@@ -2,7 +2,6 @@
 package mcp
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,15 +14,7 @@ func NewServer() *mcp.Server {
 		Version: "0.1.0",
 	}, nil)
 
-	// Placeholder tool — replaced in Phase 3 with all domain operations.
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "ping",
-		Description: "Check server connectivity",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, struct{}, error) {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: "pong"}},
-		}, struct{}{}, nil
-	})
+	Register(s)
 
 	return s
 }
