@@ -1,0 +1,21 @@
+# Worktrees
+.worktrees/
+
+# Go build artifacts
+/aviary
+*.exe
+*.test
+*.out
+
+# Web build output
+/web/dist/
+/web/node_modules/
+
+# Data directory
+~/.config/aviary/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
