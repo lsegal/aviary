@@ -276,10 +276,10 @@ These should be resolved before the relevant phase begins:
 | # | Decision | Recommendation | Phase |
 |---|---|---|---|
 | 1 | MCP SDK: `modelcontextprotocol/go-sdk` vs `mark3labs/mcp-go` | Official go-sdk | 3 |
-| 2 | Signal integration: signal-cli bridge, signald, or defer | Defer to post-launch | 8 |
-| 3 | Memory compaction trigger: automatic (background) vs on-demand (pre-prompt) | On-demand pre-prompt; threshold configurable | 7 |
+| 2 | Signal integration: signal-cli bridge, signald, or defer | signal-cli | 8 |
+| 3 | Memory compaction trigger: automatic (background) vs on-demand (pre-prompt) | automatic | 7 |
 | 4 | Gemini: native SDK vs OpenAI-compat endpoint | OpenAI-compat (zero extra code) | 5 |
-| 5 | Data directory: `~/.config/aviary/` vs XDG data dir | `~/.config/aviary/` (single location, simple) | 1 |
+| 5 | Data directory: `~/.config/aviary/` vs XDG data dir | XDG data dir with fallback to ~/.config/aviary on platforms without XDG | 1 |
 
 ---
 
