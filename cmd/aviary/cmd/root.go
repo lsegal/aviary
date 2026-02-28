@@ -5,6 +5,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/server"
 )
 
 var (
@@ -20,8 +23,18 @@ var rootCmd = &cobra.Command{
 to messaging channels, set up scheduled tasks, and let your agents work for you.`,
 }
 
+// dispatcher is the global MCP dispatcher used by all subcommands.
+var dispatcher *mcp.Dispatcher
+
 // Execute runs the root command.
 func Execute() {
+	// Wire server package into MCP dispatcher.
+	mcp.SetServerChecker(func() bool {
+		running, _, _ := server.IsRunning()
+		return running
+	})
+	mcp.SetTokenLoader(server.LoadToken)
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -32,4 +45,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aviary/aviary.yaml)")
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "authentication token (overrides stored token)")
+
+	// Initialize the dispatcher after flags are parsed.
+	cobra.OnInitialize(func() {
+		dispatcher = mcp.NewDispatcher(serverURL, token)
+	})
 }

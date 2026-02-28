@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +16,11 @@ var agentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured agents and their current state",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Agents: (not yet implemented)")
+		out, err := dispatcher.CallTool(cmd.Context(), "agent_list", nil)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
 		return nil
 	},
 }
@@ -32,7 +37,24 @@ var agentRunCmd = &cobra.Command{
 		if len(args) > 1 {
 			msg = args[1]
 		}
-		fmt.Printf("Running agent %q with message %q (not yet implemented)\n", name, msg)
+		if agentRunFile != "" {
+			data, err := os.ReadFile(agentRunFile)
+			if err != nil {
+				return fmt.Errorf("reading file: %w", err)
+			}
+			msg = string(data)
+		}
+		if msg == "" {
+			return fmt.Errorf("message required: pass as argument or use --file")
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "agent_run", map[string]any{
+			"name":    name,
+			"message": msg,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Print(out)
 		return nil
 	},
 }
@@ -42,7 +64,13 @@ var agentStopCmd = &cobra.Command{
 	Short: "Immediately stop all work in progress for an agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Stopping agent %q (not yet implemented)\n", args[0])
+		out, err := dispatcher.CallTool(cmd.Context(), "agent_stop", map[string]any{
+			"name": args[0],
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
 		return nil
 	},
 }

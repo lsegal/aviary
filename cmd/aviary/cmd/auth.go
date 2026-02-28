@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	authpkg "github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 var authCmd = &cobra.Command{
@@ -15,8 +19,8 @@ var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
 	Short: "Authorize via OAuth (opens browser)",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("OAuth login for %q (not yet implemented)\n", args[0])
+	RunE: func(_ *cobra.Command, args []string) error {
+		fmt.Printf("OAuth login for %q: not yet implemented. Use 'aviary auth set' to store an API key manually.\n", args[0])
 		return nil
 	},
 }
@@ -25,18 +29,28 @@ var authSetCmd = &cobra.Command{
 	Use:   "set <name> <value>",
 	Short: "Store a credential (API key or token) by name",
 	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Stored credential %q (not yet implemented)\n", args[0])
+	RunE: func(_ *cobra.Command, args []string) error {
+		st := authStore()
+		if err := st.Set(args[0], args[1]); err != nil {
+			return fmt.Errorf("storing credential: %w", err)
+		}
+		fmt.Printf("Credential %q stored.\n", args[0])
 		return nil
 	},
 }
 
 var authGetCmd = &cobra.Command{
 	Use:   "get <name>",
-	Short: "Show the credential name (value is masked)",
+	Short: "Show whether a credential is stored (value masked)",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Credential %q: ****** (not yet implemented)\n", args[0])
+	RunE: func(_ *cobra.Command, args []string) error {
+		st := authStore()
+		val, err := st.Get(args[0])
+		if err != nil {
+			return fmt.Errorf("getting credential: %w", err)
+		}
+		masked := strings.Repeat("*", min(len(val), 8))
+		fmt.Printf("Credential %q: %s\n", args[0], masked)
 		return nil
 	},
 }
@@ -44,8 +58,19 @@ var authGetCmd = &cobra.Command{
 var authListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all stored credential names",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Credentials: (not yet implemented)")
+	RunE: func(_ *cobra.Command, _ []string) error {
+		st := authStore()
+		keys, err := st.List()
+		if err != nil {
+			return fmt.Errorf("listing credentials: %w", err)
+		}
+		if len(keys) == 0 {
+			fmt.Println("No credentials stored.")
+			return nil
+		}
+		for _, k := range keys {
+			fmt.Println(" •", k)
+		}
 		return nil
 	},
 }
@@ -54,8 +79,12 @@ var authDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Remove a stored credential",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Deleted credential %q (not yet implemented)\n", args[0])
+	RunE: func(_ *cobra.Command, args []string) error {
+		st := authStore()
+		if err := st.Delete(args[0]); err != nil {
+			return fmt.Errorf("deleting credential: %w", err)
+		}
+		fmt.Printf("Credential %q deleted.\n", args[0])
 		return nil
 	},
 }
@@ -63,4 +92,30 @@ var authDeleteCmd = &cobra.Command{
 func init() {
 	authCmd.AddCommand(authLoginCmd, authSetCmd, authGetCmd, authListCmd, authDeleteCmd)
 	rootCmd.AddCommand(authCmd)
+}
+
+// authStore returns the file-based auth store (keychain is optional).
+func authStore() authpkg.Store {
+	path := store.SubDir(store.DirAuth) + "/credentials.json"
+	st, err := authpkg.NewFileStore(path)
+	if err != nil {
+		// Return an always-error store if we can't open the file.
+		return &errStore{err: err}
+	}
+	return st
+}
+
+// errStore is an auth.Store that always returns an error.
+type errStore struct{ err error }
+
+func (e *errStore) Set(_, _ string) error       { return e.err }
+func (e *errStore) Get(_ string) (string, error) { return "", e.err }
+func (e *errStore) Delete(_ string) error        { return e.err }
+func (e *errStore) List() ([]string, error)      { return nil, e.err }
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
