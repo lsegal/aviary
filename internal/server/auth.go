@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -89,10 +90,21 @@ func LoginHandler(token string) http.HandlerFunc {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		submitted := r.FormValue("token")
+		// Accept token from JSON body, form value, or Authorization header.
+		var submitted string
+		if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			var body struct {
+				Token string `json:"token"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				submitted = body.Token
+			}
+		}
 		if submitted == "" {
-			submitted = r.Header.Get("Authorization")
-			submitted = strings.TrimPrefix(submitted, "Bearer ")
+			submitted = r.FormValue("token")
+		}
+		if submitted == "" {
+			submitted = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
 		if submitted != token {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
