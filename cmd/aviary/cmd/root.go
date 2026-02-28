@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	cfgFile string
-	server  string
-	token   string
+	cfgFile   string
+	serverURL string
+	token     string
 )
 
 var rootCmd = &cobra.Command{
@@ -30,6 +30,6 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aviary/aviary.yaml)")
-	rootCmd.PersistentFlags().StringVar(&server, "server", "https://localhost:16677", "Aviary server URL")
+	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "authentication token (overrides stored token)")
 }
