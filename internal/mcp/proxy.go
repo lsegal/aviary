@@ -60,10 +60,36 @@ func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClien
 
 // CallTool invokes the named tool on the remote server.
 func (c *RemoteClient) CallTool(ctx context.Context, name string, args any) (*sdkmcp.CallToolResult, error) {
+	logToolCall("remote", name, args)
 	return c.session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      name,
 		Arguments: args,
 	})
+}
+
+// ListTools returns discoverable tools from the remote server.
+func (c *RemoteClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
+	res, err := c.session.ListTools(ctx, &sdkmcp.ListToolsParams{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ToolInfo, 0, len(res.Tools))
+	for _, t := range res.Tools {
+		if t == nil {
+			continue
+		}
+		out = append(out, ToolInfo{Name: t.Name, Description: t.Description})
+	}
+	return out, nil
+}
+
+// CallToolText invokes a tool and returns concatenated text content.
+func (c *RemoteClient) CallToolText(ctx context.Context, name string, args any) (string, error) {
+	result, err := c.CallTool(ctx, name, args)
+	if err != nil {
+		return "", err
+	}
+	return extractText(result), nil
 }
 
 // Close shuts down the remote connection.

@@ -2,16 +2,18 @@
 
 Major non-UI components written in Go, web UI should be written in Vue.js and packaged inside of the Go binary.
 
+## Components
+
 The architecture of the orchestrator is made up of 11 major components:
 
-## Main Process
+### Main Process
 
 - All main operations are exposed through MCP server (schedule task, send message, read memory, etc) so that the agent can talk via MCP
 - Server runs on 16677 by default (configurable)
 - MCP hosted at /mcp
 - Control plane hosted at /
 
-## MCP Server
+### MCP Server
 
 - Server must be hosted over HTTPS. No HTTP. Use self signed cert
 - AUTHENTICATION IS REQUIRED. A token must be generated on first run and that token must be used in bearer auth.
@@ -20,7 +22,7 @@ The architecture of the orchestrator is made up of 11 major components:
 - CLI interfaces with MCP server or it can bypass if it's more efficient.
 - We need to make sure that we can direct agentic operations to these MCPs. The biggest challenge will be proxying the MCP because we don't want to expose the MCP HTTP service directly to the internet. It's only for the local client, control plane, and scheduler
 
-## Control Plane
+### Control Plane
 
 - Server must be hosted over HTTPS. No HTTP. Use self signed cert
 - Token must be presented to interact with control plane! Login screen can be present with a token input box with [Sign in] and token should be stored in secured (long term) session cookies. Cookies don't need to expire, but token should be constantly validated when accessing data-- erroring with a 401 should kick you back to login, cookie should be validated on load, etc.
@@ -28,19 +30,20 @@ The architecture of the orchestrator is made up of 11 major components:
 - App should hot reload in dev mode (not sure how to do this, vite?)-- if not possible, don't do this.
 - Vue app uses shadcn for UI
 - Control plane has a chat UI that has a window into any active session for any agent.
+- Use pnpm for package management.
 
-## CLI
+### CLI
 
 - CLI either calls MCP operations directly in code or uses HTTP API to call to MCP server
 - Every MCP command should be exposed to CLI with the same arguments, so that users can choose to use CLI or HTTP API as they see fit.
 - `aviary start` / `aviary stop` should be disconnected from MCP, everything else should have an equivalent.
 
-## Configuration Watcher
+### Configuration Watcher
 
 - Checks for changes to configuration (`~/.config/aviary/aviary.json`) and reloads all services on changes.
 - All services must idempotently update on configuration change without "restart" or losing state.
 
-### Configuration Format
+#### Configuration Format
 
 - Configuration should use YAML
 - Errors should provide full validation and context for what went wrong, syntactically or semantically. We should have a JSON schema (yes, even though it's yaml, see gerald1248/validate-yaml)
@@ -49,7 +52,7 @@ The architecture of the orchestrator is made up of 11 major components:
 - In most cases, configuration should be agent dependent, i.e. each agent can have its own configuration for things like channels, permissions, models, etc. But there should also be a global configuration that can set defaults for all agents.
 - Models need their own configuration for auth, and in general, auth should be configured separately. This extends beyond models since some tools / channels may also require auth credentials. We should have like an `auth:XYZ` string syntax that can pull tokens from an auth configuration file or system keychain depending on config by name, i.e. `auth:openai:lsegal@soen.ca` would pull the OpenAI API key from the auth configuration / keychain by name "openai:lsegal@soen.ca".
 
-## Scheduler (job queue)
+### Scheduler (job queue)
 
 - Runs a cron-style system that checks a job queue for in-progress and scheduled tasks
 - Job queue should be re-entrant, retryable, and resilient enough to automatically continue on server restarts.
@@ -67,16 +70,16 @@ The architecture of the orchestrator is made up of 11 major components:
 - Since schedule is attached to an agent (in config), when a task is triggered, it should send the task details to the corresponding agent via MCP and the agent can execute the task and stream results back to the scheduler and any relevant channels.
 - Task defines which channel to send results to, whether to run in silent mode (no message), or whether to send to "last" channel.
 
-## Browser Control
+### Browser Control
 
 - Need ability to control chromium compatible browser via CDP (chrome devtools protocol) for agentic operations that require browser control (e.g. web navigation, form filling, etc).
 - This should be exposed through CLI and MCP, i.e. `aviary browser open example.com`
 - CDP default port / host should be configurable, and we should support multiple browser instances with different ports/hosts.
-- Browser should use custom profile that is separate from user's main browser profile, to avoid data contamination and for security. We can use `--profile-directory` which is better than `--user-data-dir` since it doesn't require copying the entire profile for each instance, just the specific directory for that profile.
+- Browser should use a dedicated profile name via `--profile-directory` (default `Aviary` when unset). We intentionally do not pass `--user-data-dir`, so Chrome uses its normal default user data location.
 - Should allow configuring chrome binary and command line args (appended to the ones we use above).
 - Every CDP operation should have a corresponding CLI and MCP command, e.g. `aviary browser click --selector "#submit-button"` or `POST /mcp/browser/click { "selector": "#submit-button" }`
 
-## Agent Manager
+### Agent Manager
 
 - Responsible for communicating with agents via vLLM or OpenAI API or streaming stdio when using a CLI like claude/codex/gemini.
 - Example: Message received on a channel that agent is subscribed to, message is forwarded as a prompt into the agent, streaming response back to the channel as it's received from the agent.
@@ -90,7 +93,7 @@ The architecture of the orchestrator is made up of 11 major components:
 - Multiple sessions should be able to share memory. Generally only the agent's main session should be configurable to share memory, not scheduled tasks, though architecturally it should be possible to share memory across scheduled tasks as well if needed.
 - Agents should use "thinking model" style conversations to continue conversations over multiple messages, not just sending a single message and getting a reply.
 
-## Memory Management
+### Memory Management
 
 - All conversations should be added to persistent memory by agent / session.
 - This component needs to manage memory efficiently (compacting, passing memory dumps, searching memory, etc) so that we can have long conversations without running into token limits.
@@ -99,10 +102,21 @@ The architecture of the orchestrator is made up of 11 major components:
 - Multiple messages and conversations should be able to append to the same memory and incrementally access the same memory immediately.
   - Example: if I say "do X" and "do Y" in parallel and "do X" completes first, the output of "do X" should be available to any followup messages in the do Y conversation.
 
-## Tools / Skills
+### Tools / Skills
 
 - Agents should be able to use tools/skills that are not necessarily tied to a specific channel, e.g. a "search" tool that can search the web and return results, or a "code execution" tool that can execute code and return results.
 - Tools should be able to be added on the fly and should be reflected in the system immediately without needing to restart.
 - Tools should use Skills via the [AgentSkill format](https://agentskills.io/home)
 - Each agent can define which skills are accessible
 - Skills can be configured at a toplevel, potentially with auth tokens.
+
+## Development Environment
+
+### Testing Approach
+
+- Unit tests for all components with high coverage, especially for critical components like memory management and scheduler.
+- Integration tests for major workflows, e.g. sending a message to an agent and getting a response, scheduling a task and having it execute, etc.
+- End-to-end tests that run the entire system and test major user flows, e.g. starting the server, sending messages, scheduling tasks
+- E2E UI tests for web interface with Playwright
+- Always write and run tests on changes (go test, pnpm test:e2e)
+- Always run linters and formatters on changes (go fmt, go vet, pnpm lint / biome check for web)

@@ -17,6 +17,8 @@ type ScheduledTask struct {
 	Name        string      `json:"name"`
 	TriggerType TriggerType `json:"trigger_type"`
 	Schedule    string      `json:"schedule,omitempty"` // cron expression
+	StartAt     *time.Time  `json:"start_at,omitempty"`
+	RunOnce     bool        `json:"run_once,omitempty"`
 	Watch       string      `json:"watch,omitempty"`    // glob pattern
 	Prompt      string      `json:"prompt"`
 	Channel     string      `json:"channel,omitempty"`

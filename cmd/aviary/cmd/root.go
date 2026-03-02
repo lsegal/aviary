@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lsegal/aviary/internal/logging"
 	"github.com/spf13/cobra"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/server"
 )
@@ -28,12 +30,17 @@ var dispatcher *mcp.Dispatcher
 
 // Execute runs the root command.
 func Execute() {
+	if err := logging.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to initialize logging: %v\n", err)
+	}
+
 	// Wire server package into MCP dispatcher.
 	mcp.SetServerChecker(func() bool {
 		running, _, _ := server.IsRunning()
 		return running
 	})
 	mcp.SetTokenLoader(server.LoadToken)
+	agent.SetToolClientFactory(mcp.NewAgentToolClient)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

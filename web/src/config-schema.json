@@ -1,0 +1,136 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"title": "Aviary Configuration",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"server": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"default": 16677
+				},
+				"tls": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"cert": { "type": "string" },
+						"key": { "type": "string" }
+					}
+				}
+			}
+		},
+		"agents": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["name"],
+				"additionalProperties": false,
+				"properties": {
+					"name": { "type": "string" },
+					"model": { "type": "string" },
+					"memory": { "type": "string" },
+					"fallbacks": {
+						"type": "array",
+						"items": { "type": "string" }
+					},
+					"channels": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["type"],
+							"additionalProperties": false,
+							"properties": {
+								"type": {
+									"type": "string",
+									"enum": ["slack", "discord", "signal"]
+								},
+								"token": { "type": "string" },
+								"channel": { "type": "string" },
+								"phone": { "type": "string" },
+								"allowFrom": {
+									"type": "array",
+									"items": { "type": "string" }
+								}
+							}
+						}
+					},
+					"tasks": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["name", "prompt"],
+							"additionalProperties": false,
+							"properties": {
+								"name": { "type": "string" },
+								"schedule": { "type": "string" },
+								"start_at": { "type": "string", "format": "date-time" },
+								"run_once": { "type": "boolean", "default": false },
+								"watch": { "type": "string" },
+								"prompt": { "type": "string" },
+								"channel": { "type": "string" }
+							},
+							"oneOf": [{ "required": ["schedule"] }, { "required": ["watch"] }]
+						}
+					}
+				}
+			}
+		},
+		"models": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"providers": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"auth": { "type": "string" }
+						}
+					}
+				},
+				"defaults": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"model": { "type": "string" },
+						"fallbacks": {
+							"type": "array",
+							"items": { "type": "string" }
+						}
+					}
+				}
+			}
+		},
+		"browser": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"binary": { "type": "string" },
+				"cdp_port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"default": 9222
+				}
+			}
+		},
+		"scheduler": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"concurrency": {
+					"oneOf": [
+						{ "type": "string", "enum": ["auto"] },
+						{ "type": "integer", "minimum": 1 }
+					]
+				}
+			}
+		}
+	}
+}

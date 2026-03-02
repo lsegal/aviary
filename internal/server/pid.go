@@ -4,21 +4,34 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/lsegal/aviary/internal/store"
 )
 
 // PIDPath returns the path to the PID file.
 func PIDPath() string {
-	return filepath.Join(store.DataDir(), "aviary.pid")
+	if p := strings.TrimSpace(os.Getenv("AVIARY_PID_FILE")); p != "" {
+		return p
+	}
+
+	if runtime.GOOS == "windows" {
+		if programData := strings.TrimSpace(os.Getenv("PROGRAMDATA")); programData != "" {
+			return filepath.Join(programData, "aviary", "aviary.pid")
+		}
+	}
+
+	return filepath.Join(os.TempDir(), "aviary", "aviary.pid")
 }
 
 // WritePID writes the current process PID to the PID file.
 func WritePID() error {
+	if err := os.MkdirAll(filepath.Dir(PIDPath()), 0o755); err != nil {
+		return fmt.Errorf("creating PID directory: %w", err)
+	}
+
 	pid := strconv.Itoa(os.Getpid())
-	return os.WriteFile(PIDPath(), []byte(pid+"\n"), 0o600)
+	return os.WriteFile(PIDPath(), []byte(pid+"\n"), 0o644)
 }
 
 // ReadPID reads the PID from the PID file.

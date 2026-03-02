@@ -1,11 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
-  color-scheme: dark light;
+	color-scheme: light dark;
+}
+
+html,
+body,
+#app {
+	height: 100%;
 }
 
 body {
-  @apply bg-gray-950 text-gray-100 min-h-screen;
+	margin: 0;
+	min-height: 100vh;
 }

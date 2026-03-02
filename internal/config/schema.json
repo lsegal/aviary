@@ -32,9 +32,12 @@
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string" },
-          "description": { "type": "string" },
           "model": { "type": "string" },
           "memory": { "type": "string" },
+          "fallbacks": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
           "channels": {
             "type": "array",
             "items": {
@@ -65,6 +68,8 @@
               "properties": {
                 "name": { "type": "string" },
                 "schedule": { "type": "string" },
+                "start_at": { "type": "string", "format": "date-time" },
+                "run_once": { "type": "boolean", "default": false },
                 "watch": { "type": "string" },
                 "prompt": { "type": "string" },
                 "channel": { "type": "string" }
@@ -115,6 +120,15 @@
           "minimum": 1,
           "maximum": 65535,
           "default": 9222
+        },
+        "profile_directory": {
+          "type": "string",
+          "description": "Chrome profile folder name in the browser's default user data directory (e.g. 'Default', 'Profile 1', 'work'). Defaults to 'Aviary' if unset."
+        },
+        "headless": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run the browser without a visible window. Defaults to false so the browser is visible."
         }
       }
     },

@@ -46,6 +46,21 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Validate config — fail fast on any errors, print all issues before starting.
+	st := authStore()
+	if issues := config.Validate(cfg, func(k string) (string, error) { return st.Get(k) }); len(issues) != 0 {
+		nerrs := 0
+		for _, issue := range issues {
+			fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
+			if issue.Level == config.LevelError {
+				nerrs++
+			}
+		}
+		if nerrs > 0 {
+			return fmt.Errorf("%d configuration error(s) found — run 'aviary doctor' for full details", nerrs)
+		}
+	}
+
 	// Load or generate auth token.
 	tok, isNew, err := server.LoadOrGenerateToken()
 	if err != nil {

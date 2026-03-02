@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,12 +21,79 @@ var authCmd = &cobra.Command{
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
-	Short: "Authorize via OAuth (opens browser)",
+	Short: "Authorize via OAuth PKCE (opens browser). Providers: anthropic, openai",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		fmt.Printf("OAuth login for %q: not yet implemented. Use 'aviary auth set' to store an API key manually.\n", args[0])
-		return nil
+		provider := strings.ToLower(args[0])
+		st := authStore()
+
+		switch provider {
+		case "anthropic":
+			return loginAnthropic(st)
+		case "openai":
+			return loginOpenAI(st)
+		default:
+			return fmt.Errorf("unknown provider %q; supported providers: anthropic, openai", provider)
+		}
 	},
+}
+
+func loginAnthropic(st authpkg.Store) error {
+	pkce, err := authpkg.GeneratePKCE()
+	if err != nil {
+		return fmt.Errorf("generating PKCE: %w", err)
+	}
+
+	authURL := authpkg.AnthropicBuildAuthorizeURL(pkce, "max")
+	fmt.Println("Opening browser for Anthropic Claude Pro/Max authorization...")
+	fmt.Println()
+	fmt.Println("  ", authURL)
+	fmt.Println()
+
+	if err := authpkg.OpenBrowser(authURL); err != nil {
+		fmt.Println("(Could not open browser automatically; copy the URL above.)")
+	}
+
+	fmt.Print("Paste the authorization code shown on the Anthropic page: ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	code := strings.TrimSpace(scanner.Text())
+	if code == "" {
+		return fmt.Errorf("no code entered; login cancelled")
+	}
+
+	fmt.Println("Exchanging code for tokens...")
+	token, err := authpkg.AnthropicExchange(context.Background(), code, pkce.Verifier)
+	if err != nil {
+		return fmt.Errorf("completing Anthropic login: %w", err)
+	}
+
+	// Store the OAuth token JSON at a well-known key.
+	tokenJSON, _ := marshalOAuthToken(token)
+	if err := st.Set("anthropic:oauth", tokenJSON); err != nil {
+		return fmt.Errorf("saving token: %w", err)
+	}
+
+	fmt.Println("Anthropic OAuth login successful. Token stored as anthropic:oauth")
+	return nil
+}
+
+func loginOpenAI(st authpkg.Store) error {
+	fmt.Printf("Starting OpenAI/Codex OAuth login on port %d — opening browser...\n", authpkg.OpenAICallbackPort)
+
+	ctx := context.Background()
+	token, err := authpkg.OpenAILogin(ctx)
+	if err != nil {
+		return fmt.Errorf("OpenAI login: %w", err)
+	}
+
+	tokenJSON, _ := marshalOAuthToken(token)
+	if err := st.Set("openai:oauth", tokenJSON); err != nil {
+		return fmt.Errorf("saving token: %w", err)
+	}
+
+	fmt.Println("OpenAI OAuth login successful. Token stored as openai:oauth")
+	return nil
 }
 
 var authSetCmd = &cobra.Command{
@@ -113,9 +184,8 @@ func (e *errStore) Get(_ string) (string, error) { return "", e.err }
 func (e *errStore) Delete(_ string) error        { return e.err }
 func (e *errStore) List() ([]string, error)      { return nil, e.err }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+// marshalOAuthToken serialises an OAuthToken to a JSON string.
+func marshalOAuthToken(t *authpkg.OAuthToken) (string, error) {
+	data, err := json.Marshal(t)
+	return string(data), err
 }

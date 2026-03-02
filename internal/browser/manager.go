@@ -3,109 +3,202 @@ package browser
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"log/slog"
 	"sync"
-
-	"github.com/chromedp/chromedp"
-	"github.com/lsegal/aviary/internal/store"
+	"time"
 )
 
-// Manager manages a single browser session lifecycle.
+// Manager manages browser sessions via Chrome DevTools Protocol.
+// Each operation connects to Chrome on demand — no persistent in-process session
+// is held between calls, which allows CLI invocations to share a single Chrome
+// process via tab IDs.
 type Manager struct {
-	mu      sync.Mutex
-	session *Session
-	binary  string
-	cdpPort int
+	mu         sync.Mutex // protects Chrome launch
+	binary     string
+	cdpPort    int
+	profileDir string
+	headless   bool
+	sessions   map[string]*Session
 }
+
+const defaultOperationTimeout = 15 * time.Second
 
 // NewManager creates a browser Manager.
 // binary is the path to the Chromium/Chrome executable (empty = auto-detect).
 // cdpPort is the remote debugging port (0 = default 9222).
-func NewManager(binary string, cdpPort int) *Manager {
+// profileDir is the Chrome profile-directory name (empty = "Default").
+// headless controls whether the browser window is shown (false = visible).
+func NewManager(binary string, cdpPort int, profileDir string, headless bool) *Manager {
 	if cdpPort == 0 {
 		cdpPort = 9222
 	}
-	return &Manager{binary: binary, cdpPort: cdpPort}
+	return &Manager{binary: binary, cdpPort: cdpPort, profileDir: profileDir, headless: headless, sessions: make(map[string]*Session)}
 }
 
-// Open starts a browser session navigated to url.
-// If a session is already open it is reused.
-func (m *Manager) Open(ctx context.Context, url string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// Open navigates to url in a new Chrome tab, launching Chrome if necessary.
+// It returns the CDP target ID of the new tab, which callers must pass to
+// subsequent operations (Click, Type, Screenshot, EvalJS) to target that tab.
+// Chrome and the tab persist after this call returns.
+func (m *Manager) Open(ctx context.Context, url string) (string, error) {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
 
-	if m.session == nil {
-		s, err := m.newSession(ctx)
+	if _, err := m.ensureChrome(opCtx); err != nil {
+		return "", err
+	}
+
+	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
+	tab, err := createTab(opCtx, cdpBaseURL, url)
+	if err != nil {
+		return "", err
+	}
+
+	slog.Info("browser: tab opened", "url", url, "tab", tab.ID)
+	return tab.ID, nil
+}
+
+// Tabs returns all currently open page tabs in the browser.
+// Returns an error if Chrome is not running.
+func (m *Manager) Tabs() ([]ChromeTab, error) {
+	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
+	tabs, err := fetchTabs(cdpBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("Chrome not running on port %d", m.cdpPort)
+	}
+	var pages []ChromeTab
+	for _, t := range tabs {
+		if t.Type == "page" {
+			pages = append(pages, t)
+		}
+	}
+	return pages, nil
+}
+
+// Click clicks the element matching selector in the given tab.
+func (m *Manager) Click(ctx context.Context, tabID, selector string) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	slog.Info("browser: click", "tab", tabID, "selector", selector)
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Click(selector) })
+}
+
+// Type types text into the element matching selector in the given tab.
+func (m *Manager) Type(ctx context.Context, tabID, selector, text string) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	slog.Info("browser: type", "tab", tabID, "selector", selector)
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Type(selector, text) })
+}
+
+// Fill sets the value of the element matching selector in the given tab.
+func (m *Manager) Fill(ctx context.Context, tabID, selector, text string) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	slog.Info("browser: fill", "tab", tabID, "selector", selector)
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Fill(selector, text) })
+}
+
+// Screenshot captures the current page in the given tab as PNG bytes.
+func (m *Manager) Screenshot(ctx context.Context, tabID string) ([]byte, error) {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	var buf []byte
+	err := m.withTab(opCtx, tabID, func(s *Session) error {
+		var e error
+		buf, e = s.Screenshot()
+		return e
+	})
+	return buf, err
+}
+
+// EvalJS evaluates JavaScript in the given tab and returns the result as a string.
+func (m *Manager) EvalJS(ctx context.Context, tabID, expr string) (string, error) {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	var result string
+	err := m.withTab(opCtx, tabID, func(s *Session) error {
+		var e error
+		result, e = s.EvalJS(expr)
+		return e
+	})
+	return result, err
+}
+
+// Close is a no-op: Chrome and its tabs run independently of this Manager.
+func (m *Manager) Close() {}
+
+// withTab attaches to tabID, runs fn, then disconnects (leaving the tab open).
+func (m *Manager) withTab(ctx context.Context, tabID string, fn func(*Session) error) error {
+	wsURL, err := m.ensureChrome(ctx)
+	if err != nil {
+		return fmt.Errorf("Chrome not running: %w", err)
+	}
+
+	m.mu.Lock()
+	s, ok := m.sessions[tabID]
+	m.mu.Unlock()
+
+	if !ok {
+		attachCtx := context.WithoutCancel(ctx)
+		s, err = newRemoteSessionForTab(attachCtx, wsURL, tabID)
 		if err != nil {
 			return err
 		}
-		m.session = s
+		m.mu.Lock()
+		m.sessions[tabID] = s
+		m.mu.Unlock()
 	}
 
-	return m.session.Navigate(url)
+	return fn(s)
 }
 
-// Click forwards to the active session.
-func (m *Manager) Click(selector string) error {
-	return m.withSession(func(s *Session) error { return s.Click(selector) })
-}
+// ensureChrome returns the browser-level CDP WebSocket URL, launching Chrome if needed.
+func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
+	if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
+		return wsURL, nil
+	}
 
-// Type forwards to the active session.
-func (m *Manager) Type(selector, text string) error {
-	return m.withSession(func(s *Session) error { return s.Type(selector, text) })
-}
-
-// Screenshot captures the current page.
-func (m *Manager) Screenshot() ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.session == nil {
-		return nil, fmt.Errorf("no browser session open")
+	// Double-check after acquiring lock.
+	if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
+		return wsURL, nil
 	}
-	return m.session.Screenshot()
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	if err := launchChrome(m); err != nil {
+		return "", err
+	}
+	slog.Info("browser: chrome launched", "port", m.cdpPort)
+
+	waitCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return waitForChrome(waitCtx, cdpBaseURL)
 }
 
-// EvalJS evaluates JavaScript in the active session.
-func (m *Manager) EvalJS(expr string) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.session == nil {
-		return "", fmt.Errorf("no browser session open")
+func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
 	}
-	return m.session.EvalJS(expr)
+	return context.WithTimeout(ctx, timeout)
 }
 
-// Close terminates the active browser session.
-func (m *Manager) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.session != nil {
-		m.session.Close()
-		m.session = nil
+// profileName returns the Chrome profile folder name in the default user data dir.
+func (m *Manager) profileName() string {
+	if m.profileDir != "" {
+		return m.profileDir
 	}
-}
-
-func (m *Manager) withSession(fn func(*Session) error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.session == nil {
-		return fmt.Errorf("no browser session open; call Open first")
-	}
-	return fn(m.session)
-}
-
-func (m *Manager) newSession(ctx context.Context) (*Session, error) {
-	profileDir := filepath.Join(store.DataDir(), "browser-profile")
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.UserDataDir(profileDir),
-		chromedp.Flag("remote-debugging-port", fmt.Sprintf("%d", m.cdpPort)),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("no-default-browser-check", true),
-	)
-	if m.binary != "" {
-		opts = append(opts, chromedp.ExecPath(m.binary))
-	}
-
-	return newSession(ctx, opts)
+	return "Aviary"
 }

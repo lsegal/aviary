@@ -1,19 +1,19 @@
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-950">
-    <div class="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-8 shadow-xl">
-      <h1 class="mb-2 text-2xl font-bold text-white">Aviary</h1>
-      <p class="mb-6 text-sm text-gray-400">Enter your authentication token to continue.</p>
+  <div class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+    <div class="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+      <h1 class="mb-2 text-2xl font-bold text-gray-900 dark:text-white">Aviary</h1>
+      <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">Enter your authentication token to continue.</p>
       <form @submit.prevent="submit">
-        <label class="mb-1 block text-xs font-medium text-gray-400" for="token">Token</label>
+        <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400" for="token">Token</label>
         <input
           id="token"
           v-model="tokenInput"
           type="password"
           autocomplete="current-password"
           placeholder="aviary_..."
-          class="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          class="mb-4 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
         />
-        <p v-if="errorMsg" class="mb-3 text-sm text-red-400">{{ errorMsg }}</p>
+        <p v-if="errorMsg" class="mb-3 text-sm text-red-500 dark:text-red-400">{{ errorMsg }}</p>
         <button
           type="submit"
           :disabled="loading"
@@ -27,25 +27,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "../stores/auth";
 
-const auth = useAuthStore()
-const router = useRouter()
-const tokenInput = ref('')
-const loading = ref(false)
-const errorMsg = ref('')
+const auth = useAuthStore();
+const router = useRouter();
+const tokenInput = ref("");
+const loading = ref(false);
+const errorMsg = ref("");
 
 async function submit() {
-  loading.value = true
-  errorMsg.value = ''
-  const ok = await auth.login(tokenInput.value.trim())
-  loading.value = false
-  if (ok) {
-    await router.push('/chat')
-  } else {
-    errorMsg.value = 'Invalid token. Please try again.'
-  }
+	loading.value = true;
+	errorMsg.value = "";
+	const ok = await auth.login(tokenInput.value.trim());
+	loading.value = false;
+	if (ok) {
+		await router.push("/chat");
+	} else {
+		errorMsg.value = "Invalid token. Please try again.";
+	}
 }
 </script>

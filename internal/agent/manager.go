@@ -9,6 +9,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/memory"
 )
 
 // Manager maintains a registry of AgentRunners and reconciles them with config.
@@ -17,6 +18,7 @@ type Manager struct {
 	runners map[string]*AgentRunner // keyed by agent name
 	session *SessionManager
 	factory *llm.Factory
+	memory  *memory.Manager
 }
 
 // NewManager creates a new Manager with an optional LLM factory.
@@ -25,6 +27,7 @@ func NewManager(factory *llm.Factory) *Manager {
 		runners: make(map[string]*AgentRunner),
 		session: NewSessionManager(),
 		factory: factory,
+		memory:  memory.New(),
 	}
 }
 
@@ -52,8 +55,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 	// Add or update agents.
 	for name, ac := range desired {
 		if existing, ok := m.runners[name]; ok {
-			// Check if config changed (cheap pointer comparison of model string).
-			if existing.cfg.Model == ac.Model {
+			if existing.cfg.Model == ac.Model && existing.cfg.Memory == ac.Memory {
 				continue
 			}
 			slog.Info("agent updated", "name", name)
@@ -65,7 +67,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 			ID:        fmt.Sprintf("agent_%s", name),
 			Name:      name,
 			Model:     ac.Model,
-			Memory:    ac.Memory,
+			Fallbacks: ac.Fallbacks,
 			State:     domain.AgentStateIdle,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -78,7 +80,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 				slog.Warn("failed to create LLM provider", "agent", name, "model", ac.Model, "err", err)
 			}
 		}
-		m.runners[name] = NewAgentRunner(a, ac, provider)
+		m.runners[name] = NewAgentRunner(a, ac, provider, m.memory)
 	}
 }
 

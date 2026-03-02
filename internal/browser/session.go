@@ -6,30 +6,30 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
 // Session wraps a chromedp browser context for a single automation session.
 type Session struct {
-	allocCtx  context.Context
+	allocCtx    context.Context
 	cancelAlloc context.CancelFunc
-	taskCtx   context.Context
-	cancelTask context.CancelFunc
-	mu        sync.Mutex
+	taskCtx     context.Context
+	cancelTask  context.CancelFunc
+	mu          sync.Mutex
 }
 
-// newSession creates a new browser session, launching Chromium.
-// profileDir is a path used for the user-data-dir (isolated from the user's profile).
-// cdpPort is the remote debugging port (0 = let Chrome pick one).
-func newSession(ctx context.Context, opts []chromedp.ExecAllocatorOption) (*Session, error) {
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, opts...)
+// newRemoteSession connects to an already-running Chrome and creates a new tab.
+// The tab persists after this session is closed or the process exits.
+// Call Close only on error; normal use lets the process lifecycle clean up.
+func newRemoteSession(ctx context.Context, wsURL string) (*Session, error) {
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, wsURL)
 	taskCtx, cancelTask := chromedp.NewContext(allocCtx)
 
-	// Initialize the browser.
 	if err := chromedp.Run(taskCtx); err != nil {
 		cancelTask()
 		cancelAlloc()
-		return nil, fmt.Errorf("launching browser: %w", err)
+		return nil, fmt.Errorf("connecting to Chrome at %s: %w", wsURL, err)
 	}
 
 	return &Session{
@@ -40,6 +40,35 @@ func newSession(ctx context.Context, opts []chromedp.ExecAllocatorOption) (*Sess
 	}, nil
 }
 
+// newRemoteSessionForTab connects to an already-running Chrome and attaches to
+// an existing tab by its CDP target ID. Closing this session only disconnects
+// Go from the tab — the tab itself remains open in Chrome.
+func newRemoteSessionForTab(ctx context.Context, wsURL, tabID string) (*Session, error) {
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, wsURL)
+	taskCtx, cancelTask := chromedp.NewContext(allocCtx, chromedp.WithTargetID(target.ID(tabID)))
+
+	if err := chromedp.Run(taskCtx); err != nil {
+		cancelTask()
+		cancelAlloc()
+		return nil, fmt.Errorf("attaching to tab %s: %w", tabID, err)
+	}
+
+	return &Session{
+		allocCtx:    allocCtx,
+		cancelAlloc: cancelAlloc,
+		taskCtx:     taskCtx,
+		cancelTask:  cancelTask,
+	}, nil
+}
+
+// TabID returns the CDP target ID for the tab this session is attached to.
+func (s *Session) TabID() string {
+	if c := chromedp.FromContext(s.taskCtx); c != nil && c.Target != nil {
+		return string(c.Target.TargetID)
+	}
+	return ""
+}
+
 // Run executes a chromedp action within the session.
 func (s *Session) Run(actions ...chromedp.Action) error {
 	s.mu.Lock()
@@ -47,8 +76,16 @@ func (s *Session) Run(actions ...chromedp.Action) error {
 	return chromedp.Run(s.taskCtx, actions...)
 }
 
-// Close terminates the browser session.
+// Close tears down the session context and allocator.
+// Depending on how the session was created, this may close the tab.
 func (s *Session) Close() {
 	s.cancelTask()
+	s.cancelAlloc()
+}
+
+// Detach disconnects from the browser without explicitly canceling the task
+// context. This is used for operations attached to an existing tab where we
+// must avoid closing the target on cleanup.
+func (s *Session) Detach() {
 	s.cancelAlloc()
 }

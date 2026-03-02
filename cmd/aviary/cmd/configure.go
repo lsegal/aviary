@@ -60,6 +60,12 @@ var configureAuthCmd = &cobra.Command{
 	},
 }
 
+var configureBrowserCmd = &cobra.Command{
+	Use:   "browser",
+	Short: "Configure browser automation settings",
+	RunE:  runConfigureBrowser,
+}
+
 func init() {
 	configureCmd.AddCommand(
 		configureAgentsCmd,
@@ -67,6 +73,7 @@ func init() {
 		configureModelsCmd,
 		configureSchedulerCmd,
 		configureAuthCmd,
+		configureBrowserCmd,
 	)
 	rootCmd.AddCommand(configureCmd)
 }
@@ -148,6 +155,61 @@ func runConfigureAgents(_ *cobra.Command, _ []string) error {
 	}
 
 	cfg.Agents = append(cfg.Agents, config.AgentConfig{Name: name, Model: model})
+	return writeConfig(cfg)
+}
+
+// runConfigureBrowser walks through browser-specific settings interactively.
+func runConfigureBrowser(_ *cobra.Command, _ []string) error {
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return err
+	}
+
+	profileDir := cfg.Browser.ProfileDir
+	binary := cfg.Browser.Binary
+	port := cfg.Browser.CDPPort
+	if port == 0 {
+		port = 9222
+	}
+	portStr := fmt.Sprintf("%d", port)
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Browser Configuration").
+				Description("Configure the Chromium browser used for automation.\nAviary uses your browser's default user data directory and selects a profile by name."),
+			huh.NewInput().
+				Title("Profile directory name").
+				Value(&profileDir).
+				Placeholder("Aviary").
+				Description("Chrome --profile-directory value (e.g. Default, Profile 1, Work)"),
+			huh.NewInput().
+				Title("Browser binary").
+				Value(&binary).
+				Placeholder("auto-detected").
+				Description("Path to Chrome or Chromium executable (leave empty to auto-detect)"),
+			huh.NewInput().
+				Title("CDP port").
+				Value(&portStr).
+				Placeholder("9222").
+				Description("Chrome DevTools Protocol debugging port"),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("wizard cancelled: %w", err)
+	}
+
+	cfg.Browser.ProfileDir = profileDir
+	cfg.Browser.Binary = binary
+	if portStr != "" {
+		var p int
+		fmt.Sscanf(portStr, "%d", &p)
+		if p > 0 {
+			cfg.Browser.CDPPort = p
+		}
+	}
+
 	return writeConfig(cfg)
 }
 

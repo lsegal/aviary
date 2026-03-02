@@ -1,38 +1,38 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
 
-export const useAuthStore = defineStore('auth', () => {
-  // Token is read from the aviary_session cookie set by the server.
-  const token = ref<string | null>(getCookieToken())
+const TOKEN_KEY = "aviary_token";
 
-  const isLoggedIn = computed(() => token.value !== null)
+export const useAuthStore = defineStore("auth", () => {
+	// Token is persisted in localStorage (the server also sets an HttpOnly session
+	// cookie that is sent automatically with every request, but cannot be read by JS).
+	const token = ref<string | null>(localStorage.getItem(TOKEN_KEY));
 
-  async function login(inputToken: string): Promise<boolean> {
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: inputToken }),
-    })
-    if (res.ok) {
-      token.value = inputToken
-      return true
-    }
-    return false
-  }
+	const isLoggedIn = computed(() => token.value !== null);
 
-  function logout() {
-    token.value = null
-    document.cookie = 'aviary_session=; Max-Age=0; path=/'
-  }
+	async function login(inputToken: string): Promise<boolean> {
+		const res = await fetch("/api/login", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: inputToken }),
+		});
+		if (res.ok) {
+			token.value = inputToken;
+			localStorage.setItem(TOKEN_KEY, inputToken);
+			return true;
+		}
+		return false;
+	}
 
-  function getToken(): string | null {
-    return token.value ?? getCookieToken()
-  }
+	function logout() {
+		token.value = null;
+		localStorage.removeItem(TOKEN_KEY);
+		document.cookie = "aviary_session=; Max-Age=0; path=/";
+	}
 
-  return { isLoggedIn, token, login, logout, getToken }
-})
+	function getToken(): string | null {
+		return token.value ?? localStorage.getItem(TOKEN_KEY);
+	}
 
-function getCookieToken(): string | null {
-  const match = document.cookie.match(/aviary_session=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : null
-}
+	return { isLoggedIn, token, login, logout, getToken };
+});

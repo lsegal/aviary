@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -60,7 +61,13 @@ func LoadToken() (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// BearerMiddleware enforces Bearer token authentication.
+// BearerMiddleware enforces token authentication.
+//
+// Accepts:
+//   - Authorization: Bearer <token>
+//   - aviary_session cookie
+//   - ?token=<token> query param (for APIs like EventSource that cannot set
+//     custom headers)
 func BearerMiddleware(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check Authorization header.
@@ -77,6 +84,13 @@ func BearerMiddleware(token string, next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+		}
+
+		// Check query token (used by EventSource/SSE where custom headers are
+		// not available).
+		if q := r.URL.Query().Get("token"); q != "" && q == token {
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -120,5 +134,18 @@ func LoginHandler(token string) http.HandlerFunc {
 		})
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `{"ok":true}`)
+	}
+}
+
+// makeAuthResolver returns a function that resolves "auth:<provider>:<name>"
+// references by looking them up in the file-backed credential store.
+func makeAuthResolver() func(string) (string, error) {
+	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
+	return func(ref string) (string, error) {
+		st, err := auth.NewFileStore(authPath)
+		if err != nil {
+			return "", fmt.Errorf("opening auth store: %w", err)
+		}
+		return auth.Resolve(st, ref)
 	}
 }

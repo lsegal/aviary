@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
@@ -19,6 +20,8 @@ type Scheduler struct {
 	agents  *agent.Manager
 	mu      sync.Mutex
 	tasks   map[string]config.TaskConfig // task name → config snapshot
+	onceFired map[string]bool
+	timers map[string]*time.Timer
 	cancel  context.CancelFunc
 }
 
@@ -38,6 +41,8 @@ func New(agents *agent.Manager, workers int) (*Scheduler, error) {
 		watch:  fw,
 		agents: agents,
 		tasks:  make(map[string]config.TaskConfig),
+		onceFired: make(map[string]bool),
+		timers: make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -76,7 +81,9 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			if existing, ok := s.tasks[key]; ok && existing == tc {
 				continue // unchanged
 			}
+			s.removeTriggersLocked(key)
 			s.tasks[key] = tc
+			delete(s.onceFired, key)
 
 			agentName := ac.Name
 			agentID := fmt.Sprintf("agent_%s", ac.Name)
@@ -89,9 +96,50 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 				}
 			}
 
-			if tc.Schedule != "" {
-				if err := s.cron.Add(key, tc.Schedule, enqueue); err != nil {
-					slog.Warn("scheduler: invalid cron expression", "task", key, "schedule", tc.Schedule, "err", err)
+			now := time.Now().UTC()
+			startAt, hasStartAt := parseStartAt(tc.StartAt)
+
+			if tc.RunOnce && hasStartAt {
+				delay := time.Until(startAt)
+				if delay < 0 {
+					delay = 0
+				}
+				s.timers[key] = time.AfterFunc(delay, func() {
+					enqueue()
+					s.markRunOnceComplete(key)
+				})
+				slog.Info("scheduler: one-time task armed", "key", key, "start_at", startAt.Format(time.RFC3339))
+			} else if tc.Schedule != "" {
+				registerCron := func() {
+					if tc.RunOnce {
+						if err := s.cron.Add(key, tc.Schedule, func() {
+							enqueue()
+							s.markRunOnceComplete(key)
+						}); err != nil {
+							slog.Warn("scheduler: invalid cron expression", "task", key, "schedule", tc.Schedule, "err", err)
+						}
+						return
+					}
+					if err := s.cron.Add(key, tc.Schedule, enqueue); err != nil {
+						slog.Warn("scheduler: invalid cron expression", "task", key, "schedule", tc.Schedule, "err", err)
+					}
+				}
+
+				if hasStartAt && startAt.After(now) {
+					delay := time.Until(startAt)
+					s.timers[key] = time.AfterFunc(delay, func() {
+						s.mu.Lock()
+						if s.onceFired[key] {
+							s.mu.Unlock()
+							return
+						}
+						delete(s.timers, key)
+						s.mu.Unlock()
+						registerCron()
+					})
+					slog.Info("scheduler: delayed cron task armed", "key", key, "start_at", startAt.Format(time.RFC3339))
+				} else {
+					registerCron()
 				}
 			}
 			if tc.Watch != "" {
@@ -106,9 +154,9 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 	// Remove tasks no longer in config.
 	for key := range s.tasks {
 		if _, ok := desired[key]; !ok {
-			s.cron.Remove(key)
-			s.watch.Remove(key)
+			s.removeTriggersLocked(key)
 			delete(s.tasks, key)
+			delete(s.onceFired, key)
 			slog.Info("scheduler: task removed", "key", key)
 		}
 	}
@@ -119,4 +167,32 @@ func (s *Scheduler) Queue() *JobQueue { return s.queue }
 
 func taskKey(agentName, taskName string) string {
 	return agentName + "/" + taskName
+}
+
+func parseStartAt(v string) (time.Time, bool) {
+	if v == "" {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts.UTC(), true
+}
+
+func (s *Scheduler) removeTriggersLocked(key string) {
+	s.cron.Remove(key)
+	s.watch.Remove(key)
+	if timer, ok := s.timers[key]; ok {
+		timer.Stop()
+		delete(s.timers, key)
+	}
+}
+
+func (s *Scheduler) markRunOnceComplete(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onceFired[key] = true
+	s.removeTriggersLocked(key)
+	slog.Info("scheduler: one-time task completed", "key", key)
 }

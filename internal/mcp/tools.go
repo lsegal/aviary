@@ -3,12 +3,22 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/lsegal/aviary/internal/domain"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // text returns a CallToolResult with a single text content item.
@@ -38,6 +48,7 @@ func stub(name string) (*sdkmcp.CallToolResult, struct{}, error) {
 // Tool handlers are stubs; replaced in later phases by real implementations.
 func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
+	registerSessionTools(s)
 	registerTaskTools(s)
 	registerJobTools(s)
 	registerBrowserTools(s)
@@ -51,6 +62,7 @@ func Register(s *sdkmcp.Server) {
 type agentRunArgs struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
+	Session string `json:"session,omitempty"` // session name; defaults to "main"
 	File    string `json:"file,omitempty"`
 }
 
@@ -73,7 +85,8 @@ func registerAgentTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_run",
 		Description: "Send a message to an agent and stream the response",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentRunArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args agentRunArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "chat", "tool", "agent_run", "agent", args.Name, "session", args.Session)
 		d := GetDeps()
 		if d.Agents == nil {
 			return nil, struct{}{}, fmt.Errorf("agent manager not initialized; is the server running?")
@@ -82,24 +95,57 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
 		}
+		// Ensure the session exists (defaults to "main").
+		agentID := fmt.Sprintf("agent_%s", args.Name)
+		sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("initializing session: %w", err)
+		}
+		if isStopCommand(args.Message) {
+			stopped := agent.StopSession(sess.ID)
+			if stopped == 0 {
+				return text(fmt.Sprintf("session %q has no active work", sess.ID))
+			}
+			return text(fmt.Sprintf("stopped session %q", sess.ID))
+		}
+		ctx = agent.WithSessionID(ctx, sess.ID)
 
 		var buf strings.Builder
+		progressToken := req.Params.GetProgressToken()
+		progressCount := 0.0
 		done := make(chan error, 1)
 		runner.Prompt(ctx, args.Message, func(e agent.StreamEvent) {
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)
+				if progressToken != nil {
+					progressCount++
+					_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+						ProgressToken: progressToken,
+						Progress:      progressCount,
+						Message:       e.Text,
+					})
+				}
 			case agent.StreamEventDone:
 				done <- nil
 			case agent.StreamEventStop:
-				done <- fmt.Errorf("agent stopped")
+				done <- context.Canceled
 			case agent.StreamEventError:
+				if errors.Is(e.Err, context.Canceled) {
+					done <- context.Canceled
+					return
+				}
 				done <- e.Err
 			}
 		})
 		if err := <-done; err != nil {
+			if errors.Is(err, context.Canceled) {
+				return text(buf.String())
+			}
+			slog.Error("mcp: tool failed", "component", "chat", "tool", "agent_run", "agent", args.Name, "err", err)
 			return nil, struct{}{}, err
 		}
+		slog.Info("mcp: tool done", "component", "chat", "tool", "agent_run", "agent", args.Name)
 		return text(buf.String())
 	})
 
@@ -118,6 +164,289 @@ func registerAgentTools(s *sdkmcp.Server) {
 		runner.Stop()
 		return text(fmt.Sprintf("agent %q stopped", args.Name))
 	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_get",
+		Description: "Get the full configuration for a named agent",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		for _, ac := range cfg.Agents {
+			if ac.Name == args.Name {
+				return jsonResult(ac)
+			}
+		}
+		return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
+	})
+
+	type agentUpsertArgs struct {
+		Name      string   `json:"name"`
+		Model     string   `json:"model,omitempty"`
+		Fallbacks []string `json:"fallbacks,omitempty"`
+	}
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_add",
+		Description: "Add a new agent to the configuration",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.Name == "" {
+			return nil, struct{}{}, fmt.Errorf("name is required")
+		}
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		for _, ac := range cfg.Agents {
+			if ac.Name == args.Name {
+				return nil, struct{}{}, fmt.Errorf("agent %q already exists", args.Name)
+			}
+		}
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{
+			Name:      args.Name,
+			Model:     args.Model,
+			Fallbacks: args.Fallbacks,
+		})
+		if err := config.Save("", cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("agent %q added", args.Name))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_update",
+		Description: "Update an existing agent's configuration fields",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.Name == "" {
+			return nil, struct{}{}, fmt.Errorf("name is required")
+		}
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		found := false
+		for i := range cfg.Agents {
+			if cfg.Agents[i].Name == args.Name {
+				if args.Model != "" {
+					cfg.Agents[i].Model = args.Model
+				}
+				if args.Fallbacks != nil {
+					cfg.Agents[i].Fallbacks = args.Fallbacks
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
+		}
+		if err := config.Save("", cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("agent %q updated", args.Name))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_delete",
+		Description: "Remove an agent from the configuration",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		newAgents := cfg.Agents[:0]
+		found := false
+		for _, ac := range cfg.Agents {
+			if ac.Name == args.Name {
+				found = true
+				continue
+			}
+			newAgents = append(newAgents, ac)
+		}
+		if !found {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
+		}
+		cfg.Agents = newAgents
+		if err := config.Save("", cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("agent %q deleted", args.Name))
+	})
+}
+
+// ── Session tools ────────────────────────────────────────────────────────────
+
+type sessionAgentArgs struct {
+	Agent string `json:"agent"`
+}
+
+type sessionMessagesArgs struct {
+	SessionID string `json:"session_id"`
+}
+
+type sessionStopArgs struct {
+	SessionID string `json:"session_id,omitempty"`
+	Agent     string `json:"agent,omitempty"`
+	Session   string `json:"session,omitempty"`
+}
+
+func registerSessionTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_list",
+		Description: "List all sessions for an agent",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "chat_session", "tool", "session_list", "agent", args.Agent)
+		if args.Agent == "" {
+			return nil, struct{}{}, fmt.Errorf("agent name is required")
+		}
+		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		sm := agent.NewSessionManager()
+		// Ensure the main session exists.
+		if _, err := sm.GetOrCreateNamed(agentID, "main"); err != nil {
+			return nil, struct{}{}, err
+		}
+		sessions, err := sm.List(agentID)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		type sessionDTO struct {
+			ID           string `json:"id"`
+			AgentID      string `json:"agent_id"`
+			Name         string `json:"name,omitempty"`
+			TaskID       string `json:"task_id,omitempty"`
+			CreatedAt    string `json:"created_at"`
+			UpdatedAt    string `json:"updated_at"`
+			IsProcessing bool   `json:"is_processing"`
+		}
+		out := make([]sessionDTO, 0, len(sessions))
+		for _, sess := range sessions {
+			if sess == nil {
+				continue
+			}
+			out = append(out, sessionDTO{
+				ID:           sess.ID,
+				AgentID:      sess.AgentID,
+				Name:         sess.Name,
+				TaskID:       sess.TaskID,
+				CreatedAt:    sess.CreatedAt.Format(time.RFC3339Nano),
+				UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339Nano),
+				IsProcessing: agent.IsSessionProcessing(sess.ID),
+			})
+		}
+		return jsonResult(out)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_create",
+		Description: "Create a new session for an agent",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "chat_session", "tool", "session_create", "agent", args.Agent)
+		if args.Agent == "" {
+			return nil, struct{}{}, fmt.Errorf("agent name is required")
+		}
+		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		sm := agent.NewSessionManager()
+		sess, err := sm.Create(agentID)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(sess)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_messages",
+		Description: "List persisted messages for a session (user/assistant/system)",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionMessagesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.SessionID == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		lines, err := store.ReadJSONL[map[string]any](store.SessionPath(args.SessionID))
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+
+		type messageDTO struct {
+			ID        string `json:"id"`
+			SessionID string `json:"session_id"`
+			Role      string `json:"role"`
+			Content   string `json:"content"`
+			Timestamp string `json:"timestamp"`
+		}
+
+		out := make([]messageDTO, 0, len(lines))
+		for _, line := range lines {
+			role, _ := line["role"].(string)
+			content, _ := line["content"].(string)
+			if role == "" || content == "" {
+				continue
+			}
+			if role != string(domain.MessageRoleUser) && role != string(domain.MessageRoleAssistant) && role != string(domain.MessageRoleSystem) {
+				continue
+			}
+
+			id, _ := line["id"].(string)
+			sid, _ := line["session_id"].(string)
+			ts := ""
+			switch v := line["timestamp"].(type) {
+			case string:
+				ts = v
+			}
+			if sid == "" {
+				sid = args.SessionID
+			}
+
+			out = append(out, messageDTO{
+				ID:        id,
+				SessionID: sid,
+				Role:      role,
+				Content:   content,
+				Timestamp: ts,
+			})
+		}
+
+		return jsonResult(out)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_stop",
+		Description: "Stop all in-progress work for a specific session",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		sid := strings.TrimSpace(args.SessionID)
+		if sid == "" {
+			if fromCtx, ok := agent.SessionIDFromContext(ctx); ok {
+				sid = fromCtx
+			}
+		}
+		if sid == "" && strings.TrimSpace(args.Agent) != "" {
+			sessionName := strings.TrimSpace(args.Session)
+			agentID := fmt.Sprintf("agent_%s", strings.TrimSpace(args.Agent))
+			sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			sid = sess.ID
+		}
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		stopped := agent.StopSession(sid)
+		if stopped == 0 {
+			return text(fmt.Sprintf("session %q has no active work", sid))
+		}
+		return text(fmt.Sprintf("stopped %d active run(s) in session %q", stopped, sid))
+	})
+}
+
+func isStopCommand(message string) bool {
+	n := strings.TrimSpace(strings.ToLower(message))
+	n = strings.TrimPrefix(n, "/")
+	switch n {
+	case "stop", "halt", "cancel", "abort":
+		return true
+	default:
+		return false
+	}
 }
 
 // ── Task tools ───────────────────────────────────────────────────────────────
@@ -131,6 +460,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		Name:        "task_list",
 		Description: "List all tasks, their trigger type, and last run status",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_list")
 		d := GetDeps()
 		if d.Scheduler == nil {
 			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
@@ -172,6 +502,7 @@ func registerJobTools(s *sdkmcp.Server) {
 		Name:        "job_list",
 		Description: "Show job history across all tasks",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_list", "task", args.Task)
 		d := GetDeps()
 		if d.Scheduler == nil {
 			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
@@ -197,11 +528,17 @@ type browserOpenArgs struct {
 	URL string `json:"url"`
 }
 
+type browserTabArgs struct {
+	TabID string `json:"tab_id"`
+}
+
 type browserSelectorArgs struct {
+	TabID    string `json:"tab_id"`
 	Selector string `json:"selector"`
 }
 
 type browserTypeArgs struct {
+	TabID    string `json:"tab_id"`
 	Selector string `json:"selector"`
 	Text     string `json:"text"`
 }
@@ -209,71 +546,169 @@ type browserTypeArgs struct {
 func registerBrowserTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_open",
-		Description: "Navigate to a URL in the browser",
+		Description: "Navigate to a URL in a new browser tab. Returns the tab_id needed for subsequent operations on that tab.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserOpenArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_open", "url", args.URL)
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
-		if err := d.Browser.Open(ctx, args.URL); err != nil {
+		tabID, err := d.Browser.Open(ctx, args.URL)
+		if err != nil {
 			return nil, struct{}{}, err
 		}
-		return text(fmt.Sprintf("navigated to %s", args.URL))
+		return jsonResult(map[string]any{"tab_id": tabID, "url": args.URL})
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_tabs",
+		Description: "List all currently open browser tabs and their IDs",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_tabs")
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		tabs, err := d.Browser.Tabs()
+		if err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_tabs", "err", err)
+			return nil, struct{}{}, err
+		}
+		slog.Info("browser tabs listed", "component", "browser", "count", len(tabs))
+		return jsonResult(tabs)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_click",
-		Description: "Click an element by CSS selector",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args browserSelectorArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		Description: "Click an element by CSS selector in the specified tab",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserSelectorArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_click", "tab_id", args.TabID, "selector", args.Selector)
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
-		if err := d.Browser.Click(args.Selector); err != nil {
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if err := d.Browser.Click(ctx, args.TabID, args.Selector); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_click", "tab_id", args.TabID, "selector", args.Selector, "err", err)
 			return nil, struct{}{}, err
 		}
-		return text(fmt.Sprintf("clicked %q", args.Selector))
+		slog.Info("clicked element", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
+		return text(fmt.Sprintf("clicked %q in tab %s", args.Selector, args.TabID))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "browser_type",
-		Description: "Type text into an element by CSS selector",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		Name:        "browser_keystroke",
+		Description: "Send keystrokes to an element by CSS selector in the specified tab",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_keystroke", "tab_id", args.TabID, "selector", args.Selector)
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
-		if err := d.Browser.Type(args.Selector, args.Text); err != nil {
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if err := d.Browser.Type(ctx, args.TabID, args.Selector, args.Text); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_keystroke", "tab_id", args.TabID, "selector", args.Selector, "err", err)
 			return nil, struct{}{}, err
 		}
-		return text(fmt.Sprintf("typed into %q", args.Selector))
+		slog.Info("keystrokes sent", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
+		return text(fmt.Sprintf("keystrokes sent to %q in tab %s", args.Selector, args.TabID))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_fill",
+		Description: "Fill (default typing) text in an element by CSS selector in the specified tab",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_fill", "tab_id", args.TabID, "selector", args.Selector)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if err := d.Browser.Fill(ctx, args.TabID, args.Selector, args.Text); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_fill", "tab_id", args.TabID, "selector", args.Selector, "err", err)
+			return nil, struct{}{}, err
+		}
+		slog.Info("filled element", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
+		return text(fmt.Sprintf("filled %q in tab %s", args.Selector, args.TabID))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_screenshot",
-		Description: "Capture a screenshot of the current browser view",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		Description: "Capture a screenshot of the specified tab",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTabArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_screenshot", "tab_id", args.TabID)
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
-		png, err := d.Browser.Screenshot()
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		png, err := d.Browser.Screenshot(ctx, args.TabID)
 		if err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_screenshot", "tab_id", args.TabID, "err", err)
 			return nil, struct{}{}, err
 		}
-		return text(fmt.Sprintf("screenshot captured (%d bytes PNG)", len(png)))
+
+		screenshotDir := filepath.Join(store.DataDir(), "screenshots")
+		if err := os.MkdirAll(screenshotDir, 0o700); err != nil {
+			return nil, struct{}{}, fmt.Errorf("creating screenshot directory: %w", err)
+		}
+
+		filename := fmt.Sprintf("screenshot_%s_%d.png", args.TabID, time.Now().UnixMilli())
+		path := filepath.Join(screenshotDir, filename)
+		if err := os.WriteFile(path, png, 0o600); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_screenshot", "tab_id", args.TabID, "err", err)
+			return nil, struct{}{}, fmt.Errorf("writing screenshot: %w", err)
+		}
+
+		slog.Info(fmt.Sprintf("screenshot saved: %s", path), "component", "browser", "tool", "browser_screenshot", "tab_id", args.TabID)
+
+		return text(fmt.Sprintf("screenshot saved: %s", path))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_eval",
+		Description: "Evaluate JavaScript in the specified tab and return the result",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args struct {
+		TabID string `json:"tab_id"`
+		Expr  string `json:"expr"`
+	}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		result, err := d.Browser.EvalJS(ctx, args.TabID, args.Expr)
+		if err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID, "err", err)
+			return nil, struct{}{}, err
+		}
+		slog.Info("javascript evaluated", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID)
+		return text(result)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_close",
-		Description: "Close the current browser session",
+		Description: "Close the browser manager (no-op: Chrome and tabs run independently)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_close")
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
 		d.Browser.Close()
-		return text("browser session closed")
+		slog.Info("browser manager closed", "component", "browser", "tool", "browser_close")
+		return text("browser closed")
 	})
 }
 
@@ -348,33 +783,170 @@ type authNameArgs struct {
 	Name string `json:"name"`
 }
 
+type authLoginCompleteArgs struct {
+	Code string `json:"code"`
+}
+
+// authStore returns the auth FileStore from Deps, opening it lazily if needed.
+func authStore() (*auth.FileStore, error) {
+	d := GetDeps()
+	if d.Auth != nil {
+		return d.Auth, nil
+	}
+	// Fallback: open directly (e.g. during tests or before server wires up Deps).
+	authPath := store.SubDir(store.DirAuth) + "/credentials.json"
+	return auth.NewFileStore(authPath)
+}
+
 func registerAuthTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_set",
-		Description: "Store a credential by name",
+		Description: "Store a credential by name (e.g. name=auth:anthropic:default, value=sk-ant-...)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub(fmt.Sprintf("auth_set(%s)", args.Name))
+		if args.Name == "" {
+			return nil, struct{}{}, fmt.Errorf("name is required")
+		}
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Set(args.Name, args.Value); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("credential %q stored", args.Name))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_get",
-		Description: "Get a credential name (value masked)",
+		Description: "Check whether a credential is set (value is masked)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub(fmt.Sprintf("auth_get(%s)", args.Name))
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		val, err := st.Get(args.Name)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		masked := "****"
+		if len(val) > 4 {
+			masked = val[:4] + strings.Repeat("*", len(val)-4)
+		}
+		return jsonResult(map[string]any{"name": args.Name, "set": true, "preview": masked})
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_list",
 		Description: "List all stored credential names",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub("auth_list")
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		keys, err := st.List()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(keys)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_delete",
 		Description: "Remove a stored credential",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub(fmt.Sprintf("auth_delete(%s)", args.Name))
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Delete(args.Name); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("credential %q deleted", args.Name))
+	})
+
+	// ── OAuth login: Anthropic Claude Pro/Max ────────────────────────────────
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name: "auth_login_anthropic",
+		Description: "Start Anthropic Claude Pro/Max OAuth login. " +
+			"Returns an authorization URL; open it in a browser, complete sign-in, " +
+			"then copy the code shown and call auth_login_anthropic_complete with it.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		pkce, err := auth.GeneratePKCE()
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("generating PKCE: %w", err)
+		}
+		auth.StorePendingPKCE("anthropic", pkce)
+		authURL := auth.AnthropicBuildAuthorizeURL(pkce, "max")
+
+		// Try to open the browser automatically (best-effort).
+		_ = auth.OpenBrowser(authURL)
+
+		return jsonResult(map[string]any{
+			"url":          authURL,
+			"instructions": "Open the URL in your browser (opened automatically if possible). After signing in, you will be shown an authorization code. Call auth_login_anthropic_complete with that code.",
+		})
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "auth_login_anthropic_complete",
+		Description: "Complete Anthropic OAuth login by exchanging the authorization code. Call this after auth_login_anthropic with the code shown on the Anthropic page.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args authLoginCompleteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.Code == "" {
+			return nil, struct{}{}, fmt.Errorf("code is required")
+		}
+		pkce, ok := auth.LoadPendingPKCE("anthropic")
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("no pending Anthropic login; call auth_login_anthropic first")
+		}
+
+		token, err := auth.AnthropicExchange(ctx, args.Code, pkce.Verifier)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("completing Anthropic login: %w", err)
+		}
+
+		// Persist the OAuth token as JSON under auth:anthropic:oauth.
+		tokenJSON, _ := json.Marshal(token)
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Set("auth:anthropic:oauth", string(tokenJSON)); err != nil {
+			return nil, struct{}{}, err
+		}
+
+		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).",
+			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+	})
+
+	// ── OAuth login: OpenAI / Codex ──────────────────────────────────────────
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name: "auth_login_openai",
+		Description: "Start OpenAI/Codex OAuth login. Opens the browser to the OpenAI consent screen, " +
+			"listens on localhost:1455 for the callback, exchanges the code for tokens, and stores them. " +
+			"This enables use of ChatGPT Pro/Plus (Codex) models without an API key.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		// Give the user 5 minutes to complete the browser flow.
+		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+
+		token, err := auth.OpenAILogin(loginCtx)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
+		}
+
+		tokenJSON, _ := json.Marshal(token)
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Set("auth:openai:oauth", string(tokenJSON)); err != nil {
+			return nil, struct{}{}, err
+		}
+
+		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).",
+			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 }
 
@@ -394,5 +966,91 @@ func registerServerTools(s *sdkmcp.Server) {
 		Description: "Check server connectivity",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return text("pong")
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "config_get",
+		Description: "Get the current server configuration as JSON",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_get")
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(cfg)
+	})
+
+	type configSaveArgs struct {
+		Config string `json:"config"` // full JSON-encoded Config
+	}
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "config_save",
+		Description: "Save an updated server configuration (full JSON-encoded config object)",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configSaveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_save")
+		var cfg config.Config
+		if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid config JSON: %w", err)
+		}
+		// Structural validation only (no auth store check from MCP context).
+		issues := config.Validate(&cfg, nil)
+		for _, issue := range issues {
+			if issue.Level == config.LevelError {
+				return nil, struct{}{}, fmt.Errorf("validation: [%s] %s: %s", issue.Level, issue.Field, issue.Message)
+			}
+		}
+		if err := config.Save("", &cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text("config saved")
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "config_validate",
+		Description: "Validate the current configuration and credentials, returning all issues",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_validate")
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("loading config: %w", err)
+		}
+
+		// Open the file-backed auth store to check credentials.
+		authPath := store.SubDir(store.DirAuth) + "/credentials.json"
+		var authGet func(string) (string, error)
+		if st, err := auth.NewFileStore(authPath); err == nil {
+			authGet = func(key string) (string, error) { return st.Get(key) }
+		}
+
+		type issueDTO struct {
+			Level   string `json:"level"`
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		}
+		issues := config.Validate(cfg, authGet)
+		out := make([]issueDTO, len(issues))
+		for i, iss := range issues {
+			out[i] = issueDTO{Level: string(iss.Level), Field: iss.Field, Message: iss.Message}
+		}
+
+		// Ping each unique provider to verify the API key actually works.
+		factory := llm.NewFactory(func(ref string) (string, error) {
+			if authGet == nil {
+				return "", nil
+			}
+			return authGet(strings.TrimPrefix(ref, "auth:"))
+		})
+		for provider, model := range config.UniqueProviderModels(cfg) {
+			if err := factory.PingModel(model); err != nil {
+				out = append(out, issueDTO{
+					Level:   string(config.LevelError),
+					Field:   "models." + provider,
+					Message: err.Error(),
+				})
+			}
+		}
+
+		return jsonResult(out)
 	})
 }

@@ -2,10 +2,16 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"path/filepath"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/memory"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Dispatcher selects the right MCP client — in-process or remote —
@@ -41,8 +47,49 @@ func (d *Dispatcher) Resolve(ctx context.Context) (Client, error) {
 	}
 
 	// Server not running — create a local in-process client.
+	if err := ensureInProcessDeps(); err != nil {
+		return nil, err
+	}
 	srv := NewServer()
 	return NewInProcessClient(ctx, srv)
+}
+
+func ensureInProcessDeps() error {
+	deps := GetDeps()
+	if deps != nil && deps.Agents != nil && deps.Memory != nil && deps.Browser != nil {
+		return nil
+	}
+
+	if err := store.EnsureDirs(); err != nil {
+		return fmt.Errorf("ensuring data directories: %w", err)
+	}
+
+	cfg, err := config.Load("")
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
+	authStore, _ := auth.NewFileStore(authPath)
+	authResolver := func(ref string) (string, error) {
+		if authStore == nil {
+			return "", fmt.Errorf("auth store unavailable")
+		}
+		return auth.Resolve(authStore, ref)
+	}
+
+	agents := agent.NewManager(llm.NewFactory(authResolver))
+	agents.Reconcile(cfg)
+
+	SetDeps(&Deps{
+		Agents:  agents,
+		Memory:  memory.New(),
+		Browser: browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort, cfg.Browser.ProfileDir, cfg.Browser.Headless),
+		Auth:    authStore,
+	})
+
+	agent.SetToolClientFactory(NewAgentToolClient)
+	return nil
 }
 
 // CallTool is a convenience wrapper: resolves client, calls tool, closes client.
@@ -87,21 +134,3 @@ func SetTokenLoader(fn func() (string, error)) {
 	loadStoredToken = fn
 }
 
-// extractText returns the concatenated text content from a CallToolResult.
-func extractText(result *sdkmcp.CallToolResult) string {
-	if result == nil {
-		return ""
-	}
-	var out []byte
-	for _, c := range result.Content {
-		data, _ := json.Marshal(c)
-		// Try to extract text field from marshaled content.
-		var m map[string]any
-		if err := json.Unmarshal(data, &m); err == nil {
-			if t, ok := m["text"].(string); ok {
-				out = append(out, []byte(t)...)
-			}
-		}
-	}
-	return string(out)
-}

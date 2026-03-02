@@ -16,6 +16,11 @@ func NewGeminiProvider(apiKey, model string) *GeminiProvider {
 	}
 }
 
+// Ping validates Gemini credentials by delegating to the underlying OpenAI-compatible provider.
+func (p *GeminiProvider) Ping(ctx context.Context) error {
+	return p.inner.Ping(ctx)
+}
+
 // Stream forwards to the underlying OpenAI-compatible provider.
 func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
 	return p.inner.Stream(ctx, req)

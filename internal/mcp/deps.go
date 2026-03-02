@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -14,6 +15,7 @@ type Deps struct {
 	Scheduler *scheduler.Scheduler
 	Memory    *memory.Manager
 	Browser   *browser.Manager
+	Auth      *auth.FileStore // credential store; nil until server starts
 }
 
 // globalDeps is set by the server at startup.

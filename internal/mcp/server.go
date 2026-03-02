@@ -2,6 +2,8 @@
 package mcp
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,7 +24,20 @@ func NewServer() *mcp.Server {
 // HTTPHandler returns an http.Handler for the MCP server using the
 // Streamable HTTP transport (MCP spec compliant).
 func HTTPHandler(s *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+	base := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return s
 	}, nil)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.Body != nil {
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				if name, args, ok := extractToolCallFromPayload(body); ok {
+					logToolCall("http", name, args)
+				}
+			}
+		}
+		base.ServeHTTP(w, r)
+	})
 }

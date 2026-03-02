@@ -32,6 +32,15 @@ type stdioEvent struct {
 	Err  string `json:"error,omitempty"`
 }
 
+// Ping validates the stdio provider by checking if the command exists in PATH.
+func (p *StdioProvider) Ping(_ context.Context) error {
+	_, err := exec.LookPath(p.command)
+	if err != nil {
+		return fmt.Errorf("stdio command %q not found in PATH: %w", p.command, err)
+	}
+	return nil
+}
+
 // Stream launches the subprocess, writes the request, and reads streaming events.
 func (p *StdioProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
 	cmd := exec.CommandContext(ctx, p.command, "--stream", "--json") //nolint:gosec

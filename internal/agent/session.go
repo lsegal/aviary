@@ -2,6 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/lsegal/aviary/internal/domain"
@@ -31,10 +35,76 @@ func (m *SessionManager) Create(agentID string) (*domain.Session, error) {
 	return sess, nil
 }
 
-// GetOrCreate returns the agent's existing main session, or creates one.
+// GetOrCreate returns the agent's main session, creating it if it doesn't exist.
 func (m *SessionManager) GetOrCreate(agentID string) (*domain.Session, error) {
-	// For now, always create a new session. Phase 7 adds resumption.
-	return m.Create(agentID)
+	return m.GetOrCreateNamed(agentID, "main")
+}
+
+// GetOrCreateNamed returns the named session for an agent, creating it if needed.
+// The session is stored with a deterministic ID: "{agentID}-{name}".
+func (m *SessionManager) GetOrCreateNamed(agentID, name string) (*domain.Session, error) {
+	if name == "" {
+		name = "main"
+	}
+	id := agentID + "-" + name
+	path := store.SessionPath(id)
+	// Try to read existing session header (first line).
+	lines, err := store.ReadJSONL[domain.Session](path)
+	if err == nil && len(lines) > 0 {
+		return &lines[0], nil
+	}
+	// Create new.
+	sess := &domain.Session{
+		ID:        id,
+		AgentID:   agentID,
+		Name:      name,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.AppendJSONL(path, sess); err != nil {
+		return nil, fmt.Errorf("creating session %q: %w", name, err)
+	}
+	return sess, nil
+}
+
+// List returns all sessions for agentID, sorted by creation time with "main" first.
+func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
+	sessDir := store.SubDir(store.DirSessions)
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("listing sessions: %w", err)
+	}
+
+	var sessions []*domain.Session
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		path := filepath.Join(sessDir, e.Name())
+		lines, err := store.ReadJSONL[domain.Session](path)
+		if err != nil || len(lines) == 0 {
+			continue
+		}
+		s := lines[0]
+		if s.AgentID != agentID {
+			continue
+		}
+		sessions = append(sessions, &s)
+	}
+	// Sort: "main" first, then by creation time.
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].Name == "main" {
+			return true
+		}
+		if sessions[j].Name == "main" {
+			return false
+		}
+		return sessions[i].CreatedAt.Before(sessions[j].CreatedAt)
+	})
+	return sessions, nil
 }
 
 // newID generates a simple timestamped ID with a prefix.

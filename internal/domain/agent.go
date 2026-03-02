@@ -14,12 +14,11 @@ const (
 
 // Agent represents an autonomous agent instance.
 type Agent struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Model       string     `json:"model"`
-	Memory      string     `json:"memory"` // pool name: "shared", "private", or custom
-	State       AgentState `json:"state"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Model     string     `json:"model"`
+	Fallbacks []string   `json:"fallbacks,omitempty"`
+	State     AgentState `json:"state"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

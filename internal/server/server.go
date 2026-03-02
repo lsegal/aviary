@@ -5,9 +5,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"path/filepath"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
@@ -15,6 +18,7 @@ import (
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Server wraps an HTTPS server with token auth, MCP routing, and agent management.
@@ -33,11 +37,12 @@ type Server struct {
 
 // New creates a new Server with the given config and auth token.
 func New(cfg *config.Config, token string) *Server {
+	authResolver := makeAuthResolver()
 	s := &Server{
 		cfg:    cfg,
 		token:  token,
 		mux:    http.NewServeMux(),
-		agents: agent.NewManager(llm.NewFactory(nil)),
+		agents: agent.NewManager(llm.NewFactory(authResolver)),
 	}
 
 	// Initial reconcile from loaded config.
@@ -47,14 +52,34 @@ func New(cfg *config.Config, token string) *Server {
 	if sched, err := scheduler.New(s.agents, 0); err == nil {
 		s.sched = sched
 		s.sched.Reconcile(cfg)
+	} else {
+		slog.Warn("server: scheduler initialization failed; scheduled tasks disabled", "err", err)
 	}
 
 	s.mem = memory.New()
 	s.channels = channels.NewManager()
-	s.brw = browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort)
+	s.brw = browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
+
+	// Open the file-backed credential store (non-fatal if dir doesn't exist yet).
+	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
+	authStore, _ := auth.NewFileStore(authPath)
 
 	// Inject deps into MCP tool handlers.
-	mcp.SetDeps(&mcp.Deps{Agents: s.agents, Scheduler: s.sched, Memory: s.mem, Browser: s.brw})
+	mcp.SetDeps(&mcp.Deps{Agents: s.agents, Scheduler: s.sched, Memory: s.mem, Browser: s.brw, Auth: authStore})
+	agent.SetToolClientFactory(mcp.NewAgentToolClient)
+	agent.SetSessionMessageObserver(func(sessionID, role string) {
+		wsBroadcast(wsEvent{Type: "session_message", SessionID: sessionID, Role: role})
+	})
+	agent.SetSessionProcessingObserver(func(sessionID string, processing bool) {
+		v := processing
+		wsBroadcast(wsEvent{Type: "session_processing", SessionID: sessionID, IsProcessing: &v})
+	})
+
+	// Install the log hub as the global slog handler, delegating to the
+	// preconfigured default handler (stderr + file, when logging.Init() ran).
+	globalHub.setDelegate(slog.Default().Handler())
+	slog.SetDefault(slog.New(globalHub))
+	slog.Info("server: logger initialized", "component", "server")
 
 	// Set up config watcher.
 	s.watcher = config.NewWatcher("")
@@ -76,9 +101,16 @@ func (s *Server) registerRoutes() {
 	// Login does not require auth.
 	s.mux.HandleFunc("/api/login", LoginHandler(s.token))
 
+	// Health check (public) and WebSocket keepalive (auth via session cookie / ?token=).
+	s.mux.HandleFunc("/api/health", healthHandler)
+	s.mux.HandleFunc("/api/ws", wsHandler(s.token))
+
 	// MCP endpoint: wrapped in bearer middleware.
 	s.mux.Handle("/mcp", BearerMiddleware(s.token, mcpHandler))
 	s.mux.Handle("/mcp/", BearerMiddleware(s.token, mcpHandler))
+
+	// Log stream SSE endpoint.
+	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())

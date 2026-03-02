@@ -16,7 +16,14 @@ var memorySearchCmd = &cobra.Command{
 	Short: "Search an agent's memory",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Searching memory for agent %q: %q (not yet implemented)\n", args[0], args[1])
+		out, err := dispatcher.CallTool(cmd.Context(), "memory_search", map[string]any{
+			"agent": args[0],
+			"query": args[1],
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
 		return nil
 	},
 }
@@ -26,7 +33,11 @@ var memoryShowCmd = &cobra.Command{
 	Short: "Display the full memory for an agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Memory for agent %q (not yet implemented)\n", args[0])
+		out, err := dispatcher.CallTool(cmd.Context(), "memory_show", map[string]any{"agent": args[0]})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
 		return nil
 	},
 }
@@ -36,7 +47,11 @@ var memoryClearCmd = &cobra.Command{
 	Short: "Wipe all memory for an agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Cleared memory for agent %q (not yet implemented)\n", args[0])
+		out, err := dispatcher.CallTool(cmd.Context(), "memory_clear", map[string]any{"agent": args[0]})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
 		return nil
 	},
 }

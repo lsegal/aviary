@@ -3,8 +3,10 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Role identifies who authored a message.
@@ -20,6 +22,7 @@ const (
 type Message struct {
 	Role    Role
 	Content string
+	MediaURL string
 }
 
 // Request is the input to an LLM provider.
@@ -35,6 +38,7 @@ type Request struct {
 type Event struct {
 	Type  EventType
 	Text  string // partial text (EventTypeText)
+	MediaURL string // image data URL (EventTypeMedia)
 	Error error  // (EventTypeError)
 }
 
@@ -43,6 +47,7 @@ type EventType string
 
 const (
 	EventTypeText  EventType = "text"
+	EventTypeMedia EventType = "media"
 	EventTypeError EventType = "error"
 	EventTypeDone  EventType = "done"
 )
@@ -64,6 +69,27 @@ func NewFactory(authResolver func(string) (string, error)) *Factory {
 	return &Factory{authResolver: authResolver}
 }
 
+// oauthTokenJSON is the on-disk shape of a stored OAuth token.
+type oauthTokenJSON struct {
+	AccessToken  string `json:"access"`
+	RefreshToken string `json:"refresh"`
+	ExpiresAt    int64  `json:"expires_at"`
+}
+
+// resolveOAuthToken tries to resolve a stored OAuth token for a provider.
+// Returns (accessToken, true) if a valid non-empty token is found.
+func (f *Factory) resolveOAuthToken(providerKey string) (string, bool) {
+	raw, err := f.resolveAuth(providerKey)
+	if err != nil || raw == "" {
+		return "", false
+	}
+	var tok oauthTokenJSON
+	if err := json.Unmarshal([]byte(raw), &tok); err != nil || tok.AccessToken == "" {
+		return "", false
+	}
+	return tok.AccessToken, true
+}
+
 // ForModel returns a Provider for the given model string.
 // model format: "anthropic/claude-sonnet-4.5", "openai/gpt-4o", "gemini/gemini-pro",
 // "stdio/claude" (subprocess), etc.
@@ -76,6 +102,10 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 
 	switch provider {
 	case "anthropic":
+		// Prefer OAuth token (Claude Pro/Max) if available.
+		if accessToken, ok := f.resolveOAuthToken("auth:anthropic:oauth"); ok {
+			return NewAnthropicOAuthProvider(accessToken, name), nil
+		}
 		apiKey, err := f.resolveAuth("auth:anthropic:default")
 		if err != nil {
 			return nil, fmt.Errorf("anthropic auth: %w", err)
@@ -83,6 +113,10 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewAnthropicProvider(apiKey, name), nil
 
 	case "openai":
+		// Prefer OAuth token (ChatGPT Pro/Plus Codex) if available.
+		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth"); ok {
+			return NewOpenAICodexProvider(accessToken, name), nil
+		}
 		apiKey, err := f.resolveAuth("auth:openai:default")
 		if err != nil {
 			return nil, fmt.Errorf("openai auth: %w", err)
@@ -102,6 +136,47 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)
 	}
+}
+
+// Pinger is an optional interface that LLM providers can implement to
+// validate credentials without consuming any tokens.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// PingModel verifies that the provider for the given model string is reachable
+// and the credentials are valid. If the provider implements Pinger it uses a
+// token-free check (e.g. GET /v1/models); otherwise it falls back to sending
+// a minimal 1-token request. Returns nil on success.
+func (f *Factory) PingModel(model string) error {
+	provider, err := f.ForModel(model)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if p, ok := provider.(Pinger); ok {
+		return p.Ping(ctx)
+	}
+
+	// Fallback: send a minimal 1-token request to verify auth.
+	ch, err := provider.Stream(ctx, Request{
+		Model:    model[strings.Index(model, "/")+1:],
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+		MaxToks:  1,
+		Stream:   true,
+	})
+	if err != nil {
+		return err
+	}
+	for ev := range ch {
+		if ev.Type == EventTypeError {
+			return ev.Error
+		}
+	}
+	return nil
 }
 
 func (f *Factory) resolveAuth(ref string) (string, error) {
