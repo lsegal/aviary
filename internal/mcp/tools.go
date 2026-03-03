@@ -299,7 +299,7 @@ type agentRulesSetArgs struct {
 func registerRulesTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_rules_get",
-		Description: "Read the rules.md file for an agent (returns empty string if none)",
+		Description: "Read the RULES.md file for an agent (returns empty string if none)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
@@ -318,7 +318,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_rules_set",
-		Description: "Write the rules.md file for an agent (creates or replaces)",
+		Description: "Write the RULES.md file for an agent (creates or replaces)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentRulesSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
@@ -331,7 +331,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 		if err := os.WriteFile(path, []byte(args.Content), 0o600); err != nil {
 			return nil, struct{}{}, fmt.Errorf("writing rules: %w", err)
 		}
-		return text(fmt.Sprintf("rules.md written for agent %q", args.Agent))
+		return text(fmt.Sprintf("RULES.md written for agent %q", args.Agent))
 	})
 }
 
@@ -789,57 +789,95 @@ type memoryStoreArgs struct {
 	Content string `json:"content"`
 }
 
+type memoryNotesSetArgs struct {
+	Agent   string `json:"agent"`
+	Content string `json:"content"`
+}
+
 func registerMemoryTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "memory_search",
-		Description: "Search an agent's memory",
+		Description: "Search an agent's notes for lines matching a keyword query",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d.Memory == nil {
 			return nil, struct{}{}, fmt.Errorf("memory manager not initialized")
 		}
 		poolID := "private:" + args.Agent
-		results, err := d.Memory.Search(poolID, args.Query)
+		notes, err := d.Memory.GetNotes(poolID)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(results)
+		if strings.TrimSpace(args.Query) == "" {
+			return text(notes)
+		}
+		terms := strings.Fields(strings.ToLower(args.Query))
+		var matched []string
+		for _, line := range strings.Split(notes, "\n") {
+			lower := strings.ToLower(line)
+			ok := true
+			for _, t := range terms {
+				if !strings.Contains(lower, t) {
+					ok = false
+					break
+				}
+			}
+			if ok && strings.TrimSpace(line) != "" {
+				matched = append(matched, line)
+			}
+		}
+		return text(strings.Join(matched, "\n"))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "memory_show",
-		Description: "Display the full memory for an agent",
+		Description: "Display the full notes memory for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d.Memory == nil {
 			return nil, struct{}{}, fmt.Errorf("memory manager not initialized")
 		}
 		poolID := "private:" + args.Agent
-		entries, err := d.Memory.All(poolID)
+		notes, err := d.Memory.GetNotes(poolID)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(entries)
+		return text(notes)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "memory_store",
-		Description: "Store a fact or note into an agent's persistent memory. Arguments: agent (string, required) - the agent name; content (string, required) - the text to remember.",
+		Description: "Store a fact or note into an agent's persistent notes. Arguments: agent (string, required) - the agent name; content (string, required) - the text to remember.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryStoreArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d.Memory == nil {
 			return nil, struct{}{}, fmt.Errorf("memory manager not initialized")
 		}
 		poolID := "private:" + args.Agent
-		if err := d.Memory.Append(poolID, "", "note", args.Content); err != nil {
+		if err := d.Memory.AppendNote(poolID, args.Content); err != nil {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("remembered: %s", args.Content))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "memory_notes_set",
+		Description: "Replace the entire notes file for an agent with new content (markdown text). Use this to edit or correct existing memories.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryNotesSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if d.Memory == nil {
+			return nil, struct{}{}, fmt.Errorf("memory manager not initialized")
+		}
+		poolID := "private:" + args.Agent
+		if err := d.Memory.SetNotes(poolID, args.Content); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text("notes updated")
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "memory_clear",
-		Description: "Wipe all memory for an agent",
+		Description: "Wipe all memory (notes and conversation history) for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d.Memory == nil {
@@ -847,6 +885,9 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		}
 		poolID := "private:" + args.Agent
 		if err := d.Memory.Clear(poolID); err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := d.Memory.SetNotes(poolID, ""); err != nil {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("memory cleared for agent %q", args.Agent))

@@ -347,31 +347,42 @@ func (r *AgentRunner) loadMemoryContext(sessionID string, maxTokens int) string 
 	if r.memory == nil {
 		return ""
 	}
-	entries, err := r.memory.LoadContext(r.memoryPoolID(), maxTokens)
-	if err != nil || len(entries) == 0 {
-		return ""
-	}
 
 	var b strings.Builder
-	b.WriteString("Memory context (persisted across conversations):\n")
-	for _, e := range entries {
-		if strings.TrimSpace(e.Content) == "" {
-			continue
-		}
-		role := strings.TrimSpace(e.Role)
-		if role == "" {
-			role = "note"
-		}
-		b.WriteString("- ")
-		b.WriteString(role)
-		if e.SessionID != "" && e.SessionID != sessionID {
-			b.WriteString(" (session ")
-			b.WriteString(e.SessionID)
-			b.WriteString(")")
-		}
-		b.WriteString(": ")
-		b.WriteString(e.Content)
+
+	// Inject persistent notes (human-editable markdown file) first, always.
+	if notes, err := r.memory.GetNotes(r.memoryPoolID()); err == nil && strings.TrimSpace(notes) != "" {
+		b.WriteString("Persistent notes (always remember these):\n")
+		b.WriteString(strings.TrimSpace(notes))
 		b.WriteString("\n")
+	}
+
+	// Then inject the rolling conversation window from the JSONL pool.
+	entries, err := r.memory.LoadContext(r.memoryPoolID(), maxTokens)
+	if err == nil && len(entries) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("Prior conversation context:\n")
+		for _, e := range entries {
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			role := strings.TrimSpace(e.Role)
+			if role == "" {
+				role = "note"
+			}
+			b.WriteString("- ")
+			b.WriteString(role)
+			if e.SessionID != "" && e.SessionID != sessionID {
+				b.WriteString(" (session ")
+				b.WriteString(e.SessionID)
+				b.WriteString(")")
+			}
+			b.WriteString(": ")
+			b.WriteString(e.Content)
+			b.WriteString("\n")
+		}
 	}
 
 	return strings.TrimSpace(b.String())
@@ -699,7 +710,7 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
 //  1. If cfg.Rules is a file path, read that file.
 //  2. If cfg.Rules is inline text, return it directly.
 //  3. If cfg.Rules is empty, check the per-agent data directory
-//     (<datadir>/agents/<name>/rules.md) and return its content if present.
+//     (<datadir>/agents/<name>/RULES.md) and return its content if present.
 func (r *AgentRunner) loadRules() string {
 	if r.cfg != nil && r.cfg.Rules != "" {
 		rules := r.cfg.Rules
@@ -712,7 +723,7 @@ func (r *AgentRunner) loadRules() string {
 		}
 		return strings.TrimSpace(rules)
 	}
-	// Fall back to the per-agent rules.md in the data directory.
+	// Fall back to the per-agent RULES.md in the data directory.
 	if data, err := os.ReadFile(store.AgentRulesPath(r.agent.ID)); err == nil {
 		if content := strings.TrimSpace(string(data)); content != "" {
 			return content

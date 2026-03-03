@@ -49,9 +49,9 @@ func AgentDir(agentID string) string {
 	return filepath.Join(DataDir(), DirAgents, agentDirName(agentID))
 }
 
-// AgentRulesPath returns the path for an agent's rules.md file.
+// AgentRulesPath returns the path for an agent's RULES.md file.
 func AgentRulesPath(agentID string) string {
-	return filepath.Join(AgentDir(agentID), "rules.md")
+	return filepath.Join(AgentDir(agentID), "RULES.md")
 }
 
 // EnsureDirs creates all required data subdirectories.
@@ -174,6 +174,17 @@ func MemoryPath(poolID string) string {
 	return filepath.Join(DataDir(), DirAgents, "default", "memory", sanitizeFileComponent(poolID)+".jsonl")
 }
 
+// NotesPath returns the path for the human-editable markdown notes file for a
+// memory pool. Pool IDs follow the same format as MemoryPath.
+// e.g. "private:assistant" → <datadir>/agents/assistant/MEMORY.md
+func NotesPath(poolID string) string {
+	if i := strings.Index(poolID, ":"); i >= 0 {
+		agentName := sanitizeFileComponent(poolID[i+1:])
+		return filepath.Join(DataDir(), DirAgents, agentName, "MEMORY.md")
+	}
+	return filepath.Join(DataDir(), DirAgents, "default", "MEMORY.md")
+}
+
 // UsagePath returns the path to the global usage log file.
 func UsagePath() string {
 	return filepath.Join(SubDir(DirUsage), "usage.jsonl")
@@ -203,4 +214,3 @@ func sanitizeFileComponent(s string) string {
 	}
 	return out
 }
-

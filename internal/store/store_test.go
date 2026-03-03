@@ -158,7 +158,7 @@ func TestPathHelpers(t *testing.T) {
 
 	t.Run("AgentRulesPath", func(t *testing.T) {
 		got := AgentRulesPath("agent_researcher")
-		want := filepath.Join(base, DirAgents, "researcher", "rules.md")
+		want := filepath.Join(base, DirAgents, "researcher", "RULES.md")
 		if got != want {
 			t.Errorf("AgentRulesPath = %q; want %q", got, want)
 		}
@@ -195,4 +195,3 @@ func TestIntegration_StoreSetup(t *testing.T) {
 		}
 	}
 }
-

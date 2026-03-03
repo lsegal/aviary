@@ -109,6 +109,10 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
+	type inputImageContent struct {
+		Type     string `json:"type"`
+		ImageURL string `json:"image_url"`
+	}
 	type inputMessage struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
@@ -117,6 +121,15 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
+			if strings.TrimSpace(m.MediaURL) != "" {
+				parts := make([]any, 0, 2)
+				if strings.TrimSpace(m.Content) != "" {
+					parts = append(parts, inputTextContent{Type: "input_text", Text: m.Content})
+				}
+				parts = append(parts, inputImageContent{Type: "input_image", ImageURL: m.MediaURL})
+				input = append(input, inputMessage{Role: "user", Content: parts})
+				continue
+			}
 			input = append(input, inputMessage{Role: "user", Content: m.Content})
 		case RoleAssistant:
 			input = append(input, inputMessage{
