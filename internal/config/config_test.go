@@ -150,6 +150,19 @@ func TestValidate(t *testing.T) {
 			t.Fatalf("expected start_at/watch incompatibility issue, got: %v", issues)
 		}
 	})
+
+	t.Run("openai-codex model requires openai oauth credential", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "openai-codex/gpt-5.2"}}}
+		issues := Validate(cfg, func(key string) (string, error) {
+			if key == "openai:oauth" {
+				return "", os.ErrNotExist
+			}
+			return "ok", nil
+		})
+		if !hasIssue(issues, `credential "openai:oauth" not found`) {
+			t.Fatalf("expected openai oauth credential issue, got: %v", issues)
+		}
+	})
 }
 
 // hasIssue reports whether any issue's message contains the given substring.

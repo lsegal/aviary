@@ -1,87 +1,87 @@
 import { expect, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
-const AGENTS = [
-	{
-		id: "a1",
-		name: "assistant",
-		model: "anthropic/claude-sonnet-4-5",
-		fallbacks: [],
-		state: "idle",
+const CONFIG = {
+	server: { port: 16677, tls: { cert: "", key: "" } },
+	agents: [
+		{
+			name: "assistant",
+			model: "anthropic/claude-sonnet-4-5",
+			memory: "",
+			fallbacks: [],
+			channels: [],
+			tasks: [
+				{
+					name: "daily-briefing",
+					schedule: "0 * * * * *",
+					prompt: "Summarize updates",
+					channel: "last",
+				},
+			],
+		},
+	],
+	models: {
+		providers: {
+			anthropic: { auth: "auth:anthropic:default" },
+			openai: { auth: "auth:openai:default" },
+		},
+		defaults: { model: "anthropic/claude-sonnet-4-5", fallbacks: [] },
 	},
-	{
-		id: "a2",
-		name: "coder",
-		model: "openai/gpt-4o",
-		fallbacks: [],
-		state: "running",
-	},
-];
+	browser: { binary: "", cdp_port: 9222 },
+	scheduler: { concurrency: "auto" },
+};
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
-	await mockMCP(page, { agent_list: AGENTS });
+	await mockMCP(page, {
+		config_get: CONFIG,
+		auth_list: ["auth:anthropic:default", "auth:openai:default"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+	});
 });
 
-test("renders agent cards with state badges", async ({ page }) => {
-	await page.goto("/agents");
+test("agents and tasks tab shows configured entries", async ({ page }) => {
+	await page.goto("/settings");
+	await page.getByRole("button", { name: "Agents & Tasks" }).click();
 
-	await expect(page.getByText("assistant")).toBeVisible();
-	await expect(page.getByText("coder")).toBeVisible();
-	await expect(page.getByText("idle")).toBeVisible();
-	await expect(page.getByText("running")).toBeVisible();
+	await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
+	await expect(page.locator('input[placeholder="assistant"]').first()).toHaveValue("assistant");
+	await expect(page.locator('input[placeholder="daily-briefing"]').first()).toHaveValue("daily-briefing");
+	await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 });
 
-test("shows model in agent card", async ({ page }) => {
-	await page.goto("/agents");
+test("tab switching does not blank content", async ({ page }) => {
+	await page.goto("/settings");
 
-	await expect(page.getByText("anthropic/claude-sonnet-4-5")).toBeVisible();
-	await expect(page.getByText("openai/gpt-4o")).toBeVisible();
+	for (let i = 0; i < 3; i += 1) {
+		await page.getByRole("button", { name: "General" }).click();
+		await expect(page.getByRole("heading", { name: "Server", exact: true })).toBeVisible();
+
+		await page.getByRole("button", { name: "Agents & Tasks" }).click();
+		await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
+
+		await page.getByRole("button", { name: "Sessions" }).click();
+		await expect(page.getByRole("button", { name: "Refresh Sessions" })).toBeVisible();
+
+		await page.getByRole("button", { name: "Providers & Auth" }).click();
+		await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+	}
 });
 
-test("delete shows confirm/cancel buttons", async ({ page }) => {
-	await page.goto("/agents");
+test("providers auth tab shows credential controls", async ({ page }) => {
+	await page.goto("/settings");
+	await page.getByRole("button", { name: "Providers & Auth" }).click();
 
-	// Click the first Delete button.
-	await page.getByRole("button", { name: "Delete" }).first().click();
-
-	await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
-});
-
-test("cancel delete restores delete button", async ({ page }) => {
-	await page.goto("/agents");
-
-	await page.getByRole("button", { name: "Delete" }).first().click();
-	await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
-
-	await page.getByRole("button", { name: "Cancel" }).click();
-	await expect(
-		page.getByRole("button", { name: "Delete" }).first(),
-	).toBeVisible();
-	await expect(page.getByRole("button", { name: "Confirm" })).not.toBeVisible();
-});
-
-test("add agent modal opens and closes", async ({ page }) => {
-	await page.goto("/agents");
-
-	await page.getByRole("button", { name: "+ Add Agent" }).click();
-	await expect(page.getByRole("heading", { name: "Add Agent" })).toBeVisible();
-
-	// Close via Cancel.
-	await page.getByRole("button", { name: "Cancel" }).click();
-	await expect(
-		page.getByRole("heading", { name: "Add Agent" }),
-	).not.toBeVisible();
-});
-
-test("shows empty state when no agents", async ({ page }) => {
-	await page.unroute("/mcp");
-	await mockMCP(page, { agent_list: [] });
-	await page.goto("/agents");
-
-	await expect(page.getByText("No agents configured.")).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "Add your first agent" }),
-	).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+	await expect(page.locator('input[placeholder="auth:openai:default"]').first()).toHaveValue(/auth:.+/);
+	await expect(page.getByRole("button", { name: "Refresh list" })).toBeVisible();
 });

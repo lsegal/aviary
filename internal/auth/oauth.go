@@ -28,13 +28,18 @@ const (
 	AnthropicScope       = "user:profile user:inference"
 )
 
-// OpenAI / Codex OAuth constants (from opencode codex plugin).
+// OpenAI / Codex OAuth constants.
+// Sourced from the official openai/codex CLI (codex-rs/login/src/server.rs and
+// codex-rs/core/src/auth.rs). CLIENT_ID and issuer are stable public values.
 const (
 	OpenAIClientID     = "app_EMoamEEZ73f0CkXaXp7hrann"
+	OpenAIIssuer       = "https://auth.openai.com"
 	OpenAIAuthorizeURL = "https://auth.openai.com/oauth/authorize"
 	OpenAITokenURL     = "https://auth.openai.com/oauth/token"
 	OpenAIScope        = "openid profile email offline_access"
 	OpenAICallbackPort = 1455
+	// openAIOriginator is the originator header value used by the official CLI.
+	openAIOriginator = "codex_cli_rs"
 )
 
 // PKCEParams holds the PKCE code verifier and its SHA-256 challenge.
@@ -202,25 +207,55 @@ func AnthropicRefresh(ctx context.Context, refreshToken string) (*OAuthToken, er
 // OpenAILogin starts a local HTTP callback server on port 1455, opens the browser
 // to the OpenAI/Codex OAuth consent screen, and returns tokens after the user
 // approves. Blocks until ctx is cancelled or the callback is received.
+//
+// The flow matches the official openai/codex CLI (codex-rs/login/src/server.rs):
+//   - redirect_uri uses "localhost" (not 127.0.0.1) and path "/auth/callback"
+//   - authorize URL includes id_token_add_organizations, codex_cli_simplified_flow, originator
+//   - state is a separate random value independent of the PKCE verifier
+//   - after code exchange the id_token is swapped for a real OpenAI API key
 func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, err
 	}
 
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", OpenAICallbackPort)
+	// Generate an independent random state (Codex does not reuse the PKCE verifier as state).
+	stateBuf := make([]byte, 16)
+	if _, err := rand.Read(stateBuf); err != nil {
+		return nil, fmt.Errorf("generating OAuth state: %w", err)
+	}
+	state := base64.RawURLEncoding.EncodeToString(stateBuf)
 
+	// Codex uses "localhost" (not 127.0.0.1) and the path "/auth/callback".
+	redirectURI := fmt.Sprintf("http://localhost:%d/auth/callback", OpenAICallbackPort)
+
+	// Listen on all loopback interfaces so both 127.0.0.1 and ::1 work, but
+	// bind only to the loopback to avoid exposing the callback server.
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OpenAICallbackPort))
 	if err != nil {
 		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", OpenAICallbackPort, err)
 	}
 
-	codeCh := make(chan string, 1)
+	type callbackResult struct {
+		code  string
+		state string
+	}
+	codeCh := make(chan callbackResult, 1)
 	errCh := make(chan error, 1)
 
 	mux := http.NewServeMux()
 	srv := &http.Server{Handler: mux}
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	// Codex registers the callback at /auth/callback.
+	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
+		if errParam := r.URL.Query().Get("error"); errParam != "" {
+			desc := r.URL.Query().Get("error_description")
+			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("OAuth error %s: %s", errParam, desc):
+			default:
+			}
+			return
+		}
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "missing code", http.StatusBadRequest)
@@ -233,7 +268,7 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
 		select {
-		case codeCh <- code:
+		case codeCh <- callbackResult{code: code, state: r.URL.Query().Get("state")}:
 		default:
 		}
 	})
@@ -248,18 +283,19 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 	}()
 	defer srv.Shutdown(context.Background()) //nolint:errcheck
 
-	// Build authorize URL.
+	// Build the authorize URL exactly as Codex does (server.rs build_authorize_url).
 	u, _ := url.Parse(OpenAIAuthorizeURL)
 	q := u.Query()
-	q.Set("client_id", OpenAIClientID)
 	q.Set("response_type", "code")
+	q.Set("client_id", OpenAIClientID)
 	q.Set("redirect_uri", redirectURI)
 	q.Set("scope", OpenAIScope)
 	q.Set("code_challenge", pkce.Challenge)
 	q.Set("code_challenge_method", "S256")
-	q.Set("state", pkce.Verifier)
+	q.Set("id_token_add_organizations", "true")
 	q.Set("codex_cli_simplified_flow", "true")
-	q.Set("originator", "aviary")
+	q.Set("state", state)
+	q.Set("originator", openAIOriginator)
 	u.RawQuery = q.Encode()
 
 	if err := OpenBrowser(u.String()); err != nil {
@@ -271,8 +307,8 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 		return nil, ctx.Err()
 	case err := <-errCh:
 		return nil, err
-	case code := <-codeCh:
-		return openAIExchange(ctx, code, pkce.Verifier, redirectURI)
+	case cb := <-codeCh:
+		return openAIExchange(ctx, cb.code, pkce.Verifier, redirectURI)
 	}
 }
 
@@ -307,6 +343,7 @@ func openAIExchange(ctx context.Context, code, verifier, redirectURI string) (*O
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding openai token response: %w", err)
 	}
+
 	return &OAuthToken{
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,

@@ -9,30 +9,34 @@ export function useStream() {
 	async function streamAgent(
 		agentName: string,
 		message: string,
-		onChunk: (text: string) => void,
+		onChunk: (chunk: string, isMedia?: boolean) => void,
 		session = "main",
+		mediaURL?: string,
 	): Promise<void> {
 		streaming.value = true;
 		error.value = null;
 
 		try {
 			let sawProgress = false;
+			const toolArgs: Record<string, string> = { name: agentName, message, session };
+			if (mediaURL) toolArgs.media_url = mediaURL;
+
 			const text = await callTool(
 				"agent_run",
-				{
-					name: agentName,
-					message,
-					session,
-				},
+				toolArgs,
 				{
 					onProgress: (chunk) => {
 						sawProgress = true;
-						onChunk(chunk);
+						if (chunk.startsWith("[media]")) {
+							onChunk(chunk.slice("[media]".length), true);
+						} else {
+							onChunk(chunk, false);
+						}
 					},
 				},
 			);
 			if (!sawProgress && text) {
-				onChunk(text);
+				onChunk(text, false);
 			}
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

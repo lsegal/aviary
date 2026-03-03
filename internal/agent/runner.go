@@ -17,6 +17,14 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
+// extractProvider returns the provider prefix from "provider/model" strings.
+func extractProvider(model string) string {
+	if i := strings.Index(model, "/"); i >= 0 {
+		return model[:i]
+	}
+	return model
+}
+
 // AgentRunner manages an agent's active prompts and lifecycle.
 type AgentRunner struct {
 	agent    *domain.Agent
@@ -28,6 +36,11 @@ type AgentRunner struct {
 	active   sync.WaitGroup
 	canceled bool
 }
+
+const (
+	defaultMemoryTokens     = 4000 // token budget for memory context injected into each prompt
+	defaultMemoryCompactKeep = 200  // pool entries to retain after compaction
+)
 
 // NewAgentRunner creates an AgentRunner for the given agent.
 func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provider, mem *memory.Manager) *AgentRunner {
@@ -43,6 +56,13 @@ func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provi
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
+	r.PromptMedia(ctx, message, "", consumers...)
+}
+
+// PromptMedia is like Prompt but also attaches an image to the user message.
+// mediaURL may be a data URL ("data:image/png;base64,...") or a remote URL.
+// Pass an empty string for text-only messages.
+func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string, consumers ...StreamConsumer) {
 	r.mu.Lock()
 	if r.canceled {
 		r.mu.Unlock()
@@ -63,7 +83,24 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 		sessionID := r.resolveSessionID(promptCtx)
 		untrack := trackSessionRun(sessionID, cancel)
 		defer untrack()
-		r.appendSessionMessage(sessionID, domain.MessageRoleUser, message)
+
+		// Usage tracking: accumulate across all rounds; written on exit.
+		usageRec := &domain.UsageRecord{
+			SessionID: sessionID,
+			AgentName: r.agent.Name,
+			Model:     r.agent.Model,
+			Provider:  extractProvider(r.agent.Model),
+		}
+		defer func() {
+			if usageRec.InputTokens > 0 || usageRec.OutputTokens > 0 {
+				usageRec.Timestamp = time.Now()
+				if err := store.AppendJSONL(store.UsagePath(), usageRec); err != nil {
+					slog.Warn("agent: failed to record usage", "err", err)
+				}
+			}
+		}()
+
+		r.appendSessionMessage(sessionID, domain.MessageRoleUser, message, mediaURL)
 		r.appendMemoryMessage(sessionID, domain.MessageRoleUser, message)
 
 		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", r.agent.Model)
@@ -111,11 +148,11 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 
 		tools, _ := listToolsSafe(promptCtx, toolClient)
 		systemPrompt := buildToolSystemPrompt(tools)
-		if memContext := r.loadMemoryContext(sessionID, 1200); memContext != "" {
+		if memContext := r.loadMemoryContext(sessionID, r.memoryTokens()); memContext != "" {
 			systemPrompt += "\n\n" + memContext
 		}
 
-		conversation := []llm.Message{{Role: llm.RoleUser, Content: message}}
+		conversation := []llm.Message{{Role: llm.RoleUser, Content: message, MediaURL: mediaURL}}
 		if history := r.loadSessionConversation(sessionID, 24); len(history) > 0 {
 			conversation = history
 		}
@@ -123,6 +160,7 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 		for _, t := range tools {
 			toolNames[t.Name] = struct{}{}
 		}
+		retriedToollessRefusal := false
 
 		const maxToolRounds = 8
 		for round := 0; round < maxToolRounds; round++ {
@@ -149,15 +187,29 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 			}
 
 			var modelOut strings.Builder
+			var mediaURLs []string
 			for event := range ch {
 				switch event.Type {
 				case llm.EventTypeText:
 					modelOut.WriteString(event.Text)
+				case llm.EventTypeMedia:
+					if event.MediaURL != "" {
+						mediaURLs = append(mediaURLs, event.MediaURL)
+						emit(StreamEvent{Type: StreamEventMedia, MediaURL: event.MediaURL})
+					}
+				case llm.EventTypeUsage:
+					if event.Usage != nil {
+						usageRec.InputTokens += event.Usage.InputTokens
+						usageRec.OutputTokens += event.Usage.OutputTokens
+						usageRec.CacheReadTokens += event.Usage.CacheReadTokens
+						usageRec.CacheWriteTokens += event.Usage.CacheWriteTokens
+					}
 				case llm.EventTypeError:
 					if errors.Is(event.Error, context.Canceled) || promptCtx.Err() != nil {
 						emitCanceled()
 						return
 					}
+					usageRec.HasError = true
 					emit(StreamEvent{Type: StreamEventError, Err: event.Error})
 					return
 				case llm.EventTypeDone:
@@ -171,9 +223,27 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 			answer := strings.TrimSpace(modelOut.String())
 			call, ok := parseToolCall(answer)
 			if !ok || toolClient == nil {
-				emit(StreamEvent{Type: StreamEventText, Text: answer})
-				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer)
-				r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, answer)
+				if shouldRetryToollessRefusal(answer, len(tools), retriedToollessRefusal) {
+					retriedToollessRefusal = true
+					conversation = append(conversation,
+						llm.Message{Role: llm.RoleAssistant, Content: answer},
+						llm.Message{Role: llm.RoleUser, Content: buildToolRetryPrompt(tools)},
+					)
+					continue
+				}
+
+				if answer != "" {
+					emit(StreamEvent{Type: StreamEventText, Text: answer})
+				}
+				// Persist each returned image as a separate assistant message.
+				for _, mURL := range mediaURLs {
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "", mURL)
+				}
+				if answer != "" {
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, "")
+					r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, answer)
+					r.maybeCompactMemory()
+				}
 				slog.Info("agent: prompt done", "agent", r.agent.Name)
 				emit(StreamEvent{Type: StreamEventDone})
 				return
@@ -188,6 +258,7 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 			}
 
 			emit(StreamEvent{Type: StreamEventText, Text: fmt.Sprintf("[tool] %s", call.Tool)})
+			usageRec.ToolCalls++
 			resultText, callErr := toolClient.CallToolText(promptCtx, call.Tool, call.Arguments)
 			if callErr != nil {
 				if errors.Is(callErr, context.Canceled) || promptCtx.Err() != nil {
@@ -203,8 +274,10 @@ func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...S
 			)
 		}
 
-		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds))
-		r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds))
+		errMsg := fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds)
+		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "")
+		r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, errMsg)
+		usageRec.HasError = true
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
 	}()
 }
@@ -222,8 +295,11 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 	return sess.ID
 }
 
-func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content string) {
-	if strings.TrimSpace(content) == "" || sessionID == "" {
+func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content, mediaURL string) {
+	if strings.TrimSpace(content) == "" && strings.TrimSpace(mediaURL) == "" {
+		return
+	}
+	if sessionID == "" {
 		return
 	}
 	msg := domain.Message{
@@ -231,6 +307,7 @@ func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.Message
 		SessionID: sessionID,
 		Role:      role,
 		Content:   content,
+		MediaURL:  mediaURL,
 		Timestamp: time.Now(),
 	}
 	if err := store.AppendJSONL(store.SessionPath(sessionID), msg); err != nil {
@@ -298,15 +375,17 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 	for _, line := range lines {
 		role, _ := line["role"].(string)
 		content, _ := line["content"].(string)
-		if strings.TrimSpace(role) == "" || strings.TrimSpace(content) == "" {
+		mediaURLVal, _ := line["media_url"].(string)
+		// Skip messages with no role or no meaningful content at all.
+		if strings.TrimSpace(role) == "" || (strings.TrimSpace(content) == "" && strings.TrimSpace(mediaURLVal) == "") {
 			continue
 		}
 
 		switch domain.MessageRole(role) {
 		case domain.MessageRoleUser:
-			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: content})
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: content, MediaURL: mediaURLVal})
 		case domain.MessageRoleAssistant:
-			messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: content})
+			messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: content, MediaURL: mediaURLVal})
 		case domain.MessageRoleSystem:
 			messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: content})
 		}
@@ -328,6 +407,56 @@ func (r *AgentRunner) memoryPoolID() string {
 	default:
 		return memoryName
 	}
+}
+
+// memoryTokens returns the token budget for memory context, using config or default.
+func (r *AgentRunner) memoryTokens() int {
+	if r.cfg != nil && r.cfg.MemoryTokens > 0 {
+		return r.cfg.MemoryTokens
+	}
+	return defaultMemoryTokens
+}
+
+// compactKeep returns the number of recent entries to retain after compaction.
+func (r *AgentRunner) compactKeep() int {
+	if r.cfg != nil && r.cfg.CompactKeep > 0 {
+		return r.cfg.CompactKeep
+	}
+	return defaultMemoryCompactKeep
+}
+
+// maybeCompactMemory checks whether the memory pool exceeds compactKeep and,
+// if so, runs compaction asynchronously. It logs and broadcasts WS events on
+// start and completion.
+func (r *AgentRunner) maybeCompactMemory() {
+	if r.memory == nil {
+		return
+	}
+	poolID := r.memoryPoolID()
+	keepRecent := r.compactKeep()
+
+	all, err := r.memory.All(poolID)
+	if err != nil || len(all) <= keepRecent {
+		return
+	}
+	entryCount := len(all)
+
+	// Run compaction in the background — use a detached context so the
+	// compaction is not canceled when the originating prompt context ends.
+	go func() {
+		slog.Info("agent: memory compaction started",
+			"agent", r.agent.Name, "pool", poolID, "entries", entryCount)
+		notifyMemoryCompaction(r.agent.ID, poolID, true)
+
+		if err := r.memory.Compact(context.Background(), poolID, r.provider, keepRecent); err != nil {
+			slog.Warn("agent: memory compaction failed",
+				"agent", r.agent.Name, "pool", poolID, "err", err)
+		} else {
+			slog.Info("agent: memory compaction done",
+				"agent", r.agent.Name, "pool", poolID)
+		}
+		notifyMemoryCompaction(r.agent.ID, poolID, false)
+	}()
 }
 
 func listToolsSafe(ctx context.Context, toolClient ToolClient) ([]ToolInfo, error) {
@@ -364,6 +493,27 @@ func parseToolCall(s string) (toolCall, bool) {
 		return tc, true
 	}
 
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
+		if parsed, ok := parseToolCallMap(obj); ok {
+			return parsed, true
+		}
+		if nested, ok := obj["tool_call"].(map[string]any); ok {
+			if parsed, ok := parseToolCallMap(nested); ok {
+				return parsed, true
+			}
+		}
+	}
+
+	var arr []any
+	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil && len(arr) > 0 {
+		if first, ok := arr[0].(map[string]any); ok {
+			if parsed, ok := parseToolCallMap(first); ok {
+				return parsed, true
+			}
+		}
+	}
+
 	start := strings.Index(trimmed, "{")
 	end := strings.LastIndex(trimmed, "}")
 	if start >= 0 && end > start {
@@ -374,14 +524,116 @@ func parseToolCall(s string) (toolCall, bool) {
 			}
 			return tc, true
 		}
+
+		if err := json.Unmarshal([]byte(fragment), &obj); err == nil {
+			if parsed, ok := parseToolCallMap(obj); ok {
+				return parsed, true
+			}
+			if nested, ok := obj["tool_call"].(map[string]any); ok {
+				if parsed, ok := parseToolCallMap(nested); ok {
+					return parsed, true
+				}
+			}
+		}
 	}
 
 	return toolCall{}, false
 }
 
+func parseToolCallMap(obj map[string]any) (toolCall, bool) {
+	if obj == nil {
+		return toolCall{}, false
+	}
+
+	toolName := pickString(obj, "tool", "name", "tool_name", "toolName")
+	if toolName == "" {
+		return toolCall{}, false
+	}
+
+	args := pickMap(obj, "arguments", "args", "input", "params")
+	return toolCall{Tool: toolName, Arguments: args}, true
+}
+
+func pickString(obj map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if v, ok := obj[key]; ok {
+			s, ok := v.(string)
+			if ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func pickMap(obj map[string]any, keys ...string) map[string]any {
+	for _, key := range keys {
+		if v, ok := obj[key]; ok {
+			switch typed := v.(type) {
+			case map[string]any:
+				if typed != nil {
+					return typed
+				}
+			case string:
+				var parsed map[string]any
+				if err := json.Unmarshal([]byte(typed), &parsed); err == nil && parsed != nil {
+					return parsed
+				}
+			}
+		}
+	}
+	return map[string]any{}
+}
+
+func shouldRetryToollessRefusal(answer string, toolCount int, alreadyRetried bool) bool {
+	if alreadyRetried || toolCount == 0 {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(answer))
+	if text == "" {
+		return false
+	}
+
+	lackAccess := strings.Contains(text, "don't have direct access") ||
+		strings.Contains(text, "do not have direct access") ||
+		strings.Contains(text, "can't") ||
+		strings.Contains(text, "cannot") ||
+		strings.Contains(text, "unable") ||
+		strings.Contains(text, "no access")
+	actionable := strings.Contains(text, "model") ||
+		strings.Contains(text, "config") ||
+		strings.Contains(text, "configuration") ||
+		strings.Contains(text, "setting") ||
+		strings.Contains(text, "update") ||
+		strings.Contains(text, "change") ||
+		strings.Contains(text, "modify") ||
+		strings.Contains(text, "set")
+
+	return lackAccess && actionable
+}
+
+func buildToolRetryPrompt(tools []ToolInfo) string {
+	var sb strings.Builder
+	sb.WriteString("You have tool access in this environment. If the user request is actionable via tools, do not refuse due to access. ")
+	sb.WriteString("Choose the best tool now and respond with ONLY JSON in the required shape.\n")
+	sb.WriteString("Available tools: ")
+	for i, t := range tools {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(t.Name)
+	}
+	return sb.String()
+}
+
 func buildToolSystemPrompt(tools []ToolInfo) string {
 	var sb strings.Builder
-	sb.WriteString("You are an autonomous local assistant. Use tools when needed.\n")
+	sb.WriteString("You are an autonomous local assistant with tool access in this runtime.\n")
+	sb.WriteString("When a user asks to change state (configuration, tasks, auth, browser actions, memory, sessions, jobs), prefer executing tools over explaining limitations.\n")
+	sb.WriteString("Do not claim lack of access unless a tool call actually fails.\n")
 	sb.WriteString("If you decide to call a tool, respond with ONLY valid JSON in this exact shape: {\"tool\":\"<name>\",\"arguments\":{...}}\n")
 	sb.WriteString("Do not include markdown when calling a tool.\n")
 	sb.WriteString("After receiving tool results, either call another tool with JSON or provide the final user-facing answer as plain text.\n\n")

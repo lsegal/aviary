@@ -3,7 +3,8 @@
     <!-- Sidebar -->
     <nav class="flex w-52 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900">
       <div class="mb-6 flex items-center gap-2">
-        <span class="text-lg font-bold text-gray-900 dark:text-white">🐦 Aviary</span>
+        <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
+        <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
       </div>
       <router-link v-for="link in links" :key="link.to" :to="link.to"
         class="mb-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
@@ -42,41 +43,43 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { useAuthStore } from "../stores/auth";
 import { useServerStatus } from "../composables/useServerStatus";
+import { useAuthStore } from "../stores/auth";
 
 const auth = useAuthStore();
 const { status, version } = useServerStatus();
+const logoUrl = "/logo.png";
 
 const links = [
-	{ to: "/overview", label: "Overview" },
-	{ to: "/chat", label: "Chat" },
-	{ to: "/settings", label: "Settings" },
-	{ to: "/logs", label: "Logs" },
+  { to: "/overview", label: "Overview" },
+  { to: "/chat", label: "Chat" },
+  { to: "/settings", label: "Settings" },
+  { to: "/logs", label: "Logs" },
+  { to: "/usage", label: "Usage" },
 ];
 
 const dotClass = computed(() => {
-	if (status.value === "connected") return "bg-green-500";
-	if (status.value === "disconnected") return "bg-red-500";
-	return "bg-yellow-400 animate-pulse";
+  if (status.value === "connected") return "bg-green-500";
+  if (status.value === "disconnected") return "bg-red-500";
+  return "bg-yellow-400 animate-pulse";
 });
 
 // Version dot is always green — out-of-date detection not yet implemented.
 const versionDotClass = "bg-green-500";
 
 const displayVersion = computed(() =>
-	version.value ? version.value : status.value === "disconnected" ? "—" : "…",
+  version.value ? version.value : status.value === "disconnected" ? "—" : "…",
 );
 
 const healthLabel = computed(() => {
-	if (status.value === "connected") return "Connected";
-	if (status.value === "disconnected") return "Disconnected";
-	return "…";
+  if (status.value === "connected") return "Connected";
+  if (status.value === "disconnected") return "Disconnected";
+  return "…";
 });
 
 const healthTextClass = computed(() => {
-	if (status.value === "connected") return "text-green-600 dark:text-green-400";
-	if (status.value === "disconnected") return "text-red-500 dark:text-red-400";
-	return "text-yellow-600 dark:text-yellow-400";
+  if (status.value === "connected") return "text-green-600 dark:text-green-400";
+  if (status.value === "disconnected") return "text-red-500 dark:text-red-400";
+  return "text-yellow-600 dark:text-yellow-400";
 });
 </script>

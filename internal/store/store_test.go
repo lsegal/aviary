@@ -124,15 +124,17 @@ func TestPathHelpers(t *testing.T) {
 		dir  string
 		ext  string
 		id   string
+		want string
 	}{
-		{JobPath, DirJobs, ".json", "job-1"},
-		{SessionPath, DirSessions, ".jsonl", "session-abc"},
-		{MemoryPath, DirMemory, ".jsonl", "mem-xyz"},
+		{JobPath, DirJobs, ".json", "job-1", "job-1"},
+		{SessionPath, DirSessions, ".jsonl", "session-abc", "session-abc"},
+		{MemoryPath, DirMemory, ".jsonl", "mem-xyz", "mem-xyz"},
+		{MemoryPath, DirMemory, ".jsonl", "private:default", "private_default"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.id, func(t *testing.T) {
 			got := tc.fn(tc.id)
-			want := filepath.Join(base, tc.dir, tc.id+tc.ext)
+			want := filepath.Join(base, tc.dir, tc.want+tc.ext)
 			if got != want {
 				t.Errorf("path helper(%q) = %q; want %q", tc.id, got, want)
 			}

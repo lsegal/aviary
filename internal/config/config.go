@@ -32,12 +32,14 @@ type TLSConfig struct {
 
 // AgentConfig describes a single agent.
 type AgentConfig struct {
-	Name      string          `yaml:"name"                json:"name"`
-	Model     string          `yaml:"model"               json:"model"`
-	Fallbacks []string        `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
-	Memory    string          `yaml:"memory,omitempty"    json:"memory,omitempty"`
-	Channels  []ChannelConfig `yaml:"channels"            json:"channels"`
-	Tasks     []TaskConfig    `yaml:"tasks"               json:"tasks"`
+	Name         string          `yaml:"name"                    json:"name"`
+	Model        string          `yaml:"model"                   json:"model"`
+	Fallbacks    []string        `yaml:"fallbacks,omitempty"     json:"fallbacks,omitempty"`
+	Memory       string          `yaml:"memory,omitempty"        json:"memory,omitempty"`
+	MemoryTokens int             `yaml:"memory_tokens,omitempty" json:"memory_tokens,omitempty"`
+	CompactKeep  int             `yaml:"compact_keep,omitempty"  json:"compact_keep,omitempty"`
+	Channels     []ChannelConfig `yaml:"channels"                json:"channels"`
+	Tasks        []TaskConfig    `yaml:"tasks"                   json:"tasks"`
 }
 
 // ChannelConfig describes a communication channel for an agent.

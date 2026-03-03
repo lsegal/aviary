@@ -18,6 +18,8 @@ type healthPayload struct {
 type wsEvent struct {
 	Type         string `json:"type"`
 	SessionID    string `json:"session_id,omitempty"`
+	AgentID      string `json:"agent_id,omitempty"`
+	PoolID       string `json:"pool_id,omitempty"`
 	Role         string `json:"role,omitempty"`
 	IsProcessing *bool  `json:"is_processing,omitempty"`
 	OK           bool   `json:"ok,omitempty"`

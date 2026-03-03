@@ -11,7 +11,7 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
-const defaultCompactKeep = 20 // entries to keep after compaction
+const defaultCompactKeep = 200 // entries to keep after compaction
 
 // Compact summarizes the oldest entries in a pool via LLM and replaces them
 // with a single summary entry. keepRecent entries at the end are preserved.

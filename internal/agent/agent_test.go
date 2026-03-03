@@ -21,6 +21,49 @@ type mockProvider struct {
 	err    error
 }
 
+type sequenceProvider struct {
+	mu        sync.Mutex
+	responses [][]llm.Event
+	requests  []llm.Request
+}
+
+func (s *sequenceProvider) Stream(_ context.Context, req llm.Request) (<-chan llm.Event, error) {
+	s.mu.Lock()
+	s.requests = append(s.requests, req)
+	idx := len(s.requests) - 1
+	var events []llm.Event
+	if idx < len(s.responses) {
+		events = s.responses[idx]
+	}
+	s.mu.Unlock()
+
+	ch := make(chan llm.Event, len(events)+1)
+	for _, e := range events {
+		ch <- e
+	}
+	if len(events) == 0 || events[len(events)-1].Type != llm.EventTypeDone {
+		ch <- llm.Event{Type: llm.EventTypeDone}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (s *sequenceProvider) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.requests)
+}
+
+type fakeToolClient struct {
+	tools []ToolInfo
+}
+
+func (f *fakeToolClient) ListTools(_ context.Context) ([]ToolInfo, error) { return f.tools, nil }
+func (f *fakeToolClient) CallToolText(_ context.Context, _ string, _ map[string]any) (string, error) {
+	return "", nil
+}
+func (f *fakeToolClient) Close() error { return nil }
+
 func (m *mockProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -41,6 +84,91 @@ func TestStreamEventConstants(t *testing.T) {
 		if typ == "" {
 			t.Fatal("stream event type should not be empty")
 		}
+	}
+}
+
+func TestParseToolCall_Variants(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		tool string
+	}{
+		{
+			name: "mcp style name+arguments",
+			in:   `{"name":"agent_update","arguments":{"name":"assistant","model":"openai/gpt-5.2"}}`,
+			tool: "agent_update",
+		},
+		{
+			name: "nested tool_call",
+			in:   `{"tool_call":{"name":"agent_update","args":{"name":"assistant"}}}`,
+			tool: "agent_update",
+		},
+		{
+			name: "json fence with input",
+			in:   "```json\n{\"tool\":\"agent_update\",\"input\":{\"name\":\"assistant\"}}\n```",
+			tool: "agent_update",
+		},
+		{
+			name: "array first element",
+			in:   `[{"tool":"agent_update","arguments":{"name":"assistant"}}]`,
+			tool: "agent_update",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, ok := parseToolCall(tc.in)
+			if !ok {
+				t.Fatalf("parseToolCall(%q) failed", tc.in)
+			}
+			if parsed.Tool != tc.tool {
+				t.Fatalf("expected tool %q, got %q", tc.tool, parsed.Tool)
+			}
+		})
+	}
+}
+
+func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return &fakeToolClient{tools: []ToolInfo{{Name: "agent_update", Description: "Update an agent"}}}, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "I don't have direct access to modify your model configuration from here."}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: `{"tool":"agent_update","arguments":{"name":"assistant","model":"openai/gpt-5.2"}}`}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_assistant", Name: "assistant", Model: "anthropic/claude"},
+		&config.AgentConfig{Name: "assistant", Model: "anthropic/claude"},
+		provider,
+		nil,
+	)
+
+	var gotText strings.Builder
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "set my model to openai/gpt-5.2", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			gotText.WriteString(e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError {
+			done <- struct{}{}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner")
+	}
+
+	if provider.callCount() < 2 {
+		t.Fatalf("expected at least 2 provider calls (includes one retry), got %d", provider.callCount())
+	}
+
+	if strings.Contains(strings.ToLower(gotText.String()), "don't have direct access") {
+		t.Fatalf("unexpected toolless refusal in final output: %q", gotText.String())
 	}
 }
 

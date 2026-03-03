@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +21,8 @@ var authCmd = &cobra.Command{
 	Short: "Manage authentication credentials",
 }
 
+var authLoginCode string
+
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
 	Short: "Authorize via OAuth PKCE (opens browser). Providers: anthropic, openai",
@@ -29,7 +33,7 @@ var authLoginCmd = &cobra.Command{
 
 		switch provider {
 		case "anthropic":
-			return loginAnthropic(st)
+			return loginAnthropic(st, authLoginCode)
 		case "openai":
 			return loginOpenAI(st)
 		default:
@@ -38,7 +42,7 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
-func loginAnthropic(st authpkg.Store) error {
+func loginAnthropic(st authpkg.Store, presetCode string) error {
 	pkce, err := authpkg.GeneratePKCE()
 	if err != nil {
 		return fmt.Errorf("generating PKCE: %w", err)
@@ -54,10 +58,17 @@ func loginAnthropic(st authpkg.Store) error {
 		fmt.Println("(Could not open browser automatically; copy the URL above.)")
 	}
 
-	fmt.Print("Paste the authorization code shown on the Anthropic page: ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	code := strings.TrimSpace(scanner.Text())
+	var code string
+	if presetCode != "" {
+		code = presetCode
+	} else {
+		fmt.Print("Paste the authorization code shown on the Anthropic page: ")
+		code, err = readConsoleLine()
+		if err != nil {
+			return fmt.Errorf("reading authorization code: %w", err)
+		}
+		code = strings.TrimSpace(code)
+	}
 	if code == "" {
 		return fmt.Errorf("no code entered; login cancelled")
 	}
@@ -79,9 +90,11 @@ func loginAnthropic(st authpkg.Store) error {
 }
 
 func loginOpenAI(st authpkg.Store) error {
-	fmt.Printf("Starting OpenAI/Codex OAuth login on port %d — opening browser...\n", authpkg.OpenAICallbackPort)
+	fmt.Println("Starting OpenAI OAuth login — opening browser...")
+	fmt.Println("(If the browser does not open, copy the URL printed above manually.)")
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
 	token, err := authpkg.OpenAILogin(ctx)
 	if err != nil {
 		return fmt.Errorf("OpenAI login: %w", err)
@@ -92,7 +105,8 @@ func loginOpenAI(st authpkg.Store) error {
 		return fmt.Errorf("saving token: %w", err)
 	}
 
-	fmt.Println("OpenAI OAuth login successful. Token stored as openai:oauth")
+	fmt.Println("OpenAI OAuth login successful.")
+	fmt.Println("Credential stored as openai:oauth (access token is the API key).")
 	return nil
 }
 
@@ -161,8 +175,31 @@ var authDeleteCmd = &cobra.Command{
 }
 
 func init() {
+	authLoginCmd.Flags().StringVar(&authLoginCode, "code", "", "Authorization code (skips interactive prompt)")
 	authCmd.AddCommand(authLoginCmd, authSetCmd, authGetCmd, authListCmd, authDeleteCmd)
 	rootCmd.AddCommand(authCmd)
+}
+
+// readConsoleLine reads a line directly from the console device, bypassing
+// whatever stdin the process was started with. This is reliable on Windows
+// PowerShell where os.Stdin may not behave as a tty.
+func readConsoleLine() (string, error) {
+	// Try the console device first so pasting works on Windows PowerShell.
+	cons, err := openConsole()
+	if err == nil {
+		defer cons.Close()
+		line, readErr := bufio.NewReader(cons).ReadString('\n')
+		if readErr != nil && readErr != io.EOF {
+			return "", readErr
+		}
+		return line, nil
+	}
+	// Fallback to os.Stdin.
+	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	if readErr != nil && readErr != io.EOF {
+		return "", readErr
+	}
+	return line, nil
 }
 
 // authStore returns the file-based auth store (keychain is optional).

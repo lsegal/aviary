@@ -34,6 +34,18 @@
           "name": { "type": "string" },
           "model": { "type": "string" },
           "memory": { "type": "string" },
+          "memory_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 4000,
+            "description": "Maximum tokens of memory context to include in each prompt."
+          },
+          "compact_keep": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 200,
+            "description": "Number of recent memory entries to retain after compaction."
+          },
           "fallbacks": {
             "type": "array",
             "items": { "type": "string" }

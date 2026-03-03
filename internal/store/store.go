@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Directory name constants under DataDir().
@@ -14,6 +15,7 @@ const (
 	DirMemory   = "memory"
 	DirCerts    = "certs"
 	DirAuth     = "auth"
+	DirUsage    = "usage"
 )
 
 // DataDir returns the Aviary data directory.
@@ -40,6 +42,7 @@ func EnsureDirs() error {
 		SubDir(DirMemory),
 		SubDir(DirCerts),
 		SubDir(DirAuth),
+		SubDir(DirUsage),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -61,5 +64,35 @@ func SessionPath(id string) string {
 
 // MemoryPath returns the file path for a memory pool by ID.
 func MemoryPath(id string) string {
-	return filepath.Join(SubDir(DirMemory), id+".jsonl")
+	return filepath.Join(SubDir(DirMemory), sanitizeFileComponent(id)+".jsonl")
+}
+
+// UsagePath returns the path to the global usage log file.
+func UsagePath() string {
+	return filepath.Join(SubDir(DirUsage), "usage.jsonl")
+}
+
+func sanitizeFileComponent(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "default"
+	}
+
+	r := strings.NewReplacer(
+		"<", "_",
+		">", "_",
+		":", "_",
+		"\"", "_",
+		"/", "_",
+		"\\", "_",
+		"|", "_",
+		"?", "_",
+		"*", "_",
+	)
+	out := r.Replace(s)
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return "default"
+	}
+	return out
 }

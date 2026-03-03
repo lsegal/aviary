@@ -16,3 +16,21 @@ func notifySessionMessage(sessionID, role string) {
 		sessionMessageObserver(sessionID, role)
 	}
 }
+
+// MemoryCompactionObserver is invoked when memory compaction starts or finishes
+// for an agent pool. started=true when compaction begins, false when it ends.
+type MemoryCompactionObserver func(agentID, poolID string, started bool)
+
+var memoryCompactionObserver MemoryCompactionObserver
+
+// SetMemoryCompactionObserver registers an optional observer for memory
+// compaction lifecycle events.
+func SetMemoryCompactionObserver(obs MemoryCompactionObserver) {
+	memoryCompactionObserver = obs
+}
+
+func notifyMemoryCompaction(agentID, poolID string, started bool) {
+	if memoryCompactionObserver != nil {
+		memoryCompactionObserver(agentID, poolID, started)
+	}
+}

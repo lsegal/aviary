@@ -15,14 +15,7 @@ test("sidebar contains all nav links", async ({ page }) => {
 	await page.goto("/overview");
 
 	const nav = page.locator("nav");
-	for (const label of [
-		"Overview",
-		"Chat",
-		"Agents",
-		"Tasks",
-		"Sessions",
-		"Settings",
-	]) {
+	for (const label of ["Overview", "Chat", "Settings", "Logs"]) {
 		await expect(
 			nav.getByRole("link", { name: label, exact: true }),
 		).toBeVisible();

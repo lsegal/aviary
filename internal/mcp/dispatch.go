@@ -78,7 +78,11 @@ func ensureInProcessDeps() error {
 		return auth.Resolve(authStore, ref)
 	}
 
-	agents := agent.NewManager(llm.NewFactory(authResolver))
+	factory := llm.NewFactory(authResolver)
+	if authStore != nil {
+		factory.WithTokenSetter(authStore.Set)
+	}
+	agents := agent.NewManager(factory)
 	agents.Reconcile(cfg)
 
 	SetDeps(&Deps{
@@ -133,4 +137,3 @@ var loadStoredToken = func() (string, error) {
 func SetTokenLoader(fn func() (string, error)) {
 	loadStoredToken = fn
 }
-

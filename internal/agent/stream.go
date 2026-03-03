@@ -6,6 +6,7 @@ type StreamEventType string
 
 const (
 	StreamEventText  StreamEventType = "text"   // partial text from the LLM
+	StreamEventMedia StreamEventType = "media"  // image data URL from the LLM
 	StreamEventDone  StreamEventType = "done"   // stream complete
 	StreamEventError StreamEventType = "error"  // error occurred
 	StreamEventStop  StreamEventType = "stop"   // agent was stopped mid-stream
@@ -13,10 +14,11 @@ const (
 
 // StreamEvent is a single event emitted during an agent response.
 type StreamEvent struct {
-	Type    StreamEventType
-	AgentID string
-	Text    string // set for StreamEventText
-	Err     error  // set for StreamEventError
+	Type     StreamEventType
+	AgentID  string
+	Text     string // set for StreamEventText
+	MediaURL string // set for StreamEventMedia (image data URL or remote URL)
+	Err      error  // set for StreamEventError
 }
 
 // StreamConsumer receives StreamEvents.

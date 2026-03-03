@@ -85,4 +85,3 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 	return nil
 }
-

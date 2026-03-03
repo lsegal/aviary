@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"testing"
 	"time"
 )
 
@@ -127,7 +128,7 @@ func launchChrome(m *Manager) error {
 		"--no-first-run",
 		"--no-default-browser-check",
 	}
-	if m.headless {
+	if m.headless || testing.Testing() {
 		args = append(args, "--headless", "--disable-gpu")
 	}
 

@@ -34,7 +34,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 		checkedAuth: map[string]bool{},
 	}
 	v.checkServer(cfg.Server)
-	v.checkAgents(cfg.Agents)
+	v.checkAgents(cfg.Agents, cfg.Models)
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
@@ -79,7 +79,7 @@ func (v *validator) checkServer(s ServerConfig) {
 }
 
 // checkAgents validates each AgentConfig, including channels and tasks.
-func (v *validator) checkAgents(agents []AgentConfig) {
+func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 	names := map[string]int{}
 
 	for i, a := range agents {
@@ -98,10 +98,14 @@ func (v *validator) checkAgents(agents []AgentConfig) {
 			}
 		}
 
-		if a.Model == "" {
+		effectiveModel := a.Model
+		if effectiveModel == "" {
+			effectiveModel = models.Defaults.Model
+		}
+		if effectiveModel == "" {
 			v.warnf(f+".model", "no model configured; agent will not respond to prompts")
 		} else {
-			v.checkModel(f+".model", a.Model)
+			v.checkModel(f+".model", effectiveModel)
 		}
 
 		for j, ch := range a.Channels {
@@ -183,6 +187,8 @@ func (v *validator) checkModel(field, model string) {
 		v.checkAuthCredential(field, "anthropic:default", "run 'aviary auth set anthropic:default <your-api-key>'")
 	case "openai":
 		v.checkAuthCredential(field, "openai:default", "run 'aviary auth set openai:default <your-api-key>'")
+	case "openai-codex":
+		v.checkAuthCredential(field, "openai:oauth", "run 'aviary auth login openai'")
 	case "gemini":
 		v.checkAuthCredential(field, "gemini:default", "run 'aviary auth set gemini:default <your-api-key>'")
 	case "stdio":
@@ -190,7 +196,7 @@ func (v *validator) checkModel(field, model string) {
 			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
 		}
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, gemini, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, gemini, or stdio", provider, model)
 	}
 }
 
@@ -204,7 +210,7 @@ func (v *validator) checkAuthCredential(field, key, hint string) {
 
 	val, err := v.authGet(key)
 	if err != nil || val == "" {
-		v.errorf(field, "credential %q not found in auth store — %s", key, hint)
+		v.warnf(field, "credential %q not found in auth store — %s", key, hint)
 	}
 }
 
@@ -230,7 +236,7 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 			key := strings.TrimPrefix(ch.Token, "auth:")
 			val, err := v.authGet(key)
 			if err != nil || val == "" {
-				v.errorf(field+".token", "auth reference %q not found in credential store — run 'aviary auth set %s <token>'", ch.Token, key)
+				v.warnf(field+".token", "auth reference %q not found in credential store — run 'aviary auth set %s <token>'", ch.Token, key)
 			}
 		}
 	}

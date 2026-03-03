@@ -37,12 +37,20 @@ type Server struct {
 
 // New creates a new Server with the given config and auth token.
 func New(cfg *config.Config, token string) *Server {
+	// Create auth store first — needed for both MCP deps and LLM token refresh.
+	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
+	authStore, _ := auth.NewFileStore(authPath)
+
 	authResolver := makeAuthResolver()
+	factory := llm.NewFactory(authResolver)
+	if authStore != nil {
+		factory.WithTokenSetter(authStore.Set)
+	}
 	s := &Server{
 		cfg:    cfg,
 		token:  token,
 		mux:    http.NewServeMux(),
-		agents: agent.NewManager(llm.NewFactory(authResolver)),
+		agents: agent.NewManager(factory),
 	}
 
 	// Initial reconcile from loaded config.
@@ -60,10 +68,6 @@ func New(cfg *config.Config, token string) *Server {
 	s.channels = channels.NewManager()
 	s.brw = browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
 
-	// Open the file-backed credential store (non-fatal if dir doesn't exist yet).
-	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
-	authStore, _ := auth.NewFileStore(authPath)
-
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{Agents: s.agents, Scheduler: s.sched, Memory: s.mem, Browser: s.brw, Auth: authStore})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
@@ -73,6 +77,10 @@ func New(cfg *config.Config, token string) *Server {
 	agent.SetSessionProcessingObserver(func(sessionID string, processing bool) {
 		v := processing
 		wsBroadcast(wsEvent{Type: "session_processing", SessionID: sessionID, IsProcessing: &v})
+	})
+	agent.SetMemoryCompactionObserver(func(agentID, poolID string, started bool) {
+		v := started
+		wsBroadcast(wsEvent{Type: "memory_compaction", AgentID: agentID, PoolID: poolID, IsProcessing: &v})
 	})
 
 	// Install the log hub as the global slog handler, delegating to the

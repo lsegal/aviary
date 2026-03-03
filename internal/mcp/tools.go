@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/lsegal/aviary/internal/domain"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/domain"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -55,15 +56,17 @@ func Register(s *sdkmcp.Server) {
 	registerMemoryTools(s)
 	registerAuthTools(s)
 	registerServerTools(s)
+	registerUsageTools(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
 
 type agentRunArgs struct {
-	Name    string `json:"name"`
-	Message string `json:"message"`
-	Session string `json:"session,omitempty"` // session name; defaults to "main"
-	File    string `json:"file,omitempty"`
+	Name     string `json:"name"`
+	Message  string `json:"message"`
+	Session  string `json:"session,omitempty"`  // session name; defaults to "main"
+	File     string `json:"file,omitempty"`
+	MediaURL string `json:"media_url,omitempty"` // optional image (data URL or remote URL)
 }
 
 type agentNameArgs struct {
@@ -114,7 +117,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		progressToken := req.Params.GetProgressToken()
 		progressCount := 0.0
 		done := make(chan error, 1)
-		runner.Prompt(ctx, args.Message, func(e agent.StreamEvent) {
+		runner.PromptMedia(ctx, args.Message, args.MediaURL, func(e agent.StreamEvent) {
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)
@@ -124,6 +127,16 @@ func registerAgentTools(s *sdkmcp.Server) {
 						ProgressToken: progressToken,
 						Progress:      progressCount,
 						Message:       e.Text,
+					})
+				}
+			case agent.StreamEventMedia:
+				if e.MediaURL != "" && progressToken != nil {
+					progressCount++
+					_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+						ProgressToken: progressToken,
+						Progress:      progressCount,
+						// Prefix lets the client detect media progress vs text.
+						Message: "[media]" + e.MediaURL,
 					})
 				}
 			case agent.StreamEventDone:
@@ -371,6 +384,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			SessionID string `json:"session_id"`
 			Role      string `json:"role"`
 			Content   string `json:"content"`
+			MediaURL  string `json:"media_url,omitempty"`
 			Timestamp string `json:"timestamp"`
 		}
 
@@ -378,7 +392,8 @@ func registerSessionTools(s *sdkmcp.Server) {
 		for _, line := range lines {
 			role, _ := line["role"].(string)
 			content, _ := line["content"].(string)
-			if role == "" || content == "" {
+			mediaURLVal, _ := line["media_url"].(string)
+			if role == "" || (content == "" && mediaURLVal == "") {
 				continue
 			}
 			if role != string(domain.MessageRoleUser) && role != string(domain.MessageRoleAssistant) && role != string(domain.MessageRoleSystem) {
@@ -401,6 +416,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				SessionID: sid,
 				Role:      role,
 				Content:   content,
+				MediaURL:  mediaURLVal,
 				Timestamp: ts,
 			})
 		}
@@ -911,7 +927,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		if err := st.Set("auth:anthropic:oauth", string(tokenJSON)); err != nil {
+		if err := st.Set("anthropic:oauth", string(tokenJSON)); err != nil {
 			return nil, struct{}{}, err
 		}
 
@@ -941,7 +957,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		if err := st.Set("auth:openai:oauth", string(tokenJSON)); err != nil {
+		if err := st.Set("openai:oauth", string(tokenJSON)); err != nil {
 			return nil, struct{}{}, err
 		}
 
@@ -1052,5 +1068,56 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 
 		return jsonResult(out)
+	})
+}
+
+// ── Usage tools ──────────────────────────────────────────────────────────────
+
+type usageQueryArgs struct {
+	Start string `json:"start,omitempty"` // RFC3339 or date (YYYY-MM-DD); defaults to 30 days ago
+	End   string `json:"end,omitempty"`   // RFC3339 or date; defaults to now
+}
+
+func registerUsageTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "usage_query",
+		Description: "Return raw token-usage records within a date range for display in the Usage dashboard",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args usageQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		now := time.Now()
+		start := now.AddDate(0, 0, -30)
+		end := now
+
+		parse := func(s string, fallback time.Time) time.Time {
+			if s == "" {
+				return fallback
+			}
+			for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+				if t, err := time.Parse(layout, s); err == nil {
+					return t
+				}
+			}
+			return fallback
+		}
+		start = parse(args.Start, start)
+		end = parse(args.End, end)
+		// end is inclusive for full-day queries: extend to end of day
+		if len(args.End) == 10 { // "YYYY-MM-DD" — extend to end of day
+			end = end.AddDate(0, 0, 1)
+		}
+
+		records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("reading usage log: %w", err)
+		}
+
+		// Filter to requested date range.
+		filtered := records[:0]
+		for _, r := range records {
+			if (r.Timestamp.Equal(start) || r.Timestamp.After(start)) &&
+				r.Timestamp.Before(end) {
+				filtered = append(filtered, r)
+			}
+		}
+		return jsonResult(filtered)
 	})
 }

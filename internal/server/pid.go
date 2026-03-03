@@ -70,10 +70,17 @@ func IsRunning() (bool, int, error) {
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
+		// Process not found.
 		return false, pid, nil
 	}
-	// On Unix, FindProcess always succeeds; signal 0 checks existence.
-	// On Windows, FindProcess returns an error if process doesn't exist.
+	if runtime.GOOS == "windows" {
+		// On Windows, OpenProcess (called by FindProcess) fails if the process
+		// does not exist, so a nil error here is sufficient to confirm liveness.
+		// Signal(nil) is not supported on Windows and always returns an error.
+		_ = proc
+		return true, pid, nil
+	}
+	// On Unix, FindProcess always succeeds; signal 0 checks liveness.
 	if err := proc.Signal(os.Signal(nil)); err != nil {
 		return false, pid, nil
 	}

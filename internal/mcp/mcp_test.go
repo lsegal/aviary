@@ -129,13 +129,10 @@ func TestDispatcherCallTool_PingAndToolError(t *testing.T) {
 
 	out, err = d.CallTool(context.Background(), "agent_list", map[string]any{})
 	if err != nil {
-		if !strings.Contains(err.Error(), "agent manager not initialized") {
-			t.Fatalf("expected uninitialized deps error, got %v", err)
-		}
-		return
+		t.Fatalf("agent_list should succeed with in-process deps init, got %v", err)
 	}
-	if !strings.Contains(out, "agent manager not initialized") {
-		t.Fatalf("expected uninitialized deps message in result, got %q", out)
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("expected non-empty agent_list result")
 	}
 }
 
@@ -335,6 +332,98 @@ func TestBrowserTools_NilDeps(t *testing.T) {
 
 	for _, tt := range tests {
 		toolCallContains(t, d, tt.tool, tt.args, "browser manager not initialized")
+	}
+}
+
+func TestIsStopCommand(t *testing.T) {
+	positives := []string{"stop", "halt", "cancel", "abort", "STOP", "HALT", " cancel ", "/stop", "/halt", "/cancel", "/abort"}
+	for _, c := range positives {
+		if !isStopCommand(c) {
+			t.Errorf("isStopCommand(%q) = false; want true", c)
+		}
+	}
+	negatives := []string{"", "hello", "please stop", "stopper", "don't stop", "stopping"}
+	for _, c := range negatives {
+		if isStopCommand(c) {
+			t.Errorf("isStopCommand(%q) = true; want false", c)
+		}
+	}
+}
+
+func TestAgentRun_StopCommand_NoActiveSession(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	if err != nil {
+		t.Fatalf("in-process client: %v", err)
+	}
+	defer c.Close() //nolint:errcheck
+
+	// Sending "stop" when no session is active should return an informational message,
+	// not an error.
+	res, err := c.CallTool(context.Background(), "agent_run", map[string]any{
+		"name":    "assistant",
+		"message": "stop",
+	})
+	if err != nil {
+		t.Fatalf("agent_run stop: unexpected error: %v", err)
+	}
+	out := extractText(res)
+	if !strings.Contains(out, "no active") {
+		t.Errorf("expected 'no active' in response, got %q", out)
+	}
+}
+
+func TestSessionStop_NoActiveWork(t *testing.T) {
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	if err != nil {
+		t.Fatalf("in-process client: %v", err)
+	}
+	defer c.Close() //nolint:errcheck
+
+	// Calling session_stop on an unknown session should report no active work.
+	res, err := c.CallTool(context.Background(), "session_stop", map[string]any{
+		"session_id": "nonexistent-session-id-xyz",
+	})
+	if err != nil {
+		t.Fatalf("session_stop: unexpected error: %v", err)
+	}
+	out := extractText(res)
+	if !strings.Contains(out, "no active") {
+		t.Errorf("expected 'no active' message, got %q", out)
+	}
+}
+
+func TestSessionList_IsProcessing(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	if err != nil {
+		t.Fatalf("in-process client: %v", err)
+	}
+	defer c.Close() //nolint:errcheck
+
+	// Listing sessions when no processing is happening should return is_processing=false.
+	res, err := c.CallTool(context.Background(), "session_list", map[string]any{"agent": "assistant"})
+	if err != nil {
+		t.Fatalf("session_list: unexpected error: %v", err)
+	}
+	out := extractText(res)
+	if !strings.Contains(out, "is_processing") {
+		t.Errorf("expected is_processing in session_list output, got %q", out)
+	}
+	if strings.Contains(out, `"is_processing": true`) {
+		t.Errorf("expected is_processing=false when idle, got %q", out)
 	}
 }
 

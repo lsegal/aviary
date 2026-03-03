@@ -2,520 +2,524 @@
   <AppLayout>
     <div class="h-full overflow-y-auto">
       <div class="mx-auto max-w-6xl px-6 py-6">
-        <div class="mb-6 flex items-center justify-between gap-4">
+        <div class="mb-6 flex items-center justify-between gap-3">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
-          <button
-            :disabled="store.saving || !form"
-            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-            @click="saveSettings"
-          >{{ store.saving ? "Saving…" : "Save Changes" }}</button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              :disabled="loading"
+              @click="loadConfig"
+            >{{ loading ? "Loading…" : "Reload" }}</button>
+            <button
+              type="button"
+              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              :disabled="saving"
+              @click="saveAll"
+            >{{ saving ? "Saving…" : "Save Changes" }}</button>
+          </div>
         </div>
 
         <div class="mb-6 flex flex-wrap gap-2">
           <button
-            v-for="tab in tabs"
-            :key="tab.key"
+            v-for="item in tabs"
+            :key="item"
             type="button"
-            :class="tabButtonClass(tab.key)"
-            @click="selectTab(tab.key)"
-          >{{ tab.label }}</button>
+            :class="tabClass(item)"
+            @click="activeTab = item"
+          >{{ tabLabel(item) }}</button>
         </div>
 
-        <div v-if="store.loading" class="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
-        <div v-else-if="store.error && !form" class="text-sm text-red-500 dark:text-red-400">Error: {{ store.error }}</div>
+        <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {{ errorMessage }}
+        </div>
+        <div v-if="okMessage" class="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+          {{ okMessage }}
+        </div>
 
-        <div v-else-if="form" class="space-y-10 pb-10">
-          <section v-if="activeTab === 'general'" class="space-y-10">
-            <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Server</h3>
-              <div class="space-y-5 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                <FieldRow label="Port" :hint="`Port the server listens on (${portSchema.minimum}–${portSchema.maximum})`">
-                  <input
-                    v-model.number="form.server.port"
-                    type="number"
-                    :min="portSchema.minimum"
-                    :max="portSchema.maximum"
-                    :placeholder="String(portSchema.default)"
-                    class="field-input w-32"
-                  />
-                </FieldRow>
-                <FieldRow label="TLS Certificate" hint="Path to PEM certificate file (leave blank for self-signed)">
-                  <input v-model="form.server.tls.cert" type="text" placeholder="/path/to/cert.pem" class="field-input" />
-                </FieldRow>
-                <FieldRow label="TLS Key" hint="Path to PEM private key file">
-                  <input v-model="form.server.tls.key" type="text" placeholder="/path/to/key.pem" class="field-input" />
-                </FieldRow>
+        <section v-show="activeTab === 'general'" class="space-y-6 pb-8">
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Server</h3>
+            <div class="grid gap-4 lg:grid-cols-3">
+              <div>
+                <label class="field-label">Port</label>
+                <input v-model.number="draft.server.port" type="number" min="1" max="65535" class="field-input" />
               </div>
-            </section>
-
-            <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Models</h3>
-              <div class="space-y-5 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                <FieldRow label="Default model" hint="Used when an agent does not specify a model">
-                  <input v-model="form.models.defaults.model" type="text" class="field-input" />
-                </FieldRow>
-                <FieldRow label="Default fallbacks" hint="Models tried in order if the primary fails">
-                  <StringList v-model="form.models.defaults.fallbacks" placeholder="openai/gpt-4o-mini" />
-                </FieldRow>
+              <div>
+                <label class="field-label">TLS Cert</label>
+                <input v-model="draft.server.tls.cert" type="text" class="field-input" placeholder="/path/to/cert.pem" />
               </div>
-            </section>
-
-            <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser</h3>
-              <div class="space-y-5 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                <FieldRow label="Binary path" hint="Path to Chromium or Chrome executable">
-                  <input v-model="form.browser.binary" type="text" placeholder="/usr/bin/chromium" class="field-input" />
-                </FieldRow>
-                <FieldRow label="CDP port" :hint="`Chrome DevTools Protocol port (${cdpSchema.minimum}–${cdpSchema.maximum})`">
-                  <input
-                    v-model.number="form.browser.cdp_port"
-                    type="number"
-                    :min="cdpSchema.minimum"
-                    :max="cdpSchema.maximum"
-                    :placeholder="String(cdpSchema.default)"
-                    class="field-input w-32"
-                  />
-                </FieldRow>
+              <div>
+                <label class="field-label">TLS Key</label>
+                <input v-model="draft.server.tls.key" type="text" class="field-input" placeholder="/path/to/key.pem" />
               </div>
-            </section>
+            </div>
+          </div>
 
-            <section>
-              <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scheduler</h3>
-              <div class="space-y-5 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                <FieldRow label="Concurrency" hint='"auto" uses all available CPU cores; set a number for a fixed limit'>
-                  <div class="flex flex-wrap items-center gap-4">
-                    <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <input v-model="concurrencyMode" type="radio" value="auto" class="accent-blue-600" />
-                      auto
-                    </label>
-                    <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <input v-model="concurrencyMode" type="radio" value="fixed" class="accent-blue-600" />
-                      Fixed:
-                      <input
-                        v-model.number="concurrencyValue"
-                        type="number"
-                        min="1"
-                        :disabled="concurrencyMode !== 'fixed'"
-                        class="field-input w-20 disabled:opacity-40"
-                      />
-                    </label>
-                  </div>
-                </FieldRow>
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Models</h3>
+            <div class="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label class="field-label">Default model</label>
+                <input v-model="draft.models.defaults.model" type="text" class="field-input" placeholder="anthropic/claude-sonnet-4-5" />
               </div>
-            </section>
-          </section>
+              <div>
+                <label class="field-label">Default fallbacks (comma-separated)</label>
+                <input v-model="fallbacksCsv" type="text" class="field-input" placeholder="openai/gpt-4o-mini, gemini/gemini-pro" />
+              </div>
+            </div>
+          </div>
 
-          <section v-else-if="activeTab === 'agents'" class="space-y-6">
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Agents & Tasks</h3>
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser & Scheduler</h3>
+            <div class="grid gap-4 lg:grid-cols-3">
+              <div>
+                <label class="field-label">Browser binary</label>
+                <input v-model="draft.browser.binary" type="text" class="field-input" placeholder="/usr/bin/chromium" />
+              </div>
+              <div>
+                <label class="field-label">CDP port</label>
+                <input v-model.number="draft.browser.cdp_port" type="number" min="1" max="65535" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label">Concurrency</label>
+                <input v-model="concurrencyInput" type="text" class="field-input" placeholder="auto or number" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Agents & Tasks</h3>
+            <div class="flex items-center gap-2">
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="importAgents">Import runtime agents</button>
               <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500" @click="addAgent">+ Add Agent</button>
             </div>
+          </div>
 
-            <div v-if="!form.agents.length" class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-              No agents configured.
-            </div>
+          <div v-if="!draft.agents.length" class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+            No agents configured.
+          </div>
 
-            <div v-for="(agent, agentIndex) in form.agents" :key="`agent-${agentIndex}`" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-              <div class="flex items-start justify-between gap-4">
-                <div class="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-3">
-                  <div>
-                    <label class="field-label">Name</label>
-                    <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" />
-                  </div>
-                  <div>
-                    <label class="field-label">Model</label>
-                    <input v-model="agent.model" type="text" class="field-input" placeholder="anthropic/claude-sonnet-4-5" />
-                  </div>
-                  <div>
-                    <label class="field-label">Memory</label>
-                    <input v-model="agent.memory" type="text" class="field-input" placeholder="optional memory config" />
-                  </div>
-                </div>
-                <button type="button" class="danger-btn" @click="removeAgent(agentIndex)">Remove Agent</button>
-              </div>
-
+          <div v-for="(agent, i) in draft.agents" :key="`agent-${i}`" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
               <div>
-                <label class="field-label">Fallbacks</label>
-                <StringList v-model="agent.fallbacks" placeholder="openai/gpt-4o-mini" />
+                <label class="field-label">Name</label>
+                <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" />
               </div>
-
-              <div class="space-y-3">
-                <div class="flex items-center justify-between">
-                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
-                  <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addTask(agentIndex)">+ Add Task</button>
-                </div>
-
-                <div v-if="!(agent.tasks?.length)" class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  No tasks configured for this agent.
-                </div>
-
-                <div v-for="(task, taskIndex) in agent.tasks" :key="`task-${agentIndex}-${taskIndex}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-                  <div class="flex items-start justify-between gap-4">
-                    <div class="grid flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
-                      <div>
-                        <label class="field-label">Task Name</label>
-                        <input v-model="task.name" type="text" class="field-input" placeholder="daily-summary" />
-                      </div>
-                      <div>
-                        <label class="field-label">Channel</label>
-                        <input v-model="task.channel" type="text" class="field-input" placeholder="optional channel" />
-                      </div>
-                      <div>
-                        <label class="field-label">Schedule (cron)</label>
-                        <input v-model="task.schedule" type="text" class="field-input" placeholder="0 */30 * * * *" />
-                      </div>
-                      <div>
-                        <label class="field-label">Watch (glob)</label>
-                        <input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
-                      </div>
-                      <div>
-                        <label class="field-label">Start At (RFC3339)</label>
-                        <input v-model="task.start_at" type="text" class="field-input" placeholder="2026-03-01T10:00:00Z" />
-                      </div>
-                      <label class="mt-6 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                        <input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
-                        Run once
-                      </label>
-                    </div>
-                    <button type="button" class="danger-btn" @click="removeTask(agentIndex, taskIndex)">Remove Task</button>
-                  </div>
-
-                  <div>
-                    <label class="field-label">Prompt</label>
-                    <textarea v-model="task.prompt" rows="3" class="field-input" placeholder="Task prompt..."></textarea>
-                  </div>
-                </div>
+              <div>
+                <label class="field-label">Model</label>
+                <input v-model="agent.model" type="text" class="field-input" placeholder="anthropic/claude-sonnet-4-5" />
+              </div>
+              <div>
+                <label class="field-label">Fallbacks (comma-separated)</label>
+                <input :value="agentFallbacks(agent)" type="text" class="field-input" placeholder="openai/gpt-4o-mini" @input="setAgentFallbacks(agent, $event)" />
+              </div>
+              <div class="flex items-end">
+                <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
               </div>
             </div>
-          </section>
 
-          <section v-else-if="activeTab === 'sessions'" class="space-y-6">
-            <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-              <div class="flex flex-wrap items-end gap-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addTask(i)">+ Add Task</button>
+            </div>
+
+            <div v-if="!agent.tasks?.length" class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              No tasks configured for this agent.
+            </div>
+
+            <div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]">
                 <div>
-                  <label class="field-label">Agent</label>
-                  <select v-model="sessionsAgent" class="field-input min-w-56">
-                    <option value="" disabled>Select an agent</option>
-                    <option v-for="agent in form.agents" :key="`sess-agent-${agent.name}`" :value="agent.name">{{ agent.name }}</option>
+                  <label class="field-label">Task name</label>
+                  <input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" />
+                </div>
+                <div>
+                  <label class="field-label">Schedule</label>
+                  <input v-model="task.schedule" type="text" class="field-input" placeholder="0 * * * * *" />
+                </div>
+                <div>
+                  <label class="field-label">Watch</label>
+                  <input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
+                </div>
+                <div>
+                  <label class="field-label">Channel</label>
+                  <select v-model="task.channel" class="field-input">
+                    <option value="">silent</option>
+                    <option value="last">last</option>
+                    <option value="slack">slack</option>
+                    <option value="discord">discord</option>
                   </select>
                 </div>
-                <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!sessionsAgent || sessionsLoading" @click="loadSessions">{{ sessionsLoading ? "Loading…" : "Refresh Sessions" }}</button>
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="!sessionsAgent || sessionsLoading" @click="createSession">+ Create Session</button>
-              </div>
-
-              <p v-if="sessionsError" class="mt-3 text-xs text-red-500 dark:text-red-400">{{ sessionsError }}</p>
-
-              <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                <table v-if="sessions.length" class="w-full text-sm">
-                  <thead>
-                    <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                      <th class="px-3 py-2">Name</th>
-                      <th class="px-3 py-2">ID</th>
-                      <th class="px-3 py-2">Updated</th>
-                      <th class="px-3 py-2">Processing</th>
-                      <th class="px-3 py-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="session in sessions" :key="session.id" class="border-b border-gray-100 text-gray-700 dark:border-gray-800 dark:text-gray-300">
-                      <td class="px-3 py-2">{{ session.name || "—" }}</td>
-                      <td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ session.id.slice(-10) }}</td>
-                      <td class="px-3 py-2 text-xs">{{ formatDate(session.updated_at) }}</td>
-                      <td class="px-3 py-2">
-                        <span :class="session.is_processing ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'" class="rounded-full px-2 py-0.5 text-xs">
-                          {{ session.is_processing ? "yes" : "no" }}
-                        </span>
-                      </td>
-                      <td class="px-3 py-2">
-                        <button type="button" class="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" @click="stopSession(session.id)">Stop</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div v-else class="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">No sessions found for this agent.</div>
-              </div>
-            </div>
-          </section>
-
-          <section v-else-if="activeTab === 'providers'" class="space-y-6">
-            <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-              <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Provider Mapping</h3>
-              <ProviderList v-model="providerEntries" />
-            </div>
-
-            <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-              <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials</h3>
-              <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_2fr_auto_auto_auto]">
-                <input v-model="credentialName" type="text" class="field-input" placeholder="auth:openai:default" />
-                <input v-model="credentialValue" type="password" class="field-input" placeholder="credential value" />
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" @click="setCredential">Set</button>
-                <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="checkCredential">Check</button>
-                <button type="button" class="rounded-lg border border-red-200 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" @click="deleteCredential">Delete</button>
-              </div>
-              <div class="flex items-center gap-2">
-                <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="refreshCredentials">Refresh Stored Keys</button>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ credentials.length }} stored</span>
-              </div>
-              <ul class="max-h-40 space-y-1 overflow-auto rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
-                <li v-for="name in credentials" :key="name" class="font-mono text-gray-700 dark:text-gray-300">{{ name }}</li>
-                <li v-if="!credentials.length" class="text-gray-500 dark:text-gray-400">No stored credentials.</li>
-              </ul>
-              <p v-if="credentialStatus" class="text-xs text-gray-600 dark:text-gray-300">{{ credentialStatus }}</p>
-              <p v-if="credentialError" class="text-xs text-red-500 dark:text-red-400">{{ credentialError }}</p>
-            </div>
-
-            <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-              <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">OAuth</h3>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" :disabled="oauthBusy" @click="loginOpenAI">Login OpenAI</button>
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" :disabled="oauthBusy" @click="startAnthropicLogin">Start Anthropic Login</button>
-              </div>
-
-              <div v-if="anthropicLoginUrl" class="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                <p class="text-xs text-gray-600 dark:text-gray-300">Open this URL, complete login, and paste the displayed code:</p>
-                <a :href="anthropicLoginUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicLoginUrl }}</a>
-                <div class="flex gap-2">
-                  <input v-model="anthropicCode" type="text" class="field-input" placeholder="Anthropic code" />
-                  <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" :disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropicLogin">Complete</button>
+                <div class="flex items-end">
+                  <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
                 </div>
               </div>
 
-              <p v-if="oauthStatus" class="text-xs text-gray-600 dark:text-gray-300">{{ oauthStatus }}</p>
-              <p v-if="oauthError" class="text-xs text-red-500 dark:text-red-400">{{ oauthError }}</p>
+              <div class="grid gap-3 lg:grid-cols-[1fr_auto]">
+                <div>
+                  <label class="field-label">Prompt</label>
+                  <textarea v-model="task.prompt" rows="3" class="field-input" placeholder="Task prompt..."></textarea>
+                </div>
+                <label class="mt-6 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
+                  Run once
+                </label>
+              </div>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <div v-if="saveSuccess" class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">Settings saved successfully.</div>
-          <div v-if="saveError" class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ saveError }}</div>
-        </div>
+        <section v-show="activeTab === 'sessions'" class="space-y-5 pb-8">
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Sessions</h3>
+            <div class="grid gap-3 lg:grid-cols-[280px_auto_auto]">
+              <div>
+                <label class="field-label">Agent</label>
+                <select v-model="sessionAgent" class="field-input">
+                  <option value="">Select agent</option>
+                  <option v-for="agent in draft.agents" :key="`sess-${agent.name}`" :value="agent.name">{{ agent.name }}</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!sessionAgent || sessionLoading" @click="loadSessions">{{ sessionLoading ? 'Loading…' : 'Refresh Sessions' }}</button>
+              </div>
+              <div class="flex items-end">
+                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="!sessionAgent || sessionLoading" @click="createSession">+ Create Session</button>
+              </div>
+            </div>
+
+            <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+              <table v-if="sessions.length" class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    <th class="px-3 py-2">Name</th>
+                    <th class="px-3 py-2">ID</th>
+                    <th class="px-3 py-2">Updated</th>
+                    <th class="px-3 py-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="s in sessions" :key="s.id" class="border-b border-gray-100 text-gray-700 dark:border-gray-800 dark:text-gray-300">
+                    <td class="px-3 py-2">{{ s.name || '—' }}</td>
+                    <td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ s.id.slice(-10) }}</td>
+                    <td class="px-3 py-2 text-xs">{{ formatDate(s.updated_at) }}</td>
+                    <td class="px-3 py-2">
+                      <button type="button" class="danger-btn" @click="stopSession(s.id)">Stop</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else class="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">No sessions found.</div>
+            </div>
+          </div>
+        </section>
+
+        <section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Providers mapping</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Provider name maps to an auth reference used by models.</p>
+            <div class="space-y-2">
+              <div v-for="(entry, i) in providerRows" :key="`provider-${i}`" class="grid gap-2 lg:grid-cols-[200px_1fr_auto]">
+                <input v-model="entry.name" type="text" class="field-input" placeholder="openai" />
+                <input v-model="entry.auth" type="text" class="field-input" placeholder="auth:openai:default" />
+                <button type="button" class="danger-btn" @click="providerRows.splice(i, 1)">Remove</button>
+              </div>
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="providerRows.push({ name: '', auth: '' })">+ Add provider mapping</button>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Set/check/delete credentials by auth reference (e.g. auth:openai:default).</p>
+            <div class="grid gap-3 lg:grid-cols-[1fr_2fr_auto_auto_auto]">
+              <input v-model="credentialName" type="text" class="field-input" placeholder="auth:openai:default" />
+              <input v-model="credentialValue" type="password" class="field-input" placeholder="credential value" />
+              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" @click="setCredential">Set</button>
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="checkCredential">Check</button>
+              <button type="button" class="danger-btn" @click="deleteCredential">Delete</button>
+            </div>
+            <div class="mt-3 flex items-center gap-2">
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="refreshCredentials">Refresh list</button>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ credentials.length }} stored</span>
+            </div>
+            <ul class="mt-3 max-h-40 space-y-1 overflow-auto rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+              <li v-for="name in credentials" :key="name" class="font-mono text-gray-700 dark:text-gray-300">{{ name }}</li>
+              <li v-if="!credentials.length" class="text-gray-500 dark:text-gray-400">No stored credentials.</li>
+            </ul>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">OAuth</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">OpenAI is one-click. Anthropic is two-step (start, then complete with code).</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">Login OpenAI</button>
+              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">Start Anthropic Login</button>
+            </div>
+            <div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <a :href="anthropicUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
+              <div class="flex gap-2">
+                <input v-model="anthropicCode" type="text" class="field-input" placeholder="Anthropic code" />
+                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropic">Complete</button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
-import schema from "../config-schema.json";
-import { type AgentTask, type AppConfig, useSettingsStore } from "../stores/settings";
+import { type AgentEntry, type AgentTask, type AppConfig, useSettingsStore } from "../stores/settings";
 
-type SettingsTab = "general" | "agents" | "sessions" | "providers";
+type Tab = "general" | "agents" | "sessions" | "providers";
 
-interface Session {
+interface SessionRow {
   id: string;
-  agent_id: string;
   name: string;
-  created_at: string;
   updated_at: string;
-  is_processing?: boolean;
 }
 
-const tabs: { key: SettingsTab; label: string }[] = [
-  { key: "general", label: "General" },
-  { key: "agents", label: "Agents & Tasks" },
-  { key: "sessions", label: "Sessions" },
-  { key: "providers", label: "Providers & Auth" },
-];
+interface RuntimeAgent {
+  name: string;
+  model?: string;
+  fallbacks?: string[];
+}
+
+const tabs: Tab[] = ["general", "agents", "sessions", "providers"];
+const activeTab = ref<Tab>("general");
 
 const store = useSettingsStore();
 const { callTool } = useMCP();
-const route = useRoute();
-const router = useRouter();
 
-const sch = schema as {
-  properties: {
-    server: { properties: { port: { minimum: number; maximum: number; default: number } } };
-    browser: { properties: { cdp_port: { minimum: number; maximum: number; default: number } } };
-  };
-};
-const portSchema = sch.properties.server.properties.port;
-const cdpSchema = sch.properties.browser.properties.cdp_port;
+const loading = ref(false);
+const saving = ref(false);
+const errorMessage = ref("");
+const okMessage = ref("");
 
-const form = ref<AppConfig | null>(null);
-const saveSuccess = ref(false);
-const saveError = ref("");
+const draft = ref<AppConfig>(emptyConfig());
+const providerRows = ref<{ name: string; auth: string }[]>([]);
 
-const activeTab = ref<SettingsTab>("general");
+const fallbacksCsv = ref("");
+const concurrencyInput = ref("auto");
 
-const concurrencyMode = ref<"auto" | "fixed">("auto");
-const concurrencyValue = ref<number>(1);
-const providerEntries = ref<{ name: string; auth: string }[]>([]);
-
-const sessionsAgent = ref("");
-const sessions = ref<Session[]>([]);
-const sessionsLoading = ref(false);
-const sessionsError = ref("");
+const sessionAgent = ref("");
+const sessions = ref<SessionRow[]>([]);
+const sessionLoading = ref(false);
 
 const credentials = ref<string[]>([]);
 const credentialName = ref("auth:openai:default");
 const credentialValue = ref("");
-const credentialStatus = ref("");
-const credentialError = ref("");
 
 const oauthBusy = ref(false);
-const oauthStatus = ref("");
-const oauthError = ref("");
-const anthropicLoginUrl = ref("");
+const anthropicUrl = ref("");
 const anthropicCode = ref("");
 
-const selectedTabFromRoute = computed<SettingsTab>(() => {
-  const candidate = route.query.tab;
-  if (candidate === "agents" || candidate === "sessions" || candidate === "providers" || candidate === "general") {
-    return candidate;
-  }
-  return "general";
-});
-
-watch(
-  selectedTabFromRoute,
-  (tab) => {
-    activeTab.value = tab;
-  },
-  { immediate: true },
-);
-
-watch(
-  () => store.config,
-  (cfg) => {
-    if (!cfg) return;
-    form.value = JSON.parse(JSON.stringify(cfg)) as AppConfig;
-
-    const c = cfg.scheduler.concurrency;
-    if (c === "auto" || c === "" || c == null) {
-      concurrencyMode.value = "auto";
-      concurrencyValue.value = 1;
-    } else {
-      concurrencyMode.value = "fixed";
-      concurrencyValue.value = Number(c);
-    }
-
-    providerEntries.value = Object.entries(cfg.models.providers ?? {}).map(([name, p]) => ({
-      name,
-      auth: p.auth,
-    }));
-
-    if (!sessionsAgent.value && cfg.agents.length > 0) {
-      sessionsAgent.value = cfg.agents[0].name;
-    }
-  },
-  { immediate: true },
-);
-
 onMounted(async () => {
-  if (!store.config) {
-    await store.fetchConfig();
-  }
+  await loadConfig();
   await refreshCredentials();
 });
 
-function tabButtonClass(key: SettingsTab): string {
-  return activeTab.value === key
+function emptyConfig(): AppConfig {
+  return {
+    server: { port: 16677, tls: { cert: "", key: "" } },
+    agents: [],
+    models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+    browser: { binary: "", cdp_port: 9222 },
+    scheduler: { concurrency: "auto" },
+  };
+}
+
+function tabLabel(tab: Tab): string {
+  if (tab === "general") return "General";
+  if (tab === "agents") return "Agents & Tasks";
+  if (tab === "sessions") return "Sessions";
+  return "Providers & Auth";
+}
+
+function tabClass(tab: Tab): string {
+  return activeTab.value === tab
     ? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
     : "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
 }
 
-function selectTab(tab: SettingsTab) {
-  router.replace({ query: { ...route.query, tab } });
+async function loadConfig() {
+  loading.value = true;
+  errorMessage.value = "";
+  okMessage.value = "";
+  try {
+    await store.fetchConfig();
+    const cfg = store.config ? JSON.parse(JSON.stringify(store.config)) as AppConfig : emptyConfig();
+    draft.value = cfg;
+    fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
+    concurrencyInput.value = String(cfg.scheduler.concurrency ?? "auto");
+    providerRows.value = Object.entries(cfg.models.providers ?? {}).map(([name, p]) => ({ name, auth: p.auth ?? "" }));
+
+    if (!draft.value.agents.length) {
+      await importAgents();
+    }
+
+    if (!sessionAgent.value && draft.value.agents.length) {
+      sessionAgent.value = draft.value.agents[0].name;
+    }
+  } catch (e) {
+    errorMessage.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
 }
 
 function addAgent() {
-  if (!form.value) return;
-  form.value.agents.push({
+  const agent: AgentEntry = {
     name: "",
     model: "",
     memory: "",
     fallbacks: [],
     channels: [],
     tasks: [],
-  });
+  };
+  draft.value.agents.push(agent);
 }
 
 function removeAgent(index: number) {
-  if (!form.value) return;
-  form.value.agents.splice(index, 1);
+  draft.value.agents.splice(index, 1);
 }
 
 function addTask(agentIndex: number) {
-  if (!form.value) return;
-  const task: AgentTask = {
-    name: "",
-    prompt: "",
-    schedule: "",
-    watch: "",
-    start_at: "",
-    run_once: false,
-    channel: "",
-  };
-  if (!Array.isArray(form.value.agents[agentIndex].tasks)) {
-    form.value.agents[agentIndex].tasks = [];
+  const task: AgentTask = { name: "", prompt: "", schedule: "", watch: "", channel: "", run_once: false };
+  if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
+    draft.value.agents[agentIndex].tasks = [];
   }
-  form.value.agents[agentIndex].tasks.push(task);
+  draft.value.agents[agentIndex].tasks.push(task);
 }
 
 function removeTask(agentIndex: number, taskIndex: number) {
-  if (!form.value) return;
-  form.value.agents[agentIndex].tasks.splice(taskIndex, 1);
+  draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
-async function saveSettings() {
-  if (!form.value) return;
-  saveSuccess.value = false;
-  saveError.value = "";
+function agentFallbacks(agent: AgentEntry): string {
+  return (agent.fallbacks ?? []).join(", ");
+}
 
-  form.value.scheduler.concurrency = concurrencyMode.value === "auto" ? "auto" : concurrencyValue.value;
-  form.value.models.providers = Object.fromEntries(
-    providerEntries.value
-      .filter((entry) => entry.name.trim() !== "")
-      .map((entry) => [entry.name.trim(), { auth: entry.auth }]),
-  );
+function setAgentFallbacks(agent: AgentEntry, event: Event) {
+  const value = (event.target as HTMLInputElement).value;
+  agent.fallbacks = splitCsv(value);
+}
 
+function splitCsv(value: string): string[] {
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+async function importAgents() {
   try {
-    await store.saveConfig(form.value);
-    saveSuccess.value = true;
-    setTimeout(() => (saveSuccess.value = false), 3000);
+    const raw = await callTool("agent_list");
+    const agents = (JSON.parse(raw) as RuntimeAgent[] | null) ?? [];
+    if (!agents.length) return;
+    draft.value.agents = agents.map((agent) => ({
+      name: agent.name ?? "",
+      model: agent.model ?? "",
+      memory: "",
+      fallbacks: agent.fallbacks ?? [],
+      channels: [],
+      tasks: [],
+    }));
+    if (!sessionAgent.value && draft.value.agents.length) {
+      sessionAgent.value = draft.value.agents[0].name;
+    }
+  } catch {
+    // best-effort import
+  }
+}
+
+async function saveAll() {
+  saving.value = true;
+  errorMessage.value = "";
+  okMessage.value = "";
+  try {
+    const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+    normalized.models.defaults.fallbacks = splitCsv(fallbacksCsv.value);
+
+    const conc = concurrencyInput.value.trim();
+    if (conc.toLowerCase() === "auto") {
+      normalized.scheduler.concurrency = "auto";
+    } else {
+      const n = Number.parseInt(conc, 10);
+      normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "auto" : n;
+    }
+
+    normalized.models.providers = Object.fromEntries(
+      providerRows.value
+        .map((row) => ({ name: row.name.trim(), auth: row.auth.trim() }))
+        .filter((row) => row.name !== "")
+        .map((row) => [row.name, { auth: row.auth }]),
+    );
+
+    // Normalize agent/task values.
+    normalized.agents = (normalized.agents ?? []).map((agent) => ({
+      ...agent,
+      name: (agent.name ?? "").trim(),
+      model: (agent.model ?? "").trim(),
+      memory: (agent.memory ?? "").trim(),
+      fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+      tasks: (agent.tasks ?? []).map((task) => ({
+        ...task,
+        name: (task.name ?? "").trim(),
+        prompt: (task.prompt ?? "").trim(),
+        schedule: (task.schedule ?? "").trim(),
+        watch: (task.watch ?? "").trim(),
+        start_at: (task.start_at ?? "").trim(),
+        channel: (task.channel ?? "").trim(),
+        run_once: Boolean(task.run_once),
+      })),
+    }));
+
+    await store.saveConfig(normalized);
+    draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
+    okMessage.value = "Settings saved.";
   } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
   }
 }
 
 async function loadSessions() {
-  if (!sessionsAgent.value) return;
-  sessionsLoading.value = true;
-  sessionsError.value = "";
+  if (!sessionAgent.value) return;
+  sessionLoading.value = true;
+  errorMessage.value = "";
   try {
-    const raw = await callTool("session_list", { agent: sessionsAgent.value });
-    sessions.value = (JSON.parse(raw) as Session[]) ?? [];
+    const raw = await callTool("session_list", { agent: sessionAgent.value });
+    sessions.value = (JSON.parse(raw) as SessionRow[] | null) ?? [];
   } catch (e) {
+    errorMessage.value = e instanceof Error ? e.message : String(e);
     sessions.value = [];
-    sessionsError.value = e instanceof Error ? e.message : String(e);
   } finally {
-    sessionsLoading.value = false;
+    sessionLoading.value = false;
   }
 }
 
 async function createSession() {
-  if (!sessionsAgent.value) return;
-  sessionsLoading.value = true;
-  sessionsError.value = "";
+  if (!sessionAgent.value) return;
   try {
-    await callTool("session_create", { agent: sessionsAgent.value });
+    await callTool("session_create", { agent: sessionAgent.value });
     await loadSessions();
   } catch (e) {
-    sessionsError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    sessionsLoading.value = false;
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function stopSession(sessionID: string) {
-  sessionsError.value = "";
   try {
     await callTool("session_stop", { session_id: sessionID });
     await loadSessions();
   } catch (e) {
-    sessionsError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -527,279 +531,104 @@ function formatDate(value: string): string {
 }
 
 async function refreshCredentials() {
-  credentialError.value = "";
   try {
     const raw = await callTool("auth_list");
-    credentials.value = (JSON.parse(raw) as string[]) ?? [];
-  } catch (e) {
+    credentials.value = (JSON.parse(raw) as string[] | null) ?? [];
+  } catch {
     credentials.value = [];
-    credentialError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function setCredential() {
-  credentialError.value = "";
-  credentialStatus.value = "";
-  if (!credentialName.value.trim()) {
-    credentialError.value = "Credential name is required.";
-    return;
-  }
+  if (!credentialName.value.trim()) return;
+  errorMessage.value = "";
+  okMessage.value = "";
   try {
-    await callTool("auth_set", {
-      name: credentialName.value.trim(),
-      value: credentialValue.value,
-    });
-    credentialStatus.value = `Stored ${credentialName.value.trim()}.`;
+    await callTool("auth_set", { name: credentialName.value.trim(), value: credentialValue.value });
     credentialValue.value = "";
     await refreshCredentials();
+    okMessage.value = `Credential stored: ${credentialName.value.trim()}`;
   } catch (e) {
-    credentialError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function checkCredential() {
-  credentialError.value = "";
-  credentialStatus.value = "";
-  if (!credentialName.value.trim()) {
-    credentialError.value = "Credential name is required.";
-    return;
-  }
+  if (!credentialName.value.trim()) return;
+  errorMessage.value = "";
+  okMessage.value = "";
   try {
     const raw = await callTool("auth_get", { name: credentialName.value.trim() });
-    const parsed = JSON.parse(raw) as { set?: boolean; preview?: string };
-    credentialStatus.value = parsed.set
-      ? `Credential found: ${parsed.preview ?? "(masked)"}`
-      : "Credential not set.";
+    const parsed = JSON.parse(raw) as { preview?: string };
+    okMessage.value = `Credential is set: ${parsed.preview ?? "(masked)"}`;
   } catch (e) {
-    credentialError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function deleteCredential() {
-  credentialError.value = "";
-  credentialStatus.value = "";
-  if (!credentialName.value.trim()) {
-    credentialError.value = "Credential name is required.";
-    return;
-  }
+  if (!credentialName.value.trim()) return;
+  errorMessage.value = "";
+  okMessage.value = "";
   try {
     await callTool("auth_delete", { name: credentialName.value.trim() });
-    credentialStatus.value = `Deleted ${credentialName.value.trim()}.`;
     await refreshCredentials();
+    okMessage.value = `Credential deleted: ${credentialName.value.trim()}`;
   } catch (e) {
-    credentialError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function loginOpenAI() {
   oauthBusy.value = true;
-  oauthStatus.value = "";
-  oauthError.value = "";
+  errorMessage.value = "";
+  okMessage.value = "";
   try {
-    const result = await callTool("auth_login_openai");
-    oauthStatus.value = result || "OpenAI OAuth login complete.";
+    const text = await callTool("auth_login_openai");
+    okMessage.value = text || "OpenAI OAuth completed.";
     await refreshCredentials();
   } catch (e) {
-    oauthError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   } finally {
     oauthBusy.value = false;
   }
 }
 
-async function startAnthropicLogin() {
+async function startAnthropic() {
   oauthBusy.value = true;
-  oauthStatus.value = "";
-  oauthError.value = "";
-  anthropicLoginUrl.value = "";
+  errorMessage.value = "";
+  okMessage.value = "";
+  anthropicUrl.value = "";
   try {
     const raw = await callTool("auth_login_anthropic");
     const parsed = JSON.parse(raw) as { url?: string; instructions?: string };
-    anthropicLoginUrl.value = parsed.url ?? "";
-    oauthStatus.value = parsed.instructions ?? "Anthropic login started.";
+    anthropicUrl.value = parsed.url ?? "";
+    okMessage.value = parsed.instructions ?? "Anthropic OAuth started.";
   } catch (e) {
-    oauthError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   } finally {
     oauthBusy.value = false;
   }
 }
 
-async function completeAnthropicLogin() {
+async function completeAnthropic() {
+  if (!anthropicCode.value.trim()) return;
   oauthBusy.value = true;
-  oauthStatus.value = "";
-  oauthError.value = "";
+  errorMessage.value = "";
+  okMessage.value = "";
   try {
-    const result = await callTool("auth_login_anthropic_complete", {
-      code: anthropicCode.value.trim(),
-    });
-    oauthStatus.value = result || "Anthropic OAuth login complete.";
+    const text = await callTool("auth_login_anthropic_complete", { code: anthropicCode.value.trim() });
     anthropicCode.value = "";
+    okMessage.value = text || "Anthropic OAuth completed.";
     await refreshCredentials();
   } catch (e) {
-    oauthError.value = e instanceof Error ? e.message : String(e);
+    errorMessage.value = e instanceof Error ? e.message : String(e);
   } finally {
     oauthBusy.value = false;
   }
 }
 
-const FieldRow = defineComponent({
-  props: { label: String, hint: String },
-  setup(props, { slots }) {
-    return () =>
-      h("div", { class: "grid grid-cols-[180px_1fr] items-start gap-4" }, [
-        h("div", { class: "pt-2" }, [
-          h("label", { class: "block text-sm font-medium text-gray-700 dark:text-gray-300" }, props.label),
-          props.hint
-            ? h("p", { class: "mt-0.5 text-xs text-gray-400 dark:text-gray-500" }, props.hint)
-            : null,
-        ]),
-        h("div", { class: "min-w-0" }, slots.default?.()),
-      ]);
-  },
-});
-
-const StringList = defineComponent({
-  props: {
-    modelValue: { type: Array as () => string[], required: true },
-    placeholder: String,
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    function update(fn: (arr: string[]) => string[]) {
-      emit("update:modelValue", fn([...props.modelValue]));
-    }
-    function remove(i: number) {
-      update((arr) => {
-        arr.splice(i, 1);
-        return arr;
-      });
-    }
-    function add() {
-      update((arr) => {
-        arr.push("");
-        return arr;
-      });
-    }
-    function setItem(i: number, value: string) {
-      update((arr) => {
-        arr[i] = value;
-        return arr;
-      });
-    }
-
-    return () =>
-      h("div", { class: "space-y-2" }, [
-        ...props.modelValue.map((item, i) =>
-          h("div", { key: i, class: "flex items-center gap-1.5" }, [
-            h("input", {
-              value: item,
-              type: "text",
-              placeholder: props.placeholder ?? "",
-              class: "field-input flex-1",
-              onInput: (e: Event) => setItem(i, (e.target as HTMLInputElement).value),
-            }),
-            h(
-              "button",
-              {
-                type: "button",
-                class: "list-btn text-red-500 hover:text-red-600",
-                title: "Remove",
-                onClick: () => remove(i),
-              },
-              "×",
-            ),
-          ]),
-        ),
-        h(
-          "button",
-          {
-            type: "button",
-            class: "mt-1 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400",
-            onClick: add,
-          },
-          "+ Add entry",
-        ),
-      ]);
-  },
-});
-
-const ProviderList = defineComponent({
-  props: {
-    modelValue: {
-      type: Array as () => { name: string; auth: string }[],
-      required: true,
-    },
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    function update(
-      fn: (arr: { name: string; auth: string }[]) => { name: string; auth: string }[],
-    ) {
-      emit("update:modelValue", fn([...props.modelValue]));
-    }
-    function remove(i: number) {
-      update((arr) => {
-        arr.splice(i, 1);
-        return arr;
-      });
-    }
-    function add() {
-      update((arr) => {
-        arr.push({ name: "", auth: "" });
-        return arr;
-      });
-    }
-    function setField(i: number, field: "name" | "auth", value: string) {
-      update((arr) => {
-        arr[i] = { ...arr[i], [field]: value };
-        return arr;
-      });
-    }
-
-    return () =>
-      h("div", { class: "space-y-2" }, [
-        ...props.modelValue.map((entry, i) =>
-          h("div", { key: i, class: "flex items-center gap-1.5" }, [
-            h("input", {
-              value: entry.name,
-              type: "text",
-              placeholder: "provider",
-              class: "field-input w-36 font-mono text-xs",
-              onInput: (e: Event) => setField(i, "name", (e.target as HTMLInputElement).value),
-            }),
-            h("span", { class: "text-gray-400 dark:text-gray-600" }, "→"),
-            h("input", {
-              value: entry.auth,
-              type: "text",
-              placeholder: "auth:provider:name",
-              class: "field-input flex-1 text-xs",
-              onInput: (e: Event) => setField(i, "auth", (e.target as HTMLInputElement).value),
-            }),
-            h(
-              "button",
-              {
-                type: "button",
-                class: "list-btn text-red-500 hover:text-red-600",
-                title: "Remove",
-                onClick: () => remove(i),
-              },
-              "×",
-            ),
-          ]),
-        ),
-        h(
-          "button",
-          {
-            type: "button",
-            class: "mt-1 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400",
-            onClick: add,
-          },
-          "+ Add provider",
-        ),
-      ]);
-  },
-});
-
-void [FieldRow, StringList, ProviderList, computed];
+void [computed];
 </script>
 
 <style scoped>
@@ -813,11 +642,7 @@ void [FieldRow, StringList, ProviderList, computed];
   @apply mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400;
 }
 
-.list-btn {
-  @apply flex h-7 w-7 items-center justify-center rounded border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800;
-}
-
 .danger-btn {
-  @apply rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
+  @apply rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
 }
 </style>

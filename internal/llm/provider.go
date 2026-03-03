@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/auth"
 )
 
 // Role identifies who authored a message.
@@ -34,12 +37,21 @@ type Request struct {
 	Stream   bool    // whether to stream
 }
 
+// Usage holds token-count metrics from an LLM call.
+type Usage struct {
+	InputTokens      int // prompt tokens
+	OutputTokens     int // completion tokens
+	CacheReadTokens  int // (Anthropic) prompt-cache read tokens
+	CacheWriteTokens int // (Anthropic) prompt-cache creation tokens
+}
+
 // Event is a single streaming event from an LLM provider.
 type Event struct {
-	Type  EventType
-	Text  string // partial text (EventTypeText)
+	Type     EventType
+	Text     string // partial text (EventTypeText)
 	MediaURL string // image data URL (EventTypeMedia)
-	Error error  // (EventTypeError)
+	Error    error  // (EventTypeError)
+	Usage    *Usage // token counts (EventTypeUsage)
 }
 
 // EventType identifies a streaming event.
@@ -49,6 +61,7 @@ const (
 	EventTypeText  EventType = "text"
 	EventTypeMedia EventType = "media"
 	EventTypeError EventType = "error"
+	EventTypeUsage EventType = "usage" // emitted once before EventTypeDone
 	EventTypeDone  EventType = "done"
 )
 
@@ -62,6 +75,7 @@ type Provider interface {
 // Factory creates a Provider from a model string of the form "<provider>/<name>".
 type Factory struct {
 	authResolver func(ref string) (string, error)
+	tokenSetter  func(key, value string) error // optional: persists refreshed tokens
 }
 
 // NewFactory creates a Factory. authResolver resolves "auth:<x>:<y>" references.
@@ -69,25 +83,71 @@ func NewFactory(authResolver func(string) (string, error)) *Factory {
 	return &Factory{authResolver: authResolver}
 }
 
-// oauthTokenJSON is the on-disk shape of a stored OAuth token.
-type oauthTokenJSON struct {
-	AccessToken  string `json:"access"`
-	RefreshToken string `json:"refresh"`
-	ExpiresAt    int64  `json:"expires_at"`
+// WithTokenSetter sets a callback that persists a refreshed OAuth token.
+// key is the bare credential key without the "auth:" prefix (e.g. "anthropic:oauth").
+func (f *Factory) WithTokenSetter(setter func(key, value string) error) *Factory {
+	f.tokenSetter = setter
+	return f
 }
 
 // resolveOAuthToken tries to resolve a stored OAuth token for a provider.
-// Returns (accessToken, true) if a valid non-empty token is found.
+// If the token is expired it is automatically refreshed via the provider's
+// refresh-token flow and the new token is persisted via tokenSetter.
+// Returns (accessToken, true) if a usable token is found.
 func (f *Factory) resolveOAuthToken(providerKey string) (string, bool) {
 	raw, err := f.resolveAuth(providerKey)
 	if err != nil || raw == "" {
 		return "", false
 	}
-	var tok oauthTokenJSON
+
+	trimmed := strings.TrimSpace(raw)
+	if trimmed != "" && !strings.HasPrefix(trimmed, "{") {
+		return trimmed, true
+	}
+
+	var tok auth.OAuthToken
 	if err := json.Unmarshal([]byte(raw), &tok); err != nil || tok.AccessToken == "" {
 		return "", false
 	}
+	// Auto-refresh when the token is within 30 s of expiry.
+	if tok.IsExpired() && tok.RefreshToken != "" {
+		if refreshed := f.refreshOAuthToken(providerKey, &tok); refreshed != nil {
+			return refreshed.AccessToken, true
+		}
+		// Refresh failed; fall through and try the stale token — the API
+		// will return a 401 anyway, which gives a clearer error message.
+	}
 	return tok.AccessToken, true
+}
+
+// refreshOAuthToken performs the provider-specific token refresh, persists the
+// new token via tokenSetter, and returns the refreshed OAuthToken.
+func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *auth.OAuthToken {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var newTok *auth.OAuthToken
+	var err error
+	switch {
+	case strings.Contains(providerKey, "anthropic"):
+		newTok, err = auth.AnthropicRefresh(ctx, tok.RefreshToken)
+	default:
+		return nil
+	}
+	if err != nil {
+		slog.Warn("llm: OAuth token refresh failed", "provider", providerKey, "err", err)
+		return nil
+	}
+	// Persist under the bare key (strip the "auth:" resolver prefix).
+	if f.tokenSetter != nil {
+		key := strings.TrimPrefix(providerKey, "auth:")
+		if data, marshalErr := json.Marshal(newTok); marshalErr == nil {
+			if setErr := f.tokenSetter(key, string(data)); setErr != nil {
+				slog.Warn("llm: failed to persist refreshed token", "provider", providerKey, "err", setErr)
+			}
+		}
+	}
+	return newTok
 }
 
 // ForModel returns a Provider for the given model string.
@@ -122,6 +182,13 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 			return nil, fmt.Errorf("openai auth: %w", err)
 		}
 		return NewOpenAIProvider(apiKey, name, ""), nil
+
+	case "openai-codex":
+		// Explicit Codex provider: require OAuth token from `aviary auth login openai`.
+		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth"); ok {
+			return NewOpenAICodexProvider(accessToken, name), nil
+		}
+		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
 	case "gemini":
 		apiKey, err := f.resolveAuth("auth:gemini:default")

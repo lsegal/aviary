@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -71,6 +72,25 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
+			if strings.TrimSpace(m.MediaURL) != "" {
+				blocks := make([]anthropic.ContentBlockParamUnion, 0, 2)
+				if strings.TrimSpace(m.Content) != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+				}
+				if strings.HasPrefix(m.MediaURL, "data:") {
+					// data:<mediatype>;base64,<data>
+					parts := strings.SplitN(m.MediaURL, ",", 2)
+					if len(parts) == 2 {
+						header := strings.TrimPrefix(parts[0], "data:")
+						mediaType := strings.TrimSuffix(header, ";base64")
+						blocks = append(blocks, anthropic.NewImageBlockBase64(mediaType, parts[1]))
+					}
+				} else {
+					blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: m.MediaURL}))
+				}
+				messages = append(messages, anthropic.NewUserMessage(blocks...))
+				continue
+			}
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleAssistant:
 			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
@@ -96,6 +116,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	ch := make(chan Event, 32)
 	go func() {
 		defer close(ch)
+		var usageData *Usage
 		for stream.Next() {
 			event := stream.Current()
 			switch e := event.AsAny().(type) {
@@ -103,11 +124,22 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
 					ch <- Event{Type: EventTypeText, Text: delta.Text}
 				}
+			case anthropic.MessageDeltaEvent:
+				// Usage totals are reported in the MessageDeltaEvent.
+				usageData = &Usage{
+					InputTokens:      int(e.Usage.InputTokens),
+					OutputTokens:     int(e.Usage.OutputTokens),
+					CacheReadTokens:  int(e.Usage.CacheReadInputTokens),
+					CacheWriteTokens: int(e.Usage.CacheCreationInputTokens),
+				}
 			}
 		}
 		if err := stream.Err(); err != nil {
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("anthropic stream: %w", err)}
 			return
+		}
+		if usageData != nil {
+			ch <- Event{Type: EventTypeUsage, Usage: usageData}
 		}
 		ch <- Event{Type: EventTypeDone}
 	}()

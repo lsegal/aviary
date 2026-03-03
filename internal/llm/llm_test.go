@@ -38,6 +38,7 @@ func TestFactoryForModel(t *testing.T) {
 	}{
 		{model: "anthropic/claude-sonnet-4.5", wantErr: false},
 		{model: "openai/gpt-4o", wantErr: false},
+		{model: "openai-codex/gpt-5.2", wantErr: false},
 		{model: "gemini/gemini-2.0-flash", wantErr: false},
 		{model: "stdio/claude", wantErr: false},
 		{model: "invalid", wantErr: true},
@@ -65,7 +66,7 @@ func TestFactoryForModel(t *testing.T) {
 
 func TestFactoryResolverError(t *testing.T) {
 	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:openai:default" {
+		if ref == "auth:openai:default" || ref == "auth:openai:oauth" {
 			return "", errors.New("boom")
 		}
 		return "key", nil
@@ -77,6 +78,19 @@ func TestFactoryResolverError(t *testing.T) {
 
 	if _, err := f.ForModel("stdio/codex"); err != nil {
 		t.Fatalf("stdio should not require auth resolver, got %v", err)
+	}
+}
+
+func TestFactoryOpenAICodexRequiresOAuth(t *testing.T) {
+	f := NewFactory(func(ref string) (string, error) {
+		if ref == "auth:openai:oauth" {
+			return "", errors.New("missing")
+		}
+		return "key", nil
+	})
+
+	if _, err := f.ForModel("openai-codex/gpt-5.2"); err == nil {
+		t.Fatal("expected missing oauth error for openai-codex")
 	}
 }
 
@@ -92,6 +106,7 @@ func TestIntegration_AllProviderKinds(t *testing.T) {
 	models := []string{
 		"anthropic/claude-sonnet-4.5",
 		"openai/gpt-4o-mini",
+		"openai-codex/gpt-5.2",
 		"gemini/gemini-pro",
 		"stdio/claude",
 	}
