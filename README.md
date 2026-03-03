@@ -1,5 +1,7 @@
 # Aviary: the AI Agent Nest
 
+<p align="center"><img src="web/public/logo.png" alt="Aviary logo" width="200" /></p>
+
 Aviary is an autonomous AI agent orchestrator. Connect your AI models (OpenAI, Claude, Gemini, and more) to your messaging channels (Slack, Signal, Discord), set up scheduled tasks, and let your agents work for you—all managed from a CLI or a web-based control panel.
 
 ## Table of Contents
