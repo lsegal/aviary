@@ -27,8 +27,7 @@ func (m *SessionManager) Create(agentID string) (*domain.Session, error) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	path := store.SessionPath(id)
-	// Create the JSONL file (empty; messages appended later).
+	path := store.SessionPath(agentID, id)
 	if err := store.AppendJSONL(path, sess); err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
@@ -47,13 +46,11 @@ func (m *SessionManager) GetOrCreateNamed(agentID, name string) (*domain.Session
 		name = "main"
 	}
 	id := agentID + "-" + name
-	path := store.SessionPath(id)
-	// Try to read existing session header (first line).
+	path := store.SessionPath(agentID, id)
 	lines, err := store.ReadJSONL[domain.Session](path)
 	if err == nil && len(lines) > 0 {
 		return &lines[0], nil
 	}
-	// Create new.
 	sess := &domain.Session{
 		ID:        id,
 		AgentID:   agentID,
@@ -69,7 +66,7 @@ func (m *SessionManager) GetOrCreateNamed(agentID, name string) (*domain.Session
 
 // List returns all sessions for agentID, sorted by creation time with "main" first.
 func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
-	sessDir := store.SubDir(store.DirSessions)
+	sessDir := filepath.Join(store.AgentDir(agentID), "sessions")
 	entries, err := os.ReadDir(sessDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -94,7 +91,7 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		}
 		sessions = append(sessions, &s)
 	}
-	// Sort: "main" first, then by creation time.
+
 	sort.Slice(sessions, func(i, j int) bool {
 		if sessions[i].Name == "main" {
 			return true
@@ -111,3 +108,4 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 }
+

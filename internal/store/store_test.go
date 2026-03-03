@@ -46,8 +46,7 @@ func TestSubDir(t *testing.T) {
 		name string
 	}{
 		{DirJobs},
-		{DirSessions},
-		{DirMemory},
+		{DirAgents},
 		{DirCerts},
 		{DirAuth},
 	}
@@ -73,9 +72,7 @@ func TestEnsureDirs_Success(t *testing.T) {
 
 	expected := []string{
 		DataDir(),
-		SubDir(DirJobs),
-		SubDir(DirSessions),
-		SubDir(DirMemory),
+		SubDir(DirAgents),
 		SubDir(DirCerts),
 		SubDir(DirAuth),
 	}
@@ -96,7 +93,6 @@ func TestEnsureDirs_Success(t *testing.T) {
 func TestEnsureDirs_Error(t *testing.T) {
 	tmp := t.TempDir()
 	// Place a regular file where DataDir() expects a directory to be created.
-	// DataDir() = tmp/aviary, so we create tmp/aviary as a file.
 	blocker := filepath.Join(tmp, "aviary")
 	if err := os.WriteFile(blocker, []byte("not a dir"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -112,68 +108,91 @@ func TestEnsureDirs_Error(t *testing.T) {
 	}
 }
 
-// TestPathHelpers verifies the three path helper functions.
+// TestPathHelpers verifies path helper functions.
 func TestPathHelpers(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	base := filepath.Join(tmp, "aviary")
 
-	tests := []struct {
-		fn   func(string) string
-		dir  string
-		ext  string
-		id   string
-		want string
-	}{
-		{JobPath, DirJobs, ".json", "job-1", "job-1"},
-		{SessionPath, DirSessions, ".jsonl", "session-abc", "session-abc"},
-		{MemoryPath, DirMemory, ".jsonl", "mem-xyz", "mem-xyz"},
-		{MemoryPath, DirMemory, ".jsonl", "private:default", "private_default"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.id, func(t *testing.T) {
-			got := tc.fn(tc.id)
-			want := filepath.Join(base, tc.dir, tc.want+tc.ext)
-			if got != want {
-				t.Errorf("path helper(%q) = %q; want %q", tc.id, got, want)
-			}
-		})
-	}
+	t.Run("JobPath", func(t *testing.T) {
+		got := JobPath("agent_bot", "job-1")
+		want := filepath.Join(base, DirAgents, "bot", "jobs", "job-1.json")
+		if got != want {
+			t.Errorf("JobPath(%q) = %q; want %q", "job-1", got, want)
+		}
+	})
+
+	t.Run("SessionPath", func(t *testing.T) {
+		got := SessionPath("agent_assistant", "agent_assistant-main")
+		want := filepath.Join(base, DirAgents, "assistant", "sessions", "agent_assistant-main.jsonl")
+		if got != want {
+			t.Errorf("SessionPath = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("SessionPath_plain_name", func(t *testing.T) {
+		// agentID without "agent_" prefix should also work.
+		got := SessionPath("assistant", "agent_assistant-main")
+		want := filepath.Join(base, DirAgents, "assistant", "sessions", "agent_assistant-main.jsonl")
+		if got != want {
+			t.Errorf("SessionPath (plain) = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("MemoryPath_typed", func(t *testing.T) {
+		got := MemoryPath("private:assistant")
+		want := filepath.Join(base, DirAgents, "assistant", "memory", "private.jsonl")
+		if got != want {
+			t.Errorf("MemoryPath(%q) = %q; want %q", "private:assistant", got, want)
+		}
+	})
+
+	t.Run("AgentDir", func(t *testing.T) {
+		got := AgentDir("agent_researcher")
+		want := filepath.Join(base, DirAgents, "researcher")
+		if got != want {
+			t.Errorf("AgentDir = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("AgentRulesPath", func(t *testing.T) {
+		got := AgentRulesPath("agent_researcher")
+		want := filepath.Join(base, DirAgents, "researcher", "rules.md")
+		if got != want {
+			t.Errorf("AgentRulesPath = %q; want %q", got, want)
+		}
+	})
 }
 
 // TestIntegration_StoreSetup exercises DataDir + SubDir + EnsureDirs together,
-// then verifies that path helpers return paths inside the created directories.
+// then verifies that path helpers return paths inside the created data directory.
 func TestIntegration_StoreSetup(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	// EnsureDirs must not fail.
 	if err := EnsureDirs(); err != nil {
 		t.Fatalf("EnsureDirs(): %v", err)
 	}
 
-	// All path helpers should produce paths that are children of DataDir.
 	dataDir := DataDir()
 	for _, p := range []string{
-		JobPath("j1"),
-		SessionPath("s1"),
-		MemoryPath("m1"),
+		JobPath("agent_bot", "j1"),
+		SessionPath("agent_bot", "agent_bot-main"),
+		MemoryPath("private:bot"),
 	} {
 		if !strings.HasPrefix(p, dataDir) {
 			t.Errorf("path %q is not under DataDir %q", p, dataDir)
 		}
 	}
 
-	// The directories referenced by the path helpers must already exist after
-	// EnsureDirs().
+	// Directories created by EnsureDirs must exist.
 	for _, dir := range []string{
-		SubDir(DirJobs),
-		SubDir(DirSessions),
-		SubDir(DirMemory),
+		SubDir(DirAgents),
 	} {
 		if _, err := os.Stat(dir); err != nil {
 			t.Errorf("directory %q should exist after EnsureDirs: %v", dir, err)
 		}
 	}
 }
+

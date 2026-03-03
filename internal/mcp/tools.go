@@ -49,6 +49,7 @@ func stub(name string) (*sdkmcp.CallToolResult, struct{}, error) {
 // Tool handlers are stubs; replaced in later phases by real implementations.
 func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
+	registerRulesTools(s)
 	registerSessionTools(s)
 	registerTaskTools(s)
 	registerJobTools(s)
@@ -288,7 +289,51 @@ func registerAgentTools(s *sdkmcp.Server) {
 	})
 }
 
-// ── Session tools ────────────────────────────────────────────────────────────
+// ── Rules tools ──────────────────────────────────────────────────────────────
+
+type agentRulesSetArgs struct {
+	Agent   string `json:"agent"`
+	Content string `json:"content"`
+}
+
+func registerRulesTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_rules_get",
+		Description: "Read the rules.md file for an agent (returns empty string if none)",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.Name == "" {
+			return nil, struct{}{}, fmt.Errorf("agent name is required")
+		}
+		agentID := fmt.Sprintf("agent_%s", args.Name)
+		path := store.AgentRulesPath(agentID)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return text("") // no rules file yet — not an error
+			}
+			return nil, struct{}{}, fmt.Errorf("reading rules: %w", err)
+		}
+		return text(string(data))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_rules_set",
+		Description: "Write the rules.md file for an agent (creates or replaces)",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentRulesSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.Agent == "" {
+			return nil, struct{}{}, fmt.Errorf("agent name is required")
+		}
+		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		path := store.AgentRulesPath(agentID)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return nil, struct{}{}, fmt.Errorf("creating agent dir: %w", err)
+		}
+		if err := os.WriteFile(path, []byte(args.Content), 0o600); err != nil {
+			return nil, struct{}{}, fmt.Errorf("writing rules: %w", err)
+		}
+		return text(fmt.Sprintf("rules.md written for agent %q", args.Agent))
+	})
+}
 
 type sessionAgentArgs struct {
 	Agent string `json:"agent"`
@@ -374,7 +419,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if args.SessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
-		lines, err := store.ReadJSONL[map[string]any](store.SessionPath(args.SessionID))
+		lines, err := store.ReadJSONL[map[string]any](store.FindSessionPath(args.SessionID))
 		if err != nil {
 			return nil, struct{}{}, err
 		}
@@ -672,7 +717,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 
-		screenshotDir := filepath.Join(store.DataDir(), "screenshots")
+		screenshotDir := store.ScreenshotDir()
 		if err := os.MkdirAll(screenshotDir, 0o700); err != nil {
 			return nil, struct{}{}, fmt.Errorf("creating screenshot directory: %w", err)
 		}
@@ -739,6 +784,11 @@ type memoryAgentArgs struct {
 	Agent string `json:"agent"`
 }
 
+type memoryStoreArgs struct {
+	Agent   string `json:"agent"`
+	Content string `json:"content"`
+}
+
 func registerMemoryTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "memory_search",
@@ -770,6 +820,21 @@ func registerMemoryTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return jsonResult(entries)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "memory_store",
+		Description: "Store a fact or note into an agent's persistent memory. Arguments: agent (string, required) - the agent name; content (string, required) - the text to remember.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryStoreArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if d.Memory == nil {
+			return nil, struct{}{}, fmt.Errorf("memory manager not initialized")
+		}
+		poolID := "private:" + args.Agent
+		if err := d.Memory.Append(poolID, "", "note", args.Content); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("remembered: %s", args.Content))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{

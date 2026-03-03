@@ -121,6 +121,28 @@
               </div>
             </div>
 
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="field-label mb-0">Rules File
+                  <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/rules.md)</span>
+                </label>
+                <div class="flex gap-1.5">
+                  <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).loading" @click="loadRulesFile(agent.name)">
+                    {{ getRulesState(agent.name).loading ? 'Loading…' : 'Load' }}
+                  </button>
+                  <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).saving" @click="saveRulesFile(agent.name)">
+                    {{ getRulesState(agent.name).saving ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+              <textarea :value="getRulesState(agent.name).content" @input="getRulesState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="8" class="field-input font-mono text-xs" :disabled="!agent.name" placeholder="# Agent Rules&#10;- Always respond in English&#10;- Never reveal internal tool names&#10;- ..."></textarea>
+              <p v-if="getRulesState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getRulesState(agent.name).error }}</p>
+              <div>
+                <label class="field-label">Inline override (inline text or explicit file path; leave blank to use the rules file above)</label>
+                <input v-model="agent.rules" type="text" class="field-input" placeholder="Leave blank to use rules.md, or enter a path like ~/rules.md" />
+              </div>
+            </div>
+
             <div class="flex items-center justify-between">
               <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
               <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addTask(i)">+ Add Task</button>
@@ -267,18 +289,87 @@
             </div>
           </div>
         </section>
+
+        <section v-show="activeTab === 'memory'" class="space-y-5 pb-8">
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Agent Memory</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Browse and search what the agent has remembered across sessions.</p>
+
+            <div class="mb-4 grid gap-3 lg:grid-cols-[220px_1fr_auto_auto_auto]">
+              <select v-model="memoryAgent" class="field-input">
+                <option value="">Select agent</option>
+                <option v-for="agent in draft.agents" :key="`mem-${agent.name}`" :value="agent.name">{{ agent.name }}</option>
+              </select>
+              <input v-model="memoryQuery" type="text" class="field-input" placeholder="Search keywords…" @keydown.enter="searchMemory" />
+              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="!memoryAgent || memoryLoading" @click="searchMemory">Search</button>
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-50" :disabled="!memoryAgent || memoryLoading" @click="showAllMemory">Show All</button>
+              <button type="button" class="danger-btn disabled:opacity-50" :disabled="!memoryAgent || memoryClearing" @click="clearMemory">{{ memoryClearing ? 'Clearing…' : 'Clear' }}</button>
+            </div>
+
+            <div v-if="memoryErrorMessage" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{{ memoryErrorMessage }}</div>
+
+            <div v-if="memoryLoading" class="text-xs text-gray-500 dark:text-gray-400">Loading…</div>
+            <template v-else-if="memoryLoaded">
+              <!-- Memories: summary + note entries -->
+              <div class="mb-4">
+                <div v-if="memoryEntries.length === 0 && memoryAgent" class="rounded-lg border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">No memories recorded yet. Memories are created via compaction summaries or explicit memory_store calls.</div>
+                <div v-else-if="memoryEntries.length > 0" class="space-y-2">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ memoryEntries.length }} memor{{ memoryEntries.length === 1 ? 'y' : 'ies' }}</p>
+                  <div
+                    v-for="entry in memoryEntries"
+                    :key="entry.id"
+                    class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                  >
+                    <div class="mb-1 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <span :class="entry.role === 'summary' ? 'text-purple-600 dark:text-purple-400' : 'text-teal-600 dark:text-teal-400'" class="font-semibold capitalize">{{ entry.role }}</span>
+                      <span>{{ entry.tokens }} tokens</span>
+                      <span class="ml-auto font-mono">{{ entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '' }}</span>
+                    </div>
+                    <p class="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200">{{ entry.content }}</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Message History: raw user/assistant turns -->
+              <div v-if="messageHistory.length > 0" class="border-t border-gray-200 pt-4 dark:border-gray-700">
+                <button
+                  type="button"
+                  class="mb-3 flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  @click="showMessageHistory = !showMessageHistory"
+                >
+                  <span>{{ showMessageHistory ? '▾' : '▸' }}</span>
+                  <span>Message history ({{ messageHistory.length }} turn{{ messageHistory.length === 1 ? '' : 's' }})</span>
+                </button>
+                <div v-if="showMessageHistory" class="space-y-2">
+                  <div
+                    v-for="entry in messageHistory"
+                    :key="entry.id"
+                    class="rounded-lg border border-gray-100 p-3 dark:border-gray-800"
+                  >
+                    <div class="mb-1 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <span :class="entry.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'" class="font-semibold capitalize">{{ entry.role }}</span>
+                      <span>{{ entry.tokens }} tokens</span>
+                      <span class="ml-auto font-mono">{{ entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '' }}</span>
+                    </div>
+                    <p class="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200">{{ entry.content }}</p>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
       </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
 import { type AgentEntry, type AgentTask, type AppConfig, useSettingsStore } from "../stores/settings";
 
-type Tab = "general" | "agents" | "sessions" | "providers";
+type Tab = "general" | "agents" | "sessions" | "providers" | "memory";
 
 interface SessionRow {
   id: string;
@@ -292,7 +383,7 @@ interface RuntimeAgent {
   fallbacks?: string[];
 }
 
-const tabs: Tab[] = ["general", "agents", "sessions", "providers"];
+const tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
 const activeTab = ref<Tab>("general");
 
 const store = useSettingsStore();
@@ -321,6 +412,87 @@ const oauthBusy = ref(false);
 const anthropicUrl = ref("");
 const anthropicCode = ref("");
 
+interface MemoryEntry {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+  tokens: number;
+}
+
+const memoryAgent = ref("");
+const memoryQuery = ref("");
+const memoryResults = ref<MemoryEntry[]>([]);
+const memoryLoading = ref(false);
+const memoryClearing = ref(false);
+const memoryErrorMessage = ref("");
+const memoryLoaded = ref(false);
+const showMessageHistory = ref(false);
+
+watch(memoryAgent, (agent) => {
+  memoryResults.value = [];
+  memoryLoaded.value = false;
+  showMessageHistory.value = false;
+  memoryQuery.value = "";
+  if (agent && activeTab.value === "memory") void showAllMemory();
+});
+
+watch(activeTab, (tab) => {
+  if (tab === "memory" && memoryAgent.value && !memoryLoaded.value && !memoryLoading.value) {
+    void showAllMemory();
+  }
+});
+
+const memoryEntries = computed(() =>
+  memoryResults.value.filter((e) => e.role === "summary" || e.role === "note"),
+);
+const messageHistory = computed(() =>
+  memoryResults.value.filter((e) => e.role === "user" || e.role === "assistant"),
+);
+
+interface RulesEditorState {
+  content: string;
+  loading: boolean;
+  saving: boolean;
+  error: string;
+}
+const rulesEditorState = ref<Record<string, RulesEditorState>>({});
+
+function getRulesState(agentName: string): RulesEditorState {
+  if (!rulesEditorState.value[agentName]) {
+    rulesEditorState.value[agentName] = { content: "", loading: false, saving: false, error: "" };
+  }
+  return rulesEditorState.value[agentName];
+}
+
+async function loadRulesFile(agentName: string) {
+  if (!agentName) return;
+  const state = getRulesState(agentName);
+  state.loading = true;
+  state.error = "";
+  try {
+    state.content = await callTool("agent_rules_get", { name: agentName });
+  } catch (e) {
+    state.error = e instanceof Error ? e.message : String(e);
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function saveRulesFile(agentName: string) {
+  if (!agentName) return;
+  const state = getRulesState(agentName);
+  state.saving = true;
+  state.error = "";
+  try {
+    await callTool("agent_rules_set", { agent: agentName, content: state.content });
+  } catch (e) {
+    state.error = e instanceof Error ? e.message : String(e);
+  } finally {
+    state.saving = false;
+  }
+}
+
 onMounted(async () => {
   await loadConfig();
   await refreshCredentials();
@@ -340,6 +512,7 @@ function tabLabel(tab: Tab): string {
   if (tab === "general") return "General";
   if (tab === "agents") return "Agents & Tasks";
   if (tab === "sessions") return "Sessions";
+  if (tab === "memory") return "Memory";
   return "Providers & Auth";
 }
 
@@ -368,6 +541,9 @@ async function loadConfig() {
     if (!sessionAgent.value && draft.value.agents.length) {
       sessionAgent.value = draft.value.agents[0].name;
     }
+    if (!memoryAgent.value && draft.value.agents.length) {
+      memoryAgent.value = draft.value.agents[0].name;
+    }
   } catch (e) {
     errorMessage.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -380,6 +556,7 @@ function addAgent() {
     name: "",
     model: "",
     memory: "",
+    rules: "",
     fallbacks: [],
     channels: [],
     tasks: [],
@@ -432,6 +609,9 @@ async function importAgents() {
     if (!sessionAgent.value && draft.value.agents.length) {
       sessionAgent.value = draft.value.agents[0].name;
     }
+    if (!memoryAgent.value && draft.value.agents.length) {
+      memoryAgent.value = draft.value.agents[0].name;
+    }
   } catch {
     // best-effort import
   }
@@ -466,6 +646,7 @@ async function saveAll() {
       name: (agent.name ?? "").trim(),
       model: (agent.model ?? "").trim(),
       memory: (agent.memory ?? "").trim(),
+      rules: (agent.rules ?? "").trim() || undefined,
       fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
       tasks: (agent.tasks ?? []).map((task) => ({
         ...task,
@@ -628,7 +809,57 @@ async function completeAnthropic() {
   }
 }
 
-void [computed];
+async function searchMemory() {
+  if (!memoryAgent.value) return;
+  memoryLoading.value = true;
+  memoryErrorMessage.value = "";
+  showMessageHistory.value = false;
+  try {
+    const raw = await callTool("memory_search", { agent: memoryAgent.value, query: memoryQuery.value });
+    memoryResults.value = (JSON.parse(raw) as MemoryEntry[] | null) ?? [];
+    memoryLoaded.value = true;
+  } catch (e) {
+    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+    memoryResults.value = [];
+  } finally {
+    memoryLoading.value = false;
+  }
+}
+
+async function showAllMemory() {
+  if (!memoryAgent.value) return;
+  memoryLoading.value = true;
+  memoryErrorMessage.value = "";
+  memoryQuery.value = "";
+  showMessageHistory.value = false;
+  try {
+    const raw = await callTool("memory_show", { agent: memoryAgent.value });
+    memoryResults.value = (JSON.parse(raw) as MemoryEntry[] | null) ?? [];
+    memoryLoaded.value = true;
+  } catch (e) {
+    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+    memoryResults.value = [];
+  } finally {
+    memoryLoading.value = false;
+  }
+}
+
+async function clearMemory() {
+  if (!memoryAgent.value) return;
+  memoryClearing.value = true;
+  memoryErrorMessage.value = "";
+  try {
+    await callTool("memory_clear", { agent: memoryAgent.value });
+    memoryResults.value = [];
+    memoryLoaded.value = true;
+    okMessage.value = `Memory cleared for agent "${memoryAgent.value}".`;
+  } catch (e) {
+    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    memoryClearing.value = false;
+  }
+}
+
 </script>
 
 <style scoped>

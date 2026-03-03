@@ -79,14 +79,18 @@ func TestWriteJSON(t *testing.T) {
 	})
 
 	t.Run("dir_not_exist", func(t *testing.T) {
-		// Provide a path whose parent directory does not exist → CreateTemp fails.
+		// Parent directory does not exist; WriteJSON should auto-create it.
 		p := filepath.Join(tmp, "nosuchdir", "out.json")
 		err := WriteJSON(p, testItem{Name: "x"})
-		if err == nil {
-			t.Fatal("expected error when parent dir missing, got nil")
+		if err != nil {
+			t.Fatalf("unexpected error when parent dir missing: %v", err)
 		}
-		if !strings.Contains(err.Error(), "creating temp file") {
-			t.Errorf("expected 'creating temp file' in error, got: %v", err)
+		got, err := ReadJSON[testItem](p)
+		if err != nil {
+			t.Fatalf("reading back written file: %v", err)
+		}
+		if got.Name != "x" {
+			t.Errorf("expected Name=x, got %q", got.Name)
 		}
 	})
 

@@ -41,6 +41,12 @@ func DiscoverSkills(dir string) ([]Skill, error) {
 	return skills, err
 }
 
+// sanitizeDelimitedContent escapes "</" as "&lt;/" so that embedded content
+// cannot close its surrounding XML-style delimiter tag and inject prompt text.
+func sanitizeDelimitedContent(s string) string {
+	return strings.ReplaceAll(s, "</", "&lt;/")
+}
+
 // BuildSystemPrompt prepends all skill contents to a base system prompt.
 func BuildSystemPrompt(base string, skills []Skill) string {
 	if len(skills) == 0 {
@@ -48,7 +54,7 @@ func BuildSystemPrompt(base string, skills []Skill) string {
 	}
 	var sb strings.Builder
 	for _, s := range skills {
-		sb.WriteString(fmt.Sprintf("## Skill: %s\n\n%s\n\n", s.Name, s.Content))
+		sb.WriteString(fmt.Sprintf("<skill name=%q>\n%s\n</skill>\n\n", s.Name, sanitizeDelimitedContent(s.Content)))
 	}
 	sb.WriteString(base)
 	return sb.String()

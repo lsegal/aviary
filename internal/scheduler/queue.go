@@ -53,7 +53,7 @@ func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	if err := store.WriteJSON(store.JobPath(job.ID), job); err != nil {
+	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}
 	slog.Info("job enqueued", "id", job.ID, "task", taskID)
@@ -66,9 +66,13 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	jobs, err := store.ListJSON[domain.Job](store.SubDir(store.DirJobs), ".json")
-	if err != nil {
-		return nil, fmt.Errorf("listing jobs: %w", err)
+	var jobs []domain.Job
+	for _, dir := range store.AllJobDirs() {
+		batch, err := store.ListJSON[domain.Job](dir, ".json")
+		if err != nil {
+			return nil, fmt.Errorf("listing jobs: %w", err)
+		}
+		jobs = append(jobs, batch...)
 	}
 
 	now := time.Now()
@@ -90,7 +94,7 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 		j.Attempts++
 		j.LockedAt = &now
 		j.UpdatedAt = now
-		if err := store.WriteJSON(store.JobPath(j.ID), j); err != nil {
+		if err := store.WriteJSON(store.JobPath(j.AgentID, j.ID), j); err != nil {
 			return nil, fmt.Errorf("claiming job %s: %w", j.ID, err)
 		}
 		return j, nil
@@ -108,7 +112,11 @@ func (q *JobQueue) Fail(id string, cause error) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job, err := store.ReadJSON[domain.Job](store.JobPath(id))
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
 	if err != nil {
 		return fmt.Errorf("reading job %s: %w", id, err)
 	}
@@ -132,14 +140,18 @@ func (q *JobQueue) Fail(id string, cause error) error {
 		slog.Info("job will retry", "id", id, "at", next, "err", cause)
 	}
 
-	return store.WriteJSON(store.JobPath(id), &job)
+	return store.WriteJSON(path, &job)
 }
 
 // List returns all jobs, optionally filtered by task ID.
 func (q *JobQueue) List(taskID string) ([]domain.Job, error) {
-	jobs, err := store.ListJSON[domain.Job](store.SubDir(store.DirJobs), ".json")
-	if err != nil {
-		return nil, err
+	var jobs []domain.Job
+	for _, dir := range store.AllJobDirs() {
+		batch, err := store.ListJSON[domain.Job](dir, ".json")
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, batch...)
 	}
 	if taskID == "" {
 		return jobs, nil
@@ -159,10 +171,14 @@ func (q *JobQueue) RecoverStuck() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	jobs, err := store.ListJSON[domain.Job](store.SubDir(store.DirJobs), ".json")
-	if err != nil {
-		slog.Warn("recover stuck: listing jobs failed", "err", err)
-		return
+	var jobs []domain.Job
+	for _, dir := range store.AllJobDirs() {
+		batch, err := store.ListJSON[domain.Job](dir, ".json")
+		if err != nil {
+			slog.Warn("recover stuck: listing jobs failed", "err", err)
+			continue
+		}
+		jobs = append(jobs, batch...)
 	}
 	now := time.Now()
 	for i := range jobs {
@@ -171,7 +187,7 @@ func (q *JobQueue) RecoverStuck() {
 			j.Status = domain.JobStatusPending
 			j.LockedAt = nil
 			j.UpdatedAt = now
-			if err := store.WriteJSON(store.JobPath(j.ID), j); err != nil {
+			if err := store.WriteJSON(store.JobPath(j.AgentID, j.ID), j); err != nil {
 				slog.Warn("recover stuck: failed to reset job", "id", j.ID, "err", err)
 			} else {
 				slog.Info("recovered stuck job", "id", j.ID)
@@ -184,12 +200,16 @@ func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job, err := store.ReadJSON[domain.Job](store.JobPath(id))
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
 	if err != nil {
 		return fmt.Errorf("reading job %s: %w", id, err)
 	}
 	job.Status = status
 	job.LockedAt = nil
 	job.UpdatedAt = time.Now()
-	return store.WriteJSON(store.JobPath(id), &job)
+	return store.WriteJSON(path, &job)
 }

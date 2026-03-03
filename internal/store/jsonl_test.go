@@ -41,14 +41,18 @@ func TestAppendJSONL(t *testing.T) {
 	})
 
 	t.Run("open_error", func(t *testing.T) {
-		// Path whose parent does not exist → OpenFile fails.
+		// Parent directory does not exist; AppendJSONL should auto-create it.
 		p := filepath.Join(tmp, "nodir", "append.jsonl")
 		err := AppendJSONL(p, jsonlItem{ID: "x"})
-		if err == nil {
-			t.Fatal("expected error when parent dir missing, got nil")
+		if err != nil {
+			t.Fatalf("unexpected error when parent dir missing: %v", err)
 		}
-		if !strings.Contains(err.Error(), "opening") {
-			t.Errorf("expected 'opening' in error, got: %v", err)
+		items, err := ReadJSONL[jsonlItem](p)
+		if err != nil {
+			t.Fatalf("reading back appended file: %v", err)
+		}
+		if len(items) != 1 || items[0].ID != "x" {
+			t.Errorf("expected [{x 0}], got %v", items)
 		}
 	})
 
@@ -297,30 +301,25 @@ func TestRewriteJSONL_EncodeError(t *testing.T) {
 	}
 }
 
-// TestRewriteJSONL_FallbackPath exercises the fallback code path in
-// RewriteJSONL by giving it a path whose "sibling directory" (path/..)
-// does not exist, forcing os.CreateTemp to fail and the fallback to run.
-func TestRewriteJSONL_FallbackPath(t *testing.T) {
+// TestRewriteJSONL_DeepPath verifies that RewriteJSONL auto-creates deeply
+// nested parent directories when they do not exist.
+func TestRewriteJSONL_DeepPath(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	// RewriteJSONL calls os.CreateTemp(path+"/..", ...).
-	// If path is something like tmp/a/b.jsonl, the CreateTemp dir is tmp/a/..
-	// = tmp — which exists.
-	// To force CreateTemp to fail we need path's grandparent to not exist.
-	// Use a path like tmp/noexist/sub/file.jsonl so path/.. = tmp/noexist/sub
-	// which does not exist.
+	// Use a path with multiple missing parents; RewriteJSONL should create them.
 	p := filepath.Join(tmp, "noexist", "sub", "file.jsonl")
 
-	// This should fall back to rewriteDirect, which will also fail because
-	// the parent (tmp/noexist/sub) doesn't exist.
 	err := RewriteJSONL(p, []jsonlItem{{ID: "fb", Score: 1}})
-	if err == nil {
-		t.Fatal("expected error from RewriteJSONL fallback, got nil")
+	if err != nil {
+		t.Fatalf("unexpected error from RewriteJSONL with deep path: %v", err)
 	}
-	// The error comes from rewriteDirect: "creating <path>: ..."
-	if !strings.Contains(err.Error(), "creating") {
-		t.Errorf("expected 'creating' in error from fallback, got: %v", err)
+	items, err := ReadJSONL[jsonlItem](p)
+	if err != nil {
+		t.Fatalf("reading back rewritten file: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "fb" {
+		t.Errorf("expected [{fb 1}], got %v", items)
 	}
 }
 

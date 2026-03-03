@@ -38,8 +38,13 @@ type AgentConfig struct {
 	Memory       string          `yaml:"memory,omitempty"        json:"memory,omitempty"`
 	MemoryTokens int             `yaml:"memory_tokens,omitempty" json:"memory_tokens,omitempty"`
 	CompactKeep  int             `yaml:"compact_keep,omitempty"  json:"compact_keep,omitempty"`
-	Channels     []ChannelConfig `yaml:"channels"                json:"channels"`
-	Tasks        []TaskConfig    `yaml:"tasks"                   json:"tasks"`
+	// Rules is an optional set of operating rules injected at the top of every
+	// system prompt for this agent.  It may be inline markdown text or a path
+	// to a file (e.g. "./RULES.md"); file paths are resolved relative to the
+	// process working directory at prompt time.
+	Rules    string          `yaml:"rules,omitempty"         json:"rules,omitempty"`
+	Channels []ChannelConfig `yaml:"channels"                json:"channels"`
+	Tasks    []TaskConfig    `yaml:"tasks"                   json:"tasks"`
 }
 
 // ChannelConfig describes a communication channel for an agent.

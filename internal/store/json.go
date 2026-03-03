@@ -24,6 +24,7 @@ func ReadJSON[T any](path string) (T, error) {
 
 // WriteJSON marshals v and atomically writes it to path.
 // The write is atomic: data is written to a temp file then renamed.
+// Parent directories are created if they do not exist.
 func WriteJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -32,6 +33,9 @@ func WriteJSON(path string, v any) error {
 	data = append(data, '\n')
 
 	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating dir for %s: %w", path, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)

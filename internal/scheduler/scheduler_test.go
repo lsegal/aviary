@@ -100,7 +100,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	if err := q.Fail(first.ID, errors.New("boom1")); err != nil {
 		t.Fatalf("fail first: %v", err)
 	}
-	afterFirst, err := store.ReadJSON[domain.Job](store.JobPath(job.ID))
+	afterFirst, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
 	if err != nil {
 		t.Fatalf("read after first fail: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 
 	next := time.Now().Add(-time.Second)
 	afterFirst.NextRetryAt = &next
-	if err := store.WriteJSON(store.JobPath(job.ID), &afterFirst); err != nil {
+	if err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &afterFirst); err != nil {
 		t.Fatalf("forcing retry due time: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 		t.Fatalf("fail second: %v", err)
 	}
 
-	afterSecond, err := store.ReadJSON[domain.Job](store.JobPath(job.ID))
+	afterSecond, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
 	if err != nil {
 		t.Fatalf("read after second fail: %v", err)
 	}
@@ -152,13 +152,13 @@ func TestJobQueue_RecoverStuck(t *testing.T) {
 	}
 	lockedAt := time.Now().Add(-lockTimeout - time.Second)
 	job.LockedAt = &lockedAt
-	if err := store.WriteJSON(store.JobPath(job.ID), &job); err != nil {
+	if err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job); err != nil {
 		t.Fatalf("write stuck job: %v", err)
 	}
 
 	q.RecoverStuck()
 
-	recovered, err := store.ReadJSON[domain.Job](store.JobPath(job.ID))
+	recovered, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
 	if err != nil {
 		t.Fatalf("read recovered job: %v", err)
 	}

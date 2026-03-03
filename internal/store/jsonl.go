@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // AppendJSONL marshals v as a single JSON line and appends it to path.
-// The file is created if it does not exist.
+// The file (and any parent directories) are created if they do not exist.
 func AppendJSONL(path string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -16,6 +17,9 @@ func AppendJSONL(path string, v any) error {
 	}
 	data = append(data, '\n')
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating dir for %s: %w", path, err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", path, err)
@@ -66,8 +70,12 @@ func ReadJSONL[T any](path string) ([]T, error) {
 
 // RewriteJSONL overwrites path with the given entries (used by compactor).
 func RewriteJSONL[T any](path string, entries []T) error {
+	// Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating dir for %s: %w", path, err)
+	}
 	// Write to temp file in same directory, then rename for atomicity.
-	tmp, err := os.CreateTemp(fmt.Sprintf("%s/..", path), ".tmp-rewrite-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-rewrite-*")
 	if err != nil {
 		// Fallback: write directly if temp dir creation fails.
 		return rewriteDirect(path, entries)

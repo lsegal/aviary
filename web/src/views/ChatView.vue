@@ -39,17 +39,52 @@
 						Select an agent to start chatting.
 					</div>
 					<template v-else>
-						<div v-for="(msg, i) in messages" :key="i" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
-							<div
-								:class="msg.role === 'user'
-									? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-sm text-white max-w-lg'
-									: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-sm text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-								<img v-if="msg.mediaURL" :src="msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
-								<span v-if="msg.text && msg.role === 'user'" class="whitespace-pre-wrap">{{ msg.text }}</span>
-								<div v-if="msg.text && msg.role === 'assistant'" class="prose prose-sm dark:prose-invert max-w-none"
-									v-html="renderMarkdown(msg.text)" />
+						<template v-for="(msg, i) in messages" :key="i">
+							<!-- Tool-use indicator -->
+							<div v-if="msg.role === 'tool'" class="text-left my-0.5">
+								<details class="group inline-block">
+									<summary class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0" aria-hidden="true">
+											<path fill-rule="evenodd" d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z" clip-rule="evenodd" />
+										</svg>
+										<span>{{ toolSummary(msg) }}</span>
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
+											<path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+										</svg>
+									</summary>
+									<div class="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
+										<template v-if="msg.toolData">
+											<div v-if="msg.toolData.args && Object.keys(msg.toolData.args).length > 0">
+												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Arguments</p>
+												<pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(msg.toolData.args) }}</pre>
+											</div>
+											<div v-if="msg.toolData.result" :class="msg.toolData.args && Object.keys(msg.toolData.args).length ? 'mt-2' : ''">
+												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Result</p>
+												<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ msg.toolData.result }}</pre>
+											</div>
+											<div v-if="msg.toolData.error" :class="msg.toolData.args && Object.keys(msg.toolData.args).length ? 'mt-2' : ''">
+												<p class="mb-1 font-semibold uppercase tracking-wide text-red-400">Error</p>
+												<pre class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ msg.toolData.error }}</pre>
+											</div>
+											<p v-if="!msg.toolData.result && !msg.toolData.error" class="italic text-gray-400 dark:text-gray-500">Running…</p>
+										</template>
+										<p v-else class="text-gray-500 dark:text-gray-400">{{ msg.text }}</p>
+									</div>
+								</details>
 							</div>
-						</div>
+							<!-- Regular user / assistant messages -->
+							<div v-else :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+								<div
+									:class="msg.role === 'user'
+										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-sm text-white max-w-lg'
+										: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-sm text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
+									<img v-if="msg.mediaURL" :src="msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									<span v-if="msg.text && msg.role === 'user'" class="whitespace-pre-wrap">{{ msg.text }}</span>
+									<div v-if="msg.text && msg.role === 'assistant'" class="prose prose-sm dark:prose-invert max-w-none"
+										v-html="renderMarkdown(msg.text)" />
+								</div>
+							</div>
+						</template>
 						<div v-if="currentSessionProcessing" class="text-left">
 							<span
 								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-sm text-gray-400 dark:bg-gray-800">…</span>
@@ -125,10 +160,19 @@ interface Session {
 	created_at: string;
 	is_processing?: boolean;
 }
+
+interface ToolData {
+	name: string;
+	args?: Record<string, unknown>;
+	result?: string;
+	error?: string;
+}
+
 interface Message {
-	role: "user" | "assistant";
+	role: "user" | "assistant" | "tool";
 	text: string;
 	mediaURL?: string;
+	toolData?: ToolData;
 }
 
 interface PersistedMessage {
@@ -147,6 +191,34 @@ const { streamAgent } = useStream();
 function renderMarkdown(text: string): string {
 	return marked.parse(text, { async: false }) as string;
 }
+
+/** Parse a "[tool] ..." content string into a Message. */
+function parseToolMessage(content: string): Message {
+	const raw = content.slice("[tool] ".length);
+	try {
+		const d = JSON.parse(raw) as ToolData;
+		if (d.name) return { role: "tool", text: d.name, toolData: d };
+	} catch { /* legacy: just a bare name */ }
+	return { role: "tool", text: raw };
+}
+
+/** Condensed one-line summary shown in the pill. */
+function toolSummary(msg: Message): string {
+	const d = msg.toolData;
+	if (!d) return msg.text;
+	const entries = Object.entries(d.args ?? {});
+	if (entries.length === 0) return d.name;
+	const parts = entries.slice(0, 2).map(([k, v]) => {
+		const s = typeof v === "string" ? v : JSON.stringify(v);
+		return `${k}=${s.length > 32 ? s.slice(0, 32) + "…" : s}`;
+	});
+	if (entries.length > 2) parts.push("…");
+	return `${d.name}(${parts.join(", ")})`;
+}
+
+function formatJSON(v: unknown): string {
+	return JSON.stringify(v, null, 2);
+}
 const { callTool } = useMCP();
 
 const selectedAgent = ref("");
@@ -157,6 +229,7 @@ const input = ref("");
 const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
+const isStreaming = ref(false);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -213,7 +286,9 @@ function connectSessionWS() {
 					...sessionProcessing.value,
 					[data.session_id]: data.is_processing === true,
 				};
-				if (data.session_id === selectedSessionId.value && data.is_processing === false) {
+				// Don't reload messages while streaming — send() manages its own
+				// state and will reload on completion via refreshSessionProcessing.
+				if (data.session_id === selectedSessionId.value && data.is_processing === false && !isStreaming.value) {
 					await loadSessionMessages();
 				}
 				return;
@@ -221,7 +296,11 @@ function connectSessionWS() {
 			if (data.type !== "session_message") return;
 			if (!selectedSessionId.value) return;
 			if (data.session_id !== selectedSessionId.value) return;
-			await loadSessionMessages();
+			// Skip WS-triggered reloads while streaming — ongoing chunks would be
+			// lost if messages.value is replaced mid-stream.
+			if (!isStreaming.value) {
+				await loadSessionMessages();
+			}
 		} catch {
 			// ignore malformed frames
 		}
@@ -292,7 +371,12 @@ async function loadSessionMessages() {
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
 			.filter((m): m is PersistedMessage & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
-			.map((m) => ({ role: m.role, text: m.content, mediaURL: m.media_url }));
+			.map((m) => {
+				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
+					return parseToolMessage(m.content);
+				}
+				return { role: m.role, text: m.content, mediaURL: m.media_url };
+			});
 		await scrollBottom(true);
 	} catch (e) {
 		console.error("Failed to load session messages", e);
@@ -368,6 +452,8 @@ async function send() {
 	messages.value.push({ role: "user", text, mediaURL: mediaURL || undefined });
 	await scrollBottom(true);
 
+	isStreaming.value = true;
+	let streamError = false;
 	try {
 		let assistantIndex = -1;
 		await streamAgent(
@@ -393,16 +479,26 @@ async function send() {
 		const msg = e instanceof Error ? e.message : String(e);
 		const normalized = msg.toLowerCase();
 		if (normalized.includes("stopped") || normalized.includes("canceled") || normalized.includes("cancelled")) {
+			isStreaming.value = false;
+			await loadSessionMessages();
+			await refreshSessionProcessing();
 			await scrollBottom();
 			return;
 		}
+		streamError = true;
 		messages.value.push({
 			role: "assistant",
 			text: `Error: ${msg}`,
 		});
 	} finally {
-		await refreshSessionProcessing();
+		isStreaming.value = false;
 	}
+	// Reload canonical messages from server after streaming completes.
+	// Skip if we showed an inline error so the error bubble stays visible.
+	if (!streamError) {
+		await loadSessionMessages();
+	}
+	await refreshSessionProcessing();
 	await scrollBottom();
 }
 

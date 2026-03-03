@@ -422,7 +422,7 @@ func TestDiscoverSkillsAndBuildPrompt(t *testing.T) {
 	}
 
 	prompt := BuildSystemPrompt("Base prompt", skills)
-	if !strings.Contains(prompt, "Skill: planner") || !strings.Contains(prompt, "Base prompt") {
+	if !strings.Contains(prompt, `<skill name="planner">`) || !strings.Contains(prompt, "Base prompt") {
 		t.Fatalf("unexpected prompt: %s", prompt)
 	}
 }

@@ -16,6 +16,7 @@ export interface AgentEntry {
 	name: string;
 	model: string;
 	memory?: string;
+	rules?: string;
 	fallbacks: string[];
 	channels: unknown[];
 	tasks: AgentTask[];
