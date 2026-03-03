@@ -243,11 +243,14 @@ async function loadSessions() {
 		const main = sessions.value.find((s) => s.name === "main");
 		selectedSessionId.value = main?.id ?? sessions.value[0]?.id ?? "";
 		await loadSessionMessages();
-	} catch {
-		sessions.value = [];
-		selectedSessionId.value = "";
-		messages.value = [];
-		sessionProcessing.value = {};
+	} catch (e) {
+		console.error("Failed to load sessions", e);
+		// Don't wipe existing session state on transient errors.
+		if (sessions.value.length === 0) {
+			selectedSessionId.value = "";
+			messages.value = [];
+			sessionProcessing.value = {};
+		}
 	} finally {
 		sessionsLoading.value = false;
 	}
@@ -291,9 +294,12 @@ async function loadSessionMessages() {
 			.filter((m): m is PersistedMessage & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
 			.map((m) => ({ role: m.role, text: m.content, mediaURL: m.media_url }));
 		await scrollBottom(true);
-	} catch {
-		messages.value = [];
-		updateScrollState();
+	} catch (e) {
+		console.error("Failed to load session messages", e);
+		// Don't wipe existing messages on transient errors.
+		if (messages.value.length === 0) {
+			updateScrollState();
+		}
 	}
 }
 

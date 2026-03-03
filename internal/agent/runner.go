@@ -258,6 +258,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 			}
 
 			emit(StreamEvent{Type: StreamEventText, Text: fmt.Sprintf("[tool] %s", call.Tool)})
+			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("[tool] %s", call.Tool), "")
 			usageRec.ToolCalls++
 			resultText, callErr := toolClient.CallToolText(promptCtx, call.Tool, call.Arguments)
 			if callErr != nil {

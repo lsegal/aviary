@@ -1,10 +1,14 @@
 package llm
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"github.com/openai/openai-go"
@@ -37,36 +41,44 @@ func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
 	}
 }
 
-// OpenAICodexProvider wraps OpenAIProvider for ChatGPT Pro/Plus OAuth tokens.
-// It intentionally does NOT implement Pinger so that PingModel falls back to
-// a minimal 1-token chat completion, avoiding GET /v1/models which requires
-// api.model.read scope that ChatGPT OAuth tokens do not have.
+// openAICodexBaseURL is the ChatGPT backend endpoint for OAuth-authenticated Codex requests.
+// ChatGPT OAuth tokens (ChatGPT Plus/Pro subscriptions) must be sent here — not to
+// api.openai.com which always bills from platform API credits.
+// The path uses the OpenAI Responses API format (not chat completions).
+const openAICodexBaseURL = "https://chatgpt.com/backend-api/codex/responses"
+
+// OpenAICodexProvider makes raw HTTP requests to the ChatGPT backend for
+// ChatGPT Pro/Plus OAuth tokens. It bypasses the openai-go SDK so that only
+// the exact headers the ChatGPT backend expects are sent:
+//
+//	Authorization: Bearer <access_token>
+//	ChatGPT-Account-ID: <account_id from JWT>
+//	Content-Type: application/json
+//
+// It intentionally does NOT implement Pinger so PingModel falls back to a
+// 1-token stream, avoiding GET /v1/models which requires api.model.read scope.
 type OpenAICodexProvider struct {
-	inner *OpenAIProvider
+	accessToken string
+	accountID   string
+	model       string
+	httpClient  *http.Client
 }
 
 // NewOpenAICodexProvider creates a provider using an OAuth Bearer token for
 // ChatGPT Pro/Plus accounts. The access token is obtained via auth_login_openai.
 func NewOpenAICodexProvider(accessToken, model string) *OpenAICodexProvider {
-	// The token audience is https://api.openai.com/v1, so requests must go to
-	// the default api.openai.com endpoint (empty baseURL = SDK default).
-	inner := NewOpenAIProvider(accessToken, model, "")
-	// api.openai.com/v1 requires a ChatGPT-Account-ID header when using OAuth tokens —
-	// this is derived from the JWT access token's https://api.openai.com/auth.chatgpt_account_id claim.
-	if accountID := extractChatGPTAccountID(accessToken); accountID != "" {
-		inner.client = openai.NewClient(
-			option.WithAPIKey(accessToken),
-			option.WithHTTPClient(newDebugClient(nil)),
-			option.WithHeader("ChatGPT-Account-ID", accountID),
-		)
+	return &OpenAICodexProvider{
+		accessToken: accessToken,
+		accountID:   extractChatGPTAccountID(accessToken),
+		model:       model,
+		httpClient:  newDebugClient(nil),
 	}
-	return &OpenAICodexProvider{inner: inner}
 }
 
 // extractChatGPTAccountID parses the JWT payload of an OpenAI OAuth access token
 // and returns the chatgpt_account_id claim. This must be sent as ChatGPT-Account-ID
-// header to api.openai.com when using OAuth tokens so requests are associated with
-// the user's ChatGPT subscription.
+// to the chatgpt.com/backend-api endpoint so requests are billed against the
+// ChatGPT subscription rather than platform API credits.
 func extractChatGPTAccountID(jwtToken string) string {
 	parts := strings.Split(jwtToken, ".")
 	if len(parts) < 2 {
@@ -87,9 +99,156 @@ func extractChatGPTAccountID(jwtToken string) string {
 	return claims.Auth.ChatGPTAccountID
 }
 
-// Stream forwards to the underlying OpenAI provider.
+// Stream makes a raw streaming POST to the ChatGPT backend using the Responses API
+// and returns events. The Responses API is what chatgpt.com/backend-api requires —
+// not the Chat Completions format.
 func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
-	return p.inner.Stream(ctx, req)
+	// Build input array in Responses API format.
+	// User messages use plain string content; assistant messages use the output_text structure.
+	type inputTextContent struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	type inputMessage struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"`
+	}
+	var input []inputMessage
+	for _, m := range req.Messages {
+		switch m.Role {
+		case RoleUser:
+			input = append(input, inputMessage{Role: "user", Content: m.Content})
+		case RoleAssistant:
+			input = append(input, inputMessage{
+				Role:    "assistant",
+				Content: []inputTextContent{{Type: "output_text", Text: m.Content}},
+			})
+		case RoleSystem:
+			// System messages within the conversation are folded into user turns.
+			input = append(input, inputMessage{Role: "user", Content: m.Content})
+		}
+	}
+
+	reqBody := map[string]any{
+		"model":        p.model,
+		"input":        input,
+		"stream":       true,
+		"instructions": req.System, // required by the backend, even if empty
+		"store":        false,       // required by chatgpt.com/backend-api
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("openai codex: marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, openAICodexBaseURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("openai codex: building request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.accessToken)
+	if p.accountID != "" {
+		httpReq.Header.Set("ChatGPT-Account-ID", p.accountID)
+	}
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("openai codex: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("openai stream: POST %q: %s: %s", openAICodexBaseURL, resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	ch := make(chan Event, 32)
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
+
+		// Responses API SSE events:
+		//   event: response.output_text.delta  data: {"type":"response.output_text.delta","delta":"text"}
+		//   event: response.completed          data: {"type":"response.completed","response":{...,"usage":{...}}}
+		//   event: response.failed             data: {"type":"response.failed","response":{"error":{...}}}
+		type responsesEvent struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+			// For response.completed and response.failed
+			Response *struct {
+				Error *struct {
+					Message string `json:"message"`
+					Code    string `json:"code"`
+				} `json:"error"`
+				Usage *struct {
+					InputTokens  int `json:"input_tokens"`
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
+			} `json:"response"`
+			// For response.output_item.done (full item at end)
+			Item *struct {
+				Type    string `json:"type"`
+				Role    string `json:"role"`
+				Content []struct {
+					Type string `json:"text"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"item"`
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		var lastUsage *Usage
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "" || data == "[DONE]" {
+				continue
+			}
+			var ev responsesEvent
+			if err := json.Unmarshal([]byte(data), &ev); err != nil {
+				continue
+			}
+			switch ev.Type {
+			case "response.output_text.delta":
+				if ev.Delta != "" {
+					ch <- Event{Type: EventTypeText, Text: ev.Delta}
+				}
+			case "response.completed":
+				if ev.Response != nil && ev.Response.Usage != nil {
+					u := ev.Response.Usage
+					if u.InputTokens > 0 || u.OutputTokens > 0 {
+						lastUsage = &Usage{
+							InputTokens:  u.InputTokens,
+							OutputTokens: u.OutputTokens,
+						}
+					}
+				}
+			case "response.failed":
+				msg := "unknown error"
+				if ev.Response != nil && ev.Response.Error != nil {
+					msg = ev.Response.Error.Message
+					if ev.Response.Error.Code != "" {
+						msg = ev.Response.Error.Code + ": " + msg
+					}
+				}
+				ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex: response.failed: %s", msg)}
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex stream: %w", err)}
+			return
+		}
+		if lastUsage != nil {
+			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
+		}
+		ch <- Event{Type: EventTypeDone}
+	}()
+
+	return ch, nil
 }
 
 // Ping validates OpenAI credentials by listing models (GET /v1/models).
