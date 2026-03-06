@@ -6,6 +6,7 @@ import "time"
 // AgentState represents the runtime state of an agent.
 type AgentState string
 
+// AgentState values.
 const (
 	AgentStateIdle    AgentState = "idle"
 	AgentStateRunning AgentState = "running"

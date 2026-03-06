@@ -21,11 +21,11 @@ import (
 // Authorize goes to claude.ai; token exchange and redirect URI go to platform.claude.com.
 // Client ID, URLs, and scope sourced from the official claude-code CLI (v2.1.63).
 const (
-	AnthropicClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	AnthropicClientID     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	AnthropicAuthorizeURL = "https://claude.ai/oauth/authorize"
-	AnthropicTokenURL    = "https://platform.claude.com/v1/oauth/token"
-	AnthropicRedirectURI = "https://platform.claude.com/oauth/code/callback"
-	AnthropicScope       = "user:profile user:inference"
+	AnthropicTokenURL     = "https://platform.claude.com/v1/oauth/token"
+	AnthropicRedirectURI  = "https://platform.claude.com/oauth/code/callback"
+	AnthropicScope        = "user:profile user:inference"
 )
 
 // OpenAI / Codex OAuth constants.
@@ -146,7 +146,7 @@ func AnthropicExchange(ctx context.Context, code, verifier string) (*OAuthToken,
 	if err != nil {
 		return nil, fmt.Errorf("anthropic token exchange: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("anthropic token exchange failed: %s", resp.Status)
 	}
@@ -184,7 +184,7 @@ func AnthropicRefresh(ctx context.Context, refreshToken string) (*OAuthToken, er
 	if err != nil {
 		return nil, fmt.Errorf("anthropic token refresh: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("anthropic token refresh failed: %s", resp.Status)
 	}
@@ -266,7 +266,7 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
+		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
 		select {
 		case codeCh <- callbackResult{code: code, state: r.URL.Query().Get("state")}:
 		default:
@@ -330,7 +330,7 @@ func openAIExchange(ctx context.Context, code, verifier, redirectURI string) (*O
 	if err != nil {
 		return nil, fmt.Errorf("openai token exchange: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("openai token exchange failed: %s", resp.Status)
 	}

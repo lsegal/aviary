@@ -1,3 +1,4 @@
+// Package cmd implements the aviary CLI subcommands.
 package cmd
 
 import (
@@ -15,7 +16,7 @@ var agentCmd = &cobra.Command{
 var agentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured agents and their current state",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		out, err := dispatcher.CallTool(cmd.Context(), "agent_list", nil)
 		if err != nil {
 			return err

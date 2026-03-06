@@ -3,6 +3,7 @@ package domain
 // ChannelType identifies the kind of communication channel.
 type ChannelType string
 
+// ChannelType values.
 const (
 	ChannelTypeSlack   ChannelType = "slack"
 	ChannelTypeDiscord ChannelType = "discord"

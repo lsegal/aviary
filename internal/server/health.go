@@ -60,14 +60,14 @@ func wsBroadcast(event wsEvent) {
 // Origin checking is intentionally permissive — auth is enforced separately via
 // the session cookie / query-param token, and TLS provides transport security.
 var wsUpgrader = websocket.Upgrader{
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     func(_ *http.Request) bool { return true },
 	ReadBufferSize:  256,
 	WriteBufferSize: 256,
 }
 
 // healthHandler handles GET /api/health.
 // Public — no authentication required. Returns current version and status.
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: Version})
 }
@@ -101,7 +101,7 @@ func wsHandler(token string) http.HandlerFunc {
 			return
 		}
 		wsRegister(conn)
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 		defer wsUnregister(conn)
 
 		payload := wsEvent{Type: "health", OK: true, Version: Version}

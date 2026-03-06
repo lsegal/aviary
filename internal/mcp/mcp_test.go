@@ -232,10 +232,10 @@ func TestExtractToolCallFromPayload(t *testing.T) {
 
 func TestRedactValue(t *testing.T) {
 	input := map[string]any{
-		"token":       "abc123",
-		"message":     "hello",
-		"nested":      map[string]any{"password": "p@ss", "safe": "ok"},
-		"list":        []any{map[string]any{"client_secret": "xyz"}, "fine"},
+		"token":         "abc123",
+		"message":       "hello",
+		"nested":        map[string]any{"password": "p@ss", "safe": "ok"},
+		"list":          []any{map[string]any{"client_secret": "xyz"}, "fine"},
 		"authorization": "Bearer qwe",
 	}
 

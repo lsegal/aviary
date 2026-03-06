@@ -93,9 +93,9 @@ func writeHeaders(sb *strings.Builder, h http.Header, indent string) {
 	}
 }
 
-func truncate(b []byte, max int) string {
-	if len(b) <= max {
+func truncate(b []byte, limit int) string {
+	if len(b) <= limit {
 		return string(b)
 	}
-	return string(b[:max]) + fmt.Sprintf(" …+%d bytes", len(b)-max)
+	return string(b[:limit]) + fmt.Sprintf(" …+%d bytes", len(b)-limit)
 }

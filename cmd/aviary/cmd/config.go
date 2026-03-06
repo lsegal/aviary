@@ -35,7 +35,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 }
 
-func runConfigGetSet(cmd *cobra.Command, args []string) error {
+func runConfigGetSet(_ *cobra.Command, args []string) error {
 	key := args[0]
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
@@ -132,7 +132,7 @@ func setInMap(m map[string]any, parts []string, value string) error {
 		}
 		return nil
 	}
-	sub, _ := m[p]
+	sub := m[p]
 	subMap, ok := sub.(map[string]any)
 	if !ok {
 		subMap = map[string]any{}

@@ -168,11 +168,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		if !ok {
 			return
 		}
-		runner.Prompt(ctx, msg.Text, func(e agent.StreamEvent) {
-			if e.Type == agent.StreamEventDone || e.Type == agent.StreamEventText {
-				// Channel reply is fire-and-forget; errors logged by runner.
-			}
-		})
+		// Channel reply is fire-and-forget; errors logged by runner.
+		runner.Prompt(ctx, msg.Text)
 	})
 
 	errCh := make(chan error, 1)

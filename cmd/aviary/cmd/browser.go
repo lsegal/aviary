@@ -19,7 +19,7 @@ var (
 var browserCmd = &cobra.Command{
 	Use:   "browser",
 	Short: "Control a Chromium browser via CDP",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		if internalmcp.GetDeps().Browser == nil {
 			internalmcp.GetDeps().Browser = browser.NewManager(browserBinary, browserCDPPort, browserProfileDir, false)
 		}
@@ -44,7 +44,7 @@ var browserOpenCmd = &cobra.Command{
 var browserTabsCmd = &cobra.Command{
 	Use:   "tabs",
 	Short: "List all open browser tabs",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		out, err := dispatcher.CallTool(cmd.Context(), "browser_tabs", nil)
 		if err != nil {
 			return err
@@ -62,7 +62,7 @@ var (
 var browserClickCmd = &cobra.Command{
 	Use:   "click",
 	Short: "Click an element by CSS selector",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if browserTabID == "" {
 			return fmt.Errorf("--tab is required")
 		}
@@ -146,7 +146,7 @@ var browserFillCmd = &cobra.Command{
 var browserScreenshotCmd = &cobra.Command{
 	Use:   "screenshot",
 	Short: "Capture a screenshot of a tab",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if browserTabID == "" {
 			return fmt.Errorf("--tab is required")
 		}

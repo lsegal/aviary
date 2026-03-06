@@ -43,7 +43,7 @@ func (w *Watcher) Start() error {
 	if err != nil {
 		return err
 	}
-	defer fw.Close()
+	defer fw.Close() //nolint:errcheck
 
 	// Watch the directory so we catch renames/atomic writes.
 	dir := w.path[:max(0, lastSep(w.path))]
@@ -120,11 +120,4 @@ func lastSep(s string) int {
 		}
 	}
 	return -1
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

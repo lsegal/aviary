@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lsegal/aviary/internal/logging"
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/server"
 )

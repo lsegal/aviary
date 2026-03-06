@@ -15,16 +15,16 @@ import (
 
 // Scheduler orchestrates cron triggers, file-watch triggers, and job execution.
 type Scheduler struct {
-	queue   *JobQueue
-	pool    *WorkerPool
-	cron    *CronRunner
-	watch   *FileWatcher
-	agents  *agent.Manager
-	mu      sync.Mutex
-	tasks   map[string]config.TaskConfig // task name → config snapshot
+	queue     *JobQueue
+	pool      *WorkerPool
+	cron      *CronRunner
+	watch     *FileWatcher
+	agents    *agent.Manager
+	mu        sync.Mutex
+	tasks     map[string]config.TaskConfig // task name → config snapshot
 	onceFired map[string]bool
-	timers map[string]*time.Timer
-	cancel  context.CancelFunc
+	timers    map[string]*time.Timer
+	cancel    context.CancelFunc
 }
 
 // New creates and wires a Scheduler. Call Start to begin processing.
@@ -37,14 +37,14 @@ func New(agents *agent.Manager, workers int) (*Scheduler, error) {
 	queue.RecoverStuck()
 
 	return &Scheduler{
-		queue:  queue,
-		pool:   NewWorkerPool(queue, agents, workers),
-		cron:   NewCronRunner(),
-		watch:  fw,
-		agents: agents,
-		tasks:  make(map[string]config.TaskConfig),
+		queue:     queue,
+		pool:      NewWorkerPool(queue, agents, workers),
+		cron:      NewCronRunner(),
+		watch:     fw,
+		agents:    agents,
+		tasks:     make(map[string]config.TaskConfig),
 		onceFired: make(map[string]bool),
-		timers: make(map[string]*time.Timer),
+		timers:    make(map[string]*time.Timer),
 	}, nil
 }
 

@@ -133,7 +133,7 @@ func LoginHandler(token string) http.HandlerFunc {
 			SameSite: http.SameSiteStrictMode,
 		})
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"ok":true}`)
+		_, _ = fmt.Fprintln(w, `{"ok":true}`)
 	}
 }
 

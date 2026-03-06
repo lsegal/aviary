@@ -175,7 +175,6 @@ func hasIssue(issues []Issue, msg string) bool {
 	return false
 }
 
-
 func TestHelpers(t *testing.T) {
 	if got := lastSep("a/b/c"); got != 3 {
 		t.Fatalf("lastSep unix = %d", got)

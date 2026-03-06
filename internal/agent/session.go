@@ -108,4 +108,3 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 }
-

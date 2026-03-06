@@ -112,7 +112,7 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 	// Apply wizard values.
 	if port != "" && port != "16677" {
 		var p int
-		fmt.Sscanf(port, "%d", &p)
+		_, _ = fmt.Sscanf(port, "%d", &p)
 		if p > 0 {
 			cfg.Server.Port = p
 		}
@@ -204,7 +204,7 @@ func runConfigureBrowser(_ *cobra.Command, _ []string) error {
 	cfg.Browser.Binary = binary
 	if portStr != "" {
 		var p int
-		fmt.Sscanf(portStr, "%d", &p)
+		_, _ = fmt.Sscanf(portStr, "%d", &p)
 		if p > 0 {
 			cfg.Browser.CDPPort = p
 		}

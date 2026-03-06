@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/domain"
 )
 
 const pollInterval = 5 * time.Second
@@ -79,7 +80,7 @@ func (p *WorkerPool) run(ctx context.Context) {
 		}
 
 		slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
-		if err := p.executeJob(ctx, job.AgentName, job.Prompt); err != nil {
+		if err := p.executeJob(ctx, job); err != nil {
 			slog.Warn("job failed", "id", job.ID, "err", err)
 			if failErr := p.queue.Fail(job.ID, err); failErr != nil {
 				slog.Warn("marking job failed", "id", job.ID, "err", failErr)
@@ -92,19 +93,20 @@ func (p *WorkerPool) run(ctx context.Context) {
 	}
 }
 
-func (p *WorkerPool) executeJob(ctx context.Context, agentName, prompt string) error {
-	runner, ok := p.agents.Get(agentName)
+func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
+	runner, ok := p.agents.Get(job.AgentName)
 	if !ok {
-		return fmt.Errorf("agent %q not found", agentName)
+		return fmt.Errorf("agent %q not found", job.AgentName)
 	}
 
 	var lastErr error
 	var buf strings.Builder
 	done := make(chan struct{}, 1)
-	runner.Prompt(ctx, prompt, func(e agent.StreamEvent) {
+	runner.Prompt(ctx, job.Prompt, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
 			buf.WriteString(e.Text)
+			slog.Info("job output", "job_id", job.ID, "agent", job.AgentName, "chunk", e.Text)
 		case agent.StreamEventDone, agent.StreamEventStop:
 			select {
 			case done <- struct{}{}:
@@ -124,7 +126,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, agentName, prompt string) e
 		return ctx.Err()
 	}
 	if buf.Len() > 0 {
-		slog.Info("job output", "agent", agentName, "output", buf.String())
+		if err := p.queue.UpdateOutput(job.ID, buf.String()); err != nil {
+			slog.Warn("job: failed to persist output", "id", job.ID, "err", err)
+		}
 	}
 	return lastErr
 }

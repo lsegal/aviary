@@ -14,7 +14,7 @@ func pidAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	defer syscall.CloseHandle(handle)
+	defer syscall.CloseHandle(handle) //nolint:errcheck
 	var code uint32
 	if err = syscall.GetExitCodeProcess(handle, &code); err != nil {
 		return false

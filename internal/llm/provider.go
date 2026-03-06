@@ -15,6 +15,7 @@ import (
 // Role identifies who authored a message.
 type Role string
 
+// Role values.
 const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
@@ -23,8 +24,8 @@ const (
 
 // Message is a single message in a conversation.
 type Message struct {
-	Role    Role
-	Content string
+	Role     Role
+	Content  string
 	MediaURL string
 }
 
@@ -32,9 +33,9 @@ type Message struct {
 type Request struct {
 	Model    string
 	Messages []Message
-	System   string  // optional system prompt
-	MaxToks  int     // 0 = provider default
-	Stream   bool    // whether to stream
+	System   string // optional system prompt
+	MaxToks  int    // 0 = provider default
+	Stream   bool   // whether to stream
 }
 
 // Usage holds token-count metrics from an LLM call.
@@ -57,6 +58,7 @@ type Event struct {
 // EventType identifies a streaming event.
 type EventType string
 
+// EventType values.
 const (
 	EventTypeText  EventType = "text"
 	EventTypeMedia EventType = "media"

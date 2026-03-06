@@ -418,12 +418,12 @@ func TestWorkerPool_ExecuteJob(t *testing.T) {
 
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
-	err := p.executeJob(context.Background(), "missing", "hello")
+	err := p.executeJob(context.Background(), &domain.Job{AgentName: "missing", Prompt: "hello"})
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected not found error, got %v", err)
 	}
 
-	err = p.executeJob(context.Background(), "alpha", "hello")
+	err = p.executeJob(context.Background(), &domain.Job{AgentName: "alpha", Prompt: "hello"})
 	if err != nil {
 		t.Fatalf("expected nil error for stubbed no-provider path, got %v", err)
 	}

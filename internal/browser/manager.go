@@ -63,7 +63,7 @@ func (m *Manager) Tabs() ([]ChromeTab, error) {
 	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
 	tabs, err := fetchTabs(cdpBaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("Chrome not running on port %d", m.cdpPort)
+		return nil, fmt.Errorf("chrome not running on port %d", m.cdpPort)
 	}
 	var pages []ChromeTab
 	for _, t := range tabs {
@@ -136,7 +136,7 @@ func (m *Manager) Close() {}
 func (m *Manager) withTab(ctx context.Context, tabID string, fn func(*Session) error) error {
 	wsURL, err := m.ensureChrome(ctx)
 	if err != nil {
-		return fmt.Errorf("Chrome not running: %w", err)
+		return fmt.Errorf("chrome not running: %w", err)
 	}
 
 	m.mu.Lock()

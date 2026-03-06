@@ -16,12 +16,12 @@ type SlackChannel struct {
 	botToken  string // xoxb-... token for posting
 	allowFrom []string
 
-	client     *slack.Client
-	sm         *socketmode.Client
-	handler    func(IncomingMessage)
-	handlerMu  sync.RWMutex
-	stopOnce   sync.Once
-	cancel     context.CancelFunc
+	client    *slack.Client
+	sm        *socketmode.Client
+	handler   func(IncomingMessage)
+	handlerMu sync.RWMutex
+	stopOnce  sync.Once
+	cancel    context.CancelFunc
 }
 
 // NewSlackChannel creates a SlackChannel.

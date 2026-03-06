@@ -30,12 +30,12 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	if cfgPath == "" {
 		cfgPath = config.DefaultPath()
 	}
-	fmt.Fprintf(os.Stdout, "Config file: %s\n\n", cfgPath)
+	_, _ = fmt.Fprintf(os.Stdout, "Config file: %s\n\n", cfgPath)
 
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stdout, "[WARN] config: file not found; using built-in defaults")
-		fmt.Fprintln(os.Stdout, "       Run 'aviary configure' to create one.")
-		fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout, "[WARN] config: file not found; using built-in defaults")
+		_, _ = fmt.Fprintln(os.Stdout, "       Run 'aviary configure' to create one.")
+		_, _ = fmt.Fprintln(os.Stdout)
 	}
 
 	cfg, err := config.Load(cfgPath)
@@ -50,7 +50,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 
 	nerrs, nwarns := 0, 0
 	for _, issue := range issues {
-		fmt.Fprintf(os.Stdout, "  [%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
+		_, _ = fmt.Fprintf(os.Stdout, "  [%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
 		if issue.Level == config.LevelError {
 			nerrs++
 		} else {
@@ -59,27 +59,27 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	// Ping each unique provider using the first model we find for it.
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Checking model credentials...")
+	_, _ = fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, "Checking model credentials...")
 	factory := llm.NewFactory(func(ref string) (string, error) {
 		key := strings.TrimPrefix(ref, "auth:")
 		return st.Get(key)
 	})
 	providerModels := config.UniqueProviderModels(cfg)
 	if len(providerModels) == 0 {
-		fmt.Fprintln(os.Stdout, "  (no models configured)")
+		_, _ = fmt.Fprintln(os.Stdout, "  (no models configured)")
 	}
 	for provider, model := range providerModels {
-		fmt.Fprintf(os.Stdout, "  %-12s ", provider)
+		_, _ = fmt.Fprintf(os.Stdout, "  %-12s ", provider)
 		if err := factory.PingModel(model); err != nil {
-			fmt.Fprintf(os.Stdout, "[ERROR] %v\n", err)
+			_, _ = fmt.Fprintf(os.Stdout, "[ERROR] %v\n", err)
 			nerrs++
 		} else {
-			fmt.Fprintln(os.Stdout, "[OK]")
+			_, _ = fmt.Fprintln(os.Stdout, "[OK]")
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
+	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
 	if nerrs > 0 {
 		os.Exit(1)
 	}

@@ -18,7 +18,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-func runStatus(cmd *cobra.Command, args []string) error {
+func runStatus(_ *cobra.Command, _ []string) error {
 	running, pid, err := server.IsRunning()
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)

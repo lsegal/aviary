@@ -9,9 +9,9 @@ import (
 
 // CronRunner wraps robfig/cron to add/remove named entries idempotently.
 type CronRunner struct {
-	c    *cron.Cron
-	mu   sync.Mutex
-	ids  map[string]cron.EntryID // task name → entry ID
+	c   *cron.Cron
+	mu  sync.Mutex
+	ids map[string]cron.EntryID // task name → entry ID
 }
 
 // NewCronRunner creates a CronRunner with second-precision support.

@@ -149,7 +149,7 @@ func waitForChrome(ctx context.Context, cdpBaseURL string) (string, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("Chrome did not become ready at %s: %w", cdpBaseURL, ctx.Err())
+			return "", fmt.Errorf("chrome did not become ready at %s: %w", cdpBaseURL, ctx.Err())
 		case <-ticker.C:
 			if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
 				return wsURL, nil

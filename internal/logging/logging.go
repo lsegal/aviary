@@ -1,3 +1,4 @@
+// Package logging provides structured logging utilities for Aviary.
 package logging
 
 import (

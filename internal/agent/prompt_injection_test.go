@@ -277,19 +277,19 @@ func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {
 
 	for _, rules := range injectedRules {
 		t.Run(rules[:min(len(rules), 40)], func(t *testing.T) {
-			cap := &captureProvider{}
+			prov := &captureProvider{}
 			runner := NewAgentRunner(
 				&domain.Agent{ID: "agent_inj", Name: "inj"},
 				&config.AgentConfig{Name: "inj", Model: "test/model", Rules: rules},
-				cap,
+				prov,
 				nil,
 			)
 			runnerDone(t, runner, "hello")
 
-			if len(cap.requests) == 0 {
+			if len(prov.requests) == 0 {
 				t.Fatal("no requests captured")
 			}
-			sys := cap.requests[0].System
+			sys := prov.requests[0].System
 
 			if n := strings.Count(sys, "</agent_rules>"); n != 1 {
 				t.Errorf("expected 1 </agent_rules>, got %d\nsystem:\n%s", n, sys)
@@ -382,10 +382,3 @@ func TestAgentRunner_ToolResultInjectionEscaped(t *testing.T) {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

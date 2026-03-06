@@ -60,7 +60,7 @@ func BuildSystemPrompt(base string, skills []Skill) string {
 	}
 	var sb strings.Builder
 	for _, s := range skills {
-		sb.WriteString(fmt.Sprintf("<skill name=%q>\n%s\n</skill>\n\n", s.Name, sanitizeDelimitedContent(s.Content)))
+		fmt.Fprintf(&sb, "<skill name=%q>\n%s\n</skill>\n\n", s.Name, sanitizeDelimitedContent(s.Content))
 	}
 	sb.WriteString(base)
 	return sb.String()

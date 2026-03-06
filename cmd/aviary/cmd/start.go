@@ -25,14 +25,14 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 }
 
-func runStart(cmd *cobra.Command, args []string) error {
+func runStart(_ *cobra.Command, _ []string) error {
 	// Check if already running.
 	running, pid, err := server.IsRunning()
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
 	}
 	if running {
-		return fmt.Errorf("Aviary is already running (PID %d)", pid)
+		return fmt.Errorf("aviary is already running (PID %d)", pid)
 	}
 
 	// Ensure data directories exist.
@@ -78,10 +78,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if port == 0 {
 		port = 16677
 	}
-	fmt.Fprintf(os.Stdout, "Aviary started on https://localhost:%d\n", port)
+	_, _ = fmt.Fprintf(os.Stdout, "Aviary started on https://localhost:%d\n", port)
 	if isNew {
-		fmt.Fprintf(os.Stdout, "Your access token: %s\n", tok)
-		fmt.Fprintf(os.Stdout, "Save this token — you'll need it to access the web panel.\n")
+		_, _ = fmt.Fprintf(os.Stdout, "Your access token: %s\n", tok)
+		_, _ = fmt.Fprintf(os.Stdout, "Save this token — you'll need it to access the web panel.\n")
 	}
 
 	// Start server.
@@ -95,7 +95,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		fmt.Fprintln(os.Stdout, "\nShutting down...")
+		_, _ = fmt.Fprintln(os.Stdout, "\nShutting down...")
 		cancel()
 	}()
 

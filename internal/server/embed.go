@@ -36,7 +36,7 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stat, err := f.Stat()
-	f.Close()
+	_ = f.Close()
 	if err != nil || stat.IsDir() {
 		// Directory or stat error — serve index.html.
 		h.serveIndex(w, r)
@@ -51,7 +51,7 @@ func (h spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.Copy(w, f) //nolint:errcheck
 }

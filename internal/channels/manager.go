@@ -12,7 +12,7 @@ import (
 // Manager manages channel lifecycle across all agents.
 type Manager struct {
 	mu       sync.Mutex
-	channels map[string]Channel       // key: agentName+"/"+channelType+"/"+channelID
+	channels map[string]Channel // key: agentName+"/"+channelType+"/"+channelID
 	cancels  map[string]context.CancelFunc
 }
 

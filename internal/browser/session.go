@@ -19,27 +19,6 @@ type Session struct {
 	mu          sync.Mutex
 }
 
-// newRemoteSession connects to an already-running Chrome and creates a new tab.
-// The tab persists after this session is closed or the process exits.
-// Call Close only on error; normal use lets the process lifecycle clean up.
-func newRemoteSession(ctx context.Context, wsURL string) (*Session, error) {
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, wsURL)
-	taskCtx, cancelTask := chromedp.NewContext(allocCtx)
-
-	if err := chromedp.Run(taskCtx); err != nil {
-		cancelTask()
-		cancelAlloc()
-		return nil, fmt.Errorf("connecting to Chrome at %s: %w", wsURL, err)
-	}
-
-	return &Session{
-		allocCtx:    allocCtx,
-		cancelAlloc: cancelAlloc,
-		taskCtx:     taskCtx,
-		cancelTask:  cancelTask,
-	}, nil
-}
-
 // newRemoteSessionForTab connects to an already-running Chrome and attaches to
 // an existing tab by its CDP target ID. Closing this session only disconnects
 // Go from the tab — the tab itself remains open in Chrome.

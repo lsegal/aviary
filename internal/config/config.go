@@ -32,12 +32,12 @@ type TLSConfig struct {
 
 // AgentConfig describes a single agent.
 type AgentConfig struct {
-	Name         string          `yaml:"name"                    json:"name"`
-	Model        string          `yaml:"model"                   json:"model"`
-	Fallbacks    []string        `yaml:"fallbacks,omitempty"     json:"fallbacks,omitempty"`
-	Memory       string          `yaml:"memory,omitempty"        json:"memory,omitempty"`
-	MemoryTokens int             `yaml:"memory_tokens,omitempty" json:"memory_tokens,omitempty"`
-	CompactKeep  int             `yaml:"compact_keep,omitempty"  json:"compact_keep,omitempty"`
+	Name         string   `yaml:"name"                    json:"name"`
+	Model        string   `yaml:"model"                   json:"model"`
+	Fallbacks    []string `yaml:"fallbacks,omitempty"     json:"fallbacks,omitempty"`
+	Memory       string   `yaml:"memory,omitempty"        json:"memory,omitempty"`
+	MemoryTokens int      `yaml:"memory_tokens,omitempty" json:"memory_tokens,omitempty"`
+	CompactKeep  int      `yaml:"compact_keep,omitempty"  json:"compact_keep,omitempty"`
 	// Rules is an optional set of operating rules injected at the top of every
 	// system prompt for this agent.  It may be inline markdown text or a path
 	// to a file (e.g. "./RULES.md"); file paths are resolved relative to the
@@ -86,8 +86,8 @@ type ModelDefaults struct {
 
 // BrowserConfig holds browser control settings.
 type BrowserConfig struct {
-	Binary     string `yaml:"binary"            json:"binary"`
-	CDPPort    int    `yaml:"cdp_port"          json:"cdp_port"`
+	Binary  string `yaml:"binary"            json:"binary"`
+	CDPPort int    `yaml:"cdp_port"          json:"cdp_port"`
 	// ProfileDir is the Chrome profile folder name in the browser's default
 	// user data directory (e.g. "Default", "Profile 1", "work").
 	// Defaults to "Aviary" if unset.

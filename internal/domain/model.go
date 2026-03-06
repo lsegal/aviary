@@ -3,6 +3,7 @@ package domain
 // Provider identifies a model provider.
 type Provider string
 
+// Provider values.
 const (
 	ProviderAnthropic Provider = "anthropic"
 	ProviderOpenAI    Provider = "openai"

@@ -19,7 +19,7 @@ func init() {
 	rootCmd.AddCommand(stopCmd)
 }
 
-func runStop(cmd *cobra.Command, args []string) error {
+func runStop(_ *cobra.Command, _ []string) error {
 	running, pid, err := server.IsRunning()
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)

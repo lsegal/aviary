@@ -147,7 +147,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"input":        input,
 		"stream":       true,
 		"instructions": req.System, // required by the backend, even if empty
-		"store":        false,       // required by chatgpt.com/backend-api
+		"store":        false,      // required by chatgpt.com/backend-api
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -171,13 +171,13 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("openai stream: POST %q: %s: %s", openAICodexBaseURL, resp.Status, strings.TrimSpace(string(body)))
 	}
 
 	ch := make(chan Event, 32)
 	go func() {
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		defer close(ch)
 
 		// Responses API SSE events:
@@ -203,7 +203,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				Type    string `json:"type"`
 				Role    string `json:"role"`
 				Content []struct {
-					Type string `json:"text"`
+					Type string `json:"type"`
 					Text string `json:"text"`
 				} `json:"content"`
 			} `json:"item"`

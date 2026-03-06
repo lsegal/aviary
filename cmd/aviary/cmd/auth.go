@@ -187,7 +187,7 @@ func readConsoleLine() (string, error) {
 	// Try the console device first so pasting works on Windows PowerShell.
 	cons, err := openConsole()
 	if err == nil {
-		defer cons.Close()
+		defer cons.Close() //nolint:errcheck
 		line, readErr := bufio.NewReader(cons).ReadString('\n')
 		if readErr != nil && readErr != io.EOF {
 			return "", readErr
@@ -216,7 +216,7 @@ func authStore() authpkg.Store {
 // errStore is an auth.Store that always returns an error.
 type errStore struct{ err error }
 
-func (e *errStore) Set(_, _ string) error       { return e.err }
+func (e *errStore) Set(_, _ string) error        { return e.err }
 func (e *errStore) Get(_ string) (string, error) { return "", e.err }
 func (e *errStore) Delete(_ string) error        { return e.err }
 func (e *errStore) List() ([]string, error)      { return nil, e.err }

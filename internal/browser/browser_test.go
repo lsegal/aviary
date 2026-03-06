@@ -90,7 +90,7 @@ func TestManager_EvalJSWithoutChrome(t *testing.T) {
 	}
 }
 
-func TestManager_CloseIsNoOp(t *testing.T) {
+func TestManager_CloseIsNoOp(_ *testing.T) {
 	m := NewManager("", 0, "", false)
 	// Close is a no-op and must not panic.
 	m.Close()

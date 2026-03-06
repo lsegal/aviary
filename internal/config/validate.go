@@ -13,6 +13,7 @@ import (
 // IssueLevel indicates the severity of a validation finding.
 type IssueLevel string
 
+// IssueLevel values.
 const (
 	LevelError   IssueLevel = "ERROR"
 	LevelWarning IssueLevel = "WARN"
