@@ -292,7 +292,6 @@
 </template>
 
 <script setup lang="ts">
-import AppLayout from "../components/AppLayout.vue";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useLogs } from "../composables/useLogs";
 import type { Job } from "../stores/jobs";

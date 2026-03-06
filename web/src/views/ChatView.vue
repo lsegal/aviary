@@ -145,7 +145,6 @@
 </template>
 
 <script setup lang="ts">
-import AppLayout from "../components/AppLayout.vue";
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useMCP } from "../composables/useMCP";

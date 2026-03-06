@@ -352,7 +352,6 @@
 </template>
 
 <script setup lang="ts">
-import AppLayout from "../components/AppLayout.vue";
 import { onMounted, ref, watch } from "vue";
 import { useMCP } from "../composables/useMCP";
 import {

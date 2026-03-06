@@ -71,7 +71,6 @@
 </template>
 
 <script setup lang="ts">
-import AppLayout from "../components/AppLayout.vue";
 import { computed, onMounted } from "vue";
 import { useSettingsStore } from "../stores/settings";
 import { useTasksStore } from "../stores/tasks";
