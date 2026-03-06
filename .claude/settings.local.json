@@ -8,7 +8,16 @@
       "Bash(rm:*)",
       "Bash(node:*)",
       "Bash(pnpm remove:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(pnpm lint:web:*)",
+      "Bash(go version:*)",
+      "Bash(go install:*)",
+      "Bash(grep:*)",
+      "Bash(gofmt:*)",
+      "Bash(pnpm lint:fix:*)",
+      "Bash(pnpm exec:*)"
     ]
   }
 }

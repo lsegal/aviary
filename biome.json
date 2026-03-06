@@ -1,6 +1,13 @@
 {
 	"files": {
-		"include": ["web/**", "*.ts", "*.js"],
-		"ignore": ["web/dist/", "web/node_modules/", "node_modules/"]
+		"includes": [
+			"web/**",
+			"*.ts",
+			"*.js",
+			"!web/dist",
+			"!web/node_modules",
+			"!node_modules",
+			"!**/*.css"
+		]
 	}
 }

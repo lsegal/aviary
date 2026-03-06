@@ -1,4 +1,4 @@
-lockfileVersion: '6.0'
+lockfileVersion: '6.1'
 
 settings:
   autoInstallPeers: true
@@ -31,6 +31,9 @@ devDependencies:
   '@tailwindcss/vite':
     specifier: ^4.2.1
     version: 4.2.1(vite@7.3.1)
+  '@types/node':
+    specifier: ^25.3.5
+    version: 25.3.5
   '@vitejs/plugin-vue':
     specifier: ^6.0.4
     version: 6.0.4(vite@7.3.1)(vue@3.5.29)
@@ -51,7 +54,7 @@ devDependencies:
     version: 5.9.3
   vite:
     specifier: ^7.3.1
-    version: 7.3.1
+    version: 7.3.1(@types/node@25.3.5)
   vue-tsc:
     specifier: ^3.2.5
     version: 3.2.5(typescript@5.9.3)
@@ -810,11 +813,17 @@ packages:
       '@tailwindcss/node': 4.2.1
       '@tailwindcss/oxide': 4.2.1
       tailwindcss: 4.2.1
-      vite: 7.3.1
+      vite: 7.3.1(@types/node@25.3.5)
     dev: true
 
   /@types/estree@1.0.8:
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
+    dev: true
+
+  /@types/node@25.3.5:
+    resolution: {integrity: sha512-oX8xrhvpiyRCQkG1MFchB09f+cXftgIXb3a7UUa4Y3wpmZPw5tyZGTLWhlESOLq1Rq6oDlc8npVU2/9xiCuXMA==}
+    dependencies:
+      undici-types: 7.18.2
     dev: true
 
   /@vitejs/plugin-vue@6.0.4(vite@7.3.1)(vue@3.5.29):
@@ -825,7 +834,7 @@ packages:
       vue: ^3.2.25
     dependencies:
       '@rolldown/pluginutils': 1.0.0-rc.2
-      vite: 7.3.1
+      vite: 7.3.1(@types/node@25.3.5)
       vue: 3.5.29(typescript@5.9.3)
     dev: true
 
@@ -1689,6 +1698,10 @@ packages:
     resolution: {integrity: sha512-yDJTmhydvl5lJzBmy/hyOAA0d+aqCBuwl818haVdYCRrWV84o7YyeVm4QlVHStqNrrJSTb6jKuFAVqAFsr+K3Q==}
     dev: false
 
+  /undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+    dev: true
+
   /unplugin-utils@0.3.1:
     resolution: {integrity: sha512-5lWVjgi6vuHhJ526bI4nlCOmkCIF3nnfXkCMDeMJrtdvxTs6ZFCM8oNufGTsDbKv/tJ/xj8RpvXjRuPBZJuJog==}
     engines: {node: '>=20.19.0'}
@@ -1721,7 +1734,7 @@ packages:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
     dev: true
 
-  /vite@7.3.1:
+  /vite@7.3.1(@types/node@25.3.5):
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
@@ -1761,6 +1774,7 @@ packages:
       yaml:
         optional: true
     dependencies:
+      '@types/node': 25.3.5
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3

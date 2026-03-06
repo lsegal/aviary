@@ -6,19 +6,26 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
 
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/lsegal/aviary
+
 linters-settings:
-  goimports:
-    local-prefixes: github.com/lsegal/aviary
+  errcheck:
+    exclude-functions:
+      - fmt.Sscanf
   revive:
     rules:
       - name: exported
@@ -27,5 +34,8 @@ linters-settings:
 issues:
   exclude-rules:
     - path: _test\.go
+      linters:
+        - errcheck
+    - text: "Error return value of .*(Close|Fprint).* is not checked"
       linters:
         - errcheck
