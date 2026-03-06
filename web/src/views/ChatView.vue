@@ -147,7 +147,6 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import { useAgentsStore } from "../stores/agents";
@@ -188,7 +187,7 @@ const agentsStore = useAgentsStore();
 const authStore = useAuthStore();
 const { streamAgent } = useStream();
 
-function renderMarkdown(text: string): string {
+function _renderMarkdown(text: string): string {
 	return marked.parse(text, { async: false }) as string;
 }
 
@@ -198,25 +197,27 @@ function parseToolMessage(content: string): Message {
 	try {
 		const d = JSON.parse(raw) as ToolData;
 		if (d.name) return { role: "tool", text: d.name, toolData: d };
-	} catch { /* legacy: just a bare name */ }
+	} catch {
+		/* legacy: just a bare name */
+	}
 	return { role: "tool", text: raw };
 }
 
 /** Condensed one-line summary shown in the pill. */
-function toolSummary(msg: Message): string {
+function _toolSummary(msg: Message): string {
 	const d = msg.toolData;
 	if (!d) return msg.text;
 	const entries = Object.entries(d.args ?? {});
 	if (entries.length === 0) return d.name;
 	const parts = entries.slice(0, 2).map(([k, v]) => {
 		const s = typeof v === "string" ? v : JSON.stringify(v);
-		return `${k}=${s.length > 32 ? s.slice(0, 32) + "…" : s}`;
+		return `${k}=${s.length > 32 ? `${s.slice(0, 32)}…` : s}`;
 	});
 	if (entries.length > 2) parts.push("…");
 	return `${d.name}(${parts.join(", ")})`;
 }
 
-function formatJSON(v: unknown): string {
+function _formatJSON(v: unknown): string {
 	return JSON.stringify(v, null, 2);
 }
 const { callTool } = useMCP();
@@ -235,8 +236,10 @@ const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
 let ws: WebSocket | null = null;
 
-const showBelowScroller = computed(() => hasScrollOverflow.value && !isAtBottom.value);
-const currentSessionProcessing = computed(() => {
+const _showBelowScroller = computed(
+	() => hasScrollOverflow.value && !isAtBottom.value,
+);
+const _currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
 });
@@ -288,7 +291,11 @@ function connectSessionWS() {
 				};
 				// Don't reload messages while streaming — send() manages its own
 				// state and will reload on completion via refreshSessionProcessing.
-				if (data.session_id === selectedSessionId.value && data.is_processing === false && !isStreaming.value) {
+				if (
+					data.session_id === selectedSessionId.value &&
+					data.is_processing === false &&
+					!isStreaming.value
+				) {
 					await loadSessionMessages();
 				}
 				return;
@@ -335,17 +342,17 @@ async function loadSessions() {
 	}
 }
 
-async function onAgentChange() {
+async function _onAgentChange() {
 	selectedSessionId.value = "";
 	sessions.value = [];
 	await loadSessions();
 }
 
-async function onSessionChange() {
+async function _onSessionChange() {
 	await loadSessionMessages();
 }
 
-async function createSession() {
+async function _createSession() {
 	if (!selectedAgent.value) return;
 	try {
 		const raw = await callTool("session_create", {
@@ -367,10 +374,15 @@ async function loadSessionMessages() {
 		return;
 	}
 	try {
-		const raw = await callTool("session_messages", { session_id: selectedSessionId.value });
+		const raw = await callTool("session_messages", {
+			session_id: selectedSessionId.value,
+		});
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
-			.filter((m): m is PersistedMessage & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
+			.filter(
+				(m): m is PersistedMessage & { role: "user" | "assistant" } =>
+					m.role === "user" || m.role === "assistant",
+			)
 			.map((m) => {
 				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
 					return parseToolMessage(m.content);
@@ -399,7 +411,7 @@ function updateScrollState() {
 	isAtBottom.value = distanceFromBottom <= 8;
 }
 
-function onMessagesScroll() {
+function _onMessagesScroll() {
 	updateScrollState();
 }
 
@@ -420,7 +432,7 @@ function selectedSessionName(): string {
 	return s?.name || s?.id || "main";
 }
 
-function onPaste(e: ClipboardEvent) {
+function _onPaste(e: ClipboardEvent) {
 	const items = e.clipboardData?.items;
 	if (!items) return;
 	for (const item of items) {
@@ -438,7 +450,7 @@ function onPaste(e: ClipboardEvent) {
 	}
 }
 
-async function send() {
+async function _send() {
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
@@ -478,7 +490,11 @@ async function send() {
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		const normalized = msg.toLowerCase();
-		if (normalized.includes("stopped") || normalized.includes("canceled") || normalized.includes("cancelled")) {
+		if (
+			normalized.includes("stopped") ||
+			normalized.includes("canceled") ||
+			normalized.includes("cancelled")
+		) {
 			isStreaming.value = false;
 			await loadSessionMessages();
 			await refreshSessionProcessing();
@@ -502,7 +518,7 @@ async function send() {
 	await scrollBottom();
 }
 
-async function stopSession() {
+async function _stopSession() {
 	if (!selectedSessionId.value) return;
 	const sessionID = selectedSessionId.value;
 	try {

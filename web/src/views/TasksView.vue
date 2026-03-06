@@ -72,49 +72,48 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useSettingsStore } from "../stores/settings";
 import { useTasksStore } from "../stores/tasks";
 
 const store = useTasksStore();
 const settingsStore = useSettingsStore();
 
-const configuredTasks = computed(() =>
-  (settingsStore.config?.agents ?? []).flatMap((agent) =>
-    (agent.tasks ?? []).map((task) => ({
-      agent: agent.name,
-      name: task.name || "—",
-      trigger: (() => {
-        const parts: string[] = [];
-        if (task.schedule) parts.push(`schedule: ${task.schedule}`);
-        if (task.watch) parts.push(`watch: ${task.watch}`);
-        if (task.start_at) parts.push(`start_at: ${task.start_at}`);
-        if (task.run_once) parts.push("run_once");
-        return parts.length ? parts.join(" | ") : "—";
-      })(),
-      channel: task.channel || "—",
-      prompt: task.prompt || "",
-    })),
-  ),
+const _configuredTasks = computed(() =>
+	(settingsStore.config?.agents ?? []).flatMap((agent) =>
+		(agent.tasks ?? []).map((task) => ({
+			agent: agent.name,
+			name: task.name || "—",
+			trigger: (() => {
+				const parts: string[] = [];
+				if (task.schedule) parts.push(`schedule: ${task.schedule}`);
+				if (task.watch) parts.push(`watch: ${task.watch}`);
+				if (task.start_at) parts.push(`start_at: ${task.start_at}`);
+				if (task.run_once) parts.push("run_once");
+				return parts.length ? parts.join(" | ") : "—";
+			})(),
+			channel: task.channel || "—",
+			prompt: task.prompt || "",
+		})),
+	),
 );
 
 onMounted(() => {
-  store.fetchJobs();
-  settingsStore.fetchConfig();
+	store.fetchJobs();
+	settingsStore.fetchConfig();
 });
 
-function statusClass(status: string): string {
-  const map: Record<string, string> = {
-    pending: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
-    in_progress:
-      "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-    completed:
-      "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-    failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  };
-  return (
-    map[status] ??
-    "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-  );
+function _statusClass(status: string): string {
+	const map: Record<string, string> = {
+		pending: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+		in_progress:
+			"bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+		completed:
+			"bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+		failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+	};
+	return (
+		map[status] ??
+		"bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+	);
 }
 </script>

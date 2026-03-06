@@ -40,7 +40,7 @@ const tokenInput = ref("");
 const loading = ref(false);
 const errorMsg = ref("");
 
-async function submit() {
+async function _submit() {
 	loading.value = true;
 	errorMsg.value = "";
 	const ok = await auth.login(tokenInput.value.trim());

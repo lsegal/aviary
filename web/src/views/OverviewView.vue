@@ -172,14 +172,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useOverviewStore } from "../stores/overview";
 
 const store = useOverviewStore();
 onMounted(() => store.fetchAll());
 
 // --- Agents ---
-const agentStateCounts = computed(() => {
+const _agentStateCounts = computed(() => {
 	const counts: Record<string, number> = {};
 	for (const a of store.agents) {
 		counts[a.state] = (counts[a.state] ?? 0) + 1;
@@ -187,7 +186,7 @@ const agentStateCounts = computed(() => {
 	return counts;
 });
 
-function agentStateBadge(state: string) {
+function _agentStateBadge(state: string) {
 	if (state === "idle")
 		return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
 	if (state === "running")
@@ -196,10 +195,10 @@ function agentStateBadge(state: string) {
 }
 
 // --- Jobs ---
-const inProgressJobs = computed(
+const _inProgressJobs = computed(
 	() => store.jobs.filter((j) => j.status === "in_progress").length,
 );
-const failedJobs = computed(
+const _failedJobs = computed(
 	() => store.jobs.filter((j) => j.status === "failed").length,
 );
 
@@ -211,13 +210,13 @@ const warnCount = computed(
 	() => store.issues.filter((i) => i.level === "WARN").length,
 );
 
-const healthLabel = computed(() => {
+const _healthLabel = computed(() => {
 	if (errorCount.value > 0) return "Errors";
 	if (warnCount.value > 0) return "Warnings";
 	return "Healthy";
 });
 
-const healthCardClass = computed(() => {
+const _healthCardClass = computed(() => {
 	if (errorCount.value > 0)
 		return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
 	if (warnCount.value > 0)
@@ -225,26 +224,26 @@ const healthCardClass = computed(() => {
 	return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
 });
 
-const healthLabelClass = computed(() => {
+const _healthLabelClass = computed(() => {
 	if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
 	if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
 	return "text-green-600 dark:text-green-400";
 });
 
-const healthTextClass = computed(() => {
+const _healthTextClass = computed(() => {
 	if (errorCount.value > 0) return "text-red-700 dark:text-red-300";
 	if (warnCount.value > 0) return "text-yellow-700 dark:text-yellow-300";
 	return "text-green-700 dark:text-green-300";
 });
 
-const healthSubClass = computed(() => {
+const _healthSubClass = computed(() => {
 	if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
 	if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
 	return "text-green-600 dark:text-green-500";
 });
 
 // --- Time ago ---
-function timeAgo(date: Date): string {
+function _timeAgo(date: Date): string {
 	const secs = Math.floor((Date.now() - date.getTime()) / 1000);
 	if (secs < 60) return `${secs}s ago`;
 	const mins = Math.floor(secs / 60);

@@ -57,8 +57,12 @@ export const useUsageStore = defineStore("usage", () => {
 
 	// ── Totals ────────────────────────────────────────────────────────────────
 
-	const totalInput = computed(() => records.value.reduce((s, r) => s + r.input_tokens, 0));
-	const totalOutput = computed(() => records.value.reduce((s, r) => s + r.output_tokens, 0));
+	const totalInput = computed(() =>
+		records.value.reduce((s, r) => s + r.input_tokens, 0),
+	);
+	const totalOutput = computed(() =>
+		records.value.reduce((s, r) => s + r.output_tokens, 0),
+	);
 	const totalCacheRead = computed(() =>
 		records.value.reduce((s, r) => s + (r.cache_read_tokens ?? 0), 0),
 	);
@@ -70,10 +74,16 @@ export const useUsageStore = defineStore("usage", () => {
 	const totalToolCalls = computed(() =>
 		records.value.reduce((s, r) => s + (r.tool_calls ?? 0), 0),
 	);
-	const totalErrors = computed(() => records.value.filter((r) => r.has_error).length);
-	const sessionCount = computed(() => new Set(records.value.map((r) => r.session_id)).size);
+	const totalErrors = computed(
+		() => records.value.filter((r) => r.has_error).length,
+	);
+	const sessionCount = computed(
+		() => new Set(records.value.map((r) => r.session_id)).size,
+	);
 	const avgTokensPerMsg = computed(() =>
-		totalMessages.value ? Math.round(totalTokens.value / totalMessages.value) : 0,
+		totalMessages.value
+			? Math.round(totalTokens.value / totalMessages.value)
+			: 0,
 	);
 	const errorRate = computed(() =>
 		totalMessages.value ? (totalErrors.value / totalMessages.value) * 100 : 0,
@@ -114,7 +124,8 @@ export const useUsageStore = defineStore("usage", () => {
 	const byHour = computed(() => {
 		const hours = Array(24).fill(0) as number[];
 		for (const r of records.value) {
-			hours[new Date(r.timestamp).getHours()] += r.input_tokens + r.output_tokens;
+			hours[new Date(r.timestamp).getHours()] +=
+				r.input_tokens + r.output_tokens;
 		}
 		return hours;
 	});
@@ -122,7 +133,10 @@ export const useUsageStore = defineStore("usage", () => {
 	// ── Daily chart data ──────────────────────────────────────────────────────
 
 	const byDay = computed(() => {
-		const m = new Map<string, { input: number; output: number; cache: number }>();
+		const m = new Map<
+			string,
+			{ input: number; output: number; cache: number }
+		>();
 		for (const r of records.value) {
 			const d = r.timestamp.slice(0, 10);
 			const v = m.get(d) ?? { input: 0, output: 0, cache: 0 };
@@ -132,12 +146,20 @@ export const useUsageStore = defineStore("usage", () => {
 			m.set(d, v);
 		}
 		// Fill gaps in the range.
-		const result: Array<{ date: string; input: number; output: number; cache: number }> = [];
-		let cur = new Date(startDate.value);
+		const result: Array<{
+			date: string;
+			input: number;
+			output: number;
+			cache: number;
+		}> = [];
+		const cur = new Date(startDate.value);
 		const endD = new Date(endDate.value);
 		while (cur <= endD) {
 			const key = cur.toISOString().slice(0, 10);
-			result.push({ date: key, ...(m.get(key) ?? { input: 0, output: 0, cache: 0 }) });
+			result.push({
+				date: key,
+				...(m.get(key) ?? { input: 0, output: 0, cache: 0 }),
+			});
 			cur.setDate(cur.getDate() + 1);
 		}
 		return result;

@@ -225,134 +225,144 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useUsageStore } from "../stores/usage";
 
 const store = useUsageStore();
 
-const hoveredDay = ref<number | null>(null);
-const hoveredHour = ref<number | null>(null);
-const hoveredDayChart = ref<number | null>(null);
+const _hoveredDay = ref<number | null>(null);
+const _hoveredHour = ref<number | null>(null);
+const _hoveredDayChart = ref<number | null>(null);
 const activePreset = ref<number | null>(7);
 
-const presets = [
-  { label: "Today", days: 0 },
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
+const _presets = [
+	{ label: "Today", days: 0 },
+	{ label: "7d", days: 7 },
+	{ label: "30d", days: 30 },
 ];
-const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const _dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const grandTotal = computed(
-  () => store.totalInput + store.totalOutput + store.totalCacheRead + store.totalCacheWrite,
+const _grandTotal = computed(
+	() =>
+		store.totalInput +
+		store.totalOutput +
+		store.totalCacheRead +
+		store.totalCacheWrite,
 );
 
-const statCards = computed(() => [
-  { label: "Messages", value: String(store.totalMessages) },
-  { label: "Tool Calls", value: String(store.totalToolCalls) },
-  {
-    label: "Errors",
-    value: String(store.totalErrors),
-    color: store.totalErrors > 0 ? "text-red-500" : "text-gray-900 dark:text-white",
-  },
-  { label: "Avg Tokens/Msg", value: fmtTokens(store.avgTokensPerMsg) },
-  { label: "Sessions", value: String(store.sessionCount) },
-  { label: "Input Tokens", value: fmtTokens(store.totalInput) },
-  { label: "Output Tokens", value: fmtTokens(store.totalOutput) },
-  {
-    label: "Error Rate",
-    value: store.errorRate.toFixed(1) + "%",
-    color:
-      store.errorRate > 5
-        ? "text-red-500"
-        : store.errorRate === 0
-          ? "text-green-600 dark:text-green-400"
-          : "text-gray-900 dark:text-white",
-  },
+const _statCards = computed(() => [
+	{ label: "Messages", value: String(store.totalMessages) },
+	{ label: "Tool Calls", value: String(store.totalToolCalls) },
+	{
+		label: "Errors",
+		value: String(store.totalErrors),
+		color:
+			store.totalErrors > 0 ? "text-red-500" : "text-gray-900 dark:text-white",
+	},
+	{ label: "Avg Tokens/Msg", value: fmtTokens(store.avgTokensPerMsg) },
+	{ label: "Sessions", value: String(store.sessionCount) },
+	{ label: "Input Tokens", value: fmtTokens(store.totalInput) },
+	{ label: "Output Tokens", value: fmtTokens(store.totalOutput) },
+	{
+		label: "Error Rate",
+		value: `${store.errorRate.toFixed(1)}%`,
+		color:
+			store.errorRate > 5
+				? "text-red-500"
+				: store.errorRate === 0
+					? "text-green-600 dark:text-green-400"
+					: "text-gray-900 dark:text-white",
+	},
 ]);
 
-const breakdowns = computed(() => [
-  {
-    title: "Top Models",
-    items: store.topModels,
-    maxTokens: Math.max(...store.topModels.map((m) => m.tokens), 1),
-  },
-  {
-    title: "Top Providers",
-    items: store.topProviders,
-    maxTokens: Math.max(...store.topProviders.map((m) => m.tokens), 1),
-  },
-  {
-    title: "Top Agents",
-    items: store.topAgents,
-    maxTokens: Math.max(...store.topAgents.map((m) => m.tokens), 1),
-  },
+const _breakdowns = computed(() => [
+	{
+		title: "Top Models",
+		items: store.topModels,
+		maxTokens: Math.max(...store.topModels.map((m) => m.tokens), 1),
+	},
+	{
+		title: "Top Providers",
+		items: store.topProviders,
+		maxTokens: Math.max(...store.topProviders.map((m) => m.tokens), 1),
+	},
+	{
+		title: "Top Agents",
+		items: store.topAgents,
+		maxTokens: Math.max(...store.topAgents.map((m) => m.tokens), 1),
+	},
 ]);
 
-function applyPreset(days: number) {
-  activePreset.value = days;
-  store.setPreset(days);
+function _applyPreset(days: number) {
+	activePreset.value = days;
+	store.setPreset(days);
 }
 
 function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return String(n);
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+	return String(n);
 }
 
-function fmtTs(ts: string): string {
-  if (!ts) return "-";
-  const d = new Date(ts);
-  return (
-    d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
-    " " +
-    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-  );
+function _fmtTs(ts: string): string {
+	if (!ts) return "-";
+	const d = new Date(ts);
+	return (
+		d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+		" " +
+		d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+	);
 }
 
-function pct(part: number, total: number): string {
-  if (!total) return "0%";
-  return Math.round((part / total) * 100) + "%";
+function _pct(part: number, total: number): string {
+	if (!total) return "0%";
+	return `${Math.round((part / total) * 100)}%`;
 }
 
-function barHeight(val: number, arr: number[]): string {
-  const max = Math.max(...arr, 1);
-  return Math.max(2, Math.round((val / max) * 56)) + "px";
+function _barHeight(val: number, arr: number[]): string {
+	const max = Math.max(...arr, 1);
+	return `${Math.max(2, Math.round((val / max) * 56))}px`;
 }
 
 const heatBuckets = [
-  "bg-gray-100 dark:bg-gray-800",
-  "bg-blue-100 dark:bg-blue-950",
-  "bg-blue-200 dark:bg-blue-900",
-  "bg-blue-400 dark:bg-blue-700",
-  "bg-blue-600",
-  "bg-red-500",
+	"bg-gray-100 dark:bg-gray-800",
+	"bg-blue-100 dark:bg-blue-950",
+	"bg-blue-200 dark:bg-blue-900",
+	"bg-blue-400 dark:bg-blue-700",
+	"bg-blue-600",
+	"bg-red-500",
 ];
-function heatClass(val: number, arr: number[]): string {
-  const max = Math.max(...arr, 1);
-  const ratio = val / max;
-  const idx = Math.min(heatBuckets.length - 1, Math.floor(ratio * heatBuckets.length));
-  return heatBuckets[idx];
+function _heatClass(val: number, arr: number[]): string {
+	const max = Math.max(...arr, 1);
+	const ratio = val / max;
+	const idx = Math.min(
+		heatBuckets.length - 1,
+		Math.floor(ratio * heatBuckets.length),
+	);
+	return heatBuckets[idx];
 }
 
-function sH(
-  row: { input: number; output: number; cache: number },
-  field: "input" | "output" | "cache",
-  allRows: { input: number; output: number; cache: number }[],
+function _sH(
+	row: { input: number; output: number; cache: number },
+	field: "input" | "output" | "cache",
+	allRows: { input: number; output: number; cache: number }[],
 ): number {
-  const maxTotal = Math.max(...allRows.map((r) => r.input + r.output + r.cache), 1);
-  const total = row.input + row.output + row.cache;
-  if (!total) return 0;
-  const totalH = Math.max(2, Math.round((total / maxTotal) * 80));
-  const outputH = Math.round((row.output / total) * totalH);
-  const cacheH = Math.round((row.cache / total) * totalH);
-  const inputH = totalH - outputH - cacheH;
-  return field === "input" ? inputH : field === "output" ? outputH : cacheH;
+	const maxTotal = Math.max(
+		...allRows.map((r) => r.input + r.output + r.cache),
+		1,
+	);
+	const total = row.input + row.output + row.cache;
+	if (!total) return 0;
+	const totalH = Math.max(2, Math.round((total / maxTotal) * 80));
+	const outputH = Math.round((row.output / total) * totalH);
+	const cacheH = Math.round((row.cache / total) * totalH);
+	const inputH = totalH - outputH - cacheH;
+	return field === "input" ? inputH : field === "output" ? outputH : cacheH;
 }
 
-function showLabel(i: number, len: number): boolean {
-  if (len <= 8) return true;
-  const step = Math.max(1, Math.ceil(len / 8));
-  return i === 0 || i === len - 1 || i % step === 0;
+function _showLabel(i: number, len: number): boolean {
+	if (len <= 8) return true;
+	const step = Math.max(1, Math.ceil(len / 8));
+	return i === 0 || i === len - 1 || i % step === 0;
 }
 
 onMounted(() => store.fetch());

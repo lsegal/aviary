@@ -18,23 +18,23 @@ export function useStream() {
 
 		try {
 			let sawProgress = false;
-			const toolArgs: Record<string, string> = { name: agentName, message, session };
+			const toolArgs: Record<string, string> = {
+				name: agentName,
+				message,
+				session,
+			};
 			if (mediaURL) toolArgs.media_url = mediaURL;
 
-			const text = await callTool(
-				"agent_run",
-				toolArgs,
-				{
-					onProgress: (chunk) => {
-						sawProgress = true;
-						if (chunk.startsWith("[media]")) {
-							onChunk(chunk.slice("[media]".length), true);
-						} else {
-							onChunk(chunk, false);
-						}
-					},
+			const text = await callTool("agent_run", toolArgs, {
+				onProgress: (chunk) => {
+					sawProgress = true;
+					if (chunk.startsWith("[media]")) {
+						onChunk(chunk.slice("[media]".length), true);
+					} else {
+						onChunk(chunk, false);
+					}
 				},
-			);
+			});
 			if (!sawProgress && text) {
 				onChunk(text, false);
 			}

@@ -27,6 +27,7 @@ export const useAuthStore = defineStore("auth", () => {
 	function logout() {
 		token.value = null;
 		localStorage.removeItem(TOKEN_KEY);
+		// biome-ignore lint/suspicious/noDocumentCookie: clearing session cookie on logout
 		document.cookie = "aviary_session=; Max-Age=0; path=/";
 	}
 

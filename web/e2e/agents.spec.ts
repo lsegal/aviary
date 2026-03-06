@@ -54,9 +54,15 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await page.getByRole("button", { name: "Agents & Tasks" }).click();
 
 	await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
-	await expect(page.locator('input[placeholder="assistant"]').first()).toHaveValue("assistant");
-	await expect(page.locator('input[placeholder="daily-briefing"]').first()).toHaveValue("daily-briefing");
-	await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+	await expect(
+		page.locator('input[placeholder="assistant"]').first(),
+	).toHaveValue("assistant");
+	await expect(
+		page.locator('input[placeholder="daily-briefing"]').first(),
+	).toHaveValue("daily-briefing");
+	await expect(
+		page.getByRole("heading", { name: "Tasks", exact: true }),
+	).toBeVisible();
 });
 
 test("tab switching does not blank content", async ({ page }) => {
@@ -64,16 +70,24 @@ test("tab switching does not blank content", async ({ page }) => {
 
 	for (let i = 0; i < 3; i += 1) {
 		await page.getByRole("button", { name: "General" }).click();
-		await expect(page.getByRole("heading", { name: "Server", exact: true })).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Server", exact: true }),
+		).toBeVisible();
 
 		await page.getByRole("button", { name: "Agents & Tasks" }).click();
-		await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "+ Add Agent" }),
+		).toBeVisible();
 
 		await page.getByRole("button", { name: "Sessions" }).click();
-		await expect(page.getByRole("button", { name: "Refresh Sessions" })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Refresh Sessions" }),
+		).toBeVisible();
 
 		await page.getByRole("button", { name: "Providers & Auth" }).click();
-		await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Credentials", exact: true }),
+		).toBeVisible();
 	}
 });
 
@@ -81,7 +95,13 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 	await page.goto("/settings");
 	await page.getByRole("button", { name: "Providers & Auth" }).click();
 
-	await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
-	await expect(page.locator('input[placeholder="auth:openai:default"]').first()).toHaveValue(/auth:.+/);
-	await expect(page.getByRole("button", { name: "Refresh list" })).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Credentials", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.locator('input[placeholder="auth:openai:default"]').first(),
+	).toHaveValue(/auth:.+/);
+	await expect(
+		page.getByRole("button", { name: "Refresh list" }),
+	).toBeVisible();
 });

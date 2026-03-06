@@ -126,7 +126,6 @@
 
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
 
 const logs = useLogs();
@@ -135,80 +134,85 @@ const autoScroll = ref(true);
 
 // Scroll to bottom when new entries arrive (only when autoScroll is on).
 watch(
-  () => logs.filtered.value.length,
-  async () => {
-    if (!autoScroll.value) return;
-    await nextTick();
-    if (scrollEl.value) {
-      scrollEl.value.scrollTop = scrollEl.value.scrollHeight;
-    }
-  },
+	() => logs.filtered.value.length,
+	async () => {
+		if (!autoScroll.value) return;
+		await nextTick();
+		if (scrollEl.value) {
+			scrollEl.value.scrollTop = scrollEl.value.scrollHeight;
+		}
+	},
 );
 
 // Pause auto-scroll if user scrolls up.
-function onScroll() {
-  if (!scrollEl.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = scrollEl.value;
-  autoScroll.value = scrollTop + clientHeight >= scrollHeight - 32;
+function _onScroll() {
+	if (!scrollEl.value) return;
+	const { scrollTop, scrollHeight, clientHeight } = scrollEl.value;
+	autoScroll.value = scrollTop + clientHeight >= scrollHeight - 32;
 }
 
 // Time formatting: show HH:MM:SS.mmm
-function fmtTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const hh = d.getHours().toString().padStart(2, "0");
-    const mm = d.getMinutes().toString().padStart(2, "0");
-    const ss = d.getSeconds().toString().padStart(2, "0");
-    const ms = d.getMilliseconds().toString().padStart(3, "0");
-    return `${hh}:${mm}:${ss}.${ms}`;
-  } catch {
-    return iso;
-  }
+function _fmtTime(iso: string): string {
+	try {
+		const d = new Date(iso);
+		const hh = d.getHours().toString().padStart(2, "0");
+		const mm = d.getMinutes().toString().padStart(2, "0");
+		const ss = d.getSeconds().toString().padStart(2, "0");
+		const ms = d.getMilliseconds().toString().padStart(3, "0");
+		return `${hh}:${mm}:${ss}.${ms}`;
+	} catch {
+		return iso;
+	}
 }
 
-function levelClass(level: string): string {
-  const map: Record<string, string> = {
-    debug: "text-gray-500",
-    info: "text-blue-400",
-    warn: "text-yellow-400",
-    error: "text-red-400",
-  };
-  return map[level] ?? "text-gray-400";
+function _levelClass(level: string): string {
+	const map: Record<string, string> = {
+		debug: "text-gray-500",
+		info: "text-blue-400",
+		warn: "text-yellow-400",
+		error: "text-red-400",
+	};
+	return map[level] ?? "text-gray-400";
 }
 
 // Colour palette for component chips (active state).
 const COMP_PALETTE = [
-  "border-blue-500 bg-blue-900/40 text-blue-300",
-  "border-emerald-500 bg-emerald-900/40 text-emerald-300",
-  "border-violet-500 bg-violet-900/40 text-violet-300",
-  "border-amber-500 bg-amber-900/40 text-amber-300",
-  "border-pink-500 bg-pink-900/40 text-pink-300",
-  "border-teal-500 bg-teal-900/40 text-teal-300",
-  "border-orange-500 bg-orange-900/40 text-orange-300",
-  "border-cyan-500 bg-cyan-900/40 text-cyan-300",
+	"border-blue-500 bg-blue-900/40 text-blue-300",
+	"border-emerald-500 bg-emerald-900/40 text-emerald-300",
+	"border-violet-500 bg-violet-900/40 text-violet-300",
+	"border-amber-500 bg-amber-900/40 text-amber-300",
+	"border-pink-500 bg-pink-900/40 text-pink-300",
+	"border-teal-500 bg-teal-900/40 text-teal-300",
+	"border-orange-500 bg-orange-900/40 text-orange-300",
+	"border-cyan-500 bg-cyan-900/40 text-cyan-300",
 ];
 
 function compIndex(comp: string): number {
-  // Stable index by hashing the component name.
-  let h = 0;
-  for (let i = 0; i < comp.length; i++) h = (h * 31 + comp.charCodeAt(i)) >>> 0;
-  return h % COMP_PALETTE.length;
+	// Stable index by hashing the component name.
+	let h = 0;
+	for (let i = 0; i < comp.length; i++) h = (h * 31 + comp.charCodeAt(i)) >>> 0;
+	return h % COMP_PALETTE.length;
 }
 
-function componentActiveClass(comp: string): string {
-  return `border ${COMP_PALETTE[compIndex(comp)]}`;
+function _componentActiveClass(comp: string): string {
+	return `border ${COMP_PALETTE[compIndex(comp)]}`;
 }
 
-function componentLabelClass(comp: string): string {
-  const colors = [
-    "text-blue-400", "text-emerald-400", "text-violet-400",
-    "text-amber-400", "text-pink-400", "text-teal-400",
-    "text-orange-400", "text-cyan-400",
-  ];
-  return colors[compIndex(comp)];
+function _componentLabelClass(comp: string): string {
+	const colors = [
+		"text-blue-400",
+		"text-emerald-400",
+		"text-violet-400",
+		"text-amber-400",
+		"text-pink-400",
+		"text-teal-400",
+		"text-orange-400",
+		"text-cyan-400",
+	];
+	return colors[compIndex(comp)];
 }
 
-function isComponentActive(comp: string): boolean {
-  return logs.filterComponents.value.has(comp);
+function _isComponentActive(comp: string): boolean {
+	return logs.filterComponents.value.has(comp);
 }
 </script>

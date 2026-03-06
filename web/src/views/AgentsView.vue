@@ -123,7 +123,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";
 
@@ -134,92 +133,92 @@ const saving = ref(false);
 const modalError = ref("");
 
 interface ModalState {
-  mode: "add" | "edit";
-  name: string;
-  model: string;
-  fallbacksRaw: string; // comma-separated
+	mode: "add" | "edit";
+	name: string;
+	model: string;
+	fallbacksRaw: string; // comma-separated
 }
 const modal = ref<ModalState | null>(null);
 
 const tasksByAgent = computed(() =>
-  Object.fromEntries(
-    (settingsStore.config?.agents ?? []).map((agent) => [
-      agent.name,
-      agent.tasks ?? [],
-    ]),
-  ),
+	Object.fromEntries(
+		(settingsStore.config?.agents ?? []).map((agent) => [
+			agent.name,
+			agent.tasks ?? [],
+		]),
+	),
 );
 
 onMounted(() => {
-  store.fetchAgents();
-  settingsStore.fetchConfig();
+	store.fetchAgents();
+	settingsStore.fetchConfig();
 });
 
-function taskSummary(agentName: string): string {
-  const count = tasksByAgent.value[agentName]?.length ?? 0;
-  return count === 0 ? "none" : `${count} configured`;
+function _taskSummary(agentName: string): string {
+	const count = tasksByAgent.value[agentName]?.length ?? 0;
+	return count === 0 ? "none" : `${count} configured`;
 }
 
-function stateBadge(state: string) {
-  if (state === "idle")
-    return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
-  if (state === "running")
-    return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
-  return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+function _stateBadge(state: string) {
+	if (state === "idle")
+		return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
+	if (state === "running")
+		return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
+	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
 }
 
-function openAdd() {
-  modal.value = { mode: "add", name: "", model: "", fallbacksRaw: "" };
-  modalError.value = "";
+function _openAdd() {
+	modal.value = { mode: "add", name: "", model: "", fallbacksRaw: "" };
+	modalError.value = "";
 }
 
-function openEdit(agent: Agent) {
-  modal.value = {
-    mode: "edit",
-    name: agent.name,
-    model: agent.model ?? "",
-    fallbacksRaw: (agent.fallbacks ?? []).join(", "),
-  };
-  modalError.value = "";
+function _openEdit(agent: Agent) {
+	modal.value = {
+		mode: "edit",
+		name: agent.name,
+		model: agent.model ?? "",
+		fallbacksRaw: (agent.fallbacks ?? []).join(", "),
+	};
+	modalError.value = "";
 }
 
 function closeModal() {
-  modal.value = null;
-  modalError.value = "";
+	modal.value = null;
+	modalError.value = "";
 }
 
-async function saveModal() {
-  if (!modal.value) return;
-  saving.value = true;
-  modalError.value = "";
-  try {
-    const { mode, name, model, fallbacksRaw } = modal.value;
-    const fallbacks = fallbacksRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (mode === "add") {
-      await store.addAgent({ name, model, fallbacks });
-    } else {
-      await store.updateAgent({ name, model, fallbacks });
-    }
-    closeModal();
-  } catch (e) {
-    modalError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
+async function _saveModal() {
+	if (!modal.value) return;
+	saving.value = true;
+	modalError.value = "";
+	try {
+		const { mode, name, model, fallbacksRaw } = modal.value;
+		const fallbacks = fallbacksRaw
+			.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean);
+		if (mode === "add") {
+			await store.addAgent({ name, model, fallbacks });
+		} else {
+			await store.updateAgent({ name, model, fallbacks });
+		}
+		closeModal();
+	} catch (e) {
+		modalError.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		saving.value = false;
+	}
 }
 
-async function doDelete(name: string) {
-  saving.value = true;
-  try {
-    await store.deleteAgent(name);
-    confirmDelete.value = null;
-  } catch (e) {
-    console.error(e);
-  } finally {
-    saving.value = false;
-  }
+async function _doDelete(name: string) {
+	saving.value = true;
+	try {
+		await store.deleteAgent(name);
+		confirmDelete.value = null;
+	} catch (e) {
+		console.error(e);
+	} finally {
+		saving.value = false;
+	}
 }
 </script>
