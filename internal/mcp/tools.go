@@ -65,7 +65,7 @@ func Register(s *sdkmcp.Server) {
 type agentRunArgs struct {
 	Name     string `json:"name"`
 	Message  string `json:"message"`
-	Session  string `json:"session,omitempty"`  // session name; defaults to "main"
+	Session  string `json:"session,omitempty"` // session name; defaults to "main"
 	File     string `json:"file,omitempty"`
 	MediaURL string `json:"media_url,omitempty"` // optional image (data URL or remote URL)
 }
@@ -592,7 +592,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(job)
+		when := "immediately"
+		if job.ScheduledFor != nil {
+			when = "at " + job.ScheduledFor.Format("15:04:05")
+		}
+		return text(fmt.Sprintf("Task scheduled %s (job ID: %s). Done — no further action needed.", when, job.ID))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -628,6 +632,13 @@ type jobIDArgs struct {
 	ID string `json:"id"`
 }
 
+type jobQueryArgs struct {
+	Start  string `json:"start,omitempty"`  // YYYY-MM-DD inclusive
+	End    string `json:"end,omitempty"`    // YYYY-MM-DD inclusive
+	Status string `json:"status,omitempty"` // pending|in_progress|completed|failed
+	Agent  string `json:"agent,omitempty"`
+}
+
 func registerJobTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "job_list",
@@ -646,10 +657,62 @@ func registerJobTools(s *sdkmcp.Server) {
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "job_query",
+		Description: "Return job records filtered by date range and/or status",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_query")
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		all, err := d.Scheduler.Queue().List("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		var start, end time.Time
+		if args.Start != "" {
+			start, _ = time.Parse("2006-01-02", args.Start)
+		}
+		if args.End != "" {
+			end, _ = time.Parse("2006-01-02", args.End)
+			end = end.Add(24*time.Hour - time.Nanosecond)
+		}
+		out := all[:0]
+		for _, j := range all {
+			if !start.IsZero() && j.CreatedAt.Before(start) {
+				continue
+			}
+			if !end.IsZero() && j.CreatedAt.After(end) {
+				continue
+			}
+			if args.Status != "" && string(j.Status) != args.Status {
+				continue
+			}
+			if args.Agent != "" && j.AgentName != args.Agent {
+				continue
+			}
+			out = append(out, j)
+		}
+		return jsonResult(out)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "job_logs",
-		Description: "Show output for a specific job run",
+		Description: "Show captured output for a specific job run",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub(fmt.Sprintf("job_logs(%s): job output not yet persisted (Phase 7)", args.ID))
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_logs", "id", args.ID)
+		path := store.FindJobPath(args.ID)
+		if path == "" {
+			return nil, struct{}{}, fmt.Errorf("job %s not found", args.ID)
+		}
+		job, err := store.ReadJSON[domain.Job](path)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("reading job %s: %w", args.ID, err)
+		}
+		if job.Output == "" {
+			return text("(no output captured)")
+		}
+		return text(job.Output)
 	})
 }
 

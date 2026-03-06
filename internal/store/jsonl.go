@@ -24,7 +24,7 @@ func AppendJSONL(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("writing to %s: %w", path, err)
@@ -41,7 +41,7 @@ func ReadJSONL[T any](path string) ([]T, error) {
 		}
 		return nil, fmt.Errorf("opening %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	var results []T
 	scanner := bufio.NewScanner(f)
@@ -86,22 +86,22 @@ func RewriteJSONL[T any](path string, entries []T) error {
 	enc := json.NewEncoder(w)
 	for _, v := range entries {
 		if err := enc.Encode(v); err != nil {
-			tmp.Close()
-			os.Remove(tmpName)
+			_ = tmp.Close()
+			_ = os.Remove(tmpName)
 			return fmt.Errorf("encoding entry: %w", err)
 		}
 	}
 	if err := w.Flush(); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("flushing: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("closing temp: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("renaming: %w", err)
 	}
 	return nil
@@ -112,7 +112,7 @@ func rewriteDirect[T any](path string, entries []T) error {
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	enc := json.NewEncoder(f)
 	for _, v := range entries {
 		if err := enc.Encode(v); err != nil {

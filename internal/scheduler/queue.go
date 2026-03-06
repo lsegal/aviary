@@ -226,6 +226,24 @@ func (q *JobQueue) RecoverStuck() {
 	}
 }
 
+// UpdateOutput persists the text output captured during a job's execution.
+func (q *JobQueue) UpdateOutput(id, output string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.Output = output
+	job.UpdatedAt = time.Now()
+	return store.WriteJSON(path, &job)
+}
+
 func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
