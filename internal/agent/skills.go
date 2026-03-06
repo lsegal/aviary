@@ -22,7 +22,13 @@ func DiscoverSkills(dir string) ([]Skill, error) {
 		if err != nil {
 			return nil // skip unreadable dirs
 		}
-		if info.IsDir() || !strings.EqualFold(info.Name(), "SKILL.md") {
+		if info.IsDir() {
+			if strings.HasPrefix(info.Name(), ".") && path != dir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(info.Name(), "SKILL.md") {
 			return nil
 		}
 		data, readErr := os.ReadFile(path)
