@@ -10,7 +10,8 @@
 # Web build output
 /web/dist/
 /node_modules/
-/internal/server/webdist/
+/internal/server/webdist/*
+!/internal/server/webdist/.gitkeep
 
 # Data directory
 ~/.config/aviary/
