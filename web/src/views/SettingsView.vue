@@ -191,6 +191,36 @@
                 </label>
               </div>
             </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Queued & Recent Jobs</h4>
+                <button type="button" class="rounded-lg border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="jobsLoading" @click="loadAllJobs">{{ jobsLoading ? 'Loading…' : 'Refresh' }}</button>
+              </div>
+              <div v-if="!agentJobsList(agent.name).length" class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                No queued or recent jobs.
+              </div>
+              <div v-else class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-gray-200 text-left font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                      <th class="px-3 py-2">Task</th>
+                      <th class="px-3 py-2">Status</th>
+                      <th class="px-3 py-2">When</th>
+                      <th class="px-3 py-2">Prompt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="job in agentJobsList(agent.name)" :key="job.id" class="border-b border-gray-100 text-gray-700 last:border-0 dark:border-gray-800 dark:text-gray-300">
+                      <td class="px-3 py-2 font-mono">{{ job.task_id }}</td>
+                      <td class="px-3 py-2"><span :class="jobStatusClass(job.status)" class="rounded px-1.5 py-0.5 text-xs font-medium">{{ job.status }}</span></td>
+                      <td class="px-3 py-2 text-gray-500 dark:text-gray-400">{{ fmtJobDate(job.scheduled_for ?? job.created_at) }}</td>
+                      <td class="max-w-xs truncate px-3 py-2 text-gray-500 dark:text-gray-400">{{ job.prompt }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -323,25 +353,39 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
-import { type AgentEntry, type AgentTask, type AppConfig, useSettingsStore } from "../stores/settings";
+import {
+	type AgentEntry,
+	type AgentTask,
+	type AppConfig,
+	useSettingsStore,
+} from "../stores/settings";
 
 type Tab = "general" | "agents" | "sessions" | "providers" | "memory";
 
 interface SessionRow {
-  id: string;
-  name: string;
-  updated_at: string;
+	id: string;
+	name: string;
+	updated_at: string;
 }
 
 interface RuntimeAgent {
-  name: string;
-  model?: string;
-  fallbacks?: string[];
+	name: string;
+	model?: string;
+	fallbacks?: string[];
 }
 
-const tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
+interface JobEntry {
+	id: string;
+	task_id: string;
+	agent_name: string;
+	status: string;
+	prompt: string;
+	scheduled_for?: string;
+	created_at: string;
+}
+
+const _tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
 const activeTab = ref<Tab>("general");
 
 const store = useSettingsStore();
@@ -370,6 +414,9 @@ const oauthBusy = ref(false);
 const anthropicUrl = ref("");
 const anthropicCode = ref("");
 
+const allJobs = ref<JobEntry[]>([]);
+const jobsLoading = ref(false);
+
 const memoryAgent = ref("");
 const notesContent = ref("");
 const memoryLoading = ref(false);
@@ -378,417 +425,486 @@ const notesSaving = ref(false);
 const memoryErrorMessage = ref("");
 
 watch(memoryAgent, (agent) => {
-  notesContent.value = "";
-  memoryErrorMessage.value = "";
-  if (agent && activeTab.value === "memory") void loadNotes();
+	notesContent.value = "";
+	memoryErrorMessage.value = "";
+	if (agent && activeTab.value === "memory") void loadNotes();
 });
 
 watch(activeTab, (tab) => {
-  if (tab === "memory" && memoryAgent.value && !memoryLoading.value) {
-    void loadNotes();
-  }
+	if (tab === "memory" && memoryAgent.value && !memoryLoading.value) {
+		void loadNotes();
+	}
+	if (tab === "agents") {
+		void loadAllJobs();
+	}
 });
 
 interface RulesEditorState {
-  content: string;
-  loading: boolean;
-  saving: boolean;
-  error: string;
+	content: string;
+	loading: boolean;
+	saving: boolean;
+	error: string;
 }
 const rulesEditorState = ref<Record<string, RulesEditorState>>({});
 
 function getRulesState(agentName: string): RulesEditorState {
-  if (!rulesEditorState.value[agentName]) {
-    rulesEditorState.value[agentName] = { content: "", loading: false, saving: false, error: "" };
-  }
-  return rulesEditorState.value[agentName];
+	if (!rulesEditorState.value[agentName]) {
+		rulesEditorState.value[agentName] = {
+			content: "",
+			loading: false,
+			saving: false,
+			error: "",
+		};
+	}
+	return rulesEditorState.value[agentName];
 }
 
-async function loadRulesFile(agentName: string) {
-  if (!agentName) return;
-  const state = getRulesState(agentName);
-  state.loading = true;
-  state.error = "";
-  try {
-    state.content = await callTool("agent_rules_get", { name: agentName });
-  } catch (e) {
-    state.error = e instanceof Error ? e.message : String(e);
-  } finally {
-    state.loading = false;
-  }
+async function _loadRulesFile(agentName: string) {
+	if (!agentName) return;
+	const state = getRulesState(agentName);
+	state.loading = true;
+	state.error = "";
+	try {
+		state.content = await callTool("agent_rules_get", { name: agentName });
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.loading = false;
+	}
 }
 
-async function saveRulesFile(agentName: string) {
-  if (!agentName) return;
-  const state = getRulesState(agentName);
-  state.saving = true;
-  state.error = "";
-  try {
-    await callTool("agent_rules_set", { agent: agentName, content: state.content });
-  } catch (e) {
-    state.error = e instanceof Error ? e.message : String(e);
-  } finally {
-    state.saving = false;
-  }
+async function _saveRulesFile(agentName: string) {
+	if (!agentName) return;
+	const state = getRulesState(agentName);
+	state.saving = true;
+	state.error = "";
+	try {
+		await callTool("agent_rules_set", {
+			agent: agentName,
+			content: state.content,
+		});
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.saving = false;
+	}
+}
+
+function _agentJobsList(agentName: string): JobEntry[] {
+	return allJobs.value.filter((j) => j.agent_name === agentName);
+}
+
+async function loadAllJobs() {
+	if (jobsLoading.value) return;
+	jobsLoading.value = true;
+	try {
+		const raw = await callTool("job_list", {});
+		allJobs.value = (JSON.parse(raw) as JobEntry[] | null) ?? [];
+	} catch {
+		allJobs.value = [];
+	} finally {
+		jobsLoading.value = false;
+	}
+}
+
+function _jobStatusClass(status: string): string {
+	if (status === "done")
+		return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+	if (status === "failed")
+		return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+	if (status === "in_progress")
+		return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+}
+
+function _fmtJobDate(s: string | undefined): string {
+	if (!s) return "—";
+	return new Date(s).toLocaleString();
 }
 
 onMounted(async () => {
-  await loadConfig();
-  await refreshCredentials();
+	await loadConfig();
+	await refreshCredentials();
+	void loadAllJobs();
 });
 
 function emptyConfig(): AppConfig {
-  return {
-    server: { port: 16677, tls: { cert: "", key: "" } },
-    agents: [],
-    models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-    browser: { binary: "", cdp_port: 9222 },
-    scheduler: { concurrency: "auto" },
-  };
+	return {
+		server: { port: 16677, tls: { cert: "", key: "" } },
+		agents: [],
+		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+		browser: { binary: "", cdp_port: 9222 },
+		scheduler: { concurrency: "auto" },
+	};
 }
 
-function tabLabel(tab: Tab): string {
-  if (tab === "general") return "General";
-  if (tab === "agents") return "Agents & Tasks";
-  if (tab === "sessions") return "Sessions";
-  if (tab === "memory") return "Memory";
-  return "Providers & Auth";
+function _tabLabel(tab: Tab): string {
+	if (tab === "general") return "General";
+	if (tab === "agents") return "Agents & Tasks";
+	if (tab === "sessions") return "Sessions";
+	if (tab === "memory") return "Memory";
+	return "Providers & Auth";
 }
 
-function tabClass(tab: Tab): string {
-  return activeTab.value === tab
-    ? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
-    : "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
+function _tabClass(tab: Tab): string {
+	return activeTab.value === tab
+		? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
+		: "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
 }
 
 async function loadConfig() {
-  loading.value = true;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    await store.fetchConfig();
-    const cfg = store.config ? JSON.parse(JSON.stringify(store.config)) as AppConfig : emptyConfig();
-    draft.value = cfg;
-    fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
-    concurrencyInput.value = String(cfg.scheduler.concurrency ?? "auto");
-    providerRows.value = Object.entries(cfg.models.providers ?? {}).map(([name, p]) => ({ name, auth: p.auth ?? "" }));
+	loading.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		await store.fetchConfig();
+		const cfg = store.config
+			? (JSON.parse(JSON.stringify(store.config)) as AppConfig)
+			: emptyConfig();
+		draft.value = cfg;
+		fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
+		concurrencyInput.value = String(cfg.scheduler.concurrency ?? "auto");
+		providerRows.value = Object.entries(cfg.models.providers ?? {}).map(
+			([name, p]) => ({ name, auth: p.auth ?? "" }),
+		);
 
-    if (!draft.value.agents.length) {
-      await importAgents();
-    }
+		if (!draft.value.agents.length) {
+			await importAgents();
+		}
 
-    if (!sessionAgent.value && draft.value.agents.length) {
-      sessionAgent.value = draft.value.agents[0].name;
-    }
-    if (!memoryAgent.value && draft.value.agents.length) {
-      memoryAgent.value = draft.value.agents[0].name;
-    }
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
+		if (!sessionAgent.value && draft.value.agents.length) {
+			sessionAgent.value = draft.value.agents[0].name;
+		}
+		if (!memoryAgent.value && draft.value.agents.length) {
+			memoryAgent.value = draft.value.agents[0].name;
+		}
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		loading.value = false;
+	}
 }
 
-function addAgent() {
-  const agent: AgentEntry = {
-    name: "",
-    model: "",
-    memory: "",
-    rules: "",
-    fallbacks: [],
-    channels: [],
-    tasks: [],
-  };
-  draft.value.agents.push(agent);
+function _addAgent() {
+	const agent: AgentEntry = {
+		name: "",
+		model: "",
+		memory: "",
+		rules: "",
+		fallbacks: [],
+		channels: [],
+		tasks: [],
+	};
+	draft.value.agents.push(agent);
 }
 
-function removeAgent(index: number) {
-  draft.value.agents.splice(index, 1);
+function _removeAgent(index: number) {
+	draft.value.agents.splice(index, 1);
 }
 
-function addTask(agentIndex: number) {
-  const task: AgentTask = { name: "", prompt: "", schedule: "", watch: "", channel: "", run_once: false };
-  if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
-    draft.value.agents[agentIndex].tasks = [];
-  }
-  draft.value.agents[agentIndex].tasks.push(task);
+function _addTask(agentIndex: number) {
+	const task: AgentTask = {
+		name: "",
+		prompt: "",
+		schedule: "",
+		watch: "",
+		channel: "",
+		run_once: false,
+	};
+	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
+		draft.value.agents[agentIndex].tasks = [];
+	}
+	draft.value.agents[agentIndex].tasks.push(task);
 }
 
-function removeTask(agentIndex: number, taskIndex: number) {
-  draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
+function _removeTask(agentIndex: number, taskIndex: number) {
+	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
-function agentFallbacks(agent: AgentEntry): string {
-  return (agent.fallbacks ?? []).join(", ");
+function _agentFallbacks(agent: AgentEntry): string {
+	return (agent.fallbacks ?? []).join(", ");
 }
 
-function setAgentFallbacks(agent: AgentEntry, event: Event) {
-  const value = (event.target as HTMLInputElement).value;
-  agent.fallbacks = splitCsv(value);
+function _setAgentFallbacks(agent: AgentEntry, event: Event) {
+	const value = (event.target as HTMLInputElement).value;
+	agent.fallbacks = splitCsv(value);
 }
 
 function splitCsv(value: string): string[] {
-  return value.split(",").map((v) => v.trim()).filter(Boolean);
+	return value
+		.split(",")
+		.map((v) => v.trim())
+		.filter(Boolean);
 }
 
 async function importAgents() {
-  try {
-    const raw = await callTool("agent_list");
-    const agents = (JSON.parse(raw) as RuntimeAgent[] | null) ?? [];
-    if (!agents.length) return;
-    draft.value.agents = agents.map((agent) => ({
-      name: agent.name ?? "",
-      model: agent.model ?? "",
-      memory: "",
-      fallbacks: agent.fallbacks ?? [],
-      channels: [],
-      tasks: [],
-    }));
-    if (!sessionAgent.value && draft.value.agents.length) {
-      sessionAgent.value = draft.value.agents[0].name;
-    }
-    if (!memoryAgent.value && draft.value.agents.length) {
-      memoryAgent.value = draft.value.agents[0].name;
-    }
-  } catch {
-    // best-effort import
-  }
+	try {
+		const raw = await callTool("agent_list");
+		const agents = (JSON.parse(raw) as RuntimeAgent[] | null) ?? [];
+		if (!agents.length) return;
+		draft.value.agents = agents.map((agent) => ({
+			name: agent.name ?? "",
+			model: agent.model ?? "",
+			memory: "",
+			fallbacks: agent.fallbacks ?? [],
+			channels: [],
+			tasks: [],
+		}));
+		if (!sessionAgent.value && draft.value.agents.length) {
+			sessionAgent.value = draft.value.agents[0].name;
+		}
+		if (!memoryAgent.value && draft.value.agents.length) {
+			memoryAgent.value = draft.value.agents[0].name;
+		}
+	} catch {
+		// best-effort import
+	}
 }
 
-async function saveAll() {
-  saving.value = true;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
-    normalized.models.defaults.fallbacks = splitCsv(fallbacksCsv.value);
+async function _saveAll() {
+	saving.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+		normalized.models.defaults.fallbacks = splitCsv(fallbacksCsv.value);
 
-    const conc = concurrencyInput.value.trim();
-    if (conc.toLowerCase() === "auto") {
-      normalized.scheduler.concurrency = "auto";
-    } else {
-      const n = Number.parseInt(conc, 10);
-      normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "auto" : n;
-    }
+		const conc = concurrencyInput.value.trim();
+		if (conc.toLowerCase() === "auto") {
+			normalized.scheduler.concurrency = "auto";
+		} else {
+			const n = Number.parseInt(conc, 10);
+			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "auto" : n;
+		}
 
-    normalized.models.providers = Object.fromEntries(
-      providerRows.value
-        .map((row) => ({ name: row.name.trim(), auth: row.auth.trim() }))
-        .filter((row) => row.name !== "")
-        .map((row) => [row.name, { auth: row.auth }]),
-    );
+		normalized.models.providers = Object.fromEntries(
+			providerRows.value
+				.map((row) => ({ name: row.name.trim(), auth: row.auth.trim() }))
+				.filter((row) => row.name !== "")
+				.map((row) => [row.name, { auth: row.auth }]),
+		);
 
-    // Normalize agent/task values.
-    normalized.agents = (normalized.agents ?? []).map((agent) => ({
-      ...agent,
-      name: (agent.name ?? "").trim(),
-      model: (agent.model ?? "").trim(),
-      memory: (agent.memory ?? "").trim(),
-      rules: (agent.rules ?? "").trim() || undefined,
-      fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
-      tasks: (agent.tasks ?? []).map((task) => ({
-        ...task,
-        name: (task.name ?? "").trim(),
-        prompt: (task.prompt ?? "").trim(),
-        schedule: (task.schedule ?? "").trim(),
-        watch: (task.watch ?? "").trim(),
-        start_at: (task.start_at ?? "").trim(),
-        channel: (task.channel ?? "").trim(),
-        run_once: Boolean(task.run_once),
-      })),
-    }));
+		// Normalize agent/task values.
+		normalized.agents = (normalized.agents ?? []).map((agent) => ({
+			...agent,
+			name: (agent.name ?? "").trim(),
+			model: (agent.model ?? "").trim(),
+			memory: (agent.memory ?? "").trim(),
+			rules: (agent.rules ?? "").trim() || undefined,
+			fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+			tasks: (agent.tasks ?? []).map((task) => ({
+				...task,
+				name: (task.name ?? "").trim(),
+				prompt: (task.prompt ?? "").trim(),
+				schedule: (task.schedule ?? "").trim(),
+				watch: (task.watch ?? "").trim(),
+				start_at: (task.start_at ?? "").trim(),
+				channel: (task.channel ?? "").trim(),
+				run_once: Boolean(task.run_once),
+			})),
+		}));
 
-    await store.saveConfig(normalized);
-    draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
-    okMessage.value = "Settings saved.";
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
+		await store.saveConfig(normalized);
+		draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
+		okMessage.value = "Settings saved.";
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		saving.value = false;
+	}
 }
 
 async function loadSessions() {
-  if (!sessionAgent.value) return;
-  sessionLoading.value = true;
-  errorMessage.value = "";
-  try {
-    const raw = await callTool("session_list", { agent: sessionAgent.value });
-    sessions.value = (JSON.parse(raw) as SessionRow[] | null) ?? [];
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-    sessions.value = [];
-  } finally {
-    sessionLoading.value = false;
-  }
+	if (!sessionAgent.value) return;
+	sessionLoading.value = true;
+	errorMessage.value = "";
+	try {
+		const raw = await callTool("session_list", { agent: sessionAgent.value });
+		sessions.value = (JSON.parse(raw) as SessionRow[] | null) ?? [];
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+		sessions.value = [];
+	} finally {
+		sessionLoading.value = false;
+	}
 }
 
-async function createSession() {
-  if (!sessionAgent.value) return;
-  try {
-    await callTool("session_create", { agent: sessionAgent.value });
-    await loadSessions();
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  }
+async function _createSession() {
+	if (!sessionAgent.value) return;
+	try {
+		await callTool("session_create", { agent: sessionAgent.value });
+		await loadSessions();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
-async function stopSession(sessionID: string) {
-  try {
-    await callTool("session_stop", { session_id: sessionID });
-    await loadSessions();
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  }
+async function _stopSession(sessionID: string) {
+	try {
+		await callTool("session_stop", { session_id: sessionID });
+		await loadSessions();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
-function formatDate(value: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+function _formatDate(value: string): string {
+	if (!value) return "—";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return value;
+	return date.toLocaleString();
 }
 
 async function refreshCredentials() {
-  try {
-    const raw = await callTool("auth_list");
-    credentials.value = (JSON.parse(raw) as string[] | null) ?? [];
-  } catch {
-    credentials.value = [];
-  }
+	try {
+		const raw = await callTool("auth_list");
+		credentials.value = (JSON.parse(raw) as string[] | null) ?? [];
+	} catch {
+		credentials.value = [];
+	}
 }
 
-async function setCredential() {
-  if (!credentialName.value.trim()) return;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    await callTool("auth_set", { name: credentialName.value.trim(), value: credentialValue.value });
-    credentialValue.value = "";
-    await refreshCredentials();
-    okMessage.value = `Credential stored: ${credentialName.value.trim()}`;
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  }
+async function _setCredential() {
+	if (!credentialName.value.trim()) return;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		await callTool("auth_set", {
+			name: credentialName.value.trim(),
+			value: credentialValue.value,
+		});
+		credentialValue.value = "";
+		await refreshCredentials();
+		okMessage.value = `Credential stored: ${credentialName.value.trim()}`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
-async function checkCredential() {
-  if (!credentialName.value.trim()) return;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    const raw = await callTool("auth_get", { name: credentialName.value.trim() });
-    const parsed = JSON.parse(raw) as { preview?: string };
-    okMessage.value = `Credential is set: ${parsed.preview ?? "(masked)"}`;
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  }
+async function _checkCredential() {
+	if (!credentialName.value.trim()) return;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const raw = await callTool("auth_get", {
+			name: credentialName.value.trim(),
+		});
+		const parsed = JSON.parse(raw) as { preview?: string };
+		okMessage.value = `Credential is set: ${parsed.preview ?? "(masked)"}`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
-async function deleteCredential() {
-  if (!credentialName.value.trim()) return;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    await callTool("auth_delete", { name: credentialName.value.trim() });
-    await refreshCredentials();
-    okMessage.value = `Credential deleted: ${credentialName.value.trim()}`;
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  }
+async function _deleteCredential() {
+	if (!credentialName.value.trim()) return;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		await callTool("auth_delete", { name: credentialName.value.trim() });
+		await refreshCredentials();
+		okMessage.value = `Credential deleted: ${credentialName.value.trim()}`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
-async function loginOpenAI() {
-  oauthBusy.value = true;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    const text = await callTool("auth_login_openai");
-    okMessage.value = text || "OpenAI OAuth completed.";
-    await refreshCredentials();
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    oauthBusy.value = false;
-  }
+async function _loginOpenAI() {
+	oauthBusy.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const text = await callTool("auth_login_openai");
+		okMessage.value = text || "OpenAI OAuth completed.";
+		await refreshCredentials();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		oauthBusy.value = false;
+	}
 }
 
-async function startAnthropic() {
-  oauthBusy.value = true;
-  errorMessage.value = "";
-  okMessage.value = "";
-  anthropicUrl.value = "";
-  try {
-    const raw = await callTool("auth_login_anthropic");
-    const parsed = JSON.parse(raw) as { url?: string; instructions?: string };
-    anthropicUrl.value = parsed.url ?? "";
-    okMessage.value = parsed.instructions ?? "Anthropic OAuth started.";
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    oauthBusy.value = false;
-  }
+async function _startAnthropic() {
+	oauthBusy.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	anthropicUrl.value = "";
+	try {
+		const raw = await callTool("auth_login_anthropic");
+		const parsed = JSON.parse(raw) as { url?: string; instructions?: string };
+		anthropicUrl.value = parsed.url ?? "";
+		okMessage.value = parsed.instructions ?? "Anthropic OAuth started.";
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		oauthBusy.value = false;
+	}
 }
 
-async function completeAnthropic() {
-  if (!anthropicCode.value.trim()) return;
-  oauthBusy.value = true;
-  errorMessage.value = "";
-  okMessage.value = "";
-  try {
-    const text = await callTool("auth_login_anthropic_complete", { code: anthropicCode.value.trim() });
-    anthropicCode.value = "";
-    okMessage.value = text || "Anthropic OAuth completed.";
-    await refreshCredentials();
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    oauthBusy.value = false;
-  }
+async function _completeAnthropic() {
+	if (!anthropicCode.value.trim()) return;
+	oauthBusy.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const text = await callTool("auth_login_anthropic_complete", {
+			code: anthropicCode.value.trim(),
+		});
+		anthropicCode.value = "";
+		okMessage.value = text || "Anthropic OAuth completed.";
+		await refreshCredentials();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		oauthBusy.value = false;
+	}
 }
 
 async function loadNotes() {
-  if (!memoryAgent.value) return;
-  memoryLoading.value = true;
-  memoryErrorMessage.value = "";
-  try {
-    notesContent.value = await callTool("memory_show", { agent: memoryAgent.value });
-  } catch (e) {
-    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    memoryLoading.value = false;
-  }
+	if (!memoryAgent.value) return;
+	memoryLoading.value = true;
+	memoryErrorMessage.value = "";
+	try {
+		notesContent.value = await callTool("memory_show", {
+			agent: memoryAgent.value,
+		});
+	} catch (e) {
+		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		memoryLoading.value = false;
+	}
 }
 
-async function saveNotes() {
-  if (!memoryAgent.value) return;
-  notesSaving.value = true;
-  memoryErrorMessage.value = "";
-  try {
-    await callTool("memory_notes_set", { agent: memoryAgent.value, content: notesContent.value });
-  } catch (e) {
-    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    notesSaving.value = false;
-  }
+async function _saveNotes() {
+	if (!memoryAgent.value) return;
+	notesSaving.value = true;
+	memoryErrorMessage.value = "";
+	try {
+		await callTool("memory_notes_set", {
+			agent: memoryAgent.value,
+			content: notesContent.value,
+		});
+	} catch (e) {
+		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		notesSaving.value = false;
+	}
 }
 
-async function clearMemory() {
-  if (!memoryAgent.value) return;
-  memoryClearing.value = true;
-  memoryErrorMessage.value = "";
-  try {
-    await callTool("memory_clear", { agent: memoryAgent.value });
-    notesContent.value = "";
-    okMessage.value = `Memory cleared for agent "${memoryAgent.value}".`;
-  } catch (e) {
-    memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    memoryClearing.value = false;
-  }
+async function _clearMemory() {
+	if (!memoryAgent.value) return;
+	memoryClearing.value = true;
+	memoryErrorMessage.value = "";
+	try {
+		await callTool("memory_clear", { agent: memoryAgent.value });
+		notesContent.value = "";
+		okMessage.value = `Memory cleared for agent "${memoryAgent.value}".`;
+	} catch (e) {
+		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		memoryClearing.value = false;
+	}
 }
-
 </script>
 
 <style scoped>

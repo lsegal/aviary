@@ -46,40 +46,41 @@ import { computed } from "vue";
 import { useServerStatus } from "../composables/useServerStatus";
 import { useAuthStore } from "../stores/auth";
 
-const auth = useAuthStore();
+const _auth = useAuthStore();
 const { status, version } = useServerStatus();
-const logoUrl = "/logo.png";
+const _logoUrl = "/logo.png";
 
-const links = [
-  { to: "/overview", label: "Overview" },
-  { to: "/chat", label: "Chat" },
-  { to: "/settings", label: "Settings" },
-  { to: "/logs", label: "Logs" },
-  { to: "/usage", label: "Usage" },
+const _links = [
+	{ to: "/overview", label: "Overview" },
+	{ to: "/chat", label: "Chat" },
+	{ to: "/settings", label: "Settings" },
+	{ to: "/logs", label: "Logs" },
+	{ to: "/usage", label: "Usage" },
+	{ to: "/jobs", label: "Jobs" },
 ];
 
-const dotClass = computed(() => {
-  if (status.value === "connected") return "bg-green-500";
-  if (status.value === "disconnected") return "bg-red-500";
-  return "bg-yellow-400 animate-pulse";
+const _dotClass = computed(() => {
+	if (status.value === "connected") return "bg-green-500";
+	if (status.value === "disconnected") return "bg-red-500";
+	return "bg-yellow-400 animate-pulse";
 });
 
 // Version dot is always green — out-of-date detection not yet implemented.
-const versionDotClass = "bg-green-500";
+const _versionDotClass = "bg-green-500";
 
-const displayVersion = computed(() =>
-  version.value ? version.value : status.value === "disconnected" ? "—" : "…",
+const _displayVersion = computed(() =>
+	version.value ? version.value : status.value === "disconnected" ? "—" : "…",
 );
 
-const healthLabel = computed(() => {
-  if (status.value === "connected") return "Connected";
-  if (status.value === "disconnected") return "Disconnected";
-  return "…";
+const _healthLabel = computed(() => {
+	if (status.value === "connected") return "Connected";
+	if (status.value === "disconnected") return "Disconnected";
+	return "…";
 });
 
-const healthTextClass = computed(() => {
-  if (status.value === "connected") return "text-green-600 dark:text-green-400";
-  if (status.value === "disconnected") return "text-red-500 dark:text-red-400";
-  return "text-yellow-600 dark:text-yellow-400";
+const _healthTextClass = computed(() => {
+	if (status.value === "connected") return "text-green-600 dark:text-green-400";
+	if (status.value === "disconnected") return "text-red-500 dark:text-red-400";
+	return "text-yellow-600 dark:text-yellow-400";
 });
 </script>
