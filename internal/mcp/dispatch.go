@@ -55,8 +55,8 @@ func (d *Dispatcher) Resolve(ctx context.Context) (Client, error) {
 }
 
 func ensureInProcessDeps() error {
-	deps := GetDeps()
-	if deps != nil && deps.Agents != nil && deps.Memory != nil && deps.Browser != nil {
+	// If deps were explicitly set (by the server or tests), use them as-is.
+	if depsSet {
 		return nil
 	}
 
