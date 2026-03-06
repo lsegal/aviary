@@ -40,10 +40,10 @@ type logHub struct {
 
 var globalHub = newLogHub(500)
 
-func newLogHub(cap int) *logHub {
+func newLogHub(bufCap int) *logHub {
 	return &logHub{
-		ringCap: cap,
-		ring:    make([]logEntry, 0, cap),
+		ringCap: bufCap,
+		ring:    make([]logEntry, 0, bufCap),
 		subs:    make(map[chan logEntry]struct{}),
 	}
 }
@@ -52,24 +52,6 @@ func newLogHub(cap int) *logHub {
 func (h *logHub) setDelegate(d slog.Handler) {
 	h.mu.Lock()
 	h.delegate = d
-	h.mu.Unlock()
-}
-
-// subscribe returns a channel that receives future log entries.  The caller
-// must call unsubscribe when done.
-func (h *logHub) subscribe() (chan logEntry, []logEntry) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	ch := make(chan logEntry, 512)
-	h.subs[ch] = struct{}{}
-	snap := make([]logEntry, len(h.ring))
-	copy(snap, h.ring)
-	return ch, snap
-}
-
-func (h *logHub) unsubscribe(ch chan logEntry) {
-	h.mu.Lock()
-	delete(h.subs, ch)
 	h.mu.Unlock()
 }
 
@@ -195,7 +177,7 @@ type hubChild struct {
 	extra    []slog.Attr
 }
 
-func (c *hubChild) Enabled(_ context.Context, lvl slog.Level) bool { return true }
+func (c *hubChild) Enabled(_ context.Context, _ slog.Level) bool { return true }
 func (c *hubChild) WithAttrs(attrs []slog.Attr) slog.Handler {
 	all := append(c.extra, attrs...)
 	var d slog.Handler
@@ -224,7 +206,7 @@ type hubGroup struct {
 	group    string
 }
 
-func (g *hubGroup) Enabled(_ context.Context, lvl slog.Level) bool { return true }
+func (g *hubGroup) Enabled(_ context.Context, _ slog.Level) bool { return true }
 func (g *hubGroup) WithAttrs(attrs []slog.Attr) slog.Handler {
 	var d slog.Handler
 	if g.delegate != nil {
@@ -270,7 +252,7 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return true
 		}
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 		return true
 	}
@@ -379,7 +361,7 @@ func parseLogLine(line string) logEntry {
 		}
 	}
 
-	component := "server"
+	var component string
 	if c, ok := raw["component"].(string); ok && c != "" {
 		component = c
 	} else {
