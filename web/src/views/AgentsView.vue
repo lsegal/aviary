@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import AppLayout from "../components/AppLayout.vue";
 import { computed, onMounted, ref } from "vue";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";

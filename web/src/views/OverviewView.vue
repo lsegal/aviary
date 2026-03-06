@@ -171,6 +171,7 @@
 </template>
 
 <script setup lang="ts">
+import AppLayout from "../components/AppLayout.vue";
 import { computed, onMounted } from "vue";
 import { useOverviewStore } from "../stores/overview";
 

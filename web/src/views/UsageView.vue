@@ -224,6 +224,7 @@
 </template>
 
 <script setup lang="ts">
+import AppLayout from "../components/AppLayout.vue";
 import { computed, onMounted, ref } from "vue";
 import { useUsageStore } from "../stores/usage";
 
