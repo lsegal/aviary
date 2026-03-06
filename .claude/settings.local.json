@@ -1,8 +1,14 @@
-
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm add:*)",
+      "Bash(rm:*)",
+      "Bash(node:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(go build:*)"
     ]
   }
 }
