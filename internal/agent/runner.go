@@ -27,6 +27,8 @@ func extractProvider(model string) string {
 }
 
 // AgentRunner manages an agent's active prompts and lifecycle.
+//
+//nolint:revive
 type AgentRunner struct {
 	agent    *domain.Agent
 	cfg      *config.AgentConfig
@@ -39,7 +41,7 @@ type AgentRunner struct {
 }
 
 const (
-	defaultMemoryTokens     = 4000 // token budget for memory context injected into each prompt
+	defaultMemoryTokens      = 4000 // token budget for memory context injected into each prompt
 	defaultMemoryCompactKeep = 200  // pool entries to retain after compaction
 )
 
@@ -165,6 +167,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 			toolNames[t.Name] = struct{}{}
 		}
 		retriedToollessRefusal := false
+		retriedInvalidJSON := false
 
 		const maxToolRounds = 8
 		for round := 0; round < maxToolRounds; round++ {
@@ -232,6 +235,14 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 					conversation = append(conversation,
 						llm.Message{Role: llm.RoleAssistant, Content: answer},
 						llm.Message{Role: llm.RoleUser, Content: buildToolRetryPrompt(tools)},
+					)
+					continue
+				}
+				if !retriedInvalidJSON && looksLikeBrokenToolCall(answer) {
+					retriedInvalidJSON = true
+					conversation = append(conversation,
+						llm.Message{Role: llm.RoleAssistant, Content: answer},
+						llm.Message{Role: llm.RoleUser, Content: "Your response could not be parsed as valid JSON. Ensure all double quotes inside string values are escaped as \\\". Respond with only the corrected JSON."},
 					)
 					continue
 				}
@@ -624,6 +635,13 @@ func pickMap(obj map[string]any, keys ...string) map[string]any {
 	return map[string]any{}
 }
 
+// looksLikeBrokenToolCall returns true when the response appears to be an
+// attempted JSON tool call that failed to parse (e.g. unescaped quotes).
+func looksLikeBrokenToolCall(answer string) bool {
+	t := strings.TrimSpace(answer)
+	return strings.Contains(t, `"tool"`) && strings.Contains(t, `"arguments"`)
+}
+
 func shouldRetryToollessRefusal(answer string, toolCount int, alreadyRetried bool) bool {
 	if alreadyRetried || toolCount == 0 {
 		return false
@@ -669,13 +687,14 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
 	var sb strings.Builder
 	sb.WriteString("You are an autonomous local assistant with tool access in this runtime.\n")
 	if agentName != "" {
-		sb.WriteString(fmt.Sprintf("Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName))
+		fmt.Fprintf(&sb, "Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName)
 	}
 	sb.WriteString("When a user asks to change state (configuration, tasks, auth, browser actions, memory, sessions, jobs), prefer executing tools over explaining limitations.\n")
 	sb.WriteString("Do not claim lack of access unless a tool call actually fails.\n")
 	sb.WriteString("When asked to schedule a task or reminder, call task_schedule immediately using your own agent name. Do not ask where output will appear — scheduled task output is captured in job logs.\n")
 	sb.WriteString("Any new facts detected in user messages (personal details, preferences, names, relationships, or explicit requests to remember something) should be stored using the memory_store tool (arguments: agent=<your agent name>, content=<the fact>) before responding.\n")
 	sb.WriteString("If you decide to call a tool, respond with ONLY valid JSON in this exact shape: {\"tool\":\"<name>\",\"arguments\":{...}}\n")
+	sb.WriteString("JSON rules: all string values must use \\\" to escape double quotes inside them. Never use unescaped double quotes inside a JSON string value.\n")
 	sb.WriteString("Do not include markdown when calling a tool.\n")
 	sb.WriteString("After receiving tool results, either call another tool with JSON or provide the final user-facing answer as plain text.\n\n")
 
@@ -716,7 +735,7 @@ func (r *AgentRunner) loadRules() string {
 	if r.cfg != nil && r.cfg.Rules != "" {
 		rules := r.cfg.Rules
 		// Treat as file path when it looks like one.
-		if strings.HasPrefix(rules, "/") || strings.HasPrefix(rules, "./") || strings.HasPrefix(rules, ".\\" ) || strings.HasSuffix(rules, ".md") {
+		if strings.HasPrefix(rules, "/") || strings.HasPrefix(rules, "./") || strings.HasPrefix(rules, ".\\") || strings.HasSuffix(rules, ".md") {
 			if data, err := os.ReadFile(rules); err == nil {
 				return strings.TrimSpace(string(data))
 			}
