@@ -35,7 +35,7 @@ jobs:
         with:
           version: 8
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: pnpm
@@ -55,7 +55,7 @@ jobs:
         with:
           version: 9
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           cache: pnpm
