@@ -225,6 +225,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { useUsageStore } from "../stores/usage";
 
 const store = useUsageStore();

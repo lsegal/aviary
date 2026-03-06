@@ -147,6 +147,7 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import { useAgentsStore } from "../stores/agents";

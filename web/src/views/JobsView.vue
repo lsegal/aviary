@@ -293,6 +293,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
 import type { Job } from "../stores/jobs";
 import { useJobsStore } from "../stores/jobs";

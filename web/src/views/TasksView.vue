@@ -72,6 +72,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { useSettingsStore } from "../stores/settings";
 import { useTasksStore } from "../stores/tasks";
 

@@ -126,6 +126,7 @@
 
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
 
 const logs = useLogs();

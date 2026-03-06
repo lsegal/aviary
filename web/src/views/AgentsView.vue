@@ -123,6 +123,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import AppLayout from "../components/AppLayout.vue";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";
 
