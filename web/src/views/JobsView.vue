@@ -306,15 +306,15 @@ const selectedJob = ref<Job | null>(null);
 const jobOutput = ref<string>("");
 const logsLoading = ref(false);
 const liveBottom = ref<HTMLElement | null>(null);
-const _hoveredDay = ref<number | null>(null);
+const hoveredDay = ref<number | null>(null);
 
-const _presets = [
+const presets = [
 	{ label: "Today", days: 0 },
 	{ label: "7d", days: 7 },
 	{ label: "30d", days: 30 },
 ];
 
-const _statusFilters = [
+const statusFilters = [
 	{ label: "All", value: "all" },
 	{ label: "Pending", value: "pending" },
 	{ label: "Running", value: "in_progress" },
@@ -322,7 +322,7 @@ const _statusFilters = [
 	{ label: "Failed", value: "failed" },
 ];
 
-const _filteredJobs = computed(() => {
+const filteredJobs = computed(() => {
 	if (statusFilter.value === "all") return store.jobs;
 	return store.jobs.filter((j) => j.status === statusFilter.value);
 });
@@ -343,7 +343,7 @@ watch(liveLines, async () => {
 	}
 });
 
-async function _selectJob(job: Job) {
+async function selectJob(job: Job) {
 	selectedJob.value = job;
 	jobOutput.value = "";
 	if (job.status !== "in_progress") {
@@ -357,18 +357,18 @@ async function loadLogs(id: string) {
 	logsLoading.value = false;
 }
 
-async function _reloadLogs() {
+async function reloadLogs() {
 	if (selectedJob.value) await loadLogs(selectedJob.value.id);
 }
 
-function _applyPreset(days: number) {
+function applyPreset(days: number) {
 	activePreset.value = days;
 	store.setPreset(days);
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
-function _statusLabel(s: string): string {
+function statusLabel(s: string): string {
 	return (
 		{
 			pending: "Pending",
@@ -379,7 +379,7 @@ function _statusLabel(s: string): string {
 	);
 }
 
-function _statusClass(s: string): string {
+function statusClass(s: string): string {
 	return (
 		{
 			pending:
@@ -393,7 +393,7 @@ function _statusClass(s: string): string {
 	);
 }
 
-function _fmtTs(ts: string): string {
+function fmtTs(ts: string): string {
 	if (!ts) return "—";
 	const d = new Date(ts);
 	return (
@@ -407,7 +407,7 @@ function _fmtTs(ts: string): string {
 	);
 }
 
-function _duration(job: Job): string {
+function duration(job: Job): string {
 	const start = new Date(job.created_at).getTime();
 	const end = new Date(job.updated_at).getTime();
 	const ms = end - start;
@@ -416,12 +416,12 @@ function _duration(job: Job): string {
 	return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
 }
 
-function _pct(part: number, total: number): string {
+function pct(part: number, total: number): string {
 	if (!total) return "0%";
 	return `${Math.round((part / total) * 100)}%`;
 }
 
-function _dayH(
+function dayH(
 	row: { completed: number; failed: number; running: number },
 	field: "completed" | "failed" | "running",
 ): number {
@@ -442,7 +442,7 @@ function _dayH(
 			: runningH;
 }
 
-function _showLabel(i: number, len: number): boolean {
+function showLabel(i: number, len: number): boolean {
 	if (len <= 8) return true;
 	const step = Math.max(1, Math.ceil(len / 8));
 	return i === 0 || i === len - 1 || i % step === 0;

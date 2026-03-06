@@ -229,19 +229,19 @@ import { useUsageStore } from "../stores/usage";
 
 const store = useUsageStore();
 
-const _hoveredDay = ref<number | null>(null);
-const _hoveredHour = ref<number | null>(null);
-const _hoveredDayChart = ref<number | null>(null);
+const hoveredDay = ref<number | null>(null);
+const hoveredHour = ref<number | null>(null);
+const hoveredDayChart = ref<number | null>(null);
 const activePreset = ref<number | null>(7);
 
-const _presets = [
+const presets = [
 	{ label: "Today", days: 0 },
 	{ label: "7d", days: 7 },
 	{ label: "30d", days: 30 },
 ];
-const _dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const _grandTotal = computed(
+const grandTotal = computed(
 	() =>
 		store.totalInput +
 		store.totalOutput +
@@ -249,7 +249,7 @@ const _grandTotal = computed(
 		store.totalCacheWrite,
 );
 
-const _statCards = computed(() => [
+const statCards = computed(() => [
 	{ label: "Messages", value: String(store.totalMessages) },
 	{ label: "Tool Calls", value: String(store.totalToolCalls) },
 	{
@@ -274,7 +274,7 @@ const _statCards = computed(() => [
 	},
 ]);
 
-const _breakdowns = computed(() => [
+const breakdowns = computed(() => [
 	{
 		title: "Top Models",
 		items: store.topModels,
@@ -292,7 +292,7 @@ const _breakdowns = computed(() => [
 	},
 ]);
 
-function _applyPreset(days: number) {
+function applyPreset(days: number) {
 	activePreset.value = days;
 	store.setPreset(days);
 }
@@ -303,7 +303,7 @@ function fmtTokens(n: number): string {
 	return String(n);
 }
 
-function _fmtTs(ts: string): string {
+function fmtTs(ts: string): string {
 	if (!ts) return "-";
 	const d = new Date(ts);
 	return (
@@ -313,12 +313,12 @@ function _fmtTs(ts: string): string {
 	);
 }
 
-function _pct(part: number, total: number): string {
+function pct(part: number, total: number): string {
 	if (!total) return "0%";
 	return `${Math.round((part / total) * 100)}%`;
 }
 
-function _barHeight(val: number, arr: number[]): string {
+function barHeight(val: number, arr: number[]): string {
 	const max = Math.max(...arr, 1);
 	return `${Math.max(2, Math.round((val / max) * 56))}px`;
 }
@@ -331,7 +331,7 @@ const heatBuckets = [
 	"bg-blue-600",
 	"bg-red-500",
 ];
-function _heatClass(val: number, arr: number[]): string {
+function heatClass(val: number, arr: number[]): string {
 	const max = Math.max(...arr, 1);
 	const ratio = val / max;
 	const idx = Math.min(
@@ -341,7 +341,7 @@ function _heatClass(val: number, arr: number[]): string {
 	return heatBuckets[idx];
 }
 
-function _sH(
+function sH(
 	row: { input: number; output: number; cache: number },
 	field: "input" | "output" | "cache",
 	allRows: { input: number; output: number; cache: number }[],
@@ -359,7 +359,7 @@ function _sH(
 	return field === "input" ? inputH : field === "output" ? outputH : cacheH;
 }
 
-function _showLabel(i: number, len: number): boolean {
+function showLabel(i: number, len: number): boolean {
 	if (len <= 8) return true;
 	const step = Math.max(1, Math.ceil(len / 8));
 	return i === 0 || i === len - 1 || i % step === 0;

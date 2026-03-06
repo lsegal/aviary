@@ -78,7 +78,7 @@ import { useTasksStore } from "../stores/tasks";
 const store = useTasksStore();
 const settingsStore = useSettingsStore();
 
-const _configuredTasks = computed(() =>
+const configuredTasks = computed(() =>
 	(settingsStore.config?.agents ?? []).flatMap((agent) =>
 		(agent.tasks ?? []).map((task) => ({
 			agent: agent.name,
@@ -102,7 +102,7 @@ onMounted(() => {
 	settingsStore.fetchConfig();
 });
 
-function _statusClass(status: string): string {
+function statusClass(status: string): string {
 	const map: Record<string, string> = {
 		pending: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
 		in_progress:

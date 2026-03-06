@@ -145,14 +145,14 @@ watch(
 );
 
 // Pause auto-scroll if user scrolls up.
-function _onScroll() {
+function onScroll() {
 	if (!scrollEl.value) return;
 	const { scrollTop, scrollHeight, clientHeight } = scrollEl.value;
 	autoScroll.value = scrollTop + clientHeight >= scrollHeight - 32;
 }
 
 // Time formatting: show HH:MM:SS.mmm
-function _fmtTime(iso: string): string {
+function fmtTime(iso: string): string {
 	try {
 		const d = new Date(iso);
 		const hh = d.getHours().toString().padStart(2, "0");
@@ -165,7 +165,7 @@ function _fmtTime(iso: string): string {
 	}
 }
 
-function _levelClass(level: string): string {
+function levelClass(level: string): string {
 	const map: Record<string, string> = {
 		debug: "text-gray-500",
 		info: "text-blue-400",
@@ -194,11 +194,11 @@ function compIndex(comp: string): number {
 	return h % COMP_PALETTE.length;
 }
 
-function _componentActiveClass(comp: string): string {
+function componentActiveClass(comp: string): string {
 	return `border ${COMP_PALETTE[compIndex(comp)]}`;
 }
 
-function _componentLabelClass(comp: string): string {
+function componentLabelClass(comp: string): string {
 	const colors = [
 		"text-blue-400",
 		"text-emerald-400",
@@ -212,7 +212,7 @@ function _componentLabelClass(comp: string): string {
 	return colors[compIndex(comp)];
 }
 
-function _isComponentActive(comp: string): boolean {
+function isComponentActive(comp: string): boolean {
 	return logs.filterComponents.value.has(comp);
 }
 </script>

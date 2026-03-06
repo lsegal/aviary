@@ -385,7 +385,7 @@ interface JobEntry {
 	created_at: string;
 }
 
-const _tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
+const tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
 const activeTab = ref<Tab>("general");
 
 const store = useSettingsStore();
@@ -459,7 +459,7 @@ function getRulesState(agentName: string): RulesEditorState {
 	return rulesEditorState.value[agentName];
 }
 
-async function _loadRulesFile(agentName: string) {
+async function loadRulesFile(agentName: string) {
 	if (!agentName) return;
 	const state = getRulesState(agentName);
 	state.loading = true;
@@ -473,7 +473,7 @@ async function _loadRulesFile(agentName: string) {
 	}
 }
 
-async function _saveRulesFile(agentName: string) {
+async function saveRulesFile(agentName: string) {
 	if (!agentName) return;
 	const state = getRulesState(agentName);
 	state.saving = true;
@@ -490,7 +490,7 @@ async function _saveRulesFile(agentName: string) {
 	}
 }
 
-function _agentJobsList(agentName: string): JobEntry[] {
+function agentJobsList(agentName: string): JobEntry[] {
 	return allJobs.value.filter((j) => j.agent_name === agentName);
 }
 
@@ -507,7 +507,7 @@ async function loadAllJobs() {
 	}
 }
 
-function _jobStatusClass(status: string): string {
+function jobStatusClass(status: string): string {
 	if (status === "done")
 		return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
 	if (status === "failed")
@@ -517,7 +517,7 @@ function _jobStatusClass(status: string): string {
 	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
 }
 
-function _fmtJobDate(s: string | undefined): string {
+function fmtJobDate(s: string | undefined): string {
 	if (!s) return "—";
 	return new Date(s).toLocaleString();
 }
@@ -538,7 +538,7 @@ function emptyConfig(): AppConfig {
 	};
 }
 
-function _tabLabel(tab: Tab): string {
+function tabLabel(tab: Tab): string {
 	if (tab === "general") return "General";
 	if (tab === "agents") return "Agents & Tasks";
 	if (tab === "sessions") return "Sessions";
@@ -546,7 +546,7 @@ function _tabLabel(tab: Tab): string {
 	return "Providers & Auth";
 }
 
-function _tabClass(tab: Tab): string {
+function tabClass(tab: Tab): string {
 	return activeTab.value === tab
 		? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
 		: "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
@@ -585,7 +585,7 @@ async function loadConfig() {
 	}
 }
 
-function _addAgent() {
+function addAgent() {
 	const agent: AgentEntry = {
 		name: "",
 		model: "",
@@ -598,11 +598,11 @@ function _addAgent() {
 	draft.value.agents.push(agent);
 }
 
-function _removeAgent(index: number) {
+function removeAgent(index: number) {
 	draft.value.agents.splice(index, 1);
 }
 
-function _addTask(agentIndex: number) {
+function addTask(agentIndex: number) {
 	const task: AgentTask = {
 		name: "",
 		prompt: "",
@@ -617,15 +617,15 @@ function _addTask(agentIndex: number) {
 	draft.value.agents[agentIndex].tasks.push(task);
 }
 
-function _removeTask(agentIndex: number, taskIndex: number) {
+function removeTask(agentIndex: number, taskIndex: number) {
 	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
-function _agentFallbacks(agent: AgentEntry): string {
+function agentFallbacks(agent: AgentEntry): string {
 	return (agent.fallbacks ?? []).join(", ");
 }
 
-function _setAgentFallbacks(agent: AgentEntry, event: Event) {
+function setAgentFallbacks(agent: AgentEntry, event: Event) {
 	const value = (event.target as HTMLInputElement).value;
 	agent.fallbacks = splitCsv(value);
 }
@@ -661,7 +661,7 @@ async function importAgents() {
 	}
 }
 
-async function _saveAll() {
+async function saveAll() {
 	saving.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -729,7 +729,7 @@ async function loadSessions() {
 	}
 }
 
-async function _createSession() {
+async function createSession() {
 	if (!sessionAgent.value) return;
 	try {
 		await callTool("session_create", { agent: sessionAgent.value });
@@ -739,7 +739,7 @@ async function _createSession() {
 	}
 }
 
-async function _stopSession(sessionID: string) {
+async function stopSession(sessionID: string) {
 	try {
 		await callTool("session_stop", { session_id: sessionID });
 		await loadSessions();
@@ -748,7 +748,7 @@ async function _stopSession(sessionID: string) {
 	}
 }
 
-function _formatDate(value: string): string {
+function formatDate(value: string): string {
 	if (!value) return "—";
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
@@ -764,7 +764,7 @@ async function refreshCredentials() {
 	}
 }
 
-async function _setCredential() {
+async function setCredential() {
 	if (!credentialName.value.trim()) return;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -781,7 +781,7 @@ async function _setCredential() {
 	}
 }
 
-async function _checkCredential() {
+async function checkCredential() {
 	if (!credentialName.value.trim()) return;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -796,7 +796,7 @@ async function _checkCredential() {
 	}
 }
 
-async function _deleteCredential() {
+async function deleteCredential() {
 	if (!credentialName.value.trim()) return;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -809,7 +809,7 @@ async function _deleteCredential() {
 	}
 }
 
-async function _loginOpenAI() {
+async function loginOpenAI() {
 	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -824,7 +824,7 @@ async function _loginOpenAI() {
 	}
 }
 
-async function _startAnthropic() {
+async function startAnthropic() {
 	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -841,7 +841,7 @@ async function _startAnthropic() {
 	}
 }
 
-async function _completeAnthropic() {
+async function completeAnthropic() {
 	if (!anthropicCode.value.trim()) return;
 	oauthBusy.value = true;
 	errorMessage.value = "";
@@ -875,7 +875,7 @@ async function loadNotes() {
 	}
 }
 
-async function _saveNotes() {
+async function saveNotes() {
 	if (!memoryAgent.value) return;
 	notesSaving.value = true;
 	memoryErrorMessage.value = "";
@@ -891,7 +891,7 @@ async function _saveNotes() {
 	}
 }
 
-async function _clearMemory() {
+async function clearMemory() {
 	if (!memoryAgent.value) return;
 	memoryClearing.value = true;
 	memoryErrorMessage.value = "";

@@ -187,7 +187,7 @@ const agentsStore = useAgentsStore();
 const authStore = useAuthStore();
 const { streamAgent } = useStream();
 
-function _renderMarkdown(text: string): string {
+function renderMarkdown(text: string): string {
 	return marked.parse(text, { async: false }) as string;
 }
 
@@ -204,7 +204,7 @@ function parseToolMessage(content: string): Message {
 }
 
 /** Condensed one-line summary shown in the pill. */
-function _toolSummary(msg: Message): string {
+function toolSummary(msg: Message): string {
 	const d = msg.toolData;
 	if (!d) return msg.text;
 	const entries = Object.entries(d.args ?? {});
@@ -217,7 +217,7 @@ function _toolSummary(msg: Message): string {
 	return `${d.name}(${parts.join(", ")})`;
 }
 
-function _formatJSON(v: unknown): string {
+function formatJSON(v: unknown): string {
 	return JSON.stringify(v, null, 2);
 }
 const { callTool } = useMCP();
@@ -236,10 +236,10 @@ const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
 let ws: WebSocket | null = null;
 
-const _showBelowScroller = computed(
+const showBelowScroller = computed(
 	() => hasScrollOverflow.value && !isAtBottom.value,
 );
-const _currentSessionProcessing = computed(() => {
+const currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
 });
@@ -342,17 +342,17 @@ async function loadSessions() {
 	}
 }
 
-async function _onAgentChange() {
+async function onAgentChange() {
 	selectedSessionId.value = "";
 	sessions.value = [];
 	await loadSessions();
 }
 
-async function _onSessionChange() {
+async function onSessionChange() {
 	await loadSessionMessages();
 }
 
-async function _createSession() {
+async function createSession() {
 	if (!selectedAgent.value) return;
 	try {
 		const raw = await callTool("session_create", {
@@ -411,7 +411,7 @@ function updateScrollState() {
 	isAtBottom.value = distanceFromBottom <= 8;
 }
 
-function _onMessagesScroll() {
+function onMessagesScroll() {
 	updateScrollState();
 }
 
@@ -432,7 +432,7 @@ function selectedSessionName(): string {
 	return s?.name || s?.id || "main";
 }
 
-function _onPaste(e: ClipboardEvent) {
+function onPaste(e: ClipboardEvent) {
 	const items = e.clipboardData?.items;
 	if (!items) return;
 	for (const item of items) {
@@ -450,7 +450,7 @@ function _onPaste(e: ClipboardEvent) {
 	}
 }
 
-async function _send() {
+async function send() {
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
@@ -518,7 +518,7 @@ async function _send() {
 	await scrollBottom();
 }
 
-async function _stopSession() {
+async function stopSession() {
 	if (!selectedSessionId.value) return;
 	const sessionID = selectedSessionId.value;
 	try {

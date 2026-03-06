@@ -154,12 +154,12 @@ onMounted(() => {
 	settingsStore.fetchConfig();
 });
 
-function _taskSummary(agentName: string): string {
+function taskSummary(agentName: string): string {
 	const count = tasksByAgent.value[agentName]?.length ?? 0;
 	return count === 0 ? "none" : `${count} configured`;
 }
 
-function _stateBadge(state: string) {
+function stateBadge(state: string) {
 	if (state === "idle")
 		return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
 	if (state === "running")
@@ -167,12 +167,12 @@ function _stateBadge(state: string) {
 	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
 }
 
-function _openAdd() {
+function openAdd() {
 	modal.value = { mode: "add", name: "", model: "", fallbacksRaw: "" };
 	modalError.value = "";
 }
 
-function _openEdit(agent: Agent) {
+function openEdit(agent: Agent) {
 	modal.value = {
 		mode: "edit",
 		name: agent.name,
@@ -187,7 +187,7 @@ function closeModal() {
 	modalError.value = "";
 }
 
-async function _saveModal() {
+async function saveModal() {
 	if (!modal.value) return;
 	saving.value = true;
 	modalError.value = "";
@@ -210,7 +210,7 @@ async function _saveModal() {
 	}
 }
 
-async function _doDelete(name: string) {
+async function doDelete(name: string) {
 	saving.value = true;
 	try {
 		await store.deleteAgent(name);
