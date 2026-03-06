@@ -16,5 +16,5 @@
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true
 	},
-	"include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"]
+	"include": ["web/src/**/*.ts", "web/src/**/*.d.ts", "web/src/**/*.tsx", "web/src/**/*.vue"]
 }

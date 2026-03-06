@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite",
+		"dev": "concurrently -n vite,go -c cyan,green \"vite\" \"wgo run ./cmd/aviary start\"",
 		"build": "vue-tsc --noEmit && vite build",
 		"preview": "vite preview",
 		"lint": "biome check .",
@@ -26,6 +26,7 @@
 		"@tailwindcss/vite": "^4.2.1",
 		"@vitejs/plugin-vue": "^6.0.4",
 		"autoprefixer": "^10.4.27",
+		"concurrently": "^9.2.1",
 		"postcss": "^8.5.6",
 		"tailwindcss": "^4.2.1",
 		"typescript": "^5.9.3",

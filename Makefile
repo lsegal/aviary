@@ -26,7 +26,7 @@ clean:
 	rm -rf web/dist internal/server/webdist
 
 web-build:
-	cd web && pnpm install && pnpm build
+	pnpm install && pnpm build
 	$(MAKE) web-copy
 
 web-copy:
@@ -34,6 +34,6 @@ web-copy:
 	@cp -r web/dist/. internal/server/webdist/
 
 web-dev:
-	cd web && pnpm dev
+	pnpm dev
 
 .DEFAULT_GOAL := build
