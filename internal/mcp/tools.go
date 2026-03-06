@@ -557,7 +557,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a one-time prompt for an agent, optionally deferred (e.g. in='5m', '1h30m', '30s', '5 minutes')",
+		Description: "Schedule a one-time task (arguments: agent=<your-agent-name>, prompt=<what to do>, in=<optional delay e.g. '5m', '1h30m', '30 seconds'>)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In)
 		d := GetDeps()
@@ -569,6 +569,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 		}
 		if args.Prompt == "" {
 			return nil, struct{}{}, fmt.Errorf("prompt is required")
+		}
+		if d.Agents != nil {
+			if _, ok := d.Agents.Get(args.Agent); !ok {
+				return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
+			}
 		}
 		agentID := fmt.Sprintf("agent_%s", args.Agent)
 		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
