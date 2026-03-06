@@ -6,6 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "concurrently -n vite,go -c cyan,green \"vite\" \"wgo run ./cmd/aviary start\"",
+		"dev:ci": "concurrently -n vite,go -c cyan,green \"vite\" \"./aviary start\"",
 		"build": "vue-tsc --noEmit && vite build && pnpm run build:copy && pnpm run build:go",
 		"build:web": "vue-tsc --noEmit && vite build && pnpm run build:copy",
 		"build:go": "go build -ldflags \"-X github.com/lsegal/aviary/internal/server.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o aviary ./cmd/aviary",
