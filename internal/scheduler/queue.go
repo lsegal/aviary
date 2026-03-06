@@ -90,6 +90,9 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 		if j.NextRetryAt != nil && now.Before(*j.NextRetryAt) {
 			continue
 		}
+		if j.ScheduledFor != nil && now.Before(*j.ScheduledFor) {
+			continue
+		}
 		j.Status = domain.JobStatusInProgress
 		j.Attempts++
 		j.LockedAt = &now
@@ -141,6 +144,33 @@ func (q *JobQueue) Fail(id string, cause error) error {
 	}
 
 	return store.WriteJSON(path, &job)
+}
+
+// EnqueueAt writes a new pending job that will not be claimed until at.
+func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetries int, at time.Time) (*domain.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if maxRetries <= 0 {
+		maxRetries = defaultRetries
+	}
+	job := &domain.Job{
+		ID:           newID("job"),
+		TaskID:       taskID,
+		AgentID:      agentID,
+		AgentName:    agentName,
+		Prompt:       prompt,
+		Status:       domain.JobStatusPending,
+		MaxRetries:   maxRetries,
+		ScheduledFor: &at,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
+		return nil, fmt.Errorf("enqueue job: %w", err)
+	}
+	slog.Info("job scheduled", "id", job.ID, "task", taskID, "at", at)
+	return job, nil
 }
 
 // List returns all jobs, optionally filtered by task ID.

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 )
 
 // Scheduler orchestrates cron triggers, file-watch triggers, and job execution.
@@ -164,6 +166,23 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 
 // Queue returns the underlying job queue for external inspection.
 func (s *Scheduler) Queue() *JobQueue { return s.queue }
+
+// Trigger immediately enqueues a configured task by name.
+// name may be the full "agent/task" key or just the task name.
+func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, tc := range s.tasks {
+		if key == name || tc.Name == name {
+			parts := strings.SplitN(key, "/", 2)
+			agentName := parts[0]
+			agentID := fmt.Sprintf("agent_%s", agentName)
+			return s.queue.Enqueue(key, agentID, agentName, tc.Prompt, 0)
+		}
+	}
+	return nil, fmt.Errorf("task %q not found", name)
+}
 
 func taskKey(agentName, taskName string) string {
 	return agentName + "/" + taskName

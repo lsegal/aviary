@@ -45,8 +45,9 @@ type Job struct {
 	Status      JobStatus  `json:"status"`
 	Attempts    int        `json:"attempts"`
 	MaxRetries  int        `json:"max_retries"`
-	LockedAt    *time.Time `json:"locked_at,omitempty"`
-	NextRetryAt *time.Time `json:"next_retry_at,omitempty"`
+	LockedAt     *time.Time `json:"locked_at,omitempty"`
+	NextRetryAt  *time.Time `json:"next_retry_at,omitempty"`
+	ScheduledFor *time.Time `json:"scheduled_for,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }

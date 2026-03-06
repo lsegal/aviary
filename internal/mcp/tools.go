@@ -516,6 +516,12 @@ type taskNameArgs struct {
 	Name string `json:"name"`
 }
 
+type taskScheduleArgs struct {
+	Agent  string `json:"agent"`
+	Prompt string `json:"prompt"`
+	In     string `json:"in,omitempty"` // duration: "5m", "1h", "30s", "5 minutes", etc.
+}
+
 func registerTaskTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
@@ -535,9 +541,53 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_run",
-		Description: "Manually trigger a task right now",
+		Description: "Immediately trigger a configured task by name (e.g. 'myagent/daily-report' or just 'daily-report')",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub(fmt.Sprintf("task_run(%s): use agent_run to run an agent directly", args.Name))
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_run", "task", args.Name)
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		job, err := d.Scheduler.Trigger(args.Name)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(job)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "task_schedule",
+		Description: "Schedule a one-time prompt for an agent, optionally deferred (e.g. in='5m', '1h30m', '30s', '5 minutes')",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In)
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		if args.Agent == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if args.Prompt == "" {
+			return nil, struct{}{}, fmt.Errorf("prompt is required")
+		}
+		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
+
+		var job *domain.Job
+		var err error
+		if args.In != "" {
+			delay, parseErr := parseDuration(args.In)
+			if parseErr != nil {
+				return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
+			}
+			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, 1, time.Now().Add(delay))
+		} else {
+			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, 1)
+		}
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(job)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -546,6 +596,21 @@ func registerTaskTools(s *sdkmcp.Server) {
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return stub("task_stop")
 	})
+}
+
+// parseDuration parses a duration string, accepting both Go format ("5m", "1h30m")
+// and natural language ("5 minutes", "1 hour", "30 seconds").
+func parseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = strings.ReplaceAll(s, " ", "")
+	for _, r := range []struct{ from, to string }{
+		{"minutes", "m"}, {"minute", "m"},
+		{"hours", "h"}, {"hour", "h"},
+		{"seconds", "s"}, {"second", "s"},
+	} {
+		s = strings.ReplaceAll(s, r.from, r.to)
+	}
+	return time.ParseDuration(s)
 }
 
 // ── Job tools ────────────────────────────────────────────────────────────────
