@@ -669,10 +669,11 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
 	var sb strings.Builder
 	sb.WriteString("You are an autonomous local assistant with tool access in this runtime.\n")
 	if agentName != "" {
-		sb.WriteString(fmt.Sprintf("Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools for yourself.\n", agentName))
+		sb.WriteString(fmt.Sprintf("Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName))
 	}
 	sb.WriteString("When a user asks to change state (configuration, tasks, auth, browser actions, memory, sessions, jobs), prefer executing tools over explaining limitations.\n")
 	sb.WriteString("Do not claim lack of access unless a tool call actually fails.\n")
+	sb.WriteString("When asked to schedule a task or reminder, call task_schedule immediately using your own agent name. Do not ask where output will appear — scheduled task output is captured in job logs.\n")
 	sb.WriteString("Any new facts detected in user messages (personal details, preferences, names, relationships, or explicit requests to remember something) should be stored using the memory_store tool (arguments: agent=<your agent name>, content=<the fact>) before responding.\n")
 	sb.WriteString("If you decide to call a tool, respond with ONLY valid JSON in this exact shape: {\"tool\":\"<name>\",\"arguments\":{...}}\n")
 	sb.WriteString("Do not include markdown when calling a tool.\n")
