@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,9 +99,12 @@ func (p *WorkerPool) executeJob(ctx context.Context, agentName, prompt string) e
 	}
 
 	var lastErr error
+	var buf strings.Builder
 	done := make(chan struct{}, 1)
 	runner.Prompt(ctx, prompt, func(e agent.StreamEvent) {
 		switch e.Type {
+		case agent.StreamEventText:
+			buf.WriteString(e.Text)
 		case agent.StreamEventDone, agent.StreamEventStop:
 			select {
 			case done <- struct{}{}:
@@ -118,6 +122,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, agentName, prompt string) e
 	case <-done:
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+	if buf.Len() > 0 {
+		slog.Info("job output", "agent", agentName, "output", buf.String())
 	}
 	return lastErr
 }
