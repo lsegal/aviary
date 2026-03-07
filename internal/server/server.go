@@ -4,8 +4,10 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"path/filepath"
 
@@ -21,18 +23,22 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
+// ErrRestartRequired is returned by ListenAndServe when a config change requires a server restart.
+var ErrRestartRequired = errors.New("server restart required")
+
 // Server wraps an HTTPS server with token auth, MCP routing, and agent management.
 type Server struct {
-	cfg      *config.Config
-	token    string
-	mux      *http.ServeMux
-	httpSrv  *http.Server
-	agents   *agent.Manager
-	sched    *scheduler.Scheduler
-	mem      *memory.Manager
-	channels *channels.Manager
-	brw      *browser.Manager
-	watcher  *config.Watcher
+	cfg       *config.Config
+	token     string
+	mux       *http.ServeMux
+	httpSrv   *http.Server
+	agents    *agent.Manager
+	sched     *scheduler.Scheduler
+	mem       *memory.Manager
+	channels  *channels.Manager
+	brw       *browser.Manager
+	watcher   *config.Watcher
+	restartCh chan struct{}
 }
 
 // New creates a new Server with the given config and auth token.
@@ -47,10 +53,11 @@ func New(cfg *config.Config, token string) *Server {
 		factory.WithTokenSetter(authStore.Set)
 	}
 	s := &Server{
-		cfg:    cfg,
-		token:  token,
-		mux:    http.NewServeMux(),
-		agents: agent.NewManager(factory),
+		cfg:       cfg,
+		token:     token,
+		mux:       http.NewServeMux(),
+		agents:    agent.NewManager(factory),
+		restartCh: make(chan struct{}, 1),
 	}
 
 	// Initial reconcile from loaded config.
@@ -85,9 +92,13 @@ func New(cfg *config.Config, token string) *Server {
 
 	// Install the log hub as the global slog handler, delegating to the
 	// preconfigured default handler (stderr + file, when logging.Init() ran).
-	globalHub.setDelegate(slog.Default().Handler())
-	slog.SetDefault(slog.New(globalHub))
-	slog.Info("server: logger initialized", "component", "server")
+	// Only do this once — on restart slog.Default() is already globalHub,
+	// so setting it as its own delegate would cause infinite recursion.
+	if slog.Default().Handler() != globalHub {
+		globalHub.setDelegate(slog.Default().Handler())
+		slog.SetDefault(slog.New(globalHub))
+		slog.Info("server: logger initialized", "component", "server")
+	}
 
 	// Set up config watcher.
 	s.watcher = config.NewWatcher("")
@@ -95,6 +106,15 @@ func New(cfg *config.Config, token string) *Server {
 		s.agents.Reconcile(newCfg)
 		if s.sched != nil {
 			s.sched.Reconcile(newCfg)
+		}
+		// If server-level settings changed, signal ListenAndServe to restart.
+		if serverSettingsChanged(s.cfg, newCfg) {
+			slog.Info("server: settings changed, restarting")
+			s.cfg = newCfg
+			select {
+			case s.restartCh <- struct{}{}:
+			default:
+			}
 		}
 	})
 
@@ -117,35 +137,54 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/mcp", BearerMiddleware(s.token, mcpHandler))
 	s.mux.Handle("/mcp/", BearerMiddleware(s.token, mcpHandler))
 
-	// Log stream SSE endpoint.
+	// Log stream SSE endpoint + history REST endpoint.
 	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
+	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, http.HandlerFunc(logsHistoryHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
 }
 
-// ListenAndServe starts the HTTPS server on the configured port.
+// ListenAndServe starts the server on the configured port.
 // It returns only when the context is cancelled or an error occurs.
+// Returns ErrRestartRequired if a config change requires a restart.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	port := s.cfg.Server.Port
 	if port == 0 {
 		port = 16677
 	}
 
-	cert, err := LoadOrGenerateTLS(s.cfg.Server.TLS.Cert, s.cfg.Server.TLS.Key)
-	if err != nil {
-		return fmt.Errorf("loading TLS: %w", err)
+	host := "127.0.0.1"
+	if s.cfg.Server.ExternalAccess {
+		host = "0.0.0.0"
 	}
+	addr := fmt.Sprintf("%s:%d", host, port)
 
-	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	}
-
-	addr := fmt.Sprintf(":%d", port)
-	ln, err := tls.Listen("tcp", addr, tlsCfg)
-	if err != nil {
-		return fmt.Errorf("listening on %s: %w", addr, err)
+	var ln net.Listener
+	if s.cfg.Server.NoTLS {
+		var err error
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("listening on %s: %w", addr, err)
+		}
+	} else {
+		var tlsCert, tlsKey string
+		if s.cfg.Server.TLS != nil {
+			tlsCert = s.cfg.Server.TLS.Cert
+			tlsKey = s.cfg.Server.TLS.Key
+		}
+		cert, err := LoadOrGenerateTLS(tlsCert, tlsKey)
+		if err != nil {
+			return fmt.Errorf("loading TLS: %w", err)
+		}
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		ln, err = tls.Listen("tcp", addr, tlsCfg)
+		if err != nil {
+			return fmt.Errorf("listening on %s: %w", addr, err)
+		}
 	}
 
 	s.httpSrv = &http.Server{Handler: s.mux}
@@ -177,18 +216,47 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		errCh <- s.httpSrv.Serve(ln)
 	}()
 
+	restart := false
 	select {
 	case <-ctx.Done():
-		s.watcher.Stop()
-		s.channels.Stop()
-		if s.sched != nil {
-			s.sched.Stop()
-		}
-		s.agents.Stop()
-		return s.httpSrv.Shutdown(context.Background())
+	case <-s.restartCh:
+		restart = true
 	case err := <-errCh:
 		return err
 	}
+
+	// Graceful shutdown (covers both normal stop and restart).
+	s.watcher.Stop()
+	s.channels.Stop()
+	if s.sched != nil {
+		s.sched.Stop()
+	}
+	s.agents.Stop()
+	_ = s.httpSrv.Shutdown(context.Background())
+
+	if restart {
+		return ErrRestartRequired
+	}
+	return nil
+}
+
+func tlsConfigChanged(a, b *config.TLSConfig) bool {
+	if a == nil && b == nil {
+		return false
+	}
+	if a == nil || b == nil {
+		return true
+	}
+	return *a != *b
+}
+
+// serverSettingsChanged reports whether a config change affects server-level
+// settings that require a restart (port, TLS mode, bind address).
+func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
+	return oldCfg.Server.Port != newCfg.Server.Port ||
+		oldCfg.Server.ExternalAccess != newCfg.Server.ExternalAccess ||
+		oldCfg.Server.NoTLS != newCfg.Server.NoTLS ||
+		tlsConfigChanged(oldCfg.Server.TLS, newCfg.Server.TLS)
 }
 
 // Addr returns the server address string.
@@ -197,7 +265,11 @@ func (s *Server) Addr() string {
 	if port == 0 {
 		port = 16677
 	}
-	return fmt.Sprintf("https://localhost:%d", port)
+	scheme := "https"
+	if s.cfg.Server.NoTLS {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://localhost:%d", scheme, port)
 }
 
 // Agents returns the agent manager.

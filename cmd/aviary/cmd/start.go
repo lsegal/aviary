@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -84,9 +86,6 @@ func runStart(_ *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintf(os.Stdout, "Save this token — you'll need it to access the web panel.\n")
 	}
 
-	// Start server.
-	srv := server.New(cfg, tok)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -99,5 +98,22 @@ func runStart(_ *cobra.Command, _ []string) error {
 		cancel()
 	}()
 
-	return srv.ListenAndServe(ctx)
+	// Start server; restart when config changes require it.
+	for {
+		srv := server.New(cfg, tok)
+		err := srv.ListenAndServe(ctx)
+		if err == nil || ctx.Err() != nil {
+			return err
+		}
+		if errors.Is(err, server.ErrRestartRequired) {
+			var loadErr error
+			cfg, loadErr = config.Load(cfgFile)
+			if loadErr != nil {
+				return fmt.Errorf("reloading config: %w", loadErr)
+			}
+			slog.Info("server: restarting with new config")
+			continue
+		}
+		return err
+	}
 }
