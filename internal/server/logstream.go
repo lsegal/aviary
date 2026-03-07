@@ -225,6 +225,76 @@ func (g *hubGroup) Handle(ctx context.Context, r slog.Record) error {
 	return g.parent.Handle(ctx, r)
 }
 
+// ── REST history endpoint ─────────────────────────────────────────────────────
+
+// logsHistoryHandler returns a JSON array of historical log entries from the
+// log file.  Query params: skip (lines from end already seen), limit (max to
+// return, capped at 1000).  Response: {"entries":[...],"hasMore":bool}
+func logsHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	skip := 0
+	limit := 500
+	if v := r.URL.Query().Get("skip"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &skip); n == 0 || err != nil {
+			skip = 0
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 0 || err != nil {
+			limit = 500
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	path := logging.LogFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
+		return
+	}
+
+	lines := bytes.Split(data, []byte("\n"))
+	// Drop empty trailing line from final newline.
+	for len(lines) > 0 && len(bytes.TrimSpace(lines[len(lines)-1])) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+
+	total := len(lines)
+	end := total - skip
+	if end <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
+		return
+	}
+	start := end - limit
+	hasMore := start > 0
+	if start < 0 {
+		start = 0
+	}
+
+	var entries []logEntry
+	var seq int64
+	for _, ln := range lines[start:end] {
+		line := strings.TrimSpace(string(ln))
+		if line == "" {
+			continue
+		}
+		seq++
+		e := parseLogLine(line)
+		e.Seq = seq
+		entries = append(entries, e)
+	}
+
+	type response struct {
+		Entries []logEntry `json:"entries"`
+		HasMore bool       `json:"hasMore"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response{Entries: entries, HasMore: hasMore})
+}
+
 // ── SSE endpoint ─────────────────────────────────────────────────────────────
 
 // logsHandler streams log entries via SSE.  Protected by BearerMiddleware.

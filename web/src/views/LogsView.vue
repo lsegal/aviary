@@ -77,6 +77,17 @@
         class="flex-1 overflow-y-auto bg-gray-950 p-3 font-mono text-xs leading-5"
         @scroll="onScroll"
       >
+        <!-- Load previous button -->
+        <div v-if="logs.hasMore.value" class="flex justify-center py-2">
+          <button
+            class="rounded-md border border-gray-700 bg-gray-800 px-3 py-1 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-200 disabled:opacity-50"
+            :disabled="logs.loadingMore.value"
+            @click="logs.loadPrevious()"
+          >
+            {{ logs.loadingMore.value ? 'Loading…' : '↑ Load previous 500 lines' }}
+          </button>
+        </div>
+
         <div v-if="logs.filtered.value.length === 0" class="py-8 text-center text-gray-600">
           No log entries yet.
         </div>

@@ -19,12 +19,18 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 	error: 3,
 };
 
+const INITIAL_TAIL = 500;
+
 export function useLogs() {
 	const auth = useAuthStore();
 
 	const entries = ref<LogEntry[]>([]);
 	const connected = ref(false);
 	const error = ref<string | null>(null);
+	const hasMore = ref(false);
+	const loadingMore = ref(false);
+	// How many lines from the end of the file we've already loaded via SSE tail.
+	let historySkip = INITIAL_TAIL;
 
 	// Filter state.
 	const filterComponents = ref<Set<string>>(new Set());
@@ -76,6 +82,10 @@ export function useLogs() {
 			connected.value = true;
 			error.value = null;
 			reconnectDelay = 1_000;
+			// Reset skip counter; the SSE tail re-sends the last INITIAL_TAIL lines.
+			historySkip = INITIAL_TAIL;
+			// Optimistically assume there may be history before the tail.
+			hasMore.value = true;
 		};
 
 		es.onmessage = (evt: MessageEvent) => {
@@ -118,8 +128,44 @@ export function useLogs() {
 		es = null;
 	}
 
+	async function loadPrevious() {
+		if (loadingMore.value) return;
+		loadingMore.value = true;
+		try {
+			const tok = auth.getToken();
+			const qs = new URLSearchParams({
+				skip: String(historySkip),
+				limit: "500",
+			});
+			if (tok) qs.set("token", tok);
+			const res = await fetch(`/api/logs/history?${qs}`);
+			if (!res.ok) return;
+			const data = (await res.json()) as {
+				entries: LogEntry[];
+				hasMore: boolean;
+			};
+			if (data.entries && data.entries.length > 0) {
+				historySkip += data.entries.length;
+				// Prepend with negative seq values to keep them before live entries.
+				const offset =
+					entries.value.length > 0
+						? entries.value[0].seq - data.entries.length - 1
+						: -data.entries.length;
+				const prepend = data.entries.map((e, i) => ({ ...e, seq: offset + i }));
+				entries.value = [...prepend, ...entries.value];
+			}
+			hasMore.value = data.hasMore;
+		} catch {
+			// ignore
+		} finally {
+			loadingMore.value = false;
+		}
+	}
+
 	function clearLogs() {
 		entries.value = [];
+		historySkip = INITIAL_TAIL;
+		hasMore.value = true;
 	}
 
 	function toggleComponent(component: string) {
@@ -141,10 +187,13 @@ export function useLogs() {
 		allComponents,
 		connected,
 		error,
+		hasMore,
+		loadingMore,
 		filterComponents,
 		filterLevel,
 		filterText,
 		toggleComponent,
+		loadPrevious,
 		clearLogs,
 	};
 }
