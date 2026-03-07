@@ -10,6 +10,8 @@ export interface TLSConfig {
 export interface ServerConfig {
 	port: number;
 	tls: TLSConfig;
+	external_access: boolean;
+	no_tls: boolean;
 }
 
 export interface AgentEntry {
@@ -65,7 +67,12 @@ export interface AppConfig {
 
 function defaultConfig(): AppConfig {
 	return {
-		server: { port: 16677, tls: { cert: "", key: "" } },
+		server: {
+			port: 16677,
+			tls: { cert: "", key: "" },
+			external_access: false,
+			no_tls: false,
+		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 9222 },

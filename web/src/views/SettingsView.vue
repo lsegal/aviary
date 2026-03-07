@@ -54,6 +54,25 @@
                 <input v-model="draft.server.tls.key" type="text" class="field-input" placeholder="/path/to/key.pem" />
               </div>
             </div>
+            <div class="mt-4 flex flex-wrap gap-6">
+              <label class="flex cursor-pointer items-center gap-3">
+                <input v-model="draft.server.external_access" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                <span class="text-sm text-gray-700 dark:text-gray-300">
+                  Expose service externally
+                  <span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(bind to 0.0.0.0 instead of 127.0.0.1)</span>
+                </span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-3">
+                <input v-model="draft.server.no_tls" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                <span class="text-sm text-gray-700 dark:text-gray-300">
+                  Disable TLS
+                  <span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(plain HTTP — not recommended)</span>
+                </span>
+              </label>
+            </div>
+            <p v-if="draft.server.external_access || draft.server.no_tls" class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              Changing server settings will restart the service.
+            </p>
           </div>
 
           <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
