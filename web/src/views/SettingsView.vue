@@ -290,44 +290,81 @@
 
         <section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
           <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Providers mapping</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Provider name maps to an auth reference used by models.</p>
-            <div class="space-y-2">
-              <div v-for="(entry, i) in providerRows" :key="`provider-${i}`" class="grid gap-2 lg:grid-cols-[200px_1fr_auto]">
-                <input v-model="entry.name" type="text" class="field-input" placeholder="openai" />
-                <input v-model="entry.auth" type="text" class="field-input" placeholder="auth:openai:default" />
-                <button type="button" class="danger-btn" @click="providerRows.splice(i, 1)">Remove</button>
-              </div>
-              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="providerRows.push({ name: '', auth: '' })">+ Add provider mapping</button>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Set/check/delete credentials by auth reference (e.g. auth:openai:default).</p>
-            <div class="grid gap-3 lg:grid-cols-[1fr_2fr_auto_auto_auto]">
-              <input v-model="credentialName" type="text" class="field-input" placeholder="auth:openai:default" />
-              <input v-model="credentialValue" type="password" class="field-input" placeholder="credential value" />
-              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500" @click="setCredential">Set</button>
-              <button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="checkCredential">Check</button>
-              <button type="button" class="danger-btn" @click="deleteCredential">Delete</button>
-            </div>
-            <div class="mt-3 flex items-center gap-2">
-              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="refreshCredentials">Refresh list</button>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ credentials.length }} stored</span>
-            </div>
-            <ul class="mt-3 max-h-40 space-y-1 overflow-auto rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
-              <li v-for="name in credentials" :key="name" class="font-mono text-gray-700 dark:text-gray-300">{{ name }}</li>
-              <li v-if="!credentials.length" class="text-gray-500 dark:text-gray-400">No stored credentials.</li>
-            </ul>
-          </div>
-
-          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">OAuth</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">OpenAI is one-click. Anthropic is two-step (start, then complete with code).</p>
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Authorize Providers</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Authorize Aviary to call APIs on your behalf. Tokens are stored securely and refreshed automatically. OpenAI completes in one click; Anthropic requires a second step to enter a code.</p>
             <div class="flex flex-wrap gap-2">
-              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">Login OpenAI</button>
-              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">Start Anthropic Login</button>
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">
+                <svg v-if="credentials.includes('openai:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                {{ credentials.includes('openai:oauth') ? 'Re-authorize OpenAI' : 'Authorize OpenAI' }}
+              </button>
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">
+                <svg v-if="credentials.includes('anthropic:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                {{ credentials.includes('anthropic:oauth') ? 'Re-authorize Anthropic…' : 'Authorize Anthropic…' }}
+              </button>
+            </div>
+            <div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <a :href="anthropicUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
+              <div class="flex gap-2">
+                <input v-model="anthropicCode" type="text" class="field-input" placeholder="Anthropic code" />
+                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropic">Complete</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">API Keys</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Store API keys and secrets. The name should match a provider alias credential reference (e.g. <code class="rounded bg-gray-100 px-1 font-mono dark:bg-gray-800">auth:openai:default</code>).</p>
+            <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+                    <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Name</th>
+                    <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Value</th>
+                    <th class="w-8 px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-gray-200 dark:border-gray-700">
+                    <td class="px-2 py-1.5">
+                      <input v-model="credentialName" type="text" class="field-input py-1.5 font-mono text-xs" placeholder="auth:openai:default" />
+                    </td>
+                    <td class="px-2 py-1.5">
+                      <input v-model="credentialValue" type="password" class="field-input py-1.5 text-xs" placeholder="sk-…" />
+                    </td>
+                    <td class="px-2 py-1.5">
+                      <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500" @click="setCredential">Add</button>
+                    </td>
+                  </tr>
+                  <tr v-for="name in credentials.filter(n => !n.endsWith(':oauth'))" :key="name" class="border-b border-gray-100 last:border-0 dark:border-gray-800">
+                    <td class="px-3 py-2 font-mono text-gray-700 dark:text-gray-300">{{ name }}</td>
+                    <td class="px-3 py-2 tracking-widest text-gray-400 dark:text-gray-500">••••••••</td>
+                    <td class="px-3 py-2 text-right">
+                      <button type="button" class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400" :title="`Delete ${name}`" @click="credentialName = name; deleteCredential()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="!credentials.filter(n => !n.endsWith(':oauth')).length">
+                    <td colspan="3" class="px-3 py-3 text-center text-gray-400 dark:text-gray-500">No API keys stored yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <button type="button" class="mt-2 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300" @click="refreshCredentials">↻ Refresh</button>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Authorize Providers</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Authorize Aviary to call APIs on your behalf. Tokens are stored securely and refreshed automatically. OpenAI completes in one click; Anthropic requires a second step to enter a code.</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">
+                <svg v-if="credentials.includes('openai:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                {{ credentials.includes('openai:oauth') ? 'Re-authorize OpenAI' : 'Authorize OpenAI' }}
+              </button>
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">
+                <svg v-if="credentials.includes('anthropic:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                {{ credentials.includes('anthropic:oauth') ? 'Re-authorize Anthropic…' : 'Authorize Anthropic…' }}
+              </button>
             </div>
             <div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
               <a :href="anthropicUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
@@ -452,7 +489,6 @@ const errorMessage = ref("");
 const okMessage = ref("");
 
 const draft = ref<AppConfig>(emptyConfig());
-const providerRows = ref<{ name: string; auth: string }[]>([]);
 
 const fallbacksCsv = ref("");
 const concurrencyInput = ref("auto");
@@ -628,9 +664,6 @@ async function loadConfig() {
 		draft.value = cfg;
 		fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
 		concurrencyInput.value = String(cfg.scheduler.concurrency ?? "auto");
-		providerRows.value = Object.entries(cfg.models.providers ?? {}).map(
-			([name, p]) => ({ name, auth: p.auth ?? "" }),
-		);
 
 		if (!draft.value.agents.length) {
 			await importAgents();
@@ -740,13 +773,6 @@ async function saveAll() {
 			const n = Number.parseInt(conc, 10);
 			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "auto" : n;
 		}
-
-		normalized.models.providers = Object.fromEntries(
-			providerRows.value
-				.map((row) => ({ name: row.name.trim(), auth: row.auth.trim() }))
-				.filter((row) => row.name !== "")
-				.map((row) => [row.name, { auth: row.auth }]),
-		);
 
 		// Normalize agent/task values.
 		normalized.agents = (normalized.agents ?? []).map((agent) => ({

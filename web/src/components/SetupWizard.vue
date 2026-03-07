@@ -2,11 +2,7 @@
 	<div class="mx-auto max-w-2xl px-4 py-12">
 		<!-- Progress dots -->
 		<div class="mb-10 flex items-center justify-center gap-2">
-			<div
-				v-for="(s, i) in steps"
-				:key="s"
-				class="flex items-center gap-2"
-			>
+			<div v-for="(s, i) in steps" :key="s" class="flex items-center gap-2">
 				<div
 					:class="[
 						'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors',
@@ -26,7 +22,7 @@
 			</div>
 		</div>
 
-		<!-- Step: provider -->
+		<!-- Step 1: Choose provider -->
 		<div v-if="step === 'provider'" class="text-center">
 			<h1 class="mb-2 text-2xl font-bold text-gray-900 dark:text-white">Welcome to Aviary</h1>
 			<p class="mb-8 text-sm text-gray-500 dark:text-gray-400">Let's get you set up in under a minute. Which AI provider would you like to use?</p>
@@ -42,7 +38,7 @@
 							? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
 							: 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600',
 					]"
-					@click="selectedProvider = p.id"
+					@click="selectProvider(p.id)"
 				>
 					<span class="text-3xl">{{ p.emoji }}</span>
 					<div>
@@ -67,7 +63,7 @@
 			</div>
 		</div>
 
-		<!-- Step: credentials -->
+		<!-- Step 2: Connect credentials -->
 		<div v-else-if="step === 'credentials'">
 			<button type="button" class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="step = 'provider'">
 				← Back
@@ -76,10 +72,99 @@
 			<div class="mb-6 text-center">
 				<span class="mb-3 inline-block text-4xl">{{ currentProvider?.emoji }}</span>
 				<h2 class="text-xl font-bold text-gray-900 dark:text-white">Connect {{ currentProvider?.name }}</h2>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ currentProvider?.credentialHint }}</p>
 			</div>
 
-			<div class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+			<!-- Method tabs (only shown if provider supports both) -->
+			<div v-if="currentProvider?.oauth" class="mb-5 flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/50">
+				<button
+					type="button"
+					:class="['flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors', credMethod === 'oauth' ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200']"
+					@click="credMethod = 'oauth'"
+				>Sign in with {{ currentProvider.name }}</button>
+				<button
+					type="button"
+					:class="['flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors', credMethod === 'apikey' ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200']"
+					@click="credMethod = 'apikey'"
+				>API key</button>
+			</div>
+
+			<!-- OAuth panel -->
+			<div v-if="credMethod === 'oauth'" class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+				<!-- Anthropic: URL + code exchange -->
+				<template v-if="currentProvider?.id === 'anthropic'">
+					<div v-if="!oauthUrl">
+						<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+							Sign in with your Claude Pro or Claude Max account — no API key needed.
+							We'll open Anthropic's authorization page for you.
+						</p>
+						<button
+							type="button"
+							:disabled="credSaving"
+							class="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40"
+							@click="startAnthropicOAuth"
+						>
+							{{ credSaving ? 'Opening…' : 'Sign in with Anthropic →' }}
+						</button>
+					</div>
+					<div v-else class="space-y-4">
+						<p class="text-sm text-gray-700 dark:text-gray-300">
+							A browser tab should have opened. Complete sign-in there, then copy the authorization code shown and paste it below.
+						</p>
+						<div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+							<a :href="oauthUrl" target="_blank" rel="noreferrer" class="flex-1 truncate text-xs text-blue-600 hover:underline dark:text-blue-400">{{ oauthUrl }}</a>
+							<a :href="oauthUrl" target="_blank" rel="noreferrer" class="shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Open ↗</a>
+						</div>
+						<div>
+							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Authorization code</label>
+							<input
+								v-model="oauthCode"
+								type="text"
+								placeholder="Paste code here…"
+								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+								@keyup.enter="completeAnthropicOAuth"
+							/>
+						</div>
+						<button
+							type="button"
+							:disabled="!oauthCode.trim() || credSaving"
+							class="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40"
+							@click="completeAnthropicOAuth"
+						>
+							{{ credSaving ? 'Verifying…' : 'Complete sign-in →' }}
+						</button>
+					</div>
+				</template>
+
+				<!-- OpenAI: blocking browser redirect -->
+				<template v-else-if="currentProvider?.id === 'openai'">
+					<div v-if="!credSaving">
+						<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+							Sign in with your ChatGPT Plus or Pro account. We'll open OpenAI's consent page;
+							after approving, you'll be redirected back automatically.
+						</p>
+						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
+							This uses the <code class="font-mono">openai-codex</code> provider and requires a ChatGPT Plus/Pro subscription.
+						</p>
+						<button
+							type="button"
+							class="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500"
+							@click="startOpenAIOAuth"
+						>
+							Sign in with OpenAI →
+						</button>
+					</div>
+					<div v-else class="flex flex-col items-center gap-4 py-4 text-center">
+						<svg class="h-8 w-8 animate-spin text-green-600" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+						</svg>
+						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span class="text-xs">Complete the flow in the browser tab that opened.</span></p>
+					</div>
+				</template>
+			</div>
+
+			<!-- API key panel -->
+			<div v-else class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 				<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">API Key</label>
 				<input
 					v-model="apiKey"
@@ -87,29 +172,29 @@
 					autocomplete="off"
 					:placeholder="currentProvider?.keyPlaceholder"
 					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-					@keyup.enter="saveCredential"
+					@keyup.enter="saveApiKey"
 				/>
-				<p v-if="currentProvider?.keyHelp" class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-					{{ currentProvider.keyHelp }}
-				</p>
-				<div v-if="credError" class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
-					{{ credError }}
-				</div>
+				<p v-if="currentProvider?.keyHelp" class="mt-2 text-xs text-gray-400 dark:text-gray-500">{{ currentProvider.keyHelp }}</p>
 			</div>
 
-			<div class="mt-6 flex justify-end">
+			<div v-if="credError" class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
+				{{ credError }}
+			</div>
+
+			<!-- API key continue button (OAuth has its own inline buttons) -->
+			<div v-if="credMethod === 'apikey'" class="mt-6 flex justify-end">
 				<button
 					type="button"
 					:disabled="!apiKey.trim() || credSaving"
 					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-					@click="saveCredential"
+					@click="saveApiKey"
 				>
 					{{ credSaving ? 'Saving…' : 'Continue →' }}
 				</button>
 			</div>
 		</div>
 
-		<!-- Step: agent -->
+		<!-- Step 3: Create agent -->
 		<div v-else-if="step === 'agent'">
 			<button type="button" class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="step = 'credentials'">
 				← Back
@@ -157,7 +242,7 @@
 			</div>
 		</div>
 
-		<!-- Step: done -->
+		<!-- Step 4: Done -->
 		<div v-else-if="step === 'done'" class="text-center">
 			<div class="mb-6 flex justify-center">
 				<span class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
@@ -201,11 +286,16 @@ interface Provider {
 	name: string;
 	emoji: string;
 	description: string;
-	credentialHint: string;
-	keyPlaceholder: string;
+	// OAuth support
+	oauth?: boolean;
+	// API key fields (optional when oauth-only)
+	keyPlaceholder?: string;
 	keyHelp?: string;
-	authKey: string;
+	apiAuthKey?: string;
+	// Default model when using API key
 	defaultModel: string;
+	// Default model when using OAuth (may differ, e.g. openai-codex)
+	oauthModel?: string;
 }
 
 const providers: Provider[] = [
@@ -214,32 +304,33 @@ const providers: Provider[] = [
 		name: "Anthropic",
 		emoji: "🤖",
 		description: "Claude — great for coding & reasoning",
-		credentialHint: "Enter your Anthropic API key to get started.",
+		oauth: true,
 		keyPlaceholder: "sk-ant-...",
 		keyHelp: "Find your key at console.anthropic.com → API Keys.",
-		authKey: "anthropic:default",
+		apiAuthKey: "anthropic:default",
 		defaultModel: "anthropic/claude-sonnet-4-5",
+		oauthModel: "anthropic/claude-sonnet-4-5",
 	},
 	{
 		id: "openai",
 		name: "OpenAI",
 		emoji: "🧠",
 		description: "GPT-4o — versatile and capable",
-		credentialHint: "Enter your OpenAI API key to get started.",
+		oauth: true,
 		keyPlaceholder: "sk-...",
 		keyHelp: "Find your key at platform.openai.com → API keys.",
-		authKey: "openai:default",
+		apiAuthKey: "openai:default",
 		defaultModel: "openai/gpt-4o",
+		oauthModel: "openai-codex/gpt-4o",
 	},
 	{
 		id: "gemini",
 		name: "Gemini",
 		emoji: "✨",
 		description: "Google Gemini — fast and multimodal",
-		credentialHint: "Enter your Google AI Studio API key to get started.",
 		keyPlaceholder: "AIza...",
 		keyHelp: "Find your key at aistudio.google.com → Get API key.",
-		authKey: "gemini:default",
+		apiAuthKey: "gemini:default",
 		defaultModel: "gemini/gemini-2.0-flash",
 	},
 ];
@@ -258,36 +349,53 @@ const currentProvider = computed(
 	() => providers.find((p) => p.id === selectedProvider.value) ?? null,
 );
 
+// "oauth" or "apikey"
+const credMethod = ref<"oauth" | "apikey">("oauth");
+
 const apiKey = ref("");
 const credSaving = ref(false);
 const credError = ref("");
 
+// Anthropic two-step OAuth state
+const oauthUrl = ref("");
+const oauthCode = ref("");
+
 const agentName = ref("assistant");
 const agentModelInput = ref("");
-
-// Pre-fill model when provider is chosen
-watch(currentProvider, (p) => {
-	if (p && !agentModelInput.value) {
-		agentModelInput.value = p.defaultModel;
-	}
-});
-
 const agentSaving = ref(false);
 const agentError = ref("");
 
-async function saveCredential() {
-	if (!apiKey.value.trim() || !currentProvider.value) return;
+function selectProvider(id: string) {
+	selectedProvider.value = id;
+	const p = providers.find((x) => x.id === id);
+	// Default to OAuth if the provider supports it, otherwise API key
+	credMethod.value = p?.oauth ? "oauth" : "apikey";
+	// Reset state
+	apiKey.value = "";
+	oauthUrl.value = "";
+	oauthCode.value = "";
+	credError.value = "";
+	agentModelInput.value = "";
+}
+
+// Pre-fill model when the method is chosen
+watch([currentProvider, credMethod], ([p, method]) => {
+	if (!p) return;
+	agentModelInput.value =
+		method === "oauth" && p.oauthModel ? p.oauthModel : p.defaultModel;
+});
+
+// ── API key ───────────────────────────────────────────────────────────────────
+
+async function saveApiKey() {
+	if (!apiKey.value.trim() || !currentProvider.value?.apiAuthKey) return;
 	credSaving.value = true;
 	credError.value = "";
 	try {
 		await callTool("auth_set", {
-			name: currentProvider.value.authKey,
+			name: currentProvider.value.apiAuthKey,
 			value: apiKey.value.trim(),
 		});
-		// Pre-fill model now that provider is confirmed
-		if (!agentModelInput.value) {
-			agentModelInput.value = currentProvider.value.defaultModel;
-		}
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
@@ -295,6 +403,56 @@ async function saveCredential() {
 		credSaving.value = false;
 	}
 }
+
+// ── Anthropic OAuth (two-step) ────────────────────────────────────────────────
+
+async function startAnthropicOAuth() {
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		const raw = await callTool("auth_login_anthropic");
+		const parsed = JSON.parse(raw) as { url?: string };
+		oauthUrl.value = parsed.url ?? "";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		credSaving.value = false;
+	}
+}
+
+async function completeAnthropicOAuth() {
+	if (!oauthCode.value.trim()) return;
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		await callTool("auth_login_anthropic_complete", {
+			code: oauthCode.value.trim(),
+		});
+		step.value = "agent";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		credSaving.value = false;
+	}
+}
+
+// ── OpenAI OAuth (blocking browser redirect) ──────────────────────────────────
+
+async function startOpenAIOAuth() {
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		// This call blocks until the browser redirect completes (up to 5 min)
+		await callTool("auth_login_openai");
+		step.value = "agent";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+		credSaving.value = false;
+	}
+	// Don't clear credSaving on success — the step transition handles it
+}
+
+// ── Create agent ──────────────────────────────────────────────────────────────
 
 async function createAgent() {
 	if (!agentName.value.trim() || !agentModelInput.value.trim()) return;
