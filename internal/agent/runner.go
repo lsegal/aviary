@@ -84,6 +84,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 		defer cancel()
 
 		sessionID := r.resolveSessionID(promptCtx)
+		promptCtx = WithSessionAgentID(promptCtx, r.agent.ID)
 		untrack := trackSessionRun(sessionID, cancel)
 		defer untrack()
 

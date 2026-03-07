@@ -41,7 +41,7 @@ func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", 0)
+	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", 0, "", "")
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", 2)
+	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", 2, "", "")
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}

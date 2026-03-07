@@ -558,7 +558,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
 		Description: "Schedule a one-time task (arguments: agent=<your-agent-name>, prompt=<what to do>, in=<optional delay e.g. '5m', '1h30m', '30 seconds'>)",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In)
 		d := GetDeps()
 		if d.Scheduler == nil {
@@ -578,6 +578,10 @@ func registerTaskTools(s *sdkmcp.Server) {
 		agentID := fmt.Sprintf("agent_%s", args.Agent)
 		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
 
+		// Capture the originating session so the job can reply there when done.
+		replySessionID, _ := agent.SessionIDFromContext(ctx)
+		replyAgentID, _ := agent.SessionAgentIDFromContext(ctx)
+
 		var job *domain.Job
 		var err error
 		if args.In != "" {
@@ -585,9 +589,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if parseErr != nil {
 				return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
 			}
-			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, 1, time.Now().Add(delay))
+			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, 1, time.Now().Add(delay), replyAgentID, replySessionID)
 		} else {
-			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, 1)
+			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, 1, replyAgentID, replySessionID)
 		}
 		if err != nil {
 			return nil, struct{}{}, err

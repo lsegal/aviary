@@ -35,7 +35,9 @@ type JobQueue struct {
 func NewJobQueue() *JobQueue { return &JobQueue{} }
 
 // Enqueue writes a new pending job to disk.
-func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries int) (*domain.Job, error) {
+// replyAgentID and replySessionID, if set, identify the session that should
+// receive the job's output when it completes (the "call-back" channel).
+func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -43,15 +45,17 @@ func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries
 		maxRetries = defaultRetries
 	}
 	job := &domain.Job{
-		ID:         newID("job"),
-		TaskID:     taskID,
-		AgentID:    agentID,
-		AgentName:  agentName,
-		Prompt:     prompt,
-		Status:     domain.JobStatusPending,
-		MaxRetries: maxRetries,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:             newID("job"),
+		TaskID:         taskID,
+		AgentID:        agentID,
+		AgentName:      agentName,
+		Prompt:         prompt,
+		Status:         domain.JobStatusPending,
+		MaxRetries:     maxRetries,
+		ReplyAgentID:   replyAgentID,
+		ReplySessionID: replySessionID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
@@ -147,7 +151,8 @@ func (q *JobQueue) Fail(id string, cause error) error {
 }
 
 // EnqueueAt writes a new pending job that will not be claimed until at.
-func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetries int, at time.Time) (*domain.Job, error) {
+// replyAgentID and replySessionID, if set, identify the session to reply to on completion.
+func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -155,16 +160,18 @@ func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetri
 		maxRetries = defaultRetries
 	}
 	job := &domain.Job{
-		ID:           newID("job"),
-		TaskID:       taskID,
-		AgentID:      agentID,
-		AgentName:    agentName,
-		Prompt:       prompt,
-		Status:       domain.JobStatusPending,
-		MaxRetries:   maxRetries,
-		ScheduledFor: &at,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:             newID("job"),
+		TaskID:         taskID,
+		AgentID:        agentID,
+		AgentName:      agentName,
+		Prompt:         prompt,
+		Status:         domain.JobStatusPending,
+		MaxRetries:     maxRetries,
+		ScheduledFor:   &at,
+		ReplyAgentID:   replyAgentID,
+		ReplySessionID: replySessionID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)

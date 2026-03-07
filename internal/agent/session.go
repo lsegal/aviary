@@ -121,6 +121,23 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 	return sessions, nil
 }
 
+// AppendMessageToSession appends a message to an existing session and fires
+// the session-message observer so WebSocket clients are notified.
+func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, content string) error {
+	msg := domain.Message{
+		ID:        newID("msg"),
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
+		return err
+	}
+	notifySessionMessage(sessionID, string(role))
+	return nil
+}
+
 // newID generates a simple timestamped ID with a prefix.
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())

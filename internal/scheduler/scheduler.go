@@ -93,7 +93,7 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			prompt := tc.Prompt
 
 			enqueue := func() {
-				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, 0); err != nil {
+				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, 0, "", ""); err != nil {
 					slog.Warn("scheduler: enqueue failed", "task", taskID, "err", err)
 				}
 			}
@@ -178,7 +178,7 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 			parts := strings.SplitN(key, "/", 2)
 			agentName := parts[0]
 			agentID := fmt.Sprintf("agent_%s", agentName)
-			return s.queue.Enqueue(key, agentID, agentName, tc.Prompt, 0)
+			return s.queue.Enqueue(key, agentID, agentName, tc.Prompt, 0, "", "")
 		}
 	}
 	return nil, fmt.Errorf("task %q not found", name)

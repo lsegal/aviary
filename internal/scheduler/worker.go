@@ -147,9 +147,16 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	if buf.Len() > 0 {
-		if err := p.queue.UpdateOutput(job.ID, buf.String()); err != nil {
+	output := buf.String()
+	if output != "" {
+		if err := p.queue.UpdateOutput(job.ID, output); err != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", err)
+		}
+		// Reply to the originating session/channel if one was recorded.
+		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
+			if err := agent.AppendMessageToSession(job.ReplyAgentID, job.ReplySessionID, "assistant", output); err != nil {
+				slog.Warn("job: failed to send reply to session", "id", job.ID, "session", job.ReplySessionID, "err", err)
+			}
 		}
 	}
 	return lastErr
