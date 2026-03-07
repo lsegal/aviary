@@ -39,55 +39,63 @@
 						Select an agent to start chatting.
 					</div>
 					<template v-else>
-						<template v-for="(msg, i) in messages" :key="i">
+						<template v-for="item in displayItems" :key="item.key">
+							<!-- Date divider -->
+							<div v-if="item.type === 'date-divider'" class="flex justify-center my-4">
+								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
+							</div>
 							<!-- Tool-use indicator -->
-							<div v-if="msg.role === 'tool'" class="text-left my-0.5">
+							<div v-else-if="item.msg.role === 'tool'" class="text-left my-0.5">
 								<details class="group inline-block">
 									<summary class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
 										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0" aria-hidden="true">
 											<path fill-rule="evenodd" d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z" clip-rule="evenodd" />
 										</svg>
-										<span>{{ toolSummary(msg) }}</span>
+										<span>{{ toolSummary(item.msg) }}</span>
 										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
 											<path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
 										</svg>
 									</summary>
 									<div class="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
-										<template v-if="msg.toolData">
-											<div v-if="msg.toolData.args && Object.keys(msg.toolData.args).length > 0">
+										<template v-if="item.msg.toolData">
+											<div v-if="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length > 0">
 												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Arguments</p>
-												<pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(msg.toolData.args) }}</pre>
+												<pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(item.msg.toolData.args) }}</pre>
 											</div>
-											<div v-if="msg.toolData.result" :class="msg.toolData.args && Object.keys(msg.toolData.args).length ? 'mt-2' : ''">
+											<div v-if="item.msg.toolData.result" :class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
 												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Result</p>
-												<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ msg.toolData.result }}</pre>
+												<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ item.msg.toolData.result }}</pre>
 											</div>
-											<div v-if="msg.toolData.error" :class="msg.toolData.args && Object.keys(msg.toolData.args).length ? 'mt-2' : ''">
+											<div v-if="item.msg.toolData.error" :class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
 												<p class="mb-1 font-semibold uppercase tracking-wide text-red-400">Error</p>
-												<pre class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ msg.toolData.error }}</pre>
+												<pre class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ item.msg.toolData.error }}</pre>
 											</div>
-											<p v-if="!msg.toolData.result && !msg.toolData.error" class="italic text-gray-400 dark:text-gray-500">Running…</p>
+											<p v-if="!item.msg.toolData.result && !item.msg.toolData.error" class="italic text-gray-400 dark:text-gray-500">Running…</p>
 										</template>
-										<p v-else class="text-gray-500 dark:text-gray-400">{{ msg.text }}</p>
+										<p v-else class="text-gray-500 dark:text-gray-400">{{ item.msg.text }}</p>
 									</div>
 								</details>
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+							<div v-else :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
 								<div
-									:class="msg.role === 'user'
-										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-sm text-white max-w-lg'
-										: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-sm text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<img v-if="msg.mediaURL" :src="msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
-									<span v-if="msg.text && msg.role === 'user'" class="whitespace-pre-wrap">{{ msg.text }}</span>
-									<div v-if="msg.text && msg.role === 'assistant'" class="prose prose-sm dark:prose-invert max-w-none"
-										v-html="renderMarkdown(msg.text)" />
+									:class="item.msg.role === 'user'
+										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
+										: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
+									<img v-if="item.msg.mediaURL" :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									<span v-if="item.msg.text && item.msg.role === 'user'" class="whitespace-pre-wrap">{{ item.msg.text }}</span>
+									<div v-if="item.msg.text && item.msg.role === 'assistant'" class="prose dark:prose-invert max-w-none"
+										v-html="renderMarkdown(item.msg.text)" />
+									<span v-if="item.isLastInGroup && item.msg.timestamp"
+										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
+										{{ formatTime(item.msg.timestamp) }}
+									</span>
 								</div>
 							</div>
 						</template>
 						<div v-if="currentSessionProcessing" class="text-left">
 							<span
-								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-sm text-gray-400 dark:bg-gray-800">…</span>
+								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-400 dark:bg-gray-800">…</span>
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -173,7 +181,12 @@ interface Message {
 	text: string;
 	mediaURL?: string;
 	toolData?: ToolData;
+	timestamp?: string;
 }
+
+type DisplayItem =
+	| { type: "date-divider"; key: string; label: string }
+	| { type: "message"; key: string; msg: Message; isLastInGroup: boolean };
 
 interface PersistedMessage {
 	id?: string;
@@ -221,6 +234,29 @@ function toolSummary(msg: Message): string {
 function formatJSON(v: unknown): string {
 	return JSON.stringify(v, null, 2);
 }
+
+function formatDateLabel(d: Date): string {
+	const now = new Date();
+	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const yesterday = new Date(today.getTime() - 86_400_000);
+	const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+	if (msgDay.getTime() === today.getTime()) return "Today";
+	if (msgDay.getTime() === yesterday.getTime()) return "Yesterday";
+	const opts: Intl.DateTimeFormatOptions = {
+		weekday: "short",
+		month: "short",
+		day: "numeric",
+	};
+	if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+	return d.toLocaleDateString(undefined, opts);
+}
+
+function formatTime(timestamp: string): string {
+	return new Date(timestamp).toLocaleTimeString(undefined, {
+		hour: "numeric",
+		minute: "2-digit",
+	});
+}
 const { callTool } = useMCP();
 
 const selectedAgent = ref("");
@@ -240,6 +276,33 @@ let ws: WebSocket | null = null;
 const showBelowScroller = computed(
 	() => hasScrollOverflow.value && !isAtBottom.value,
 );
+
+const displayItems = computed((): DisplayItem[] => {
+	const items: DisplayItem[] = [];
+	let lastDateKey = "";
+	for (let i = 0; i < messages.value.length; i++) {
+		const msg = messages.value[i];
+		// Insert date divider when the calendar day changes (skip tool messages)
+		if (msg.timestamp && msg.role !== "tool") {
+			const d = new Date(msg.timestamp);
+			const dateKey = d.toDateString();
+			if (dateKey !== lastDateKey) {
+				lastDateKey = dateKey;
+				items.push({
+					type: "date-divider",
+					key: `date-${i}`,
+					label: formatDateLabel(d),
+				});
+			}
+		}
+		// A message is last-in-group when the next message has a different role
+		const next = messages.value[i + 1];
+		const isLastInGroup =
+			msg.role !== "tool" && (!next || next.role !== msg.role);
+		items.push({ type: "message", key: `msg-${i}`, msg, isLastInGroup });
+	}
+	return items;
+});
 const currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
@@ -388,7 +451,12 @@ async function loadSessionMessages() {
 				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
 					return parseToolMessage(m.content);
 				}
-				return { role: m.role, text: m.content, mediaURL: m.media_url };
+				return {
+					role: m.role,
+					text: m.content,
+					mediaURL: m.media_url,
+					timestamp: m.timestamp,
+				};
 			});
 		await scrollBottom(true);
 	} catch (e) {
