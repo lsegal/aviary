@@ -1,6 +1,11 @@
 <template>
   <AppLayout>
-    <div class="px-6 py-6">
+    <!-- Setup wizard: shown until at least one agent exists -->
+    <div v-if="showWizard" class="h-full overflow-y-auto">
+      <SetupWizard @skip="dismissed = true" />
+    </div>
+
+    <div v-else class="px-6 py-6">
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">Overview</h2>
         <button
@@ -171,12 +176,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import SetupWizard from "../components/SetupWizard.vue";
 import { useOverviewStore } from "../stores/overview";
 
 const store = useOverviewStore();
 onMounted(() => store.fetchAll());
+
+const dismissed = ref(false);
+const showWizard = computed(
+	() => !store.loading && store.agents.length === 0 && !dismissed.value,
+);
 
 // --- Agents ---
 const agentStateCounts = computed(() => {
