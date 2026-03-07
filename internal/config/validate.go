@@ -62,8 +62,11 @@ func (v *validator) checkServer(s ServerConfig) {
 		v.errorf("server.port", "port %d is out of range; must be 1–65535", s.Port)
 	}
 
-	certSet := s.TLS.Cert != ""
-	keySet := s.TLS.Key != ""
+	var certSet, keySet bool
+	if s.TLS != nil {
+		certSet = s.TLS.Cert != ""
+		keySet = s.TLS.Key != ""
+	}
 	if certSet != keySet {
 		v.errorf("server.tls", "tls.cert and tls.key must both be set or both be empty (cert set: %v, key set: %v)", certSet, keySet)
 	}
@@ -100,7 +103,7 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 		}
 
 		effectiveModel := a.Model
-		if effectiveModel == "" {
+		if effectiveModel == "" && models.Defaults != nil {
 			effectiveModel = models.Defaults.Model
 		}
 		if effectiveModel == "" {
@@ -249,11 +252,13 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 
 // checkModels validates ModelsConfig provider auth refs and default model strings.
 func (v *validator) checkModels(m ModelsConfig) {
-	if m.Defaults.Model != "" {
-		v.checkModel("models.defaults.model", m.Defaults.Model)
-	}
-	for i, fb := range m.Defaults.Fallbacks {
-		v.checkModel(fmt.Sprintf("models.defaults.fallbacks[%d]", i), fb)
+	if m.Defaults != nil {
+		if m.Defaults.Model != "" {
+			v.checkModel("models.defaults.model", m.Defaults.Model)
+		}
+		for i, fb := range m.Defaults.Fallbacks {
+			v.checkModel(fmt.Sprintf("models.defaults.fallbacks[%d]", i), fb)
+		}
 	}
 	for k, p := range m.Providers {
 		pf := fmt.Sprintf("models.providers[%q].auth", k)
@@ -342,9 +347,11 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 			seen[provider] = model
 		}
 	}
-	add(cfg.Models.Defaults.Model)
-	for _, fb := range cfg.Models.Defaults.Fallbacks {
-		add(fb)
+	if cfg.Models.Defaults != nil {
+		add(cfg.Models.Defaults.Model)
+		for _, fb := range cfg.Models.Defaults.Fallbacks {
+			add(fb)
+		}
 	}
 	for _, a := range cfg.Agents {
 		add(a.Model)

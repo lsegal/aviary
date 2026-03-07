@@ -11,23 +11,25 @@ import (
 
 // Config is the top-level configuration for Aviary.
 type Config struct {
-	Server    ServerConfig    `yaml:"server"    json:"server"`
-	Agents    []AgentConfig   `yaml:"agents"    json:"agents"`
-	Models    ModelsConfig    `yaml:"models"    json:"models"`
-	Browser   BrowserConfig   `yaml:"browser"   json:"browser"`
-	Scheduler SchedulerConfig `yaml:"scheduler" json:"scheduler"`
+	Server    ServerConfig    `yaml:"server"              json:"server"`
+	Agents    []AgentConfig   `yaml:"agents,omitempty"    json:"agents,omitempty"`
+	Models    ModelsConfig    `yaml:"models,omitempty"    json:"models,omitempty"`
+	Browser   BrowserConfig   `yaml:"browser,omitempty"   json:"browser,omitempty"`
+	Scheduler SchedulerConfig `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 }
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int       `yaml:"port" json:"port"`
-	TLS  TLSConfig `yaml:"tls"  json:"tls"`
+	Port           int        `yaml:"port"                      json:"port"`
+	TLS            *TLSConfig `yaml:"tls,omitempty"             json:"tls,omitempty"`
+	ExternalAccess bool       `yaml:"external_access,omitempty" json:"external_access,omitempty"` // bind to 0.0.0.0 instead of 127.0.0.1
+	NoTLS          bool       `yaml:"no_tls,omitempty"          json:"no_tls,omitempty"`          // disable TLS (plain HTTP)
 }
 
 // TLSConfig holds paths to TLS certificate and key.
 type TLSConfig struct {
-	Cert string `yaml:"cert" json:"cert"`
-	Key  string `yaml:"key"  json:"key"`
+	Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
+	Key  string `yaml:"key,omitempty"  json:"key,omitempty"`
 }
 
 // AgentConfig describes a single agent.
@@ -42,62 +44,62 @@ type AgentConfig struct {
 	// system prompt for this agent.  It may be inline markdown text or a path
 	// to a file (e.g. "./RULES.md"); file paths are resolved relative to the
 	// process working directory at prompt time.
-	Rules    string          `yaml:"rules,omitempty"         json:"rules,omitempty"`
-	Channels []ChannelConfig `yaml:"channels"                json:"channels"`
-	Tasks    []TaskConfig    `yaml:"tasks"                   json:"tasks"`
+	Rules    string          `yaml:"rules,omitempty"     json:"rules,omitempty"`
+	Channels []ChannelConfig `yaml:"channels,omitempty"  json:"channels,omitempty"`
+	Tasks    []TaskConfig    `yaml:"tasks,omitempty"     json:"tasks,omitempty"`
 }
 
 // ChannelConfig describes a communication channel for an agent.
 type ChannelConfig struct {
-	Type      string   `yaml:"type"      json:"type"`
-	Token     string   `yaml:"token"     json:"token"`
-	Channel   string   `yaml:"channel"   json:"channel"`
-	Phone     string   `yaml:"phone"     json:"phone"`
-	AllowFrom []string `yaml:"allowFrom" json:"allowFrom"`
+	Type      string   `yaml:"type"               json:"type"`
+	Token     string   `yaml:"token,omitempty"    json:"token,omitempty"`
+	Channel   string   `yaml:"channel,omitempty"  json:"channel,omitempty"`
+	Phone     string   `yaml:"phone,omitempty"    json:"phone,omitempty"`
+	AllowFrom []string `yaml:"allowFrom,omitempty" json:"allowFrom,omitempty"`
 }
 
 // TaskConfig describes a scheduled or file-watch task.
 type TaskConfig struct {
-	Name     string `yaml:"name"     json:"name"`
-	Schedule string `yaml:"schedule" json:"schedule"`
-	StartAt  string `yaml:"start_at" json:"start_at"`
-	RunOnce  bool   `yaml:"run_once" json:"run_once"`
-	Watch    string `yaml:"watch"    json:"watch"`
-	Prompt   string `yaml:"prompt"   json:"prompt"`
-	Channel  string `yaml:"channel"  json:"channel"`
+	Name     string `yaml:"name"              json:"name"`
+	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"`
+	StartAt  string `yaml:"start_at,omitempty" json:"start_at,omitempty"`
+	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
+	Watch    string `yaml:"watch,omitempty"    json:"watch,omitempty"`
+	Prompt   string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
+	Channel  string `yaml:"channel,omitempty"  json:"channel,omitempty"`
 }
 
 // ModelsConfig holds model provider configuration and defaults.
 type ModelsConfig struct {
-	Providers map[string]ProviderConfig `yaml:"providers" json:"providers"`
-	Defaults  ModelDefaults             `yaml:"defaults"  json:"defaults"`
+	Providers map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
 }
 
 // ProviderConfig holds auth for a model provider.
 type ProviderConfig struct {
-	Auth string `yaml:"auth" json:"auth"`
+	Auth string `yaml:"auth,omitempty" json:"auth,omitempty"`
 }
 
 // ModelDefaults holds default model settings.
 type ModelDefaults struct {
-	Model     string   `yaml:"model"     json:"model"`
-	Fallbacks []string `yaml:"fallbacks" json:"fallbacks"`
+	Model     string   `yaml:"model,omitempty"     json:"model,omitempty"`
+	Fallbacks []string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
 }
 
 // BrowserConfig holds browser control settings.
 type BrowserConfig struct {
-	Binary  string `yaml:"binary"            json:"binary"`
-	CDPPort int    `yaml:"cdp_port"          json:"cdp_port"`
+	Binary  string `yaml:"binary,omitempty"            json:"binary,omitempty"`
+	CDPPort int    `yaml:"cdp_port,omitempty"          json:"cdp_port,omitempty"`
 	// ProfileDir is the Chrome profile folder name in the browser's default
 	// user data directory (e.g. "Default", "Profile 1", "work").
 	// Defaults to "Aviary" if unset.
-	ProfileDir string `yaml:"profile_directory" json:"profile_directory"`
-	Headless   bool   `yaml:"headless"          json:"headless"`
+	ProfileDir string `yaml:"profile_directory,omitempty" json:"profile_directory,omitempty"`
+	Headless   bool   `yaml:"headless,omitempty"          json:"headless,omitempty"`
 }
 
 // SchedulerConfig holds scheduler settings.
 type SchedulerConfig struct {
-	Concurrency any `yaml:"concurrency" json:"concurrency"` // "auto" or a number
+	Concurrency any `yaml:"concurrency,omitempty" json:"concurrency,omitempty"` // "auto" or a number
 }
 
 // Default returns a Config populated with sensible defaults.
