@@ -352,9 +352,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
+import { useAuthStore } from "../stores/auth";
 import {
 	type AgentEntry,
 	type AgentTask,
@@ -391,6 +392,40 @@ const activeTab = ref<Tab>("general");
 
 const store = useSettingsStore();
 const { callTool } = useMCP();
+const authStore = useAuthStore();
+
+let settingsWs: WebSocket | null = null;
+
+function connectWs() {
+	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+	const tok = authStore.getToken();
+	const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
+	settingsWs = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	settingsWs.onmessage = async (e) => {
+		try {
+			const data = JSON.parse(e.data as string) as {
+				type?: string;
+				session_id?: string;
+			};
+			if (
+				data.type === "session_message" ||
+				data.type === "session_processing"
+			) {
+				if (activeTab.value === "sessions" && sessionAgent.value) {
+					await loadSessions();
+				}
+				if (activeTab.value === "agents") {
+					void loadAllJobs();
+				}
+			}
+		} catch {
+			// ignore malformed frames
+		}
+	};
+	settingsWs.onclose = () => {
+		settingsWs = null;
+	};
+}
 
 const loading = ref(false);
 const saving = ref(false);
@@ -437,6 +472,9 @@ watch(activeTab, (tab) => {
 	}
 	if (tab === "agents") {
 		void loadAllJobs();
+	}
+	if (tab === "sessions" && sessionAgent.value) {
+		void loadSessions();
 	}
 });
 
@@ -524,9 +562,15 @@ function fmtJobDate(s: string | undefined): string {
 }
 
 onMounted(async () => {
+	connectWs();
 	await loadConfig();
 	await refreshCredentials();
 	void loadAllJobs();
+});
+
+onUnmounted(() => {
+	settingsWs?.close();
+	settingsWs = null;
 });
 
 function emptyConfig(): AppConfig {

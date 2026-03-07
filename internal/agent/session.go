@@ -34,6 +34,23 @@ func (m *SessionManager) Create(agentID string) (*domain.Session, error) {
 	return sess, nil
 }
 
+// CreateWithName creates a new unique session with the given display name.
+// Unlike GetOrCreateNamed, this always creates a fresh session (no dedup).
+func (m *SessionManager) CreateWithName(agentID, name string) (*domain.Session, error) {
+	id := newID("sess")
+	sess := &domain.Session{
+		ID:        id,
+		AgentID:   agentID,
+		Name:      name,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.AppendJSONL(store.SessionPath(agentID, id), sess); err != nil {
+		return nil, fmt.Errorf("creating session %q: %w", name, err)
+	}
+	return sess, nil
+}
+
 // GetOrCreate returns the agent's main session, creating it if it doesn't exist.
 func (m *SessionManager) GetOrCreate(agentID string) (*domain.Session, error) {
 	return m.GetOrCreateNamed(agentID, "main")

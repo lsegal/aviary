@@ -93,10 +93,32 @@ func (p *WorkerPool) run(ctx context.Context) {
 	}
 }
 
+// jobSessionName returns a human-readable session name derived from the job.
+// e.g. "daily-report · Mar 6 05:14" for a configured task, "oneshot · Mar 6 05:14" for a one-time job.
+func jobSessionName(job *domain.Job) string {
+	parts := strings.SplitN(job.TaskID, "/", 2)
+	name := job.TaskID
+	if len(parts) == 2 {
+		if parts[0] == "oneshot" {
+			name = "oneshot"
+		} else {
+			name = parts[1]
+		}
+	}
+	return name + " · " + time.Now().Format("Jan 2 15:04")
+}
+
 func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	runner, ok := p.agents.Get(job.AgentName)
 	if !ok {
 		return fmt.Errorf("agent %q not found", job.AgentName)
+	}
+
+	// Give each job its own session so output doesn't pollute the main session.
+	if sess, err := agent.NewSessionManager().CreateWithName(job.AgentID, jobSessionName(job)); err != nil {
+		slog.Warn("job: failed to create session, falling back to main", "id", job.ID, "err", err)
+	} else {
+		ctx = agent.WithSessionID(ctx, sess.ID)
 	}
 
 	var lastErr error
