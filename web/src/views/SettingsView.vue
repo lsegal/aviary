@@ -352,28 +352,6 @@
             </div>
             <button type="button" class="mt-2 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300" @click="refreshCredentials">↻ Refresh</button>
           </div>
-
-          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Authorize Providers</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Authorize Aviary to call APIs on your behalf. Tokens are stored securely and refreshed automatically. OpenAI completes in one click; Anthropic requires a second step to enter a code.</p>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">
-                <svg v-if="credentials.includes('openai:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-                {{ credentials.includes('openai:oauth') ? 'Re-authorize OpenAI' : 'Authorize OpenAI' }}
-              </button>
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">
-                <svg v-if="credentials.includes('anthropic:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-                {{ credentials.includes('anthropic:oauth') ? 'Re-authorize Anthropic…' : 'Authorize Anthropic…' }}
-              </button>
-            </div>
-            <div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-              <a :href="anthropicUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
-              <div class="flex gap-2">
-                <input v-model="anthropicCode" type="text" class="field-input" placeholder="Anthropic code" />
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropic">Complete</button>
-              </div>
-            </div>
-          </div>
         </section>
 
         <section v-show="activeTab === 'memory'" class="space-y-5 pb-8">
