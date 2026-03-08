@@ -1,7 +1,14 @@
 <template>
   <AppLayout>
+    <!-- Initial load -->
+    <div v-if="!store.fetched" class="flex h-full items-center justify-center">
+      <svg class="h-6 w-6 animate-spin text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+    </div>
+
     <!-- Setup wizard: shown until at least one agent exists -->
-    <div v-if="showWizard" class="h-full overflow-y-auto">
+    <div v-else-if="showWizard" class="h-full overflow-y-auto">
       <SetupWizard @skip="dismissed = true" />
     </div>
 
@@ -186,7 +193,7 @@ onMounted(() => store.fetchAll());
 
 const dismissed = ref(false);
 const showWizard = computed(
-	() => !store.loading && store.agents.length === 0 && !dismissed.value,
+	() => store.fetched && store.agents.length === 0 && !dismissed.value,
 );
 
 // --- Agents ---

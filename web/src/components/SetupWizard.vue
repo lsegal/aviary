@@ -45,6 +45,9 @@
 						<p class="font-semibold text-gray-900 dark:text-white">{{ p.name }}</p>
 						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ p.description }}</p>
 					</div>
+					<span v-if="detectedAuth(p)" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+						{{ detectedAuth(p) === "oauth" ? "signed in" : "key set" }}
+					</span>
 				</button>
 			</div>
 
@@ -155,6 +158,29 @@
 					</div>
 					<div v-else class="flex flex-col items-center gap-4 py-4 text-center">
 						<svg class="h-8 w-8 animate-spin text-green-600" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+						</svg>
+						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span class="text-xs">Complete the flow in the browser tab that opened.</span></p>
+					</div>
+				</template>
+			<!-- Gemini: blocking browser redirect -->
+				<template v-else-if="currentProvider?.id === 'gemini'">
+					<div v-if="!credSaving">
+						<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+							Sign in with your Google account. We'll open Google's consent page;
+							after approving, you'll be redirected back automatically.
+						</p>
+						<button
+							type="button"
+							class="w-full rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-400"
+							@click="startGeminiOAuth"
+						>
+							Sign in with Google →
+						</button>
+					</div>
+					<div v-else class="flex flex-col items-center gap-4 py-4 text-center">
+						<svg class="h-8 w-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 						</svg>
@@ -275,7 +301,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useMCP } from "../composables/useMCP";
 import { type AppConfig, useSettingsStore } from "../stores/settings";
 
@@ -296,6 +322,8 @@ interface Provider {
 	defaultModel: string;
 	// Default model when using OAuth (may differ, e.g. openai-codex)
 	oauthModel?: string;
+	// Credential store keys used to detect existing auth (oauth key first, then api key)
+	authKeys: string[];
 }
 
 const providers: Provider[] = [
@@ -310,6 +338,7 @@ const providers: Provider[] = [
 		apiAuthKey: "anthropic:default",
 		defaultModel: "anthropic/claude-sonnet-4-5",
 		oauthModel: "anthropic/claude-sonnet-4-5",
+		authKeys: ["anthropic:oauth", "anthropic:default"],
 	},
 	{
 		id: "openai",
@@ -322,16 +351,20 @@ const providers: Provider[] = [
 		apiAuthKey: "openai:default",
 		defaultModel: "openai/gpt-4o",
 		oauthModel: "openai-codex/gpt-4o",
+		authKeys: ["openai:oauth", "openai:default"],
 	},
 	{
 		id: "gemini",
 		name: "Gemini",
 		emoji: "✨",
 		description: "Google Gemini — fast and multimodal",
+		oauth: true,
 		keyPlaceholder: "AIza...",
 		keyHelp: "Find your key at aistudio.google.com → Get API key.",
 		apiAuthKey: "gemini:default",
 		defaultModel: "gemini/gemini-2.0-flash",
+		oauthModel: "gemini/gemini-2.0-flash",
+		authKeys: ["gemini:oauth", "gemini:default"],
 	},
 ];
 
@@ -365,11 +398,41 @@ const agentModelInput = ref("");
 const agentSaving = ref(false);
 const agentError = ref("");
 
+// Keys already stored in the credential store, populated on mount
+const storedKeys = ref<string[]>([]);
+
+onMounted(async () => {
+	try {
+		const raw = await callTool("auth_list");
+		storedKeys.value = (JSON.parse(raw) as string[]) ?? [];
+	} catch {
+		// Non-fatal; wizard just won't auto-detect existing credentials
+	}
+});
+
+// Returns the detected auth method for a provider (or null if none found)
+function detectedAuth(p: Provider | undefined): "oauth" | "apikey" | null {
+	if (!p) return null;
+	if (p.oauth && storedKeys.value.includes(p.authKeys[0])) return "oauth";
+	if (p.apiAuthKey && storedKeys.value.includes(p.apiAuthKey)) return "apikey";
+	return null;
+}
+
 function selectProvider(id: string) {
 	selectedProvider.value = id;
 	const p = providers.find((x) => x.id === id);
+	if (!p) return;
+	const existing = detectedAuth(p);
+	if (existing) {
+		// Already authenticated — set method + model and skip to agent creation
+		credMethod.value = existing;
+		agentModelInput.value =
+			existing === "oauth" && p.oauthModel ? p.oauthModel : p.defaultModel;
+		step.value = "agent";
+		return;
+	}
 	// Default to OAuth if the provider supports it, otherwise API key
-	credMethod.value = p?.oauth ? "oauth" : "apikey";
+	credMethod.value = p.oauth ? "oauth" : "apikey";
 	// Reset state
 	apiKey.value = "";
 	oauthUrl.value = "";
@@ -450,6 +513,20 @@ async function startOpenAIOAuth() {
 		credSaving.value = false;
 	}
 	// Don't clear credSaving on success — the step transition handles it
+}
+
+// ── Gemini OAuth (blocking browser redirect) ──────────────────────────────────
+
+async function startGeminiOAuth() {
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		await callTool("auth_login_gemini");
+		step.value = "agent";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+		credSaving.value = false;
+	}
 }
 
 // ── Create agent ──────────────────────────────────────────────────────────────

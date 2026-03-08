@@ -17,6 +17,7 @@ export const useOverviewStore = defineStore("overview", () => {
 	const jobs = ref<Job[]>([]);
 	const issues = ref<DoctorIssue[]>([]);
 	const loading = ref(false);
+	const fetched = ref(false);
 	const error = ref<string | null>(null);
 	const lastChecked = ref<Date | null>(null);
 
@@ -37,6 +38,7 @@ export const useOverviewStore = defineStore("overview", () => {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
 			loading.value = false;
+			fetched.value = true;
 		}
 	}
 
@@ -55,6 +57,7 @@ export const useOverviewStore = defineStore("overview", () => {
 		jobs,
 		issues,
 		loading,
+		fetched,
 		error,
 		lastChecked,
 		fetchAll,
