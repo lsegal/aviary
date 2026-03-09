@@ -351,6 +351,238 @@ func openAIExchange(ctx context.Context, code, verifier, redirectURI string) (*O
 	}, nil
 }
 
+// Gemini OAuth constants for the gemini-cli OAuth flow.
+// Client ID, secret, and redirect port sourced from the official google-gemini/gemini-cli
+// (packages/core/src/code_assist/oauth2.ts).
+const (
+	GeminiClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	GeminiClientSecret = "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"
+	GeminiAuthorizeURL = "https://accounts.google.com/o/oauth2/v2/auth"
+	GeminiTokenURL     = "https://oauth2.googleapis.com/token"
+	GeminiScope        = "https://www.googleapis.com/auth/cloud-platform openid email profile"
+	GeminiCallbackPort = 45289
+)
+
+// GeminiLogin starts a local HTTP callback server on port 45289, opens the browser
+// to Google's OAuth consent screen, and returns tokens after the user approves.
+// Matches the google-gemini/gemini-cli authentication flow.
+func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
+	pkce, err := GeneratePKCE()
+	if err != nil {
+		return nil, err
+	}
+
+	stateBuf := make([]byte, 16)
+	if _, err := rand.Read(stateBuf); err != nil {
+		return nil, fmt.Errorf("generating OAuth state: %w", err)
+	}
+	state := base64.RawURLEncoding.EncodeToString(stateBuf)
+
+	redirectURI := fmt.Sprintf("http://localhost:%d", GeminiCallbackPort)
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GeminiCallbackPort))
+	if err != nil {
+		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", GeminiCallbackPort, err)
+	}
+
+	type callbackResult struct {
+		code  string
+		state string
+	}
+	codeCh := make(chan callbackResult, 1)
+	errCh := make(chan error, 1)
+
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if errParam := r.URL.Query().Get("error"); errParam != "" {
+			desc := r.URL.Query().Get("error_description")
+			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("OAuth error %s: %s", errParam, desc):
+			default:
+			}
+			return
+		}
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "missing code", http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("no code in OAuth callback"):
+			default:
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
+		select {
+		case codeCh <- callbackResult{code: code, state: r.URL.Query().Get("state")}:
+		default:
+		}
+	})
+
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+	}()
+	defer srv.Shutdown(context.Background()) //nolint:errcheck
+
+	u, _ := url.Parse(GeminiAuthorizeURL)
+	q := u.Query()
+	q.Set("response_type", "code")
+	q.Set("client_id", GeminiClientID)
+	q.Set("redirect_uri", redirectURI)
+	q.Set("scope", GeminiScope)
+	q.Set("code_challenge", pkce.Challenge)
+	q.Set("code_challenge_method", "S256")
+	q.Set("state", state)
+	q.Set("access_type", "offline") // request refresh token
+	q.Set("prompt", "consent")      // force consent to always get refresh token
+	u.RawQuery = q.Encode()
+
+	if err := OpenBrowser(u.String()); err != nil {
+		return nil, fmt.Errorf("opening browser: %w", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case err := <-errCh:
+		return nil, err
+	case cb := <-codeCh:
+		return geminiExchange(ctx, cb.code, pkce.Verifier, redirectURI)
+	}
+}
+
+func geminiExchange(ctx context.Context, code, verifier, redirectURI string) (*OAuthToken, error) {
+	body := url.Values{}
+	body.Set("grant_type", "authorization_code")
+	body.Set("client_id", GeminiClientID)
+	body.Set("client_secret", GeminiClientSecret)
+	body.Set("code", code)
+	body.Set("code_verifier", verifier)
+	body.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, GeminiTokenURL, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gemini token exchange: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gemini token exchange failed: %s", resp.Status)
+	}
+
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding gemini token response: %w", err)
+	}
+	return &OAuthToken{
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
+	}, nil
+}
+
+// GeminiRefresh refreshes an expired Gemini OAuth access token.
+func GeminiRefresh(ctx context.Context, refreshToken string) (*OAuthToken, error) {
+	body := url.Values{}
+	body.Set("grant_type", "refresh_token")
+	body.Set("client_id", GeminiClientID)
+	body.Set("client_secret", GeminiClientSecret)
+	body.Set("refresh_token", refreshToken)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, GeminiTokenURL, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gemini token refresh: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gemini token refresh failed: %s", resp.Status)
+	}
+
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding gemini refresh response: %w", err)
+	}
+	// Google may not return a new refresh token; reuse the old one.
+	if result.RefreshToken == "" {
+		result.RefreshToken = refreshToken
+	}
+	return &OAuthToken{
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
+	}, nil
+}
+
+// geminiCodeAssistEndpoint is the base URL for the Gemini Code Assist API,
+// which is the backend used by the gemini-cli OAuth flow.
+const geminiCodeAssistEndpoint = "https://cloudcode-pa.googleapis.com/v1internal"
+
+// GeminiLookupProject fetches the Google Cloud project ID associated with a
+// Gemini Code Assist OAuth access token. Uses the loadCodeAssist endpoint
+// (matching gemini-cli's packages/core/src/code_assist/server.ts).
+func GeminiLookupProject(ctx context.Context, accessToken string) (string, error) {
+	loadURL := geminiCodeAssistEndpoint + ":loadCodeAssist"
+	body := `{"cloudaicompanionProject":null,"metadata":{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI","duetProject":null}}`
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loadURL, bytes.NewBufferString(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("gemini project lookup: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gemini project lookup: %s", resp.Status)
+	}
+	var result struct {
+		CloudaicompanionProject string `json:"cloudaicompanionProject"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decoding gemini project lookup response: %w", err)
+	}
+	if result.CloudaicompanionProject == "" {
+		return "", fmt.Errorf("gemini project lookup: empty project ID in response")
+	}
+	return result.CloudaicompanionProject, nil
+}
+
+// GeminiCodeAssistBaseURL returns the OpenAI-compatible base URL for Vertex AI
+// given a Google Cloud project ID obtained from GeminiLookupProject.
+// Vertex AI exposes an OpenAI-compatible endpoint that accepts the same
+// cloud-platform OAuth tokens issued by the gemini-cli flow.
+func GeminiCodeAssistBaseURL(projectID string) string {
+	return fmt.Sprintf("https://us-central1-aiplatform.googleapis.com/v1/projects/%s/locations/us-central1/endpoints/openapi/", projectID)
+}
+
 // OpenBrowser opens rawURL in the system default browser.
 func OpenBrowser(rawURL string) error {
 	var cmd *exec.Cmd

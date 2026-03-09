@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/domain"
@@ -21,6 +22,50 @@ import (
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/store"
 )
+
+// ── Provider connectivity ping cache ─────────────────────────────────────────
+
+// providerPingTTL is how long a cached ping result is considered fresh.
+const providerPingTTL = 30 * time.Second
+
+type providerPingEntry struct {
+	ok        bool
+	errMsg    string
+	checkedAt time.Time
+}
+
+var (
+	providerPingMu     sync.RWMutex
+	providerPingCache  = map[string]providerPingEntry{}
+	providerPingActive sync.Map // provider → struct{} while in flight
+)
+
+// startProviderPingIfStale fires a background goroutine to ping the provider
+// unless a fresh result is already cached or a goroutine is already in flight.
+func startProviderPingIfStale(provider, model string, factory *llm.Factory) {
+	providerPingMu.RLock()
+	entry, ok := providerPingCache[provider]
+	providerPingMu.RUnlock()
+	if ok && time.Since(entry.checkedAt) < providerPingTTL {
+		return
+	}
+	if _, loaded := providerPingActive.LoadOrStore(provider, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer providerPingActive.Delete(provider)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := factory.PingModel(ctx, model)
+		e := providerPingEntry{ok: err == nil, checkedAt: time.Now()}
+		if err != nil {
+			e.errMsg = err.Error()
+		}
+		providerPingMu.Lock()
+		providerPingCache[provider] = e
+		providerPingMu.Unlock()
+	}()
+}
 
 // text returns a CallToolResult with a single text content item.
 func text(s string) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1060,7 +1105,7 @@ func authStore() (*auth.FileStore, error) {
 func registerAuthTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_set",
-		Description: "Store a credential by name (e.g. name=auth:anthropic:default, value=sk-ant-...)",
+		Description: "Store a credential by name (e.g. name=anthropic:default, value=sk-ant-...)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("name is required")
@@ -1164,7 +1209,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("completing Anthropic login: %w", err)
 		}
 
-		// Persist the OAuth token as JSON under auth:anthropic:oauth.
+		// Persist the OAuth token as JSON under the key "anthropic:oauth".
 		tokenJSON, _ := json.Marshal(token)
 		st, err := authStore()
 		if err != nil {
@@ -1175,6 +1220,35 @@ func registerAuthTools(s *sdkmcp.Server) {
 		}
 
 		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).",
+			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+	})
+
+	// ── OAuth login: Google Gemini ───────────────────────────────────────────
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name: "auth_login_gemini",
+		Description: "Start Google Gemini OAuth login (gemini-cli style). Opens the browser to Google's consent screen, " +
+			"listens on localhost:45289 for the callback, exchanges the code for tokens, and stores them. " +
+			"This enables use of Gemini models via your Google account without an API key.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+
+		token, err := auth.GeminiLogin(loginCtx)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
+		}
+
+		tokenJSON, _ := json.Marshal(token)
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Set("gemini:oauth", string(tokenJSON)); err != nil {
+			return nil, struct{}{}, err
+		}
+
+		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).",
 			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 
@@ -1267,7 +1341,7 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "config_validate",
-		Description: "Validate the current configuration and credentials, returning all issues",
+		Description: "Validate the current configuration and credentials, returning all issues. Provider connectivity is checked asynchronously; results appear on subsequent calls.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_validate")
 		cfg, err := config.Load("")
@@ -1293,19 +1367,24 @@ func registerServerTools(s *sdkmcp.Server) {
 			out[i] = issueDTO{Level: string(iss.Level), Field: iss.Field, Message: iss.Message}
 		}
 
-		// Ping each unique provider to verify the API key actually works.
-		factory := llm.NewFactory(func(ref string) (string, error) {
+		// Fire background connectivity pings for each configured provider.
+		// The first call returns only static issues; cached ping failures appear on subsequent calls.
+		pingFactory := llm.NewFactory(func(ref string) (string, error) {
 			if authGet == nil {
 				return "", nil
 			}
 			return authGet(strings.TrimPrefix(ref, "auth:"))
 		})
 		for provider, model := range config.UniqueProviderModels(cfg) {
-			if err := factory.PingModel(model); err != nil {
+			startProviderPingIfStale(provider, model, pingFactory)
+			providerPingMu.RLock()
+			entry, cached := providerPingCache[provider]
+			providerPingMu.RUnlock()
+			if cached && !entry.ok {
 				out = append(out, issueDTO{
 					Level:   string(config.LevelError),
 					Field:   "models." + provider,
-					Message: err.Error(),
+					Message: entry.errMsg,
 				})
 			}
 		}

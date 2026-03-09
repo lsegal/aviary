@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -71,8 +73,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 	for provider, model := range providerModels {
 		_, _ = fmt.Fprintf(os.Stdout, "  %-12s ", provider)
-		if err := factory.PingModel(model); err != nil {
-			_, _ = fmt.Fprintf(os.Stdout, "[ERROR] %v\n", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		pingErr := factory.PingModel(ctx, model)
+		cancel()
+		if pingErr != nil {
+			_, _ = fmt.Fprintf(os.Stdout, "[ERROR] %v\n", pingErr)
 			nerrs++
 		} else {
 			_, _ = fmt.Fprintln(os.Stdout, "[OK]")

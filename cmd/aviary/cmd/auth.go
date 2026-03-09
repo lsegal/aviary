@@ -25,7 +25,7 @@ var authLoginCode string
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
-	Short: "Authorize via OAuth PKCE (opens browser). Providers: anthropic, openai",
+	Short: "Authorize via OAuth PKCE (opens browser). Providers: anthropic, openai, gemini",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		provider := strings.ToLower(args[0])
@@ -36,8 +36,10 @@ var authLoginCmd = &cobra.Command{
 			return loginAnthropic(st, authLoginCode)
 		case "openai":
 			return loginOpenAI(st)
+		case "gemini":
+			return loginGemini(st)
 		default:
-			return fmt.Errorf("unknown provider %q; supported providers: anthropic, openai", provider)
+			return fmt.Errorf("unknown provider %q; supported providers: anthropic, openai, gemini", provider)
 		}
 	},
 }
@@ -86,6 +88,36 @@ func loginAnthropic(st authpkg.Store, presetCode string) error {
 	}
 
 	fmt.Println("Anthropic OAuth login successful. Token stored as anthropic:oauth")
+	return nil
+}
+
+func loginGemini(st authpkg.Store) error {
+	fmt.Println("Starting Gemini OAuth login — opening browser...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+
+	token, err := authpkg.GeminiLogin(ctx)
+	if err != nil {
+		return fmt.Errorf("gemini login: %w", err)
+	}
+
+	fmt.Println("Fetching Google Cloud project...")
+	projectID, err := authpkg.GeminiLookupProject(ctx, token.AccessToken)
+	if err != nil {
+		return fmt.Errorf("looking up Google Cloud project: %w", err)
+	}
+
+	tokenJSON, _ := marshalOAuthToken(token)
+	if err := st.Set("gemini:oauth", tokenJSON); err != nil {
+		return fmt.Errorf("saving token: %w", err)
+	}
+	if err := st.Set("gemini:project", projectID); err != nil {
+		return fmt.Errorf("saving project ID: %w", err)
+	}
+
+	fmt.Printf("Gemini OAuth login successful. Project: %s\n", projectID)
+	fmt.Println("Credentials stored as gemini:oauth and gemini:project.")
 	return nil
 }
 

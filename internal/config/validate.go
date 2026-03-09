@@ -188,13 +188,16 @@ func (v *validator) checkModel(field, model string) {
 
 	switch provider {
 	case "anthropic":
-		v.checkAuthCredential(field, "anthropic:default", "run 'aviary auth set anthropic:default <your-api-key>'")
+		v.checkAuthCredentialEither(field, "anthropic:oauth", "anthropic:default",
+			"run 'aviary auth set anthropic:default <your-api-key>' or 'aviary auth login anthropic'")
 	case "openai":
-		v.checkAuthCredential(field, "openai:default", "run 'aviary auth set openai:default <your-api-key>'")
+		v.checkAuthCredentialEither(field, "openai:oauth", "openai:default",
+			"run 'aviary auth set openai:default <your-api-key>' or 'aviary auth login openai'")
 	case "openai-codex":
 		v.checkAuthCredential(field, "openai:oauth", "run 'aviary auth login openai'")
 	case "gemini":
-		v.checkAuthCredential(field, "gemini:default", "run 'aviary auth set gemini:default <your-api-key>'")
+		v.checkAuthCredentialEither(field, "gemini:oauth", "gemini:default",
+			"run 'aviary auth set gemini:default <your-api-key>' or 'aviary auth login gemini'")
 	case "stdio":
 		if _, err := exec.LookPath(name); err != nil {
 			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
@@ -216,6 +219,25 @@ func (v *validator) checkAuthCredential(field, key, hint string) {
 	if err != nil || val == "" {
 		v.warnf(field, "credential %q not found in auth store — %s", key, hint)
 	}
+}
+
+// checkAuthCredentialEither checks that at least one of oauthKey or apiKey is
+// present in the auth store. If neither is found, a single warning is emitted.
+// Deduplication is based on the combination of both keys.
+func (v *validator) checkAuthCredentialEither(field, oauthKey, apiKey, hint string) {
+	dedupKey := oauthKey + "|" + apiKey
+	if v.authGet == nil || v.checkedAuth[dedupKey] {
+		return
+	}
+	v.checkedAuth[dedupKey] = true
+
+	if oauthVal, _ := v.authGet(oauthKey); oauthVal != "" {
+		return
+	}
+	if apiVal, _ := v.authGet(apiKey); apiVal != "" {
+		return
+	}
+	v.warnf(field, "credential %q not found in auth store — %s", apiKey, hint)
 }
 
 // checkChannel validates a ChannelConfig.

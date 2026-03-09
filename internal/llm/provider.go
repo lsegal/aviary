@@ -133,6 +133,8 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 	switch {
 	case strings.Contains(providerKey, "anthropic"):
 		newTok, err = auth.AnthropicRefresh(ctx, tok.RefreshToken)
+	case strings.Contains(providerKey, "gemini"):
+		newTok, err = auth.GeminiRefresh(ctx, tok.RefreshToken)
 	default:
 		return nil
 	}
@@ -193,6 +195,29 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
 	case "gemini":
+		// Prefer OAuth token (Google account) if available.
+		// OAuth tokens are from the gemini-cli Code Assist flow and require a
+		// project ID (stored at login time) to construct the streaming endpoint.
+		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
+			projectID, _ := f.resolveAuth("auth:gemini:project")
+			if projectID == "" {
+				// Project ID missing (e.g. old credential store). Try to fetch it
+				// on-the-fly using the existing token and persist it for next time.
+				lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer lookupCancel()
+				var lookupErr error
+				projectID, lookupErr = auth.GeminiLookupProject(lookupCtx, accessToken)
+				if lookupErr != nil {
+					return nil, fmt.Errorf("gemini auth: OAuth token found but no project ID stored; run 'aviary auth login gemini' again")
+				}
+				if f.tokenSetter != nil {
+					if setErr := f.tokenSetter("gemini:project", projectID); setErr != nil {
+						slog.Warn("llm: failed to persist gemini project ID", "err", setErr)
+					}
+				}
+			}
+			return NewGeminiCodeAssistProvider(accessToken, projectID, name), nil
+		}
 		apiKey, err := f.resolveAuth("auth:gemini:default")
 		if err != nil {
 			return nil, fmt.Errorf("gemini auth: %w", err)
@@ -217,14 +242,11 @@ type Pinger interface {
 // and the credentials are valid. If the provider implements Pinger it uses a
 // token-free check (e.g. GET /v1/models); otherwise it falls back to sending
 // a minimal 1-token request. Returns nil on success.
-func (f *Factory) PingModel(model string) error {
+func (f *Factory) PingModel(ctx context.Context, model string) error {
 	provider, err := f.ForModel(model)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
 	if p, ok := provider.(Pinger); ok {
 		return p.Ping(ctx)

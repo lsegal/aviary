@@ -10,6 +10,8 @@ func TestConfigGetKey_Simple(t *testing.T) {
 	cfg := config.Default()
 	cfg.Browser.ProfileDir = "/my/profile"
 	cfg.Browser.Binary = "/usr/bin/chromium"
+	cfg.Browser.CDPPort = 9222
+	cfg.Scheduler.Concurrency = "auto"
 
 	tests := []struct {
 		key  string
