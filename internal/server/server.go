@@ -242,10 +242,33 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		// Route the message into a per-channel session: "<channelType>:<channelID>".
 		msgCtx := agent.WithChannelSession(ctx, msg.Type, msg.Channel)
 
+		// Resolve the deterministic session ID and register a delivery function
+		// so any prompt to this session (including from the web UI) routes the
+		// completed response back to this channel conversation.
+		agentID := "agent_" + agentName
+		if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
+			chDest, chRef := msg.Channel, ch // capture loop vars for the closure
+			agent.RegisterSessionDelivery(sess.ID, msg.Type, msg.Channel, func(text string) {
+				if err := chRef.Send(chDest, text); err != nil {
+					slog.Warn("server: failed to send response to channel", "type", msg.Type, "channel", chDest, "err", err)
+				}
+			})
+			if ms, ok := ch.(channels.MediaSender); ok {
+				agent.RegisterSessionMediaDelivery(sess.ID, msg.Type, msg.Channel, func(caption, path string) {
+					if err := ms.SendMedia(chDest, caption, path); err != nil {
+						slog.Warn("server: failed to send media to channel", "type", msg.Type, "channel", chDest, "err", err)
+					}
+				})
+			}
+			if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, msg.Channel); err != nil {
+				slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
+			}
+		}
+
 		// Start a typing indicator if the channel supports it; refresh every
 		// 10 s so it stays visible while the agent is still processing.
 		var stopTyping context.CancelFunc
-		if ts, ok := ch.(channels.TypingSender); ok {
+		if ts, ok := ch.(channels.TypingSender); ok && ts.ShowTyping() {
 			_ = ts.SendTyping(msg.Channel, false)
 			typingCtx, cancel := context.WithCancel(ctx)
 			stopTyping = cancel
@@ -264,7 +287,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}()
 		}
 
-		runner.PromptWithRestrictions(msgCtx, msg.Text, msg.RestrictTools, func(e agent.StreamEvent) {
+		rOpts := agent.RunOverrides{
+			Model:         msg.Model,
+			Fallbacks:     msg.Fallbacks,
+			RestrictTools: msg.RestrictTools,
+		}
+		runner.PromptWithOverrides(msgCtx, msg.Text, rOpts, func(e agent.StreamEvent) {
 			switch e.Type {
 			case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
 				if stopTyping != nil {
@@ -273,6 +301,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}
 		})
 	})
+	s.loadSessionDeliveries()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -337,3 +366,34 @@ func (s *Server) Addr() string {
 
 // Agents returns the agent manager.
 func (s *Server) Agents() *agent.Manager { return s.agents }
+
+// loadSessionDeliveries reads all persisted session channel configs and
+// registers delivery functions so that sessions started from channels continue
+// to route responses back to those channels after a server restart.
+// Per-message registrations (Reconcile closure) will overwrite these with a
+// more direct closure on the next inbound message.
+func (s *Server) loadSessionDeliveries() {
+	cfgs, err := store.FindAllSessionChannelsConfigs()
+	if err != nil {
+		slog.Warn("server: failed to load session channel configs", "err", err)
+		return
+	}
+	for _, cfg := range cfgs {
+		for _, ch := range cfg.Channels {
+			chType, chID, sessionID := ch.Type, ch.ID, cfg.SessionID
+			agent.RegisterSessionDelivery(sessionID, chType, chID, func(text string) {
+				if err := s.channels.RouteDelivery(chType, chID, text); err != nil {
+					slog.Warn("server: failed to deliver to channel", "type", chType, "id", chID, "err", err)
+				}
+			})
+			agent.RegisterSessionMediaDelivery(sessionID, chType, chID, func(caption, path string) {
+				if err := s.channels.RouteMediaDelivery(chType, chID, caption, path); err != nil {
+					slog.Warn("server: failed to deliver media to channel", "type", chType, "id", chID, "err", err)
+				}
+			})
+		}
+	}
+	if len(cfgs) > 0 {
+		slog.Info("server: loaded session channel deliveries", "sessions", len(cfgs))
+	}
+}

@@ -203,7 +203,10 @@ func registerAgentTools(s *sdkmcp.Server) {
 				return text(buf.String())
 			}
 			slog.Error("mcp: tool failed", "component", "chat", "tool", "agent_run", "agent", args.Name, "err", err)
-			return nil, struct{}{}, err
+			return &sdkmcp.CallToolResult{
+				IsError: true,
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: err.Error()}},
+			}, struct{}{}, nil
 		}
 		slog.Info("mcp: tool done", "component", "chat", "tool", "agent_run", "agent", args.Name)
 		return text(buf.String())
@@ -495,15 +498,12 @@ func registerSessionTools(s *sdkmcp.Server) {
 		out := make([]messageDTO, 0, len(lines))
 		for _, line := range lines {
 			role, _ := line["role"].(string)
-			content, _ := line["content"].(string)
-			mediaURLVal, _ := line["media_url"].(string)
-			if role == "" || (content == "" && mediaURLVal == "") {
-				continue
-			}
-			if role != string(domain.MessageRoleUser) && role != string(domain.MessageRoleAssistant) && role != string(domain.MessageRoleSystem) {
+			if role == "" {
 				continue
 			}
 
+			content, _ := line["content"].(string)
+			mediaURLVal, _ := line["media_url"].(string)
 			id, _ := line["id"].(string)
 			sid, _ := line["session_id"].(string)
 			modelVal, _ := line["model"].(string)
@@ -934,10 +934,10 @@ func registerBrowserTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_eval",
-		Description: "Evaluate JavaScript in the specified tab and return the result",
+		Description: "Evaluate JavaScript in the specified tab and return the result. Pass the script in the `javascript` field.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args struct {
-		TabID string `json:"tab_id"`
-		Expr  string `json:"expr"`
+		TabID      string `json:"tab_id"`
+		JavaScript string `json:"javascript"`
 	}) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID)
 		d := GetDeps()
@@ -947,13 +947,34 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		if args.TabID == "" {
 			return nil, struct{}{}, fmt.Errorf("tab_id is required")
 		}
-		result, err := d.Browser.EvalJS(ctx, args.TabID, args.Expr)
+		result, err := d.Browser.EvalJS(ctx, args.TabID, args.JavaScript)
 		if err != nil {
 			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID, "err", err)
 			return nil, struct{}{}, err
 		}
 		slog.Info("javascript evaluated", "component", "browser", "tool", "browser_eval", "tab_id", args.TabID)
 		return text(result)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name: "channel_send_file",
+		Description: "Send a local file (e.g. a screenshot) to the current conversation channel. " +
+			"Use this to share images or files with the user instead of asking them to open a path manually. " +
+			"caption is optional text to accompany the file.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args struct {
+		FilePath string `json:"file_path"`
+		Caption  string `json:"caption,omitempty"`
+	}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "channel", "tool", "channel_send_file", "path", args.FilePath)
+		if args.FilePath == "" {
+			return nil, struct{}{}, fmt.Errorf("file_path is required")
+		}
+		sessionID, ok := agent.SessionIDFromContext(ctx)
+		if !ok || sessionID == "" {
+			return nil, struct{}{}, fmt.Errorf("no active channel session; cannot send file")
+		}
+		agent.DeliverMediaToSession(sessionID, args.Caption, args.FilePath)
+		return text(fmt.Sprintf("file sent: %s", args.FilePath))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -1387,10 +1408,10 @@ func registerServerTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("loading config: %w", err)
 		}
 
-		// Open the file-backed auth store to check credentials.
-		authPath := store.SubDir(store.DirAuth) + "/credentials.json"
+		// Use the shared auth store if available to avoid redundant file reads/locks.
+		st, err := authStore()
 		var authGet func(string) (string, error)
-		if st, err := auth.NewFileStore(authPath); err == nil {
+		if err == nil {
 			authGet = func(key string) (string, error) { return st.Get(key) }
 		}
 
@@ -1415,9 +1436,12 @@ func registerServerTools(s *sdkmcp.Server) {
 		})
 		for provider, model := range config.UniqueProviderModels(cfg) {
 			startProviderPingIfStale(provider, model, pingFactory)
+
+			// Safely check for cached results without holding the lock during pings.
 			providerPingMu.RLock()
 			entry, cached := providerPingCache[provider]
 			providerPingMu.RUnlock()
+
 			if cached && !entry.ok {
 				out = append(out, issueDTO{
 					Level:   string(config.LevelError),

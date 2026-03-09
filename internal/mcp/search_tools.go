@@ -52,10 +52,14 @@ func registerSearchTools(s *sdkmcp.Server) {
 			if apiKey, err := st.Get("brave:api_key"); err == nil && apiKey != "" {
 				results, err := braveSearch(ctx, apiKey, args.Query, count)
 				if err != nil {
-					return nil, struct{}{}, fmt.Errorf("brave search: %w", err)
+					slog.Warn("mcp: brave search failed, falling back to browser", "component", "search", "err", err)
+				} else if len(results) > 0 {
+					slog.Info("mcp: web_search completed", "component", "search", "backend", "brave", "results", len(results))
+					return jsonResult(results)
+				} else {
+					// Brave returned no results; fall through to browser.
+					slog.Info("mcp: brave search returned no results, falling back to browser", "component", "search", "query", args.Query)
 				}
-				slog.Info("mcp: web_search completed", "component", "search", "backend", "brave", "results", len(results))
-				return jsonResult(results)
 			}
 		}
 
@@ -123,44 +127,45 @@ func braveSearch(ctx context.Context, apiKey, query string, count int) ([]search
 	return results, nil
 }
 
-// browserSearch navigates to DuckDuckGo Lite in a new browser tab, extracts
-// results via JavaScript, then closes the tab.
+// browserSearch navigates to Google in a new browser tab, extracts organic
+// search results via JavaScript, then closes the tab.
 func browserSearch(ctx context.Context, br *browser.Manager, query string, count int) ([]searchResult, error) {
-	searchURL := "https://lite.duckduckgo.com/lite/?q=" + url.QueryEscape(query)
+	searchURL := "https://www.google.com/search?q=" + url.QueryEscape(query)
 
 	// Allow more time for page load + JS evaluation.
 	opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Open a blank tab so we navigate only once (via chromedp, which waits for load).
+	// Open blank first so Navigate (which waits for page load) handles the URL.
 	tabID, err := br.Open(opCtx, "about:blank")
 	if err != nil {
 		return nil, fmt.Errorf("opening tab: %w", err)
 	}
 	defer br.CloseTab(tabID) //nolint:errcheck
 
-	// Navigate and wait for the page to finish loading.
 	if err := br.Navigate(opCtx, tabID, searchURL); err != nil {
-		return nil, fmt.Errorf("navigating to search page: %w", err)
+		return nil, fmt.Errorf("navigating to google: %w", err)
 	}
 
-	// Extract results.  DuckDuckGo Lite renders organic results as consecutive
-	// <tr> rows: the first contains an <a class="result-link"> with the title
-	// and destination URL; the next sibling contains a <td class="result-snippet">
-	// with the description snippet.
+	// Walk all h3 elements inside #rso (Google's organic results container).
+	// Each h3 sits inside or adjacent to an <a> whose href is the result URL.
 	extractJS := fmt.Sprintf(`(() => {
 		const results = [];
-		const links = Array.from(document.querySelectorAll('a.result-link'));
-		for (let i = 0; i < Math.min(%d, links.length); i++) {
-			const a = links[i];
-			const row = a.closest('tr');
-			const snippetTd = row && row.nextElementSibling
-				? row.nextElementSibling.querySelector('td.result-snippet')
-				: null;
+		const h3s = Array.from(document.querySelectorAll('#rso h3'));
+		for (const h3 of h3s) {
+			if (results.length >= %d) break;
+			const a = h3.closest('a') || h3.parentElement && h3.parentElement.closest('a');
+			if (!a || !a.href || !a.href.startsWith('http')) continue;
+			const container = a.closest('[data-hveid]') || a.closest('.g') || a.parentElement;
+			const snippet = container && (
+				container.querySelector('.VwiC3b') ||
+				container.querySelector('[style*="webkit-line-clamp"]') ||
+				container.querySelector('[data-sncf]')
+			);
 			results.push({
-				title: a.textContent.trim(),
+				title: h3.textContent.trim(),
 				url: a.href,
-				description: snippetTd ? snippetTd.textContent.trim() : ''
+				description: snippet ? snippet.textContent.trim() : ''
 			});
 		}
 		return JSON.stringify(results);
