@@ -62,7 +62,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 				continue // already running
 			}
 
-			ch := newChannel(cc)
+			ch := newChannel(cc, ac.Model, ac.Fallbacks)
 			if ch == nil {
 				continue
 			}
@@ -141,6 +141,57 @@ func (m *Manager) SubscribeLogs(key string) (history []string, live <-chan strin
 	return h, l, u, true
 }
 
+// RouteDelivery sends text to channelID via any running channel of channelType.
+// It tries all matching channels and returns on the first success.
+func (m *Manager) RouteDelivery(channelType, channelID, text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var lastErr error
+	for key, ch := range m.channels {
+		parts := strings.SplitN(key, "/", 3)
+		if len(parts) != 3 || parts[1] != channelType {
+			continue
+		}
+		if err := ch.Send(channelID, text); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("no active channel of type %q", channelType)
+}
+
+// RouteMediaDelivery sends a media file to channelID via any running channel
+// of channelType that implements MediaSender. Returns an error if no matching
+// channel supports media or all attempts fail.
+func (m *Manager) RouteMediaDelivery(channelType, channelID, caption, filePath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var lastErr error
+	for key, ch := range m.channels {
+		parts := strings.SplitN(key, "/", 3)
+		if len(parts) != 3 || parts[1] != channelType {
+			continue
+		}
+		ms, ok := ch.(MediaSender)
+		if !ok {
+			continue
+		}
+		if err := ms.SendMedia(channelID, caption, filePath); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("no active channel of type %q supports media", channelType)
+}
+
 // List returns a snapshot of all currently running channels and their daemon status.
 func (m *Manager) List() []ChannelStatus {
 	m.mu.Lock()
@@ -167,15 +218,28 @@ func (m *Manager) List() []ChannelStatus {
 	return result
 }
 
-func newChannel(cc config.ChannelConfig) Channel {
+func newChannel(cc config.ChannelConfig, agentModel string, agentFallbacks []string) Channel {
+	model := cc.Model
+	if model == "" {
+		model = agentModel
+	}
+	fallbacks := cc.Fallbacks
+	if len(fallbacks) == 0 {
+		fallbacks = agentFallbacks
+	}
+
 	switch cc.Type {
 	case "slack":
 		// Token = bot token (xoxb-…), URL = app-level token (xapp-…) for Socket Mode.
-		return NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom)
+		return NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom, model, fallbacks)
 	case "discord":
-		return NewDiscordChannel(cc.Token, cc.AllowFrom)
+		return NewDiscordChannel(cc.Token, cc.AllowFrom, model, fallbacks)
 	case "signal":
-		return NewSignalChannel(cc.Phone, cc.URL, cc.AllowFrom)
+		showTyping := config.BoolOr(cc.ShowTyping, true)
+		reactToEmoji := config.BoolOr(cc.ReactToEmoji, true)
+		replyToReplies := config.BoolOr(cc.ReplyToReplies, true)
+		sendReadReceipts := config.BoolOr(cc.SendReadReceipts, true)
+		return NewSignalChannel(cc.Phone, cc.URL, cc.AllowFrom, showTyping, reactToEmoji, replyToReplies, sendReadReceipts, model, fallbacks)
 	default:
 		slog.Warn("unknown channel type", "type", cc.Type)
 		return nil

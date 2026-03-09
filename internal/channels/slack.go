@@ -18,6 +18,8 @@ type SlackChannel struct {
 	appToken  string // xapp-... token for socket mode
 	botToken  string // xoxb-... token for posting
 	allowFrom []config.AllowFromEntry
+	model     string
+	fallbacks []string
 
 	botUserID string // populated on connect via auth.test
 
@@ -31,13 +33,15 @@ type SlackChannel struct {
 
 // NewSlackChannel creates a SlackChannel.
 // appToken is the App-Level token (xapp-), botToken is the Bot token (xoxb-).
-func NewSlackChannel(appToken, botToken string, allowFrom []config.AllowFromEntry) *SlackChannel {
+func NewSlackChannel(appToken, botToken string, allowFrom []config.AllowFromEntry, model string, fallbacks []string) *SlackChannel {
 	api := slack.New(botToken, slack.OptionAppLevelToken(appToken))
 	sm := socketmode.New(api)
 	return &SlackChannel{
 		appToken:  appToken,
 		botToken:  botToken,
 		allowFrom: allowFrom,
+		model:     model,
+		fallbacks: fallbacks,
 		client:    api,
 		sm:        sm,
 	}
@@ -121,13 +125,23 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		fn(IncomingMessage{
+		im := IncomingMessage{
 			Type:          "slack",
 			From:          inner.User,
 			Channel:       inner.Channel,
 			Text:          inner.Text,
 			RestrictTools: result.restrictTools,
-		})
+			Model:         result.model,
+			Fallbacks:     result.fallbacks,
+		}
+		// Apply channel-level overrides if entry-level ones are absent.
+		if im.Model == "" {
+			im.Model = c.model
+		}
+		if len(im.Fallbacks) == 0 {
+			im.Fallbacks = c.fallbacks
+		}
+		fn(im)
 	} else {
 		slog.Debug("slack: no handler registered", "from", inner.User)
 	}

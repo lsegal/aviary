@@ -15,6 +15,8 @@ import (
 type DiscordChannel struct {
 	token     string
 	allowFrom []config.AllowFromEntry
+	model     string
+	fallbacks []string
 
 	session   *discordgo.Session
 	handler   func(IncomingMessage)
@@ -24,10 +26,12 @@ type DiscordChannel struct {
 }
 
 // NewDiscordChannel creates a DiscordChannel with the given bot token.
-func NewDiscordChannel(token string, allowFrom []config.AllowFromEntry) *DiscordChannel {
+func NewDiscordChannel(token string, allowFrom []config.AllowFromEntry, model string, fallbacks []string) *DiscordChannel {
 	return &DiscordChannel{
 		token:     token,
 		allowFrom: allowFrom,
+		model:     model,
+		fallbacks: fallbacks,
 		done:      make(chan struct{}),
 	}
 }
@@ -74,13 +78,22 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 		fn := c.handler
 		c.handlerMu.RUnlock()
 		if fn != nil {
-			fn(IncomingMessage{
+			im := IncomingMessage{
 				Type:          "discord",
 				From:          m.Author.ID,
 				Channel:       m.ChannelID,
 				Text:          m.Content,
 				RestrictTools: result.restrictTools,
-			})
+				Model:         result.model,
+				Fallbacks:     result.fallbacks,
+			}
+			if im.Model == "" {
+				im.Model = c.model
+			}
+			if len(im.Fallbacks) == 0 {
+				im.Fallbacks = c.fallbacks
+			}
+			fn(im)
 		} else {
 			slog.Debug("discord: no handler registered", "from", m.Author.ID)
 		}

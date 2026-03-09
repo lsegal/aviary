@@ -68,9 +68,44 @@
                   "type": "string",
                   "description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
                 },
-                "allowFrom": {
+                "showTyping": { "type": "boolean" },
+                "replyToReplies": { "type": "boolean" },
+                "reactToEmoji": { "type": "boolean" },
+                "sendReadReceipts": { "type": "boolean" },
+                "model": { "type": "string" },
+                "fallbacks": {
                   "type": "array",
                   "items": { "type": "string" }
+                },
+                "allowFrom": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      { "type": "string" },
+                      {
+                        "type": "object",
+                        "required": ["from"],
+                        "properties": {
+                          "from": { "type": "string" },
+                          "allowedGroups": { "type": "string" },
+                          "mentionPrefixes": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          },
+                          "respondToMentions": { "type": "boolean" },
+                          "restrictTools": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          },
+                          "model": { "type": "string" },
+                          "fallbacks": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               }
             }

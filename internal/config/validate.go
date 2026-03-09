@@ -191,8 +191,8 @@ func (v *validator) checkModel(field, model string) {
 		v.checkAuthCredentialEither(field, "anthropic:oauth", "anthropic:default",
 			"run 'aviary auth set anthropic:default <your-api-key>' or 'aviary auth login anthropic'")
 	case "openai":
-		v.checkAuthCredentialEither(field, "openai:oauth", "openai:default",
-			"run 'aviary auth set openai:default <your-api-key>' or 'aviary auth login openai'")
+		v.checkAuthCredential(field, "openai:default",
+			"run 'aviary auth set openai:default <your-api-key>'")
 	case "openai-codex":
 		v.checkAuthCredential(field, "openai:oauth", "run 'aviary auth login openai'")
 	case "google", "gemini", "google-gemini-cli":

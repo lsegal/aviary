@@ -13,6 +13,8 @@ type IncomingMessage struct {
 	Channel       string // channel ID or name
 	Text          string
 	RestrictTools []string // per-entry tool allow-list override; nil means use agent defaults
+	Model         string   // per-entry model override; "" means use agent default
+	Fallbacks     []string // per-entry fallbacks override; nil means use agent defaults
 }
 
 // Channel is the interface implemented by all messaging channel backends.
@@ -56,4 +58,12 @@ type LogSinkSetter interface {
 type TypingSender interface {
 	ShowTyping() bool
 	SendTyping(channel string, stop bool) error
+}
+
+// MediaSender is an optional interface implemented by channels that support
+// sending media attachments (images, files, etc.).
+// filePath is the local filesystem path to the file to send.
+// caption is an optional text message accompanying the file.
+type MediaSender interface {
+	SendMedia(channel, caption, filePath string) error
 }

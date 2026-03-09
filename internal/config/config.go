@@ -59,24 +59,29 @@ type AgentConfig struct {
 	Tasks       []TaskConfig       `yaml:"tasks,omitempty"       json:"tasks,omitempty"`
 }
 
-// AllowFromEntry defines a set of allowed senders/groups and optional group-chat
+// AllowFromEntry defines a set of allowed senders and optional group-chat
 // filtering settings that apply when a message matches this entry.
 //
-// The From field is a comma-separated list of IDs, each of which may be:
+// The From field is a comma-separated list of sender IDs:
 //   - A phone number (Signal) or user ID (Slack/Discord), e.g. "+15551234567"
-//   - "*" to match any direct-message sender
-//   - "group:*" to match any group/channel message
-//   - "group:<id>" to match a specific group ID or channel ID
+//   - "*" to match any sender (DMs or groups, combined with AllowedGroups for groups)
 //
-// MentionPrefixes and RespondToMentions only apply when the matched ID is a
-// group qualifier (starts with "group:").  For direct-message IDs all messages
-// from the matched sender are forwarded without further filtering.
+// To allow group/channel messages, AllowedGroups must be set.  When AllowedGroups
+// is empty the entry only applies to direct messages.
+//
+// MentionPrefixes and RespondToMentions only apply to group messages.
+// For direct-message IDs all messages from the matched sender are forwarded
+// without further filtering.
 //
 // For YAML backward compatibility a plain string entry is equivalent to
 // AllowFromEntry{From: "<string>"}.
 type AllowFromEntry struct {
-	// From is a comma-separated list of sender IDs or group qualifiers.
+	// From is a comma-separated list of sender IDs.
 	From string `yaml:"from" json:"from"`
+	// AllowedGroups is a comma-separated list of group/channel IDs that this
+	// entry permits.  Use "*" to allow any group.  When empty (the default) the
+	// entry only matches direct messages.
+	AllowedGroups string `yaml:"allowedGroups,omitempty" json:"allowedGroups,omitempty"`
 	// MentionPrefixes is a list of glob patterns matched against the message
 	// text in group chats.  At least one must match for the message to be
 	// forwarded (unless RespondToMentions is true and the bot is mentioned).
@@ -90,6 +95,10 @@ type AllowFromEntry struct {
 	// match this entry.  When non-empty only the listed tools are available;
 	// an absent or empty slice falls back to the agent-level permissions.
 	RestrictTools []string `yaml:"restrictTools,omitempty" json:"restrictTools,omitempty"`
+	// Model overrides the agent's default model for messages matching this entry.
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Fallbacks overrides the agent's default fallbacks for messages matching this entry.
+	Fallbacks []string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
 }
 
 // UnmarshalYAML lets a plain YAML string act as AllowFromEntry{From: "<string>"}
@@ -133,6 +142,15 @@ type ChannelConfig struct {
 	// to one of its own messages (bypassing normal allowFrom filtering).
 	// Defaults to true for channels that support it.
 	ReplyToReplies *bool `yaml:"replyToReplies,omitempty" json:"replyToReplies,omitempty"`
+	// SendReadReceipts controls whether the agent sends read receipts for
+	// messages it will respond to. Read receipts are only sent for messages
+	// that pass the allowFrom filter (i.e. messages the agent will act on).
+	// Defaults to true for channels that support it.
+	SendReadReceipts *bool `yaml:"sendReadReceipts,omitempty" json:"sendReadReceipts,omitempty"`
+	// Model overrides the agent's default model for all messages on this channel.
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Fallbacks overrides the agent's default fallbacks for all messages on this channel.
+	Fallbacks []string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
 }
 
 // BoolOr returns the value of b if non-nil, otherwise def.
@@ -175,9 +193,8 @@ type ModelDefaults struct {
 type BrowserConfig struct {
 	Binary  string `yaml:"binary,omitempty"            json:"binary,omitempty"`
 	CDPPort int    `yaml:"cdp_port,omitempty"          json:"cdp_port,omitempty"`
-	// ProfileDir is the Chrome profile folder name in the browser's default
-	// user data directory (e.g. "Default", "Profile 1", "work").
-	// Defaults to "Aviary" if unset.
+	// ProfileDir is the Chrome user data directory path.
+	// Defaults to <OS config dir>/aviary/browser if unset.
 	ProfileDir string `yaml:"profile_directory,omitempty" json:"profile_directory,omitempty"`
 	Headless   bool   `yaml:"headless,omitempty"          json:"headless,omitempty"`
 }
@@ -222,6 +239,26 @@ func normalize(cfg *Config) {
 	for i := range cfg.Agents {
 		if len(cfg.Agents[i].Channels) == 0 {
 			cfg.Agents[i].Channels = nil
+		}
+		for j := range cfg.Agents[i].Channels {
+			ch := &cfg.Agents[i].Channels[j]
+			if len(ch.Fallbacks) == 0 {
+				ch.Fallbacks = nil
+			}
+			if len(ch.AllowFrom) == 0 {
+				ch.AllowFrom = nil
+			}
+			for k := range ch.AllowFrom {
+				if len(ch.AllowFrom[k].Fallbacks) == 0 {
+					ch.AllowFrom[k].Fallbacks = nil
+				}
+				if len(ch.AllowFrom[k].MentionPrefixes) == 0 {
+					ch.AllowFrom[k].MentionPrefixes = nil
+				}
+				if len(ch.AllowFrom[k].RestrictTools) == 0 {
+					ch.AllowFrom[k].RestrictTools = nil
+				}
+			}
 		}
 		if len(cfg.Agents[i].Tasks) == 0 {
 			cfg.Agents[i].Tasks = nil

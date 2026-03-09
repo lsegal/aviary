@@ -5,18 +5,206 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
+	nethtml "golang.org/x/net/html"
 )
+
+var (
+	urlRegex = regexp.MustCompile(`https?://[^\s<>"{}|\\^\x60\[\]]+`)
+)
+
+// linkPreview holds metadata for a URL preview to include in outgoing Signal messages.
+type linkPreview struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Image       string `json:"image,omitempty"` // local file path for signal-cli
+}
+
+// fetchLinkPreviews extracts the first URL from text, fetches its OG metadata
+// (including downloading the og:image to a temp file), and returns a slice of
+// previews suitable for the signal-cli send RPC plus a cleanup function to
+// remove any temp files once the send has completed.
+func fetchLinkPreviews(text string) ([]linkPreview, func()) {
+	raw := urlRegex.FindString(text)
+	if raw == "" {
+		return nil, nil
+	}
+	u := strings.TrimRight(raw, ".,;:!?)")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, nil
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Aviary/1.0)")
+	req.Header.Set("Accept", "text/html")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Debug("signal: link preview fetch failed", "url", u, "err", err)
+		return nil, nil
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		return nil, nil
+	}
+
+	p := linkPreview{URL: u}
+	z := nethtml.NewTokenizer(io.LimitReader(resp.Body, 64*1024))
+	var inTitle bool
+
+	for {
+		tt := z.Next()
+		if tt == nethtml.ErrorToken {
+			break
+		}
+		t := z.Token()
+
+		switch tt {
+		case nethtml.StartTagToken, nethtml.SelfClosingTagToken:
+			tagName := strings.ToLower(t.Data)
+			if tagName == "title" {
+				inTitle = true
+			}
+			if tagName == "meta" {
+				var property, content string
+				for _, a := range t.Attr {
+					key := strings.ToLower(a.Key)
+					if key == "property" || key == "name" {
+						property = strings.ToLower(a.Val)
+					}
+					if key == "content" {
+						content = a.Val
+					}
+				}
+				switch property {
+				case "og:title", "twitter:title":
+					if p.Title == "" {
+						p.Title = strings.TrimSpace(content)
+					}
+				case "og:description", "description", "twitter:description":
+					if p.Description == "" {
+						p.Description = strings.TrimSpace(content)
+					}
+				case "og:image", "twitter:image":
+					if p.Image == "" && content != "" {
+						p.Image = content
+					}
+				}
+			}
+			if tagName == "link" {
+				var rel, href string
+				for _, a := range t.Attr {
+					key := strings.ToLower(a.Key)
+					if key == "rel" {
+						rel = strings.ToLower(a.Val)
+					}
+					if key == "href" {
+						href = a.Val
+					}
+				}
+				if (rel == "icon" || rel == "apple-touch-icon" || rel == "shortcut icon") && p.Image == "" {
+					p.Image = href
+				}
+			}
+			if tagName == "img" && p.Image == "" {
+				for _, a := range t.Attr {
+					if strings.ToLower(a.Key) == "src" {
+						p.Image = a.Val
+						break
+					}
+				}
+			}
+		case nethtml.EndTagToken:
+			if strings.ToLower(t.Data) == "title" {
+				inTitle = false
+			}
+		case nethtml.TextToken:
+			if inTitle && p.Title == "" {
+				p.Title = strings.TrimSpace(t.Data)
+			}
+		}
+	}
+
+	if p.Title == "" {
+		return nil, nil
+	}
+
+	p.Title = html.UnescapeString(p.Title)
+	p.Description = html.UnescapeString(p.Description)
+
+	// Resolve image URL and download to a temp file for signal-cli.
+	var cleanup func()
+	imageURL := html.UnescapeString(p.Image)
+	p.Image = "" // clear it; will be set to local path if download succeeds
+	if imageURL != "" {
+		// Resolve relative image URLs against the page URL.
+		if base, err := url.Parse(u); err == nil {
+			if rel, err := url.Parse(imageURL); err == nil {
+				imageURL = base.ResolveReference(rel).String()
+			}
+		}
+
+		if strings.HasPrefix(imageURL, "http") {
+			if path, err := downloadTempImage(ctx, imageURL); err == nil {
+				p.Image = path
+				cleanup = func() { os.Remove(path) } //nolint:errcheck
+			} else {
+				slog.Debug("signal: link preview image download failed", "url", imageURL, "err", err)
+			}
+		}
+	}
+
+	return []linkPreview{p}, cleanup
+}
+
+// downloadTempImage fetches imageURL and writes it to a temp file, returning the path.
+func downloadTempImage(ctx context.Context, imageURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", imageURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Aviary/1.0)")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	f, err := os.CreateTemp("", "aviary-preview-*.jpg")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+
+	// Ensure the file is readable by the signal-cli subprocess.
+	_ = os.Chmod(f.Name(), 0644)
+
+	if _, err := io.Copy(f, io.LimitReader(resp.Body, 4*1024*1024)); err != nil {
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", err
+	}
+	return f.Name(), nil
+}
 
 // SignalChannel connects to a signal-cli daemon via its native TCP JSON-RPC interface.
 // If url is set, it connects to an existing external daemon. Otherwise it
@@ -42,11 +230,14 @@ type SignalChannel struct {
 	phone     string // registered Signal account phone number
 	initAddr  string // configured TCP address; empty → managed daemon mode
 	allowFrom []config.AllowFromEntry
+	model     string
+	fallbacks []string
 
 	// Per-channel feature flags (defaults are true).
-	showTyping     bool // show typing indicator while agent processes
-	reactToEmoji   bool // mirror emoji reactions on agent's own messages
-	replyToReplies bool // respond to quoted replies targeting agent's messages
+	showTyping       bool // show typing indicator while agent processes
+	reactToEmoji     bool // mirror emoji reactions on agent's own messages
+	replyToReplies   bool // respond to quoted replies targeting agent's messages
+	sendReadReceipts bool // send read receipts for messages the agent will respond to
 
 	addrMu sync.RWMutex
 	addr   string // current effective daemon address (set dynamically in managed mode)
@@ -73,18 +264,21 @@ var reconnectDelay = 2 * time.Second
 // phone is the registered account phone number; addr is the optional TCP
 // address of an existing signal-cli JSON-RPC daemon (e.g. "127.0.0.1:7583").
 // When addr is empty, signal-cli is launched and managed automatically.
-// showTyping, reactToEmoji, and replyToReplies enable the corresponding
-// per-channel behaviours (all typically defaulted to true by the caller).
-func NewSignalChannel(phone, addr string, allowFrom []config.AllowFromEntry, showTyping, reactToEmoji, replyToReplies bool) *SignalChannel {
+// showTyping, reactToEmoji, replyToReplies, and sendReadReceipts enable the
+// corresponding per-channel behaviours (all typically defaulted to true by the caller).
+func NewSignalChannel(phone, addr string, allowFrom []config.AllowFromEntry, showTyping, reactToEmoji, replyToReplies, sendReadReceipts bool, model string, fallbacks []string) *SignalChannel {
 	return &SignalChannel{
-		phone:          phone,
-		initAddr:       addr,
-		addr:           addr,
-		allowFrom:      allowFrom,
-		showTyping:     showTyping,
-		reactToEmoji:   reactToEmoji,
-		replyToReplies: replyToReplies,
-		done:           make(chan struct{}),
+		phone:            phone,
+		initAddr:         addr,
+		addr:             addr,
+		allowFrom:        allowFrom,
+		showTyping:       showTyping,
+		reactToEmoji:     reactToEmoji,
+		replyToReplies:   replyToReplies,
+		sendReadReceipts: sendReadReceipts,
+		model:            model,
+		fallbacks:        fallbacks,
+		done:             make(chan struct{}),
 	}
 }
 
@@ -122,9 +316,10 @@ func (c *SignalChannel) OnMessage(fn func(IncomingMessage)) {
 	c.handler = fn
 }
 
-// Send sends a Signal message to a recipient phone number via JSON-RPC over TCP.
-// recipient is a phone number in E.164 format (e.g. "+15551234567").
-func (c *SignalChannel) Send(recipient, text string) error {
+// Send sends a Signal message to a recipient or group via JSON-RPC over TCP.
+// channel must be a phone number in E.164 format (starts with "+") for direct
+// messages, or a base64-encoded group ID for group conversations.
+func (c *SignalChannel) Send(channel, text string) error {
 	c.addrMu.RLock()
 	addr := c.addr
 	c.addrMu.RUnlock()
@@ -134,13 +329,39 @@ func (c *SignalChannel) Send(recipient, text string) error {
 	}
 
 	type sendParams struct {
-		Recipient []string `json:"recipient"`
-		Message   string   `json:"message"`
+		Recipient          []string `json:"recipient,omitempty"`
+		GroupID            string   `json:"groupId,omitempty"`
+		Message            string   `json:"message"`
+		Attachments        []string `json:"attachments,omitempty"`
+		PreviewURL         string   `json:"previewUrl,omitempty"`
+		PreviewTitle       string   `json:"previewTitle,omitempty"`
+		PreviewDescription string   `json:"previewDescription,omitempty"`
+		PreviewImage       string   `json:"previewImage,omitempty"`
+	}
+	previews, cleanupPreview := fetchLinkPreviews(text)
+	if cleanupPreview != nil {
+		defer cleanupPreview()
+	}
+
+	params := sendParams{Message: text}
+	if len(previews) > 0 {
+		p := previews[0]
+		params.PreviewURL = p.URL
+		params.PreviewTitle = p.Title
+		params.PreviewDescription = p.Description
+		params.PreviewImage = p.Image
+		// Note: signal-cli handles previewImage as a separate attachment internally;
+		// it should not be included in the top-level Attachments array when sent as a preview.
+	}
+	if strings.HasPrefix(channel, "+") {
+		params.Recipient = []string{channel}
+	} else {
+		params.GroupID = channel
 	}
 	req := jsonrpcRequest[sendParams]{
 		JSONRPC: "2.0",
 		Method:  "send",
-		Params:  sendParams{Recipient: []string{recipient}, Message: text},
+		Params:  params,
 		ID:      c.idSeq.Add(1),
 	}
 
@@ -148,6 +369,7 @@ func (c *SignalChannel) Send(recipient, text string) error {
 	if err != nil {
 		return fmt.Errorf("signal: marshal request: %w", err)
 	}
+	slog.Debug("signal: send request", "body", string(body))
 	body = append(body, '\n')
 
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -165,6 +387,7 @@ func (c *SignalChannel) Send(recipient, text string) error {
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
+	slog.Debug("signal: send response", "result", string(resp.Result))
 	if resp.Error != nil {
 		return fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
 	}
@@ -281,12 +504,125 @@ func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, target
 		return fmt.Errorf("signal: write: %w", err)
 	}
 
-	var resp2 jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp2); err != nil {
+	var resp jsonrpcResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
-	if resp2.Error != nil {
-		return fmt.Errorf("signal: rpc error: %d %s", resp2.Error.Code, resp2.Error.Message)
+	if resp.Error != nil {
+		return fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
+	}
+	return nil
+}
+
+// SendMedia sends a file attachment with an optional caption via signal-cli.
+// channel must be a phone number in E.164 format or a base64 group ID.
+func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
+	c.addrMu.RLock()
+	addr := c.addr
+	c.addrMu.RUnlock()
+
+	if addr == "" {
+		return fmt.Errorf("signal: daemon not ready")
+	}
+
+	type sendParams struct {
+		Recipient   []string `json:"recipient,omitempty"`
+		GroupID     string   `json:"groupId,omitempty"`
+		Message     string   `json:"message,omitempty"`
+		Attachments []string `json:"attachments"`
+	}
+	params := sendParams{
+		Attachments: []string{filePath},
+		Message:     caption,
+	}
+	if strings.HasPrefix(channel, "+") {
+		params.Recipient = []string{channel}
+	} else {
+		params.GroupID = channel
+	}
+
+	req := jsonrpcRequest[sendParams]{
+		JSONRPC: "2.0",
+		Method:  "send",
+		Params:  params,
+		ID:      c.idSeq.Add(1),
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("signal: marshal request: %w", err)
+	}
+	body = append(body, '\n')
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("signal: dial: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if _, err := conn.Write(body); err != nil {
+		return fmt.Errorf("signal: write: %w", err)
+	}
+	var resp jsonrpcResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return fmt.Errorf("signal: read response: %w", err)
+	}
+	if resp.Error != nil {
+		return fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
+	}
+	return nil
+}
+
+// sendReadReceipt sends a read receipt for msgTimestamp to recipient via signal-cli.
+// recipient must be a phone number in E.164 format.
+func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) error {
+	c.addrMu.RLock()
+	addr := c.addr
+	c.addrMu.RUnlock()
+
+	if addr == "" {
+		return fmt.Errorf("signal: daemon not ready")
+	}
+
+	type receiptParams struct {
+		Recipient        string  `json:"recipient"`
+		TargetTimestamps []int64 `json:"targetTimestamps"`
+		Type             string  `json:"type"`
+	}
+	params := receiptParams{
+		Recipient:        recipient,
+		TargetTimestamps: []int64{msgTimestamp},
+		Type:             "read",
+	}
+
+	req := jsonrpcRequest[receiptParams]{
+		JSONRPC: "2.0",
+		Method:  "sendReceipt",
+		Params:  params,
+		ID:      c.idSeq.Add(1),
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("signal: marshal request: %w", err)
+	}
+	body = append(body, '\n')
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("signal: dial: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if _, err := conn.Write(body); err != nil {
+		return fmt.Errorf("signal: write: %w", err)
+	}
+
+	var resp jsonrpcResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return fmt.Errorf("signal: read response: %w", err)
+	}
+	if resp.Error != nil {
+		return fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
 	}
 	return nil
 }
@@ -485,6 +821,24 @@ func (c *SignalChannel) listen(ctx context.Context, addr string) error {
 
 	slog.Info("signal: connected", "addr", addr, "phone", c.phone)
 
+	// Enable link previews for the account.
+	go func() {
+		time.Sleep(500 * time.Millisecond) // wait a beat for the daemon to be ready
+		type configParams struct {
+			LinkPreviews bool `json:"linkPreviews"`
+		}
+		req := jsonrpcRequest[configParams]{
+			JSONRPC: "2.0",
+			Method:  "updateConfiguration",
+			Params:  configParams{LinkPreviews: true},
+			ID:      c.idSeq.Add(1),
+		}
+		if body, err := json.Marshal(req); err == nil {
+			body = append(body, '\n')
+			_, _ = conn.Write(body)
+		}
+	}()
+
 	// Close the connection when context is cancelled or Stop is called.
 	go func() {
 		select {
@@ -545,23 +899,29 @@ type jsonrpcNotification struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+// signalDataMessage is the dataMessage block inside a signal-cli receive envelope.
+type signalDataMessage struct {
+	Message  string `json:"message"`
+	Mentions []struct {
+		Number string `json:"number"`
+		UUID   string `json:"uuid"`
+	} `json:"mentions"`
+	Quote *struct {
+		ID     int64  `json:"id"`
+		Author string `json:"author"`
+		Text   string `json:"text"`
+	} `json:"quote"`
+	GroupInfo *struct {
+		GroupID string `json:"groupId"`
+	} `json:"groupInfo"`
+}
+
 // receiveParams is the params block of a "receive" notification.
 type receiveParams struct {
 	Envelope struct {
-		Source       string `json:"source"`
-		Timestamp    int64  `json:"timestamp"`
-		WasMentioned bool   `json:"wasMentioned"`
-		DataMessage  *struct {
-			Message  string `json:"message"`
-			Quote    *struct {
-				ID     int64  `json:"id"`
-				Author string `json:"author"`
-				Text   string `json:"text"`
-			} `json:"quote"`
-			GroupInfo *struct {
-				GroupID string `json:"groupId"`
-			} `json:"groupInfo"`
-		} `json:"dataMessage"`
+		Source          string             `json:"source"`
+		Timestamp       int64              `json:"timestamp"`
+		DataMessage     *signalDataMessage `json:"dataMessage"`
 		ReactionMessage *struct {
 			Emoji               string `json:"emoji"`
 			TargetAuthor        string `json:"targetAuthor"`
@@ -604,20 +964,24 @@ func (c *SignalChannel) dispatch(line []byte) {
 		env.DataMessage.Quote != nil &&
 		env.DataMessage.Quote.Author == c.phone
 
-	c.dispatchEnvelope(env.Source, env.WasMentioned, isReplyToSelf, env.DataMessage)
+	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(env.DataMessage), isReplyToSelf, env.DataMessage)
 }
 
-func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, isReplyToSelf bool, dataMessage *struct {
-	Message  string "json:\"message\""
-	Quote    *struct {
-		ID     int64  "json:\"id\""
-		Author string "json:\"author\""
-		Text   string "json:\"text\""
-	} "json:\"quote\""
-	GroupInfo *struct {
-		GroupID string "json:\"groupId\""
-	} "json:\"groupInfo\""
-}) {
+// isMentioned checks the dataMessage.mentions array for the bot's own phone
+// number, which is how signal-cli signals a @mention.
+func (c *SignalChannel) isMentioned(dataMessage *signalDataMessage) bool {
+	if dataMessage == nil || c.phone == "" {
+		return false
+	}
+	for _, m := range dataMessage.Mentions {
+		if m.Number == c.phone {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasMentioned bool, isReplyToSelf bool, dataMessage *signalDataMessage) {
 	if dataMessage == nil || dataMessage.Message == "" {
 		return
 	}
@@ -637,6 +1001,8 @@ func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, isRep
 		result.allowed = true
 		if r := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned); r.allowed {
 			result.restrictTools = r.restrictTools
+			result.model = r.model
+			result.fallbacks = r.fallbacks
 		}
 	} else {
 		result = checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
@@ -645,18 +1011,35 @@ func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, isRep
 		}
 	}
 
+	// Send a read receipt so the sender knows the agent saw their message.
+	// Receipts always go to the sender's phone number (source), even in groups.
+	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+			slog.Warn("signal: failed to send read receipt", "err", err)
+		}
+	}
+
 	c.handlerMu.RLock()
 	fn := c.handler
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		fn(IncomingMessage{
+		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
 			Channel:       channelID,
 			Text:          dataMessage.Message,
 			RestrictTools: result.restrictTools,
-		})
+			Model:         result.model,
+			Fallbacks:     result.fallbacks,
+		}
+		if im.Model == "" {
+			im.Model = c.model
+		}
+		if len(im.Fallbacks) == 0 {
+			im.Fallbacks = c.fallbacks
+		}
+		fn(im)
 	} else {
 		slog.Debug("signal: no handler registered", "from", source)
 	}

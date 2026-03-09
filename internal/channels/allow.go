@@ -11,6 +11,8 @@ import (
 type allowResult struct {
 	allowed       bool
 	restrictTools []string
+	model         string
+	fallbacks     []string
 }
 
 // checkAllowed applies allowFrom rules to an incoming message and returns
@@ -37,17 +39,42 @@ func checkAllowed(
 	for _, entry := range entries {
 		for _, id := range splitFrom(entry.From) {
 			if isGroup {
-				if !matchesGroupChannel(id, channelID) {
+				// Step 1: the sender must match this entry's From list.
+				if id != "*" && id != from {
 					continue
+				}
+				// Step 2: the group/channel must be explicitly allowed.
+				if !matchesAllowedGroup(entry.AllowedGroups, channelID) {
+					continue
+				}
+				// Step 3: optional mention filtering.
+				// If no mention filter is configured, all messages pass through.
+				if len(entry.MentionPrefixes) == 0 && !entry.RespondToMentions {
+					return allowResult{
+						allowed:       true,
+						restrictTools: entry.RestrictTools,
+						model:         entry.Model,
+						fallbacks:     entry.Fallbacks,
+					}
 				}
 				if matchesMentionPrefixes(text, entry.MentionPrefixes) ||
 					(entry.RespondToMentions && (wasMentioned || isDirectMention(text, botUserID))) {
-					return allowResult{allowed: true, restrictTools: entry.RestrictTools}
+					return allowResult{
+						allowed:       true,
+						restrictTools: entry.RestrictTools,
+						model:         entry.Model,
+						fallbacks:     entry.Fallbacks,
+					}
 				}
 			} else {
-				// Direct message: match sender ID.
+				// Direct message: match sender ID only.
 				if id == "*" || id == from {
-					return allowResult{allowed: true, restrictTools: entry.RestrictTools}
+					return allowResult{
+						allowed:       true,
+						restrictTools: entry.RestrictTools,
+						model:         entry.Model,
+						fallbacks:     entry.Fallbacks,
+					}
 				}
 			}
 		}
@@ -67,15 +94,20 @@ func splitFrom(s string) []string {
 	return ids
 }
 
-// matchesGroupChannel reports whether the ID pattern targets this group channel.
-// id must start with "group:"; the suffix is either "*" (any group) or a
-// specific channel/group ID.
-func matchesGroupChannel(id, channelID string) bool {
-	if !strings.HasPrefix(id, "group:") {
+// matchesAllowedGroup reports whether channelID is permitted by the
+// allowedGroups spec.  allowedGroups is a comma-separated list where each
+// element is either "*" (any group) or an exact group/channel ID.
+// An empty allowedGroups string never matches (entry is DM-only).
+func matchesAllowedGroup(allowedGroups, channelID string) bool {
+	if allowedGroups == "" {
 		return false
 	}
-	suffix := strings.TrimPrefix(id, "group:")
-	return suffix == "*" || suffix == channelID
+	for _, pattern := range splitFrom(allowedGroups) {
+		if pattern == "*" || pattern == channelID {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesMentionPrefixes returns true when text matches at least one pattern.
