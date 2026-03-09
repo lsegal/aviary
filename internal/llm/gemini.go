@@ -1,11 +1,15 @@
 package llm
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
-
-	"github.com/lsegal/aviary/internal/auth"
+	"strings"
 )
 
 const geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -17,6 +21,10 @@ const geminiNativeModelsURL = "https://generativelanguage.googleapis.com/v1beta/
 
 // googleTokenInfoURL validates any Google OAuth access token.
 const googleTokenInfoURL = "https://oauth2.googleapis.com/tokeninfo"
+
+// geminiCodeAssistStreamURL is the streaming endpoint for the Code Assist API.
+// The project ID and model name (without "models/" prefix) are passed in the request body, not the URL.
+const geminiCodeAssistStreamURL = "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
 
 // pingGoogleOAuthToken validates a Google OAuth access token via the tokeninfo endpoint.
 func pingGoogleOAuthToken(ctx context.Context, accessToken string) error {
@@ -77,22 +85,24 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	return p.inner.Stream(ctx, req)
 }
 
-// GeminiCodeAssistProvider uses the Vertex AI OpenAI-compatible endpoint with a
-// Google OAuth access token from the gemini-cli Code Assist flow. The project ID
-// is fetched at login time via GeminiLookupProject (loadCodeAssist) and used to
-// construct the Vertex AI streaming endpoint URL.
+// GeminiCodeAssistProvider uses the Cloud Code Assist API
+// (cloudcode-pa.googleapis.com) with a Google OAuth access token from the
+// gemini-cli Code Assist flow. This uses the native Gemini streaming format,
+// not the OpenAI-compatible endpoint, and does not require Vertex AI to be
+// enabled in the project.
 type GeminiCodeAssistProvider struct {
-	inner       *OpenAIProvider
 	accessToken string
+	projectID   string
+	model       string
 }
 
 // NewGeminiCodeAssistProvider creates a provider using the Code Assist endpoint.
 // projectID is the Google Cloud project ID returned by auth.GeminiLookupProject.
 func NewGeminiCodeAssistProvider(accessToken, projectID, model string) *GeminiCodeAssistProvider {
-	baseURL := auth.GeminiCodeAssistBaseURL(projectID)
 	return &GeminiCodeAssistProvider{
-		inner:       NewOpenAIProvider(accessToken, model, baseURL),
 		accessToken: accessToken,
+		projectID:   projectID,
+		model:       model,
 	}
 }
 
@@ -101,7 +111,137 @@ func (p *GeminiCodeAssistProvider) Ping(ctx context.Context) error {
 	return pingGoogleOAuthToken(ctx, p.accessToken)
 }
 
-// Stream forwards to the underlying OpenAI-compatible provider.
+// Stream calls the Code Assist streaming endpoint using native Gemini format.
 func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
-	return p.inner.Stream(ctx, req)
+	type part struct {
+		Text string `json:"text"`
+	}
+	type content struct {
+		Role  string `json:"role"`
+		Parts []part `json:"parts"`
+	}
+	type systemInstruction struct {
+		Parts []part `json:"parts"`
+	}
+	type generationConfig struct {
+		MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+	}
+	type innerRequest struct {
+		Contents          []content          `json:"contents"`
+		SystemInstruction *systemInstruction `json:"systemInstruction,omitempty"`
+		GenerationConfig  *generationConfig  `json:"generationConfig,omitempty"`
+	}
+
+	var contents []content
+	for _, msg := range req.Messages {
+		switch msg.Role {
+		case RoleUser:
+			c := content{Role: "user", Parts: []part{{Text: msg.Content}}}
+			contents = append(contents, c)
+		case RoleAssistant:
+			c := content{Role: "model", Parts: []part{{Text: msg.Content}}}
+			contents = append(contents, c)
+		}
+	}
+
+	inner := innerRequest{Contents: contents}
+	if req.System != "" {
+		inner.SystemInstruction = &systemInstruction{Parts: []part{{Text: req.System}}}
+	}
+	if req.MaxToks > 0 {
+		inner.GenerationConfig = &generationConfig{MaxOutputTokens: req.MaxToks}
+	}
+
+	envelope := map[string]any{
+		"model":   p.model,
+		"project": p.projectID,
+		"request": inner,
+	}
+
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("code assist: marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, geminiCodeAssistStreamURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("code assist: creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.accessToken)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("code assist stream: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, strings.TrimSpace(string(errBody)))
+	}
+
+	ch := make(chan Event, 16)
+	go func() {
+		defer close(ch)
+		defer func() { _ = resp.Body.Close() }()
+
+		type candidateChunk struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		}
+		type responseChunk struct {
+			Response struct {
+				Candidates    []candidateChunk `json:"candidates"`
+				UsageMetadata struct {
+					PromptTokenCount     int `json:"promptTokenCount"`
+					CandidatesTokenCount int `json:"candidatesTokenCount"`
+				} `json:"usageMetadata"`
+			} `json:"response"`
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		var lastUsage *Usage
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var chunk responseChunk
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
+			}
+			for _, cand := range chunk.Response.Candidates {
+				for _, p := range cand.Content.Parts {
+					if p.Text != "" {
+						ch <- Event{Type: EventTypeText, Text: p.Text}
+					}
+				}
+			}
+			if chunk.Response.UsageMetadata.PromptTokenCount > 0 || chunk.Response.UsageMetadata.CandidatesTokenCount > 0 {
+				lastUsage = &Usage{
+					InputTokens:  chunk.Response.UsageMetadata.PromptTokenCount,
+					OutputTokens: chunk.Response.UsageMetadata.CandidatesTokenCount,
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("code assist stream: %w", err)}
+			return
+		}
+		if lastUsage != nil {
+			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
+		}
+		ch <- Event{Type: EventTypeDone}
+	}()
+
+	return ch, nil
 }

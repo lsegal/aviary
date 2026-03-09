@@ -575,14 +575,6 @@ func GeminiLookupProject(ctx context.Context, accessToken string) (string, error
 	return result.CloudaicompanionProject, nil
 }
 
-// GeminiCodeAssistBaseURL returns the OpenAI-compatible base URL for Vertex AI
-// given a Google Cloud project ID obtained from GeminiLookupProject.
-// Vertex AI exposes an OpenAI-compatible endpoint that accepts the same
-// cloud-platform OAuth tokens issued by the gemini-cli flow.
-func GeminiCodeAssistBaseURL(projectID string) string {
-	return fmt.Sprintf("https://us-central1-aiplatform.googleapis.com/v1/projects/%s/locations/us-central1/endpoints/openapi/", projectID)
-}
-
 // OpenBrowser opens rawURL in the system default browser.
 func OpenBrowser(rawURL string) error {
 	var cmd *exec.Cmd

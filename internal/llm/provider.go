@@ -133,7 +133,7 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 	switch {
 	case strings.Contains(providerKey, "anthropic"):
 		newTok, err = auth.AnthropicRefresh(ctx, tok.RefreshToken)
-	case strings.Contains(providerKey, "gemini"):
+	case strings.Contains(providerKey, "google"), strings.Contains(providerKey, "gemini"):
 		newTok, err = auth.GeminiRefresh(ctx, tok.RefreshToken)
 	default:
 		return nil
@@ -194,7 +194,7 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		}
 		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
-	case "gemini":
+	case "google", "gemini", "google-gemini-cli":
 		// Prefer OAuth token (Google account) if available.
 		// OAuth tokens are from the gemini-cli Code Assist flow and require a
 		// project ID (stored at login time) to construct the streaming endpoint.
@@ -208,7 +208,7 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 				var lookupErr error
 				projectID, lookupErr = auth.GeminiLookupProject(lookupCtx, accessToken)
 				if lookupErr != nil {
-					return nil, fmt.Errorf("gemini auth: OAuth token found but no project ID stored; run 'aviary auth login gemini' again")
+					return nil, fmt.Errorf("%s auth: OAuth token found but no project ID stored; run 'aviary auth login gemini' again", provider)
 				}
 				if f.tokenSetter != nil {
 					if setErr := f.tokenSetter("gemini:project", projectID); setErr != nil {
@@ -220,7 +220,7 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		}
 		apiKey, err := f.resolveAuth("auth:gemini:default")
 		if err != nil {
-			return nil, fmt.Errorf("gemini auth: %w", err)
+			return nil, fmt.Errorf("%s auth: %w", provider, err)
 		}
 		return NewGeminiProvider(apiKey, name), nil
 

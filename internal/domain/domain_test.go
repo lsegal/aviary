@@ -31,7 +31,7 @@ func TestConstants_NonEmpty(t *testing.T) {
 			t.Fatal("channel type should not be empty")
 		}
 	}
-	for _, provider := range []Provider{ProviderAnthropic, ProviderOpenAI, ProviderGemini, ProviderStdio} {
+	for _, provider := range []Provider{ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderStdio} {
 		if provider == "" {
 			t.Fatal("provider should not be empty")
 		}

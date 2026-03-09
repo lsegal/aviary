@@ -7,7 +7,7 @@ type Provider string
 const (
 	ProviderAnthropic Provider = "anthropic"
 	ProviderOpenAI    Provider = "openai"
-	ProviderGemini    Provider = "gemini"
+	ProviderGoogle    Provider = "google"
 	ProviderStdio     Provider = "stdio" // subprocess: claude CLI, codex, etc.
 )
 
