@@ -229,6 +229,68 @@ func (c *SignalChannel) SendTyping(channel string, stop bool) error {
 	return nil
 }
 
+// sendReaction sends a sendReaction JSON-RPC request to signal-cli.
+// channel is a phone number (E.164) for 1-to-1 chats or a base64 group ID.
+func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, targetSentTimestamp int64) error {
+	c.addrMu.RLock()
+	addr := c.addr
+	c.addrMu.RUnlock()
+
+	if addr == "" {
+		return fmt.Errorf("signal: daemon not ready")
+	}
+
+	type reactionParams struct {
+		Recipient           []string `json:"recipient,omitempty"`
+		GroupID             string   `json:"groupId,omitempty"`
+		Emoji               string   `json:"emoji"`
+		TargetAuthor        string   `json:"targetAuthor"`
+		TargetSentTimestamp int64    `json:"targetSentTimestamp"`
+	}
+	params := reactionParams{
+		Emoji:               emoji,
+		TargetAuthor:        targetAuthor,
+		TargetSentTimestamp: targetSentTimestamp,
+	}
+	if strings.HasPrefix(channel, "+") {
+		params.Recipient = []string{channel}
+	} else {
+		params.GroupID = channel
+	}
+
+	req := jsonrpcRequest[reactionParams]{
+		JSONRPC: "2.0",
+		Method:  "sendReaction",
+		Params:  params,
+		ID:      c.idSeq.Add(1),
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("signal: marshal request: %w", err)
+	}
+	body = append(body, '\n')
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("signal: dial: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if _, err := conn.Write(body); err != nil {
+		return fmt.Errorf("signal: write: %w", err)
+	}
+
+	var resp2 jsonrpcResponse
+	if err := json.NewDecoder(conn).Decode(&resp2); err != nil {
+		return fmt.Errorf("signal: read response: %w", err)
+	}
+	if resp2.Error != nil {
+		return fmt.Errorf("signal: rpc error: %d %s", resp2.Error.Code, resp2.Error.Message)
+	}
+	return nil
+}
+
 // Start connects to signal-cli and listens for incoming messages.
 // If no daemon address was configured, signal-cli is launched automatically.
 // Reconnects on connection loss until ctx is done or Stop is called.
@@ -525,11 +587,33 @@ func (c *SignalChannel) dispatch(line []byte) {
 		return
 	}
 
-	c.dispatchEnvelope(p.Envelope.Source, p.Envelope.WasMentioned, p.Envelope.DataMessage)
+	env := p.Envelope
+
+	// Mirror emoji reactions placed on the agent's own messages.
+	if r := env.ReactionMessage; r != nil && !r.IsRemove &&
+		c.reactToEmoji && c.phone != "" && r.TargetAuthor == c.phone {
+		if err := c.sendReaction(env.Source, r.Emoji, r.TargetAuthor, r.TargetSentTimestamp); err != nil {
+			slog.Warn("signal: failed to mirror reaction", "err", err)
+		}
+		return
+	}
+
+	// Determine whether this is a reply to one of the agent's own messages.
+	isReplyToSelf := c.replyToReplies && c.phone != "" &&
+		env.DataMessage != nil &&
+		env.DataMessage.Quote != nil &&
+		env.DataMessage.Quote.Author == c.phone
+
+	c.dispatchEnvelope(env.Source, env.WasMentioned, isReplyToSelf, env.DataMessage)
 }
 
-func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, dataMessage *struct {
-	Message   string "json:\"message\""
+func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, isReplyToSelf bool, dataMessage *struct {
+	Message  string "json:\"message\""
+	Quote    *struct {
+		ID     int64  "json:\"id\""
+		Author string "json:\"author\""
+		Text   string "json:\"text\""
+	} "json:\"quote\""
 	GroupInfo *struct {
 		GroupID string "json:\"groupId\""
 	} "json:\"groupInfo\""
@@ -546,9 +630,19 @@ func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, dataM
 	}
 
 	// Use the envelope's wasMentioned field for respondToMentions support.
-	result := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
-	if !result.allowed {
-		return
+	// Replies to the agent's own messages bypass the allowFrom filter but still
+	// carry any per-entry tool restrictions from a matching entry if one exists.
+	var result allowResult
+	if isReplyToSelf {
+		result.allowed = true
+		if r := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned); r.allowed {
+			result.restrictTools = r.restrictTools
+		}
+	} else {
+		result = checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
+		if !result.allowed {
+			return
+		}
 	}
 
 	c.handlerMu.RLock()
