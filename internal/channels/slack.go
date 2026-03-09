@@ -3,18 +3,23 @@ package channels
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // SlackChannel connects to Slack using Socket Mode (no public URL required).
 type SlackChannel struct {
 	appToken  string // xapp-... token for socket mode
 	botToken  string // xoxb-... token for posting
-	allowFrom []string
+	allowFrom []config.AllowFromEntry
+
+	botUserID string // populated on connect via auth.test
 
 	client    *slack.Client
 	sm        *socketmode.Client
@@ -26,7 +31,7 @@ type SlackChannel struct {
 
 // NewSlackChannel creates a SlackChannel.
 // appToken is the App-Level token (xapp-), botToken is the Bot token (xoxb-).
-func NewSlackChannel(appToken, botToken string, allowFrom []string) *SlackChannel {
+func NewSlackChannel(appToken, botToken string, allowFrom []config.AllowFromEntry) *SlackChannel {
 	api := slack.New(botToken, slack.OptionAppLevelToken(appToken))
 	sm := socketmode.New(api)
 	return &SlackChannel{
@@ -55,6 +60,13 @@ func (c *SlackChannel) Send(channel, text string) error {
 func (c *SlackChannel) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	c.cancel = cancel
+
+	// Fetch the bot's own user ID so we can detect direct @mentions in groups.
+	if resp, err := c.client.AuthTestContext(ctx); err == nil {
+		c.botUserID = resp.UserID
+	} else {
+		slog.Warn("slack: auth.test failed; direct-mention detection disabled", "err", err)
+	}
 
 	go func() {
 		for {
@@ -97,7 +109,10 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 		return // ignore bot messages
 	}
 
-	if !c.allowed(inner.User) {
+	// Slack DM channels start with 'D'; everything else is a group/channel.
+	isGroup := !strings.HasPrefix(inner.Channel, "D")
+	result := checkAllowed(c.allowFrom, inner.User, inner.Channel, inner.Text, isGroup, c.botUserID, false)
+	if !result.allowed {
 		return
 	}
 
@@ -107,23 +122,13 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 
 	if fn != nil {
 		fn(IncomingMessage{
-			From:    inner.User,
-			Channel: inner.Channel,
-			Text:    inner.Text,
+			Type:          "slack",
+			From:          inner.User,
+			Channel:       inner.Channel,
+			Text:          inner.Text,
+			RestrictTools: result.restrictTools,
 		})
 	} else {
 		slog.Debug("slack: no handler registered", "from", inner.User)
 	}
-}
-
-func (c *SlackChannel) allowed(user string) bool {
-	if len(c.allowFrom) == 0 {
-		return false
-	}
-	for _, a := range c.allowFrom {
-		if a == "*" || a == user {
-			return true
-		}
-	}
-	return false
 }

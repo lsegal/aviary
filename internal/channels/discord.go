@@ -7,12 +7,14 @@ import (
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // DiscordChannel connects to Discord using a bot token.
 type DiscordChannel struct {
 	token     string
-	allowFrom []string
+	allowFrom []config.AllowFromEntry
 
 	session   *discordgo.Session
 	handler   func(IncomingMessage)
@@ -22,7 +24,7 @@ type DiscordChannel struct {
 }
 
 // NewDiscordChannel creates a DiscordChannel with the given bot token.
-func NewDiscordChannel(token string, allowFrom []string) *DiscordChannel {
+func NewDiscordChannel(token string, allowFrom []config.AllowFromEntry) *DiscordChannel {
 	return &DiscordChannel{
 		token:     token,
 		allowFrom: allowFrom,
@@ -58,7 +60,14 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 		if m.Author.Bot {
 			return
 		}
-		if !c.allowed(m.Author.ID) {
+		// Messages sent in a guild channel have a non-empty GuildID.
+		isGroup := m.GuildID != ""
+		botUserID := ""
+		if s.State != nil && s.State.User != nil {
+			botUserID = s.State.User.ID
+		}
+		result := checkAllowed(c.allowFrom, m.Author.ID, m.ChannelID, m.Content, isGroup, botUserID, false)
+		if !result.allowed {
 			return
 		}
 		c.handlerMu.RLock()
@@ -66,9 +75,11 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 		c.handlerMu.RUnlock()
 		if fn != nil {
 			fn(IncomingMessage{
-				From:    m.Author.ID,
-				Channel: m.ChannelID,
-				Text:    m.Content,
+				Type:          "discord",
+				From:          m.Author.ID,
+				Channel:       m.ChannelID,
+				Text:          m.Content,
+				RestrictTools: result.restrictTools,
 			})
 		} else {
 			slog.Debug("discord: no handler registered", "from", m.Author.ID)
@@ -91,16 +102,4 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 // Stop disconnects from Discord.
 func (c *DiscordChannel) Stop() {
 	c.stopOnce.Do(func() { close(c.done) })
-}
-
-func (c *DiscordChannel) allowed(userID string) bool {
-	if len(c.allowFrom) == 0 {
-		return false
-	}
-	for _, a := range c.allowFrom {
-		if a == "*" || a == userID {
-			return true
-		}
-	}
-	return false
 }

@@ -10,9 +10,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // SignalChannel connects to a signal-cli daemon via its native TCP JSON-RPC interface.
@@ -26,7 +29,7 @@ import (
 //	    phone: "+15551234567"
 //	    url: "127.0.0.1:7583"
 //	    allowFrom:
-//	      - "+15559876543"
+//	      - from: "+15559876543"
 //
 // Managed daemon (signal-cli is launched and managed automatically):
 //
@@ -34,11 +37,11 @@ import (
 //	  - type: signal
 //	    phone: "+15551234567"
 //	    allowFrom:
-//	      - "+15559876543"
+//	      - from: "+15559876543"
 type SignalChannel struct {
 	phone     string // registered Signal account phone number
 	initAddr  string // configured TCP address; empty → managed daemon mode
-	allowFrom []string
+	allowFrom []config.AllowFromEntry
 
 	addrMu sync.RWMutex
 	addr   string // current effective daemon address (set dynamically in managed mode)
@@ -65,7 +68,7 @@ var reconnectDelay = 2 * time.Second
 // phone is the registered account phone number; addr is the optional TCP
 // address of an existing signal-cli JSON-RPC daemon (e.g. "127.0.0.1:7583").
 // When addr is empty, signal-cli is launched and managed automatically.
-func NewSignalChannel(phone, addr string, allowFrom []string) *SignalChannel {
+func NewSignalChannel(phone, addr string, allowFrom []config.AllowFromEntry) *SignalChannel {
 	return &SignalChannel{
 		phone:     phone,
 		initAddr:  addr,
@@ -145,6 +148,64 @@ func (c *SignalChannel) Send(recipient, text string) error {
 	}
 
 	// Read response line.
+	var resp jsonrpcResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return fmt.Errorf("signal: read response: %w", err)
+	}
+	if resp.Error != nil {
+		return fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
+	}
+	return nil
+}
+
+// SendTyping sends a typing indicator to a recipient phone number or Signal group.
+// channel must be a phone number in E.164 format (starts with "+") for direct
+// messages, or a base64-encoded group ID for group conversations.
+// Pass stop=true to cancel the indicator.
+func (c *SignalChannel) SendTyping(channel string, stop bool) error {
+	c.addrMu.RLock()
+	addr := c.addr
+	c.addrMu.RUnlock()
+
+	if addr == "" {
+		return fmt.Errorf("signal: daemon not ready")
+	}
+
+	type typingParams struct {
+		Recipient []string `json:"recipient,omitempty"`
+		GroupID   string   `json:"groupId,omitempty"`
+		Stop      bool     `json:"stop"`
+	}
+	params := typingParams{Stop: stop}
+	if strings.HasPrefix(channel, "+") {
+		params.Recipient = []string{channel}
+	} else {
+		params.GroupID = channel
+	}
+
+	req := jsonrpcRequest[typingParams]{
+		JSONRPC: "2.0",
+		Method:  "sendTyping",
+		Params:  params,
+		ID:      c.idSeq.Add(1),
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("signal: marshal request: %w", err)
+	}
+	body = append(body, '\n')
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("signal: dial: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if _, err := conn.Write(body); err != nil {
+		return fmt.Errorf("signal: write: %w", err)
+	}
+
 	var resp jsonrpcResponse
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
@@ -412,9 +473,13 @@ type jsonrpcNotification struct {
 // receiveParams is the params block of a "receive" notification.
 type receiveParams struct {
 	Envelope struct {
-		Source      string `json:"source"`
-		DataMessage *struct {
-			Message string `json:"message"`
+		Source       string `json:"source"`
+		WasMentioned bool   `json:"wasMentioned"`
+		DataMessage  *struct {
+			Message   string `json:"message"`
+			GroupInfo *struct {
+				GroupID string `json:"groupId"`
+			} `json:"groupInfo"`
 		} `json:"dataMessage"`
 	} `json:"envelope"`
 }
@@ -435,14 +500,29 @@ func (c *SignalChannel) dispatch(line []byte) {
 		return
 	}
 
-	c.dispatchEnvelope(p.Envelope.Source, p.Envelope.DataMessage)
+	c.dispatchEnvelope(p.Envelope.Source, p.Envelope.WasMentioned, p.Envelope.DataMessage)
 }
 
-func (c *SignalChannel) dispatchEnvelope(source string, dataMessage *struct{ Message string "json:\"message\"" }) {
+func (c *SignalChannel) dispatchEnvelope(source string, wasMentioned bool, dataMessage *struct {
+	Message   string "json:\"message\""
+	GroupInfo *struct {
+		GroupID string "json:\"groupId\""
+	} "json:\"groupInfo\""
+}) {
 	if dataMessage == nil || dataMessage.Message == "" {
 		return
 	}
-	if !c.allowed(source) {
+
+	// Determine group context and channel ID.
+	isGroup := dataMessage.GroupInfo != nil
+	channelID := source
+	if isGroup {
+		channelID = dataMessage.GroupInfo.GroupID
+	}
+
+	// Use the envelope's wasMentioned field for respondToMentions support.
+	result := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
+	if !result.allowed {
 		return
 	}
 
@@ -451,25 +531,14 @@ func (c *SignalChannel) dispatchEnvelope(source string, dataMessage *struct{ Mes
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		// Signal uses phone numbers as the channel/conversation identifier.
 		fn(IncomingMessage{
-			From:    source,
-			Channel: source,
-			Text:    dataMessage.Message,
+			Type:          "signal",
+			From:          source,
+			Channel:       channelID,
+			Text:          dataMessage.Message,
+			RestrictTools: result.restrictTools,
 		})
 	} else {
 		slog.Debug("signal: no handler registered", "from", source)
 	}
-}
-
-func (c *SignalChannel) allowed(phone string) bool {
-	if len(c.allowFrom) == 0 {
-		return false
-	}
-	for _, a := range c.allowFrom {
-		if a == "*" || a == phone {
-			return true
-		}
-	}
-	return false
 }

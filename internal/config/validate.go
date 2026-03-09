@@ -195,7 +195,7 @@ func (v *validator) checkModel(field, model string) {
 			"run 'aviary auth set openai:default <your-api-key>' or 'aviary auth login openai'")
 	case "openai-codex":
 		v.checkAuthCredential(field, "openai:oauth", "run 'aviary auth login openai'")
-	case "gemini":
+	case "google", "gemini", "google-gemini-cli":
 		v.checkAuthCredentialEither(field, "gemini:oauth", "gemini:default",
 			"run 'aviary auth set gemini:default <your-api-key>' or 'aviary auth login gemini'")
 	case "stdio":
@@ -203,7 +203,7 @@ func (v *validator) checkModel(field, model string) {
 			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
 		}
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, gemini, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, or stdio", provider, model)
 	}
 }
 
@@ -252,7 +252,13 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 	}
 
 	if len(ch.AllowFrom) == 0 {
-		v.warnf(field+".allowFrom", "empty allowFrom list will silently reject all incoming messages; add user IDs or use [\"*\"] to allow everyone")
+		v.warnf(field+".allowFrom", "empty allowFrom list will silently reject all incoming messages; add allowFrom entries or use [{from: \"*\"}] to allow everyone")
+	}
+	for i, entry := range ch.AllowFrom {
+		ef := fmt.Sprintf("%s.allowFrom[%d]", field, i)
+		if strings.TrimSpace(entry.From) == "" {
+			v.errorf(ef+".from", "allowFrom entry must have a non-empty \"from\" field")
+		}
 	}
 
 	if ch.Token != "" && strings.HasPrefix(ch.Token, "auth:") {

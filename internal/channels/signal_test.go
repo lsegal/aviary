@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 func init() {
@@ -192,7 +194,7 @@ func waitConnected(t *testing.T, fd *fakeDaemon, timeout time.Duration) {
 // ── dispatch tests ────────────────────────────────────────────────────────────
 
 func TestDispatch_ValidReceive(t *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	msgs := make(chan IncomingMessage, 1)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -212,7 +214,7 @@ func TestDispatch_ValidReceive(t *testing.T) {
 }
 
 func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -223,7 +225,7 @@ func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
 }
 
 func TestDispatch_EmptyMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -235,7 +237,7 @@ func TestDispatch_EmptyMessageIgnored(t *testing.T) {
 }
 
 func TestDispatch_NilDataMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -247,7 +249,7 @@ func TestDispatch_NilDataMessageIgnored(t *testing.T) {
 }
 
 func TestDispatch_MalformedJSON(t *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -258,32 +260,33 @@ func TestDispatch_MalformedJSON(t *testing.T) {
 }
 
 func TestDispatch_NoHandlerRegistered(_ *testing.T) {
-	ch := NewSignalChannel("", "", []string{"*"})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
 	// No handler — should not panic.
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hi"}}}}`
 	ch.dispatch([]byte(line))
 }
 
-// ── allowed tests ─────────────────────────────────────────────────────────────
+// ── checkAllowed tests ────────────────────────────────────────────────────────
 
-func TestAllowed(t *testing.T) {
+func TestCheckAllowed_DirectMessages(t *testing.T) {
 	tests := []struct {
 		name      string
-		allowFrom []string
-		phone     string
+		allowFrom []config.AllowFromEntry
+		from      string
 		want      bool
 	}{
 		{"empty allowFrom blocks all", nil, "+1", false},
-		{"wildcard allows all", []string{"*"}, "+1", true},
-		{"exact match", []string{"+15551111111"}, "+15551111111", true},
-		{"no match", []string{"+15551111111"}, "+15559999999", false},
-		{"multiple entries, match second", []string{"+15551111111", "+15552222222"}, "+15552222222", true},
+		{"wildcard allows all", []config.AllowFromEntry{{From: "*"}}, "+1", true},
+		{"exact match", []config.AllowFromEntry{{From: "+15551111111"}}, "+15551111111", true},
+		{"no match", []config.AllowFromEntry{{From: "+15551111111"}}, "+15559999999", false},
+		{"multiple in one entry", []config.AllowFromEntry{{From: "+15551111111,+15552222222"}}, "+15552222222", true},
+		{"multiple entries, match second", []config.AllowFromEntry{{From: "+15551111111"}, {From: "+15552222222"}}, "+15552222222", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ch := NewSignalChannel("", "", tc.allowFrom)
-			if got := ch.allowed(tc.phone); got != tc.want {
-				t.Errorf("allowed(%q) = %v, want %v", tc.phone, got, tc.want)
+			result := checkAllowed(tc.allowFrom, tc.from, tc.from, "", false, "", false)
+			if result.allowed != tc.want {
+				t.Errorf("checkAllowed allowed=%v, want %v", result.allowed, tc.want)
 			}
 		})
 	}
@@ -388,7 +391,7 @@ func TestStart_ExternalMode_ReceivesMessages(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []string{"*"})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -421,7 +424,7 @@ func TestStart_ExternalMode_FiltersByAllowFrom(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []string{"+15550001111"})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "+15550001111"}})
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -450,7 +453,7 @@ func TestStop_StopsChannel(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []string{"*"})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
 	cancel, errCh := startChannel(ch)
 	defer cancel()
 
@@ -470,7 +473,7 @@ func TestStop_StopsChannel(t *testing.T) {
 func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	fd := newFakeDaemon(t)
 
-	ch := NewSignalChannel("", fd.Addr(), []string{"*"})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -510,7 +513,7 @@ func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []string{"*"})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
 	msgs := make(chan IncomingMessage, 10)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 

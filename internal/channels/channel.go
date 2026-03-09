@@ -8,9 +8,11 @@ import (
 
 // IncomingMessage represents a message received on a channel.
 type IncomingMessage struct {
-	From    string // user ID or name
-	Channel string // channel ID or name
-	Text    string
+	Type          string // channel type: "discord", "slack", "signal", etc.
+	From          string // user ID or name
+	Channel       string // channel ID or name
+	Text          string
+	RestrictTools []string // per-entry tool allow-list override; nil means use agent defaults
 }
 
 // Channel is the interface implemented by all messaging channel backends.
@@ -45,4 +47,11 @@ type DaemonProvider interface {
 // stdout/stderr. The manager calls SetLogSink before starting the channel.
 type LogSinkSetter interface {
 	SetLogSink(s *LogSink)
+}
+
+// TypingSender is an optional interface implemented by channels that support
+// typing indicators. SendTyping signals that the agent is composing a reply;
+// pass stop=true to cancel the indicator.
+type TypingSender interface {
+	SendTyping(channel string, stop bool) error
 }
