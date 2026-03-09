@@ -51,7 +51,9 @@ type LogSinkSetter interface {
 
 // TypingSender is an optional interface implemented by channels that support
 // typing indicators. SendTyping signals that the agent is composing a reply;
-// pass stop=true to cancel the indicator.
+// pass stop=true to cancel the indicator. ShowTyping reports whether the typing
+// indicator is enabled per the channel's configuration.
 type TypingSender interface {
+	ShowTyping() bool
 	SendTyping(channel string, stop bool) error
 }

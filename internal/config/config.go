@@ -123,6 +123,24 @@ type ChannelConfig struct {
 	Phone     string           `yaml:"phone,omitempty"    json:"phone,omitempty"`
 	URL       string           `yaml:"url,omitempty"      json:"url,omitempty"`
 	AllowFrom []AllowFromEntry `yaml:"allowFrom,omitempty" json:"allowFrom,omitempty"`
+	// ShowTyping controls whether a typing indicator is shown while the agent
+	// processes a message. Defaults to true for channels that support it.
+	ShowTyping *bool `yaml:"showTyping,omitempty"     json:"showTyping,omitempty"`
+	// ReactToEmoji controls whether the agent mirrors emoji reactions placed on
+	// its own messages. Defaults to true for channels that support it.
+	ReactToEmoji *bool `yaml:"reactToEmoji,omitempty"   json:"reactToEmoji,omitempty"`
+	// ReplyToReplies controls whether the agent responds when someone replies
+	// to one of its own messages (bypassing normal allowFrom filtering).
+	// Defaults to true for channels that support it.
+	ReplyToReplies *bool `yaml:"replyToReplies,omitempty" json:"replyToReplies,omitempty"`
+}
+
+// BoolOr returns the value of b if non-nil, otherwise def.
+func BoolOr(b *bool, def bool) bool {
+	if b == nil {
+		return def
+	}
+	return *b
 }
 
 // TaskConfig describes a scheduled or file-watch task.

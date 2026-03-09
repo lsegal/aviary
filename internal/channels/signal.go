@@ -43,6 +43,11 @@ type SignalChannel struct {
 	initAddr  string // configured TCP address; empty → managed daemon mode
 	allowFrom []config.AllowFromEntry
 
+	// Per-channel feature flags (defaults are true).
+	showTyping     bool // show typing indicator while agent processes
+	reactToEmoji   bool // mirror emoji reactions on agent's own messages
+	replyToReplies bool // respond to quoted replies targeting agent's messages
+
 	addrMu sync.RWMutex
 	addr   string // current effective daemon address (set dynamically in managed mode)
 
@@ -68,13 +73,18 @@ var reconnectDelay = 2 * time.Second
 // phone is the registered account phone number; addr is the optional TCP
 // address of an existing signal-cli JSON-RPC daemon (e.g. "127.0.0.1:7583").
 // When addr is empty, signal-cli is launched and managed automatically.
-func NewSignalChannel(phone, addr string, allowFrom []config.AllowFromEntry) *SignalChannel {
+// showTyping, reactToEmoji, and replyToReplies enable the corresponding
+// per-channel behaviours (all typically defaulted to true by the caller).
+func NewSignalChannel(phone, addr string, allowFrom []config.AllowFromEntry, showTyping, reactToEmoji, replyToReplies bool) *SignalChannel {
 	return &SignalChannel{
-		phone:     phone,
-		initAddr:  addr,
-		addr:      addr,
-		allowFrom: allowFrom,
-		done:      make(chan struct{}),
+		phone:          phone,
+		initAddr:       addr,
+		addr:           addr,
+		allowFrom:      allowFrom,
+		showTyping:     showTyping,
+		reactToEmoji:   reactToEmoji,
+		replyToReplies: replyToReplies,
+		done:           make(chan struct{}),
 	}
 }
 
@@ -85,6 +95,9 @@ func (c *SignalChannel) SetLogSink(s *LogSink) {
 	c.logSink = s
 	c.logSinkMu.Unlock()
 }
+
+// ShowTyping reports whether the typing-indicator feature is enabled for this channel.
+func (c *SignalChannel) ShowTyping() bool { return c.showTyping }
 
 // streamToSink reads lines from r and writes them to the channel's LogSink.
 // Runs in its own goroutine; exits when r reaches EOF or an error occurs.
@@ -474,13 +487,25 @@ type jsonrpcNotification struct {
 type receiveParams struct {
 	Envelope struct {
 		Source       string `json:"source"`
+		Timestamp    int64  `json:"timestamp"`
 		WasMentioned bool   `json:"wasMentioned"`
 		DataMessage  *struct {
-			Message   string `json:"message"`
+			Message  string `json:"message"`
+			Quote    *struct {
+				ID     int64  `json:"id"`
+				Author string `json:"author"`
+				Text   string `json:"text"`
+			} `json:"quote"`
 			GroupInfo *struct {
 				GroupID string `json:"groupId"`
 			} `json:"groupInfo"`
 		} `json:"dataMessage"`
+		ReactionMessage *struct {
+			Emoji               string `json:"emoji"`
+			TargetAuthor        string `json:"targetAuthor"`
+			TargetSentTimestamp int64  `json:"targetSentTimestamp"`
+			IsRemove            bool   `json:"isRemove"`
+		} `json:"reactionMessage"`
 	} `json:"envelope"`
 }
 
