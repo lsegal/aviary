@@ -3,17 +3,16 @@
 		<!-- Progress dots -->
 		<div class="mb-10 flex items-center justify-center gap-2">
 			<div v-for="(s, i) in steps" :key="s" class="flex items-center gap-2">
-				<div
-					:class="[
-						'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors',
-						currentStepIndex > i
-							? 'bg-blue-600 text-white'
-							: currentStepIndex === i
-								? 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-900/40'
-								: 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
-					]"
-				>
-					<svg v-if="currentStepIndex > i" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+				<div :class="[
+					'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors',
+					currentStepIndex > i
+						? 'bg-blue-600 text-white'
+						: currentStepIndex === i
+							? 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-900/40'
+							: 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+				]">
+					<svg v-if="currentStepIndex > i" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+						stroke-width="3">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 					</svg>
 					<span v-else>{{ i + 1 }}</span>
@@ -25,42 +24,36 @@
 		<!-- Step 1: Choose provider -->
 		<div v-if="step === 'provider'" class="text-center">
 			<h1 class="mb-2 text-2xl font-bold text-gray-900 dark:text-white">Welcome to Aviary</h1>
-			<p class="mb-8 text-sm text-gray-500 dark:text-gray-400">Let's get you set up in under a minute. Which AI provider would you like to use?</p>
+			<p class="mb-8 text-sm text-gray-500 dark:text-gray-400">Let's get you set up in under a minute. Which AI provider
+				would you like to use?</p>
 
 			<div class="grid gap-3 sm:grid-cols-3">
-				<button
-					v-for="p in providers"
-					:key="p.id"
-					type="button"
-					:class="[
-						'flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all hover:shadow-md',
-						selectedProvider === p.id
-							? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-							: 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600',
-					]"
-					@click="selectProvider(p.id)"
-				>
+				<button v-for="p in providers" :key="p.id" type="button" :class="[
+					'flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all hover:shadow-md',
+					selectedProvider === p.id
+						? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+						: 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600',
+				]" @click="selectProvider(p.id)">
 					<span class="text-3xl">{{ p.emoji }}</span>
 					<div>
 						<p class="font-semibold text-gray-900 dark:text-white">{{ p.name }}</p>
 						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ p.description }}</p>
 					</div>
-					<span v-if="detectedAuth(p)" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+					<span v-if="detectedAuth(p)"
+						class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
 						{{ detectedAuth(p) === "oauth" ? "signed in" : "key set" }}
 					</span>
 				</button>
 			</div>
 
 			<div class="mt-8 flex items-center justify-between">
-				<button type="button" class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="$emit('skip')">
+				<button type="button" class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+					@click="$emit('skip')">
 					Skip for now
 				</button>
-				<button
-					type="button"
-					:disabled="!selectedProvider"
+				<button type="button" :disabled="!selectedProvider"
 					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-					@click="step = 'credentials'"
-				>
+					@click="step = 'credentials'">
 					Continue →
 				</button>
 			</div>
@@ -68,7 +61,9 @@
 
 		<!-- Step 2: Connect credentials -->
 		<div v-else-if="step === 'credentials'">
-			<button type="button" class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="step = 'provider'">
+			<button type="button"
+				class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+				@click="step = 'provider'">
 				← Back
 			</button>
 
@@ -78,21 +73,19 @@
 			</div>
 
 			<!-- Method tabs (only shown if provider supports both) -->
-			<div v-if="currentProvider?.oauth" class="mb-5 flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/50">
-				<button
-					type="button"
+			<div v-if="currentProvider?.oauth"
+				class="mb-5 flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/50">
+				<button type="button"
 					:class="['flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors', credMethod === 'oauth' ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200']"
-					@click="credMethod = 'oauth'"
-				>Sign in with {{ currentProvider.name }}</button>
-				<button
-					type="button"
+					@click="credMethod = 'oauth'">Sign in with {{ currentProvider.name }}</button>
+				<button type="button"
 					:class="['flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors', credMethod === 'apikey' ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200']"
-					@click="credMethod = 'apikey'"
-				>API key</button>
+					@click="credMethod = 'apikey'">API key</button>
 			</div>
 
 			<!-- OAuth panel -->
-			<div v-if="credMethod === 'oauth'" class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+			<div v-if="credMethod === 'oauth'"
+				class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 				<!-- Anthropic: URL + code exchange -->
 				<template v-if="currentProvider?.id === 'anthropic'">
 					<div v-if="!oauthUrl">
@@ -100,39 +93,34 @@
 							Sign in with your Claude Pro or Claude Max account — no API key needed.
 							We'll open Anthropic's authorization page for you.
 						</p>
-						<button
-							type="button"
-							:disabled="credSaving"
+						<button type="button" :disabled="credSaving"
 							class="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40"
-							@click="startAnthropicOAuth"
-						>
+							@click="startAnthropicOAuth">
 							{{ credSaving ? 'Opening…' : 'Sign in with Anthropic →' }}
 						</button>
 					</div>
 					<div v-else class="space-y-4">
 						<p class="text-sm text-gray-700 dark:text-gray-300">
-							A browser tab should have opened. Complete sign-in there, then copy the authorization code shown and paste it below.
+							A browser tab should have opened. Complete sign-in there, then copy the authorization code shown and paste
+							it below.
 						</p>
-						<div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-							<a :href="oauthUrl" target="_blank" rel="noreferrer" class="flex-1 truncate text-xs text-blue-600 hover:underline dark:text-blue-400">{{ oauthUrl }}</a>
-							<a :href="oauthUrl" target="_blank" rel="noreferrer" class="shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Open ↗</a>
+						<div
+							class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+							<a :href="oauthUrl" target="_blank" rel="noreferrer"
+								class="flex-1 truncate text-xs text-blue-600 hover:underline dark:text-blue-400">{{ oauthUrl }}</a>
+							<a :href="oauthUrl" target="_blank" rel="noreferrer"
+								class="shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Open ↗</a>
 						</div>
 						<div>
-							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Authorization code</label>
-							<input
-								v-model="oauthCode"
-								type="text"
-								placeholder="Paste code here…"
+							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Authorization
+								code</label>
+							<input v-model="oauthCode" type="text" placeholder="Paste code here…"
 								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-								@keyup.enter="completeAnthropicOAuth"
-							/>
+								@keyup.enter="completeAnthropicOAuth" />
 						</div>
-						<button
-							type="button"
-							:disabled="!oauthCode.trim() || credSaving"
+						<button type="button" :disabled="!oauthCode.trim() || credSaving"
 							class="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40"
-							@click="completeAnthropicOAuth"
-						>
+							@click="completeAnthropicOAuth">
 							{{ credSaving ? 'Verifying…' : 'Complete sign-in →' }}
 						</button>
 					</div>
@@ -146,13 +134,12 @@
 							after approving, you'll be redirected back automatically.
 						</p>
 						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
-							This uses the <code class="font-mono">openai-codex</code> provider and requires a ChatGPT Plus/Pro subscription.
+							This uses the <code class="font-mono">openai-codex</code> provider and requires a ChatGPT Plus/Pro
+							subscription.
 						</p>
-						<button
-							type="button"
+						<button type="button"
 							class="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500"
-							@click="startOpenAIOAuth"
-						>
+							@click="startOpenAIOAuth">
 							Sign in with OpenAI →
 						</button>
 					</div>
@@ -161,21 +148,20 @@
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 						</svg>
-						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span class="text-xs">Complete the flow in the browser tab that opened.</span></p>
+						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span
+								class="text-xs">Complete the flow in the browser tab that opened.</span></p>
 					</div>
 				</template>
-			<!-- Gemini: blocking browser redirect -->
+				<!-- Gemini: blocking browser redirect -->
 				<template v-else-if="currentProvider?.id === 'gemini'">
 					<div v-if="!credSaving">
 						<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
 							Sign in with your Google account. We'll open Google's consent page;
 							after approving, you'll be redirected back automatically.
 						</p>
-						<button
-							type="button"
+						<button type="button"
 							class="w-full rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-400"
-							@click="startGeminiOAuth"
-						>
+							@click="startGeminiOAuth">
 							Sign in with Google →
 						</button>
 					</div>
@@ -184,7 +170,8 @@
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 						</svg>
-						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span class="text-xs">Complete the flow in the browser tab that opened.</span></p>
+						<p class="text-sm text-gray-600 dark:text-gray-400">Waiting for browser sign-in… <br><span
+								class="text-xs">Complete the flow in the browser tab that opened.</span></p>
 					</div>
 				</template>
 			</div>
@@ -192,29 +179,24 @@
 			<!-- API key panel -->
 			<div v-else class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 				<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">API Key</label>
-				<input
-					v-model="apiKey"
-					type="password"
-					autocomplete="off"
-					:placeholder="currentProvider?.keyPlaceholder"
+				<input v-model="apiKey" type="password" autocomplete="off" :placeholder="currentProvider?.keyPlaceholder"
 					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-					@keyup.enter="saveApiKey"
-				/>
-				<p v-if="currentProvider?.keyHelp" class="mt-2 text-xs text-gray-400 dark:text-gray-500">{{ currentProvider.keyHelp }}</p>
+					@keyup.enter="saveApiKey" />
+				<p v-if="currentProvider?.keyHelp" class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+					{{ currentProvider.keyHelp }}
+				</p>
 			</div>
 
-			<div v-if="credError" class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
+			<div v-if="credError"
+				class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
 				{{ credError }}
 			</div>
 
 			<!-- API key continue button (OAuth has its own inline buttons) -->
 			<div v-if="credMethod === 'apikey'" class="mt-6 flex justify-end">
-				<button
-					type="button"
-					:disabled="!apiKey.trim() || credSaving"
+				<button type="button" :disabled="!apiKey.trim() || credSaving"
 					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-					@click="saveApiKey"
-				>
+					@click="saveApiKey">
 					{{ credSaving ? 'Saving…' : 'Continue →' }}
 				</button>
 			</div>
@@ -222,47 +204,43 @@
 
 		<!-- Step 3: Create agent -->
 		<div v-else-if="step === 'agent'">
-			<button type="button" class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="step = 'credentials'">
+			<button type="button"
+				class="mb-6 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+				@click="step = 'credentials'">
 				← Back
 			</button>
 
 			<div class="mb-6 text-center">
 				<h2 class="text-xl font-bold text-gray-900 dark:text-white">Create your first agent</h2>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">An agent is an AI that can chat, run tasks, and remember things for you.</p>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">An agent is an AI that can chat, run tasks, and
+					remember
+					things for you.</p>
 			</div>
 
 			<div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 				<div>
 					<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Agent name</label>
-					<input
-						v-model="agentName"
-						type="text"
-						placeholder="assistant"
-						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-					/>
+					<input v-model="agentName" type="text" placeholder="assistant"
+						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500" />
 					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Lowercase letters, numbers, and hyphens only.</p>
 				</div>
 				<div>
 					<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
-					<input
-						v-model="agentModelInput"
-						type="text"
-						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-					/>
-					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Format: <code class="font-mono">provider/model-name</code></p>
+					<input v-model="agentModelInput" type="text"
+						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500" />
+					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Format: <code
+							class="font-mono">provider/model-name</code></p>
 				</div>
-				<div v-if="agentError" class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
+				<div v-if="agentError"
+					class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
 					{{ agentError }}
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end">
-				<button
-					type="button"
-					:disabled="!agentName.trim() || !agentModelInput.trim() || agentSaving"
+				<button type="button" :disabled="!agentName.trim() || !agentModelInput.trim() || agentSaving"
 					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-					@click="createAgent"
-				>
+					@click="createAgent">
 					{{ agentSaving ? 'Creating…' : 'Create agent →' }}
 				</button>
 			</div>
@@ -272,7 +250,8 @@
 		<div v-else-if="step === 'done'" class="text-center">
 			<div class="mb-6 flex justify-center">
 				<span class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
-					<svg class="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<svg class="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+						stroke-width="2">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 					</svg>
 				</span>
@@ -283,16 +262,12 @@
 				Start chatting or explore settings to add tasks and channels.
 			</p>
 			<div class="flex items-center justify-center gap-3">
-				<router-link
-					to="/settings?tab=agents"
-					class="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-				>
+				<router-link to="/settings?tab=agents"
+					class="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
 					Explore settings
 				</router-link>
-				<router-link
-					to="/chat"
-					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
-				>
+				<router-link to="/chat"
+					class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">
 					Start chatting →
 				</router-link>
 			</div>
@@ -350,7 +325,7 @@ const providers: Provider[] = [
 		keyHelp: "Find your key at platform.openai.com → API keys.",
 		apiAuthKey: "openai:default",
 		defaultModel: "openai/gpt-4o",
-		oauthModel: "openai-codex/gpt-4o",
+		oauthModel: "openai-codex/gpt-5.2",
 		authKeys: ["openai:oauth", "openai:default"],
 	},
 	{

@@ -256,8 +256,8 @@
                 <div v-for="(entry, ei) in ch.allowFrom" :key="`af-${i}-${k}-${ei}`" class="space-y-2 rounded border border-gray-100 p-3 dark:border-gray-800">
                   <div class="grid gap-2 lg:grid-cols-[1fr_auto]">
                     <div>
-                      <label class="field-label">From (*, user ID, phone, group:*, group:&lt;id&gt; — comma-separated)</label>
-                      <input v-model="entry.from" type="text" class="field-input" placeholder="*, group:*, +15551234567" />
+                      <label class="field-label">From (*, user ID, phone number — comma-separated)</label>
+                      <input v-model="entry.from" type="text" class="field-input" placeholder="*, +15551234567" />
                     </div>
                     <div class="flex items-end">
                       <button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
@@ -265,14 +265,31 @@
                   </div>
                   <div class="grid gap-2 lg:grid-cols-2">
                     <div>
-                      <label class="field-label">Mention Prefixes — group chats only (comma-separated glob patterns)</label>
-                      <input :value="entryMentionPrefixes(entry)" type="text" class="field-input" placeholder="@bot*, !help" @input="setEntryMentionPrefixes(entry, $event)" />
+                      <label class="field-label">Allowed Groups (* or specific group IDs, comma-separated)</label>
+                      <input v-model="entry.allowedGroups" type="text" class="field-input" placeholder="Leave empty for DMs only, * for any group" />
+                    </div>
+                    <div></div>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-2">
+                    <div>
+                      <label class="field-label">Mention Prefixes — group chats only (comma-separated, case-insensitive)</label>
+                      <input :value="entryMentionPrefixes(entry)" type="text" class="field-input" placeholder="@bot, !help" @change="setEntryMentionPrefixes(entry, $event)" />
                     </div>
                     <div class="flex items-end pb-1">
                       <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                         <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
                         Respond to @mentions (group chats only)
                       </label>
+                    </div>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-2">
+                    <div>
+                      <label class="field-label">Model override (optional)</label>
+                      <ModelSelector v-model="entry.model" placeholder="Default agent model" />
+                    </div>
+                    <div>
+                      <label class="field-label">Fallback overrides (optional)</label>
+                      <ModelSelector v-model="entry.fallbacks" multiple placeholder="Default agent fallbacks" />
                     </div>
                   </div>
                   <!-- Restrict Tools -->
@@ -331,6 +348,17 @@
                 </div>
               </div>
 
+              <div class="grid gap-3 lg:grid-cols-2">
+                <div>
+                  <label class="field-label">Channel model override (optional)</label>
+                  <ModelSelector v-model="ch.model" placeholder="Default agent model" />
+                </div>
+                <div>
+                  <label class="field-label">Channel fallback overrides (optional)</label>
+                  <ModelSelector v-model="ch.fallbacks" multiple placeholder="Default agent fallbacks" />
+                </div>
+              </div>
+
               <div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
                 <div>
                   <label class="field-label">App-Level Token (xapp-…)</label>
@@ -358,6 +386,25 @@
                   <label class="field-label">signal-cli Daemon Address</label>
                   <input v-model="ch.url" type="text" class="field-input" placeholder="127.0.0.1:7583" />
                 </div>
+              </div>
+
+              <div class="flex flex-wrap gap-4 pt-1">
+                <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" v-model="ch.showTyping" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                  Show typing indicator
+                </label>
+                <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" v-model="ch.replyToReplies" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                  Reply to replies
+                </label>
+                <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" v-model="ch.reactToEmoji" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                  React to emojis
+                </label>
+                <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" v-model="ch.sendReadReceipts" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                  Send read receipts
+                </label>
               </div>
             </div>
 
@@ -757,10 +804,35 @@ const secretName = ref("");
 const secretValue = ref("");
 
 const KNOWN_PROVIDERS = [
-	{ id: "anthropic", label: "Anthropic" },
-	{ id: "openai", label: "OpenAI" },
-	{ id: "google", label: "Google" },
-] as const;
+	{
+		id: "anthropic",
+		label: "Anthropic",
+		authId: "anthropic",
+		hasOAuth: true,
+		hasApiKey: true,
+	},
+	{
+		id: "openai",
+		label: "OpenAI",
+		authId: "openai",
+		hasOAuth: false,
+		hasApiKey: true,
+	},
+	{
+		id: "openai-codex",
+		label: "OpenAI Codex",
+		authId: "openai",
+		hasOAuth: true,
+		hasApiKey: false,
+	},
+	{
+		id: "google",
+		label: "Google",
+		authId: "gemini",
+		hasOAuth: true,
+		hasApiKey: true,
+	},
+];
 
 const configuredProviders = computed(() => {
 	const entries: Array<{
@@ -771,15 +843,14 @@ const configuredProviders = computed(() => {
 	}> = [];
 	for (const cred of credentials.value) {
 		for (const p of KNOWN_PROVIDERS) {
-			const authId = p.id === "google" ? "gemini" : p.id;
-			if (cred === `${authId}:oauth`) {
+			if (p.hasOAuth && cred === `${p.authId}:oauth`) {
 				entries.push({
 					key: cred,
 					provider: p.id,
 					providerLabel: p.label,
 					authType: "oauth",
 				});
-			} else if (cred === `${authId}:default`) {
+			} else if (p.hasApiKey && cred === `${p.authId}:default`) {
 				entries.push({
 					key: cred,
 					provider: p.id,
@@ -796,17 +867,16 @@ const availableProviderOptions = computed(() => {
 	const configured = new Set(configuredProviders.value.map((e) => e.key));
 	const options: Array<{ key: string; label: string; provider: string }> = [];
 	for (const p of KNOWN_PROVIDERS) {
-		const authId = p.id === "google" ? "gemini" : p.id;
-		if (!configured.has(`${authId}:oauth`)) {
+		if (p.hasOAuth && !configured.has(`${p.authId}:oauth`)) {
 			options.push({
-				key: `${authId}:oauth`,
+				key: `${p.authId}:oauth`,
 				label: `${p.label} (OAuth)`,
 				provider: p.id,
 			});
 		}
-		if (!configured.has(`${authId}:default`)) {
+		if (p.hasApiKey && !configured.has(`${p.authId}:default`)) {
 			options.push({
-				key: `${authId}:apikey`,
+				key: `${p.authId}:apikey`,
 				label: `${p.label} (API Key)`,
 				provider: p.id,
 			});
@@ -818,9 +888,8 @@ const availableProviderOptions = computed(() => {
 const extraSecrets = computed(() => {
 	const providerKeys = new Set<string>();
 	for (const p of KNOWN_PROVIDERS) {
-		const authId = p.id === "google" ? "gemini" : p.id;
-		providerKeys.add(`${authId}:oauth`);
-		providerKeys.add(`${authId}:default`);
+		providerKeys.add(`${p.authId}:oauth`);
+		providerKeys.add(`${p.authId}:default`);
 	}
 	return credentials.value.filter((cred) => !providerKeys.has(cred));
 });
@@ -1027,6 +1096,14 @@ async function loadConfig() {
 			? (JSON.parse(JSON.stringify(store.config)) as AppConfig)
 			: emptyConfig();
 		draft.value = cfg;
+		draft.value.agents.forEach((agent) => {
+			(agent.channels ?? []).forEach((ch) => {
+				if (ch.showTyping === undefined) ch.showTyping = true;
+				if (ch.replyToReplies === undefined) ch.replyToReplies = true;
+				if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
+				if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
+			});
+		});
 		concurrencyInput.value = cfg.scheduler.concurrency
 			? String(cfg.scheduler.concurrency)
 			: "";
@@ -1090,7 +1167,13 @@ function removeTask(agentIndex: number, taskIndex: number) {
 }
 
 function addChannel(agentIndex: number) {
-	const ch: AgentChannel = { type: "signal" };
+	const ch: AgentChannel = {
+		type: "signal",
+		showTyping: true,
+		replyToReplies: true,
+		reactToEmoji: true,
+		sendReadReceipts: true,
+	};
 	if (!Array.isArray(draft.value.agents[agentIndex].channels)) {
 		draft.value.agents[agentIndex].channels = [];
 	}
@@ -1307,10 +1390,21 @@ async function saveAll() {
 				channel: (ch.channel ?? "").trim() || undefined,
 				phone: (ch.phone ?? "").trim() || undefined,
 				url: (ch.url ?? "").trim() || undefined,
+				model: (ch.model ?? "").trim() || undefined,
+				fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+				showTyping: ch.showTyping === false ? false : undefined,
+				replyToReplies: ch.replyToReplies === false ? false : undefined,
+				reactToEmoji: ch.reactToEmoji === false ? false : undefined,
+				sendReadReceipts: ch.sendReadReceipts === false ? false : undefined,
 				allowFrom: (ch.allowFrom ?? [])
 					.map((entry) => ({
 						...entry,
 						from: (entry.from ?? "").trim(),
+						allowedGroups: (entry.allowedGroups ?? "").trim() || undefined,
+						model: (entry.model ?? "").trim() || undefined,
+						fallbacks: (entry.fallbacks ?? [])
+							.map((v) => v.trim())
+							.filter(Boolean),
 						mentionPrefixes: (entry.mentionPrefixes ?? [])
 							.map((v) => v.trim())
 							.filter(Boolean),
@@ -1430,7 +1524,7 @@ async function addProviderOAuth() {
 async function reauthorizeProvider(provider: string) {
 	if (provider === "anthropic") {
 		await startAnthropic();
-	} else if (provider === "openai") {
+	} else if (provider === "openai" || provider === "openai-codex") {
 		await loginOpenAI();
 	} else if (provider === "google") {
 		await loginGemini();

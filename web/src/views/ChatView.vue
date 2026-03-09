@@ -18,7 +18,7 @@
 				<div v-if="selectedAgent" class="flex items-center gap-2">
 					<label class="text-xs font-medium text-gray-500 dark:text-gray-400">Session</label>
 					<select v-model="selectedSessionId"
-						class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+						class="max-w-[200px] truncate rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
 						@change="onSessionChange">
 						<option v-for="s in sessions" :key="s.id" :value="s.id">
 							{{ s.name || s.id }}
@@ -39,13 +39,13 @@
 						Select an agent to start chatting.
 					</div>
 					<template v-else>
-						<template v-for="item in displayItems" :key="item.key">
+						<template v-for="item in displayItems" :key="item.type === 'message' ? (item.msg.id || item.key) : item.key">
 							<!-- Date divider -->
 							<div v-if="item.type === 'date-divider'" class="flex justify-center my-4">
 								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
 							</div>
 							<!-- Tool-use indicator -->
-							<div v-else-if="item.msg.role === 'tool'" class="text-left my-0.5">
+							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
 								<details class="group inline-block">
 									<summary class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
 										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0" aria-hidden="true">
@@ -77,7 +77,7 @@
 								</details>
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
+							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
 								<div
 									:class="item.msg.role === 'user'
 										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
@@ -180,6 +180,7 @@ interface ToolData {
 }
 
 interface Message {
+	id?: string;
 	role: "user" | "assistant" | "tool";
 	text: string;
 	mediaURL?: string;
@@ -217,15 +218,21 @@ function isErrorMessage(text: string): boolean {
 }
 
 /** Parse a "[tool] ..." content string into a Message. */
-function parseToolMessage(content: string): Message {
+function parseToolMessage(
+	content: string,
+	timestamp?: string,
+	model?: string,
+	id?: string,
+): Message {
 	const raw = content.slice("[tool] ".length);
 	try {
 		const d = JSON.parse(raw) as ToolData;
-		if (d.name) return { role: "tool", text: d.name, toolData: d };
+		if (d.name)
+			return { id, role: "tool", text: d.name, toolData: d, timestamp, model };
 	} catch {
 		/* legacy: just a bare name */
 	}
-	return { role: "tool", text: raw };
+	return { id, role: "tool", text: raw, timestamp, model };
 }
 
 /** Condensed one-line summary shown in the pill. */
@@ -457,14 +464,18 @@ async function loadSessionMessages() {
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
 			.filter(
-				(m): m is PersistedMessage & { role: "user" | "assistant" } =>
-					m.role === "user" || m.role === "assistant",
+				(m): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
+					m.role === "user" || m.role === "assistant" || m.role === "tool",
 			)
 			.map((m) => {
-				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
-					return parseToolMessage(m.content);
+				if (
+					m.role === "tool" ||
+					(m.role === "assistant" && m.content.startsWith("[tool] "))
+				) {
+					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
 				}
 				return {
+					id: m.id,
 					role: m.role,
 					text: m.content,
 					mediaURL: m.media_url,
@@ -539,13 +550,24 @@ async function send() {
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
+
+	const now = new Date().toISOString();
+	const agentModel = agentsStore.agents.find(
+		(a) => a.name === selectedAgent.value,
+	)?.model;
+
 	input.value = "";
 	pastedMedia.value = "";
 	sessionProcessing.value = {
 		...sessionProcessing.value,
 		[selectedSessionId.value]: true,
 	};
-	messages.value.push({ role: "user", text, mediaURL: mediaURL || undefined });
+	messages.value.push({
+		role: "user",
+		text,
+		mediaURL: mediaURL || undefined,
+		timestamp: now,
+	});
 	await scrollBottom(true);
 
 	isStreaming.value = true;
@@ -558,11 +580,22 @@ async function send() {
 			text,
 			(chunk, isMedia) => {
 				if (isMedia && chunk) {
-					messages.value.push({ role: "assistant", text: "", mediaURL: chunk });
+					messages.value.push({
+						role: "assistant",
+						text: "",
+						mediaURL: chunk,
+						timestamp: now,
+						model: agentModel,
+					});
 					scrollBottom();
 				} else if (chunk) {
 					if (assistantIndex === -1) {
-						messages.value.push({ role: "assistant", text: "" });
+						messages.value.push({
+							role: "assistant",
+							text: "",
+							timestamp: now,
+							model: agentModel,
+						});
 						assistantIndex = messages.value.length - 1;
 					}
 					messages.value[assistantIndex].text += chunk;
@@ -592,6 +625,8 @@ async function send() {
 			role: "assistant",
 			text: `Error: ${msg}`,
 			isError: true,
+			timestamp: now,
+			model: agentModel,
 		});
 	} finally {
 		isStreaming.value = false;
