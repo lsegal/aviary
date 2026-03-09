@@ -4,23 +4,43 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/lsegal/aviary/internal/config"
 )
 
+// ChannelStatus describes a running channel and its daemon, if any.
+type ChannelStatus struct {
+	Key     string      `json:"key"`
+	Agent   string      `json:"agent"`
+	Type    string      `json:"type"`
+	Index   int         `json:"index"`
+	Started time.Time   `json:"started"`
+	Daemon  *DaemonInfo `json:"daemon,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
 // Manager manages channel lifecycle across all agents.
 type Manager struct {
-	mu       sync.Mutex
-	channels map[string]Channel // key: agentName+"/"+channelType+"/"+channelID
-	cancels  map[string]context.CancelFunc
+	mu         sync.Mutex
+	channels   map[string]Channel // key: agentName+"/"+channelType+"/"+channelID
+	cancels    map[string]context.CancelFunc
+	startTimes map[string]time.Time
+	errors     map[string]string
+	sinks      map[string]*LogSink // per-channel stdout/stderr capture
 }
 
 // NewManager creates a channel Manager.
 func NewManager() *Manager {
 	return &Manager{
-		channels: make(map[string]Channel),
-		cancels:  make(map[string]context.CancelFunc),
+		channels:   make(map[string]Channel),
+		cancels:    make(map[string]context.CancelFunc),
+		startTimes: make(map[string]time.Time),
+		errors:     make(map[string]string),
+		sinks:      make(map[string]*LogSink),
 	}
 }
 
@@ -45,6 +65,13 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 				continue
 			}
 
+			// Attach a log sink so managed subprocess output is capturable.
+			sink := newLogSink()
+			m.sinks[key] = sink
+			if ss, ok := ch.(LogSinkSetter); ok {
+				ss.SetLogSink(sink)
+			}
+
 			agentName := ac.Name
 			ch.OnMessage(func(msg IncomingMessage) {
 				msgFn(agentName, msg)
@@ -53,10 +80,14 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 			cctx, cancel := context.WithCancel(ctx)
 			m.channels[key] = ch
 			m.cancels[key] = cancel
+			m.startTimes[key] = time.Now()
 
 			go func(k string, c Channel) {
 				if err := c.Start(cctx); err != nil && cctx.Err() == nil {
 					slog.Warn("channel error", "key", k, "err", err)
+					m.mu.Lock()
+					m.errors[k] = err.Error()
+					m.mu.Unlock()
 				}
 			}(key, ch)
 
@@ -71,6 +102,9 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 			m.cancels[key]()
 			delete(m.channels, key)
 			delete(m.cancels, key)
+			delete(m.startTimes, key)
+			delete(m.errors, key)
+			delete(m.sinks, key)
 			slog.Info("channel stopped", "key", key)
 		}
 	}
@@ -86,18 +120,60 @@ func (m *Manager) Stop() {
 	}
 	m.channels = make(map[string]Channel)
 	m.cancels = make(map[string]context.CancelFunc)
+	m.startTimes = make(map[string]time.Time)
+	m.errors = make(map[string]string)
+	m.sinks = make(map[string]*LogSink)
+}
+
+// SubscribeLogs returns a log subscription for the given daemon key.
+// history contains buffered lines already captured; live delivers future lines.
+// The caller must call unsub when done. Returns ok=false if the key is unknown.
+func (m *Manager) SubscribeLogs(key string) (history []string, live <-chan string, unsub func(), ok bool) {
+	m.mu.Lock()
+	sink := m.sinks[key]
+	m.mu.Unlock()
+	if sink == nil {
+		return nil, nil, nil, false
+	}
+	h, l, u := sink.Subscribe()
+	return h, l, u, true
+}
+
+// List returns a snapshot of all currently running channels and their daemon status.
+func (m *Manager) List() []ChannelStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	result := make([]ChannelStatus, 0, len(m.channels))
+	for key, ch := range m.channels {
+		parts := strings.SplitN(key, "/", 3)
+		status := ChannelStatus{
+			Key:     key,
+			Started: m.startTimes[key],
+			Error:   m.errors[key],
+		}
+		if len(parts) == 3 {
+			status.Agent = parts[0]
+			status.Type = parts[1]
+			status.Index, _ = strconv.Atoi(parts[2])
+		}
+		if dp, ok := ch.(DaemonProvider); ok {
+			status.Daemon = dp.DaemonInfo()
+		}
+		result = append(result, status)
+	}
+	return result
 }
 
 func newChannel(cc config.ChannelConfig) Channel {
 	switch cc.Type {
 	case "slack":
-		// For Slack: Token field holds the bot token; a separate App-Level token
-		// would be needed for Socket Mode. For now use a placeholder.
-		return NewSlackChannel("", cc.Token, cc.AllowFrom)
+		// Token = bot token (xoxb-…), URL = app-level token (xapp-…) for Socket Mode.
+		return NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom)
 	case "discord":
 		return NewDiscordChannel(cc.Token, cc.AllowFrom)
 	case "signal":
-		return NewSignalChannel(cc.Phone, cc.AllowFrom)
+		return NewSignalChannel(cc.Phone, cc.URL, cc.AllowFrom)
 	default:
 		slog.Warn("unknown channel type", "type", cc.Type)
 		return nil

@@ -1,7 +1,10 @@
 // Package channels implements messaging channel integrations.
 package channels
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // IncomingMessage represents a message received on a channel.
 type IncomingMessage struct {
@@ -20,4 +23,26 @@ type Channel interface {
 	Send(channel, text string) error
 	// OnMessage registers a callback for incoming messages.
 	OnMessage(fn func(IncomingMessage))
+}
+
+// DaemonInfo describes a daemon process associated with a channel.
+// For managed daemons (aviary-launched), PID and Started are populated.
+// For external daemons, only Addr is set (PID=0).
+type DaemonInfo struct {
+	PID      int       `json:"pid"`
+	Addr     string    `json:"addr"`
+	Started  time.Time `json:"started"`
+	External bool      `json:"external"` // true = aviary did not launch this process
+}
+
+// DaemonProvider is an optional interface implemented by channels that manage
+// a subprocess daemon. Returns nil when the daemon is not currently running.
+type DaemonProvider interface {
+	DaemonInfo() *DaemonInfo
+}
+
+// LogSinkSetter is an optional interface for channels that capture subprocess
+// stdout/stderr. The manager calls SetLogSink before starting the channel.
+type LogSinkSetter interface {
+	SetLogSink(s *LogSink)
 }
