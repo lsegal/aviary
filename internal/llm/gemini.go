@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 const geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -22,9 +25,8 @@ const geminiNativeModelsURL = "https://generativelanguage.googleapis.com/v1beta/
 // googleTokenInfoURL validates any Google OAuth access token.
 const googleTokenInfoURL = "https://oauth2.googleapis.com/tokeninfo"
 
-// geminiCodeAssistStreamURL is the streaming endpoint for the Code Assist API.
-// The project ID and model name (without "models/" prefix) are passed in the request body, not the URL.
-const geminiCodeAssistStreamURL = "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
+// codeAssistBaseURL is the Code Assist API base.
+const codeAssistBaseURL = "https://cloudcode-pa.googleapis.com/v1internal"
 
 // pingGoogleOAuthToken validates a Google OAuth access token via the tokeninfo endpoint.
 func pingGoogleOAuthToken(ctx context.Context, accessToken string) error {
@@ -44,6 +46,50 @@ func pingGoogleOAuthToken(ctx context.Context, accessToken string) error {
 		return fmt.Errorf("gemini oauth ping: invalid token (%s)", resp.Status)
 	}
 	return nil
+}
+
+// fetchCodeAssistProject calls the Code Assist loadCodeAssist endpoint to
+// retrieve the GCP project ID associated with the user's Google account.
+// Returns a plain project ID string (e.g. "my-project-123456").
+func fetchCodeAssistProject(ctx context.Context, accessToken string) (string, error) {
+	payload := map[string]any{
+		"cloudaicompanionProject": nil,
+		"metadata": map[string]any{
+			"ideType":     "IDE_UNSPECIFIED",
+			"platform":    "PLATFORM_UNSPECIFIED",
+			"pluginType":  "GEMINI",
+			"duetProject": nil,
+		},
+	}
+	body, _ := json.Marshal(payload)
+
+	url := codeAssistBaseURL + ":loadCodeAssist"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("code assist project: creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("code assist project: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("code assist project: %s %s", resp.Status, strings.TrimSpace(string(respBody)))
+	}
+
+	var result struct {
+		CloudAICompanionProject string `json:"cloudaicompanionProject"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil || result.CloudAICompanionProject == "" {
+		return "", fmt.Errorf("code assist project: unexpected response: %s", strings.TrimSpace(string(respBody)))
+	}
+	slog.Debug("code assist: resolved project", "project", result.CloudAICompanionProject)
+	return result.CloudAICompanionProject, nil
 }
 
 // GeminiProvider uses Google Gemini via the OpenAI-compatible endpoint with an API key.
@@ -92,16 +138,15 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 // enabled in the project.
 type GeminiCodeAssistProvider struct {
 	accessToken string
-	projectID   string
 	model       string
+	mu          sync.Mutex
+	project     string // cached plain GCP project ID, e.g. "my-project-123456"
 }
 
 // NewGeminiCodeAssistProvider creates a provider using the Code Assist endpoint.
-// projectID is the Google Cloud project ID returned by auth.GeminiLookupProject.
-func NewGeminiCodeAssistProvider(accessToken, projectID, model string) *GeminiCodeAssistProvider {
+func NewGeminiCodeAssistProvider(accessToken, model string) *GeminiCodeAssistProvider {
 	return &GeminiCodeAssistProvider{
 		accessToken: accessToken,
-		projectID:   projectID,
 		model:       model,
 	}
 }
@@ -111,8 +156,75 @@ func (p *GeminiCodeAssistProvider) Ping(ctx context.Context) error {
 	return pingGoogleOAuthToken(ctx, p.accessToken)
 }
 
+// resolveProject returns the cached project ID, fetching it via loadCodeAssist if needed.
+func (p *GeminiCodeAssistProvider) resolveProject(ctx context.Context) (string, error) {
+	p.mu.Lock()
+	cached := p.project
+	p.mu.Unlock()
+	if cached != "" {
+		return cached, nil
+	}
+
+	proj, err := fetchCodeAssistProject(ctx, p.accessToken)
+	if err != nil {
+		return "", err
+	}
+
+	p.mu.Lock()
+	p.project = proj
+	p.mu.Unlock()
+	return proj, nil
+}
+
+// doStreamRequest posts body to url and returns the response. It retries once
+// after a short delay on HTTP 5xx errors, which are often transient on the
+// Code Assist free tier.
+func (p *GeminiCodeAssistProvider) doStreamRequest(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	const maxAttempts = 2
+	for attempt := range maxAttempts {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("code assist: creating request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+p.accessToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("code assist stream: %w", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+
+		errBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		errText := strings.TrimSpace(string(errBody))
+
+		// Retry once on 5xx (transient backend errors); give up immediately on
+		// 4xx since those are not going to be fixed by retrying.
+		if resp.StatusCode >= 500 && attempt < maxAttempts-1 {
+			slog.Warn("code assist: transient error, retrying", "status", resp.StatusCode, "attempt", attempt+1)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+
+		return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, errText)
+	}
+	return nil, fmt.Errorf("code assist stream: all attempts failed")
+}
+
 // Stream calls the Code Assist streaming endpoint using native Gemini format.
 func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
+	project, err := p.resolveProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	type part struct {
 		Text string `json:"text"`
 	}
@@ -152,9 +264,13 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 		inner.GenerationConfig = &generationConfig{MaxOutputTokens: req.MaxToks}
 	}
 
+	// The Code Assist API (matching gemini-cli's CAGenerateContentRequest):
+	// - "model": plain model name (e.g. "gemini-2.0-flash")
+	// - "project": plain GCP project ID (separate top-level field)
+	// - "request": standard Gemini GenerateContentRequest
 	envelope := map[string]any{
 		"model":   p.model,
-		"project": p.projectID,
+		"project": project,
 		"request": inner,
 	}
 
@@ -162,22 +278,12 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 	if err != nil {
 		return nil, fmt.Errorf("code assist: marshaling request: %w", err)
 	}
+	slog.Debug("code assist: stream request", "body", string(body))
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, geminiCodeAssistStreamURL, bytes.NewReader(body))
+	streamURL := codeAssistBaseURL + ":streamGenerateContent?alt=sse"
+	resp, err := p.doStreamRequest(ctx, streamURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("code assist: creating request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.accessToken)
-
-	resp, err := http.DefaultClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("code assist stream: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, strings.TrimSpace(string(errBody)))
+		return nil, err
 	}
 
 	ch := make(chan Event, 16)

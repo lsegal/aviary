@@ -102,22 +102,12 @@ func loginGemini(st authpkg.Store) error {
 		return fmt.Errorf("gemini login: %w", err)
 	}
 
-	fmt.Println("Fetching Google Cloud project...")
-	projectID, err := authpkg.GeminiLookupProject(ctx, token.AccessToken)
-	if err != nil {
-		return fmt.Errorf("looking up Google Cloud project: %w", err)
-	}
-
 	tokenJSON, _ := marshalOAuthToken(token)
 	if err := st.Set("gemini:oauth", tokenJSON); err != nil {
 		return fmt.Errorf("saving token: %w", err)
 	}
-	if err := st.Set("gemini:project", projectID); err != nil {
-		return fmt.Errorf("saving project ID: %w", err)
-	}
 
-	fmt.Printf("Gemini OAuth login successful. Project: %s\n", projectID)
-	fmt.Println("Credentials stored as gemini:oauth and gemini:project.")
+	fmt.Println("Gemini OAuth login successful. Credentials stored as gemini:oauth.")
 	return nil
 }
 

@@ -177,10 +177,6 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewAnthropicProvider(apiKey, name), nil
 
 	case "openai":
-		// Prefer OAuth token (ChatGPT Pro/Plus Codex) if available.
-		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth"); ok {
-			return NewOpenAICodexProvider(accessToken, name), nil
-		}
 		apiKey, err := f.resolveAuth("auth:openai:default")
 		if err != nil {
 			return nil, fmt.Errorf("openai auth: %w", err)
@@ -196,27 +192,9 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 
 	case "google", "gemini", "google-gemini-cli":
 		// Prefer OAuth token (Google account) if available.
-		// OAuth tokens are from the gemini-cli Code Assist flow and require a
-		// project ID (stored at login time) to construct the streaming endpoint.
+		// OAuth tokens are from the gemini-cli Code Assist flow.
 		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
-			projectID, _ := f.resolveAuth("auth:gemini:project")
-			if projectID == "" {
-				// Project ID missing (e.g. old credential store). Try to fetch it
-				// on-the-fly using the existing token and persist it for next time.
-				lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer lookupCancel()
-				var lookupErr error
-				projectID, lookupErr = auth.GeminiLookupProject(lookupCtx, accessToken)
-				if lookupErr != nil {
-					return nil, fmt.Errorf("%s auth: OAuth token found but no project ID stored; run 'aviary auth login gemini' again", provider)
-				}
-				if f.tokenSetter != nil {
-					if setErr := f.tokenSetter("gemini:project", projectID); setErr != nil {
-						slog.Warn("llm: failed to persist gemini project ID", "err", setErr)
-					}
-				}
-			}
-			return NewGeminiCodeAssistProvider(accessToken, projectID, name), nil
+			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
 		apiKey, err := f.resolveAuth("auth:gemini:default")
 		if err != nil {

@@ -539,42 +539,6 @@ func GeminiRefresh(ctx context.Context, refreshToken string) (*OAuthToken, error
 	}, nil
 }
 
-// geminiCodeAssistEndpoint is the base URL for the Gemini Code Assist API,
-// which is the backend used by the gemini-cli OAuth flow.
-const geminiCodeAssistEndpoint = "https://cloudcode-pa.googleapis.com/v1internal"
-
-// GeminiLookupProject fetches the Google Cloud project ID associated with a
-// Gemini Code Assist OAuth access token. Uses the loadCodeAssist endpoint
-// (matching gemini-cli's packages/core/src/code_assist/server.ts).
-func GeminiLookupProject(ctx context.Context, accessToken string) (string, error) {
-	loadURL := geminiCodeAssistEndpoint + ":loadCodeAssist"
-	body := `{"cloudaicompanionProject":null,"metadata":{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI","duetProject":null}}`
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loadURL, bytes.NewBufferString(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("gemini project lookup: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("gemini project lookup: %s", resp.Status)
-	}
-	var result struct {
-		CloudaicompanionProject string `json:"cloudaicompanionProject"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding gemini project lookup response: %w", err)
-	}
-	if result.CloudaicompanionProject == "" {
-		return "", fmt.Errorf("gemini project lookup: empty project ID in response")
-	}
-	return result.CloudaicompanionProject, nil
-}
-
 // OpenBrowser opens rawURL in the system default browser.
 func OpenBrowser(rawURL string) error {
 	var cmd *exec.Cmd
