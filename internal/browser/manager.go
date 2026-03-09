@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -127,6 +128,27 @@ func (m *Manager) EvalJS(ctx context.Context, tabID, expr string) (string, error
 		return e
 	})
 	return result, err
+}
+
+// Navigate navigates an existing tab to url, waiting for the page to load.
+func (m *Manager) Navigate(ctx context.Context, tabID, url string) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Navigate(url) })
+}
+
+// CloseTab closes the given tab via the CDP /json/close endpoint and removes
+// its cached session.
+func (m *Manager) CloseTab(tabID string) error {
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/json/close/%s", m.cdpPort, tabID)) //nolint:noctx
+	if err != nil {
+		return err
+	}
+	resp.Body.Close() //nolint:errcheck
+	m.mu.Lock()
+	delete(m.sessions, tabID)
+	m.mu.Unlock()
+	return nil
 }
 
 // Close is a no-op: Chrome and its tabs run independently of this Manager.

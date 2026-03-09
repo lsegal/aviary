@@ -29,5 +29,6 @@ type Message struct {
 	Role      MessageRole `json:"role"`
 	Content   string      `json:"content"`
 	MediaURL  string      `json:"media_url,omitempty"`
+	Model     string      `json:"model,omitempty"` // LLM model used; only set on assistant messages
 	Timestamp time.Time   `json:"timestamp"`
 }

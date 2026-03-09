@@ -99,6 +99,7 @@ func Register(s *sdkmcp.Server) {
 	registerTaskTools(s)
 	registerJobTools(s)
 	registerBrowserTools(s)
+	registerSearchTools(s)
 	registerMemoryTools(s)
 	registerAuthTools(s)
 	registerServerTools(s)
@@ -250,6 +251,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		Name:        "agent_add",
 		Description: "Add a new agent to the configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("name is required")
 		}
@@ -270,6 +272,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if err := config.Save("", cfg); err != nil {
 			return nil, struct{}{}, err
 		}
+		if d.Agents != nil {
+			d.Agents.Reconcile(cfg)
+		}
 		return text(fmt.Sprintf("agent %q added", args.Name))
 	})
 
@@ -277,6 +282,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		Name:        "agent_update",
 		Description: "Update an existing agent's configuration fields",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("name is required")
 		}
@@ -303,6 +309,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if err := config.Save("", cfg); err != nil {
 			return nil, struct{}{}, err
 		}
+		if d.Agents != nil {
+			d.Agents.Reconcile(cfg)
+		}
 		return text(fmt.Sprintf("agent %q updated", args.Name))
 	})
 
@@ -310,6 +319,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		Name:        "agent_delete",
 		Description: "Remove an agent from the configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
 		cfg, err := config.Load("")
 		if err != nil {
 			return nil, struct{}{}, err
@@ -329,6 +339,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		cfg.Agents = newAgents
 		if err := config.Save("", cfg); err != nil {
 			return nil, struct{}{}, err
+		}
+		if d.Agents != nil {
+			d.Agents.Reconcile(cfg)
 		}
 		return text(fmt.Sprintf("agent %q deleted", args.Name))
 	})
@@ -475,6 +488,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			Role      string `json:"role"`
 			Content   string `json:"content"`
 			MediaURL  string `json:"media_url,omitempty"`
+			Model     string `json:"model,omitempty"`
 			Timestamp string `json:"timestamp"`
 		}
 
@@ -492,6 +506,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 
 			id, _ := line["id"].(string)
 			sid, _ := line["session_id"].(string)
+			modelVal, _ := line["model"].(string)
 			ts := ""
 			switch v := line["timestamp"].(type) {
 			case string:
@@ -507,6 +522,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				Role:      role,
 				Content:   content,
 				MediaURL:  mediaURLVal,
+				Model:     modelVal,
 				Timestamp: ts,
 			})
 		}
@@ -1102,6 +1118,21 @@ func authStore() (*auth.FileStore, error) {
 	return auth.NewFileStore(authPath)
 }
 
+// reconcileAgents reloads config from disk and reconciles all agent runners so
+// they pick up freshly stored credentials (e.g. after an OAuth login).
+func reconcileAgents() {
+	d := GetDeps()
+	if d == nil || d.Agents == nil {
+		return
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		slog.Warn("mcp: failed to reload config for agent reconcile", "err", err)
+		return
+	}
+	d.Agents.Reconcile(cfg)
+}
+
 func registerAuthTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "auth_set",
@@ -1218,6 +1249,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if err := st.Set("anthropic:oauth", string(tokenJSON)); err != nil {
 			return nil, struct{}{}, err
 		}
+		reconcileAgents()
 
 		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).",
 			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
@@ -1247,6 +1279,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if err := st.Set("gemini:oauth", string(tokenJSON)); err != nil {
 			return nil, struct{}{}, err
 		}
+		reconcileAgents()
 
 		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).",
 			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
@@ -1277,6 +1310,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if err := st.Set("openai:oauth", string(tokenJSON)); err != nil {
 			return nil, struct{}{}, err
 		}
+		reconcileAgents()
 
 		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).",
 			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
@@ -1335,6 +1369,10 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		if err := config.Save("", &cfg); err != nil {
 			return nil, struct{}{}, err
+		}
+		d := GetDeps()
+		if d.Agents != nil {
+			d.Agents.Reconcile(&cfg)
 		}
 		return text("config saved")
 	})
