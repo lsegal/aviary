@@ -16,6 +16,27 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
+var testDataDir string
+
+func TestMain(m *testing.M) {
+	var err error
+	testDataDir, err = os.MkdirTemp("", "aviary-agent-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(testDataDir)
+	store.SetDataDir(testDataDir)
+	os.Exit(m.Run())
+}
+
+// setTestDataDir gives t its own isolated data directory and restores
+// the shared testDataDir when the test finishes.
+func setTestDataDir(t *testing.T) {
+	t.Helper()
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir(testDataDir) })
+}
+
 type mockProvider struct {
 	events []llm.Event
 	err    error
@@ -144,6 +165,7 @@ func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 		&config.AgentConfig{Name: "assistant", Model: "anthropic/claude"},
 		provider,
 		nil,
+		nil,
 	)
 
 	var gotText strings.Builder
@@ -232,7 +254,7 @@ func TestNewID(t *testing.T) {
 }
 
 func TestAgentRunner_NilProvider(t *testing.T) {
-	runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, nil, nil)
+	runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, nil, nil, nil)
 
 	var got []StreamEvent
 	done := make(chan struct{}, 1)
@@ -258,7 +280,7 @@ func TestAgentRunner_NilProvider(t *testing.T) {
 
 func TestAgentRunner_WithProvider(t *testing.T) {
 	provider := &mockProvider{events: []llm.Event{{Type: llm.EventTypeText, Text: "hello "}, {Type: llm.EventTypeText, Text: "world"}}}
-	runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, provider, nil)
+	runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, provider, nil, nil)
 
 	var text string
 	done := make(chan struct{}, 1)
@@ -283,7 +305,7 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 
 func TestAgentRunner_ErrorCases(t *testing.T) {
 	t.Run("stream setup error", func(t *testing.T) {
-		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{err: errors.New("boom")}, nil)
+		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{err: errors.New("boom")}, nil, nil)
 		errCh := make(chan error, 1)
 		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
 			if e.Type == StreamEventError {
@@ -301,7 +323,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 	})
 
 	t.Run("stream event error", func(t *testing.T) {
-		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("event boom")}}}, nil)
+		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("event boom")}}}, nil, nil)
 		errCh := make(chan error, 1)
 		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
 			if e.Type == StreamEventError {
@@ -322,7 +344,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 func TestAgentRunner_StopAndAccessors(t *testing.T) {
 	a := &domain.Agent{ID: "a1", Name: "myagent"}
 	cfg := &config.AgentConfig{Name: "myagent", Model: "anthropic/claude"}
-	runner := NewAgentRunner(a, cfg, nil, nil)
+	runner := NewAgentRunner(a, cfg, nil, nil, nil)
 
 	runner.Stop()
 	typCh := make(chan StreamEventType, 1)
@@ -376,7 +398,7 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 }
 
 func TestSessionManager_CreateAndGetOrCreate(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	setTestDataDir(t)
 	if err := store.EnsureDirs(); err != nil {
 		t.Fatalf("ensure dirs: %v", err)
 	}
@@ -396,6 +418,53 @@ func TestSessionManager_CreateAndGetOrCreate(t *testing.T) {
 	}
 	if s2.ID == "" || s2.AgentID != "agent1" {
 		t.Fatalf("unexpected session 2: %+v", s2)
+	}
+}
+
+func TestSessionManager_List(t *testing.T) {
+	setTestDataDir(t)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	sm := NewSessionManager()
+	agentID := "agent_assistant"
+
+	// Create a "main" session with old AgentID format (plain assistant)
+	s1 := &domain.Session{
+		ID:        "assistant-main",
+		AgentID:   "assistant",
+		Name:      "main",
+		CreatedAt: time.Now().Add(-time.Hour),
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}
+	if err := store.AppendJSONL(store.SessionPath(agentID, s1.ID), s1); err != nil {
+		t.Fatalf("setup s1: %v", err)
+	}
+
+	// Create another session with new AgentID format (agent_assistant)
+	s2 := &domain.Session{
+		ID:        "agent_assistant-other",
+		AgentID:   "agent_assistant",
+		Name:      "other",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.AppendJSONL(store.SessionPath(agentID, s2.ID), s2); err != nil {
+		t.Fatalf("setup s2: %v", err)
+	}
+
+	list, err := sm.List(agentID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(list))
+	}
+
+	// Verify "main" is first
+	if list[0].Name != "main" {
+		t.Errorf("expected main session first, got %q", list[0].Name)
 	}
 }
 
@@ -424,5 +493,444 @@ func TestDiscoverSkillsAndBuildPrompt(t *testing.T) {
 	prompt := BuildSystemPrompt("Base prompt", skills)
 	if !strings.Contains(prompt, `<skill name="planner">`) || !strings.Contains(prompt, "Base prompt") {
 		t.Fatalf("unexpected prompt: %s", prompt)
+	}
+}
+
+func TestFilterTools_AllowList(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{
+			Name:        "bot",
+			Permissions: &config.PermissionsConfig{Tools: []string{"tool_a", "tool_b"}},
+		},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{
+		{Name: "tool_a", Description: "Tool A"},
+		{Name: "tool_b", Description: "Tool B"},
+		{Name: "tool_c", Description: "Tool C"},
+	}
+
+	// Agent-level permissions apply when no per-message restrictions.
+	filtered := runner.filterTools(tools, nil)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered tools, got %d", len(filtered))
+	}
+	for _, tool := range filtered {
+		if tool.Name != "tool_a" && tool.Name != "tool_b" {
+			t.Errorf("unexpected tool: %s", tool.Name)
+		}
+	}
+}
+
+func TestFilterTools_PerMessageOverride(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{
+			Name:        "bot",
+			Permissions: &config.PermissionsConfig{Tools: []string{"tool_a"}},
+		},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{
+		{Name: "tool_a"},
+		{Name: "tool_b"},
+		{Name: "tool_c"},
+	}
+
+	// Per-message override restricts to only tool_c.
+	filtered := runner.filterTools(tools, []string{"tool_c"})
+	if len(filtered) != 1 || filtered[0].Name != "tool_c" {
+		t.Fatalf("expected 1 filtered tool (tool_c), got %v", filtered)
+	}
+}
+
+func TestFilterTools_NoRestrictions(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{Name: "bot"}, // no permissions
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{{Name: "tool_a"}, {Name: "tool_b"}}
+	filtered := runner.filterTools(tools, nil)
+	if len(filtered) != 2 {
+		t.Fatalf("expected all 2 tools, got %d", len(filtered))
+	}
+}
+
+func TestLoadRules_InlineText(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{Name: "bot", Rules: "Be helpful."},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	rules := runner.loadRules()
+	if rules != "Be helpful." {
+		t.Errorf("expected inline rules, got %q", rules)
+	}
+}
+
+func TestLoadRules_FilePath(t *testing.T) {
+	setTestDataDir(t)
+
+	dir := t.TempDir()
+	rulesFile := filepath.Join(dir, "RULES.md")
+	if err := os.WriteFile(rulesFile, []byte("# Rules\nBe safe."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{Name: "bot", Rules: rulesFile},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	rules := runner.loadRules()
+	if !strings.Contains(rules, "Be safe.") {
+		t.Errorf("expected file rules, got %q", rules)
+	}
+}
+
+func TestLoadRules_FallbackToDataDir(t *testing.T) {
+	setTestDataDir(t)
+
+	// Write RULES.md to the agent's data directory.
+	agentID := "agent_ruletest"
+	rulesPath := store.AgentRulesPath(agentID)
+	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rulesPath, []byte("Follow safety guidelines."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: agentID, Name: "ruletest"},
+		&config.AgentConfig{Name: "ruletest"}, // no inline rules
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	rules := runner.loadRules()
+	if !strings.Contains(rules, "Follow safety guidelines.") {
+		t.Errorf("expected fallback rules from data dir, got %q", rules)
+	}
+}
+
+func TestLoadRules_Empty(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_norules", Name: "norules"},
+		&config.AgentConfig{Name: "norules"}, // no rules
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	rules := runner.loadRules()
+	if rules != "" {
+		t.Errorf("expected empty rules, got %q", rules)
+	}
+}
+
+func TestAppendSessionMessage_SkipsEmptyContent(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_msg", Name: "msgtest"},
+		&config.AgentConfig{Name: "msgtest"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	// Empty content should not create a file.
+	runner.appendSessionMessage("sess1", domain.MessageRoleUser, "", "", "")
+	p := store.SessionPath("agent_msg", "sess1")
+	if _, err := os.Stat(p); err == nil {
+		t.Error("expected no session file for empty content")
+	}
+}
+
+func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_persist", Name: "persist"},
+		&config.AgentConfig{Name: "persist"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	runner.appendSessionMessage("sess2", domain.MessageRoleUser, "Hello, world!", "", "")
+
+	p := store.SessionPath("agent_persist", "sess2")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("expected session file: %v", err)
+	}
+	if !strings.Contains(string(data), "Hello, world!") {
+		t.Errorf("expected message in session file, got: %s", string(data))
+	}
+}
+
+func TestResolveSessionID_FromContext(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_sess", Name: "sesstest"},
+		&config.AgentConfig{Name: "sesstest"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	ctx := WithSessionID(context.Background(), "explicit-session-id")
+	sessionID := runner.resolveSessionID(ctx)
+	if sessionID != "explicit-session-id" {
+		t.Errorf("expected explicit session ID, got %q", sessionID)
+	}
+}
+
+func TestSetSessionMessageObserver(t *testing.T) {
+	var notified string
+	SetSessionMessageObserver(func(sessionID, role string) {
+		notified = sessionID + "/" + role
+	})
+	t.Cleanup(func() { SetSessionMessageObserver(nil) })
+
+	notifySessionMessage("sess123", "user")
+	if notified != "sess123/user" {
+		t.Errorf("expected sess123/user, got %q", notified)
+	}
+}
+
+func TestRegisterSessionDelivery(t *testing.T) {
+	var received string
+	RegisterSessionDelivery("test-sess", "signal", "+1", func(text string) { received = text })
+
+	deliverToSession("test-sess", "hello delivery")
+	if received != "hello delivery" {
+		t.Errorf("expected 'hello delivery', got %q", received)
+	}
+
+	// Empty text should not call delivery function.
+	received = ""
+	deliverToSession("test-sess", "")
+	if received != "" {
+		t.Error("expected no delivery for empty text")
+	}
+
+	// Unknown session should not panic.
+	deliverToSession("unknown-sess", "no delivery")
+}
+
+func TestRegisterSessionDelivery_Idempotent(t *testing.T) {
+	var calls int
+	RegisterSessionDelivery("sess-idem", "slack", "C1", func(_ string) { calls++ })
+	RegisterSessionDelivery("sess-idem", "slack", "C1", func(_ string) { calls += 10 })
+
+	// Second registration overwrites the first.
+	deliverToSession("sess-idem", "msg")
+	if calls != 10 {
+		t.Errorf("expected calls=10 (second fn overwrites), got %d", calls)
+	}
+}
+
+func TestRegisterSessionMediaDelivery(t *testing.T) {
+	var captionGot, pathGot string
+	RegisterSessionMediaDelivery("media-sess", "signal", "+2", func(caption, path string) {
+		captionGot = caption
+		pathGot = path
+	})
+
+	DeliverMediaToSession("media-sess", "my caption", "/path/to/file.jpg")
+	if captionGot != "my caption" || pathGot != "/path/to/file.jpg" {
+		t.Errorf("unexpected delivery: caption=%q path=%q", captionGot, pathGot)
+	}
+
+	// Empty path should not call delivery function.
+	captionGot = ""
+	DeliverMediaToSession("media-sess", "ignored", "")
+	if captionGot != "" {
+		t.Error("expected no media delivery for empty path")
+	}
+}
+
+func TestSetMemoryCompactionObserver(t *testing.T) {
+	var notifiedAgent string
+	SetMemoryCompactionObserver(func(agentID, poolID string, started bool) {
+		notifiedAgent = agentID
+	})
+	t.Cleanup(func() { SetMemoryCompactionObserver(nil) })
+
+	notifyMemoryCompaction("agent_test", "pool1", true)
+	if notifiedAgent != "agent_test" {
+		t.Errorf("expected agent_test, got %q", notifiedAgent)
+	}
+}
+
+func TestSessionManager_CreateWithName(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+
+	sess, err := sm.CreateWithName("agent_named", "mysession")
+	if err != nil {
+		t.Fatalf("CreateWithName: %v", err)
+	}
+	if sess.Name != "mysession" {
+		t.Errorf("Name = %q; want %q", sess.Name, "mysession")
+	}
+	if sess.AgentID != "agent_named" {
+		t.Errorf("AgentID = %q; want %q", sess.AgentID, "agent_named")
+	}
+	if sess.ID == "" {
+		t.Error("expected non-empty session ID")
+	}
+}
+
+func TestSessionManager_CreateWithName_AlwaysNew(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+
+	sess1, _ := sm.CreateWithName("agent_new", "myname")
+	sess2, _ := sm.CreateWithName("agent_new", "myname")
+
+	if sess1.ID == sess2.ID {
+		t.Error("expected different IDs from two CreateWithName calls")
+	}
+}
+
+func TestAppendMessageToSession(t *testing.T) {
+	setTestDataDir(t)
+
+	agentID := "agent_append_msg"
+	sessionID := "sess_amsg"
+
+	// Create session first.
+	sm := NewSessionManager()
+	_, _ = sm.CreateWithName(agentID, "amsg")
+
+	err := AppendMessageToSession(agentID, sessionID, domain.MessageRoleUser, "Hello there!")
+	if err != nil {
+		t.Fatalf("AppendMessageToSession: %v", err)
+	}
+
+	// Verify message was written.
+	p := store.SessionPath(agentID, sessionID)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read session file: %v", err)
+	}
+	if !strings.Contains(string(data), "Hello there!") {
+		t.Errorf("expected message in session, got: %s", string(data))
+	}
+}
+
+func TestRunnerMemoryPoolID(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_mpid", Name: "mpid"},
+		&config.AgentConfig{Name: "mpid", Memory: "shared"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	poolID := runner.memoryPoolID()
+	if poolID != "shared" {
+		t.Errorf("memoryPoolID = %q; want %q", poolID, "shared")
+	}
+}
+
+func TestRunnerMemoryPoolID_Default(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_mpid2", Name: "mpid2"},
+		&config.AgentConfig{Name: "mpid2"}, // no Memory field
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	poolID := runner.memoryPoolID()
+	if poolID != "private:mpid2" {
+		t.Errorf("memoryPoolID default = %q; want %q", poolID, "private:mpid2")
+	}
+}
+
+func TestRunnerCompactKeep(t *testing.T) {
+	setTestDataDir(t)
+
+	t.Run("explicit value", func(t *testing.T) {
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "agent_ck", Name: "ck"},
+			&config.AgentConfig{Name: "ck", CompactKeep: 50},
+			&mockProvider{},
+			nil,
+			nil,
+		)
+		if v := runner.compactKeep(); v != 50 {
+			t.Errorf("compactKeep = %d; want 50", v)
+		}
+	})
+
+	t.Run("default value", func(t *testing.T) {
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "agent_ck2", Name: "ck2"},
+			&config.AgentConfig{Name: "ck2"},
+			&mockProvider{},
+			nil,
+			nil,
+		)
+		if v := runner.compactKeep(); v <= 0 {
+			t.Errorf("compactKeep default should be positive, got %d", v)
+		}
+	})
+}
+
+func TestRunnerWait(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_wait", Name: "wait"},
+		&config.AgentConfig{Name: "wait"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	// Wait on idle runner should return immediately.
+	done := make(chan struct{})
+	go func() {
+		runner.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("Wait() did not return promptly on idle runner")
 	}
 }

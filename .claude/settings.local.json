@@ -17,7 +17,13 @@
       "Bash(grep:*)",
       "Bash(gofmt:*)",
       "Bash(pnpm lint:fix:*)",
-      "Bash(pnpm exec:*)"
+      "Bash(pnpm exec:*)",
+      "Bash(go test:*)",
+      "Bash(go run:*)",
+      "Bash(curl:*)",
+      "Bash(go tool:*)",
+      "Bash(ls -lh /d/github/lsegal/aviary/cmd/aviary/cmd/*.go)",
+      "Bash(git:*)"
     ]
   }
 }

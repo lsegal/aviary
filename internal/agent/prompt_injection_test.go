@@ -283,6 +283,7 @@ func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {
 				&config.AgentConfig{Name: "inj", Model: "test/model", Rules: rules},
 				prov,
 				nil,
+				nil,
 			)
 			runnerDone(t, runner, "hello")
 
@@ -343,6 +344,7 @@ func TestAgentRunner_ToolResultInjectionEscaped(t *testing.T) {
 		&domain.Agent{ID: "agent_tr", Name: "tr"},
 		&config.AgentConfig{Name: "tr", Model: "test/model"},
 		provider,
+		nil,
 		nil,
 	)
 	runnerDone(t, runner, "run the tool")

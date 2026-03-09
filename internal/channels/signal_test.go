@@ -175,6 +175,17 @@ func waitMsg(t *testing.T, msgs <-chan IncomingMessage, timeout time.Duration) I
 	}
 }
 
+// waitMsgTimeout waits up to timeout for a message, returning (msg, true) or
+// the zero value and false if nothing arrives in time.
+func waitMsgTimeout(msgs <-chan IncomingMessage, timeout time.Duration) (IncomingMessage, bool) {
+	select {
+	case m := <-msgs:
+		return m, true
+	case <-time.After(timeout):
+		return IncomingMessage{}, false
+	}
+}
+
 // waitConnected polls until the fake daemon has at least one connection.
 func waitConnected(t *testing.T, fd *fakeDaemon, timeout time.Duration) {
 	t.Helper()
@@ -194,7 +205,7 @@ func waitConnected(t *testing.T, fd *fakeDaemon, timeout time.Duration) {
 // ── dispatch tests ────────────────────────────────────────────────────────────
 
 func TestDispatch_ValidReceive(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 1)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -214,7 +225,7 @@ func TestDispatch_ValidReceive(t *testing.T) {
 }
 
 func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -225,7 +236,7 @@ func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
 }
 
 func TestDispatch_EmptyMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -237,7 +248,7 @@ func TestDispatch_EmptyMessageIgnored(t *testing.T) {
 }
 
 func TestDispatch_NilDataMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -249,7 +260,7 @@ func TestDispatch_NilDataMessageIgnored(t *testing.T) {
 }
 
 func TestDispatch_MalformedJSON(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	called := false
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
@@ -260,10 +271,37 @@ func TestDispatch_MalformedJSON(t *testing.T) {
 }
 
 func TestDispatch_NoHandlerRegistered(_ *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	// No handler — should not panic.
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hi"}}}}`
 	ch.dispatch([]byte(line))
+}
+
+func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {
+	const botPhone = "+12130000000"
+	const groupID = "Z2lkPQ=="
+	allowFrom := []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}
+	ch := NewSignalChannel(botPhone, "", allowFrom, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	// Message that @mentions the bot via the mentions array → should be received.
+	withMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"},"mentions":[{"number":"` + botPhone + `","uuid":"","start":0,"length":3}]}}}}`
+	ch.dispatch([]byte(withMention))
+	if _, ok := waitMsgTimeout(msgs, 200*time.Millisecond); !ok {
+		t.Error("expected message to be received when bot is @mentioned")
+	}
+
+	// Message without mention → should be blocked.
+	noMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"}}}}}`
+	ch.dispatch([]byte(noMention))
+	if _, ok := waitMsgTimeout(msgs, 50*time.Millisecond); ok {
+		t.Error("expected message to be blocked when bot is not @mentioned")
+	}
 }
 
 // ── checkAllowed tests ────────────────────────────────────────────────────────
@@ -292,10 +330,92 @@ func TestCheckAllowed_DirectMessages(t *testing.T) {
 	}
 }
 
+func TestCheckAllowed_GroupMessages(t *testing.T) {
+	const groupID = "abc123=="
+	const sender = "+15551234567"
+	tests := []struct {
+		name      string
+		allowFrom []config.AllowFromEntry
+		from      string
+		text      string
+		want      bool
+	}{
+		{
+			"wildcard sender + allowedGroups=* allows all",
+			[]config.AllowFromEntry{{From: "*", AllowedGroups: "*"}},
+			sender, "hello", true,
+		},
+		{
+			"exact sender + allowedGroups=* allows that sender",
+			[]config.AllowFromEntry{{From: sender, AllowedGroups: "*"}},
+			sender, "hello", true,
+		},
+		{
+			"exact sender + specific group allows matching",
+			[]config.AllowFromEntry{{From: sender, AllowedGroups: groupID}},
+			sender, "hello", true,
+		},
+		{
+			"exact sender + wrong group blocked",
+			[]config.AllowFromEntry{{From: sender, AllowedGroups: "other=="}},
+			sender, "hello", false,
+		},
+		{
+			"wrong sender blocked even with allowedGroups=*",
+			[]config.AllowFromEntry{{From: "+19999999999", AllowedGroups: "*"}},
+			sender, "hello", false,
+		},
+		{
+			"no allowedGroups means DM-only — group message blocked",
+			[]config.AllowFromEntry{{From: "*"}},
+			sender, "hello", false,
+		},
+		{
+			"allowedGroups=* with respond_to_mentions=true blocks non-mention",
+			[]config.AllowFromEntry{{From: "*", AllowedGroups: "*", RespondToMentions: true}},
+			sender, "hello", false,
+		},
+		{
+			"allowedGroups=* with mention_prefixes match allows",
+			[]config.AllowFromEntry{{From: "*", AllowedGroups: "*", MentionPrefixes: []string{"hey bot"}}},
+			sender, "hey bot do something", true,
+		},
+		{
+			"allowedGroups=* with mention_prefixes no match blocked",
+			[]config.AllowFromEntry{{From: "*", AllowedGroups: "*", MentionPrefixes: []string{"hey bot"}}},
+			sender, "hello", false,
+		},
+		{
+			"allowedGroups comma-separated with spaces matches",
+			[]config.AllowFromEntry{{From: "*", AllowedGroups: "other== , " + groupID}},
+			sender, "hello", true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := checkAllowed(tc.allowFrom, tc.from, groupID, tc.text, true, "", false)
+			if result.allowed != tc.want {
+				t.Errorf("checkAllowed allowed=%v, want %v", result.allowed, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckAllowed_SpaceTrimming(t *testing.T) {
+	// Comma-separated IDs with spaces should behave identically to without spaces.
+	entries := []config.AllowFromEntry{{From: "+15551111111 , +15552222222"}}
+	if !checkAllowed(entries, "+15552222222", "+15552222222", "", false, "", false).allowed {
+		t.Error("space-trimmed comma list: +15552222222 should be allowed")
+	}
+	if checkAllowed(entries, "+15559999999", "+15559999999", "", false, "", false).allowed {
+		t.Error("space-trimmed comma list: +15559999999 should not be allowed")
+	}
+}
+
 // ── DaemonInfo tests ──────────────────────────────────────────────────────────
 
 func TestDaemonInfo_ExternalMode(t *testing.T) {
-	ch := NewSignalChannel("+1", "127.0.0.1:7583", nil)
+	ch := NewSignalChannel("+1", "127.0.0.1:7583", nil, true, true, true, true, "test", nil)
 	info := ch.DaemonInfo()
 	if info == nil {
 		t.Fatal("DaemonInfo returned nil for external mode")
@@ -312,14 +432,14 @@ func TestDaemonInfo_ExternalMode(t *testing.T) {
 }
 
 func TestDaemonInfo_ManagedMode_NotRunning(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil)
+	ch := NewSignalChannel("+1", "", nil, true, true, true, true, "test", nil)
 	if info := ch.DaemonInfo(); info != nil {
 		t.Errorf("DaemonInfo = %+v, want nil when daemon not running", info)
 	}
 }
 
 func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil)
+	ch := NewSignalChannel("+1", "", nil, true, true, true, true, "test", nil)
 	ch.procMu.Lock()
 	ch.procPID = 1234
 	ch.procStarted = time.Now()
@@ -349,7 +469,7 @@ func TestSend_PostsJSONRPCOverTCP(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), nil)
+	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
 	if err := ch.Send("+15550001111", "test message"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -379,9 +499,38 @@ func TestSend_PostsJSONRPCOverTCP(t *testing.T) {
 }
 
 func TestSend_DaemonNotReady(t *testing.T) {
-	ch := NewSignalChannel("", "", nil)
+	ch := NewSignalChannel("", "", nil, true, true, true, true, "test", nil)
 	if err := ch.Send("+1", "hi"); err == nil {
 		t.Error("expected error when daemon not ready, got nil")
+	}
+}
+
+func TestSend_GroupUsesGroupId(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	const groupID = "Z2lkPQ=="
+	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
+	if err := ch.Send(groupID, "hello group"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	reqs := fd.SentRequests()
+	if len(reqs) != 1 {
+		t.Fatalf("got %d RPC requests, want 1", len(reqs))
+	}
+	params, _ := reqs[0]["params"].(map[string]interface{})
+	if params == nil {
+		t.Fatal("params missing")
+	}
+	if params["groupId"] != groupID {
+		t.Errorf("groupId = %v, want %q", params["groupId"], groupID)
+	}
+	if _, hasRecipient := params["recipient"]; hasRecipient {
+		t.Error("recipient should not be set for group sends")
+	}
+	if params["message"] != "hello group" {
+		t.Errorf("message = %q, want 'hello group'", params["message"])
 	}
 }
 
@@ -391,7 +540,7 @@ func TestStart_ExternalMode_ReceivesMessages(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -424,7 +573,7 @@ func TestStart_ExternalMode_FiltersByAllowFrom(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "+15550001111"}})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "+15550001111"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -453,7 +602,7 @@ func TestStop_StopsChannel(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	cancel, errCh := startChannel(ch)
 	defer cancel()
 
@@ -473,7 +622,7 @@ func TestStop_StopsChannel(t *testing.T) {
 func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	fd := newFakeDaemon(t)
 
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 4)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
@@ -513,7 +662,7 @@ func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
 
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}})
+	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 10)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 

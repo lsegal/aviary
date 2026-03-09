@@ -2,12 +2,15 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -213,6 +216,113 @@ func TestPIDLifecycle(t *testing.T) {
 	}
 	if running || gotPID != 0 {
 		t.Fatalf("expected not running after remove, got running=%v pid=%d", running, gotPID)
+	}
+}
+
+func TestHealthHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	rr := httptest.NewRecorder()
+	healthHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rr.Code)
+	}
+
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Version string `json:"version"`
+		GOOS    string `json:"goos"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if !payload.OK {
+		t.Error("expected ok=true in health response")
+	}
+	if payload.GOOS == "" {
+		t.Error("expected non-empty GOOS in health response")
+	}
+}
+
+func TestProcSampler(t *testing.T) {
+	s := NewProcSampler()
+
+	// Initially no stats.
+	_, ok := s.Get(99999)
+	if ok {
+		t.Error("expected Get on untracked PID to return ok=false")
+	}
+
+	// Forget on untracked PID should not panic.
+	s.Forget(99999)
+}
+
+func TestLoadOrGenerateTLS_GeneratesSelfSigned(t *testing.T) {
+	setupServerDataDir(t)
+
+	cert, err := LoadOrGenerateTLS("", "")
+	if err != nil {
+		t.Fatalf("LoadOrGenerateTLS: %v", err)
+	}
+	if len(cert.Certificate) == 0 {
+		t.Fatal("expected non-empty certificate")
+	}
+}
+
+func TestLoadOrGenerateTLS_LoadsExisting(t *testing.T) {
+	setupServerDataDir(t)
+
+	// Generate first.
+	cert1, err := LoadOrGenerateTLS("", "")
+	if err != nil {
+		t.Fatalf("first generate: %v", err)
+	}
+
+	// Load again — should return the same cert.
+	cert2, err := LoadOrGenerateTLS("", "")
+	if err != nil {
+		t.Fatalf("second load: %v", err)
+	}
+
+	if len(cert1.Certificate) != len(cert2.Certificate) {
+		t.Error("expected same certificate on second call")
+	}
+}
+
+func TestExtractComponent(t *testing.T) {
+	tests := []struct {
+		msg   string
+		attrs map[string]string
+		want  string
+	}{
+		{"server: something happened", map[string]string{}, "server"},
+		{"agent: running task", map[string]string{}, "agent"},
+		{"no colon", map[string]string{}, "server"}, // default
+		{"", map[string]string{"component": "mycomp"}, "mycomp"},
+		{"msg", map[string]string{"component": "explicit"}, "explicit"},
+	}
+	for _, tc := range tests {
+		got := extractComponent(tc.msg, tc.attrs)
+		if got != tc.want {
+			t.Errorf("extractComponent(%q, %v) = %q; want %q", tc.msg, tc.attrs, got, tc.want)
+		}
+	}
+}
+
+func TestLogHub_Handle(t *testing.T) {
+	hub := newLogHub(10)
+
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	_ = hub.Handle(context.Background(), rec)
+
+	// Ring should have one entry.
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	if len(hub.ring) != 1 {
+		t.Fatalf("expected 1 ring entry, got %d", len(hub.ring))
+	}
+	if hub.ring[0].Message != "test message" {
+		t.Errorf("unexpected message: %q", hub.ring[0].Message)
 	}
 }
 

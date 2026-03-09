@@ -1,11 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefault(t *testing.T) {
@@ -227,6 +230,538 @@ func TestHelpers(t *testing.T) {
 	}
 	if got := max(4, 2); got != 4 {
 		t.Fatalf("max = %d", got)
+	}
+}
+
+func TestSave(t *testing.T) {
+	t.Run("round-trip", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		cfg := Default()
+		cfg.Agents = []AgentConfig{{Name: "mybot", Model: "anthropic/claude-sonnet-4-5"}}
+		if err := Save(path, &cfg); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load after Save: %v", err)
+		}
+		if loaded.Server.Port != cfg.Server.Port {
+			t.Errorf("port mismatch: got %d want %d", loaded.Server.Port, cfg.Server.Port)
+		}
+		if len(loaded.Agents) != 1 || loaded.Agents[0].Name != "mybot" {
+			t.Errorf("agents mismatch: %+v", loaded.Agents)
+		}
+	})
+
+	t.Run("creates parent dir", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "nested", "subdir", "aviary.yaml")
+
+		cfg := Default()
+		if err := Save(path, &cfg); err != nil {
+			t.Fatalf("Save with nested dir: %v", err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("file not created: %v", err)
+		}
+	})
+
+	t.Run("normalize empty agents", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		cfg := Default()
+		cfg.Agents = []AgentConfig{} // empty
+		if err := Save(path, &cfg); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if len(loaded.Agents) != 0 {
+			t.Errorf("expected no agents in loaded config, got %d", len(loaded.Agents))
+		}
+	})
+}
+
+func TestNormalize(t *testing.T) {
+	t.Run("empty TLS block removed", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{TLS: &TLSConfig{}}}
+		normalize(cfg)
+		if cfg.Server.TLS != nil {
+			t.Error("expected TLS to be nil after normalization")
+		}
+	})
+
+	t.Run("TLS with cert preserved", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{TLS: &TLSConfig{Cert: "cert.pem", Key: "key.pem"}}}
+		normalize(cfg)
+		if cfg.Server.TLS == nil {
+			t.Error("expected TLS to be preserved when cert/key are set")
+		}
+	})
+
+	t.Run("empty agents set to nil", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{}}
+		normalize(cfg)
+		if cfg.Agents != nil {
+			t.Error("expected Agents to be nil after normalization")
+		}
+	})
+
+	t.Run("empty permissions set to nil", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{
+			Name:        "bot",
+			Permissions: &PermissionsConfig{Tools: []string{}},
+		}}}
+		normalize(cfg)
+		if cfg.Agents[0].Permissions != nil {
+			t.Error("expected empty Permissions to be nil after normalization")
+		}
+	})
+
+	t.Run("auto concurrency removed", func(t *testing.T) {
+		cfg := &Config{Scheduler: SchedulerConfig{Concurrency: "auto"}}
+		normalize(cfg)
+		if cfg.Scheduler.Concurrency != nil {
+			t.Errorf("expected Concurrency=nil after normalize(auto), got %v", cfg.Scheduler.Concurrency)
+		}
+	})
+
+	t.Run("numeric concurrency preserved", func(t *testing.T) {
+		cfg := &Config{Scheduler: SchedulerConfig{Concurrency: 4}}
+		normalize(cfg)
+		if cfg.Scheduler.Concurrency != 4 {
+			t.Errorf("expected Concurrency=4, got %v", cfg.Scheduler.Concurrency)
+		}
+	})
+}
+
+func TestBoolOr(t *testing.T) {
+	t.Run("nil returns default", func(t *testing.T) {
+		if got := BoolOr(nil, true); got != true {
+			t.Fatalf("BoolOr(nil, true) = %v", got)
+		}
+		if got := BoolOr(nil, false); got != false {
+			t.Fatalf("BoolOr(nil, false) = %v", got)
+		}
+	})
+
+	t.Run("non-nil returns value", func(t *testing.T) {
+		b := true
+		if got := BoolOr(&b, false); got != true {
+			t.Fatalf("BoolOr(&true, false) = %v", got)
+		}
+		b = false
+		if got := BoolOr(&b, true); got != false {
+			t.Fatalf("BoolOr(&false, true) = %v", got)
+		}
+	})
+}
+
+func TestAllowFromEntry_UnmarshalYAML(t *testing.T) {
+	t.Run("plain string", func(t *testing.T) {
+		src := `"+15551234567"`
+		var entry AllowFromEntry
+		if err := yaml.Unmarshal([]byte(src), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.From != "+15551234567" {
+			t.Errorf("From = %q; want %q", entry.From, "+15551234567")
+		}
+	})
+
+	t.Run("full struct", func(t *testing.T) {
+		src := "from: \"+1\"\nallowedGroups: \"group1\"\nrespondToMentions: true\n"
+		var entry AllowFromEntry
+		if err := yaml.Unmarshal([]byte(src), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.From != "+1" {
+			t.Errorf("From = %q", entry.From)
+		}
+		if entry.AllowedGroups != "group1" {
+			t.Errorf("AllowedGroups = %q", entry.AllowedGroups)
+		}
+		if !entry.RespondToMentions {
+			t.Error("expected RespondToMentions=true")
+		}
+	})
+}
+
+func TestAllowFromEntry_UnmarshalJSON(t *testing.T) {
+	t.Run("plain string", func(t *testing.T) {
+		data := []byte(`"+15551234567"`)
+		var entry AllowFromEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.From != "+15551234567" {
+			t.Errorf("From = %q; want %q", entry.From, "+15551234567")
+		}
+	})
+
+	t.Run("full struct", func(t *testing.T) {
+		data := []byte(`{"from":"+2","allowedGroups":"ch1","respondToMentions":true}`)
+		var entry AllowFromEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.From != "+2" || entry.AllowedGroups != "ch1" || !entry.RespondToMentions {
+			t.Errorf("unexpected entry: %+v", entry)
+		}
+	})
+}
+
+func TestValidate_ServerPort(t *testing.T) {
+	t.Run("valid port", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{Port: 8080}}
+		issues := Validate(cfg, nil)
+		for _, iss := range issues {
+			if iss.Field == "server.port" && iss.Level == LevelError {
+				t.Fatalf("unexpected port error: %s", iss.Message)
+			}
+		}
+	})
+
+	t.Run("port out of range high", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{Port: 99999}}
+		issues := Validate(cfg, nil)
+		if !hasIssue(issues, "out of range") {
+			t.Fatalf("expected port range error, got: %v", issues)
+		}
+	})
+
+	t.Run("port out of range low", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{Port: -1}}
+		issues := Validate(cfg, nil)
+		if !hasIssue(issues, "out of range") {
+			t.Fatalf("expected port range error, got: %v", issues)
+		}
+	})
+
+	t.Run("TLS cert without key", func(t *testing.T) {
+		cfg := &Config{Server: ServerConfig{TLS: &TLSConfig{Cert: "cert.pem"}}}
+		issues := Validate(cfg, nil)
+		if !hasIssue(issues, "tls.cert and tls.key must both be set") {
+			t.Fatalf("expected TLS error, got: %v", issues)
+		}
+	})
+}
+
+func TestValidate_UnknownChannelType(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:     "bot",
+			Channels: []ChannelConfig{{Type: "telegram"}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "unknown channel type") {
+		t.Fatalf("expected unknown channel type issue, got: %v", issues)
+	}
+}
+
+func TestValidate_ChannelEmptyAllowFrom(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:     "bot",
+			Channels: []ChannelConfig{{Type: "signal"}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "empty allowFrom list") {
+		t.Fatalf("expected empty allowFrom warning, got: %v", issues)
+	}
+}
+
+func TestValidate_StdioModelMissingCommand(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "stdio/nonexistent-cmd-xyz-12345",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "not found in PATH") {
+		t.Fatalf("expected stdio not-found issue, got: %v", issues)
+	}
+}
+
+func TestValidate_UnknownProvider(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "unknown-provider/model-x",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "unknown provider") {
+		t.Fatalf("expected unknown provider issue, got: %v", issues)
+	}
+}
+
+func TestValidate_InvalidModel(t *testing.T) {
+	// Model without slash is invalid.
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "noSlashModel",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "invalid model") {
+		t.Fatalf("expected invalid model issue, got: %v", issues)
+	}
+}
+
+func TestValidate_DuplicateAgentName(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "bot", Model: "anthropic/claude-sonnet-4-5"},
+			{Name: "bot", Model: "anthropic/claude-sonnet-4-5"},
+		},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "duplicate agent name") {
+		t.Fatalf("expected duplicate agent name issue, got: %v", issues)
+	}
+}
+
+func TestValidate_BrowserInvalidCDPPort(t *testing.T) {
+	cfg := &Config{Browser: BrowserConfig{CDPPort: 99999}}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "CDP port") {
+		t.Fatalf("expected CDP port issue, got: %v", issues)
+	}
+}
+
+func TestValidate_SchedulerInvalidConcurrency(t *testing.T) {
+	cfg := &Config{Scheduler: SchedulerConfig{Concurrency: "invalid-str"}}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "invalid string value") {
+		t.Fatalf("expected invalid concurrency issue, got: %v", issues)
+	}
+}
+
+func TestValidate_SchedulerNegativeConcurrency(t *testing.T) {
+	cfg := &Config{Scheduler: SchedulerConfig{Concurrency: -1}}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "not positive") {
+		t.Fatalf("expected negative concurrency warning, got: %v", issues)
+	}
+}
+
+func TestValidate_ModelsProviderBadAuth(t *testing.T) {
+	cfg := &Config{
+		Models: ModelsConfig{
+			Providers: map[string]ProviderConfig{
+				"myprovider": {Auth: "auth:"},
+			},
+		},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "malformed auth reference") {
+		t.Fatalf("expected malformed auth reference issue, got: %v", issues)
+	}
+}
+
+func TestValidate_InvalidTaskChannel(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Tasks: []TaskConfig{{
+				Name:     "t1",
+				Schedule: "* * * * * *",
+				Prompt:   "do it",
+				Channel:  "telegram",
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "invalid value") {
+		t.Fatalf("expected invalid task channel issue, got: %v", issues)
+	}
+}
+
+func TestValidate_DuplicateTaskName(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Tasks: []TaskConfig{
+				{Name: "t1", Schedule: "* * * * * *", Prompt: "do it"},
+				{Name: "t1", Schedule: "* * * * * *", Prompt: "do it again"},
+			},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "duplicate task name") {
+		t.Fatalf("expected duplicate task name issue, got: %v", issues)
+	}
+}
+
+func TestValidate_InvalidCronExpression(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Tasks: []TaskConfig{{
+				Name:     "t1",
+				Schedule: "not-a-cron",
+				Prompt:   "do it",
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "invalid cron expression") {
+		t.Fatalf("expected invalid cron expression issue, got: %v", issues)
+	}
+}
+
+func TestSchema(t *testing.T) {
+	s := Schema()
+	if len(s) == 0 {
+		t.Fatal("Schema() returned empty bytes")
+	}
+	// Should be valid JSON.
+	var v any
+	if err := json.Unmarshal(s, &v); err != nil {
+		t.Fatalf("Schema() is not valid JSON: %v", err)
+	}
+}
+
+func TestUniqueProviderModels(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "a1", Model: "anthropic/claude-sonnet-4-5"},
+			{Name: "a2", Model: "openai/gpt-4"},
+			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
+			{Name: "a4", Model: "stdio/mycommand"},           // excluded
+		},
+	}
+	got := UniqueProviderModels(cfg)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 unique providers, got %d: %v", len(got), got)
+	}
+	if _, ok := got["anthropic"]; !ok {
+		t.Error("expected 'anthropic' in result")
+	}
+	if _, ok := got["openai"]; !ok {
+		t.Error("expected 'openai' in result")
+	}
+	if _, ok := got["stdio"]; ok {
+		t.Error("expected 'stdio' to be excluded")
+	}
+}
+
+func TestUniqueProviderModels_WithDefaults(t *testing.T) {
+	cfg := &Config{
+		Models: ModelsConfig{
+			Defaults: &ModelDefaults{
+				Model:     "gemini/gemini-2.0-flash",
+				Fallbacks: []string{"openai/gpt-4"},
+			},
+		},
+	}
+	got := UniqueProviderModels(cfg)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 providers from defaults, got %d: %v", len(got), got)
+	}
+}
+
+func TestValidate_ChannelAuthRef(t *testing.T) {
+	t.Run("malformed auth ref in token", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name: "bot",
+				Channels: []ChannelConfig{{
+					Type:      "slack",
+					Token:     "auth:",         // malformed
+					AllowFrom: []AllowFromEntry{{From: "*"}},
+				}},
+			}},
+		}
+		issues := Validate(cfg, nil)
+		if !hasIssue(issues, "malformed auth reference") {
+			t.Fatalf("expected malformed auth ref issue, got: %v", issues)
+		}
+	})
+
+	t.Run("valid auth ref not found", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name: "bot",
+				Channels: []ChannelConfig{{
+					Type:      "slack",
+					Token:     "auth:slack:default",
+					AllowFrom: []AllowFromEntry{{From: "*"}},
+				}},
+			}},
+		}
+		issues := Validate(cfg, func(string) (string, error) { return "", os.ErrNotExist })
+		if !hasIssue(issues, "not found in credential store") {
+			t.Fatalf("expected auth ref not-found warning, got: %v", issues)
+		}
+	})
+
+	t.Run("signal phone without + prefix", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name: "bot",
+				Channels: []ChannelConfig{{
+					Type:      "signal",
+					Phone:     "15551234567", // missing +
+					AllowFrom: []AllowFromEntry{{From: "*"}},
+				}},
+			}},
+		}
+		issues := Validate(cfg, nil)
+		if !hasIssue(issues, "E.164") {
+			t.Fatalf("expected E.164 warning, got: %v", issues)
+		}
+	})
+}
+
+func TestValidate_ModelsWithDefaults(t *testing.T) {
+	cfg := &Config{
+		Models: ModelsConfig{
+			Defaults: &ModelDefaults{
+				Model:     "anthropic/claude-sonnet-4-5",
+				Fallbacks: []string{"openai/gpt-4"},
+			},
+		},
+	}
+	// No auth store, so no credential warnings about keys.
+	issues := Validate(cfg, nil)
+	for _, iss := range issues {
+		if iss.Level == LevelError {
+			t.Fatalf("unexpected error in model defaults validation: %+v", iss)
+		}
+	}
+}
+
+func TestValidate_ModelsProviderFoundAuth(t *testing.T) {
+	cfg := &Config{
+		Models: ModelsConfig{
+			Providers: map[string]ProviderConfig{
+				"myprovider": {Auth: "auth:myprovider:default"},
+			},
+		},
+	}
+	issues := Validate(cfg, func(key string) (string, error) {
+		if key == "myprovider:default" {
+			return "tok", nil
+		}
+		return "", os.ErrNotExist
+	})
+	for _, iss := range issues {
+		if strings.Contains(iss.Message, "myprovider") && iss.Level == LevelError {
+			t.Fatalf("unexpected error: %v", iss)
+		}
 	}
 }
 
