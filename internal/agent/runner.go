@@ -134,10 +134,11 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 				emitCanceled()
 				return
 			}
-			// Stub: no LLM provider configured.
+			// No LLM provider configured — surface as an error so the UI shows it visibly.
 			slog.Warn("agent: no provider", "agent", r.agent.Name, "model", r.agent.Model)
-			emit(StreamEvent{Type: StreamEventText, Text: "[no LLM provider configured for " + r.agent.Model + "]"})
-			emit(StreamEvent{Type: StreamEventDone})
+			provErr := fmt.Errorf("no LLM provider configured for %q — check credentials and model settings", r.agent.Model)
+			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "Error: "+provErr.Error(), "")
+			emit(StreamEvent{Type: StreamEventError, Err: provErr})
 			return
 		}
 
@@ -190,6 +191,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 					return
 				}
 				slog.Error("agent: stream error", "agent", r.agent.Name, "err", err)
+				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", err), "")
 				emit(StreamEvent{Type: StreamEventError, Err: err})
 				return
 			}
@@ -218,6 +220,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 						return
 					}
 					usageRec.HasError = true
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", event.Error), "")
 					emit(StreamEvent{Type: StreamEventError, Err: event.Error})
 					return
 				case llm.EventTypeDone:

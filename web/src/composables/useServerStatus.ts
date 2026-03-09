@@ -15,6 +15,7 @@ export function useServerStatus() {
 
 	const status = ref<ConnectionStatus>("connecting");
 	const version = ref<string>("");
+	const goos = ref<string>("");
 
 	let ws: WebSocket | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -45,8 +46,10 @@ export function useServerStatus() {
 				const data = JSON.parse(e.data as string) as {
 					ok?: boolean;
 					version?: string;
+					goos?: string;
 				};
 				if (data.version) version.value = data.version;
+				if (data.goos) goos.value = data.goos;
 				status.value = "connected";
 			} catch {
 				// ignore malformed frames
@@ -90,5 +93,5 @@ export function useServerStatus() {
 	onMounted(() => connect());
 	onUnmounted(() => teardown());
 
-	return { status, version };
+	return { status, version, goos };
 }

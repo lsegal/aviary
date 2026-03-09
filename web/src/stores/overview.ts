@@ -25,17 +25,26 @@ export const useOverviewStore = defineStore("overview", () => {
 		loading.value = true;
 		error.value = null;
 		try {
-			const [agentsRaw, jobsRaw, issuesRaw] = await Promise.all([
+			const [agentsRes, jobsRes, issuesRes] = await Promise.allSettled([
 				callTool("agent_list"),
 				callTool("job_list"),
 				callTool("config_validate"),
 			]);
-			agents.value = (JSON.parse(agentsRaw) as Agent[]) ?? [];
-			jobs.value = (JSON.parse(jobsRaw) as Job[] | null) ?? [];
-			issues.value = (JSON.parse(issuesRaw) as DoctorIssue[]) ?? [];
-			lastChecked.value = new Date();
-		} catch (e) {
-			error.value = e instanceof Error ? e.message : String(e);
+			if (agentsRes.status === "fulfilled") {
+				agents.value = (JSON.parse(agentsRes.value) as Agent[]) ?? [];
+			} else {
+				error.value =
+					agentsRes.reason instanceof Error
+						? agentsRes.reason.message
+						: String(agentsRes.reason);
+			}
+			if (jobsRes.status === "fulfilled") {
+				jobs.value = (JSON.parse(jobsRes.value) as Job[] | null) ?? [];
+			}
+			if (issuesRes.status === "fulfilled") {
+				issues.value = (JSON.parse(issuesRes.value) as DoctorIssue[]) ?? [];
+				lastChecked.value = new Date();
+			}
 		} finally {
 			loading.value = false;
 			fetched.value = true;

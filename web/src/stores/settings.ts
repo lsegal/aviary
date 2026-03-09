@@ -14,13 +14,22 @@ export interface ServerConfig {
 	no_tls: boolean;
 }
 
+export interface AgentChannel {
+	type: string;
+	token?: string;
+	channel?: string;
+	phone?: string;
+	url?: string;
+	allowFrom?: string[];
+}
+
 export interface AgentEntry {
 	name: string;
 	model: string;
 	memory?: string;
 	rules?: string;
 	fallbacks: string[];
-	channels: unknown[];
+	channels: AgentChannel[];
 	tasks: AgentTask[];
 }
 

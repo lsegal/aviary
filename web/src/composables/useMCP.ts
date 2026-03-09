@@ -101,6 +101,10 @@ export function useMCP() {
 					buffer = buffer.slice(idx + 1);
 					processLine(line);
 				}
+				if (finalMessage) {
+					reader.cancel().catch(() => {});
+					break;
+				}
 			}
 
 			buffer += decoder.decode();
@@ -187,10 +191,12 @@ export function useMCP() {
 		if (data.error) throw new Error(data.error.message);
 
 		const content = data.result?.content ?? [];
-		return content
+		const text = content
 			.filter((c) => c.type === "text")
 			.map((c) => c.text ?? "")
 			.join("");
+		if (data.result?.isError) throw new Error(text || "tool call failed");
+		return text;
 	}
 
 	return { callTool };

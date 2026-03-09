@@ -193,7 +193,11 @@ onMounted(() => store.fetchAll());
 
 const dismissed = ref(false);
 const showWizard = computed(
-	() => store.fetched && store.agents.length === 0 && !dismissed.value,
+	() =>
+		store.fetched &&
+		!store.error &&
+		store.agents.length === 0 &&
+		!dismissed.value,
 );
 
 // --- Agents ---

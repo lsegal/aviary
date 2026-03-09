@@ -81,13 +81,16 @@
 								<div
 									:class="item.msg.role === 'user'
 										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
-										: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
+										: item.msg.isError
+											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
+											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
 									<img v-if="item.msg.mediaURL" :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
 									<span v-if="item.msg.text && item.msg.role === 'user'" class="whitespace-pre-wrap">{{ item.msg.text }}</span>
-									<div v-if="item.msg.text && item.msg.role === 'assistant'" class="prose dark:prose-invert max-w-none"
+									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError" class="whitespace-pre-wrap font-mono text-sm">{{ item.msg.text }}</span>
+									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError" class="prose dark:prose-invert max-w-none"
 										v-html="renderMarkdown(item.msg.text)" />
 									<span v-if="item.isLastInGroup && item.msg.timestamp"
-										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
+										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : item.msg.isError ? 'text-xs text-red-400 dark:text-red-500 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
 										{{ formatTime(item.msg.timestamp) }}
 									</span>
 								</div>
@@ -182,6 +185,7 @@ interface Message {
 	mediaURL?: string;
 	toolData?: ToolData;
 	timestamp?: string;
+	isError?: boolean;
 }
 
 type DisplayItem =
@@ -203,6 +207,11 @@ const { streamAgent } = useStream();
 
 function renderMarkdown(text: string): string {
 	return marked.parse(text, { async: false }) as string;
+}
+
+/** Returns true if an assistant message text looks like an error. */
+function isErrorMessage(text: string): boolean {
+	return text.startsWith("Error:") || text.startsWith("[no LLM provider");
 }
 
 /** Parse a "[tool] ..." content string into a Message. */
@@ -268,6 +277,7 @@ const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 const isStreaming = ref(false);
+const hasInlineError = ref(false);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -309,7 +319,7 @@ const currentSessionProcessing = computed(() => {
 });
 
 const onVisible = async () => {
-	if (document.visibilityState === "visible") {
+	if (document.visibilityState === "visible" && !hasInlineError.value) {
 		await loadSessionMessages();
 	}
 };
@@ -358,7 +368,8 @@ function connectSessionWS() {
 				if (
 					data.session_id === selectedSessionId.value &&
 					data.is_processing === false &&
-					!isStreaming.value
+					!isStreaming.value &&
+					!hasInlineError.value
 				) {
 					await loadSessionMessages();
 				}
@@ -369,7 +380,7 @@ function connectSessionWS() {
 			if (data.session_id !== selectedSessionId.value) return;
 			// Skip WS-triggered reloads while streaming — ongoing chunks would be
 			// lost if messages.value is replaced mid-stream.
-			if (!isStreaming.value) {
+			if (!isStreaming.value && !hasInlineError.value) {
 				await loadSessionMessages();
 			}
 		} catch {
@@ -456,6 +467,7 @@ async function loadSessionMessages() {
 					text: m.content,
 					mediaURL: m.media_url,
 					timestamp: m.timestamp,
+					isError: m.role === "assistant" && isErrorMessage(m.content),
 				};
 			});
 		await scrollBottom(true);
@@ -535,6 +547,7 @@ async function send() {
 
 	isStreaming.value = true;
 	let streamError = false;
+	hasInlineError.value = false;
 	try {
 		let assistantIndex = -1;
 		await streamAgent(
@@ -571,9 +584,11 @@ async function send() {
 			return;
 		}
 		streamError = true;
+		hasInlineError.value = true;
 		messages.value.push({
 			role: "assistant",
 			text: `Error: ${msg}`,
+			isError: true,
 		});
 	} finally {
 		isStreaming.value = false;

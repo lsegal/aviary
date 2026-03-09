@@ -43,7 +43,7 @@
             <div class="grid gap-4 lg:grid-cols-3">
               <div>
                 <label class="field-label">Port</label>
-                <input v-model.number="draft.server.port" type="number" min="1" max="65535" class="field-input" />
+                <input v-model.number="draft.server.port" type="number" min="1" max="65535" class="field-input" placeholder="16677" />
               </div>
               <div>
                 <label class="field-label">TLS Cert</label>
@@ -98,7 +98,7 @@
               </div>
               <div>
                 <label class="field-label">CDP port</label>
-                <input v-model.number="draft.browser.cdp_port" type="number" min="1" max="65535" class="field-input" />
+                <input v-model.number="draft.browser.cdp_port" type="number" min="1" max="65535" class="field-input" placeholder="9222" />
               </div>
               <div>
                 <label class="field-label">Concurrency</label>
@@ -163,6 +163,64 @@
             </div>
 
             <div class="flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h4>
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addChannel(i)">+ Add Channel</button>
+            </div>
+
+            <div v-if="!agent.channels?.length" class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              No channels configured for this agent.
+            </div>
+
+            <div v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <div class="grid gap-3 lg:grid-cols-[160px_1fr_auto]">
+                <div>
+                  <label class="field-label">Type</label>
+                  <select v-model="ch.type" class="field-input">
+                    <option value="slack">slack</option>
+                    <option value="discord">discord</option>
+                    <option value="signal">signal</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">Allow From (comma-separated phone numbers or user IDs; * for all)</label>
+                  <input :value="channelAllowFrom(ch)" type="text" class="field-input" placeholder="+15551234567, *" @input="setChannelAllowFrom(ch, $event)" />
+                </div>
+                <div class="flex items-end">
+                  <button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
+                </div>
+              </div>
+
+              <div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
+                <div>
+                  <label class="field-label">App-Level Token (xapp-…)</label>
+                  <input v-model="ch.url" type="text" class="field-input" placeholder="xapp-..." />
+                </div>
+                <div>
+                  <label class="field-label">Bot Token (xoxb-…)</label>
+                  <input v-model="ch.token" type="text" class="field-input" placeholder="xoxb-..." />
+                </div>
+              </div>
+
+              <div v-if="ch.type === 'discord'" class="grid gap-3 lg:grid-cols-1">
+                <div>
+                  <label class="field-label">Bot Token</label>
+                  <input v-model="ch.token" type="text" class="field-input" placeholder="Discord bot token" />
+                </div>
+              </div>
+
+              <div v-if="ch.type === 'signal'" class="grid gap-3 lg:grid-cols-2">
+                <div>
+                  <label class="field-label">Account Phone (E.164)</label>
+                  <input v-model="ch.phone" type="text" class="field-input" placeholder="+15551234567" />
+                </div>
+                <div>
+                  <label class="field-label">signal-cli Daemon Address</label>
+                  <input v-model="ch.url" type="text" class="field-input" placeholder="127.0.0.1:7583" />
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between">
               <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
               <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addTask(i)">+ Add Task</button>
             </div>
@@ -192,6 +250,7 @@
                     <option value="last">last</option>
                     <option value="slack">slack</option>
                     <option value="discord">discord</option>
+                    <option value="signal">signal</option>
                   </select>
                 </div>
                 <div class="flex items-end">
@@ -289,31 +348,83 @@
         </section>
 
         <section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
+          <!-- Provider Authentication -->
           <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Authorize Providers</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Authorize Aviary to call APIs on your behalf. Tokens are stored securely and refreshed automatically. OpenAI completes in one click; Anthropic requires a second step to enter a code.</p>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="loginOpenAI">
-                <svg v-if="credentials.includes('openai:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-                {{ credentials.includes('openai:oauth') ? 'Re-authorize OpenAI' : 'Authorize OpenAI' }}
-              </button>
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="startAnthropic">
-                <svg v-if="credentials.includes('anthropic:oauth')" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-                {{ credentials.includes('anthropic:oauth') ? 'Re-authorize Anthropic…' : 'Authorize Anthropic…' }}
-              </button>
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Provider Authentication</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Configure authentication for LLM providers. OAuth tokens are stored securely and refreshed automatically.</p>
+
+            <!-- Existing provider credentials -->
+            <div v-if="configuredProviders.length" class="mb-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+                    <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Provider</th>
+                    <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Auth Type</th>
+                    <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
+                    <th class="w-36 px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="entry in configuredProviders" :key="entry.key" class="border-b border-gray-100 last:border-0 dark:border-gray-800">
+                    <td class="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{{ entry.providerLabel }}</td>
+                    <td class="px-3 py-2">
+                      <span :class="entry.authType === 'oauth' ? 'inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'">
+                        {{ entry.authType === 'oauth' ? 'OAuth' : 'API Key' }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2">
+                      <span v-if="entry.authType === 'oauth'" class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                        Authorized
+                      </span>
+                      <span v-else class="tracking-widest text-gray-400 dark:text-gray-500">••••••••</span>
+                    </td>
+                    <td class="px-3 py-2 text-right">
+                      <div class="flex items-center justify-end gap-2">
+                        <button v-if="entry.authType === 'oauth'" type="button" class="text-xs text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="oauthBusy" @click="reauthorizeProvider(entry.provider)">Re-authorize</button>
+                        <button type="button" class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400" :title="`Remove ${entry.key}`" @click="deleteProviderCredential(entry.key)">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
+
+            <!-- Add provider credential -->
+            <div v-if="availableProviderOptions.length" class="flex flex-wrap items-center gap-2">
+              <select v-model="providerAddSelection" class="field-input max-w-[220px]">
+                <option value="">Add provider…</option>
+                <option v-for="opt in availableProviderOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</option>
+              </select>
+              <template v-if="providerAddSelection">
+                <template v-if="providerAddSelection.endsWith(':apikey')">
+                  <input v-model="providerApiKeyValue" type="password" class="field-input max-w-[260px]" placeholder="API key…" />
+                  <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="!providerApiKeyValue.trim()" @click="addProviderApiKey">Add</button>
+                </template>
+                <button v-else type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy" @click="addProviderOAuth">
+                  {{ oauthBusy ? 'Authorizing…' : 'Authorize' }}
+                </button>
+              </template>
+            </div>
+            <p v-else-if="!configuredProviders.length" class="text-xs text-gray-400 dark:text-gray-500">No providers configured yet. Use the dropdown above to add one.</p>
+
+            <!-- Anthropic two-step OAuth inline form -->
             <div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Open the link below, sign in, and paste the code shown:</p>
               <a :href="anthropicUrl" target="_blank" rel="noreferrer" class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
               <div class="flex gap-2">
-                <input v-model="anthropicCode" type="text" class="field-input" placeholder="Anthropic code" />
+                <input v-model="anthropicCode" type="text" class="field-input" placeholder="Paste code here…" />
                 <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropic">Complete</button>
               </div>
             </div>
           </div>
 
+          <!-- Extra Secrets -->
           <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">API Keys</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Store API keys and secrets. The name should match a provider alias credential reference (e.g. <code class="rounded bg-gray-100 px-1 font-mono dark:bg-gray-800">auth:openai:default</code>).</p>
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Extra Secrets</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Store arbitrary secrets for use by tools and agents (e.g. a Brave API key or Twilio auth token).</p>
             <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
               <table class="w-full text-xs">
                 <thead>
@@ -326,26 +437,26 @@
                 <tbody>
                   <tr class="border-b border-gray-200 dark:border-gray-700">
                     <td class="px-2 py-1.5">
-                      <input v-model="credentialName" type="text" class="field-input py-1.5 font-mono text-xs" placeholder="auth:openai:default" />
+                      <input v-model="secretName" type="text" class="field-input py-1.5 font-mono text-xs" placeholder="brave_api_key" />
                     </td>
                     <td class="px-2 py-1.5">
-                      <input v-model="credentialValue" type="password" class="field-input py-1.5 text-xs" placeholder="sk-…" />
+                      <input v-model="secretValue" type="password" class="field-input py-1.5 text-xs" placeholder="…" />
                     </td>
                     <td class="px-2 py-1.5">
-                      <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500" @click="setCredential">Add</button>
+                      <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500" @click="addSecret">Add</button>
                     </td>
                   </tr>
-                  <tr v-for="name in credentials.filter(n => !n.endsWith(':oauth'))" :key="name" class="border-b border-gray-100 last:border-0 dark:border-gray-800">
+                  <tr v-for="name in extraSecrets" :key="name" class="border-b border-gray-100 last:border-0 dark:border-gray-800">
                     <td class="px-3 py-2 font-mono text-gray-700 dark:text-gray-300">{{ name }}</td>
                     <td class="px-3 py-2 tracking-widest text-gray-400 dark:text-gray-500">••••••••</td>
                     <td class="px-3 py-2 text-right">
-                      <button type="button" class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400" :title="`Delete ${name}`" @click="credentialName = name; deleteCredential()">
+                      <button type="button" class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400" :title="`Delete ${name}`" @click="deleteSecret(name)">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                       </button>
                     </td>
                   </tr>
-                  <tr v-if="!credentials.filter(n => !n.endsWith(':oauth')).length">
-                    <td colspan="3" class="px-3 py-3 text-center text-gray-400 dark:text-gray-500">No API keys stored yet.</td>
+                  <tr v-if="!extraSecrets.length">
+                    <td colspan="3" class="px-3 py-3 text-center text-gray-400 dark:text-gray-500">No extra secrets stored yet.</td>
                   </tr>
                 </tbody>
               </table>
@@ -386,11 +497,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
 import { useAuthStore } from "../stores/auth";
 import {
+	type AgentChannel,
 	type AgentEntry,
 	type AgentTask,
 	type AppConfig,
@@ -421,8 +534,24 @@ interface JobEntry {
 	created_at: string;
 }
 
+const route = useRoute();
+const router = useRouter();
+
 const tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
-const activeTab = ref<Tab>("general");
+const queryTab = route.query.tab as Tab | undefined;
+const storedTab = localStorage.getItem("settings:activeTab") as Tab | null;
+const activeTab = ref<Tab>(
+	queryTab && tabs.includes(queryTab)
+		? queryTab
+		: storedTab && tabs.includes(storedTab)
+			? storedTab
+			: "general",
+);
+
+watch(activeTab, (tab) => {
+	localStorage.setItem("settings:activeTab", tab);
+	void router.replace({ query: { ...route.query, tab } });
+});
 
 const store = useSettingsStore();
 const { callTool } = useMCP();
@@ -469,19 +598,86 @@ const okMessage = ref("");
 const draft = ref<AppConfig>(emptyConfig());
 
 const fallbacksCsv = ref("");
-const concurrencyInput = ref("auto");
+const concurrencyInput = ref("");
 
 const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
 const sessionLoading = ref(false);
 
 const credentials = ref<string[]>([]);
-const credentialName = ref("auth:openai:default");
-const credentialValue = ref("");
-
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
 const anthropicCode = ref("");
+const providerAddSelection = ref("");
+const providerApiKeyValue = ref("");
+const secretName = ref("");
+const secretValue = ref("");
+
+const KNOWN_PROVIDERS = [
+	{ id: "anthropic", label: "Anthropic" },
+	{ id: "openai", label: "OpenAI" },
+	{ id: "gemini", label: "Gemini" },
+] as const;
+
+const configuredProviders = computed(() => {
+	const entries: Array<{
+		key: string;
+		provider: string;
+		providerLabel: string;
+		authType: "oauth" | "apikey";
+	}> = [];
+	for (const cred of credentials.value) {
+		for (const p of KNOWN_PROVIDERS) {
+			if (cred === `${p.id}:oauth`) {
+				entries.push({
+					key: cred,
+					provider: p.id,
+					providerLabel: p.label,
+					authType: "oauth",
+				});
+			} else if (cred === `${p.id}:default`) {
+				entries.push({
+					key: cred,
+					provider: p.id,
+					providerLabel: p.label,
+					authType: "apikey",
+				});
+			}
+		}
+	}
+	return entries;
+});
+
+const availableProviderOptions = computed(() => {
+	const configured = new Set(configuredProviders.value.map((e) => e.key));
+	const options: Array<{ key: string; label: string; provider: string }> = [];
+	for (const p of KNOWN_PROVIDERS) {
+		if (!configured.has(`${p.id}:oauth`)) {
+			options.push({
+				key: `${p.id}:oauth`,
+				label: `${p.label} (OAuth)`,
+				provider: p.id,
+			});
+		}
+		if (!configured.has(`${p.id}:default`)) {
+			options.push({
+				key: `${p.id}:apikey`,
+				label: `${p.label} (API Key)`,
+				provider: p.id,
+			});
+		}
+	}
+	return options;
+});
+
+const extraSecrets = computed(() => {
+	const providerKeys = new Set<string>();
+	for (const p of KNOWN_PROVIDERS) {
+		providerKeys.add(`${p.id}:oauth`);
+		providerKeys.add(`${p.id}:default`);
+	}
+	return credentials.value.filter((cred) => !providerKeys.has(cred));
+});
 
 const allJobs = ref<JobEntry[]>([]);
 const jobsLoading = ref(false);
@@ -608,11 +804,16 @@ onUnmounted(() => {
 
 function emptyConfig(): AppConfig {
 	return {
-		server: { port: 16677, tls: { cert: "", key: "" } },
+		server: {
+			port: 0,
+			tls: { cert: "", key: "" },
+			external_access: false,
+			no_tls: false,
+		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 9222 },
-		scheduler: { concurrency: "auto" },
+		browser: { binary: "", cdp_port: 0 },
+		scheduler: { concurrency: "" },
 	};
 }
 
@@ -641,7 +842,9 @@ async function loadConfig() {
 			: emptyConfig();
 		draft.value = cfg;
 		fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
-		concurrencyInput.value = String(cfg.scheduler.concurrency ?? "auto");
+		concurrencyInput.value = cfg.scheduler.concurrency
+			? String(cfg.scheduler.concurrency)
+			: "";
 
 		if (!draft.value.agents.length) {
 			await importAgents();
@@ -696,6 +899,26 @@ function removeTask(agentIndex: number, taskIndex: number) {
 	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
+function addChannel(agentIndex: number) {
+	const ch: AgentChannel = { type: "signal" };
+	if (!Array.isArray(draft.value.agents[agentIndex].channels)) {
+		draft.value.agents[agentIndex].channels = [];
+	}
+	draft.value.agents[agentIndex].channels.push(ch);
+}
+
+function removeChannel(agentIndex: number, chIndex: number) {
+	draft.value.agents[agentIndex].channels.splice(chIndex, 1);
+}
+
+function channelAllowFrom(ch: AgentChannel): string {
+	return (ch.allowFrom ?? []).join(", ");
+}
+
+function setChannelAllowFrom(ch: AgentChannel, event: Event) {
+	ch.allowFrom = splitCsv((event.target as HTMLInputElement).value);
+}
+
 function agentFallbacks(agent: AgentEntry): string {
 	return (agent.fallbacks ?? []).join(", ");
 }
@@ -745,11 +968,11 @@ async function saveAll() {
 		normalized.models.defaults.fallbacks = splitCsv(fallbacksCsv.value);
 
 		const conc = concurrencyInput.value.trim();
-		if (conc.toLowerCase() === "auto") {
-			normalized.scheduler.concurrency = "auto";
+		if (!conc || conc.toLowerCase() === "auto") {
+			normalized.scheduler.concurrency = ""; // backend normalize() strips empty/"auto"
 		} else {
 			const n = Number.parseInt(conc, 10);
-			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "auto" : n;
+			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "" : n;
 		}
 
 		// Normalize agent/task values.
@@ -760,6 +983,15 @@ async function saveAll() {
 			memory: (agent.memory ?? "").trim(),
 			rules: (agent.rules ?? "").trim() || undefined,
 			fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+			channels: (agent.channels ?? []).map((ch) => ({
+				...ch,
+				type: (ch.type ?? "").trim(),
+				token: (ch.token ?? "").trim() || undefined,
+				channel: (ch.channel ?? "").trim() || undefined,
+				phone: (ch.phone ?? "").trim() || undefined,
+				url: (ch.url ?? "").trim() || undefined,
+				allowFrom: (ch.allowFrom ?? []).map((v) => v.trim()).filter(Boolean),
+			})),
 			tasks: (agent.tasks ?? []).map((task) => ({
 				...task,
 				name: (task.name ?? "").trim(),
@@ -832,46 +1064,79 @@ async function refreshCredentials() {
 	}
 }
 
-async function setCredential() {
-	if (!credentialName.value.trim()) return;
+async function addProviderApiKey() {
+	const provider = providerAddSelection.value.replace(/:apikey$/, "");
+	const key = `${provider}:default`;
+	const val = providerApiKeyValue.value.trim();
+	if (!provider || !val) return;
 	errorMessage.value = "";
-	okMessage.value = "";
 	try {
-		await callTool("auth_set", {
-			name: credentialName.value.trim(),
-			value: credentialValue.value,
-		});
-		credentialValue.value = "";
+		await callTool("auth_set", { name: key, value: val });
+		providerApiKeyValue.value = "";
+		providerAddSelection.value = "";
 		await refreshCredentials();
-		okMessage.value = `Credential stored: ${credentialName.value.trim()}`;
+		okMessage.value = `${provider} API key stored.`;
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	}
 }
 
-async function checkCredential() {
-	if (!credentialName.value.trim()) return;
+async function addProviderOAuth() {
+	if (!providerAddSelection.value) return;
+	const provider = providerAddSelection.value.replace(/:oauth$/, "");
+	if (provider === "anthropic") {
+		await startAnthropic();
+	} else if (provider === "openai") {
+		await loginOpenAI();
+		providerAddSelection.value = "";
+	} else if (provider === "gemini") {
+		await loginGemini();
+		providerAddSelection.value = "";
+	}
+}
+
+async function reauthorizeProvider(provider: string) {
+	if (provider === "anthropic") {
+		await startAnthropic();
+	} else if (provider === "openai") {
+		await loginOpenAI();
+	} else if (provider === "gemini") {
+		await loginGemini();
+	}
+}
+
+async function deleteProviderCredential(key: string) {
 	errorMessage.value = "";
-	okMessage.value = "";
 	try {
-		const raw = await callTool("auth_get", {
-			name: credentialName.value.trim(),
-		});
-		const parsed = JSON.parse(raw) as { preview?: string };
-		okMessage.value = `Credential is set: ${parsed.preview ?? "(masked)"}`;
+		await callTool("auth_delete", { name: key });
+		await refreshCredentials();
+		okMessage.value = "Provider credential removed.";
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	}
 }
 
-async function deleteCredential() {
-	if (!credentialName.value.trim()) return;
+async function addSecret() {
+	const name = secretName.value.trim().replace(/^auth:/, "");
+	if (!name) return;
 	errorMessage.value = "";
-	okMessage.value = "";
 	try {
-		await callTool("auth_delete", { name: credentialName.value.trim() });
+		await callTool("auth_set", { name, value: secretValue.value });
+		secretName.value = "";
+		secretValue.value = "";
 		await refreshCredentials();
-		okMessage.value = `Credential deleted: ${credentialName.value.trim()}`;
+		okMessage.value = `Secret stored: ${name}`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function deleteSecret(name: string) {
+	errorMessage.value = "";
+	try {
+		await callTool("auth_delete", { name });
+		await refreshCredentials();
+		okMessage.value = `Secret deleted: ${name}`;
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	}
@@ -884,6 +1149,21 @@ async function loginOpenAI() {
 	try {
 		const text = await callTool("auth_login_openai");
 		okMessage.value = text || "OpenAI OAuth completed.";
+		await refreshCredentials();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		oauthBusy.value = false;
+	}
+}
+
+async function loginGemini() {
+	oauthBusy.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const text = await callTool("auth_login_gemini");
+		okMessage.value = text || "Gemini OAuth completed.";
 		await refreshCredentials();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
@@ -919,6 +1199,8 @@ async function completeAnthropic() {
 			code: anthropicCode.value.trim(),
 		});
 		anthropicCode.value = "";
+		anthropicUrl.value = "";
+		providerAddSelection.value = "";
 		okMessage.value = text || "Anthropic OAuth completed.";
 		await refreshCredentials();
 	} catch (e) {
