@@ -106,7 +106,7 @@ test("health card is yellow when warnings only", async ({ page }) => {
 		},
 	];
 	await mockMCP(page, {
-		agent_list: [],
+		agent_list: [{ name: "bot", state: "idle" }],
 		job_list: [],
 		config_validate: issues,
 	});
@@ -125,7 +125,7 @@ test("re-check button refreshes doctor status", async ({ page }) => {
 		},
 	];
 	await mockMCP(page, {
-		agent_list: [],
+		agent_list: [{ name: "bot", state: "idle" }],
 		job_list: [],
 		config_validate: issues,
 	});
@@ -134,14 +134,22 @@ test("re-check button refreshes doctor status", async ({ page }) => {
 
 	// Fix the issue, re-intercept with clean result.
 	await page.unroute("/mcp");
-	await mockMCP(page, { agent_list: [], job_list: [], config_validate: [] });
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
 	await page.getByRole("button", { name: "Re-check" }).click();
 
 	await expect(page.getByText("No issues found")).toBeVisible();
 });
 
 test("stat cards link to their detail views", async ({ page }) => {
-	await mockMCP(page, { agent_list: [], job_list: [], config_validate: [] });
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
 	await page.goto("/overview");
 
 	await page.getByText("Agents").first().click();

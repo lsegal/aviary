@@ -88,22 +88,11 @@
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
-              <input v-model="modal.model" type="text" list="model-suggestions"
-                placeholder="anthropic/claude-sonnet-4-5"
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-              <datalist id="model-suggestions">
-                <option value="anthropic/claude-sonnet-4-5" />
-                <option value="anthropic/claude-opus-4-5" />
-                <option value="openai/gpt-4o" />
-                <option value="openai/gpt-4o-mini" />
-                <option value="gemini/gemini-pro" />
-              </datalist>
+              <ModelSelector v-model="modal.model" placeholder="Select a model…" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Fallbacks</label>
-              <input v-model="modal.fallbacksRaw" type="text" placeholder="openai/gpt-4o, gemini/gemini-pro"
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-              <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Comma-separated list of fallback models</p>
+              <ModelSelector v-model="modal.fallbacks" multiple placeholder="Add fallbacks…" />
             </div>
           </div>
           <p v-if="modalError" class="mt-3 text-xs text-red-500 dark:text-red-400">{{ modalError }}</p>
@@ -124,6 +113,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import ModelSelector from "../components/ModelSelector.vue";
+import { SUPPORTED_MODELS } from "../constants/models";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";
 
@@ -137,7 +128,7 @@ interface ModalState {
 	mode: "add" | "edit";
 	name: string;
 	model: string;
-	fallbacksRaw: string; // comma-separated
+	fallbacks: string[];
 }
 const modal = ref<ModalState | null>(null);
 
@@ -169,7 +160,7 @@ function stateBadge(state: string) {
 }
 
 function openAdd() {
-	modal.value = { mode: "add", name: "", model: "", fallbacksRaw: "" };
+	modal.value = { mode: "add", name: "", model: "", fallbacks: [] };
 	modalError.value = "";
 }
 
@@ -178,7 +169,7 @@ function openEdit(agent: Agent) {
 		mode: "edit",
 		name: agent.name,
 		model: agent.model ?? "",
-		fallbacksRaw: (agent.fallbacks ?? []).join(", "),
+		fallbacks: [...(agent.fallbacks ?? [])],
 	};
 	modalError.value = "";
 }
@@ -193,11 +184,8 @@ async function saveModal() {
 	saving.value = true;
 	modalError.value = "";
 	try {
-		const { mode, name, model, fallbacksRaw } = modal.value;
-		const fallbacks = fallbacksRaw
-			.split(",")
-			.map((s) => s.trim())
-			.filter(Boolean);
+		const { mode, name, model, fallbacks: rawFallbacks } = modal.value;
+		const fallbacks = rawFallbacks.map((s) => s.trim()).filter(Boolean);
 		if (mode === "add") {
 			await store.addAgent({ name, model, fallbacks });
 		} else {

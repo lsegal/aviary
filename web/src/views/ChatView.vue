@@ -91,7 +91,7 @@
 										v-html="renderMarkdown(item.msg.text)" />
 									<span v-if="item.isLastInGroup && item.msg.timestamp"
 										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : item.msg.isError ? 'text-xs text-red-400 dark:text-red-500 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
-										{{ formatTime(item.msg.timestamp) }}
+										{{ formatTime(item.msg.timestamp) }}{{ item.msg.model ? ' | ' + item.msg.model : '' }}
 									</span>
 								</div>
 							</div>
@@ -185,6 +185,7 @@ interface Message {
 	mediaURL?: string;
 	toolData?: ToolData;
 	timestamp?: string;
+	model?: string;
 	isError?: boolean;
 }
 
@@ -198,6 +199,7 @@ interface PersistedMessage {
 	role: "user" | "assistant" | "system";
 	content: string;
 	media_url?: string;
+	model?: string;
 	timestamp?: string;
 }
 
@@ -467,6 +469,7 @@ async function loadSessionMessages() {
 					text: m.content,
 					mediaURL: m.media_url,
 					timestamp: m.timestamp,
+					model: m.model,
 					isError: m.role === "assistant" && isErrorMessage(m.content),
 				};
 			});

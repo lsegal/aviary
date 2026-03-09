@@ -99,9 +99,9 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 		page.getByRole("heading", { name: "Credentials", exact: true }),
 	).toBeVisible();
 	await expect(
-		page.locator('input[placeholder="auth:openai:default"]').first(),
-	).toHaveValue(/auth:.+/);
+		page.getByRole("heading", { name: "Extra Secrets", exact: true }),
+	).toBeVisible();
 	await expect(
-		page.getByRole("button", { name: "Refresh list" }),
+		page.locator('input[placeholder="brave_api_key"]').first(),
 	).toBeVisible();
 });

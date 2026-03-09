@@ -4,6 +4,7 @@ import { useAuthStore } from "../stores/auth";
 export interface MCPResult {
 	content?: Array<{ type: string; text?: string }>;
 	isError?: boolean;
+	[key: string]: unknown;
 }
 
 type JsonRpcResponse = {
@@ -16,6 +17,11 @@ type JsonRpcResponse = {
 
 interface CallToolOptions {
 	onProgress?: (chunk: string) => void;
+}
+
+export interface MCPToolInfo {
+	name: string;
+	description?: string;
 }
 
 // Module-level session state — one session shared across all useMCP() calls.
@@ -199,5 +205,19 @@ export function useMCP() {
 		return text;
 	}
 
-	return { callTool };
+	async function listTools(): Promise<MCPToolInfo[]> {
+		await ensureInitialized();
+		const res = await post({
+			jsonrpc: "2.0",
+			id: Date.now(),
+			method: "tools/list",
+			params: {},
+		});
+		if (!res.ok) throw new Error(`MCP error: ${res.status} ${res.statusText}`);
+		const data = await readResponse(res);
+		if (data.error) throw new Error(data.error.message);
+		return (data.result?.tools as MCPToolInfo[] | undefined) ?? [];
+	}
+
+	return { callTool, listTools };
 }

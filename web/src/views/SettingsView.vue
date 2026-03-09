@@ -80,11 +80,11 @@
             <div class="grid gap-4 lg:grid-cols-2">
               <div>
                 <label class="field-label">Default model</label>
-                <input v-model="draft.models.defaults.model" type="text" class="field-input" placeholder="anthropic/claude-sonnet-4-5" />
+                <ModelSelector v-model="draft.models.defaults.model" placeholder="Select a model…" />
               </div>
               <div>
-                <label class="field-label">Default fallbacks (comma-separated)</label>
-                <input v-model="fallbacksCsv" type="text" class="field-input" placeholder="openai/gpt-4o-mini, gemini/gemini-pro" />
+                <label class="field-label">Default fallbacks</label>
+                <ModelSelector v-model="draft.models.defaults.fallbacks" multiple placeholder="Add fallbacks…" />
               </div>
             </div>
           </div>
@@ -122,20 +122,20 @@
           </div>
 
           <div v-for="(agent, i) in draft.agents" :key="`agent-${i}`" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
+            <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
               <div>
                 <label class="field-label">Name</label>
                 <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" />
               </div>
               <div>
                 <label class="field-label">Model</label>
-                <input v-model="agent.model" type="text" class="field-input" placeholder="anthropic/claude-sonnet-4-5" />
+                <ModelSelector v-model="agent.model" placeholder="Select a model…" />
               </div>
               <div>
-                <label class="field-label">Fallbacks (comma-separated)</label>
-                <input :value="agentFallbacks(agent)" type="text" class="field-input" placeholder="openai/gpt-4o-mini" @input="setAgentFallbacks(agent, $event)" />
+                <label class="field-label">Fallbacks</label>
+                <ModelSelector v-model="agent.fallbacks" multiple placeholder="Add fallbacks…" />
               </div>
-              <div class="flex items-end">
+              <div class="flex items-end pb-1.5">
                 <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
               </div>
             </div>
@@ -162,6 +162,64 @@
               </div>
             </div>
 
+            <!-- Permissions -->
+            <div>
+              <div class="flex items-center gap-3">
+                <label class="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    :checked="hasToolRestriction(agent)"
+                    class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                    @change="setToolRestriction(agent, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
+                </label>
+                <span class="text-xs text-gray-400 dark:text-gray-500">
+                  When checked, only the selected tools are visible to this agent.
+                </span>
+              </div>
+
+              <div v-if="hasToolRestriction(agent) && toolGroupEntries.length" class="mt-3 space-y-2">
+                <div
+                  v-for="[cat, catTools] in toolGroupEntries"
+                  :key="cat"
+                  class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                >
+                  <label class="mb-2 flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      :checked="isCategoryFullyEnabled(agent, cat)"
+                      :indeterminate="isCategoryPartiallyEnabled(agent, cat)"
+                      class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                      @change="toggleCategory(agent, cat, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {{ toolCategoryLabel(cat) }}
+                    </span>
+                  </label>
+                  <div class="flex flex-wrap gap-x-5 gap-y-1.5 pl-6">
+                    <label
+                      v-for="tool in catTools"
+                      :key="tool.name"
+                      class="flex cursor-pointer items-center gap-1.5"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="isToolEnabled(agent, tool.name)"
+                        class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                        @change="toggleTool(agent, tool.name, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ tool.name }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <p v-if="hasToolRestriction(agent) && !toolGroupEntries.length" class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                No tools found. The server may not be reachable.
+              </p>
+            </div>
+
             <div class="flex items-center justify-between">
               <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h4>
               <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addChannel(i)">+ Add Channel</button>
@@ -181,12 +239,95 @@
                     <option value="signal">signal</option>
                   </select>
                 </div>
-                <div>
-                  <label class="field-label">Allow From (comma-separated phone numbers or user IDs; * for all)</label>
-                  <input :value="channelAllowFrom(ch)" type="text" class="field-input" placeholder="+15551234567, *" @input="setChannelAllowFrom(ch, $event)" />
-                </div>
                 <div class="flex items-end">
                   <button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
+                </div>
+              </div>
+
+              <!-- Allow From entries -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="field-label">Allow From</span>
+                  <button type="button" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addAllowFrom(i, k)">+ Add Entry</button>
+                </div>
+                <div v-if="!ch.allowFrom?.length" class="rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  No entries — all messages will be rejected.
+                </div>
+                <div v-for="(entry, ei) in ch.allowFrom" :key="`af-${i}-${k}-${ei}`" class="space-y-2 rounded border border-gray-100 p-3 dark:border-gray-800">
+                  <div class="grid gap-2 lg:grid-cols-[1fr_auto]">
+                    <div>
+                      <label class="field-label">From (*, user ID, phone, group:*, group:&lt;id&gt; — comma-separated)</label>
+                      <input v-model="entry.from" type="text" class="field-input" placeholder="*, group:*, +15551234567" />
+                    </div>
+                    <div class="flex items-end">
+                      <button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
+                    </div>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-2">
+                    <div>
+                      <label class="field-label">Mention Prefixes — group chats only (comma-separated glob patterns)</label>
+                      <input :value="entryMentionPrefixes(entry)" type="text" class="field-input" placeholder="@bot*, !help" @input="setEntryMentionPrefixes(entry, $event)" />
+                    </div>
+                    <div class="flex items-end pb-1">
+                      <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                        Respond to @mentions (group chats only)
+                      </label>
+                    </div>
+                  </div>
+                  <!-- Restrict Tools -->
+                  <div>
+                    <div class="flex items-center gap-3">
+                      <label class="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          :checked="hasEntryToolRestriction(entry)"
+                          class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                          @change="setEntryToolRestriction(entry, ($event.target as HTMLInputElement).checked)"
+                        />
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
+                      </label>
+                      <span class="text-xs text-gray-400 dark:text-gray-500">When checked, only the selected tools are available for this entry (overrides agent defaults).</span>
+                    </div>
+                    <div v-if="hasEntryToolRestriction(entry) && toolGroupEntries.length" class="mt-3 space-y-2">
+                      <div
+                        v-for="[cat, catTools] in toolGroupEntries"
+                        :key="cat"
+                        class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                      >
+                        <label class="mb-2 flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            :checked="isEntryCategoryFullyEnabled(entry, cat)"
+                            :indeterminate="isEntryCategoryPartiallyEnabled(entry, cat)"
+                            class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                            @change="toggleEntryCategory(entry, cat, ($event.target as HTMLInputElement).checked)"
+                          />
+                          <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {{ toolCategoryLabel(cat) }}
+                          </span>
+                        </label>
+                        <div class="flex flex-wrap gap-x-5 gap-y-1.5 pl-6">
+                          <label
+                            v-for="tool in catTools"
+                            :key="tool.name"
+                            class="flex cursor-pointer items-center gap-1.5"
+                          >
+                            <input
+                              type="checkbox"
+                              :checked="isEntryToolEnabled(entry, tool.name)"
+                              class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                              @change="toggleEntryTool(entry, tool.name, ($event.target as HTMLInputElement).checked)"
+                            />
+                            <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ tool.name }}</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <p v-if="hasEntryToolRestriction(entry) && !toolGroupEntries.length" class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                      No tools found. The server may not be reachable.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -350,7 +491,7 @@
         <section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
           <!-- Provider Authentication -->
           <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Provider Authentication</h3>
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials</h3>
             <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Configure authentication for LLM providers. OAuth tokens are stored securely and refreshed automatically.</p>
 
             <!-- Existing provider credentials -->
@@ -500,12 +641,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import { useMCP } from "../composables/useMCP";
+import ModelSelector from "../components/ModelSelector.vue";
+import { type MCPToolInfo, useMCP } from "../composables/useMCP";
+import { SUPPORTED_MODELS } from "../constants/models";
 import { useAuthStore } from "../stores/auth";
 import {
 	type AgentChannel,
 	type AgentEntry,
 	type AgentTask,
+	type AllowFromEntry,
 	type AppConfig,
 	useSettingsStore,
 } from "../stores/settings";
@@ -554,7 +698,7 @@ watch(activeTab, (tab) => {
 });
 
 const store = useSettingsStore();
-const { callTool } = useMCP();
+const { callTool, listTools } = useMCP();
 const authStore = useAuthStore();
 
 let settingsWs: WebSocket | null = null;
@@ -597,7 +741,6 @@ const okMessage = ref("");
 
 const draft = ref<AppConfig>(emptyConfig());
 
-const fallbacksCsv = ref("");
 const concurrencyInput = ref("");
 
 const sessionAgent = ref("");
@@ -616,7 +759,7 @@ const secretValue = ref("");
 const KNOWN_PROVIDERS = [
 	{ id: "anthropic", label: "Anthropic" },
 	{ id: "openai", label: "OpenAI" },
-	{ id: "gemini", label: "Gemini" },
+	{ id: "google", label: "Google" },
 ] as const;
 
 const configuredProviders = computed(() => {
@@ -628,14 +771,15 @@ const configuredProviders = computed(() => {
 	}> = [];
 	for (const cred of credentials.value) {
 		for (const p of KNOWN_PROVIDERS) {
-			if (cred === `${p.id}:oauth`) {
+			const authId = p.id === "google" ? "gemini" : p.id;
+			if (cred === `${authId}:oauth`) {
 				entries.push({
 					key: cred,
 					provider: p.id,
 					providerLabel: p.label,
 					authType: "oauth",
 				});
-			} else if (cred === `${p.id}:default`) {
+			} else if (cred === `${authId}:default`) {
 				entries.push({
 					key: cred,
 					provider: p.id,
@@ -652,16 +796,17 @@ const availableProviderOptions = computed(() => {
 	const configured = new Set(configuredProviders.value.map((e) => e.key));
 	const options: Array<{ key: string; label: string; provider: string }> = [];
 	for (const p of KNOWN_PROVIDERS) {
-		if (!configured.has(`${p.id}:oauth`)) {
+		const authId = p.id === "google" ? "gemini" : p.id;
+		if (!configured.has(`${authId}:oauth`)) {
 			options.push({
-				key: `${p.id}:oauth`,
+				key: `${authId}:oauth`,
 				label: `${p.label} (OAuth)`,
 				provider: p.id,
 			});
 		}
-		if (!configured.has(`${p.id}:default`)) {
+		if (!configured.has(`${authId}:default`)) {
 			options.push({
-				key: `${p.id}:apikey`,
+				key: `${authId}:apikey`,
 				label: `${p.label} (API Key)`,
 				provider: p.id,
 			});
@@ -673,8 +818,9 @@ const availableProviderOptions = computed(() => {
 const extraSecrets = computed(() => {
 	const providerKeys = new Set<string>();
 	for (const p of KNOWN_PROVIDERS) {
-		providerKeys.add(`${p.id}:oauth`);
-		providerKeys.add(`${p.id}:default`);
+		const authId = p.id === "google" ? "gemini" : p.id;
+		providerKeys.add(`${authId}:oauth`);
+		providerKeys.add(`${authId}:default`);
 	}
 	return credentials.value.filter((cred) => !providerKeys.has(cred));
 });
@@ -687,6 +833,46 @@ const notesContent = ref("");
 const memoryLoading = ref(false);
 const memoryClearing = ref(false);
 const notesSaving = ref(false);
+
+const availableTools = ref<MCPToolInfo[]>([]);
+
+function toolCategory(name: string): string {
+	if (
+		name === "ping" ||
+		name.startsWith("server_") ||
+		name.startsWith("config_")
+	)
+		return "server";
+	if (name.startsWith("web_")) return "search";
+	return name.split("_")[0] ?? name;
+}
+
+function toolCategoryLabel(cat: string): string {
+	const labels: Record<string, string> = {
+		agent: "Agent",
+		session: "Sessions",
+		task: "Tasks",
+		job: "Jobs",
+		browser: "Browser",
+		search: "Search",
+		memory: "Memory",
+		auth: "Auth",
+		server: "Server",
+		usage: "Usage",
+	};
+	return labels[cat] ?? cat.charAt(0).toUpperCase() + cat.slice(1);
+}
+
+const toolGroupEntries = computed((): [string, MCPToolInfo[]][] => {
+	const groups = new Map<string, MCPToolInfo[]>();
+	for (const tool of availableTools.value) {
+		const cat = toolCategory(tool.name);
+		const list = groups.get(cat) ?? [];
+		list.push(tool);
+		groups.set(cat, list);
+	}
+	return [...groups.entries()];
+});
 const memoryErrorMessage = ref("");
 
 watch(memoryAgent, (agent) => {
@@ -841,7 +1027,6 @@ async function loadConfig() {
 			? (JSON.parse(JSON.stringify(store.config)) as AppConfig)
 			: emptyConfig();
 		draft.value = cfg;
-		fallbacksCsv.value = (cfg.models.defaults.fallbacks ?? []).join(", ");
 		concurrencyInput.value = cfg.scheduler.concurrency
 			? String(cfg.scheduler.concurrency)
 			: "";
@@ -855,6 +1040,11 @@ async function loadConfig() {
 		}
 		if (!memoryAgent.value && draft.value.agents.length) {
 			memoryAgent.value = draft.value.agents[0].name;
+		}
+
+		// Fetch the available tool list once so the permissions UI can render.
+		if (!availableTools.value.length) {
+			availableTools.value = await listTools().catch(() => []);
 		}
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
@@ -911,28 +1101,156 @@ function removeChannel(agentIndex: number, chIndex: number) {
 	draft.value.agents[agentIndex].channels.splice(chIndex, 1);
 }
 
-function channelAllowFrom(ch: AgentChannel): string {
-	return (ch.allowFrom ?? []).join(", ");
+function addAllowFrom(agentIndex: number, chIndex: number) {
+	const ch = draft.value.agents[agentIndex].channels[chIndex];
+	if (!Array.isArray(ch.allowFrom)) {
+		ch.allowFrom = [];
+	}
+	ch.allowFrom.push({ from: "", respondToMentions: true });
 }
 
-function setChannelAllowFrom(ch: AgentChannel, event: Event) {
-	ch.allowFrom = splitCsv((event.target as HTMLInputElement).value);
+function removeAllowFrom(
+	agentIndex: number,
+	chIndex: number,
+	entryIndex: number,
+) {
+	draft.value.agents[agentIndex].channels[chIndex].allowFrom?.splice(
+		entryIndex,
+		1,
+	);
 }
 
-function agentFallbacks(agent: AgentEntry): string {
-	return (agent.fallbacks ?? []).join(", ");
+function entryMentionPrefixes(entry: AllowFromEntry): string {
+	return (entry.mentionPrefixes ?? []).join(", ");
 }
 
-function setAgentFallbacks(agent: AgentEntry, event: Event) {
-	const value = (event.target as HTMLInputElement).value;
-	agent.fallbacks = splitCsv(value);
-}
-
-function splitCsv(value: string): string[] {
-	return value
+function setEntryMentionPrefixes(entry: AllowFromEntry, event: Event) {
+	entry.mentionPrefixes = (event.target as HTMLInputElement).value
 		.split(",")
 		.map((v) => v.trim())
 		.filter(Boolean);
+}
+
+function hasEntryToolRestriction(entry: AllowFromEntry): boolean {
+	return (entry.restrictTools?.length ?? 0) > 0;
+}
+
+function setEntryToolRestriction(entry: AllowFromEntry, restricted: boolean) {
+	if (restricted) {
+		entry.restrictTools = availableTools.value.map((t) => t.name);
+	} else {
+		entry.restrictTools = undefined;
+	}
+}
+
+function isEntryToolEnabled(entry: AllowFromEntry, toolName: string): boolean {
+	if (!hasEntryToolRestriction(entry)) return true;
+	return entry.restrictTools?.includes(toolName) ?? false;
+}
+
+function toggleEntryTool(
+	entry: AllowFromEntry,
+	toolName: string,
+	enabled: boolean,
+) {
+	if (!entry.restrictTools) entry.restrictTools = [];
+	const idx = entry.restrictTools.indexOf(toolName);
+	if (enabled && idx === -1) {
+		entry.restrictTools.push(toolName);
+	} else if (!enabled && idx !== -1) {
+		entry.restrictTools.splice(idx, 1);
+	}
+}
+
+function isEntryCategoryFullyEnabled(
+	entry: AllowFromEntry,
+	cat: string,
+): boolean {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	return catTools.every((t) => isEntryToolEnabled(entry, t.name));
+}
+
+function isEntryCategoryPartiallyEnabled(
+	entry: AllowFromEntry,
+	cat: string,
+): boolean {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	const enabledCount = catTools.filter((t) =>
+		isEntryToolEnabled(entry, t.name),
+	).length;
+	return enabledCount > 0 && enabledCount < catTools.length;
+}
+
+function toggleEntryCategory(
+	entry: AllowFromEntry,
+	cat: string,
+	enabled: boolean,
+) {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	for (const t of catTools) {
+		toggleEntryTool(entry, t.name, enabled);
+	}
+}
+
+function hasToolRestriction(agent: AgentEntry): boolean {
+	return (agent.permissions?.tools?.length ?? 0) > 0;
+}
+
+function setToolRestriction(agent: AgentEntry, restricted: boolean) {
+	if (restricted) {
+		// Start with all tools selected so nothing breaks immediately.
+		agent.permissions = { tools: availableTools.value.map((t) => t.name) };
+	} else {
+		agent.permissions = undefined;
+	}
+}
+
+function isToolEnabled(agent: AgentEntry, toolName: string): boolean {
+	if (!hasToolRestriction(agent)) return true;
+	return agent.permissions?.tools?.includes(toolName) ?? false;
+}
+
+function toggleTool(agent: AgentEntry, toolName: string, enabled: boolean) {
+	if (!agent.permissions) agent.permissions = { tools: [] };
+	if (!agent.permissions.tools) agent.permissions.tools = [];
+	const idx = agent.permissions.tools.indexOf(toolName);
+	if (enabled && idx === -1) {
+		agent.permissions.tools.push(toolName);
+	} else if (!enabled && idx !== -1) {
+		agent.permissions.tools.splice(idx, 1);
+	}
+}
+
+function isCategoryFullyEnabled(agent: AgentEntry, cat: string): boolean {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	return catTools.every((t) => isToolEnabled(agent, t.name));
+}
+
+function isCategoryPartiallyEnabled(agent: AgentEntry, cat: string): boolean {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	const enabledCount = catTools.filter((t) =>
+		isToolEnabled(agent, t.name),
+	).length;
+	return enabledCount > 0 && enabledCount < catTools.length;
+}
+
+function toggleCategory(agent: AgentEntry, cat: string, enabled: boolean) {
+	const catTools = availableTools.value.filter(
+		(t) => toolCategory(t.name) === cat,
+	);
+	for (const t of catTools) {
+		toggleTool(agent, t.name, enabled);
+	}
 }
 
 async function importAgents() {
@@ -965,7 +1283,6 @@ async function saveAll() {
 	okMessage.value = "";
 	try {
 		const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
-		normalized.models.defaults.fallbacks = splitCsv(fallbacksCsv.value);
 
 		const conc = concurrencyInput.value.trim();
 		if (!conc || conc.toLowerCase() === "auto") {
@@ -990,7 +1307,18 @@ async function saveAll() {
 				channel: (ch.channel ?? "").trim() || undefined,
 				phone: (ch.phone ?? "").trim() || undefined,
 				url: (ch.url ?? "").trim() || undefined,
-				allowFrom: (ch.allowFrom ?? []).map((v) => v.trim()).filter(Boolean),
+				allowFrom: (ch.allowFrom ?? [])
+					.map((entry) => ({
+						...entry,
+						from: (entry.from ?? "").trim(),
+						mentionPrefixes: (entry.mentionPrefixes ?? [])
+							.map((v) => v.trim())
+							.filter(Boolean),
+						restrictTools: (entry.restrictTools ?? [])
+							.map((v) => v.trim())
+							.filter(Boolean),
+					}))
+					.filter((entry) => entry.from),
 			})),
 			tasks: (agent.tasks ?? []).map((task) => ({
 				...task,
@@ -1002,6 +1330,10 @@ async function saveAll() {
 				channel: (task.channel ?? "").trim(),
 				run_once: Boolean(task.run_once),
 			})),
+			permissions:
+				(agent.permissions?.tools?.length ?? 0) > 0
+					? { tools: (agent.permissions?.tools ?? []).filter(Boolean) }
+					: undefined,
 		}));
 
 		await store.saveConfig(normalized);
@@ -1089,7 +1421,7 @@ async function addProviderOAuth() {
 	} else if (provider === "openai") {
 		await loginOpenAI();
 		providerAddSelection.value = "";
-	} else if (provider === "gemini") {
+	} else if (provider === "google") {
 		await loginGemini();
 		providerAddSelection.value = "";
 	}
@@ -1100,7 +1432,7 @@ async function reauthorizeProvider(provider: string) {
 		await startAnthropic();
 	} else if (provider === "openai") {
 		await loginOpenAI();
-	} else if (provider === "gemini") {
+	} else if (provider === "google") {
 		await loginGemini();
 	}
 }

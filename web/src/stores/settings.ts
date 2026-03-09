@@ -14,13 +14,24 @@ export interface ServerConfig {
 	no_tls: boolean;
 }
 
+export interface AllowFromEntry {
+	from: string;
+	mentionPrefixes?: string[];
+	respondToMentions?: boolean;
+	restrictTools?: string[];
+}
+
 export interface AgentChannel {
 	type: string;
 	token?: string;
 	channel?: string;
 	phone?: string;
 	url?: string;
-	allowFrom?: string[];
+	allowFrom?: AllowFromEntry[];
+}
+
+export interface AgentPermissions {
+	tools?: string[];
 }
 
 export interface AgentEntry {
@@ -29,6 +40,7 @@ export interface AgentEntry {
 	memory?: string;
 	rules?: string;
 	fallbacks: string[];
+	permissions?: AgentPermissions;
 	channels: AgentChannel[];
 	tasks: AgentTask[];
 }
@@ -110,7 +122,17 @@ export const useSettingsStore = defineStore("settings", () => {
 					...parsed.server,
 					tls: { ...base.server.tls, ...(parsed.server?.tls ?? {}) },
 				},
-				agents: parsed.agents ?? [],
+				agents: (parsed.agents ?? []).map((agent) => ({
+					...agent,
+					channels: (agent.channels ?? []).map((ch) => ({
+						...ch,
+						allowFrom: (ch.allowFrom ?? []).map((entry) => ({
+							...entry,
+							// Default respondToMentions to true when absent (omitempty hides false).
+							respondToMentions: entry.respondToMentions !== false,
+						})),
+					})),
+				})),
 				models: {
 					providers: parsed.models?.providers ?? {},
 					defaults: { ...base.models.defaults, ...parsed.models?.defaults },
