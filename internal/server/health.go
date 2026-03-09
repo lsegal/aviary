@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 type healthPayload struct {
 	OK      bool   `json:"ok"`
 	Version string `json:"version"`
+	GOOS    string `json:"goos"`
 }
 
 type wsEvent struct {
@@ -24,6 +26,7 @@ type wsEvent struct {
 	IsProcessing *bool  `json:"is_processing,omitempty"`
 	OK           bool   `json:"ok,omitempty"`
 	Version      string `json:"version,omitempty"`
+	GOOS         string `json:"goos,omitempty"`
 }
 
 var wsClients = struct {
@@ -69,7 +72,7 @@ var wsUpgrader = websocket.Upgrader{
 // Public — no authentication required. Returns current version and status.
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: Version})
+	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: Version, GOOS: runtime.GOOS})
 }
 
 // wsHandler returns a handler for GET /api/ws.
@@ -104,7 +107,7 @@ func wsHandler(token string) http.HandlerFunc {
 		defer conn.Close() //nolint:errcheck
 		defer wsUnregister(conn)
 
-		payload := wsEvent{Type: "health", OK: true, Version: Version}
+		payload := wsEvent{Type: "health", OK: true, Version: Version, GOOS: runtime.GOOS}
 
 		// Send the initial status immediately on connect.
 		if err := conn.WriteJSON(payload); err != nil {

@@ -57,6 +57,7 @@ const links = [
 	{ to: "/logs", label: "Logs" },
 	{ to: "/usage", label: "Usage" },
 	{ to: "/jobs", label: "Jobs" },
+	{ to: "/daemons", label: "Daemons" },
 ];
 
 const dotClass = computed(() => {

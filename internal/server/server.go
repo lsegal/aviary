@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
@@ -37,6 +39,7 @@ type Server struct {
 	mem       *memory.Manager
 	channels  *channels.Manager
 	brw       *browser.Manager
+	sampler   *ProcSampler
 	watcher   *config.Watcher
 	restartCh chan struct{}
 }
@@ -73,7 +76,12 @@ func New(cfg *config.Config, token string) *Server {
 
 	s.mem = memory.New()
 	s.channels = channels.NewManager()
-	s.brw = browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
+	s.sampler = NewProcSampler()
+	cdpPort := cfg.Browser.CDPPort
+	if cdpPort == 0 {
+		cdpPort = config.DefaultCDPPort
+	}
+	s.brw = browser.NewManager(cfg.Browser.Binary, cdpPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
 
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{Agents: s.agents, Scheduler: s.sched, Memory: s.mem, Browser: s.brw, Auth: authStore})
@@ -141,6 +149,10 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
 	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, http.HandlerFunc(logsHistoryHandler)))
 
+	// Daemons status + log-stream endpoints.
+	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, http.HandlerFunc(s.daemonsHandler)))
+	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, http.HandlerFunc(s.daemonLogsHandler)))
+
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
 }
@@ -200,6 +212,26 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if s.sched != nil {
 		s.sched.Start(ctx)
 	}
+
+	// Start process sampler — periodically collects CPU/RSS for all daemon PIDs.
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pids := []int{os.Getpid()}
+				for _, cs := range s.channels.List() {
+					if cs.Daemon != nil && cs.Daemon.PID > 0 {
+						pids = append(pids, cs.Daemon.PID)
+					}
+				}
+				s.sampler.Sample(pids)
+			}
+		}
+	}()
 
 	// Start channel integrations and route messages to agents.
 	s.channels.Reconcile(ctx, s.cfg, func(agentName string, msg channels.IncomingMessage) {
