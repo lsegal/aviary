@@ -64,6 +64,10 @@
                 "token": { "type": "string" },
                 "channel": { "type": "string" },
                 "phone": { "type": "string" },
+                "url": {
+                  "type": "string",
+                  "description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
+                },
                 "allowFrom": {
                   "type": "array",
                   "items": { "type": "string" }

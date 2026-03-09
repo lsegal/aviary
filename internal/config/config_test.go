@@ -13,11 +13,13 @@ func TestDefault(t *testing.T) {
 	if cfg.Server.Port != 16677 {
 		t.Fatalf("default server port = %d", cfg.Server.Port)
 	}
-	if cfg.Browser.CDPPort != 9222 {
-		t.Fatalf("default cdp port = %d", cfg.Browser.CDPPort)
+	// CDPPort and Concurrency are intentionally absent from Default() so unset
+	// fields don't appear in aviary.yaml; consuming code applies its own fallbacks.
+	if cfg.Browser.CDPPort != 0 {
+		t.Fatalf("default cdp port should be unset (0), got %d", cfg.Browser.CDPPort)
 	}
-	if cfg.Scheduler.Concurrency != "auto" {
-		t.Fatalf("default scheduler concurrency = %v", cfg.Scheduler.Concurrency)
+	if cfg.Scheduler.Concurrency != nil {
+		t.Fatalf("default scheduler concurrency should be unset (nil), got %v", cfg.Scheduler.Concurrency)
 	}
 }
 
@@ -40,14 +42,15 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	t.Run("missing returns defaults", func(t *testing.T) {
+	t.Run("missing returns empty config", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 		cfg, err := Load("")
 		if err != nil {
 			t.Fatalf("load missing: %v", err)
 		}
-		if cfg.Server.Port != 16677 {
-			t.Fatalf("expected default port, got %d", cfg.Server.Port)
+		// Load returns zero values for missing files; consuming code applies runtime defaults.
+		if cfg.Server.Port != 0 {
+			t.Fatalf("expected port 0 (unset), got %d", cfg.Server.Port)
 		}
 	})
 
@@ -161,6 +164,40 @@ func TestValidate(t *testing.T) {
 		})
 		if !hasIssue(issues, `credential "openai:oauth" not found`) {
 			t.Fatalf("expected openai oauth credential issue, got: %v", issues)
+		}
+	})
+
+	t.Run("gemini oauth token satisfies credential check", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "gemini/gemini-2.0-flash"}}}
+		issues := Validate(cfg, func(key string) (string, error) {
+			if key == "gemini:oauth" {
+				return `{"access_token":"tok"}`, nil
+			}
+			return "", os.ErrNotExist
+		})
+		if hasIssue(issues, "gemini") {
+			t.Fatalf("expected no gemini credential issue when oauth is set, got: %v", issues)
+		}
+	})
+
+	t.Run("gemini warns when neither api key nor oauth is set", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "gemini/gemini-2.0-flash"}}}
+		issues := Validate(cfg, func(string) (string, error) { return "", os.ErrNotExist })
+		if !hasIssue(issues, `credential "gemini:default" not found`) {
+			t.Fatalf("expected gemini credential warning, got: %v", issues)
+		}
+	})
+
+	t.Run("anthropic oauth token satisfies credential check", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "anthropic/claude-sonnet-4-5"}}}
+		issues := Validate(cfg, func(key string) (string, error) {
+			if key == "anthropic:oauth" {
+				return `{"access_token":"tok"}`, nil
+			}
+			return "", os.ErrNotExist
+		})
+		if hasIssue(issues, "anthropic") {
+			t.Fatalf("expected no anthropic credential issue when oauth is set, got: %v", issues)
 		}
 	})
 }

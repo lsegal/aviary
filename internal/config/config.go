@@ -20,7 +20,7 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port           int        `yaml:"port"                      json:"port"`
+	Port           int        `yaml:"port,omitempty"            json:"port,omitempty"`
 	TLS            *TLSConfig `yaml:"tls,omitempty"             json:"tls,omitempty"`
 	ExternalAccess bool       `yaml:"external_access,omitempty" json:"external_access,omitempty"` // bind to 0.0.0.0 instead of 127.0.0.1
 	NoTLS          bool       `yaml:"no_tls,omitempty"          json:"no_tls,omitempty"`          // disable TLS (plain HTTP)
@@ -55,6 +55,7 @@ type ChannelConfig struct {
 	Token     string   `yaml:"token,omitempty"    json:"token,omitempty"`
 	Channel   string   `yaml:"channel,omitempty"  json:"channel,omitempty"`
 	Phone     string   `yaml:"phone,omitempty"    json:"phone,omitempty"`
+	URL       string   `yaml:"url,omitempty"      json:"url,omitempty"`
 	AllowFrom []string `yaml:"allowFrom,omitempty" json:"allowFrom,omitempty"`
 }
 
@@ -102,18 +103,52 @@ type SchedulerConfig struct {
 	Concurrency any `yaml:"concurrency,omitempty" json:"concurrency,omitempty"` // "auto" or a number
 }
 
+// DefaultCDPPort is the default Chrome DevTools Protocol port used when not set in config.
+const DefaultCDPPort = 9222
+
 // Default returns a Config populated with sensible defaults.
+// Only fields that must be explicitly written to YAML are set here.
+// Other defaults (CDPPort, Concurrency) live in the consuming code so that
+// unset fields remain absent from the YAML file.
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
 			Port: 16677,
 		},
-		Browser: BrowserConfig{
-			CDPPort: 9222,
-		},
-		Scheduler: SchedulerConfig{
-			Concurrency: "auto",
-		},
+	}
+}
+
+// normalize strips zero/empty fields that would produce noisy YAML output.
+// It is called automatically by Save.
+func normalize(cfg *Config) {
+	// Nil out TLS block if no cert/key are configured.
+	if cfg.Server.TLS != nil && cfg.Server.TLS.Cert == "" && cfg.Server.TLS.Key == "" {
+		cfg.Server.TLS = nil
+	}
+	// Nil out empty slices/maps so they are omitted from YAML.
+	if len(cfg.Agents) == 0 {
+		cfg.Agents = nil
+	}
+	if len(cfg.Models.Providers) == 0 {
+		cfg.Models.Providers = nil
+	}
+	if cfg.Models.Defaults != nil && cfg.Models.Defaults.Model == "" && len(cfg.Models.Defaults.Fallbacks) == 0 {
+		cfg.Models.Defaults = nil
+	}
+	for i := range cfg.Agents {
+		if len(cfg.Agents[i].Channels) == 0 {
+			cfg.Agents[i].Channels = nil
+		}
+		if len(cfg.Agents[i].Tasks) == 0 {
+			cfg.Agents[i].Tasks = nil
+		}
+		if len(cfg.Agents[i].Fallbacks) == 0 {
+			cfg.Agents[i].Fallbacks = nil
+		}
+	}
+	// Strip concurrency if it's the implicit default so it doesn't clutter the YAML.
+	if s, ok := cfg.Scheduler.Concurrency.(string); ok && (s == "" || s == "auto") {
+		cfg.Scheduler.Concurrency = nil
 	}
 }
 
@@ -132,6 +167,7 @@ func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = DefaultPath()
 	}
+	normalize(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
@@ -147,6 +183,9 @@ func Save(path string, cfg *Config) error {
 
 // Load reads and parses the config file at path.
 // If path is empty, DefaultPath() is used.
+// Only fields present in the file are populated; unset fields remain zero so
+// they are omitted from YAML on the next save. Consuming code applies its own
+// runtime defaults (e.g. port 16677, CDP port 9222).
 func Load(path string) (*Config, error) {
 	if path == "" {
 		path = DefaultPath()
@@ -155,13 +194,12 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			cfg := Default()
-			return &cfg, nil
+			return &Config{}, nil
 		}
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
-	cfg := Default()
+	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}

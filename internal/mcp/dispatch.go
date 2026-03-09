@@ -88,7 +88,7 @@ func ensureInProcessDeps() error {
 	SetDeps(&Deps{
 		Agents:  agents,
 		Memory:  memory.New(),
-		Browser: browser.NewManager(cfg.Browser.Binary, cfg.Browser.CDPPort, cfg.Browser.ProfileDir, cfg.Browser.Headless),
+		Browser: browser.NewManager(cfg.Browser.Binary, cdpPortOrDefault(cfg.Browser.CDPPort), cfg.Browser.ProfileDir, cfg.Browser.Headless),
 		Auth:    authStore,
 	})
 
@@ -136,4 +136,11 @@ var loadStoredToken = func() (string, error) {
 // SetTokenLoader allows the server package to inject its LoadToken function.
 func SetTokenLoader(fn func() (string, error)) {
 	loadStoredToken = fn
+}
+
+func cdpPortOrDefault(port int) int {
+	if port == 0 {
+		return config.DefaultCDPPort
+	}
+	return port
 }
