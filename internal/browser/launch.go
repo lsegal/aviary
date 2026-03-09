@@ -124,7 +124,7 @@ func launchChrome(m *Manager) error {
 
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", m.cdpPort),
-		fmt.Sprintf("--profile-directory=%s", m.profileName()),
+		fmt.Sprintf("--user-data-dir=%s", m.userDataDir()),
 		"--no-first-run",
 		"--no-default-browser-check",
 	}

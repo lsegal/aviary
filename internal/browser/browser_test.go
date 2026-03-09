@@ -31,16 +31,16 @@ func TestNewManager_CustomPort(t *testing.T) {
 	}
 }
 
-func TestManager_ProfileDirDefault(t *testing.T) {
+func TestManager_UserDataDirDefault(t *testing.T) {
 	m := NewManager("", 0, "", false)
-	got := m.profileName()
-	if got != "Aviary" {
-		t.Fatalf("expected default profile name 'Aviary', got %q", got)
+	got := m.userDataDir()
+	if got == "" {
+		t.Fatal("expected non-empty default user data dir")
 	}
-	// Explicit profileDir overrides the default.
-	m2 := NewManager("", 0, "Work", false)
-	if m2.profileName() != "Work" {
-		t.Fatalf("expected 'Work', got %q", m2.profileName())
+	// Explicit profileDir is used as-is.
+	m2 := NewManager("", 0, "/tmp/my-profile", false)
+	if m2.userDataDir() != "/tmp/my-profile" {
+		t.Fatalf("expected '/tmp/my-profile', got %q", m2.userDataDir())
 	}
 }
 

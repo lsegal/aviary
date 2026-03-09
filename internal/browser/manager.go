@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -217,10 +219,16 @@ func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Con
 	return context.WithTimeout(ctx, timeout)
 }
 
-// profileName returns the Chrome profile folder name in the default user data dir.
-func (m *Manager) profileName() string {
+// userDataDir returns the Chrome user data directory for Aviary's browser.
+// If profileDir is set it is used as-is (absolute path); otherwise a
+// platform-appropriate directory under the OS config dir is used.
+func (m *Manager) userDataDir() string {
 	if m.profileDir != "" {
 		return m.profileDir
 	}
-	return "Aviary"
+	base, err := os.UserConfigDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "aviary", "browser")
 }
