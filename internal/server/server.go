@@ -234,13 +234,44 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 
 	// Start channel integrations and route messages to agents.
-	s.channels.Reconcile(ctx, s.cfg, func(agentName string, msg channels.IncomingMessage) {
+	s.channels.Reconcile(ctx, s.cfg, func(agentName string, ch channels.Channel, msg channels.IncomingMessage) {
 		runner, ok := s.agents.Get(agentName)
 		if !ok {
 			return
 		}
-		// Channel reply is fire-and-forget; errors logged by runner.
-		runner.Prompt(ctx, msg.Text)
+		// Route the message into a per-channel session: "<channelType>:<channelID>".
+		msgCtx := agent.WithChannelSession(ctx, msg.Type, msg.Channel)
+
+		// Start a typing indicator if the channel supports it; refresh every
+		// 10 s so it stays visible while the agent is still processing.
+		var stopTyping context.CancelFunc
+		if ts, ok := ch.(channels.TypingSender); ok {
+			_ = ts.SendTyping(msg.Channel, false)
+			typingCtx, cancel := context.WithCancel(ctx)
+			stopTyping = cancel
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				defer ts.SendTyping(msg.Channel, true) //nolint:errcheck
+				for {
+					select {
+					case <-typingCtx.Done():
+						return
+					case <-ticker.C:
+						_ = ts.SendTyping(msg.Channel, false)
+					}
+				}
+			}()
+		}
+
+		runner.PromptWithRestrictions(msgCtx, msg.Text, msg.RestrictTools, func(e agent.StreamEvent) {
+			switch e.Type {
+			case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
+				if stopTyping != nil {
+					stopTyping()
+				}
+			}
+		})
 	})
 
 	errCh := make(chan error, 1)

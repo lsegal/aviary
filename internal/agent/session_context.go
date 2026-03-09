@@ -4,6 +4,12 @@ import "context"
 
 type sessionContextKey struct{}
 type sessionAgentIDKey struct{}
+type channelSessionKey struct{}
+
+type channelSession struct {
+	channelType string
+	channelID   string
+}
 
 // WithSessionID stores a concrete session ID in context for prompt execution.
 func WithSessionID(ctx context.Context, sessionID string) context.Context {
@@ -37,4 +43,22 @@ func SessionAgentIDFromContext(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return v, true
+}
+
+// WithChannelSession stores the originating channel type and ID in context so
+// that resolveSessionID can route the prompt to a per-channel session.
+func WithChannelSession(ctx context.Context, channelType, channelID string) context.Context {
+	if channelType == "" || channelID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, channelSessionKey{}, channelSession{channelType, channelID})
+}
+
+// ChannelSessionFromContext extracts the channel session info if present.
+func ChannelSessionFromContext(ctx context.Context) (channelType, channelID string, ok bool) {
+	v, ok := ctx.Value(channelSessionKey{}).(channelSession)
+	if !ok || v.channelType == "" {
+		return "", "", false
+	}
+	return v.channelType, v.channelID, true
 }

@@ -46,7 +46,9 @@ func NewManager() *Manager {
 
 // Reconcile idempotently starts/stops channels from the config.
 // msgFn receives messages and should route them to the appropriate agent runner.
-func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(agentName string, msg IncomingMessage)) {
+// The ch argument passed to msgFn is the channel the message arrived on; it may
+// implement optional interfaces such as TypingSender.
+func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(agentName string, ch Channel, msg IncomingMessage)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -74,7 +76,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 
 			agentName := ac.Name
 			ch.OnMessage(func(msg IncomingMessage) {
-				msgFn(agentName, msg)
+				msgFn(agentName, ch, msg)
 			})
 
 			cctx, cancel := context.WithCancel(ctx)

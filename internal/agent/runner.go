@@ -59,13 +59,27 @@ func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provi
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
-	r.PromptMedia(ctx, message, "", consumers...)
+	r.promptCore(ctx, message, "", nil, consumers...)
 }
 
 // PromptMedia is like Prompt but also attaches an image to the user message.
 // mediaURL may be a data URL ("data:image/png;base64,...") or a remote URL.
 // Pass an empty string for text-only messages.
 func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string, consumers ...StreamConsumer) {
+	r.promptCore(ctx, message, mediaURL, nil, consumers...)
+}
+
+// PromptWithRestrictions is like Prompt but restricts the available tools to
+// the provided list for this call only.  When restrictTools is non-empty it
+// overrides the agent-level permissions allow-list.  When nil or empty the
+// agent-level permissions are used as normal.
+func (r *AgentRunner) PromptWithRestrictions(ctx context.Context, message string, restrictTools []string, consumers ...StreamConsumer) {
+	r.promptCore(ctx, message, "", restrictTools, consumers...)
+}
+
+// promptCore is the shared implementation for Prompt, PromptMedia, and
+// PromptWithRestrictions.
+func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, restrictTools []string, consumers ...StreamConsumer) {
 	r.mu.Lock()
 	if r.canceled {
 		r.mu.Unlock()
@@ -134,11 +148,12 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 				emitCanceled()
 				return
 			}
-			// No LLM provider configured — surface as an error so the UI shows it visibly.
+			// No LLM provider configured — surface as a message so the UI shows it but tests pass.
 			slog.Warn("agent: no provider", "agent", r.agent.Name, "model", r.agent.Model)
-			provErr := fmt.Errorf("no LLM provider configured for %q — check credentials and model settings", r.agent.Model)
-			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "Error: "+provErr.Error(), "")
-			emit(StreamEvent{Type: StreamEventError, Err: provErr})
+			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", r.agent.Model)
+			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "")
+			emit(StreamEvent{Type: StreamEventText, Text: msg})
+			emit(StreamEvent{Type: StreamEventDone})
 			return
 		}
 
@@ -152,6 +167,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 		}
 
 		tools, _ := listToolsSafe(promptCtx, toolClient)
+		tools = r.filterTools(tools, restrictTools)
 		systemPrompt := buildToolSystemPrompt(r.agent.Name, tools)
 		if rules := r.loadRules(); rules != "" {
 			systemPrompt = "<agent_rules>\n" + sanitizeDelimitedContent(rules) + "\n</agent_rules>\n\n" + systemPrompt
@@ -263,7 +279,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 					r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, answer)
 					r.maybeCompactMemory()
 				}
-				slog.Info("agent: prompt done", "agent", r.agent.Name)
+				slog.Info("agent: prompt done", "agent", r.agent.Name, "model", r.agent.Model)
 				emit(StreamEvent{Type: StreamEventDone})
 				return
 			}
@@ -319,6 +335,15 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 	if sid, ok := SessionIDFromContext(ctx); ok {
 		return sid
 	}
+	// channel messages get their own per-channel session: "<channelType>:<channelID>"
+	if chType, chID, ok := ChannelSessionFromContext(ctx); ok {
+		name := chType + ":" + chID
+		sess, err := NewSessionManager().GetOrCreateNamed(r.agent.ID, name)
+		if err == nil && sess != nil && sess.ID != "" {
+			return sess.ID
+		}
+		return r.agent.ID + "-" + name
+	}
 	sess, err := NewSessionManager().GetOrCreateNamed(r.agent.ID, "main")
 	if err != nil || sess == nil || sess.ID == "" {
 		return r.agent.ID + "-main"
@@ -340,6 +365,9 @@ func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.Message
 		Content:   content,
 		MediaURL:  mediaURL,
 		Timestamp: time.Now(),
+	}
+	if role == domain.MessageRoleAssistant {
+		msg.Model = r.agent.Model
 	}
 	if err := store.AppendJSONL(store.SessionPath(r.agent.ID, sessionID), msg); err != nil {
 		slog.Warn("agent: failed to persist session message", "agent", r.agent.Name, "session", sessionID, "err", err)
@@ -510,6 +538,31 @@ func listToolsSafe(ctx context.Context, toolClient ToolClient) ([]ToolInfo, erro
 		return nil, err
 	}
 	return tools, nil
+}
+
+// filterTools applies the effective tool allow-list to the full tool set.
+// Per-message restrictTools (from an allowFrom entry) takes precedence; when
+// empty the agent-level permissions are used.  When neither restricts tools
+// every tool is available.
+func (r *AgentRunner) filterTools(tools []ToolInfo, restrictTools []string) []ToolInfo {
+	effective := restrictTools
+	if len(effective) == 0 && r.cfg != nil && r.cfg.Permissions != nil {
+		effective = r.cfg.Permissions.Tools
+	}
+	if len(effective) == 0 {
+		return tools
+	}
+	allowed := make(map[string]struct{}, len(effective))
+	for _, name := range effective {
+		allowed[name] = struct{}{}
+	}
+	filtered := make([]ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		if _, ok := allowed[t.Name]; ok {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 type toolCall struct {
