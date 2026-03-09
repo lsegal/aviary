@@ -63,11 +63,20 @@ func (m *SessionManager) GetOrCreateNamed(agentID, name string) (*domain.Session
 		name = "main"
 	}
 	id := agentID + "-" + name
-	path := store.SessionPath(agentID, id)
-	lines, err := store.ReadJSONL[domain.Session](path)
-	if err == nil && len(lines) > 0 {
-		return &lines[0], nil
+
+	// Try finding existing session first.
+	if p := store.FindSessionPath(id); p != "" {
+		lines, err := store.ReadJSONL[domain.Session](p)
+		if err == nil {
+			for _, s := range lines {
+				if s.AgentID != "" {
+					return &s, nil
+				}
+			}
+		}
 	}
+
+	path := store.SessionPath(agentID, id)
 	sess := &domain.Session{
 		ID:        id,
 		AgentID:   agentID,
@@ -92,6 +101,7 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
 
+	agentName := strings.TrimPrefix(agentID, "agent_")
 	var sessions []*domain.Session
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
@@ -99,14 +109,25 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		}
 		path := filepath.Join(sessDir, e.Name())
 		lines, err := store.ReadJSONL[domain.Session](path)
-		if err != nil || len(lines) == 0 {
+		if err != nil {
 			continue
 		}
-		s := lines[0]
-		if s.AgentID != agentID {
+		var s *domain.Session
+		for _, line := range lines {
+			if line.AgentID != "" {
+				s = &line
+				break
+			}
+		}
+		if s == nil {
 			continue
 		}
-		sessions = append(sessions, &s)
+		// Flexible check: allow both agent_name and name formats.
+		sName := strings.TrimPrefix(s.AgentID, "agent_")
+		if sName != agentName {
+			continue
+		}
+		sessions = append(sessions, s)
 	}
 
 	sort.Slice(sessions, func(i, j int) bool {

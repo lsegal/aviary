@@ -20,6 +20,7 @@ const (
 	MessageRoleUser      MessageRole = "user"
 	MessageRoleAssistant MessageRole = "assistant"
 	MessageRoleSystem    MessageRole = "system"
+	MessageRoleTool      MessageRole = "tool"
 )
 
 // Message represents a single message in a session.

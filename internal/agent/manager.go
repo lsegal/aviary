@@ -80,7 +80,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 				slog.Warn("failed to create LLM provider", "agent", name, "model", ac.Model, "err", err)
 			}
 		}
-		m.runners[name] = NewAgentRunner(a, ac, provider, m.memory)
+		m.runners[name] = NewAgentRunner(a, ac, provider, m.factory, m.memory)
 	}
 }
 

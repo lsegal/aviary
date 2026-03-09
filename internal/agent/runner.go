@@ -33,6 +33,7 @@ type AgentRunner struct {
 	agent    *domain.Agent
 	cfg      *config.AgentConfig
 	provider llm.Provider // nil until Phase 5 wiring; falls back to stub
+	factory  *llm.Factory // used to create fallback providers on demand
 	memory   *memory.Manager
 	stopCh   chan struct{}
 	mu       sync.Mutex
@@ -46,40 +47,47 @@ const (
 )
 
 // NewAgentRunner creates an AgentRunner for the given agent.
-func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provider, mem *memory.Manager) *AgentRunner {
+func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provider, factory *llm.Factory, mem *memory.Manager) *AgentRunner {
 	return &AgentRunner{
 		agent:    a,
 		cfg:      cfg,
 		provider: provider,
+		factory:  factory,
 		memory:   mem,
 		stopCh:   make(chan struct{}),
 	}
 }
 
+// RunOverrides defines per-run overrides for model, fallbacks, and tools.
+type RunOverrides struct {
+	Model         string
+	Fallbacks     []string
+	RestrictTools []string
+}
+
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", nil, consumers...)
+	r.promptCore(ctx, message, "", RunOverrides{}, consumers...)
 }
 
 // PromptMedia is like Prompt but also attaches an image to the user message.
 // mediaURL may be a data URL ("data:image/png;base64,...") or a remote URL.
 // Pass an empty string for text-only messages.
 func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURL, nil, consumers...)
+	r.promptCore(ctx, message, mediaURL, RunOverrides{}, consumers...)
 }
 
-// PromptWithRestrictions is like Prompt but restricts the available tools to
-// the provided list for this call only.  When restrictTools is non-empty it
-// overrides the agent-level permissions allow-list.  When nil or empty the
-// agent-level permissions are used as normal.
-func (r *AgentRunner) PromptWithRestrictions(ctx context.Context, message string, restrictTools []string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", restrictTools, consumers...)
+// PromptWithOverrides is like Prompt but applies the provided overrides for
+// this call only. Model, Fallbacks, and RestrictTools in overrides take
+// precedence over agent-level defaults when non-empty.
+func (r *AgentRunner) PromptWithOverrides(ctx context.Context, message string, overrides RunOverrides, consumers ...StreamConsumer) {
+	r.promptCore(ctx, message, "", overrides, consumers...)
 }
 
 // promptCore is the shared implementation for Prompt, PromptMedia, and
-// PromptWithRestrictions.
-func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, restrictTools []string, consumers ...StreamConsumer) {
+// PromptWithOverrides.
+func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, overrides RunOverrides, consumers ...StreamConsumer) {
 	r.mu.Lock()
 	if r.canceled {
 		r.mu.Unlock()
@@ -98,16 +106,57 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		defer cancel()
 
 		sessionID := r.resolveSessionID(promptCtx)
+		promptCtx = WithSessionID(promptCtx, sessionID)
 		promptCtx = WithSessionAgentID(promptCtx, r.agent.ID)
 		untrack := trackSessionRun(sessionID, cancel)
 		defer untrack()
+
+		// Effective model for this run.
+		effectiveModel := overrides.Model
+		if effectiveModel == "" {
+			effectiveModel = r.agent.Model
+		}
+
+		// Effective fallbacks for this run (overrides > agent config).
+		effectiveFallbacks := overrides.Fallbacks
+		if len(effectiveFallbacks) == 0 {
+			effectiveFallbacks = r.agent.Fallbacks
+		}
+		remainingFallbacks := make([]string, len(effectiveFallbacks))
+		copy(remainingFallbacks, effectiveFallbacks)
+
+		// Resolve the provider from the factory for this prompt to ensure
+		// fresh OAuth tokens (factory.ForModel calls resolveOAuthToken).
+		currentProvider := r.provider
+		if r.factory != nil {
+			if p, err := r.factory.ForModel(effectiveModel); err == nil {
+				currentProvider = p
+			}
+		}
+
+		tryFallback := func(origErr error) bool {
+			if len(remainingFallbacks) == 0 || r.factory == nil {
+				return false
+			}
+			nextModel := remainingFallbacks[0]
+			remainingFallbacks = remainingFallbacks[1:]
+			p, err := r.factory.ForModel(nextModel)
+			if err != nil {
+				slog.Warn("agent: fallback provider failed", "agent", r.agent.Name, "model", nextModel, "err", err)
+				return false
+			}
+			slog.Info("agent: falling back to model", "agent", r.agent.Name, "from", effectiveModel, "to", nextModel, "reason", origErr)
+			effectiveModel = nextModel
+			currentProvider = p
+			return true
+		}
 
 		// Usage tracking: accumulate across all rounds; written on exit.
 		usageRec := &domain.UsageRecord{
 			SessionID: sessionID,
 			AgentName: r.agent.Name,
-			Model:     r.agent.Model,
-			Provider:  extractProvider(r.agent.Model),
+			Model:     effectiveModel,
+			Provider:  extractProvider(effectiveModel),
 		}
 		defer func() {
 			if usageRec.InputTokens > 0 || usageRec.OutputTokens > 0 {
@@ -118,10 +167,10 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			}
 		}()
 
-		r.appendSessionMessage(sessionID, domain.MessageRoleUser, message, mediaURL)
+		r.appendSessionMessage(sessionID, domain.MessageRoleUser, message, mediaURL, effectiveModel)
 		r.appendMemoryMessage(sessionID, domain.MessageRoleUser, message)
 
-		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", r.agent.Model)
+		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", effectiveModel)
 
 		// Stop if stopCh is closed.
 		go func() {
@@ -149,10 +198,11 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				return
 			}
 			// No LLM provider configured — surface as a message so the UI shows it but tests pass.
-			slog.Warn("agent: no provider", "agent", r.agent.Name, "model", r.agent.Model)
-			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", r.agent.Model)
-			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "")
+			slog.Warn("agent: no provider", "agent", r.agent.Name, "model", effectiveModel)
+			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", effectiveModel)
+			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "", effectiveModel)
 			emit(StreamEvent{Type: StreamEventText, Text: msg})
+			deliverToSession(sessionID, msg)
 			emit(StreamEvent{Type: StreamEventDone})
 			return
 		}
@@ -167,7 +217,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		}
 
 		tools, _ := listToolsSafe(promptCtx, toolClient)
-		tools = r.filterTools(tools, restrictTools)
+		tools = r.filterTools(tools, overrides.RestrictTools)
 		systemPrompt := buildToolSystemPrompt(r.agent.Name, tools)
 		if rules := r.loadRules(); rules != "" {
 			systemPrompt = "<agent_rules>\n" + sanitizeDelimitedContent(rules) + "\n</agent_rules>\n\n" + systemPrompt
@@ -194,26 +244,31 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				return
 			}
 			req := llm.Request{
-				Model:    r.agent.Model,
+				Model:    effectiveModel,
 				Messages: conversation,
 				System:   systemPrompt,
 				Stream:   true,
 			}
 
-			ch, err := r.provider.Stream(promptCtx, req)
+			ch, err := currentProvider.Stream(promptCtx, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || promptCtx.Err() != nil {
 					emitCanceled()
 					return
 				}
+				if isRetryableError(err) && tryFallback(err) {
+					round--
+					continue
+				}
 				slog.Error("agent: stream error", "agent", r.agent.Name, "err", err)
-				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", err), "")
+				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", err), "", effectiveModel)
 				emit(StreamEvent{Type: StreamEventError, Err: err})
 				return
 			}
 
 			var modelOut strings.Builder
 			var mediaURLs []string
+			var fallbackTriggered bool
 			for event := range ch {
 				switch event.Type {
 				case llm.EventTypeText:
@@ -235,12 +290,21 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 						emitCanceled()
 						return
 					}
+					if isRetryableError(event.Error) && tryFallback(event.Error) {
+						fallbackTriggered = true
+						for range ch {} // drain remaining events
+						break
+					}
 					usageRec.HasError = true
-					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", event.Error), "")
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", event.Error), "", effectiveModel)
 					emit(StreamEvent{Type: StreamEventError, Err: event.Error})
 					return
 				case llm.EventTypeDone:
 				}
+			}
+			if fallbackTriggered {
+				round--
+				continue
 			}
 			if promptCtx.Err() != nil {
 				emitCanceled()
@@ -272,14 +336,15 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				}
 				// Persist each returned image as a separate assistant message.
 				for _, mURL := range mediaURLs {
-					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "", mURL)
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "", mURL, effectiveModel)
 				}
 				if answer != "" {
-					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, "")
+					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, "", effectiveModel)
 					r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, answer)
 					r.maybeCompactMemory()
 				}
-				slog.Info("agent: prompt done", "agent", r.agent.Name, "model", r.agent.Model)
+				slog.Info("agent: prompt done", "agent", r.agent.Name, "model", effectiveModel)
+				deliverToSession(sessionID, answer)
 				emit(StreamEvent{Type: StreamEventDone})
 				return
 			}
@@ -306,13 +371,13 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				// Persist with error detail so history is informative.
 				errRec := toolEventRecord{Name: call.Tool, Args: call.Arguments, Error: callErr.Error()}
 				errPayload, _ := json.Marshal(errRec)
-				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(errPayload), "")
+				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(errPayload), "", effectiveModel)
 				resultText = "error: " + callErr.Error()
 			} else {
 				// Persist with full result so history shows expandable output.
 				histRec := toolEventRecord{Name: call.Tool, Args: call.Arguments, Result: resultText}
 				histPayload, _ := json.Marshal(histRec)
-				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(histPayload), "")
+				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(histPayload), "", effectiveModel)
 			}
 
 			conversation = append(conversation,
@@ -322,7 +387,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		}
 
 		errMsg := fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds)
-		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "")
+		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "", effectiveModel)
 		r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, errMsg)
 		usageRec.HasError = true
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
@@ -351,7 +416,7 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 	return sess.ID
 }
 
-func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content, mediaURL string) {
+func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content, mediaURL, model string) {
 	if strings.TrimSpace(content) == "" && strings.TrimSpace(mediaURL) == "" {
 		return
 	}
@@ -367,7 +432,7 @@ func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.Message
 		Timestamp: time.Now(),
 	}
 	if role == domain.MessageRoleAssistant {
-		msg.Model = r.agent.Model
+		msg.Model = model
 	}
 	if err := store.AppendJSONL(store.SessionPath(r.agent.ID, sessionID), msg); err != nil {
 		slog.Warn("agent: failed to persist session message", "agent", r.agent.Name, "session", sessionID, "err", err)
@@ -697,6 +762,26 @@ func pickMap(obj map[string]any, keys ...string) map[string]any {
 func looksLikeBrokenToolCall(answer string) bool {
 	t := strings.TrimSpace(answer)
 	return strings.Contains(t, `"tool"`) && strings.Contains(t, `"arguments"`)
+}
+
+// isRetryableError returns true for transient errors that warrant trying a
+// fallback model (e.g. 429 rate-limit, quota exhausted, service unavailable,
+// or expired/invalid auth which might be resolved by a refresh/fallback).
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "429") ||
+		strings.Contains(s, "too many requests") ||
+		strings.Contains(s, "rate limit") ||
+		strings.Contains(s, "quota") ||
+		strings.Contains(s, "overloaded") ||
+		strings.Contains(s, "503") ||
+		strings.Contains(s, "service unavailable") ||
+		strings.Contains(s, "401") ||
+		strings.Contains(s, "unauthorized") ||
+		strings.Contains(s, "unauthenticated")
 }
 
 func shouldRetryToollessRefusal(answer string, toolCount int, alreadyRetried bool) bool {
