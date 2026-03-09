@@ -125,7 +125,7 @@ func TestPathHelpers(t *testing.T) {
 
 	t.Run("SessionPath", func(t *testing.T) {
 		got := SessionPath("agent_assistant", "agent_assistant-main")
-		want := filepath.Join(base, DirAgents, "assistant", "sessions", "agent_assistant-main.jsonl")
+		want := filepath.Join(base, DirAgents, "assistant", "sessions", "main.jsonl")
 		if got != want {
 			t.Errorf("SessionPath = %q; want %q", got, want)
 		}
@@ -134,9 +134,38 @@ func TestPathHelpers(t *testing.T) {
 	t.Run("SessionPath_plain_name", func(t *testing.T) {
 		// agentID without "agent_" prefix should also work.
 		got := SessionPath("assistant", "agent_assistant-main")
-		want := filepath.Join(base, DirAgents, "assistant", "sessions", "agent_assistant-main.jsonl")
+		want := filepath.Join(base, DirAgents, "assistant", "sessions", "main.jsonl")
 		if got != want {
 			t.Errorf("SessionPath (plain) = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("FindSessionPath", func(t *testing.T) {
+		// Setup dummy session file.
+		agentName := "searcher"
+		sessID := "agent_searcher-main"
+		path := SessionPath("agent_"+agentName, sessID)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		got := FindSessionPath(sessID)
+		if got != path {
+			t.Errorf("FindSessionPath(%q) = %q; want %q", sessID, got, path)
+		}
+
+		// Non-prefixed sessID should also work.
+		sess2 := "sess_123"
+		path2 := SessionPath("agent_"+agentName, sess2)
+		if err := os.WriteFile(path2, []byte("{}"), 0o600); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		got2 := FindSessionPath(sess2)
+		if got2 != path2 {
+			t.Errorf("FindSessionPath(%q) = %q; want %q", sess2, got2, path2)
 		}
 	})
 
@@ -163,6 +192,166 @@ func TestPathHelpers(t *testing.T) {
 			t.Errorf("AgentRulesPath = %q; want %q", got, want)
 		}
 	})
+}
+
+// TestSanitizeFileComponent verifies the sanitizer replaces forbidden chars and
+// handles edge cases.
+func TestSanitizeFileComponent(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"normal", "normal"},
+		{"", "default"},
+		{"   ", "default"},
+		{"file<name>", "file_name_"},
+		{"path/to/file", "path_to_file"},
+		{"back\\slash", "back_slash"},
+		{"pipe|char", "pipe_char"},
+		{"question?mark", "question_mark"},
+		{"star*glob", "star_glob"},
+		{"colon:sep", "colon_sep"},
+		{"quote\"char", "quote_char"},
+		{"  spaces  ", "spaces"},
+	}
+	for _, tc := range tests {
+		got := sanitizeFileComponent(tc.in)
+		if got != tc.want {
+			t.Errorf("sanitizeFileComponent(%q) = %q; want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestAgentDirName verifies the agent_prefix stripping.
+func TestAgentDirName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"agent_foo", "foo"},
+		{"agent_assistant", "assistant"},
+		{"foo", "foo"},
+		{"agent_", "default"},
+	}
+	for _, tc := range tests {
+		got := agentDirName(tc.in)
+		if got != tc.want {
+			t.Errorf("agentDirName(%q) = %q; want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestFindJobPath verifies FindJobPath returns the correct path.
+func TestFindJobPath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	// Create a dummy job file.
+	agentID := "agent_finder"
+	jobID := "job-abc"
+	p := JobPath(agentID, jobID)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	got := FindJobPath(jobID)
+	if got != p {
+		t.Errorf("FindJobPath(%q) = %q; want %q", jobID, got, p)
+	}
+
+	// Non-existent job should return "".
+	got2 := FindJobPath("nonexistent-job")
+	if got2 != "" {
+		t.Errorf("FindJobPath(nonexistent) = %q; want empty", got2)
+	}
+}
+
+// TestAllJobDirs verifies AllJobDirs includes agent job directories.
+func TestAllJobDirs(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	// Create jobs dirs for two agents.
+	for _, agent := range []string{"agent_a1", "agent_a2"} {
+		jobDir := filepath.Join(AgentDir(agent), "jobs")
+		if err := os.MkdirAll(jobDir, 0o700); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+
+	dirs := AllJobDirs()
+	if len(dirs) < 2 {
+		t.Fatalf("expected at least 2 job dirs, got %d: %v", len(dirs), dirs)
+	}
+}
+
+// TestAllJobDirs_Legacy verifies AllJobDirs includes the legacy jobs dir.
+func TestAllJobDirs_Legacy(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	// Create only the legacy flat jobs directory.
+	legacyDir := SubDir(DirJobs)
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	dirs := AllJobDirs()
+	found := false
+	for _, d := range dirs {
+		if d == legacyDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected legacy dir %q in AllJobDirs, got %v", legacyDir, dirs)
+	}
+}
+
+// TestScreenshotDir verifies path format.
+func TestScreenshotDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	got := ScreenshotDir()
+	want := filepath.Join(DataDir(), "screenshots")
+	if got != want {
+		t.Errorf("ScreenshotDir() = %q; want %q", got, want)
+	}
+}
+
+// TestNotesPath verifies notes path format.
+func TestNotesPath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	got := NotesPath("private:assistant")
+	want := filepath.Join(DataDir(), DirAgents, "assistant", "MEMORY.md")
+	if got != want {
+		t.Errorf("NotesPath(%q) = %q; want %q", "private:assistant", got, want)
+	}
+
+	// Without colon: fallback to default.
+	got2 := NotesPath("standalone")
+	want2 := filepath.Join(DataDir(), DirAgents, "default", "MEMORY.md")
+	if got2 != want2 {
+		t.Errorf("NotesPath(%q) = %q; want %q", "standalone", got2, want2)
+	}
+}
+
+// TestUsagePath verifies usage path format.
+func TestUsagePath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	got := UsagePath()
+	want := filepath.Join(SubDir(DirUsage), "usage.jsonl")
+	if got != want {
+		t.Errorf("UsagePath() = %q; want %q", got, want)
+	}
 }
 
 // TestIntegration_StoreSetup exercises DataDir + SubDir + EnsureDirs together,

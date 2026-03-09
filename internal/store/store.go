@@ -21,9 +21,19 @@ const (
 	DirMemory   = "memory"   // deprecated: memory now lives under agents/<name>/memory/
 )
 
+var customDataDir string
+
+// SetDataDir overrides the directory returned by DataDir.
+// Pass an empty string to restore automatic resolution via XDG_CONFIG_HOME or ~/.config.
+// This is intended for the --data-dir CLI flag and for tests.
+func SetDataDir(dir string) { customDataDir = dir }
+
 // DataDir returns the Aviary data directory.
-// Respects XDG_CONFIG_HOME; falls back to ~/.config/aviary.
+// Resolution order: SetDataDir value > XDG_CONFIG_HOME > ~/.config/aviary.
 func DataDir() string {
+	if customDataDir != "" {
+		return customDataDir
+	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "aviary")
 	}
@@ -74,7 +84,7 @@ func EnsureDirs() error {
 // JobPath returns the path for a job file under the agent's jobs directory:
 // <datadir>/agents/<agentID>/jobs/<id>.json.
 func JobPath(agentID, id string) string {
-	return filepath.Join(AgentDir(agentID), "jobs", id+".json")
+	return filepath.Join(AgentDir(agentID), "jobs", sanitizeFileComponent(id)+".json")
 }
 
 // FindJobPath scans all known agent directories and returns the full path
@@ -132,31 +142,62 @@ func ScreenshotDir() string {
 	return filepath.Join(DataDir(), "screenshots")
 }
 
+// SessionChannelsPath returns the path for the session's channel delivery
+// config file: <datadir>/agents/<agentID>/sessions/<sessionID>.channels.json.
+// It shares the same naming logic as SessionPath.
+func SessionChannelsPath(agentID, sessionID string) string {
+	p := SessionPath(agentID, sessionID)
+	return strings.TrimSuffix(p, ".jsonl") + ".channels.json"
+}
+
 // SessionPath returns the path for the given session file under the agent's
 // sessions directory: <datadir>/agents/<agentID>/sessions/<sessionID>.jsonl.
 func SessionPath(agentID, sessionID string) string {
-	return filepath.Join(AgentDir(agentID), "sessions", sessionID+".jsonl")
+	name := sessionID
+	// Strip agent prefix if it exists in the session ID to avoid redundant filenames.
+	// e.g. agentID="agent_assistant", sessionID="agent_assistant-main" -> "main.jsonl"
+	agentName := strings.TrimPrefix(agentID, "agent_")
+	prefixes := []string{"agent_" + agentName + "-", agentName + "-"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(name, p) {
+			name = strings.TrimPrefix(name, p)
+			break
+		}
+	}
+	return filepath.Join(AgentDir(agentID), "sessions", sanitizeFileComponent(name)+".jsonl")
 }
 
 // FindSessionPath scans all known agent directories and returns the full path
 // for the first session file matching sessionID.  Returns "" when not found.
 func FindSessionPath(sessionID string) string {
 	agentsDir := filepath.Join(DataDir(), DirAgents)
-	if entries, err := os.ReadDir(agentsDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			p := filepath.Join(agentsDir, e.Name(), "sessions", sessionID+".jsonl")
-			if _, err := os.Stat(p); err == nil {
-				return p
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		agentName := e.Name()
+		// Try stripped ID: sessionID="agent_foo-main", agentName="foo" -> "main.jsonl"
+		prefixes := []string{"agent_" + agentName + "-", agentName + "-"}
+		for _, p := range prefixes {
+			if strings.HasPrefix(sessionID, p) {
+				stripped := strings.TrimPrefix(sessionID, p)
+				p2 := filepath.Join(agentsDir, agentName, "sessions", sanitizeFileComponent(stripped)+".jsonl")
+				if _, err := os.Stat(p2); err == nil {
+					return p2
+				}
 			}
 		}
-	}
-	// Fallback: legacy flat sessions directory.
-	p := filepath.Join(SubDir(DirSessions), sessionID+".jsonl")
-	if _, err := os.Stat(p); err == nil {
-		return p
+
+		// Also try plain sessionID (e.g. for "sess_..." type IDs).
+		p := filepath.Join(agentsDir, agentName, "sessions", sanitizeFileComponent(sessionID)+".jsonl")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
 	return ""
 }

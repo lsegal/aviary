@@ -10,10 +10,12 @@ import (
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/server"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 var (
-	cfgFile   string
+	cfgFile string
+	dataDir string
 	serverURL string
 	token     string
 )
@@ -50,11 +52,15 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aviary/aviary.yaml)")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory (default: ~/.config/aviary)")
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "authentication token (overrides stored token)")
 
 	// Initialize the dispatcher after flags are parsed.
 	cobra.OnInitialize(func() {
+		if dataDir != "" {
+			store.SetDataDir(dataDir)
+		}
 		dispatcher = mcp.NewDispatcher(serverURL, token)
 	})
 }
