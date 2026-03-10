@@ -3,6 +3,7 @@
 
 # Go build artifacts
 .gocache
+.golangci-lint-cache
 /aviary
 *.exe
 *.test

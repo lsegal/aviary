@@ -69,7 +69,7 @@ execFileSync(
 		"build",
 		"-trimpath",
 		"-ldflags",
-		`-s -w -X github.com/lsegal/aviary/internal/server.Version=${version}`,
+		`-s -w -X github.com/lsegal/aviary/internal/buildinfo.Version=${version}`,
 		"-o",
 		outputPath,
 		"./cmd/aviary",
