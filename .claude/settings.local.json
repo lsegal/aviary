@@ -23,7 +23,10 @@
       "Bash(curl:*)",
       "Bash(go tool:*)",
       "Bash(ls -lh /d/github/lsegal/aviary/cmd/aviary/cmd/*.go)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(D:/github/lsegal/aviary/internal/server/server_test.go:*)",
+      "Bash(D:/github/lsegal/aviary/internal/mcp/mcp_test.go:*)",
+      "Bash(pnpm test:go:*)"
     ]
   }
 }
