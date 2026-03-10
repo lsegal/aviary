@@ -84,7 +84,14 @@
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<img v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									<button
+										v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)"
+										type="button"
+										class="cursor-zoom-in"
+										@click="openExpandedImage(item.msg.mediaURL)"
+									>
+										<img :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									</button>
 									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full rounded-lg" style="max-height:320px" />
 									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full" />
 									<a v-else-if="item.msg.mediaURL" :href="item.msg.mediaURL" target="_blank" rel="noopener noreferrer"
@@ -157,6 +164,25 @@
 					</button>
 				</form>
 			</div>
+		</div>
+		<div
+			v-if="expandedImageURL"
+			class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
+			@click="closeExpandedImage"
+		>
+			<button
+				type="button"
+				class="absolute right-4 top-4 rounded-full bg-black/50 px-3 py-1 text-sm text-white hover:bg-black/70"
+				aria-label="Close image"
+				@click.stop="closeExpandedImage"
+			>
+				Close
+			</button>
+			<img
+				:src="expandedImageURL"
+				class="max-h-full max-w-full rounded-xl shadow-2xl"
+				@click.stop
+			/>
 		</div>
 	</AppLayout>
 </template>
@@ -319,6 +345,7 @@ const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 const isStreaming = ref(false);
 const hasInlineError = ref(false);
+const expandedImageURL = ref("");
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -365,6 +392,12 @@ const onVisible = async () => {
 	}
 };
 
+const onWindowKeydown = (e: KeyboardEvent) => {
+	if (e.key === "Escape" && expandedImageURL.value) {
+		closeExpandedImage();
+	}
+};
+
 onMounted(async () => {
 	await agentsStore.fetchAgents();
 	// Auto-select first agent.
@@ -374,6 +407,7 @@ onMounted(async () => {
 		await loadSessionMessages();
 	}
 	document.addEventListener("visibilitychange", onVisible);
+	window.addEventListener("keydown", onWindowKeydown);
 	connectSessionWS();
 	await nextTick();
 	updateScrollState();
@@ -381,11 +415,20 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	document.removeEventListener("visibilitychange", onVisible);
+	window.removeEventListener("keydown", onWindowKeydown);
 	if (ws) {
 		ws.close();
 		ws = null;
 	}
 });
+
+function openExpandedImage(mediaURL: string) {
+	expandedImageURL.value = mediaURL;
+}
+
+function closeExpandedImage() {
+	expandedImageURL.value = "";
+}
 
 function connectSessionWS() {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
