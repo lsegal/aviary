@@ -114,7 +114,6 @@
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
-import { SUPPORTED_MODELS } from "../constants/models";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";
 

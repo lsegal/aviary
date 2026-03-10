@@ -549,14 +549,11 @@ async function loadSessionMessages() {
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
 			.filter(
-				(m): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
-					m.role === "user" || m.role === "assistant" || m.role === "tool",
+				(m): m is PersistedMessage & { role: "user" | "assistant" } =>
+					m.role === "user" || m.role === "assistant",
 			)
 			.map((m) => {
-				if (
-					m.role === "tool" ||
-					(m.role === "assistant" && m.content.startsWith("[tool] "))
-				) {
+				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
 					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
 				}
 				return {

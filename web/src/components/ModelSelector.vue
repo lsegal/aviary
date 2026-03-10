@@ -2,7 +2,6 @@
   <div class="relative w-full">
     <!-- Selection Area -->
     <div
-      ref="container"
       :class="[
         'flex items-center gap-1.5 p-1.5 min-h-[38px] rounded-lg border border-gray-300 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 transition-all cursor-text',
         multiple ? 'flex-wrap' : 'flex-nowrap overflow-hidden'
@@ -91,7 +90,6 @@ const props = defineProps<{
 
 const emit = defineEmits(["update:modelValue"]);
 
-const container = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
 const query = ref("");
 const isOpen = ref(false);

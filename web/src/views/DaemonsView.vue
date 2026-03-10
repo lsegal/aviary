@@ -185,7 +185,8 @@ function startLogStream(key: string) {
 	if (!logLines.value[key]) {
 		logLines.value[key] = [];
 	}
-	const url = `/api/daemons/logs?key=${encodeURIComponent(key)}&token=${encodeURIComponent(auth.getToken())}`;
+	const token = auth.getToken() ?? "";
+	const url = `/api/daemons/logs?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`;
 	const es = new EventSource(url);
 	es.onmessage = (ev) => {
 		try {

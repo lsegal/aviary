@@ -2022,22 +2022,6 @@ async function saveNotes(agentName: string) {
 		state.saving = false;
 	}
 }
-
-async function clearMemory(agentName: string) {
-	if (!agentName) return;
-	const state = getMemoryState(agentName);
-	state.clearing = true;
-	state.error = "";
-	try {
-		await callTool("memory_clear", { agent: agentName });
-		state.content = "";
-		okMessage.value = `Memory cleared for agent "${agentName}".`;
-	} catch (e) {
-		state.error = e instanceof Error ? e.message : String(e);
-	} finally {
-		state.clearing = false;
-	}
-}
 </script>
 
 <style scoped>
