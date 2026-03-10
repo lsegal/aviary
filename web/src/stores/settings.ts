@@ -30,6 +30,7 @@ export interface AgentChannel {
 	channel?: string;
 	phone?: string;
 	url?: string;
+	disabledTools?: string[];
 	allowFrom?: AllowFromEntry[];
 	showTyping?: boolean;
 	replyToReplies?: boolean;
@@ -41,6 +42,7 @@ export interface AgentChannel {
 
 export interface AgentPermissions {
 	tools?: string[];
+	disabledTools?: string[];
 }
 
 export interface AgentEntry {
@@ -83,6 +85,14 @@ export interface BrowserConfig {
 	cdp_port: number;
 }
 
+export interface WebSearchConfig {
+	brave_api_key?: string;
+}
+
+export interface SearchConfig {
+	web: WebSearchConfig;
+}
+
 export interface SchedulerConfig {
 	concurrency: string | number;
 }
@@ -100,6 +110,7 @@ export interface AppConfig {
 	agents: AgentEntry[];
 	models: ModelsConfig;
 	browser: BrowserConfig;
+	search: SearchConfig;
 	scheduler: SchedulerConfig;
 	skills: Record<string, SkillConfig>;
 }
@@ -115,6 +126,7 @@ function defaultConfig(): AppConfig {
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
+		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "" },
 		skills: {},
 	};
@@ -161,6 +173,9 @@ export const useSettingsStore = defineStore("settings", () => {
 					defaults: { ...base.models.defaults, ...parsed.models?.defaults },
 				},
 				browser: { ...base.browser, ...parsed.browser },
+				search: {
+					web: { ...base.search.web, ...(parsed.search?.web ?? {}) },
+				},
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
 				skills: parsed.skills ?? {},
 			};

@@ -548,6 +548,7 @@ function emptyConfig(): AppConfig {
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 9222 },
+		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "auto" },
 		skills: {},
 	};

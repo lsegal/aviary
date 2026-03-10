@@ -452,6 +452,54 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 	mgr.Stop()
 }
 
+func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
+	mgr := NewManager(nil)
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},
+		Models: config.ModelsConfig{
+			Defaults: &config.ModelDefaults{
+				Model:     "google/gemini-2.0-flash",
+				Fallbacks: []string{"openai-codex/gpt-5.2"},
+			},
+		},
+	}
+
+	mgr.Reconcile(cfg)
+
+	runner, ok := mgr.Get("bot")
+	if !ok {
+		t.Fatal("bot should exist")
+	}
+	if got := runner.Agent().Model; got != "google/gemini-2.0-flash" {
+		t.Fatalf("runner model = %q; want global default", got)
+	}
+	if got := runner.Agent().Fallbacks; len(got) != 1 || got[0] != "openai-codex/gpt-5.2" {
+		t.Fatalf("runner fallbacks = %v; want global defaults", got)
+	}
+
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},
+		Models: config.ModelsConfig{
+			Defaults: &config.ModelDefaults{
+				Model:     "openai/gpt-4.1",
+				Fallbacks: []string{"anthropic/claude-sonnet-4.5"},
+			},
+		},
+	})
+
+	runner, ok = mgr.Get("bot")
+	if !ok {
+		t.Fatal("bot should still exist")
+	}
+	if got := runner.Agent().Model; got != "openai/gpt-4.1" {
+		t.Fatalf("runner model after defaults change = %q; want updated global default", got)
+	}
+	if got := runner.Agent().Fallbacks; len(got) != 1 || got[0] != "anthropic/claude-sonnet-4.5" {
+		t.Fatalf("runner fallbacks after defaults change = %v; want updated global defaults", got)
+	}
+}
+
 func TestSessionManager_CreateAndGetOrCreate(t *testing.T) {
 	setTestDataDir(t)
 	if err := store.EnsureDirs(); err != nil {
@@ -570,7 +618,7 @@ func TestFilterTools_AllowList(t *testing.T) {
 	}
 
 	// Agent-level permissions apply when no per-message restrictions.
-	filtered := runner.filterTools(tools, nil)
+	filtered := runner.filterTools(tools, nil, nil)
 	if len(filtered) != 2 {
 		t.Fatalf("expected 2 filtered tools, got %d", len(filtered))
 	}
@@ -600,9 +648,56 @@ func TestFilterTools_PerMessageOverride(t *testing.T) {
 	}
 
 	// Per-message override restricts to only tool_c.
-	filtered := runner.filterTools(tools, []string{"tool_c"})
+	filtered := runner.filterTools(tools, []string{"tool_c"}, nil)
 	if len(filtered) != 1 || filtered[0].Name != "tool_c" {
 		t.Fatalf("expected 1 filtered tool (tool_c), got %v", filtered)
+	}
+}
+
+func TestFilterTools_DisabledWinsAfterAllowList(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{
+			Name: "bot",
+			Permissions: &config.PermissionsConfig{
+				Tools:         []string{"tool_a", "tool_b"},
+				DisabledTools: []string{"tool_b"},
+			},
+		},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{
+		{Name: "tool_a"},
+		{Name: "tool_b"},
+		{Name: "tool_c"},
+	}
+
+	filtered := runner.filterTools(tools, nil, nil)
+	if len(filtered) != 1 || filtered[0].Name != "tool_a" {
+		t.Fatalf("expected only tool_a after disabled filter, got %v", filtered)
+	}
+}
+
+func TestFilterTools_PerMessageDisabledAppliedAfterRestrict(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{Name: "bot"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{
+		{Name: "tool_a"},
+		{Name: "tool_b"},
+	}
+
+	filtered := runner.filterTools(tools, []string{"tool_a", "tool_b"}, []string{"tool_b"})
+	if len(filtered) != 1 || filtered[0].Name != "tool_a" {
+		t.Fatalf("expected only tool_a after per-message disabled filter, got %v", filtered)
 	}
 }
 
@@ -616,7 +711,7 @@ func TestFilterTools_NoRestrictions(t *testing.T) {
 	)
 
 	tools := []ToolInfo{{Name: "tool_a"}, {Name: "tool_b"}}
-	filtered := runner.filterTools(tools, nil)
+	filtered := runner.filterTools(tools, nil, nil)
 	if len(filtered) != 2 {
 		t.Fatalf("expected all 2 tools, got %d", len(filtered))
 	}

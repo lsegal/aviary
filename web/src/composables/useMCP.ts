@@ -180,11 +180,16 @@ export function useMCP() {
 		await readResponse(res);
 
 		// Send initialized notification (no response expected).
-		await post({
+		const notifyRes = await post({
 			jsonrpc: "2.0",
 			method: "notifications/initialized",
 			params: {},
 		});
+		if (!notifyRes.ok)
+			throw httpError("MCP initialized notification failed", notifyRes);
+		// Drain the response body if present so the browser does not keep the
+		// request hanging across subsequent SPA navigations.
+		await notifyRes.text().catch(() => "");
 	}
 
 	async function ensureInitialized(): Promise<void> {
@@ -203,43 +208,45 @@ export function useMCP() {
 		args?: Record<string, unknown>,
 		options?: CallToolOptions,
 	): Promise<string> {
-		await ensureInitialized();
-		const progressToken =
-			options?.onProgress && typeof crypto?.randomUUID === "function"
-				? crypto.randomUUID()
-				: options?.onProgress
-					? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-					: undefined;
+		return withSessionRetry(async () => {
+			await ensureInitialized();
+			const progressToken =
+				options?.onProgress && typeof crypto?.randomUUID === "function"
+					? crypto.randomUUID()
+					: options?.onProgress
+						? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+						: undefined;
 
-		const res = await post({
-			jsonrpc: "2.0",
-			id: Date.now(),
-			method: "tools/call",
-			params: {
-				name,
-				arguments: args ?? {},
-				...(progressToken ? { _meta: { progressToken } } : {}),
-			},
+			const res = await post({
+				jsonrpc: "2.0",
+				id: Date.now(),
+				method: "tools/call",
+				params: {
+					name,
+					arguments: args ?? {},
+					...(progressToken ? { _meta: { progressToken } } : {}),
+				},
+			});
+
+			if (!res.ok) throw httpError("MCP error", res);
+
+			const data = await readResponse(res, (evt) => {
+				if (evt.method !== "notifications/progress") return;
+				const msg = evt.params?.message;
+				if (typeof msg === "string" && msg.length > 0) {
+					options?.onProgress?.(msg);
+				}
+			});
+			if (data.error) throw new Error(data.error.message);
+
+			const content = data.result?.content ?? [];
+			const text = content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text ?? "")
+				.join("");
+			if (data.result?.isError) throw new Error(text || "tool call failed");
+			return text;
 		});
-
-		if (!res.ok) throw httpError("MCP error", res);
-
-		const data = await readResponse(res, (evt) => {
-			if (evt.method !== "notifications/progress") return;
-			const msg = evt.params?.message;
-			if (typeof msg === "string" && msg.length > 0) {
-				options?.onProgress?.(msg);
-			}
-		});
-		if (data.error) throw new Error(data.error.message);
-
-		const content = data.result?.content ?? [];
-		const text = content
-			.filter((c) => c.type === "text")
-			.map((c) => c.text ?? "")
-			.join("");
-		if (data.result?.isError) throw new Error(text || "tool call failed");
-		return text;
 	}
 
 	async function listTools(): Promise<MCPToolInfo[]> {

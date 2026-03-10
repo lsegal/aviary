@@ -38,6 +38,20 @@
 						"type": "array",
 						"items": { "type": "string" }
 					},
+					"permissions": {
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"tools": {
+								"type": "array",
+								"items": { "type": "string" }
+							},
+							"disabledTools": {
+								"type": "array",
+								"items": { "type": "string" }
+							}
+						}
+					},
 					"channels": {
 						"type": "array",
 						"items": {
@@ -52,6 +66,10 @@
 								"token": { "type": "string" },
 								"channel": { "type": "string" },
 								"phone": { "type": "string" },
+								"disabledTools": {
+									"type": "array",
+									"items": { "type": "string" }
+								},
 								"allowFrom": {
 									"type": "array",
 									"items": { "type": "string" }

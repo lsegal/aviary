@@ -54,6 +54,8 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 
 	desired := make(map[string]struct{})
 	for _, ac := range cfg.Agents {
+		agentModel := config.EffectiveAgentModel(ac, cfg.Models)
+		agentFallbacks := config.EffectiveAgentFallbacks(ac, cfg.Models)
 		for i, cc := range ac.Channels {
 			key := channelKey(ac.Name, cc.Type, i)
 			desired[key] = struct{}{}
@@ -62,7 +64,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 				continue // already running
 			}
 
-			ch := newChannel(cc, ac.Model, ac.Fallbacks)
+			ch := newChannel(cc, agentModel, agentFallbacks)
 			if ch == nil {
 				continue
 			}
@@ -245,15 +247,21 @@ func newChannel(cc config.ChannelConfig, agentModel string, agentFallbacks []str
 	switch cc.Type {
 	case "slack":
 		// Token = bot token (xoxb-…), URL = app-level token (xapp-…) for Socket Mode.
-		return NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom, model, fallbacks)
+		ch := NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom, model, fallbacks)
+		ch.disabledTools = cc.DisabledTools
+		return ch
 	case "discord":
-		return NewDiscordChannel(cc.Token, cc.AllowFrom, model, fallbacks)
+		ch := NewDiscordChannel(cc.Token, cc.AllowFrom, model, fallbacks)
+		ch.disabledTools = cc.DisabledTools
+		return ch
 	case "signal":
 		showTyping := config.BoolOr(cc.ShowTyping, true)
 		reactToEmoji := config.BoolOr(cc.ReactToEmoji, true)
 		replyToReplies := config.BoolOr(cc.ReplyToReplies, true)
 		sendReadReceipts := config.BoolOr(cc.SendReadReceipts, true)
-		return NewSignalChannel(cc.Phone, cc.URL, cc.AllowFrom, showTyping, reactToEmoji, replyToReplies, sendReadReceipts, model, fallbacks)
+		ch := NewSignalChannel(cc.Phone, cc.URL, cc.AllowFrom, showTyping, reactToEmoji, replyToReplies, sendReadReceipts, model, fallbacks)
+		ch.disabledTools = cc.DisabledTools
+		return ch
 	default:
 		slog.Warn("unknown channel type", "type", cc.Type)
 		return nil

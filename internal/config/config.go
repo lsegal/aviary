@@ -2,10 +2,12 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +18,7 @@ type Config struct {
 	Agents    []AgentConfig          `yaml:"agents,omitempty"    json:"agents,omitempty"`
 	Models    ModelsConfig           `yaml:"models,omitempty"    json:"models,omitempty"`
 	Browser   BrowserConfig          `yaml:"browser,omitempty"   json:"browser,omitempty"`
+	Search    SearchConfig           `yaml:"search,omitempty"    json:"search,omitempty"`
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 }
@@ -48,7 +51,8 @@ type TLSConfig struct {
 // offered to the agent.  An empty or absent Permissions block means all tools
 // are available (no restriction).
 type PermissionsConfig struct {
-	Tools []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Tools         []string `yaml:"tools,omitempty"         json:"tools,omitempty"`
+	DisabledTools []string `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
 }
 
 // AgentConfig describes a single agent.
@@ -136,12 +140,13 @@ func (e *AllowFromEntry) UnmarshalJSON(b []byte) error {
 
 // ChannelConfig describes a communication channel for an agent.
 type ChannelConfig struct {
-	Type      string           `yaml:"type"               json:"type"`
-	Token     string           `yaml:"token,omitempty"    json:"token,omitempty"`
-	Channel   string           `yaml:"channel,omitempty"  json:"channel,omitempty"`
-	Phone     string           `yaml:"phone,omitempty"    json:"phone,omitempty"`
-	URL       string           `yaml:"url,omitempty"      json:"url,omitempty"`
-	AllowFrom []AllowFromEntry `yaml:"allowFrom,omitempty" json:"allowFrom,omitempty"`
+	Type          string           `yaml:"type"                    json:"type"`
+	Token         string           `yaml:"token,omitempty"         json:"token,omitempty"`
+	Channel       string           `yaml:"channel,omitempty"       json:"channel,omitempty"`
+	Phone         string           `yaml:"phone,omitempty"         json:"phone,omitempty"`
+	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
+	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
+	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
 	// ShowTyping controls whether a typing indicator is shown while the agent
 	// processes a message. Defaults to true for channels that support it.
 	ShowTyping *bool `yaml:"showTyping,omitempty"     json:"showTyping,omitempty"`
@@ -209,6 +214,16 @@ type BrowserConfig struct {
 	Headless   bool   `yaml:"headless,omitempty"          json:"headless,omitempty"`
 }
 
+// SearchConfig holds search backend settings.
+type SearchConfig struct {
+	Web WebSearchConfig `yaml:"web,omitempty" json:"web,omitempty"`
+}
+
+// WebSearchConfig holds web search provider credentials.
+type WebSearchConfig struct {
+	BraveAPIKey string `yaml:"brave_api_key,omitempty" json:"brave_api_key,omitempty"`
+}
+
 // SchedulerConfig holds scheduler settings.
 type SchedulerConfig struct {
 	Concurrency any `yaml:"concurrency,omitempty" json:"concurrency,omitempty"` // "auto" or a number
@@ -229,6 +244,35 @@ func Default() Config {
 	}
 }
 
+// EffectiveAgentModel returns the runtime model for an agent, preferring the
+// agent-specific value and falling back to models.defaults.model.
+func EffectiveAgentModel(agent AgentConfig, models ModelsConfig) string {
+	model := strings.TrimSpace(agent.Model)
+	if model != "" {
+		return model
+	}
+	if models.Defaults == nil {
+		return ""
+	}
+	return strings.TrimSpace(models.Defaults.Model)
+}
+
+// EffectiveAgentFallbacks returns the runtime fallback list for an agent,
+// preferring the agent-specific list and otherwise using models.defaults.fallbacks.
+func EffectiveAgentFallbacks(agent AgentConfig, models ModelsConfig) []string {
+	if len(agent.Fallbacks) > 0 {
+		out := make([]string, len(agent.Fallbacks))
+		copy(out, agent.Fallbacks)
+		return out
+	}
+	if models.Defaults == nil || len(models.Defaults.Fallbacks) == 0 {
+		return nil
+	}
+	out := make([]string, len(models.Defaults.Fallbacks))
+	copy(out, models.Defaults.Fallbacks)
+	return out
+}
+
 // normalize strips zero/empty fields that would produce noisy YAML output.
 // It is called automatically by Save.
 func normalize(cfg *Config) {
@@ -242,6 +286,9 @@ func normalize(cfg *Config) {
 	}
 	if len(cfg.Models.Providers) == 0 {
 		cfg.Models.Providers = nil
+	}
+	if cfg.Search.Web.BraveAPIKey == "" {
+		cfg.Search.Web = WebSearchConfig{}
 	}
 	if len(cfg.Skills) == 0 {
 		cfg.Skills = nil
@@ -274,6 +321,9 @@ func normalize(cfg *Config) {
 			if len(ch.Fallbacks) == 0 {
 				ch.Fallbacks = nil
 			}
+			if len(ch.DisabledTools) == 0 {
+				ch.DisabledTools = nil
+			}
 			if len(ch.AllowFrom) == 0 {
 				ch.AllowFrom = nil
 			}
@@ -296,6 +346,14 @@ func normalize(cfg *Config) {
 			cfg.Agents[i].Fallbacks = nil
 		}
 		if cfg.Agents[i].Permissions != nil && len(cfg.Agents[i].Permissions.Tools) == 0 {
+			cfg.Agents[i].Permissions.Tools = nil
+		}
+		if cfg.Agents[i].Permissions != nil && len(cfg.Agents[i].Permissions.DisabledTools) == 0 {
+			cfg.Agents[i].Permissions.DisabledTools = nil
+		}
+		if cfg.Agents[i].Permissions != nil &&
+			len(cfg.Agents[i].Permissions.Tools) == 0 &&
+			len(cfg.Agents[i].Permissions.DisabledTools) == 0 {
 			cfg.Agents[i].Permissions = nil
 		}
 	}
@@ -337,10 +395,16 @@ func Save(path string, cfg *Config) error {
 	if err := backupConfigFile(path); err != nil {
 		return err
 	}
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
+	if err := enc.Close(); err != nil {
+		return fmt.Errorf("finalizing config yaml: %w", err)
+	}
+	data := buf.Bytes()
 	if err := os.WriteFile(path, data, 0o640); err != nil {
 		return fmt.Errorf("writing config %s: %w", path, err)
 	}

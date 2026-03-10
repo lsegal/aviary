@@ -189,10 +189,8 @@ async function loadCatalog() {
 	loading.value = true;
 	errorMessage.value = "";
 	try {
-		const [tools, rawSkills] = await Promise.all([
-			listTools(),
-			callTool("skills_list"),
-		]);
+		const tools = await listTools();
+		const rawSkills = await callTool("skills_list");
 		availableTools.value = tools;
 		installedSkills.value =
 			(JSON.parse(rawSkills) as InstalledSkill[] | null)?.map((skill) => ({

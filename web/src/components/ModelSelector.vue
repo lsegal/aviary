@@ -71,7 +71,7 @@
         </div>
       </div>
       <div v-else class="px-4 py-2 text-sm text-gray-400 italic">
-        No matching models found
+        {{ props.emptyText ?? "No matching options found" }}
       </div>
     </div>
   </div>
@@ -85,6 +85,8 @@ const props = defineProps<{
 	modelValue: string | string[];
 	multiple?: boolean;
 	placeholder?: string;
+	options?: string[];
+	emptyText?: string;
 }>();
 
 const emit = defineEmits(["update:modelValue"]);
@@ -97,7 +99,8 @@ const activeIndex = ref(0);
 
 const filteredOptions = computed(() => {
 	const q = query.value.toLowerCase().trim();
-	return SUPPORTED_MODELS.filter((m) => {
+	const options = props.options ?? SUPPORTED_MODELS;
+	return options.filter((m) => {
 		if (props.multiple && Array.isArray(props.modelValue)) {
 			if (props.modelValue.includes(m)) return false;
 		}

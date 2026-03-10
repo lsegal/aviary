@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/config"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,7 +33,7 @@ func registerSearchTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "web_search",
 		Description: "Search the web for a query and return a list of results with titles, URLs, and descriptions. " +
-			"Uses the Brave Search API if a 'brave:api_key' credential has been set via auth_set; " +
+			"Uses the Brave Search API when search.web.brave_api_key is configured with an auth reference; " +
 			"otherwise falls back to searching DuckDuckGo via the browser.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args webSearchArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "search", "tool", "web_search", "query", args.Query)
@@ -46,29 +48,30 @@ func registerSearchTools(s *sdkmcp.Server) {
 			count = 20
 		}
 
-		// Prefer Brave Search API when an API key is configured.
-		st, err := authStore()
-		if err == nil {
-			if apiKey, err := st.Get("brave:api_key"); err == nil && apiKey != "" {
+		// Prefer Brave Search API when explicitly configured in aviary.yaml.
+		if apiKey, authRef, err := configuredBraveAPIKey(); err == nil {
+			if apiKey != "" {
 				results, err := braveSearch(ctx, apiKey, args.Query, count)
 				if err != nil {
-					slog.Warn("mcp: brave search failed, falling back to browser", "component", "search", "err", err)
+					slog.Warn("mcp: brave search failed, falling back to browser", "component", "search", "auth_ref", authRef, "err", err)
 				} else if len(results) > 0 {
 					slog.Info("mcp: web_search completed", "component", "search", "backend", "brave", "results", len(results))
 					return jsonResult(results)
 				} else {
 					// Brave returned no results; fall through to browser.
-					slog.Info("mcp: brave search returned no results, falling back to browser", "component", "search", "query", args.Query)
+					slog.Info("mcp: brave search returned no results, falling back to browser", "component", "search", "query", args.Query, "auth_ref", authRef)
 				}
 			}
+		} else {
+			slog.Warn("mcp: configured Brave search auth could not be resolved, falling back to browser", "component", "search", "err", err)
 		}
 
 		// Fall back to browser-based DuckDuckGo search.
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf(
-				"no search backend available: store your Brave Search API key with " +
-					"auth_set(name='brave:api_key', value='<key>'), or ensure the browser is configured")
+				"no search backend available: configure search.web.brave_api_key with an auth reference " +
+					"(for example auth:brave_api_key), or ensure the browser is configured")
 		}
 		results, err := browserSearch(ctx, d.Browser, args.Query, count)
 		if err != nil {
@@ -77,6 +80,26 @@ func registerSearchTools(s *sdkmcp.Server) {
 		slog.Info("mcp: web_search completed", "component", "search", "backend", "browser", "results", len(results))
 		return jsonResult(results)
 	})
+}
+
+func configuredBraveAPIKey() (apiKey string, authRef string, err error) {
+	cfg, err := config.Load("")
+	if err != nil {
+		return "", "", fmt.Errorf("loading config: %w", err)
+	}
+	authRef = strings.TrimSpace(cfg.Search.Web.BraveAPIKey)
+	if authRef == "" {
+		return "", "", nil
+	}
+	st, err := authStore()
+	if err != nil {
+		return "", authRef, err
+	}
+	apiKey, err = auth.Resolve(st, authRef)
+	if err != nil {
+		return "", authRef, err
+	}
+	return apiKey, authRef, nil
 }
 
 // braveSearch queries the Brave Search API and returns structured results.

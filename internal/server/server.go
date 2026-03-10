@@ -309,6 +309,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			Model:         msg.Model,
 			Fallbacks:     msg.Fallbacks,
 			RestrictTools: msg.RestrictTools,
+			DisabledTools: msg.DisabledTools,
 		}
 		runner.PromptWithOverrides(msgCtx, msg.Text, rOpts, func(e agent.StreamEvent) {
 			switch e.Type {

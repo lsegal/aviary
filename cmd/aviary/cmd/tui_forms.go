@@ -22,6 +22,16 @@ type simpleFormField struct {
 	value  bool
 }
 
+type generalFormModel struct {
+	fields  []simpleFormField
+	cursor  int
+	cfg     *config.Config
+	cfgPath string
+	width   int
+	saved   bool
+	err     string
+}
+
 func newInput(placeholder, value string) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder
@@ -79,6 +89,138 @@ func renderSimpleFields(fields []simpleFormField, cursor int) string {
 		b.WriteString("\n    " + f.input.View() + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func newGeneralFormModel(cfg *config.Config, cfgPath string) generalFormModel {
+	port := "16677"
+	if cfg.Server.Port > 0 {
+		port = strconv.Itoa(cfg.Server.Port)
+	}
+	cdp := ""
+	if cfg.Browser.CDPPort > 0 {
+		cdp = strconv.Itoa(cfg.Browser.CDPPort)
+	}
+	concurrency := ""
+	if cfg.Scheduler.Concurrency != nil {
+		concurrency = fmt.Sprintf("%v", cfg.Scheduler.Concurrency)
+	}
+	fields := []simpleFormField{
+		{label: "Port", desc: "HTTP(S) listen port", input: newInput("16677", port)},
+		{label: "External access", desc: "Bind to 0.0.0.0", isBool: true, value: cfg.Server.ExternalAccess},
+		{label: "Disable TLS", desc: "Use plain HTTP", isBool: true, value: cfg.Server.NoTLS},
+		{label: "Browser binary", desc: "Leave empty to auto-detect", input: newInput("auto-detected", cfg.Browser.Binary)},
+		{label: "CDP port", desc: "Chrome DevTools Protocol port", input: newInput("9222", cdp)},
+		{label: "Concurrency", desc: "Task workers or 'auto'", input: newInput("auto", concurrency)},
+		{label: "Brave key ref", desc: "Exact config value for search.web.brave_api_key", input: newInput("auth:brave_api_key", strings.TrimSpace(cfg.Search.Web.BraveAPIKey))},
+	}
+	fields[0].input.Focus()
+	return generalFormModel{fields: fields, cfg: cfg, cfgPath: cfgPath}
+}
+
+func (m generalFormModel) Init() tea.Cmd { return textinput.Blink }
+func (m generalFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		for i := range m.fields {
+			if !m.fields[i].isBool {
+				m.fields[i].input.Width = clampInputWidth(m.width)
+			}
+		}
+	case savedMsg:
+		m.saved = true
+	case errMsg:
+		m.err = string(msg)
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q", "esc":
+			return m, tea.Quit
+		case "up", "k", "shift+tab":
+			if m.cursor > 0 {
+				if !m.fields[m.cursor].isBool {
+					m.fields[m.cursor].input.Blur()
+				}
+				m.cursor--
+				if !m.fields[m.cursor].isBool {
+					m.fields[m.cursor].input.Focus()
+				}
+			}
+			return m, nil
+		case "down", "j", "tab":
+			if m.cursor < len(m.fields)-1 {
+				if !m.fields[m.cursor].isBool {
+					m.fields[m.cursor].input.Blur()
+				}
+				m.cursor++
+				if !m.fields[m.cursor].isBool {
+					m.fields[m.cursor].input.Focus()
+				}
+			}
+			return m, nil
+		case " ":
+			if m.fields[m.cursor].isBool {
+				m.fields[m.cursor].value = !m.fields[m.cursor].value
+				return m, nil
+			}
+		case "ctrl+s":
+			return m, m.saveCmd()
+		}
+	}
+	if !m.fields[m.cursor].isBool {
+		var cmd tea.Cmd
+		m.fields[m.cursor].input, cmd = m.fields[m.cursor].input.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m generalFormModel) saveCmd() tea.Cmd {
+	cfg := m.cfg
+	cfgPath := m.cfgPath
+	return func() tea.Msg {
+		portStr := strings.TrimSpace(m.fields[0].input.Value())
+		if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+			cfg.Server.Port = p
+		}
+		cfg.Server.ExternalAccess = m.fields[1].value
+		cfg.Server.NoTLS = m.fields[2].value
+		cfg.Browser.Binary = strings.TrimSpace(m.fields[3].input.Value())
+		if p, err := strconv.Atoi(strings.TrimSpace(m.fields[4].input.Value())); err == nil {
+			cfg.Browser.CDPPort = p
+		}
+		concurrency := strings.TrimSpace(m.fields[5].input.Value())
+		switch {
+		case concurrency == "", concurrency == "auto":
+			cfg.Scheduler.Concurrency = nil
+		default:
+			p, err := strconv.Atoi(concurrency)
+			if err != nil {
+				return errMsg("Concurrency must be a number or 'auto'")
+			}
+			cfg.Scheduler.Concurrency = p
+		}
+		cfg.Search.Web.BraveAPIKey = strings.TrimSpace(m.fields[6].input.Value())
+		if err := config.Save(cfgPath, cfg); err != nil {
+			return errMsg(err.Error())
+		}
+		return savedMsg{}
+	}
+}
+
+func (m generalFormModel) View() string {
+	var b strings.Builder
+	b.WriteString(tuiTitleStyle.Render("General Settings") + "\n")
+	b.WriteString(tuiSectionStyle.Render(strings.Repeat("─", maxInt(24, minInt(72, widthOrDefault(m.width)-2)))))
+	b.WriteString("\n")
+	b.WriteString(renderSimpleFields(m.fields, m.cursor))
+	if m.saved {
+		b.WriteString("\n" + tuiSuccessStyle.Render("Saved."))
+	}
+	if m.err != "" {
+		b.WriteString("\n" + tuiErrorStyle.Render(m.err))
+	}
+	b.WriteString("\n\n" + tuiHelpStyle.Render("Tab/↑/↓ navigate · Space toggle · Ctrl+S save · Esc/q quit"))
+	return b.String()
 }
 
 type serverFormModel struct {
@@ -391,6 +533,11 @@ func (m schedulerFormModel) View() string {
 
 func runServerForm(cfg *config.Config, cfgPath string) error {
 	_, err := tea.NewProgram(newServerFormModel(cfg, cfgPath), tea.WithAltScreen()).Run()
+	return err
+}
+
+func runGeneralForm(cfg *config.Config, cfgPath string) error {
+	_, err := tea.NewProgram(newGeneralFormModel(cfg, cfgPath), tea.WithAltScreen()).Run()
 	return err
 }
 

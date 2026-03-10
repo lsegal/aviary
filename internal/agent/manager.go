@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -54,8 +55,10 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 
 	// Add or update agents.
 	for name, ac := range desired {
+		effectiveModel := config.EffectiveAgentModel(*ac, cfg.Models)
+		effectiveFallbacks := config.EffectiveAgentFallbacks(*ac, cfg.Models)
 		if existing, ok := m.runners[name]; ok {
-			if existing.cfg.Model == ac.Model && existing.cfg.Memory == ac.Memory {
+			if existing.agent.Model == effectiveModel && slices.Equal(existing.agent.Fallbacks, effectiveFallbacks) && existing.cfg.Memory == ac.Memory {
 				continue
 			}
 			slog.Info("agent updated", "name", name)
@@ -66,18 +69,18 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 		a := &domain.Agent{
 			ID:        fmt.Sprintf("agent_%s", name),
 			Name:      name,
-			Model:     ac.Model,
-			Fallbacks: ac.Fallbacks,
+			Model:     effectiveModel,
+			Fallbacks: effectiveFallbacks,
 			State:     domain.AgentStateIdle,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 		var provider llm.Provider
 		if m.factory != nil {
-			if p, err := m.factory.ForModel(ac.Model); err == nil {
+			if p, err := m.factory.ForModel(effectiveModel); err == nil {
 				provider = p
-			} else {
-				slog.Warn("failed to create LLM provider", "agent", name, "model", ac.Model, "err", err)
+			} else if effectiveModel != "" {
+				slog.Warn("failed to create LLM provider", "agent", name, "model", effectiveModel, "err", err)
 			}
 		}
 		m.runners[name] = NewAgentRunner(a, ac, provider, m.factory, m.memory)

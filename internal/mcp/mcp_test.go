@@ -1571,8 +1571,15 @@ func TestWebSearchTool_WithBraveAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new file store: %v", err)
 	}
-	if err := as.Set("brave:api_key", "test-brave-key"); err != nil {
+	if err := as.Set("brave_api_key", "test-brave-key"); err != nil {
 		t.Fatalf("set brave api key: %v", err)
+	}
+	if err := config.Save("", &config.Config{
+		Search: config.SearchConfig{
+			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
@@ -1609,6 +1616,33 @@ func TestWebSearchTool_WithBraveAuth(t *testing.T) {
 	if !strings.Contains(out, "Brave Result") {
 		t.Fatalf("expected Brave Result in output, got %q", out)
 	}
+}
+
+func TestWebSearchTool_DoesNotImplicitlyUseBraveCredential(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	authPath := base + "/aviary/auth/credentials.json"
+	as, err := auth.NewFileStore(authPath)
+	if err != nil {
+		t.Fatalf("new file store: %v", err)
+	}
+	if err := as.Set("brave_api_key", "test-brave-key"); err != nil {
+		t.Fatalf("set brave api key: %v", err)
+	}
+	SetDeps(&Deps{Auth: as, Browser: nil})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "web_search", map[string]any{"query": "test"}, "no search backend")
 }
 
 func TestRunGogCLI_CommandRequired(t *testing.T) {

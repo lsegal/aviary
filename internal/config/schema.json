@@ -50,6 +50,20 @@
             "type": "array",
             "items": { "type": "string" }
           },
+          "permissions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "disabledTools": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          },
           "channels": {
             "type": "array",
             "items": {
@@ -74,6 +88,10 @@
                 "sendReadReceipts": { "type": "boolean" },
                 "model": { "type": "string" },
                 "fallbacks": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "disabledTools": {
                   "type": "array",
                   "items": { "type": "string" }
                 },
@@ -180,6 +198,19 @@
           "type": "boolean",
           "default": false,
           "description": "Run the browser without a visible window. Defaults to false so the browser is visible."
+        }
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "web": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "brave_api_key": { "type": "string" }
+          }
         }
       }
     },

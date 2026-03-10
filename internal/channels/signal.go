@@ -228,11 +228,12 @@ func downloadTempImage(ctx context.Context, imageURL string) (string, error) {
 //	    allowFrom:
 //	      - from: "+15559876543"
 type SignalChannel struct {
-	phone     string // registered Signal account phone number
-	initAddr  string // configured TCP address; empty → managed daemon mode
-	allowFrom []config.AllowFromEntry
-	model     string
-	fallbacks []string
+	phone         string // registered Signal account phone number
+	initAddr      string // configured TCP address; empty → managed daemon mode
+	allowFrom     []config.AllowFromEntry
+	model         string
+	fallbacks     []string
+	disabledTools []string
 
 	// Per-channel feature flags (defaults are true).
 	showTyping       bool // show typing indicator while agent processes
@@ -1032,6 +1033,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			Channel:       channelID,
 			Text:          dataMessage.Message,
 			RestrictTools: result.restrictTools,
+			DisabledTools: c.disabledTools,
 			Model:         result.model,
 			Fallbacks:     result.fallbacks,
 		}

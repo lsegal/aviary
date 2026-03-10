@@ -13,7 +13,8 @@ import (
 type configureMenuSelection int
 
 const (
-	configureMenuProviders configureMenuSelection = iota
+	configureMenuGeneral configureMenuSelection = iota
+	configureMenuProviders
 	configureMenuAgents
 	configureMenuSkills
 	configureMenuServer
@@ -40,6 +41,7 @@ type configureMenuModel struct {
 func newConfigureMenuModel(cfg *config.Config, st authpkg.Store) configureMenuModel {
 	return configureMenuModel{
 		items: []configureMenuItem{
+			{configureMenuGeneral, "General", configureGeneralSummary(cfg), "Shared runtime settings including server, browser, scheduler, and web search."},
 			{configureMenuProviders, "Providers & Auth", configureProvidersSummary(st), "Manage provider credentials and OAuth logins."},
 			{configureMenuAgents, "Agents", configureAgentsSummary(cfg), "Add, edit, or remove configured agents."},
 			{configureMenuSkills, "Skills", configureSkillsSummary(cfg), "Enable installed skills and configure skill runtime settings."},
@@ -131,6 +133,10 @@ func runWizard(cfg *config.Config, cfgPath string, st authpkg.Store) error {
 			return err
 		}
 		switch selection {
+		case configureMenuGeneral:
+			if err := runGeneralForm(cfg, cfgPath); err != nil {
+				return err
+			}
 		case configureMenuProviders:
 			if err := runProviderMgr(st); err != nil {
 				return err
@@ -192,6 +198,20 @@ func configureAgentsSummary(cfg *config.Config) string {
 		return "1 agent configured"
 	}
 	return fmt.Sprintf("%d agents configured", len(cfg.Agents))
+}
+
+func configureGeneralSummary(cfg *config.Config) string {
+	parts := []string{
+		configureServerSummary(cfg),
+		configureBrowserSummary(cfg),
+		configureSchedulerSummary(cfg),
+	}
+	if ref := strings.TrimSpace(cfg.Search.Web.BraveAPIKey); ref != "" {
+		parts = append(parts, "Brave "+ref)
+	} else {
+		parts = append(parts, "Browser fallback only")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func configureServerSummary(cfg *config.Config) string {

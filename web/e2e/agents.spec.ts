@@ -28,6 +28,7 @@ const CONFIG = {
 		defaults: { model: "anthropic/claude-sonnet-4-5", fallbacks: [] },
 	},
 	browser: { binary: "", cdp_port: 9222 },
+	search: { web: { brave_api_key: "auth:brave_api_key" } },
 	scheduler: { concurrency: "auto" },
 };
 
@@ -35,7 +36,7 @@ test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		config_get: CONFIG,
-		auth_list: ["auth:anthropic:default", "auth:openai:default"],
+		auth_list: ["anthropic:default", "openai:default", "brave_api_key"],
 		session_list: [],
 		agent_list: [
 			{
@@ -95,6 +96,17 @@ test("tab switching does not blank content", async ({ page }) => {
 	}
 });
 
+test("general tab shows web search settings", async ({ page }) => {
+	await page.goto("/settings");
+
+	await expect(
+		page.getByRole("heading", { name: "Web Search", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByText("auth:brave_api_key", { exact: true }),
+	).toBeVisible();
+});
+
 test("providers auth tab shows credential controls", async ({ page }) => {
 	await page.goto("/settings");
 	await page
@@ -106,8 +118,5 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 	).toBeVisible();
 	await expect(
 		page.getByRole("heading", { name: "Extra Secrets", exact: true }),
-	).toBeVisible();
-	await expect(
-		page.locator('input[placeholder="brave_api_key"]').first(),
 	).toBeVisible();
 });

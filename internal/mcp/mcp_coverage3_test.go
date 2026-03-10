@@ -91,8 +91,15 @@ func TestWebSearch_BraveNoResults_FallbackNoBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new file store: %v", err)
 	}
-	if err := as.Set("brave:api_key", "test-key"); err != nil {
+	if err := as.Set("brave_api_key", "test-key"); err != nil {
 		t.Fatalf("set brave key: %v", err)
+	}
+	if err := config.Save("", &config.Config{
+		Search: config.SearchConfig{
+			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
@@ -133,8 +140,15 @@ func TestWebSearch_BraveError_FallbackNoBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new file store: %v", err)
 	}
-	if err := as.Set("brave:api_key", "bad-key"); err != nil {
+	if err := as.Set("brave_api_key", "bad-key"); err != nil {
 		t.Fatalf("set brave key: %v", err)
+	}
+	if err := config.Save("", &config.Config{
+		Search: config.SearchConfig{
+			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
@@ -173,8 +187,15 @@ func TestWebSearch_CountClamping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new file store: %v", err)
 	}
-	if err := as.Set("brave:api_key", "test-key"); err != nil {
+	if err := as.Set("brave_api_key", "test-key"); err != nil {
 		t.Fatalf("set brave key: %v", err)
+	}
+	if err := config.Save("", &config.Config{
+		Search: config.SearchConfig{
+			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
+		},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
@@ -435,6 +456,50 @@ func TestAgentUpdate_WithFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(out, "updated") {
 		t.Fatalf("expected 'updated', got %q", out)
+	}
+}
+
+func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{Name: "assistant", Model: ""}},
+		Models: config.ModelsConfig{
+			Defaults: &config.ModelDefaults{
+				Model:     "google/gemini-2.0-flash",
+				Fallbacks: []string{"openai-codex/gpt-5.2"},
+			},
+		},
+	}
+	if err := config.Save("", cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	out, err := d.CallTool(context.Background(), "agent_list", map[string]any{})
+	if err != nil {
+		t.Fatalf("agent_list: %v", err)
+	}
+	if !strings.Contains(out, "google/gemini-2.0-flash") {
+		t.Fatalf("expected effective default model in agent_list, got %q", out)
+	}
+	if !strings.Contains(out, "openai-codex/gpt-5.2") {
+		t.Fatalf("expected effective default fallback in agent_list, got %q", out)
 	}
 }
 

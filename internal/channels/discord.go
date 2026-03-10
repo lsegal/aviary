@@ -13,10 +13,11 @@ import (
 
 // DiscordChannel connects to Discord using a bot token.
 type DiscordChannel struct {
-	token     string
-	allowFrom []config.AllowFromEntry
-	model     string
-	fallbacks []string
+	token         string
+	allowFrom     []config.AllowFromEntry
+	model         string
+	fallbacks     []string
+	disabledTools []string
 
 	session   *discordgo.Session
 	handler   func(IncomingMessage)
@@ -84,6 +85,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 				Channel:       m.ChannelID,
 				Text:          m.Content,
 				RestrictTools: result.restrictTools,
+				DisabledTools: c.disabledTools,
 				Model:         result.model,
 				Fallbacks:     result.fallbacks,
 			}

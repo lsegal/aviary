@@ -63,6 +63,7 @@ type RunOverrides struct {
 	Model         string
 	Fallbacks     []string
 	RestrictTools []string
+	DisabledTools []string
 }
 
 // Prompt sends a message to the agent and fans out stream events to consumers.
@@ -79,7 +80,7 @@ func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string,
 }
 
 // PromptWithOverrides is like Prompt but applies the provided overrides for
-// this call only. Model, Fallbacks, and RestrictTools in overrides take
+// this call only. Model, Fallbacks, RestrictTools, and DisabledTools in overrides take
 // precedence over agent-level defaults when non-empty.
 func (r *AgentRunner) PromptWithOverrides(ctx context.Context, message string, overrides RunOverrides, consumers ...StreamConsumer) {
 	r.promptCore(ctx, message, "", overrides, consumers...)
@@ -192,7 +193,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			emit(StreamEvent{Type: StreamEventStop})
 		}
 
-		if r.provider == nil {
+		if currentProvider == nil {
 			if promptCtx.Err() != nil {
 				emitCanceled()
 				return
@@ -217,7 +218,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		}
 
 		tools, _ := listToolsSafe(promptCtx, toolClient)
-		tools = r.filterTools(tools, overrides.RestrictTools)
+		tools = r.filterTools(tools, overrides.RestrictTools, overrides.DisabledTools)
 		systemPrompt := buildToolSystemPrompt(r.agent.Name, tools)
 		if rules := r.loadRules(); rules != "" {
 			systemPrompt = "<agent_rules>\n" + sanitizeDelimitedContent(rules) + "\n</agent_rules>\n\n" + systemPrompt
@@ -608,29 +609,51 @@ func listToolsSafe(ctx context.Context, toolClient ToolClient) ([]ToolInfo, erro
 	return tools, nil
 }
 
-// filterTools applies the effective tool allow-list to the full tool set.
-// Per-message restrictTools (from an allowFrom entry) takes precedence; when
-// empty the agent-level permissions are used.  When neither restricts tools
-// every tool is available.
-func (r *AgentRunner) filterTools(tools []ToolInfo, restrictTools []string) []ToolInfo {
+// filterTools applies the effective tool allow-list to the full tool set and
+// then removes any disabled tools. Per-message restrictTools (from an
+// allowFrom entry) takes precedence; when empty the agent-level permissions are
+// used. Disabled tools are always applied after the allow-list so an explicit
+// exclusion wins over inclusion.
+func (r *AgentRunner) filterTools(tools []ToolInfo, restrictTools, disabledTools []string) []ToolInfo {
 	effective := restrictTools
 	if len(effective) == 0 && r.cfg != nil && r.cfg.Permissions != nil {
 		effective = r.cfg.Permissions.Tools
 	}
-	if len(effective) == 0 {
-		return tools
-	}
-	allowed := make(map[string]struct{}, len(effective))
-	for _, name := range effective {
-		allowed[name] = struct{}{}
-	}
-	filtered := make([]ToolInfo, 0, len(tools))
-	for _, t := range tools {
-		if _, ok := allowed[t.Name]; ok {
-			filtered = append(filtered, t)
+
+	filtered := tools
+	if len(effective) > 0 {
+		allowed := make(map[string]struct{}, len(effective))
+		for _, name := range effective {
+			allowed[name] = struct{}{}
+		}
+		filtered = make([]ToolInfo, 0, len(tools))
+		for _, t := range tools {
+			if _, ok := allowed[t.Name]; ok {
+				filtered = append(filtered, t)
+			}
 		}
 	}
-	return filtered
+
+	disabled := disabledTools
+	if r.cfg != nil && r.cfg.Permissions != nil && len(r.cfg.Permissions.DisabledTools) > 0 {
+		disabled = append(append([]string{}, r.cfg.Permissions.DisabledTools...), disabledTools...)
+	}
+
+	if len(disabled) == 0 {
+		return filtered
+	}
+
+	blocked := make(map[string]struct{}, len(disabled))
+	for _, name := range disabled {
+		blocked[name] = struct{}{}
+	}
+	result := make([]ToolInfo, 0, len(filtered))
+	for _, t := range filtered {
+		if _, ok := blocked[t.Name]; !ok {
+			result = append(result, t)
+		}
+	}
+	return result
 }
 
 type toolCall struct {

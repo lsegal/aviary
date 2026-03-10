@@ -295,6 +295,38 @@ func TestSave(t *testing.T) {
 		}
 	})
 
+	t.Run("writes yaml with 2-space indentation", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		cfg := Default()
+		cfg.Agents = []AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-sonnet-4-5",
+			Channels: []ChannelConfig{{
+				Type: "signal",
+				AllowFrom: []AllowFromEntry{{
+					From: "*",
+				}},
+			}},
+		}}
+		if err := Save(path, &cfg); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		text := string(data)
+		if !strings.Contains(text, "\n  - name: bot\n") {
+			t.Fatalf("expected 2-space list indentation, got:\n%s", text)
+		}
+		if !strings.Contains(text, "\n          - from: ") {
+			t.Fatalf("expected nested 2-space indentation, got:\n%s", text)
+		}
+	})
+
 	t.Run("normalize empty agents", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "aviary.yaml")
@@ -386,6 +418,27 @@ func TestNormalize(t *testing.T) {
 		normalize(cfg)
 		if cfg.Agents[0].Permissions != nil {
 			t.Error("expected empty Permissions to be nil after normalization")
+		}
+	})
+
+	t.Run("empty disabled tools normalized", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{
+			Name: "bot",
+			Permissions: &PermissionsConfig{
+				Tools:         []string{"tool_a"},
+				DisabledTools: []string{},
+			},
+			Channels: []ChannelConfig{{
+				Type:          "slack",
+				DisabledTools: []string{},
+			}},
+		}}}
+		normalize(cfg)
+		if cfg.Agents[0].Permissions == nil || cfg.Agents[0].Permissions.DisabledTools != nil {
+			t.Error("expected empty Permissions.DisabledTools to be nil after normalization")
+		}
+		if cfg.Agents[0].Channels[0].DisabledTools != nil {
+			t.Error("expected empty Channel.DisabledTools to be nil after normalization")
 		}
 	})
 

@@ -15,11 +15,12 @@ import (
 
 // SlackChannel connects to Slack using Socket Mode (no public URL required).
 type SlackChannel struct {
-	appToken  string // xapp-... token for socket mode
-	botToken  string // xoxb-... token for posting
-	allowFrom []config.AllowFromEntry
-	model     string
-	fallbacks []string
+	appToken      string // xapp-... token for socket mode
+	botToken      string // xoxb-... token for posting
+	allowFrom     []config.AllowFromEntry
+	model         string
+	fallbacks     []string
+	disabledTools []string
 
 	botUserID string // populated on connect via auth.test
 
@@ -131,6 +132,7 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 			Channel:       inner.Channel,
 			Text:          inner.Text,
 			RestrictTools: result.restrictTools,
+			DisabledTools: c.disabledTools,
 			Model:         result.model,
 			Fallbacks:     result.fallbacks,
 		}

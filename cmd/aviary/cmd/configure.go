@@ -20,6 +20,12 @@ var configureProvidersCmd = &cobra.Command{
 	RunE:    runConfigureProviders,
 }
 
+var configureGeneralCmd = &cobra.Command{
+	Use:   "general",
+	Short: "Configure shared runtime settings",
+	RunE:  runConfigureGeneral,
+}
+
 var configureAgentsCmd = &cobra.Command{
 	Use:   "agents",
 	Short: "Add, view, or remove agents",
@@ -52,6 +58,7 @@ var configureSchedulerCmd = &cobra.Command{
 
 func init() {
 	configureCmd.AddCommand(
+		configureGeneralCmd,
 		configureProvidersCmd,
 		configureAgentsCmd,
 		configureSkillsCmd,
@@ -74,6 +81,14 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 
 func runConfigureProviders(_ *cobra.Command, _ []string) error {
 	return runProviderMgr(authStore())
+}
+
+func runConfigureGeneral(_ *cobra.Command, _ []string) error {
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return err
+	}
+	return runGeneralForm(cfg, cfgFile)
 }
 
 func runConfigureAgents(_ *cobra.Command, _ []string) error {

@@ -96,6 +96,21 @@
               </div>
             </div>
           </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Web Search</h3>
+            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Select the stored secret that holds your Brave Search API key. This writes an <span class="font-mono">auth:&lt;name&gt;</span> reference into <span class="font-mono">aviary.yaml</span>.</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <select v-model="webSearchSecretSelection" class="field-input max-w-[320px]">
+                <option value="">Use browser fallback only</option>
+                <option v-for="name in webSearchSecretOptions" :key="name" :value="name">{{ name }}</option>
+              </select>
+              <span v-if="draft.search.web.brave_api_key" class="rounded bg-gray-100 px-2 py-1 font-mono text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                {{ draft.search.web.brave_api_key }}
+              </span>
+            </div>
+            <p v-if="!webSearchSecretOptions.length" class="mt-3 text-xs text-gray-400 dark:text-gray-500">No stored secrets available yet. Add one in Providers & Auth, then select it here.</p>
+          </div>
         </section>
 
         <section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
@@ -240,6 +255,26 @@
               <p v-if="hasToolRestriction(agent) && !toolGroupEntries.length" class="mt-2 text-xs text-gray-400 dark:text-gray-500">
                 No tools found. The server may not be reachable.
               </p>
+
+              <div class="mt-4">
+                <label class="field-label">Disabled tools</label>
+                <ModelSelector
+                  :model-value="agent.permissions?.disabledTools ?? []"
+                  :options="availableToolNames"
+                  multiple
+                  placeholder="Exclude tools after restrict tools…"
+                  empty-text="No matching tools found"
+                  @update:model-value="
+                    agent.permissions = {
+                      ...(agent.permissions ?? {}),
+                      disabledTools: Array.isArray($event) ? $event : [],
+                    }
+                  "
+                />
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Applied after the inclusive tool list. Disabled tools always win.
+                </p>
+              </div>
             </div>
 
             <div class="flex items-center justify-between">
@@ -397,6 +432,21 @@
                     @update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label class="field-label">Channel disabled tools (optional)</label>
+                <ModelSelector
+                  :model-value="ch.disabledTools ?? []"
+                  :options="availableToolNames"
+                  multiple
+                  placeholder="Exclude tools for this channel…"
+                  empty-text="No matching tools found"
+                  @update:model-value="ch.disabledTools = Array.isArray($event) ? $event : []"
+                />
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Applied after any restrict-tools allow list for messages on this channel.
+                </p>
               </div>
 
               <div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
@@ -761,6 +811,16 @@
             </div>
             <button type="button" class="mt-2 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300" @click="refreshCredentials">↻ Refresh</button>
           </div>
+
+          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Token</h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              The Aviary token authenticates access to the web UI and API. To rotate it, run the command below in your terminal. Regenerating the token signs out existing sessions and clients using the old token.
+            </p>
+            <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-200">
+              aviary token --new
+            </div>
+          </div>
         </section>
 
       </div>
@@ -996,6 +1056,20 @@ const extraSecrets = computed(() => {
 	return credentials.value.filter((cred) => !providerKeys.has(cred));
 });
 
+const webSearchSecretOptions = computed(() =>
+	extraSecrets.value.filter((cred) => !cred.endsWith(":oauth")),
+);
+
+const webSearchSecretSelection = computed({
+	get(): string {
+		const ref = draft.value.search.web.brave_api_key?.trim() ?? "";
+		return ref.startsWith("auth:") ? ref.slice(5) : "";
+	},
+	set(name: string) {
+		draft.value.search.web.brave_api_key = name ? `auth:${name}` : "";
+	},
+});
+
 const allJobs = ref<JobEntry[]>([]);
 const jobsLoading = ref(false);
 
@@ -1040,6 +1114,12 @@ const toolGroupEntries = computed((): [string, MCPToolInfo[]][] => {
 	}
 	return [...groups.entries()];
 });
+
+const availableToolNames = computed(() =>
+	availableTools.value
+		.map((tool) => tool.name)
+		.sort((a, b) => a.localeCompare(b)),
+);
 watch(activeTab, (tab) => {
 	if (tab === "agents") {
 		void loadAllJobs();
@@ -1201,6 +1281,7 @@ function emptyConfig(): AppConfig {
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
+		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "" },
 		skills: {},
 	};
@@ -1608,6 +1689,13 @@ async function saveAll() {
 			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "" : n;
 		}
 
+		normalized.search = {
+			web: {
+				brave_api_key:
+					(normalized.search?.web?.brave_api_key ?? "").trim() || undefined,
+			},
+		};
+
 		// Normalize agent/task values.
 		normalized.agents = (normalized.agents ?? []).map((agent) => ({
 			...agent,
@@ -1625,6 +1713,9 @@ async function saveAll() {
 				url: (ch.url ?? "").trim() || undefined,
 				model: (ch.model ?? "").trim() || undefined,
 				fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+				disabledTools: (ch.disabledTools ?? [])
+					.map((v) => v.trim())
+					.filter(Boolean),
 				showTyping: ch.showTyping === false ? false : undefined,
 				replyToReplies: ch.replyToReplies === false ? false : undefined,
 				reactToEmoji: ch.reactToEmoji === false ? false : undefined,
@@ -1658,8 +1749,14 @@ async function saveAll() {
 				run_once: Boolean(task.run_once),
 			})),
 			permissions:
-				(agent.permissions?.tools?.length ?? 0) > 0
-					? { tools: (agent.permissions?.tools ?? []).filter(Boolean) }
+				(agent.permissions?.tools?.length ?? 0) > 0 ||
+				(agent.permissions?.disabledTools?.length ?? 0) > 0
+					? {
+							tools: (agent.permissions?.tools ?? []).filter(Boolean),
+							disabledTools: (agent.permissions?.disabledTools ?? [])
+								.map((v) => v.trim())
+								.filter(Boolean),
+						}
 					: undefined,
 		}));
 		const normalizedSkills: Record<string, SkillConfig> = {};
