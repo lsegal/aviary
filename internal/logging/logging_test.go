@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -187,5 +189,32 @@ func TestTeeHandler_WithAttrs_Empty(t *testing.T) {
 	h2 := h.WithAttrs([]slog.Attr{})
 	if h2 == nil {
 		t.Fatal("WithAttrs(empty) returned nil")
+	}
+}
+
+func TestInit(t *testing.T) {
+	// Use os.TempDir() directly (not t.TempDir()) so the directory persists
+	// past test cleanup and avoids Windows file-lock issues with open log files.
+	tmp, err := os.MkdirTemp("", "aviary-init-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	// Best-effort cleanup; may fail on Windows due to open file handle.
+	defer os.RemoveAll(tmp) //nolint:errcheck
+
+	store.SetDataDir(tmp)
+	defer store.SetDataDir("")
+
+	// Reset once so Init() actually runs.
+	once = sync.Once{}
+
+	err = Init()
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Log file should now exist.
+	if _, serr := os.Stat(LogFilePath()); serr != nil {
+		t.Errorf("expected log file to exist after Init(), got: %v", serr)
 	}
 }

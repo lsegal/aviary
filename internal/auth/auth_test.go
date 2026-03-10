@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -560,5 +561,79 @@ func TestIntegration_FileStoreResolve(t *testing.T) {
 	got, err := Resolve(s, "auth:openai:default")
 	if err != nil || got != "sk-test" {
 		t.Fatalf("resolve got %q err %v", got, err)
+	}
+}
+
+func TestGeminiExchange_MockServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "gemini-access-tok",
+			"refresh_token": "gemini-refresh-tok",
+			"expires_in":    3600,
+		})
+	}))
+	defer srv.Close()
+	patchDefaultClient(t, srv)
+
+	tok, err := geminiExchange(context.Background(), "code123", "verifier456", "http://localhost:45289/callback")
+	if err != nil {
+		t.Fatalf("geminiExchange: %v", err)
+	}
+	if tok.AccessToken != "gemini-access-tok" {
+		t.Errorf("access token = %q; want gemini-access-tok", tok.AccessToken)
+	}
+	if tok.RefreshToken != "gemini-refresh-tok" {
+		t.Errorf("refresh token = %q; want gemini-refresh-tok", tok.RefreshToken)
+	}
+	if tok.ExpiresAt == 0 {
+		t.Error("expected non-zero ExpiresAt")
+	}
+}
+
+func TestGeminiExchange_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	patchDefaultClient(t, srv)
+
+	_, err := geminiExchange(context.Background(), "code", "verifier", "http://localhost:45289/callback")
+	if err == nil {
+		t.Fatal("expected error for HTTP 403")
+	}
+}
+
+func TestOpenAILogin_PortInUse(t *testing.T) {
+	// Bind port 1455 so OpenAILogin fails with "address already in use".
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OpenAICallbackPort))
+	if err != nil {
+		t.Skipf("cannot bind port %d: %v", OpenAICallbackPort, err)
+	}
+	defer ln.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err = OpenAILogin(ctx)
+	if err == nil {
+		t.Fatal("expected error when callback port is busy")
+	}
+}
+
+func TestGeminiLogin_PortInUse(t *testing.T) {
+	// Bind port 45289 so GeminiLogin fails with "address already in use".
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GeminiCallbackPort))
+	if err != nil {
+		t.Skipf("cannot bind port %d: %v", GeminiCallbackPort, err)
+	}
+	defer ln.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err = GeminiLogin(ctx)
+	if err == nil {
+		t.Fatal("expected error when callback port is busy")
 	}
 }
