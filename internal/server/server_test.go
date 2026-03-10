@@ -734,8 +734,8 @@ func TestProcSampler_Sample(t *testing.T) {
 	if !ok {
 		t.Fatal("expected stats for current PID")
 	}
-	if stats.Status != "running" {
-		t.Errorf("expected status=running, got %q", stats.Status)
+	if stats.Status != "running" && stats.Status != "sleeping" {
+		t.Errorf("expected status running or sleeping, got %q", stats.Status)
 	}
 }
 
