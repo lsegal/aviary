@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // Manager manages browser sessions via Chrome DevTools Protocol.
@@ -220,15 +221,11 @@ func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Con
 }
 
 // userDataDir returns the Chrome user data directory for Aviary's browser.
-// If profileDir is set it is used as-is (absolute path); otherwise a
-// platform-appropriate directory under the OS config dir is used.
+// If profileDir is set it is used as-is; otherwise a browser directory
+// alongside aviary.yaml is used.
 func (m *Manager) userDataDir() string {
 	if m.profileDir != "" {
 		return m.profileDir
 	}
-	base, err := os.UserConfigDir()
-	if err != nil {
-		base = os.TempDir()
-	}
-	return filepath.Join(base, "aviary", "browser")
+	return filepath.Join(filepath.Dir(config.DefaultPath()), "browser")
 }
