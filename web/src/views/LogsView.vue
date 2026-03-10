@@ -84,7 +84,7 @@
             :disabled="logs.loadingMore.value"
             @click="logs.loadPrevious()"
           >
-            {{ logs.loadingMore.value ? 'Loading…' : '↑ Load previous 500 lines' }}
+            {{ logs.loadingMore.value ? 'Loading…' : `↑ Load previous ${logs.historyPageSize} lines` }}
           </button>
         </div>
 

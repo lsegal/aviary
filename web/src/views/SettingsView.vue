@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="h-full overflow-y-auto">
-      <div class="mx-auto max-w-6xl px-6 py-6">
+      <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <div class="mb-6 flex items-center justify-between gap-3">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
           <div class="flex items-center gap-2">
@@ -18,16 +18,6 @@
               @click="saveAll"
             >{{ saving ? "Saving…" : "Save Changes" }}</button>
           </div>
-        </div>
-
-        <div class="mb-6 flex flex-wrap gap-2">
-          <button
-            v-for="item in tabs"
-            :key="item"
-            type="button"
-            :class="tabClass(item)"
-            @click="activeTab = item"
-          >{{ tabLabel(item) }}</button>
         </div>
 
         <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
@@ -185,9 +175,6 @@
                     </button>
                     <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getMemoryState(agent.name).saving" @click="saveNotes(agent.name)">
                       {{ getMemoryState(agent.name).saving ? 'Saving…' : 'Save' }}
-                    </button>
-                    <button type="button" class="danger-btn disabled:opacity-50" :disabled="!agent.name || getMemoryState(agent.name).clearing" @click="clearMemory(agent.name)">
-                      {{ getMemoryState(agent.name).clearing ? 'Clearing…' : 'Clear All' }}
                     </button>
                   </div>
                 </div>
@@ -486,16 +473,38 @@
                 </div>
                 <div>
                   <label class="field-label">Channel</label>
-                  <select v-model="task.channel" class="field-input">
+                  <select
+                    :value="taskChannelSelection(task)"
+                    class="field-input"
+                    @change="setTaskChannelSelection(task, $event)"
+                  >
                     <option value="">silent</option>
                     <option value="last">last</option>
-                    <option value="slack">slack</option>
-                    <option value="discord">discord</option>
-                    <option value="signal">signal</option>
+                    <option
+                      v-for="option in configuredTaskChannelOptions(agent)"
+                      :key="option.value"
+                      :value="option.value"
+                    >{{ option.label }}</option>
                   </select>
                 </div>
                 <div class="flex items-end">
                   <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
+                </div>
+              </div>
+
+              <div
+                v-if="taskChannelNeedsTarget(task)"
+                class="grid gap-3 lg:grid-cols-[1fr_auto]"
+              >
+                <div>
+                  <label class="field-label">Destination ID</label>
+                  <input
+                    :value="taskChannelTarget(task)"
+                    type="text"
+                    class="field-input"
+                    :placeholder="taskChannelTargetPlaceholder(task)"
+                    @input="setTaskChannelTarget(task, $event)"
+                  />
                 </div>
               </div>
 
@@ -761,7 +770,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
@@ -811,24 +820,31 @@ interface JobEntry {
 	created_at: string;
 }
 
+interface TaskChannelOption {
+	value: string;
+	label: string;
+	type: string;
+}
+
 const route = useRoute();
-const router = useRouter();
 
 const tabs: Tab[] = ["general", "agents", "skills", "sessions", "providers"];
-const queryTab = route.query.tab as Tab | undefined;
-const storedTab = localStorage.getItem("settings:activeTab") as Tab | null;
 const activeTab = ref<Tab>(
-	queryTab && tabs.includes(queryTab)
-		? queryTab
-		: storedTab && tabs.includes(storedTab)
-			? storedTab
-			: "general",
+	(route.params.tab as Tab | undefined) &&
+		tabs.includes(route.params.tab as Tab)
+		? (route.params.tab as Tab)
+		: "general",
 );
 
-watch(activeTab, (tab) => {
-	localStorage.setItem("settings:activeTab", tab);
-	void router.replace({ query: { ...route.query, tab } });
-});
+watch(
+	() => route.params.tab,
+	(tab) => {
+		if (tab && tabs.includes(tab as Tab)) {
+			activeTab.value = tab as Tab;
+		}
+	},
+	{ immediate: true },
+);
 
 const store = useSettingsStore();
 const { callTool, listTools } = useMCP();
@@ -1190,20 +1206,6 @@ function emptyConfig(): AppConfig {
 	};
 }
 
-function tabLabel(tab: Tab): string {
-	if (tab === "general") return "General";
-	if (tab === "agents") return "Agents & Tasks";
-	if (tab === "skills") return "Skills";
-	if (tab === "sessions") return "Sessions";
-	return "Providers & Auth";
-}
-
-function tabClass(tab: Tab): string {
-	return activeTab.value === tab
-		? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
-		: "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
-}
-
 async function loadConfig() {
 	loading.value = true;
 	errorMessage.value = "";
@@ -1220,6 +1222,9 @@ async function loadConfig() {
 				if (ch.replyToReplies === undefined) ch.replyToReplies = true;
 				if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
 				if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
+			});
+			(agent.tasks ?? []).forEach((task) => {
+				if (!task.channel) task.channel = "last";
 			});
 		});
 		concurrencyInput.value = cfg.scheduler.concurrency
@@ -1248,7 +1253,7 @@ async function loadConfig() {
 async function loadInstalledSkills() {
 	skillsLoading.value = true;
 	try {
-		const raw = await callTool("skill_list");
+		const raw = await callTool("skills_list");
 		installedSkills.value = (JSON.parse(raw) as InstalledSkill[] | null) ?? [];
 	} catch {
 		installedSkills.value = [];
@@ -1298,7 +1303,7 @@ function addTask(agentIndex: number) {
 		prompt: "",
 		schedule: "",
 		watch: "",
-		channel: "",
+		channel: "last",
 		run_once: false,
 	};
 	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
@@ -1309,6 +1314,92 @@ function addTask(agentIndex: number) {
 
 function removeTask(agentIndex: number, taskIndex: number) {
 	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
+}
+
+function configuredChannelLabel(ch: AgentChannel, index: number): string {
+	if (ch.type === "signal" && ch.phone) return `signal (${ch.phone})`;
+	if (ch.type === "slack" && ch.channel) return `slack (${ch.channel})`;
+	if (ch.type === "discord" && ch.channel) return `discord (${ch.channel})`;
+	return `${ch.type} #${index + 1}`;
+}
+
+function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
+	return (agent.channels ?? [])
+		.filter((ch) => !!ch.type)
+		.map((ch, index) => ({
+			value: `route:${ch.type}:${index}`,
+			label: configuredChannelLabel(ch, index),
+			type: ch.type,
+		}));
+}
+
+function parseTaskChannelValue(channel?: string): {
+	selection: string;
+	target: string;
+	type: string;
+} {
+	const raw = (channel ?? "").trim();
+	if (!raw) return { selection: "", target: "", type: "" };
+	if (raw === "last") return { selection: "last", target: "", type: "" };
+	if (raw.startsWith("route:")) {
+		const parts = raw.split(":", 4);
+		if (parts.length >= 3) {
+			return {
+				selection: parts.slice(0, 3).join(":"),
+				target: parts[3] ?? "",
+				type: parts[1] ?? "",
+			};
+		}
+	}
+	if (raw === "slack" || raw === "discord" || raw === "signal") {
+		return {
+			selection: `route:${raw}:0`,
+			target: "",
+			type: raw,
+		};
+	}
+	return { selection: "", target: "", type: "" };
+}
+
+function taskChannelSelection(task: AgentTask): string {
+	return parseTaskChannelValue(task.channel).selection;
+}
+
+function taskChannelTarget(task: AgentTask): string {
+	return parseTaskChannelValue(task.channel).target;
+}
+
+function taskChannelNeedsTarget(task: AgentTask): boolean {
+	return taskChannelSelection(task).startsWith("route:");
+}
+
+function taskChannelTargetPlaceholder(task: AgentTask): string {
+	const type = parseTaskChannelValue(task.channel).type;
+	if (type === "signal") return "Phone number or group ID";
+	if (type === "slack") return "Slack channel or DM conversation ID";
+	if (type === "discord") return "Discord channel ID";
+	return "Destination ID";
+}
+
+function setTaskChannelSelection(task: AgentTask, event: Event) {
+	const selection = (event.target as HTMLSelectElement).value;
+	const parsed = parseTaskChannelValue(task.channel);
+	if (!selection) {
+		task.channel = "";
+		return;
+	}
+	if (selection === "last") {
+		task.channel = "last";
+		return;
+	}
+	task.channel = `${selection}:${parsed.target}`;
+}
+
+function setTaskChannelTarget(task: AgentTask, event: Event) {
+	const target = (event.target as HTMLInputElement).value.trim();
+	const selection = taskChannelSelection(task);
+	if (!selection.startsWith("route:")) return;
+	task.channel = `${selection}:${target}`;
 }
 
 function addChannel(agentIndex: number) {

@@ -11,7 +11,7 @@ func TestConstants_NonEmpty(t *testing.T) {
 			t.Fatal("agent state should not be empty")
 		}
 	}
-	for _, status := range []JobStatus{JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed} {
+	for _, status := range []JobStatus{JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed, JobStatusCanceled} {
 		if status == "" {
 			t.Fatal("job status should not be empty")
 		}

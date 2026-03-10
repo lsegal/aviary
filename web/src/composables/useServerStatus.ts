@@ -16,9 +16,15 @@ export function useServerStatus() {
 	const status = ref<ConnectionStatus>("connecting");
 	const version = ref<string>("");
 	const goos = ref<string>("");
+	const latestVersion = ref<string>("");
+	const upgradeAvailable = ref(false);
+	const versionMessage = ref("");
+	const checkingVersion = ref(false);
+	const upgrading = ref(false);
 
 	let ws: WebSocket | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let versionTimer: ReturnType<typeof setInterval> | null = null;
 	let reconnectDelay = 1_000;
 	let destroyed = false;
 
@@ -77,6 +83,51 @@ export function useServerStatus() {
 		reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
 	}
 
+	async function refreshVersionStatus() {
+		checkingVersion.value = true;
+		try {
+			const token = auth.getToken();
+			const res = await fetch("/api/version", {
+				headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+			});
+			const data = (await res.json()) as {
+				latestVersion?: string;
+				upgradeAvailable?: boolean;
+				message?: string;
+			};
+			latestVersion.value = data.latestVersion ?? "";
+			upgradeAvailable.value = data.upgradeAvailable === true;
+			versionMessage.value = data.message ?? "";
+		} catch {
+			versionMessage.value = "";
+		} finally {
+			checkingVersion.value = false;
+		}
+	}
+
+	async function triggerUpgrade() {
+		upgrading.value = true;
+		try {
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+			};
+			const token = auth.getToken();
+			if (token) headers.Authorization = `Bearer ${token}`;
+			const res = await fetch("/api/version/upgrade", {
+				method: "POST",
+				headers,
+				body: JSON.stringify({ version: latestVersion.value || undefined }),
+			});
+			const data = (await res.json()) as { message?: string };
+			versionMessage.value = data.message ?? "";
+			if (res.ok) {
+				upgradeAvailable.value = false;
+			}
+		} finally {
+			upgrading.value = false;
+		}
+	}
+
 	function teardown() {
 		destroyed = true;
 		if (reconnectTimer !== null) {
@@ -88,10 +139,31 @@ export function useServerStatus() {
 			ws.close();
 			ws = null;
 		}
+		if (versionTimer !== null) {
+			clearInterval(versionTimer);
+			versionTimer = null;
+		}
 	}
 
-	onMounted(() => connect());
+	onMounted(() => {
+		connect();
+		void refreshVersionStatus();
+		versionTimer = setInterval(() => {
+			void refreshVersionStatus();
+		}, 5 * 60_000);
+	});
 	onUnmounted(() => teardown());
 
-	return { status, version, goos };
+	return {
+		status,
+		version,
+		goos,
+		latestVersion,
+		upgradeAvailable,
+		versionMessage,
+		checkingVersion,
+		upgrading,
+		refreshVersionStatus,
+		triggerUpgrade,
+	};
 }

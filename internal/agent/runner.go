@@ -159,7 +159,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			Provider:  extractProvider(effectiveModel),
 		}
 		defer func() {
-			if usageRec.InputTokens > 0 || usageRec.OutputTokens > 0 {
+			if usageRec.InputTokens > 0 || usageRec.OutputTokens > 0 || usageRec.HasError || usageRec.HasThrottle {
 				usageRec.Timestamp = time.Now()
 				if err := store.AppendJSONL(store.UsagePath(), usageRec); err != nil {
 					slog.Warn("agent: failed to record usage", "err", err)
@@ -256,6 +256,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 					emitCanceled()
 					return
 				}
+				markUsageFailure(usageRec, err)
 				if isRetryableError(err) && tryFallback(err) {
 					round--
 					continue
@@ -290,12 +291,14 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 						emitCanceled()
 						return
 					}
+					markUsageFailure(usageRec, event.Error)
 					if isRetryableError(event.Error) && tryFallback(event.Error) {
 						fallbackTriggered = true
-						for range ch {} // drain remaining events
+						for ev := range ch {
+							_ = ev
+						}
 						break
 					}
-					usageRec.HasError = true
 					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, fmt.Sprintf("Error: %v", event.Error), "", effectiveModel)
 					emit(StreamEvent{Type: StreamEventError, Err: event.Error})
 					return
@@ -784,6 +787,31 @@ func isRetryableError(err error) bool {
 		strings.Contains(s, "unauthenticated")
 }
 
+func isThrottleError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "429") ||
+		strings.Contains(s, "rate limit") ||
+		strings.Contains(s, "rate_limit") ||
+		strings.Contains(s, "rate_limit_exceeded") ||
+		strings.Contains(s, "resource_exhausted") ||
+		strings.Contains(s, "quota") ||
+		strings.Contains(s, "capacity")
+}
+
+func markUsageFailure(rec *domain.UsageRecord, err error) {
+	if rec == nil || err == nil {
+		return
+	}
+	if isThrottleError(err) {
+		rec.HasThrottle = true
+		return
+	}
+	rec.HasError = true
+}
+
 func shouldRetryToollessRefusal(answer string, toolCount int, alreadyRetried bool) bool {
 	if alreadyRetried || toolCount == 0 {
 		return false
@@ -833,7 +861,7 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
 	}
 	sb.WriteString("When a user asks to change state (configuration, tasks, auth, browser actions, memory, sessions, jobs), prefer executing tools over explaining limitations.\n")
 	sb.WriteString("Do not claim lack of access unless a tool call actually fails.\n")
-	sb.WriteString("When asked to schedule a task or reminder, call task_schedule immediately using your own agent name. Do not ask where output will appear — scheduled task output is captured in job logs.\n")
+	sb.WriteString("When asked to schedule a task or reminder, call task_schedule immediately using your own agent name. Use \"in\" for one-time reminders and \"schedule\" for recurring tasks. Do not ask where output will appear — scheduled task output is captured in job logs.\n")
 	sb.WriteString("Any new facts detected in user messages (personal details, preferences, names, relationships, or explicit requests to remember something) should be stored using the memory_store tool (arguments: agent=<your agent name>, content=<the fact>) before responding.\n")
 	sb.WriteString("If you decide to call a tool, respond with ONLY valid JSON in this exact shape: {\"tool\":\"<name>\",\"arguments\":{...}}\n")
 	sb.WriteString("JSON rules: all string values must use \\\" to escape double quotes inside them. Never use unescaped double quotes inside a JSON string value.\n")

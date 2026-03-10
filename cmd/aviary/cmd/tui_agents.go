@@ -527,7 +527,7 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m agentMgrModel) saveConfig(msg string) tea.Cmd {
+func (m agentMgrModel) saveConfig(_ string) tea.Cmd {
 	cfg := m.cfg
 	cfgPath := m.cfgPath
 	return func() tea.Msg {

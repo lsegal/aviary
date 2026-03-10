@@ -128,9 +128,6 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				} else {
 					taskNames[t.Name] = j
 				}
-				if strings.Contains(t.Name, "/") {
-					v.errorf(tf+".name", "task name %q must not contain '/' (it is used as part of the scheduler task key)", t.Name)
-				}
 			}
 
 			if t.Schedule == "" && t.Watch == "" {

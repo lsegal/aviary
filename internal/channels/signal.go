@@ -19,8 +19,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lsegal/aviary/internal/config"
 	nethtml "golang.org/x/net/html"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 var (
@@ -338,6 +339,7 @@ func (c *SignalChannel) Send(channel, text string) error {
 		PreviewDescription string   `json:"previewDescription,omitempty"`
 		PreviewImage       string   `json:"previewImage,omitempty"`
 	}
+	text = formatSignalMarkup(text)
 	previews, cleanupPreview := fetchLinkPreviews(text)
 	if cleanupPreview != nil {
 		defer cleanupPreview()
@@ -533,7 +535,7 @@ func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
 	}
 	params := sendParams{
 		Attachments: []string{filePath},
-		Message:     caption,
+		Message:     formatSignalMarkup(caption),
 	}
 	if strings.HasPrefix(channel, "+") {
 		params.Recipient = []string{channel}

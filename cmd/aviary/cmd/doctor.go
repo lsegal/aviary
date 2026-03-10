@@ -24,6 +24,7 @@ Exits with status 1 if any errors are found.`,
 }
 
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorDisableVersion, "disable-version-check", false, "Skip the GitHub release version check and upgrade prompt")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -85,6 +86,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
+	if !doctorDisableVersion {
+		if err := maybeRunDoctorVersionCheck(); err != nil {
+			return err
+		}
+	}
 	if nerrs > 0 {
 		os.Exit(1)
 	}

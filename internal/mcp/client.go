@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/buildinfo"
 )
 
 // ToolInfo is a minimal MCP tool descriptor used for dynamic discovery.
@@ -52,7 +54,7 @@ func NewInProcessClient(ctx context.Context, srv *sdkmcp.Server) (*InProcessClie
 	// Connect the client side.
 	c := sdkmcp.NewClient(&sdkmcp.Implementation{
 		Name:    "aviary-cli",
-		Version: "0.1.0",
+		Version: buildinfo.Version,
 	}, nil)
 
 	session, err := c.Connect(connCtx, clientTransport, nil)

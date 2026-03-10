@@ -39,7 +39,11 @@ func GenerateToken() (string, error) {
 // Returns the token and a boolean indicating if it was newly generated.
 func LoadOrGenerateToken() (string, bool, error) {
 	data, err := os.ReadFile(tokenPath())
-	if err == nil {
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", false, fmt.Errorf("reading token: %w", err)
+		}
+	} else {
 		tok := strings.TrimSpace(string(data))
 		if tok != "" {
 			return tok, false, nil

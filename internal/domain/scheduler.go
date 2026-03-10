@@ -14,6 +14,7 @@ const (
 // ScheduledTask represents a task to be executed by an agent on a schedule or trigger.
 type ScheduledTask struct {
 	ID          string      `json:"id"`
+	AgentName   string      `json:"agent_name"`
 	AgentID     string      `json:"agent_id"`
 	Name        string      `json:"name"`
 	TriggerType TriggerType `json:"trigger_type"`
@@ -35,6 +36,7 @@ const (
 	JobStatusInProgress JobStatus = "in_progress"
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
+	JobStatusCanceled   JobStatus = "canceled"
 )
 
 // Job represents a single instance of a task being executed.
@@ -44,6 +46,7 @@ type Job struct {
 	AgentID        string     `json:"agent_id"`
 	AgentName      string     `json:"agent_name"`
 	Prompt         string     `json:"prompt"`
+	OutputChannel  string     `json:"output_channel,omitempty"`
 	Status         JobStatus  `json:"status"`
 	Attempts       int        `json:"attempts"`
 	MaxRetries     int        `json:"max_retries"`

@@ -78,11 +78,8 @@ func TestFactoryForModel(t *testing.T) {
 }
 
 func TestFactoryResolverError(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:openai:default" || ref == "auth:openai:oauth" {
-			return "", errors.New("boom")
-		}
-		return "key", nil
+	f := NewFactory(func(_ string) (string, error) {
+		return "", errors.New("boom")
 	})
 
 	if _, err := f.ForModel("openai/gpt-4o"); err == nil {
@@ -220,7 +217,7 @@ func TestResolveOAuthToken_Empty(t *testing.T) {
 
 func TestResolveOAuthToken_PlainString(t *testing.T) {
 	// Auth resolver returns a plain API key.
-	f := NewFactory(func(ref string) (string, error) {
+	f := NewFactory(func(_ string) (string, error) {
 		return "sk-test-key", nil
 	})
 	tok, ok := f.resolveOAuthToken("anthropic:oauth")
@@ -285,21 +282,21 @@ func newTestGeminiProvider(baseURL, model string) *GeminiProvider {
 func anthropicSSEResponse(w http.ResponseWriter, text string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-5-sonnet-20241022\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":1}}}\n\n")
-	fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n")
-	fmt.Fprintf(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":%q}}\n\n", text)
-	fmt.Fprintf(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
-	fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}\n\n")
-	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	_, _ = fmt.Fprintf(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-5-sonnet-20241022\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":1}}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":%q}}\n\n", text)
+	_, _ = fmt.Fprintf(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+	_, _ = fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 }
 
 // openAISSEResponse writes a minimal OpenAI chat completion SSE response.
 func openAISSEResponse(w http.ResponseWriter, text string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":%q},\"finish_reason\":null}]}\n\n", text)
-	fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n")
-	fmt.Fprintf(w, "data: [DONE]\n\n")
+	_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":%q},\"finish_reason\":null}]}\n\n", text)
+	_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n")
+	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 }
 
 // collectEvents drains a channel into a slice (with timeout).
@@ -341,7 +338,7 @@ func TestDebugHTTP_Enabled(t *testing.T) {
 		t.Error("expected DebugHTTP() == true when env is 1")
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Test", "yes")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("body"))
@@ -356,7 +353,7 @@ func TestDebugHTTP_Enabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -377,7 +374,7 @@ func TestDebugTransport_WithBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	got, _ := io.ReadAll(resp.Body)
 	if string(got) != "hello world" {
 		t.Errorf("body roundtrip: got %q", string(got))
@@ -444,7 +441,7 @@ func TestNoAPIKeyTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if gotHeaders.Get("X-Api-Key") != "" {
 		t.Error("x-api-key header should have been stripped by noAPIKeyTransport")
@@ -463,7 +460,7 @@ func TestAnthropicProvider_Ping_Success(t *testing.T) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"data":[{"id":"claude-3-5-sonnet-20241022","type":"model","display_name":"Claude 3.5 Sonnet","created_at":"2024-10-22T00:00:00Z"}],"first_id":"claude-3-5-sonnet-20241022","last_id":"claude-3-5-sonnet-20241022","has_more":false}`)
+			_, _ = fmt.Fprint(w, `{"data":[{"id":"claude-3-5-sonnet-20241022","type":"model","display_name":"Claude 3.5 Sonnet","created_at":"2024-10-22T00:00:00Z"}],"first_id":"claude-3-5-sonnet-20241022","last_id":"claude-3-5-sonnet-20241022","has_more":false}`)
 		} else {
 			http.NotFound(w, r)
 		}
@@ -477,9 +474,9 @@ func TestAnthropicProvider_Ping_Success(t *testing.T) {
 }
 
 func TestAnthropicProvider_Ping_Error(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`)
+		_, _ = fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`)
 	}))
 	defer srv.Close()
 
@@ -491,7 +488,7 @@ func TestAnthropicProvider_Ping_Error(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "Hello!")
 	}))
 	defer srv.Close()
@@ -533,7 +530,7 @@ func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "Hi there!")
 	}))
 	defer srv.Close()
@@ -560,7 +557,7 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "reply")
 	}))
 	defer srv.Close()
@@ -581,7 +578,7 @@ func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "image")
 	}))
 	defer srv.Close()
@@ -600,7 +597,7 @@ func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "image response")
 	}))
 	defer srv.Close()
@@ -619,7 +616,7 @@ func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithMediaURL_NoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "image only")
 	}))
 	defer srv.Close()
@@ -639,9 +636,9 @@ func TestAnthropicProvider_Stream_WithMediaURL_NoContent(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_ServerError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"type":"error","error":{"type":"server_error","message":"internal error"}}`)
+		_, _ = fmt.Fprint(w, `{"type":"error","error":{"type":"server_error","message":"internal error"}}`)
 	}))
 	defer srv.Close()
 
@@ -667,7 +664,7 @@ func TestAnthropicProvider_Stream_ServerError(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_DefaultMaxToks(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "ok")
 	}))
 	defer srv.Close()
@@ -707,10 +704,10 @@ func TestNewAnthropicProvider_EmptyKey(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOpenAIProvider_Ping_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"object":"list","data":[{"id":"gpt-4o","object":"model","created":1234567890,"owned_by":"openai"}]}`)
+		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"gpt-4o","object":"model","created":1234567890,"owned_by":"openai"}]}`)
 	}))
 	defer srv.Close()
 
@@ -721,9 +718,9 @@ func TestOpenAIProvider_Ping_Success(t *testing.T) {
 }
 
 func TestOpenAIProvider_Ping_Error(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"error":{"message":"invalid api key","type":"invalid_request_error"}}`)
+		_, _ = fmt.Fprint(w, `{"error":{"message":"invalid api key","type":"invalid_request_error"}}`)
 	}))
 	defer srv.Close()
 
@@ -735,7 +732,7 @@ func TestOpenAIProvider_Ping_Error(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_TextAndUsage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "Hello!")
 	}))
 	defer srv.Close()
@@ -776,7 +773,7 @@ func TestOpenAIProvider_Stream_TextAndUsage(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_WithSystem(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "sys reply")
 	}))
 	defer srv.Close()
@@ -794,7 +791,7 @@ func TestOpenAIProvider_Stream_WithSystem(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_AllRoles(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "ok")
 	}))
 	defer srv.Close()
@@ -816,7 +813,7 @@ func TestOpenAIProvider_Stream_AllRoles(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "image response")
 	}))
 	defer srv.Close()
@@ -835,7 +832,7 @@ func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "image only")
 	}))
 	defer srv.Close()
@@ -854,9 +851,9 @@ func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
 }
 
 func TestOpenAIProvider_Stream_ServerError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"error":{"message":"server error","type":"server_error"}}`)
+		_, _ = fmt.Fprint(w, `{"error":{"message":"server error","type":"server_error"}}`)
 	}))
 	defer srv.Close()
 
@@ -892,13 +889,13 @@ func TestNewOpenAIProvider_EmptyKey(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOpenAICodexProvider_Stream_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n")
-		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\" World\"}\n\n")
-		fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\" World\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -940,11 +937,11 @@ func TestOpenAICodexProvider_Stream_Success(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -968,10 +965,10 @@ func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_WithMedia_NoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -991,10 +988,10 @@ func TestOpenAICodexProvider_Stream_WithMedia_NoContent(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_Failed(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"message\":\"quota exceeded\",\"code\":\"rate_limit\"}}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"message\":\"quota exceeded\",\"code\":\"rate_limit\"}}}\n\n")
 	}))
 	defer srv.Close()
 
@@ -1023,11 +1020,11 @@ func TestOpenAICodexProvider_Stream_Failed(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_FailedNoError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		// response.failed without a specific error struct
-		fmt.Fprint(w, "data: {\"type\":\"response.failed\",\"response\":{}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.failed\",\"response\":{}}\n\n")
 	}))
 	defer srv.Close()
 
@@ -1053,9 +1050,9 @@ func TestOpenAICodexProvider_Stream_FailedNoError(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_HTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "forbidden")
+		_, _ = fmt.Fprint(w, "forbidden")
 	}))
 	defer srv.Close()
 
@@ -1085,7 +1082,7 @@ func TestOpenAICodexProvider_Stream_WithAccountID(t *testing.T) {
 		gotAccountID = r.Header.Get("ChatGPT-Account-ID")
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -1105,14 +1102,14 @@ func TestOpenAICodexProvider_Stream_WithAccountID(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		// Some lines that should be skipped (not "data: " prefix or bad JSON).
-		fmt.Fprint(w, "event: ping\n\n")
-		fmt.Fprint(w, "data: not valid json\n\n")
-		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "event: ping\n\n")
+		_, _ = fmt.Fprint(w, "data: not valid json\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -1156,7 +1153,7 @@ func (t *rewriteURLTransport) RoundTrip(req *http.Request) (*http.Response, erro
 // ---------------------------------------------------------------------------
 
 func TestGeminiProvider_Stream_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		openAISSEResponse(w, "Gemini says hi")
 	}))
 	defer srv.Close()
@@ -1182,10 +1179,10 @@ func TestGeminiProvider_Stream_Success(t *testing.T) {
 }
 
 func TestGeminiProvider_Ping_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"models":[]}`)
+		_, _ = fmt.Fprint(w, `{"models":[]}`)
 	}))
 	defer srv.Close()
 
@@ -1208,7 +1205,7 @@ func TestGeminiProvider_Ping_Success(t *testing.T) {
 }
 
 func TestGeminiProvider_Ping_Error(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
@@ -1258,7 +1255,7 @@ func TestPingGoogleOAuthToken_Success(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"email":"test@example.com"}`)
+		_, _ = fmt.Fprint(w, `{"email":"test@example.com"}`)
 	})
 
 	err := pingGoogleOAuthToken(context.Background(), "test-access-token")
@@ -1268,9 +1265,9 @@ func TestPingGoogleOAuthToken_Success(t *testing.T) {
 }
 
 func TestPingGoogleOAuthToken_Invalid(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error_description":"Invalid Value"}`)
+		_, _ = fmt.Fprint(w, `{"error_description":"Invalid Value"}`)
 	})
 
 	err := pingGoogleOAuthToken(context.Background(), "bad-token")
@@ -1283,10 +1280,10 @@ func TestPingGoogleOAuthToken_Invalid(t *testing.T) {
 }
 
 func TestFetchCodeAssistProject_Success(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"cloudaicompanionProject":"my-project-123456"}`)
+		_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"my-project-123456"}`)
 	})
 
 	proj, err := fetchCodeAssistProject(context.Background(), "test-access-token")
@@ -1299,9 +1296,9 @@ func TestFetchCodeAssistProject_Success(t *testing.T) {
 }
 
 func TestFetchCodeAssistProject_HTTPError(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "access denied")
+		_, _ = fmt.Fprint(w, "access denied")
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "bad-token")
@@ -1311,9 +1308,9 @@ func TestFetchCodeAssistProject_HTTPError(t *testing.T) {
 }
 
 func TestFetchCodeAssistProject_BadJSON(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"someOtherField":"value"}`)
+		_, _ = fmt.Fprint(w, `{"someOtherField":"value"}`)
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "test-token")
@@ -1323,9 +1320,9 @@ func TestFetchCodeAssistProject_BadJSON(t *testing.T) {
 }
 
 func TestFetchCodeAssistProject_InvalidJSON(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `not-json`)
+		_, _ = fmt.Fprint(w, `not-json`)
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "test-token")
@@ -1335,9 +1332,9 @@ func TestFetchCodeAssistProject_InvalidJSON(t *testing.T) {
 }
 
 func TestGeminiCodeAssistProvider_Ping_Success(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"email":"test@example.com"}`)
+		_, _ = fmt.Fprint(w, `{"email":"test@example.com"}`)
 	})
 
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
@@ -1347,7 +1344,7 @@ func TestGeminiCodeAssistProvider_Ping_Success(t *testing.T) {
 }
 
 func TestGeminiCodeAssistProvider_Ping_Error(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	})
 
@@ -1359,10 +1356,10 @@ func TestGeminiCodeAssistProvider_Ping_Error(t *testing.T) {
 
 func TestGeminiCodeAssistProvider_ResolveProject_Cached(t *testing.T) {
 	var callCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		callCount++
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"cloudaicompanionProject":"cached-project"}`)
+		_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"cached-project"}`)
 	})
 
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
@@ -1384,9 +1381,9 @@ func TestGeminiCodeAssistProvider_ResolveProject_Cached(t *testing.T) {
 }
 
 func TestGeminiCodeAssistProvider_ResolveProject_Error(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "forbidden")
+		_, _ = fmt.Fprint(w, "forbidden")
 	})
 
 	p := NewGeminiCodeAssistProvider("bad-token", "gemini-2.0-flash")
@@ -1398,20 +1395,20 @@ func TestGeminiCodeAssistProvider_ResolveProject_Error(t *testing.T) {
 
 func TestGeminiCodeAssistProvider_Stream_Success(t *testing.T) {
 	var requestCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		if requestCount == 1 {
 			// First request: resolve project via loadCodeAssist.
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
 		} else {
 			// Second request: stream response.
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			data := `{"response":{"candidates":[{"content":{"parts":[{"text":"Hello from Gemini!"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}}`
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 		}
 	})
 
@@ -1454,17 +1451,17 @@ func TestGeminiCodeAssistProvider_Stream_Success(t *testing.T) {
 
 func TestGeminiCodeAssistProvider_Stream_AllRoles(t *testing.T) {
 	var requestCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		if requestCount == 1 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
 		} else {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			data := `{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":0,"candidatesTokenCount":0}}}`
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 		}
 	})
 
@@ -1484,9 +1481,9 @@ func TestGeminiCodeAssistProvider_Stream_AllRoles(t *testing.T) {
 }
 
 func TestGeminiCodeAssistProvider_Stream_ProjectError(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "forbidden")
+		_, _ = fmt.Fprint(w, "forbidden")
 	})
 
 	p := NewGeminiCodeAssistProvider("bad-token", "gemini-2.0-flash")
@@ -1501,23 +1498,24 @@ func TestGeminiCodeAssistProvider_Stream_ProjectError(t *testing.T) {
 func TestGeminiCodeAssistProvider_Stream_500Retry(t *testing.T) {
 	// Test that doStreamRequest retries once on 5xx.
 	var requestCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
-		if requestCount == 1 {
+		switch requestCount {
+		case 1:
 			// loadCodeAssist.
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
-		} else if requestCount == 2 {
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+		case 2:
 			// First stream attempt: 500.
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, "transient error")
-		} else {
+			_, _ = fmt.Fprint(w, "transient error")
+		default:
 			// Second stream attempt: success.
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			data := `{"response":{"candidates":[{"content":{"parts":[{"text":"retry worked"}],"role":"model"}}],"usageMetadata":{}}}`
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 		}
 	})
 
@@ -1545,14 +1543,14 @@ func TestGeminiCodeAssistProvider_Stream_500Retry(t *testing.T) {
 
 func TestGeminiCodeAssistProvider_Stream_4xxNoRetry(t *testing.T) {
 	var requestCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		if requestCount == 1 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
 		} else {
 			w.WriteHeader(http.StatusForbidden)
-			fmt.Fprint(w, "forbidden")
+			_, _ = fmt.Fprint(w, "forbidden")
 		}
 	})
 
@@ -1570,18 +1568,18 @@ func TestGeminiCodeAssistProvider_Stream_4xxNoRetry(t *testing.T) {
 
 func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
 	var requestCount int
-	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		if requestCount == 1 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
 		} else {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "data: not valid json\n\n")
+			_, _ = fmt.Fprint(w, "data: not valid json\n\n")
 			valid := `{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}]}}],"usageMetadata":{}}}`
-			fmt.Fprintf(w, "data: %s\n\n", valid)
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", valid)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 		}
 	})
 
@@ -1610,14 +1608,14 @@ func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
 
 func TestFactory_PingModel_Pinger(t *testing.T) {
 	// Provider that implements Pinger.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"object":"list","data":[]}`)
+		_, _ = fmt.Fprint(w, `{"object":"list","data":[]}`)
 	}))
 	defer srv.Close()
 
-	f := NewFactory(func(ref string) (string, error) {
+	f := NewFactory(func(_ string) (string, error) {
 		return "test-key", nil
 	})
 	// Override the internal provider to use our test server.
@@ -1632,11 +1630,11 @@ func TestFactory_PingModel_Pinger(t *testing.T) {
 
 func TestFactory_PingModel_FallbackStream(t *testing.T) {
 	// OpenAICodexProvider doesn't implement Pinger - PingModel falls back to Stream.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -1681,10 +1679,10 @@ func TestFactory_PingModel_Error(t *testing.T) {
 func TestResolveOAuthToken_JSONToken(t *testing.T) {
 	// Build a JSON token that is already valid (not expired).
 	// OAuthToken uses "access", "refresh", "expires_at" (Unix ms).
-	expiresAt := time.Now().Add(1*time.Hour).UnixMilli()
+	expiresAt := time.Now().Add(1 * time.Hour).UnixMilli()
 	tokenJSON := fmt.Sprintf(`{"access":"at-valid","refresh":"rt","expires_at":%d}`, expiresAt)
 
-	f := NewFactory(func(ref string) (string, error) {
+	f := NewFactory(func(_ string) (string, error) {
 		return tokenJSON, nil
 	})
 	tok, ok := f.resolveOAuthToken("auth:anthropic:oauth")
@@ -1694,7 +1692,7 @@ func TestResolveOAuthToken_JSONToken(t *testing.T) {
 }
 
 func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
+	f := NewFactory(func(_ string) (string, error) {
 		return `{invalid json`, nil
 	})
 	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
@@ -1704,7 +1702,7 @@ func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
 }
 
 func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
+	f := NewFactory(func(_ string) (string, error) {
 		return `{"access_token":"","refresh_token":"rt"}`, nil
 	})
 	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")

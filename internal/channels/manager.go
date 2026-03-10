@@ -164,6 +164,20 @@ func (m *Manager) RouteDelivery(channelType, channelID, text string) error {
 	return fmt.Errorf("no active channel of type %q", channelType)
 }
 
+// SendOnConfiguredChannel sends text using a specific configured channel
+// instance identified by agentName/channelType/index.
+func (m *Manager) SendOnConfiguredChannel(agentName, channelType string, index int, channelID, text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := channelKey(agentName, channelType, index)
+	ch, ok := m.channels[key]
+	if !ok {
+		return fmt.Errorf("configured channel %q not active", key)
+	}
+	return ch.Send(channelID, text)
+}
+
 // RouteMediaDelivery sends a media file to channelID via any running channel
 // of channelType that implements MediaSender. Returns an error if no matching
 // channel supports media or all attempts fail.

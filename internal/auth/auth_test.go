@@ -528,11 +528,11 @@ func writeFileContent(path, content string) error {
 
 func TestSplitOnce(t *testing.T) {
 	tests := []struct {
-		s        string
-		sep      byte
-		wantA    string
-		wantB    string
-		wantOK   bool
+		s      string
+		sep    byte
+		wantA  string
+		wantB  string
+		wantOK bool
 	}{
 		{"hello#world", '#', "hello", "world", true},
 		{"CODE#STATE", '#', "CODE", "STATE", true},
@@ -610,7 +610,7 @@ func TestOpenAILogin_PortInUse(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot bind port %d: %v", OpenAICallbackPort, err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -627,7 +627,7 @@ func TestGeminiLogin_PortInUse(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot bind port %d: %v", GeminiCallbackPort, err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

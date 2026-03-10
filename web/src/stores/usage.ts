@@ -14,6 +14,7 @@ export interface UsageRecord {
 	cache_write_tokens?: number;
 	tool_calls?: number;
 	has_error?: boolean;
+	has_throttle?: boolean;
 }
 
 function fmtDate(daysAgo: number): string {
@@ -77,6 +78,9 @@ export const useUsageStore = defineStore("usage", () => {
 	const totalErrors = computed(
 		() => records.value.filter((r) => r.has_error).length,
 	);
+	const totalThrottles = computed(
+		() => records.value.filter((r) => r.has_throttle).length,
+	);
 	const sessionCount = computed(
 		() => new Set(records.value.map((r) => r.session_id)).size,
 	);
@@ -87,6 +91,11 @@ export const useUsageStore = defineStore("usage", () => {
 	);
 	const errorRate = computed(() =>
 		totalMessages.value ? (totalErrors.value / totalMessages.value) * 100 : 0,
+	);
+	const throttleRate = computed(() =>
+		totalMessages.value
+			? (totalThrottles.value / totalMessages.value) * 100
+			: 0,
 	);
 	const cacheHitRate = computed(() => {
 		const total = totalInput.value + totalCacheRead.value;
@@ -177,6 +186,7 @@ export const useUsageStore = defineStore("usage", () => {
 			output: number;
 			tool_calls: number;
 			has_error: boolean;
+			has_throttle: boolean;
 			first_ts: string;
 			last_ts: string;
 		};
@@ -193,6 +203,7 @@ export const useUsageStore = defineStore("usage", () => {
 					output: r.output_tokens,
 					tool_calls: r.tool_calls ?? 0,
 					has_error: r.has_error ?? false,
+					has_throttle: r.has_throttle ?? false,
 					first_ts: r.timestamp,
 					last_ts: r.timestamp,
 				});
@@ -201,6 +212,7 @@ export const useUsageStore = defineStore("usage", () => {
 				s.output += r.output_tokens;
 				s.tool_calls += r.tool_calls ?? 0;
 				s.has_error = s.has_error || (r.has_error ?? false);
+				s.has_throttle = s.has_throttle || (r.has_throttle ?? false);
 				if (r.timestamp < s.first_ts) s.first_ts = r.timestamp;
 				if (r.timestamp > s.last_ts) s.last_ts = r.timestamp;
 			}
@@ -225,9 +237,11 @@ export const useUsageStore = defineStore("usage", () => {
 		totalMessages,
 		totalToolCalls,
 		totalErrors,
+		totalThrottles,
 		sessionCount,
 		avgTokensPerMsg,
 		errorRate,
+		throttleRate,
 		cacheHitRate,
 		topModels,
 		topProviders,

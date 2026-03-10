@@ -93,10 +93,10 @@ func TestEnsureSessionChannel_IdempotentAdd(t *testing.T) {
 	setupStoreDir(t)
 
 	const (
-		agentID    = "agent_testbot"
-		sessionID  = "sess-idem"
-		chanType   = "signal"
-		chanID     = "+15550000001"
+		agentID   = "agent_testbot"
+		sessionID = "sess-idem"
+		chanType  = "signal"
+		chanID    = "+15550000001"
 	)
 
 	// First call should add.

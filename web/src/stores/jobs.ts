@@ -19,6 +19,20 @@ export interface Job {
 	updated_at: string;
 }
 
+export interface ScheduledTask {
+	id: string;
+	agent_id: string;
+	agent_name: string;
+	name: string;
+	trigger_type: "cron" | "watch";
+	schedule?: string;
+	start_at?: string;
+	run_once?: boolean;
+	watch?: string;
+	prompt: string;
+	channel?: string;
+}
+
 function fmtDate(daysAgo: number): string {
 	const d = new Date();
 	d.setDate(d.getDate() - daysAgo);
@@ -29,7 +43,9 @@ export const useJobsStore = defineStore("jobs", () => {
 	const { callTool } = useMCP();
 
 	const jobs = ref<Job[]>([]);
+	const scheduledTasks = ref<ScheduledTask[]>([]);
 	const loading = ref(false);
+	const tasksLoading = ref(false);
 	const error = ref<string | null>(null);
 	const startDate = ref<string>(fmtDate(7));
 	const endDate = ref<string>(fmtDate(0));
@@ -52,12 +68,37 @@ export const useJobsStore = defineStore("jobs", () => {
 		}
 	}
 
+	async function fetchScheduledTasks() {
+		tasksLoading.value = true;
+		error.value = null;
+		try {
+			const raw = await callTool("task_list", {});
+			scheduledTasks.value = (JSON.parse(raw) as ScheduledTask[] | null) ?? [];
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+		} finally {
+			tasksLoading.value = false;
+		}
+	}
+
 	async function fetchLogs(jobID: string): Promise<string> {
 		try {
 			return await callTool("job_logs", { id: jobID });
 		} catch (e) {
 			return `Error: ${e instanceof Error ? e.message : String(e)}`;
 		}
+	}
+
+	async function runTaskNow(taskID: string): Promise<Job | null> {
+		const raw = await callTool("task_run", { name: taskID });
+		await Promise.all([fetch(), fetchScheduledTasks()]);
+		return (JSON.parse(raw) as Job | null) ?? null;
+	}
+
+	async function runJobNow(jobID: string): Promise<Job | null> {
+		const raw = await callTool("job_run_now", { id: jobID });
+		await Promise.all([fetch(), fetchScheduledTasks()]);
+		return (JSON.parse(raw) as Job | null) ?? null;
 	}
 
 	function setPreset(days: number) {
@@ -136,12 +177,17 @@ export const useJobsStore = defineStore("jobs", () => {
 
 	return {
 		jobs,
+		scheduledTasks,
 		loading,
+		tasksLoading,
 		error,
 		startDate,
 		endDate,
 		fetch,
+		fetchScheduledTasks,
 		fetchLogs,
+		runTaskNow,
+		runJobNow,
 		setPreset,
 		pending,
 		running,

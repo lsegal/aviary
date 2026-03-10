@@ -203,7 +203,7 @@
                 class="border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50">
                 <td class="px-5 py-2.5">
                   <span class="flex items-center gap-1.5">
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.has_error ? 'bg-red-500' : 'bg-green-500'" />
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.has_error ? 'bg-red-500' : s.has_throttle ? 'bg-amber-500' : 'bg-green-500'" />
                     <code class="font-mono text-gray-600 dark:text-gray-400">...{{ s.session_id.slice(-12) }}</code>
                   </span>
                 </td>
@@ -254,6 +254,14 @@ const statCards = computed(() => [
 	{ label: "Messages", value: String(store.totalMessages) },
 	{ label: "Tool Calls", value: String(store.totalToolCalls) },
 	{
+		label: "Throttles",
+		value: String(store.totalThrottles),
+		color:
+			store.totalThrottles > 0
+				? "text-amber-500"
+				: "text-gray-900 dark:text-white",
+	},
+	{
 		label: "Errors",
 		value: String(store.totalErrors),
 		color:
@@ -263,6 +271,16 @@ const statCards = computed(() => [
 	{ label: "Sessions", value: String(store.sessionCount) },
 	{ label: "Input Tokens", value: fmtTokens(store.totalInput) },
 	{ label: "Output Tokens", value: fmtTokens(store.totalOutput) },
+	{
+		label: "Throttle Rate",
+		value: `${store.throttleRate.toFixed(1)}%`,
+		color:
+			store.throttleRate > 5
+				? "text-amber-500"
+				: store.throttleRate === 0
+					? "text-green-600 dark:text-green-400"
+					: "text-gray-900 dark:text-white",
+	},
 	{
 		label: "Error Rate",
 		value: `${store.errorRate.toFixed(1)}%`,

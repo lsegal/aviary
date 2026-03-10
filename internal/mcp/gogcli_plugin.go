@@ -22,28 +22,28 @@ type gogcliRunArgs struct {
 }
 
 var gogAllowedCommands = map[string]struct{}{
-	"gmail":      {},
-	"calendar":   {},
-	"drive":      {},
-	"contacts":   {},
-	"tasks":      {},
-	"sheets":     {},
-	"docs":       {},
-	"slides":     {},
-	"forms":      {},
-	"chat":       {},
-	"classroom":  {},
-	"appscript":  {},
-	"people":     {},
-	"groups":     {},
-	"admin":      {},
-	"keep":       {},
-	"time":       {},
+	"gmail":     {},
+	"calendar":  {},
+	"drive":     {},
+	"contacts":  {},
+	"tasks":     {},
+	"sheets":    {},
+	"docs":      {},
+	"slides":    {},
+	"forms":     {},
+	"chat":      {},
+	"classroom": {},
+	"appscript": {},
+	"people":    {},
+	"groups":    {},
+	"admin":     {},
+	"keep":      {},
+	"time":      {},
 }
 
 func registerPluginTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name: "gogcli_run",
+		Name: "skill_gogcli",
 		Description: "Run a gog CLI command for Google Workspace services. " +
 			"Arguments: command (array of strings, required) and account (optional). " +
 			"Only service commands such as gmail/calendar/drive/contacts/tasks/sheets/docs/slides/forms/chat/classroom/appscript/people/groups/admin/keep/time are allowed. " +

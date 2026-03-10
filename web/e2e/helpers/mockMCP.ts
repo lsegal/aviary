@@ -8,6 +8,7 @@ export interface ToolFixtures {
 	session_list?: object[];
 	server_status?: object;
 	task_run?: object | null;
+	tool_list?: object[];
 	[key: string]: unknown;
 }
 
@@ -65,6 +66,18 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 					jsonrpc: "2.0",
 					id: body.id,
 					result: { content: [{ type: "text", text: JSON.stringify(data) }] },
+				}),
+			});
+		}
+
+		if (body.method === "tools/list") {
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: body.id,
+					result: { tools: fixtures.tool_list ?? [] },
 				}),
 			});
 		}

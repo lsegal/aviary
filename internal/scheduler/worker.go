@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -25,6 +26,15 @@ type WorkerPool struct {
 	stop     chan struct{}
 	ctxMu    sync.RWMutex
 	ctx      context.Context
+	deliver  func(agentName, route, text string) error
+	activeMu sync.Mutex
+	active   map[string]activeJob
+}
+
+type activeJob struct {
+	taskID    string
+	sessionID string
+	cancel    context.CancelFunc
 }
 
 // NewWorkerPool creates a WorkerPool with n concurrent workers.
@@ -38,6 +48,7 @@ func NewWorkerPool(q *JobQueue, agents *agent.Manager, n int) *WorkerPool {
 		agents: agents,
 		n:      n,
 		stop:   make(chan struct{}),
+		active: make(map[string]activeJob),
 	}
 }
 
@@ -106,8 +117,18 @@ func (p *WorkerPool) ExecuteNow(job *domain.Job) {
 }
 
 func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
+	jobCtx, cancel := context.WithCancel(ctx)
+	p.registerActiveJob(job.ID, job.TaskID, cancel)
+	defer p.unregisterActiveJob(job.ID)
+
 	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
-	if err := p.executeJob(ctx, job); err != nil {
+	if err := p.executeJob(jobCtx, job); err != nil {
+		if errors.Is(err, context.Canceled) {
+			if cancelErr := p.queue.Cancel(job.ID); cancelErr != nil {
+				slog.Warn("marking job canceled", "id", job.ID, "err", cancelErr)
+			}
+			return
+		}
 		slog.Warn("job failed", "id", job.ID, "err", err)
 		if failErr := p.queue.Fail(job.ID, err); failErr != nil {
 			slog.Warn("marking job failed", "id", job.ID, "err", failErr)
@@ -144,6 +165,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	if sess, err := agent.NewSessionManager().CreateWithName(job.AgentID, jobSessionName(job)); err != nil {
 		slog.Warn("job: failed to create session, falling back to main", "id", job.ID, "err", err)
 	} else {
+		p.setActiveJobSession(job.ID, sess.ID)
 		ctx = agent.WithSessionID(ctx, sess.ID)
 	}
 
@@ -180,10 +202,65 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		}
 		// Reply to the originating session/channel if one was recorded.
 		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
-			if err := agent.AppendMessageToSession(job.ReplyAgentID, job.ReplySessionID, "assistant", output); err != nil {
+			if err := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, output); err != nil {
 				slog.Warn("job: failed to send reply to session", "id", job.ID, "session", job.ReplySessionID, "err", err)
+			}
+		}
+		if job.OutputChannel != "" && p.deliver != nil {
+			if err := p.deliver(job.AgentName, job.OutputChannel, output); err != nil {
+				slog.Warn("job: failed to deliver output to task channel", "id", job.ID, "route", job.OutputChannel, "err", err)
 			}
 		}
 	}
 	return lastErr
+}
+
+// SetTaskOutputDelivery configures the callback used to forward completed task output.
+func (p *WorkerPool) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
+	p.deliver = fn
+}
+
+func (p *WorkerPool) registerActiveJob(jobID, taskID string, cancel context.CancelFunc) {
+	p.activeMu.Lock()
+	defer p.activeMu.Unlock()
+	p.active[jobID] = activeJob{taskID: taskID, cancel: cancel}
+}
+
+func (p *WorkerPool) setActiveJobSession(jobID, sessionID string) {
+	p.activeMu.Lock()
+	defer p.activeMu.Unlock()
+	job, ok := p.active[jobID]
+	if !ok {
+		return
+	}
+	job.sessionID = sessionID
+	p.active[jobID] = job
+}
+
+func (p *WorkerPool) unregisterActiveJob(jobID string) {
+	p.activeMu.Lock()
+	defer p.activeMu.Unlock()
+	delete(p.active, jobID)
+}
+
+// StopJobs interrupts active jobs. If matcher is nil, all active jobs are
+// stopped. It returns the number of jobs signaled for cancellation.
+func (p *WorkerPool) StopJobs(matcher func(jobID, taskID string) bool) int {
+	p.activeMu.Lock()
+	defer p.activeMu.Unlock()
+
+	stopped := 0
+	for jobID, job := range p.active {
+		if matcher != nil && !matcher(jobID, job.taskID) {
+			continue
+		}
+		if job.sessionID != "" {
+			agent.StopSession(job.sessionID)
+		}
+		if job.cancel != nil {
+			job.cancel()
+		}
+		stopped++
+	}
+	return stopped
 }

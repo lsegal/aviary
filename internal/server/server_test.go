@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 func setupServerDataDir(t *testing.T) {
@@ -72,6 +74,26 @@ func TestGenerateLoadTokenFlows(t *testing.T) {
 		}
 		if first != second {
 			t.Fatalf("token changed first=%s second=%s", first, second)
+		}
+	})
+
+	t.Run("load or generate read error does not rotate token", func(t *testing.T) {
+		if err := os.Remove(tokenPath()); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove token file: %v", err)
+		}
+		if err := os.Mkdir(tokenPath(), 0o700); err != nil {
+			t.Fatalf("mkdir token path: %v", err)
+		}
+
+		_, isNew, err := LoadOrGenerateToken()
+		if err == nil {
+			t.Fatal("expected read error")
+		}
+		if isNew {
+			t.Fatal("expected isNew=false on read error")
+		}
+		if !strings.Contains(err.Error(), "reading token") {
+			t.Fatalf("expected token read error, got %v", err)
 		}
 	})
 }
@@ -245,6 +267,60 @@ func TestHealthHandler(t *testing.T) {
 	}
 	if payload.GOOS == "" {
 		t.Error("expected non-empty GOOS in health response")
+	}
+}
+
+func TestVersionHandler_Emulated(t *testing.T) {
+	resetSlogForTest()
+	orig := buildinfo.Version
+	buildinfo.Version = "dev"
+	t.Cleanup(func() {
+		buildinfo.Version = orig
+		_ = update.ConfigureEmulation("")
+	})
+	if err := update.ConfigureEmulation("1.2.3:1.3.0"); err != nil {
+		t.Fatalf("ConfigureEmulation: %v", err)
+	}
+	srv := New(&config.Config{}, "tok")
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	rr := httptest.NewRecorder()
+	srv.versionHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var payload struct {
+		CurrentVersion   string `json:"currentVersion"`
+		LatestVersion    string `json:"latestVersion"`
+		UpgradeAvailable bool   `json:"upgradeAvailable"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.CurrentVersion != "1.2.3" || payload.LatestVersion != "1.3.0" || !payload.UpgradeAvailable {
+		t.Fatalf("unexpected version payload: %+v", payload)
+	}
+}
+
+func TestVersionUpgradeHandler_Emulated(t *testing.T) {
+	resetSlogForTest()
+	orig := buildinfo.Version
+	buildinfo.Version = "dev"
+	t.Cleanup(func() {
+		buildinfo.Version = orig
+		_ = update.ConfigureEmulation("")
+	})
+	if err := update.ConfigureEmulation("1.2.3:1.3.0"); err != nil {
+		t.Fatalf("ConfigureEmulation: %v", err)
+	}
+	srv := New(&config.Config{}, "tok")
+	req := httptest.NewRequest(http.MethodPost, "/api/version/upgrade", strings.NewReader(`{"version":"1.3.0"}`))
+	rr := httptest.NewRecorder()
+	srv.versionUpgradeHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Emulated upgrade completed") {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }
 
@@ -731,6 +807,8 @@ func TestParseLogLine_MissingTimestamp(t *testing.T) {
 }
 
 func TestGenerateToken(t *testing.T) {
+	setupServerDataDir(t)
+
 	tok, err := GenerateToken()
 	if err != nil {
 		t.Fatalf("GenerateToken: %v", err)
@@ -971,7 +1049,7 @@ func TestLogsHandler_SSE(t *testing.T) {
 	}
 }
 
-func TestWsBroadcast_NoSubscribers(t *testing.T) {
+func TestWsBroadcast_NoSubscribers(_ *testing.T) {
 	// wsBroadcast with no connected clients should not panic.
 	wsBroadcast(wsEvent{Type: "test"})
 	wsBroadcast(wsEvent{Type: "health", OK: true, Version: "v0", GOOS: "linux"})
@@ -1144,23 +1222,27 @@ type memFile struct {
 	name    string
 }
 
-func (f *memFile) Read(p []byte) (n int, err error)         { return f.content.Read(p) }
-func (f *memFile) Seek(offset int64, whence int) (int64, error) { return f.content.Seek(offset, whence) }
-func (f *memFile) Close() error                             { return nil }
-func (f *memFile) Readdir(_ int) ([]fs.FileInfo, error)     { return nil, nil }
-func (f *memFile) Stat() (fs.FileInfo, error)               { return &memFileInfo{name: f.name, size: int64(f.content.Len())}, nil }
+func (f *memFile) Read(p []byte) (n int, err error) { return f.content.Read(p) }
+func (f *memFile) Seek(offset int64, whence int) (int64, error) {
+	return f.content.Seek(offset, whence)
+}
+func (f *memFile) Close() error                         { return nil }
+func (f *memFile) Readdir(_ int) ([]fs.FileInfo, error) { return nil, nil }
+func (f *memFile) Stat() (fs.FileInfo, error) {
+	return &memFileInfo{name: f.name, size: int64(f.content.Len())}, nil
+}
 
 type memFileInfo struct {
 	name string
 	size int64
 }
 
-func (fi *memFileInfo) Name() string      { return fi.name }
-func (fi *memFileInfo) Size() int64       { return fi.size }
-func (fi *memFileInfo) Mode() fs.FileMode { return 0o444 }
+func (fi *memFileInfo) Name() string       { return fi.name }
+func (fi *memFileInfo) Size() int64        { return fi.size }
+func (fi *memFileInfo) Mode() fs.FileMode  { return 0o444 }
 func (fi *memFileInfo) ModTime() time.Time { return time.Time{} }
-func (fi *memFileInfo) IsDir() bool       { return false }
-func (fi *memFileInfo) Sys() any          { return nil }
+func (fi *memFileInfo) IsDir() bool        { return false }
+func (fi *memFileInfo) Sys() any           { return nil }
 
 // ── Additional coverage tests ─────────────────────────────────────────────────
 
@@ -1184,7 +1266,7 @@ func TestWsHandler_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestWsHandler_ValidCookieAuthUpgradeFails(t *testing.T) {
+func TestWsHandler_ValidCookieAuthUpgradeFails(_ *testing.T) {
 	// Authentication passes (cookie) but the upgrade will fail because
 	// httptest.ResponseRecorder does not implement http.Hijacker.
 	// The handler should not panic and should return (upgrade error is silently swallowed).
@@ -1205,7 +1287,7 @@ func TestWsHandler_ValidCookieAuthUpgradeFails(t *testing.T) {
 	// The gorilla upgrader returns an error and writes 4xx; any non-panic result is ok.
 }
 
-func TestWsHandler_ValidQueryTokenUpgradeFails(t *testing.T) {
+func TestWsHandler_ValidQueryTokenUpgradeFails(_ *testing.T) {
 	token := "aviary_tok_wstest2"
 	h := wsHandler(token)
 
@@ -1360,11 +1442,11 @@ func (m *memFSWithDir) Open(name string) (http.File, error) {
 
 type memDirFile struct{ name string }
 
-func (f *memDirFile) Read(_ []byte) (int, error)               { return 0, nil }
-func (f *memDirFile) Seek(_ int64, _ int) (int64, error)       { return 0, nil }
-func (f *memDirFile) Close() error                             { return nil }
-func (f *memDirFile) Readdir(_ int) ([]fs.FileInfo, error)     { return nil, nil }
-func (f *memDirFile) Stat() (fs.FileInfo, error)               { return &memDirInfo{name: f.name}, nil }
+func (f *memDirFile) Read(_ []byte) (int, error)           { return 0, nil }
+func (f *memDirFile) Seek(_ int64, _ int) (int64, error)   { return 0, nil }
+func (f *memDirFile) Close() error                         { return nil }
+func (f *memDirFile) Readdir(_ int) ([]fs.FileInfo, error) { return nil, nil }
+func (f *memDirFile) Stat() (fs.FileInfo, error)           { return &memDirInfo{name: f.name}, nil }
 
 type memDirInfo struct{ name string }
 
@@ -1482,13 +1564,6 @@ func TestLogsHandler_FilePoll(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func TestGenerateSelfSigned_Direct(t *testing.T) {
 	setupServerDataDir(t)
 	// Call generateSelfSigned directly to cover its body.
@@ -1523,7 +1598,7 @@ func TestParseLogLine_NoAttrs(t *testing.T) {
 	}
 }
 
-func TestWsBroadcast_WithEntry(t *testing.T) {
+func TestWsBroadcast_WithEntry(_ *testing.T) {
 	// Ensure wsBroadcast handles all wsEvent fields without panic.
 	processing := true
 	wsBroadcast(wsEvent{
@@ -1580,6 +1655,38 @@ func TestLogsHistoryHandler_HasMoreTrue(t *testing.T) {
 	}
 	if len(resp.Entries) != 2 {
 		t.Errorf("expected 2 entries, got %d", len(resp.Entries))
+	}
+}
+
+func TestReadLogLinesFromEnd_SkipLimitWithoutTrailingNewline(t *testing.T) {
+	setupServerDataDir(t)
+
+	logDir := filepath.Join(store.DataDir(), "logs")
+	_ = os.MkdirAll(logDir, 0o700)
+	logFile := filepath.Join(logDir, "aviary.log")
+	content := strings.Join([]string{
+		`{"time":"2024-01-01T00:00:00Z","level":"info","msg":"line-1"}`,
+		`{"time":"2024-01-01T00:00:01Z","level":"info","msg":"line-2"}`,
+		`{"time":"2024-01-01T00:00:02Z","level":"info","msg":"line-3"}`,
+		`{"time":"2024-01-01T00:00:03Z","level":"info","msg":"line-4"}`,
+	}, "\n")
+	_ = os.WriteFile(logFile, []byte(content), 0o600)
+
+	lines, hasMore, err := readLogLinesFromEnd(logFile, 1, 2)
+	if err != nil {
+		t.Fatalf("readLogLinesFromEnd: %v", err)
+	}
+	if !hasMore {
+		t.Fatal("expected hasMore=true with earlier lines remaining")
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+	if !strings.Contains(string(lines[0]), "line-2") {
+		t.Fatalf("expected first returned line to be line-2, got %q", string(lines[0]))
+	}
+	if !strings.Contains(string(lines[1]), "line-3") {
+		t.Fatalf("expected second returned line to be line-3, got %q", string(lines[1]))
 	}
 }
 
@@ -1683,7 +1790,7 @@ func TestLogHub_RingCapWithSubs(t *testing.T) {
 	}
 }
 
-func TestProcSampler_MultiPID(t *testing.T) {
+func TestProcSampler_MultiPID(_ *testing.T) {
 	s := NewProcSampler()
 	// Sample self + nonexistent PIDs — should not panic.
 	s.Sample([]int{os.Getpid(), 99998, 99999})
@@ -1776,5 +1883,86 @@ func TestParseLogLine_JSONWithMissingLevel(t *testing.T) {
 	e := parseLogLine(line)
 	if e.Level != "info" {
 		t.Errorf("level = %q; want info", e.Level)
+	}
+}
+
+// ── deliverTaskOutput ────────────────────────────────────────────────────────
+
+func TestDeliverTaskOutput_EmptyRoute(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	err := srv.deliverTaskOutput("bot", "", "text")
+	if err != nil {
+		t.Fatalf("expected nil for empty route, got %v", err)
+	}
+}
+
+func TestDeliverTaskOutput_InvalidRoute(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	err := srv.deliverTaskOutput("bot", "badroute", "text")
+	if err == nil {
+		t.Fatal("expected error for invalid route format")
+	}
+}
+
+func TestDeliverTaskOutput_InvalidRouteIndex(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	err := srv.deliverTaskOutput("bot", "route:slack:notanumber:C123", "text")
+	if err == nil {
+		t.Fatal("expected error for non-numeric route index")
+	}
+}
+
+func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	err := srv.deliverTaskOutput("bot", "route:slack:0:   ", "text")
+	if err == nil {
+		t.Fatal("expected error for empty target ID")
+	}
+}
+
+func TestDeliverTaskOutput_LastRouteNoSessions(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	// No session channel files → latestAgentSessionChannels returns error.
+	err := srv.deliverTaskOutput("bot", "last", "text")
+	if err == nil {
+		t.Fatal("expected error when no session channels exist")
+	}
+}
+
+// ── latestAgentSessionChannels ───────────────────────────────────────────────
+
+func TestLatestAgentSessionChannels_NoSessions(t *testing.T) {
+	setupServerDataDir(t)
+	_, err := latestAgentSessionChannels("agent_nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing sessions dir")
+	}
+}
+
+func TestLatestAgentSessionChannels_WithSession(t *testing.T) {
+	setupServerDataDir(t)
+	// Create a real session channel config via store.
+	if err := store.EnsureSessionChannel("agent_mybot", "sess1", "slack", "C999"); err != nil {
+		t.Fatalf("EnsureSessionChannel: %v", err)
+	}
+	channels, err := latestAgentSessionChannels("agent_mybot")
+	if err != nil {
+		t.Fatalf("latestAgentSessionChannels: %v", err)
+	}
+	if len(channels) == 0 {
+		t.Fatal("expected at least one channel")
+	}
+	if channels[0].Type != "slack" {
+		t.Errorf("channel type = %q, want slack", channels[0].Type)
 	}
 }

@@ -34,7 +34,7 @@ type JobQueue struct {
 // NewJobQueue creates a JobQueue.
 func NewJobQueue() *JobQueue { return &JobQueue{} }
 
-func (q *JobQueue) newJob(taskID, agentID, agentName, prompt string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
+func (q *JobQueue) newJob(taskID, agentID, agentName, prompt, outputChannel string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
 	if maxRetries <= 0 {
 		maxRetries = defaultRetries
 	}
@@ -44,6 +44,7 @@ func (q *JobQueue) newJob(taskID, agentID, agentName, prompt string, status doma
 		AgentID:        agentID,
 		AgentName:      agentName,
 		Prompt:         prompt,
+		OutputChannel:  outputChannel,
 		Status:         status,
 		MaxRetries:     maxRetries,
 		ReplyAgentID:   replyAgentID,
@@ -63,11 +64,11 @@ func (q *JobQueue) newJob(taskID, agentID, agentName, prompt string, status doma
 // Enqueue writes a new pending job to disk.
 // replyAgentID and replySessionID, if set, identify the session that should
 // receive the job's output when it completes (the "call-back" channel).
-func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt, outputChannel string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusPending, maxRetries, nil, replyAgentID, replySessionID)
+	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusPending, maxRetries, nil, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}
@@ -77,16 +78,47 @@ func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries
 
 // StartImmediate writes a job that is already marked in_progress so it can be
 // executed outside the normal queue claim loop.
-func (q *JobQueue) StartImmediate(taskID, agentID, agentName, prompt string, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) StartImmediate(taskID, agentID, agentName, prompt, outputChannel string, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusInProgress, 1, nil, replyAgentID, replySessionID)
+	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusInProgress, 1, nil, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("start immediate job: %w", err)
 	}
 	slog.Info("job started immediately", "id", job.ID, "task", taskID)
 	return job, nil
+}
+
+// ForceStart marks an existing pending job in_progress immediately so it can
+// be executed outside the normal queue claim loop.
+func (q *JobQueue) ForceStart(id string) (*domain.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return nil, fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return nil, fmt.Errorf("reading job %s: %w", id, err)
+	}
+	if job.Status != domain.JobStatusPending {
+		return nil, fmt.Errorf("job %s is not pending", id)
+	}
+	now := time.Now()
+	job.Status = domain.JobStatusInProgress
+	job.Attempts++
+	job.LockedAt = &now
+	job.NextRetryAt = nil
+	job.ScheduledFor = nil
+	job.UpdatedAt = now
+	if err := store.WriteJSON(path, &job); err != nil {
+		return nil, fmt.Errorf("force starting job %s: %w", id, err)
+	}
+	slog.Info("job force-started", "id", job.ID, "task", job.TaskID)
+	return &job, nil
 }
 
 // Claim atomically locks a pending job for processing.
@@ -139,6 +171,11 @@ func (q *JobQueue) Complete(id string) error {
 	return q.updateStatus(id, domain.JobStatusCompleted)
 }
 
+// Cancel marks a job as canceled.
+func (q *JobQueue) Cancel(id string) error {
+	return q.updateStatus(id, domain.JobStatusCanceled)
+}
+
 // Fail marks a job as failed and schedules a retry if attempts remain.
 func (q *JobQueue) Fail(id string, cause error) error {
 	q.mu.Lock()
@@ -177,11 +214,11 @@ func (q *JobQueue) Fail(id string, cause error) error {
 
 // EnqueueAt writes a new pending job that will not be claimed until at.
 // replyAgentID and replySessionID, if set, identify the session to reply to on completion.
-func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt, outputChannel string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusPending, maxRetries, &at, replyAgentID, replySessionID)
+	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusPending, maxRetries, &at, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}

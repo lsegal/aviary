@@ -7,13 +7,15 @@ import (
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/buildinfo"
 )
 
 // NewServer creates and configures an MCP server with all Aviary tools registered.
 func NewServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "aviary",
-		Version: "0.1.0",
+		Version: buildinfo.Version,
 	}, nil)
 
 	Register(s)

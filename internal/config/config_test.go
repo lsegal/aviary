@@ -135,6 +135,14 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("task names may contain slash", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "folder/subtask", Prompt: "p", Schedule: "*/1 * * * * *"}}}}}
+		issues := Validate(cfg, nil)
+		if hasIssue(issues, "must not contain '/'") {
+			t.Fatalf("expected slash in task name to be allowed, got: %v", issues)
+		}
+	})
+
 	t.Run("invalid channel type", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Channels: []ChannelConfig{{Type: ""}}}}}
 		issues := Validate(cfg, nil)
@@ -303,6 +311,44 @@ func TestSave(t *testing.T) {
 		}
 		if len(loaded.Agents) != 0 {
 			t.Errorf("expected no agents in loaded config, got %d", len(loaded.Agents))
+		}
+	})
+
+	t.Run("rotates backups up to five", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		for i := 0; i < 7; i++ {
+			cfg := Default()
+			cfg.Server.Port = 16677 + i
+			if err := Save(path, &cfg); err != nil {
+				t.Fatalf("Save %d: %v", i, err)
+			}
+		}
+
+		backupDir := filepath.Join(dir, "backups")
+		entries, err := os.ReadDir(backupDir)
+		if err != nil {
+			t.Fatalf("ReadDir backups: %v", err)
+		}
+		if len(entries) != 5 {
+			t.Fatalf("expected 5 backups, got %d", len(entries))
+		}
+
+		latestBackup, err := Load(filepath.Join(backupDir, "aviary.yml.bak.1"))
+		if err != nil {
+			t.Fatalf("Load latest backup: %v", err)
+		}
+		if latestBackup.Server.Port != 16682 {
+			t.Fatalf("expected latest backup port 16682, got %d", latestBackup.Server.Port)
+		}
+
+		oldestBackup, err := Load(filepath.Join(backupDir, "aviary.yml.bak.5"))
+		if err != nil {
+			t.Fatalf("Load oldest backup: %v", err)
+		}
+		if oldestBackup.Server.Port != 16678 {
+			t.Fatalf("expected oldest retained backup port 16678, got %d", oldestBackup.Server.Port)
 		}
 	})
 }
@@ -698,7 +744,7 @@ func TestValidate_ChannelAuthRef(t *testing.T) {
 				Name: "bot",
 				Channels: []ChannelConfig{{
 					Type:      "slack",
-					Token:     "auth:",         // malformed
+					Token:     "auth:", // malformed
 					AllowFrom: []AllowFromEntry{{From: "*"}},
 				}},
 			}},
@@ -783,6 +829,74 @@ func TestValidate_ModelsProviderFoundAuth(t *testing.T) {
 	}
 }
 
+func TestNormalize_Skills(t *testing.T) {
+	t.Run("empty skills map set to nil", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{}}
+		normalize(cfg)
+		if cfg.Skills != nil {
+			t.Error("expected Skills to be nil after normalization")
+		}
+	})
+
+	t.Run("empty skill entry deleted", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{
+			"mygog": {},
+		}}
+		normalize(cfg)
+		if cfg.Skills != nil {
+			t.Errorf("expected Skills to be nil after deleting empty entry, got %v", cfg.Skills)
+		}
+	})
+
+	t.Run("enabled skill preserved", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{
+			"mygog": {Enabled: true},
+		}}
+		normalize(cfg)
+		if cfg.Skills == nil || !cfg.Skills["mygog"].Enabled {
+			t.Error("expected enabled skill to be preserved")
+		}
+	})
+
+	t.Run("skill with binary preserved", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{
+			"mygog": {Binary: "/usr/local/bin/gog"},
+		}}
+		normalize(cfg)
+		if cfg.Skills == nil || cfg.Skills["mygog"].Binary == "" {
+			t.Error("expected skill with binary to be preserved")
+		}
+	})
+
+	t.Run("skill allowed commands normalized", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{
+			"mygog": {Enabled: true, AllowedCommands: []string{}},
+		}}
+		normalize(cfg)
+		if cfg.Skills["mygog"].AllowedCommands != nil {
+			t.Error("expected empty AllowedCommands to be nil")
+		}
+	})
+
+	t.Run("skill env normalized", func(t *testing.T) {
+		cfg := &Config{Skills: map[string]SkillConfig{
+			"mygog": {Enabled: true, Env: map[string]string{}},
+		}}
+		normalize(cfg)
+		if cfg.Skills["mygog"].Env != nil {
+			t.Error("expected empty Env to be nil")
+		}
+	})
+}
+
+func TestValidate_BrowserBinaryNotFound(t *testing.T) {
+	cfg := &Config{Browser: BrowserConfig{Binary: "/nonexistent/path/to/chrome-xyz-notreal"}}
+	issues := Validate(cfg, nil)
+	if !hasIssue(issues, "not found") {
+		t.Fatalf("expected binary not found issue, got: %v", issues)
+	}
+}
+
 func TestWatcher(t *testing.T) {
 	t.Run("new watcher path", func(t *testing.T) {
 		w := NewWatcher("custom.yaml")
@@ -813,6 +927,13 @@ func TestWatcher(t *testing.T) {
 		}
 	})
 
+	t.Run("new watcher empty path uses default", func(t *testing.T) {
+		w := NewWatcher("")
+		if w.path == "" {
+			t.Fatal("expected non-empty path from NewWatcher(\"\")")
+		}
+	})
+
 	t.Run("start stop", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "aviary.yaml")
@@ -834,5 +955,38 @@ func TestWatcher(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("watcher start did not stop")
 		}
+	})
+
+	t.Run("start detects file write and debounces", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+		if err := os.WriteFile(path, []byte("server:\n  port: 9000\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		w := NewWatcher(path)
+		got := make(chan int, 2)
+		w.OnChange(func(cfg *Config) { got <- cfg.Server.Port })
+
+		done := make(chan error, 1)
+		go func() { done <- w.Start() }()
+		time.Sleep(50 * time.Millisecond)
+
+		// Write to the file — watcher should debounce and reload.
+		if err := os.WriteFile(path, []byte("server:\n  port: 9001\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		select {
+		case port := <-got:
+			if port != 9001 {
+				t.Fatalf("expected port 9001, got %d", port)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("watcher did not call handler after file write")
+		}
+
+		w.Stop()
+		<-done
 	})
 }

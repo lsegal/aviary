@@ -12,11 +12,11 @@ import (
 
 // Config is the top-level configuration for Aviary.
 type Config struct {
-	Server    ServerConfig    `yaml:"server"              json:"server"`
-	Agents    []AgentConfig   `yaml:"agents,omitempty"    json:"agents,omitempty"`
-	Models    ModelsConfig    `yaml:"models,omitempty"    json:"models,omitempty"`
-	Browser   BrowserConfig   `yaml:"browser,omitempty"   json:"browser,omitempty"`
-	Scheduler SchedulerConfig `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
+	Server    ServerConfig           `yaml:"server"              json:"server"`
+	Agents    []AgentConfig          `yaml:"agents,omitempty"    json:"agents,omitempty"`
+	Models    ModelsConfig           `yaml:"models,omitempty"    json:"models,omitempty"`
+	Browser   BrowserConfig          `yaml:"browser,omitempty"   json:"browser,omitempty"`
+	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 }
 
@@ -334,12 +334,44 @@ func Save(path string, cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
+	if err := backupConfigFile(path); err != nil {
+		return err
+	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 	if err := os.WriteFile(path, data, 0o640); err != nil {
 		return fmt.Errorf("writing config %s: %w", path, err)
+	}
+	return nil
+}
+
+func backupConfigFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading existing config for backup: %w", err)
+	}
+	backupDir := filepath.Join(filepath.Dir(path), "backups")
+	if err := os.MkdirAll(backupDir, 0o750); err != nil {
+		return fmt.Errorf("creating backup dir: %w", err)
+	}
+	oldest := filepath.Join(backupDir, "aviary.yml.bak.5")
+	if err := os.Remove(oldest); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing oldest backup: %w", err)
+	}
+	for i := 4; i >= 1; i-- {
+		src := filepath.Join(backupDir, fmt.Sprintf("aviary.yml.bak.%d", i))
+		dst := filepath.Join(backupDir, fmt.Sprintf("aviary.yml.bak.%d", i+1))
+		if err := os.Rename(src, dst); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("rotating backup %d: %w", i, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "aviary.yml.bak.1"), data, 0o640); err != nil {
+		return fmt.Errorf("writing config backup: %w", err)
 	}
 	return nil
 }

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/lsegal/aviary/internal/config"
 )
 
@@ -156,7 +158,7 @@ func TestFetchTabs_ConnectionError(t *testing.T) {
 }
 
 func TestFetchTabs_InvalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("not-json")) //nolint:errcheck
 	}))
@@ -193,7 +195,7 @@ func TestCreateTab_Success(t *testing.T) {
 }
 
 func TestCreateTab_EmptyID(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ChromeTab{ID: "", Type: "page"}) //nolint:errcheck
 	}))
@@ -206,7 +208,7 @@ func TestCreateTab_EmptyID(t *testing.T) {
 }
 
 func TestCreateTab_HTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -218,7 +220,7 @@ func TestCreateTab_HTTPError(t *testing.T) {
 }
 
 func TestCreateTab_InvalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("not-json")) //nolint:errcheck
 	}))
@@ -253,7 +255,7 @@ func TestFetchWebSocketURL_Success(t *testing.T) {
 }
 
 func TestFetchWebSocketURL_EmptyURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chromeVersionInfo{WebSocketDebuggerURL: ""}) //nolint:errcheck
 	}))
@@ -273,7 +275,7 @@ func TestFetchWebSocketURL_ConnectionError(t *testing.T) {
 }
 
 func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("bad")) //nolint:errcheck
 	}))
 	defer srv.Close()
@@ -287,7 +289,7 @@ func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
 // --- waitForChrome ---
 
 func TestWaitForChrome_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
 			WebSocketDebuggerURL: "ws://localhost:9222/devtools/browser/ready",
@@ -308,7 +310,7 @@ func TestWaitForChrome_Success(t *testing.T) {
 }
 
 func TestWaitForChrome_Timeout(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
@@ -325,7 +327,7 @@ func TestWaitForChrome_Timeout(t *testing.T) {
 // --- Manager.Tabs ---
 
 func TestManager_Tabs_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
 			{ID: "tab1", Type: "page", URL: "https://example.com"},
@@ -459,5 +461,333 @@ func TestManager_FillWithoutChrome(t *testing.T) {
 	err := m.Fill(cancelledCtx(), "tab-id", "#input", "hello")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// --- Session direct tests ---
+
+// makeTestSession builds a Session that has already-cancelled contexts.
+// We use plain context.WithCancel rather than chromedp.NewContext so that
+// calling Close/Detach/Run does not block trying to connect to Chrome.
+func makeTestSession() *Session {
+	allocCtx, cancelAlloc := context.WithCancel(context.Background())
+	taskCtx, cancelTask := context.WithCancel(allocCtx)
+	// Cancel immediately so all operations fail fast.
+	cancelTask()
+	cancelAlloc()
+	return &Session{
+		allocCtx:    allocCtx,
+		cancelAlloc: cancelAlloc,
+		taskCtx:     taskCtx,
+		cancelTask:  cancelTask,
+	}
+}
+
+func TestSession_Close(_ *testing.T) {
+	s := makeTestSession()
+	// Must not panic, even on a cancelled context.
+	s.Close()
+	// Calling Close again must also not panic.
+	s.Close()
+}
+
+func TestSession_Detach(_ *testing.T) {
+	s := makeTestSession()
+	s.Detach()
+	// Double-call must not panic.
+	s.Detach()
+}
+
+func TestSession_TabID_NoTarget(_ *testing.T) {
+	s := makeTestSession()
+	// With no real Chrome connection the target will be nil; TabID must return "".
+	id := s.TabID()
+	// We accept either empty string or a non-empty string - just must not panic.
+	_ = id
+}
+
+func TestSession_Run_CancelledContext(t *testing.T) {
+	s := makeTestSession()
+	err := s.Run(chromedp.ActionFunc(func(_ context.Context) error { return nil }))
+	// With a cancelled context, chromedp.Run returns an error.
+	if err == nil {
+		t.Fatal("expected error from Run with cancelled context")
+	}
+}
+
+// --- Session ops tests (error paths via cancelled session) ---
+
+func TestSession_Navigate_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.Navigate("https://example.com")
+	if err == nil {
+		t.Fatal("expected error from Navigate on cancelled session")
+	}
+}
+
+func TestSession_Type_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.Type("#input", "hello")
+	if err == nil {
+		t.Fatal("expected error from Type on cancelled session")
+	}
+}
+
+func TestSession_Fill_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.Fill("#input", "hello")
+	if err == nil {
+		t.Fatal("expected error from Fill on cancelled session")
+	}
+}
+
+func TestSession_Screenshot_Error(t *testing.T) {
+	s := makeTestSession()
+	buf, err := s.Screenshot()
+	if err == nil {
+		t.Fatal("expected error from Screenshot on cancelled session")
+	}
+	if buf != nil {
+		t.Fatal("expected nil buf on error")
+	}
+}
+
+func TestSession_EvalJS_Error(t *testing.T) {
+	s := makeTestSession()
+	result, err := s.EvalJS("1+1")
+	if err == nil {
+		t.Fatal("expected error from EvalJS on cancelled session")
+	}
+	if result != "" {
+		t.Fatal("expected empty result on error")
+	}
+}
+
+func TestSession_Click_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.Click("#btn")
+	if err == nil {
+		t.Fatal("expected error from Click on cancelled session")
+	}
+}
+
+// --- newRemoteSessionForTab error path ---
+
+func TestNewRemoteSessionForTab_InvalidWS(t *testing.T) {
+	// Use a port that nothing is listening on so chromedp.Run fails fast.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := newRemoteSessionForTab(ctx, "ws://127.0.0.1:1/devtools/browser/fake", "tab-fake")
+	if err == nil {
+		t.Fatal("expected error connecting to invalid WebSocket URL")
+	}
+}
+
+// --- ensureChrome when chrome is already running ---
+
+// mockCDPServer returns an httptest.Server that answers /json/version with a
+// fake (but non-empty) WebSocket debugger URL so ensureChrome short-circuits.
+func mockCDPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/version":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
+			})
+		case "/json/list":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+				{ID: "tab1", Type: "page", URL: "https://example.com"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestEnsureChrome_AlreadyRunning(t *testing.T) {
+	srv := mockCDPServer(t)
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	wsURL, err := m.ensureChrome(ctx)
+	if err != nil {
+		t.Fatalf("ensureChrome: %v", err)
+	}
+	if wsURL == "" {
+		t.Fatal("expected non-empty wsURL")
+	}
+}
+
+func TestEnsureChrome_CancelledContext(t *testing.T) {
+	m := NewManager("", 19876, "", false)
+	// With a cancelled context and no chrome running, ensureChrome must return an error.
+	_, err := m.ensureChrome(cancelledCtx())
+	if err == nil {
+		t.Fatal("expected error with cancelled context")
+	}
+}
+
+// --- Manager.Open via mock CDP ---
+
+func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {
+	// Serve both /json/version (for ensureChrome) and /json/new (for createTab).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/json/version":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
+			})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
+				ID: "opened-tab-1", Type: "page", URL: "https://example.com",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	tabID, err := m.Open(ctx, "https://example.com")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if tabID != "opened-tab-1" {
+		t.Errorf("expected 'opened-tab-1', got %q", tabID)
+	}
+}
+
+func TestManager_Open_WithoutChrome(t *testing.T) {
+	m := NewManager("", 19876, "", false)
+	_, err := m.Open(cancelledCtx(), "https://example.com")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+// --- Manager.Close ---
+
+func TestManager_Close_IsNoOp(_ *testing.T) {
+	m := NewManager("", 0, "", false)
+	// Must not panic - Close() is documented as a no-op.
+	m.Close()
+}
+
+// --- Manager.withTab: ensureChrome succeeds but session attach fails ---
+
+func TestManager_withTab_AttachFails(t *testing.T) {
+	// The mock CDP server answers /json/version (Chrome "running") but the
+	// returned ws:// URL is invalid so newRemoteSessionForTab will fail.
+	srv := mockCDPServer(t)
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Navigate calls withTab → ensureChrome succeeds → newRemoteSessionForTab fails.
+	err := m.Navigate(ctx, "nonexistent-tab", "https://example.com")
+	if err == nil {
+		t.Fatal("expected error when attaching to non-existent tab fails")
+	}
+}
+
+func TestManager_withTab_ReusesCachedSession(t *testing.T) {
+	srv := mockCDPServer(t)
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false)
+
+	// Inject a pre-built (cancelled) session into the cache.
+	s := makeTestSession()
+	m.mu.Lock()
+	m.sessions["cached-tab"] = s
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// withTab should find the cached session and call fn(s).
+	// The session's context is cancelled so the operation will fail, but that
+	// still proves the cached-session branch was reached (no attach attempt).
+	err := m.Navigate(ctx, "cached-tab", "https://example.com")
+	if err == nil {
+		t.Fatal("expected error from cancelled cached session")
+	}
+}
+
+// --- launchChrome: binary not found ---
+
+func TestLaunchChrome_BinaryNotFound(t *testing.T) {
+	m := NewManager("/nonexistent/path/to/chrome-xxxx", 19876, "", true)
+	// findChrome returns the path as-is for explicit binaries, so launchChrome
+	// will try to exec it and fail at cmd.Start().
+	err := launchChrome(m)
+	if err == nil {
+		t.Fatal("expected error launching non-existent chrome binary")
+	}
+}
+
+// --- findChrome: platform paths ---
+
+func TestFindChrome_PlatformPaths(_ *testing.T) {
+	// Ensure platformChromePaths returns a slice (may be empty) without panic.
+	paths := platformChromePaths()
+	_ = paths // just exercise the function
+}
+
+// --- Manager.CloseTab removes session from cache ---
+
+func TestManager_CloseTab_RemovesCachedSession(t *testing.T) {
+	var closedTabID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/json/close/") {
+			closedTabID = strings.TrimPrefix(r.URL.Path, "/json/close/")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Target is closing")) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false)
+
+	// Seed a cached session.
+	s := makeTestSession()
+	m.mu.Lock()
+	m.sessions["tab-cache"] = s
+	m.mu.Unlock()
+
+	err := m.CloseTab("tab-cache")
+	if err != nil {
+		t.Fatalf("CloseTab: %v", err)
+	}
+	if closedTabID != "tab-cache" {
+		t.Errorf("expected tab-cache closed, got %q", closedTabID)
+	}
+
+	m.mu.Lock()
+	_, still := m.sessions["tab-cache"]
+	m.mu.Unlock()
+	if still {
+		t.Error("expected session to be removed from cache after CloseTab")
 	}
 }

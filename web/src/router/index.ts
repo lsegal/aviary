@@ -18,27 +18,55 @@ const router = createRouter({
 		},
 		{
 			path: "/agents",
-			redirect: "/settings?tab=agents",
+			redirect: "/settings/agents",
 			meta: { requiresAuth: true },
 		},
 		{
 			path: "/tasks",
-			redirect: "/settings?tab=agents",
+			component: () => import("../views/TasksView.vue"),
 			meta: { requiresAuth: true },
 		},
 		{
 			path: "/sessions",
-			redirect: "/settings?tab=sessions",
+			redirect: "/settings/sessions",
 			meta: { requiresAuth: true },
 		},
 		{
 			path: "/settings",
+			redirect: (to) => {
+				const allowed = new Set([
+					"general",
+					"agents",
+					"skills",
+					"sessions",
+					"providers",
+				]);
+				const tab =
+					typeof to.query.tab === "string" && allowed.has(to.query.tab)
+						? to.query.tab
+						: "general";
+				return `/settings/${tab}`;
+			},
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/settings/:tab(general|agents|skills|sessions|providers)",
 			component: () => import("../views/SettingsView.vue"),
 			meta: { requiresAuth: true },
 		},
 		{
 			path: "/logs",
 			component: () => import("../views/LogsView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/system/tools",
+			component: () => import("../views/SystemToolsView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/system/skills",
+			component: () => import("../views/SystemSkillsView.vue"),
 			meta: { requiresAuth: true },
 		},
 		{

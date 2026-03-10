@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/buildinfo"
 )
 
 // RemoteClient calls an MCP server over HTTPS using the Streamable HTTP transport.
@@ -43,7 +45,7 @@ func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClien
 
 	c := sdkmcp.NewClient(&sdkmcp.Implementation{
 		Name:    "aviary-cli",
-		Version: "0.1.0",
+		Version: buildinfo.Version,
 	}, nil)
 
 	session, err := c.Connect(connCtx, t, nil)

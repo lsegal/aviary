@@ -159,6 +159,16 @@ func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, 
 	return nil
 }
 
+// AppendReplyToSession appends an assistant reply to a session and forwards it
+// to any registered delivery targets for that session.
+func AppendReplyToSession(agentID, sessionID, content string) error {
+	if err := AppendMessageToSession(agentID, sessionID, domain.MessageRoleAssistant, content); err != nil {
+		return err
+	}
+	deliverToSession(sessionID, content)
+	return nil
+}
+
 // AppendMediaMessageToSession appends a message with optional text and media to
 // an existing session and fires the session-message observer.
 func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageRole, content, mediaURL string) error {

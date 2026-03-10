@@ -51,7 +51,7 @@ test.beforeEach(async ({ page }) => {
 
 test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await page.goto("/settings");
-	await page.getByRole("button", { name: "Agents & Tasks" }).click();
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 
 	await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
 	await expect(
@@ -69,22 +69,26 @@ test("tab switching does not blank content", async ({ page }) => {
 	await page.goto("/settings");
 
 	for (let i = 0; i < 3; i += 1) {
-		await page.getByRole("button", { name: "General" }).click();
+		await page.getByRole("link", { name: "General", exact: true }).click();
 		await expect(
 			page.getByRole("heading", { name: "Server", exact: true }),
 		).toBeVisible();
 
-		await page.getByRole("button", { name: "Agents & Tasks" }).click();
+		await page
+			.getByRole("link", { name: "Agents & Tasks", exact: true })
+			.click();
 		await expect(
 			page.getByRole("button", { name: "+ Add Agent" }),
 		).toBeVisible();
 
-		await page.getByRole("button", { name: "Sessions" }).click();
+		await page.getByRole("link", { name: "Sessions", exact: true }).click();
 		await expect(
 			page.getByRole("button", { name: "Refresh Sessions" }),
 		).toBeVisible();
 
-		await page.getByRole("button", { name: "Providers & Auth" }).click();
+		await page
+			.getByRole("link", { name: "Providers & Auth", exact: true })
+			.click();
 		await expect(
 			page.getByRole("heading", { name: "Credentials", exact: true }),
 		).toBeVisible();
@@ -93,7 +97,9 @@ test("tab switching does not blank content", async ({ page }) => {
 
 test("providers auth tab shows credential controls", async ({ page }) => {
 	await page.goto("/settings");
-	await page.getByRole("button", { name: "Providers & Auth" }).click();
+	await page
+		.getByRole("link", { name: "Providers & Auth", exact: true })
+		.click();
 
 	await expect(
 		page.getByRole("heading", { name: "Credentials", exact: true }),

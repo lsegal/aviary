@@ -226,5 +226,5 @@ test("stat cards link to their detail views", async ({ page }) => {
 	await page.goto("/overview");
 
 	await page.getByText("Agents").first().click();
-	await expect(page).toHaveURL("/settings?tab=agents");
+	await expect(page).toHaveURL("/settings/agents");
 });

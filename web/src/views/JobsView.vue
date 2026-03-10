@@ -143,6 +143,60 @@
             </div>
           </div>
 
+          <div class="mb-4 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+              <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Scheduled Tasks</h3>
+              <span class="text-xs text-gray-400">{{ store.scheduledTasks.length }} configured</span>
+            </div>
+            <div v-if="store.tasksLoading" class="px-5 py-6 text-sm text-gray-400">
+              Loading scheduled tasks…
+            </div>
+            <div v-else-if="!store.scheduledTasks.length" class="px-5 py-6 text-sm text-gray-400">
+              No scheduled tasks configured.
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
+                    <th class="px-5 py-2.5 font-medium">Task</th>
+                    <th class="px-4 py-2.5 font-medium">Agent</th>
+                    <th class="px-4 py-2.5 font-medium">Type</th>
+                    <th class="px-4 py-2.5 font-medium">Trigger</th>
+                    <th class="px-4 py-2.5 font-medium">Prompt</th>
+                    <th class="px-4 py-2.5 text-right font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="task in store.scheduledTasks" :key="task.id"
+                    class="border-b border-gray-50 text-gray-700 dark:border-gray-800 dark:text-gray-300">
+                    <td class="px-5 py-2.5">
+                      <code class="font-mono text-gray-600 dark:text-gray-400">{{ task.id }}</code>
+                    </td>
+                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ task.agent_name }}</td>
+                    <td class="px-4 py-2.5 uppercase text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                      {{ task.trigger_type }}
+                    </td>
+                    <td class="px-4 py-2.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                      {{ taskTrigger(task) }}
+                    </td>
+                    <td class="max-w-lg truncate px-4 py-2.5 text-gray-600 dark:text-gray-400" :title="task.prompt">
+                      {{ task.prompt || "—" }}
+                    </td>
+                    <td class="px-4 py-2.5 text-right">
+                      <button
+                        class="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        :disabled="runningTaskID === task.id"
+                        @click.stop="runScheduledTaskNow(task.id)"
+                      >
+                        {{ runningTaskID === task.id ? "Running…" : "Run Now" }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Jobs table -->
           <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
@@ -163,6 +217,7 @@
                     <th class="px-4 py-2.5 font-medium">Duration</th>
                     <th class="px-4 py-2.5 text-right font-medium">Attempts</th>
                     <th class="px-4 py-2.5 font-medium">Scheduled</th>
+                    <th class="px-4 py-2.5 text-right font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,6 +241,16 @@
                     <td class="px-4 py-2.5 text-right text-gray-500">{{ job.attempts }}/{{ job.max_retries }}</td>
                     <td class="px-4 py-2.5 text-gray-400">
                       {{ job.scheduled_for ? fmtTs(job.scheduled_for) : "—" }}
+                    </td>
+                    <td class="px-4 py-2.5 text-right">
+                      <button
+                        v-if="job.status === 'pending'"
+                        class="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        :disabled="runningJobID === job.id"
+                        @click.stop="runQueuedJobNow(job.id)"
+                      >
+                        {{ runningJobID === job.id ? "Running…" : "Run Now" }}
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -295,7 +360,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
-import type { Job } from "../stores/jobs";
+import type { Job, ScheduledTask } from "../stores/jobs";
 import { useJobsStore } from "../stores/jobs";
 
 const store = useJobsStore();
@@ -308,6 +373,8 @@ const jobOutput = ref<string>("");
 const logsLoading = ref(false);
 const liveBottom = ref<HTMLElement | null>(null);
 const hoveredDay = ref<number | null>(null);
+const runningTaskID = ref<string | null>(null);
+const runningJobID = ref<string | null>(null);
 
 const presets = [
 	{ label: "Today", days: 0 },
@@ -365,6 +432,33 @@ async function reloadLogs() {
 function applyPreset(days: number) {
 	activePreset.value = days;
 	store.setPreset(days);
+}
+
+async function runScheduledTaskNow(taskID: string) {
+	runningTaskID.value = taskID;
+	try {
+		await store.runTaskNow(taskID);
+	} finally {
+		runningTaskID.value = null;
+	}
+}
+
+async function runQueuedJobNow(jobID: string) {
+	runningJobID.value = jobID;
+	try {
+		await store.runJobNow(jobID);
+	} finally {
+		runningJobID.value = null;
+	}
+}
+
+function taskTrigger(task: ScheduledTask): string {
+	const parts: string[] = [];
+	if (task.schedule) parts.push(`schedule: ${task.schedule}`);
+	if (task.watch) parts.push(`watch: ${task.watch}`);
+	if (task.start_at) parts.push(`start_at: ${task.start_at}`);
+	if (task.run_once) parts.push("run_once");
+	return parts.length ? parts.join(" | ") : "—";
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -449,5 +543,8 @@ function showLabel(i: number, len: number): boolean {
 	return i === 0 || i === len - 1 || i % step === 0;
 }
 
-onMounted(() => store.fetch());
+onMounted(() => {
+	store.fetch();
+	store.fetchScheduledTasks();
+});
 </script>

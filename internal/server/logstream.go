@@ -247,44 +247,11 @@ func logsHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 
-	path := logging.LogFilePath()
-	data, err := os.ReadFile(path)
+	entries, hasMore, err := readHistoricalLogEntries(logging.LogFilePath(), skip, limit)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
 		return
-	}
-
-	lines := bytes.Split(data, []byte("\n"))
-	// Drop empty trailing line from final newline.
-	for len(lines) > 0 && len(bytes.TrimSpace(lines[len(lines)-1])) == 0 {
-		lines = lines[:len(lines)-1]
-	}
-
-	total := len(lines)
-	end := total - skip
-	if end <= 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
-		return
-	}
-	start := end - limit
-	hasMore := start > 0
-	if start < 0 {
-		start = 0
-	}
-
-	var entries []logEntry
-	var seq int64
-	for _, ln := range lines[start:end] {
-		line := strings.TrimSpace(string(ln))
-		if line == "" {
-			continue
-		}
-		seq++
-		e := parseLogLine(line)
-		e.Seq = seq
-		entries = append(entries, e)
 	}
 
 	type response struct {
@@ -328,19 +295,22 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := logging.LogFilePath()
-	data, err := os.ReadFile(path)
-	if err == nil && len(data) > 0 {
-		lines := bytes.Split(data, []byte("\n"))
-		start := 0
-		if len(lines) > 500 {
-			start = len(lines) - 500
+	tail := 200
+	if v := r.URL.Query().Get("tail"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &tail); n == 0 || err != nil {
+			tail = 200
 		}
-		for _, ln := range lines[start:] {
-			line := strings.TrimSpace(string(ln))
-			if line == "" {
-				continue
-			}
-			e := parseLogLine(line)
+	}
+	if tail < 0 {
+		tail = 0
+	}
+	if tail > 1000 {
+		tail = 1000
+	}
+
+	initialEntries, _, err := readHistoricalLogEntries(path, 0, tail)
+	if err == nil {
+		for _, e := range initialEntries {
 			sendEntry(e)
 		}
 	}
@@ -400,6 +370,91 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func readHistoricalLogEntries(path string, skip, limit int) ([]logEntry, bool, error) {
+	lines, hasMore, err := readLogLinesFromEnd(path, skip, limit)
+	if err != nil {
+		return nil, false, err
+	}
+
+	entries := make([]logEntry, 0, len(lines))
+	var seq int64
+	for _, line := range lines {
+		text := strings.TrimSpace(string(line))
+		if text == "" {
+			continue
+		}
+		seq++
+		entry := parseLogLine(text)
+		entry.Seq = seq
+		entries = append(entries, entry)
+	}
+	return entries, hasMore, nil
+}
+
+func readLogLinesFromEnd(path string, skip, limit int) ([][]byte, bool, error) {
+	if limit <= 0 {
+		return nil, false, nil
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close() //nolint:errcheck
+
+	st, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	if st.Size() == 0 {
+		return nil, false, nil
+	}
+
+	const chunkSize int64 = 64 * 1024
+	targetLines := skip + limit + 1
+	var (
+		pos       = st.Size()
+		buf       []byte
+		lineCount int
+	)
+
+	for pos > 0 && lineCount < targetLines {
+		start := pos - chunkSize
+		if start < 0 {
+			start = 0
+		}
+		chunk := make([]byte, pos-start)
+		if _, err := f.ReadAt(chunk, start); err != nil && err != io.EOF {
+			return nil, false, err
+		}
+		buf = append(chunk, buf...)
+		pos = start
+		lineCount = bytes.Count(buf, []byte{'\n'})
+		if len(buf) > 0 && buf[len(buf)-1] != '\n' {
+			lineCount++
+		}
+	}
+
+	lines := bytes.Split(buf, []byte("\n"))
+	for len(lines) > 0 && len(bytes.TrimSpace(lines[len(lines)-1])) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) == 0 {
+		return nil, false, nil
+	}
+
+	end := len(lines) - skip
+	if end <= 0 {
+		return nil, false, nil
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	hasMore := pos > 0 || start > 0
+	return lines[start:end], hasMore, nil
 }
 
 func parseLogLine(line string) logEntry {

@@ -19,17 +19,17 @@ const (
 )
 
 type skillMgrModel struct {
-	cfg       *config.Config
-	cfgPath   string
-	mode      skillMgrMode
-	cursor    int
+	cfg        *config.Config
+	cfgPath    string
+	mode       skillMgrMode
+	cursor     int
 	editCursor int
-	width     int
-	installed []skills.Definition
-	binary    textinput.Model
-	allowed   textinput.Model
-	message   string
-	err       string
+	width      int
+	installed  []skills.Definition
+	binary     textinput.Model
+	allowed    textinput.Model
+	message    string
+	err        string
 }
 
 func newSkillMgrModel(cfg *config.Config, cfgPath string) skillMgrModel {

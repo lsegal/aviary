@@ -14,15 +14,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/domain"
-
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/robfig/cron/v3"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 	"github.com/lsegal/aviary/skills"
 )
 
@@ -599,27 +600,30 @@ type taskNameArgs struct {
 	Name string `json:"name"`
 }
 
+type taskStopArgs struct {
+	Name  string `json:"name,omitempty"`
+	JobID string `json:"job_id,omitempty"`
+}
+
 type taskScheduleArgs struct {
-	Agent  string `json:"agent"`
-	Prompt string `json:"prompt"`
-	In     string `json:"in,omitempty"` // duration: "5m", "1h", "30s", "5 minutes", etc.
+	Agent    string `json:"agent"`
+	Name     string `json:"name,omitempty"`
+	Prompt   string `json:"prompt"`
+	In       string `json:"in,omitempty"`       // duration: "5m", "1h", "30s", "5 minutes", etc.
+	Schedule string `json:"schedule,omitempty"` // cron expression with leading seconds field
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
-		Description: "List all tasks, their trigger type, and last run status",
+		Description: "List configured tasks and their trigger definitions",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_list")
 		d := GetDeps()
 		if d.Scheduler == nil {
 			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
 		}
-		jobs, err := d.Scheduler.Queue().List("")
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(jobs)
+		return jsonResult(d.Scheduler.ListTasks())
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -640,9 +644,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a one-time task (arguments: agent=<your-agent-name>, prompt=<what to do>, in=<optional delay e.g. '5m', '1h30m', '30 seconds'>)",
+		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In)
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
 		if d.Scheduler == nil {
 			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
@@ -658,6 +662,60 @@ func registerTaskTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
 			}
 		}
+		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
+			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
+		}
+		if strings.TrimSpace(args.Schedule) != "" {
+			if err := validateTaskSchedule(args.Schedule); err != nil {
+				return nil, struct{}{}, err
+			}
+			cfg, err := config.Load("")
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			agentIdx := -1
+			for i := range cfg.Agents {
+				if cfg.Agents[i].Name == args.Agent {
+					agentIdx = i
+					break
+				}
+			}
+			if agentIdx < 0 {
+				return nil, struct{}{}, fmt.Errorf("agent %q not found in config", args.Agent)
+			}
+			taskName := strings.TrimSpace(args.Name)
+			if taskName == "" {
+				taskName = generatedTaskName(args.Prompt)
+			}
+			nextTask := config.TaskConfig{
+				Name:     taskName,
+				Prompt:   args.Prompt,
+				Schedule: strings.TrimSpace(args.Schedule),
+			}
+			updated := false
+			for i := range cfg.Agents[agentIdx].Tasks {
+				if cfg.Agents[agentIdx].Tasks[i].Name == taskName {
+					cfg.Agents[agentIdx].Tasks[i] = nextTask
+					updated = true
+					break
+				}
+			}
+			if !updated {
+				cfg.Agents[agentIdx].Tasks = append(cfg.Agents[agentIdx].Tasks, nextTask)
+			}
+			if err := config.Save("", cfg); err != nil {
+				return nil, struct{}{}, err
+			}
+			if d.Agents != nil {
+				d.Agents.Reconcile(cfg)
+			}
+			d.Scheduler.Reconcile(cfg)
+			action := "created"
+			if updated {
+				action = "updated"
+			}
+			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+		}
 		agentID := fmt.Sprintf("agent_%s", args.Agent)
 		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
 
@@ -672,9 +730,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if parseErr != nil {
 				return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
 			}
-			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, 1, time.Now().Add(delay), replyAgentID, replySessionID)
+			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, "", 1, time.Now().Add(delay), replyAgentID, replySessionID)
 		} else {
-			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, 1, replyAgentID, replySessionID)
+			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, "", 1, replyAgentID, replySessionID)
 		}
 		if err != nil {
 			return nil, struct{}{}, err
@@ -688,9 +746,30 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_stop",
-		Description: "Stop all currently running scheduled task jobs",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return stub("task_stop")
+		Description: "Stop scheduled task jobs. Optional name=<task-name or agent/task> or job_id=<job-id>; omit both to stop all pending and running jobs.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		target := strings.TrimSpace(args.JobID)
+		if target == "" {
+			target = strings.TrimSpace(args.Name)
+		}
+		stopped, err := d.Scheduler.StopJobs(target)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if stopped == 0 {
+			if target == "" {
+				return text("no pending or running task jobs to stop")
+			}
+			return text(fmt.Sprintf("no pending or running task jobs matched %q", target))
+		}
+		if target == "" {
+			return text(fmt.Sprintf("stopped %d pending/running task job(s)", stopped))
+		}
+		return text(fmt.Sprintf("stopped %d pending/running task job(s) matching %q", stopped, target))
 	})
 }
 
@@ -707,6 +786,36 @@ func parseDuration(s string) (time.Duration, error) {
 		s = strings.ReplaceAll(s, r.from, r.to)
 	}
 	return time.ParseDuration(s)
+}
+
+func validateTaskSchedule(schedule string) error {
+	c := cron.New(cron.WithSeconds())
+	if _, err := c.AddFunc(strings.TrimSpace(schedule), func() {}); err != nil {
+		return fmt.Errorf("invalid schedule %q: %w", schedule, err)
+	}
+	return nil
+}
+
+func generatedTaskName(prompt string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(prompt) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && b.String()[b.Len()-1] != '-':
+			b.WriteRune('-')
+		}
+		if b.Len() >= 24 {
+			break
+		}
+	}
+	base := strings.Trim(b.String(), "-")
+	if base == "" {
+		base = "scheduled"
+	}
+	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 }
 
 // ── Job tools ────────────────────────────────────────────────────────────────
@@ -800,6 +909,22 @@ func registerJobTools(s *sdkmcp.Server) {
 			return text("(no output captured)")
 		}
 		return text(job.Output)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "job_run_now",
+		Description: "Immediately run an existing pending job by ID, ignoring its scheduled time and worker concurrency limits",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_run_now", "id", args.ID)
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		job, err := d.Scheduler.RunJobNow(args.ID)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(job)
 	})
 }
 
@@ -1384,6 +1509,38 @@ func registerServerTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"status": "running"})
 	})
 
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "server_version_check",
+		Description: "Check the current Aviary version against the latest GitHub release",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		check, err := update.Check(ctx, nil)
+		if err != nil && check.LatestVersion == "" {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(check)
+	})
+
+	type serverUpgradeArgs struct {
+		Version string `json:"version,omitempty"`
+	}
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "server_upgrade",
+		Description: "Upgrade Aviary to the latest release and restart the server if needed",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if update.EmulationActive() {
+			return jsonResult(map[string]any{"started": true, "emulated": true})
+		}
+		if d.Upgrade == nil {
+			return nil, struct{}{}, fmt.Errorf("server upgrade is only available when the Aviary server is running")
+		}
+		if err := d.Upgrade(ctx, args.Version); err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(map[string]any{"started": true})
+	})
+
 	// Replace ping placeholder with a proper tool.
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "ping",
@@ -1546,7 +1703,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "skill_list",
+		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		cfg, err := config.Load("")

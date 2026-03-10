@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/lsegal/aviary/internal/buildinfo"
 )
 
 // healthPayload is the JSON shape sent by both /api/health and the WebSocket heartbeat.
@@ -72,7 +74,7 @@ var wsUpgrader = websocket.Upgrader{
 // Public — no authentication required. Returns current version and status.
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: Version, GOOS: runtime.GOOS})
+	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS})
 }
 
 // wsHandler returns a handler for GET /api/ws.
@@ -107,7 +109,7 @@ func wsHandler(token string) http.HandlerFunc {
 		defer conn.Close() //nolint:errcheck
 		defer wsUnregister(conn)
 
-		payload := wsEvent{Type: "health", OK: true, Version: Version, GOOS: runtime.GOOS}
+		payload := wsEvent{Type: "health", OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS}
 
 		// Send the initial status immediately on connect.
 		if err := conn.WriteJSON(payload); err != nil {

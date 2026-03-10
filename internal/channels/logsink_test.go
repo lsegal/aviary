@@ -75,7 +75,7 @@ func TestLogSink_Subscribe_History(t *testing.T) {
 }
 
 // TestLogSink_Unsubscribe verifies the unsubscribe function removes the subscriber.
-func TestLogSink_Unsubscribe(t *testing.T) {
+func TestLogSink_Unsubscribe(_ *testing.T) {
 	s := newLogSink()
 	_, _, unsub := s.Subscribe()
 

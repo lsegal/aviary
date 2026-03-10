@@ -39,7 +39,8 @@
 						Select an agent to start chatting.
 					</div>
 					<template v-else>
-						<template v-for="item in displayItems" :key="item.type === 'message' ? (item.msg.id || item.key) : item.key">
+						<template v-for="item in displayItems"
+							:key="item.type === 'message' ? (item.msg.id || item.key) : item.key">
 							<!-- Date divider -->
 							<div v-if="item.type === 'date-divider'" class="flex justify-center my-4">
 								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
@@ -47,30 +48,49 @@
 							<!-- Tool-use indicator -->
 							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
 								<details class="group inline-block">
-									<summary class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0" aria-hidden="true">
-											<path fill-rule="evenodd" d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z" clip-rule="evenodd" />
+									<summary
+										class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+											class="h-3 w-3 shrink-0" aria-hidden="true">
+											<path fill-rule="evenodd"
+												d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z"
+												clip-rule="evenodd" />
 										</svg>
 										<span>{{ toolSummary(item.msg) }}</span>
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
-											<path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+											class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
+											<path fill-rule="evenodd"
+												d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
+												clip-rule="evenodd" />
 										</svg>
 									</summary>
-									<div class="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
+									<div
+										class="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
 										<template v-if="item.msg.toolData">
 											<div v-if="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length > 0">
-												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Arguments</p>
-												<pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(item.msg.toolData.args) }}</pre>
+												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Arguments
+												</p>
+												<pre
+													class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(item.msg.toolData.args) }}
+												</pre>
 											</div>
-											<div v-if="item.msg.toolData.result" :class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
-												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Result</p>
-												<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ item.msg.toolData.result }}</pre>
+											<div v-if="item.msg.toolData.result"
+												:class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
+												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Result
+												</p>
+												<pre
+													class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ item.msg.toolData.result }}
+												</pre>
 											</div>
-											<div v-if="item.msg.toolData.error" :class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
+											<div v-if="item.msg.toolData.error"
+												:class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
 												<p class="mb-1 font-semibold uppercase tracking-wide text-red-400">Error</p>
-												<pre class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ item.msg.toolData.error }}</pre>
+												<pre
+													class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ item.msg.toolData.error }}
+												</pre>
 											</div>
-											<p v-if="!item.msg.toolData.result && !item.msg.toolData.error" class="italic text-gray-400 dark:text-gray-500">Running…</p>
+											<p v-if="!item.msg.toolData.result && !item.msg.toolData.error"
+												class="italic text-gray-400 dark:text-gray-500">Running…</p>
 										</template>
 										<p v-else class="text-gray-500 dark:text-gray-400">{{ item.msg.text }}</p>
 									</div>
@@ -84,24 +104,24 @@
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<button
-										v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)"
-										type="button"
-										class="cursor-zoom-in"
-										@click="openExpandedImage(item.msg.mediaURL)"
-									>
+									<button v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)" type="button"
+										class="cursor-zoom-in" @click="openExpandedImage(item.msg.mediaURL)">
 										<img :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
 									</button>
-									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full rounded-lg" style="max-height:320px" />
-									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full" />
+									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
+										controls class="max-w-full rounded-lg" style="max-height:320px" />
+									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
+										controls class="max-w-full" />
 									<a v-else-if="item.msg.mediaURL" :href="item.msg.mediaURL" target="_blank" rel="noopener noreferrer"
 										class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
 										Open attachment
 									</a>
-									<span v-if="item.msg.text && item.msg.role === 'user'" class="whitespace-pre-wrap">{{ item.msg.text }}</span>
-									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError" class="whitespace-pre-wrap font-mono text-sm">{{ item.msg.text }}</span>
-									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError" class="prose dark:prose-invert max-w-none"
-										v-html="renderMarkdown(item.msg.text)" />
+									<span v-if="item.msg.text && item.msg.role === 'user'"
+										class="whitespace-pre-wrap">{{ item.msg.text }}</span>
+									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError"
+										class="whitespace-pre-wrap font-mono text-sm">{{ item.msg.text }}</span>
+									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError"
+										class="prose dark:prose-invert max-w-none" v-html="renderMarkdown(item.msg.text)" />
 									<span v-if="item.isLastInGroup && item.msg.timestamp"
 										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : item.msg.isError ? 'text-xs text-red-400 dark:text-red-500 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
 										{{ formatTime(item.msg.timestamp) }}{{ item.msg.model ? ' | ' + item.msg.model : '' }}
@@ -165,24 +185,14 @@
 				</form>
 			</div>
 		</div>
-		<div
-			v-if="expandedImageURL"
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
-			@click="closeExpandedImage"
-		>
-			<button
-				type="button"
+		<div v-if="expandedImageURL" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
+			@click="closeExpandedImage">
+			<button type="button"
 				class="absolute right-4 top-4 rounded-full bg-black/50 px-3 py-1 text-sm text-white hover:bg-black/70"
-				aria-label="Close image"
-				@click.stop="closeExpandedImage"
-			>
+				aria-label="Close image" @click.stop="closeExpandedImage">
 				Close
 			</button>
-			<img
-				:src="expandedImageURL"
-				class="max-h-full max-w-full rounded-xl shadow-2xl"
-				@click.stop
-			/>
+			<img :src="expandedImageURL" class="max-h-full max-w-full rounded-xl shadow-2xl" @click.stop />
 		</div>
 	</AppLayout>
 </template>

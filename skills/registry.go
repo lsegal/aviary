@@ -1,3 +1,4 @@
+// Package skills provides discovery and loading for builtin and installed skills.
 package skills
 
 import (
@@ -8,13 +9,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lsegal/aviary/internal/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 //go:embed */SKILL.md
 var builtinFS embed.FS
 
+// Definition describes a skill that can be listed or installed.
 type Definition struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

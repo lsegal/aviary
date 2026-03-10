@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"context"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
@@ -16,6 +18,7 @@ type Deps struct {
 	Memory    *memory.Manager
 	Browser   *browser.Manager
 	Auth      *auth.FileStore // credential store; nil until server starts
+	Upgrade   func(context.Context, string) error
 }
 
 // globalDeps is set by the server at startup.

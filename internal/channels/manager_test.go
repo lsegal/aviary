@@ -76,7 +76,7 @@ func TestManager_NewManager(t *testing.T) {
 }
 
 // TestManager_Stop_Empty verifies Stop on empty manager doesn't panic.
-func TestManager_Stop_Empty(t *testing.T) {
+func TestManager_Stop_Empty(_ *testing.T) {
 	mgr := NewManager()
 	mgr.Stop() // should not panic
 }
@@ -406,7 +406,7 @@ func TestDiscordChannel_Send_NotConnected(t *testing.T) {
 	}
 }
 
-func TestDiscordChannel_Stop_Idempotent(t *testing.T) {
+func TestDiscordChannel_Stop_Idempotent(_ *testing.T) {
 	ch := NewDiscordChannel("t", nil, "m", nil)
 	ch.Stop()
 	ch.Stop() // should not panic
@@ -442,13 +442,13 @@ func TestSlackChannel_OnMessage(t *testing.T) {
 	}
 }
 
-func TestSlackChannel_Stop_NilCancel(t *testing.T) {
+func TestSlackChannel_Stop_NilCancel(_ *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
 	ch.Stop() // should not panic when cancel is nil
 	ch.Stop() // idempotent
 }
 
-func TestSlackChannel_Dispatch_WrongType(t *testing.T) {
+func TestSlackChannel_Dispatch_WrongType(_ *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
 	// Non-eventsAPI event type causes early return before Ack — no panic.
 	ch.dispatch(socketmode.Event{Type: socketmode.EventTypeHello})
@@ -502,7 +502,7 @@ func newSignalMockTCPServer(t *testing.T, response jsonrpcResponseMock) string {
 		response.ID = req.ID
 		_ = json.NewEncoder(conn).Encode(response)
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return ln.Addr().String()
 }
 
@@ -609,9 +609,9 @@ func TestFetchLinkPreviews_NoURL(t *testing.T) {
 }
 
 func TestFetchLinkPreviews_WithURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintln(w, `<html><head>
+		_, _ = fmt.Fprintln(w, `<html><head>
 			<meta property="og:title" content="Test Title">
 			<meta property="og:description" content="Test Desc">
 		</head><body></body></html>`)
@@ -631,9 +631,9 @@ func TestFetchLinkPreviews_WithURL(t *testing.T) {
 }
 
 func TestFetchLinkPreviews_NonHTMLResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"key":"value"}`)
+		_, _ = fmt.Fprintln(w, `{"key":"value"}`)
 	}))
 	defer srv.Close()
 
@@ -649,7 +649,7 @@ func TestFetchLinkPreviews_NonHTMLResponse(t *testing.T) {
 // ── downloadTempImage tests ───────────────────────────────────────────────────
 
 func TestDownloadTempImage_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte("fake image data"))
 	}))
@@ -672,7 +672,7 @@ func TestDownloadTempImage_Success(t *testing.T) {
 	}
 }
 
-func TestDownloadTempImage_NotFound(t *testing.T) {
+func TestDownloadTempImage_NotFound(_ *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return a 404 with no body — downloadTempImage should still succeed
 		// (it copies whatever body is present); test that it at least returns
@@ -710,7 +710,7 @@ func TestSignalChannel_StreamToSink(t *testing.T) {
 	}
 }
 
-func TestSignalChannel_StreamToSink_NoSink(t *testing.T) {
+func TestSignalChannel_StreamToSink_NoSink(_ *testing.T) {
 	// streamToSink with nil LogSink should not panic.
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	// logSink is nil by default

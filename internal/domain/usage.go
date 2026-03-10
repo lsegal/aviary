@@ -16,4 +16,5 @@ type UsageRecord struct {
 	CacheWriteTokens int       `json:"cache_write_tokens,omitempty"`
 	ToolCalls        int       `json:"tool_calls,omitempty"`
 	HasError         bool      `json:"has_error,omitempty"`
+	HasThrottle      bool      `json:"has_throttle,omitempty"`
 }

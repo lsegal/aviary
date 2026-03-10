@@ -21,12 +21,14 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 func TestSetGetDeps(t *testing.T) {
@@ -552,7 +554,196 @@ func TestServerTools(t *testing.T) {
 func TestTaskTools(t *testing.T) {
 	d := setupMCPDispatcher(t)
 	// task_list
-	toolCallContains(t, d, "task_list", map[string]any{}, "")
+	toolCallContains(t, d, "task_list", map[string]any{}, "scheduler not initialized")
+}
+
+func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	if err := config.Save("", cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "morning-hi",
+		"prompt":   "send hi",
+		"schedule": "0 0 10 * * *",
+	})
+	if err != nil {
+		t.Fatalf("task_schedule recurring: %v", err)
+	}
+	if !strings.Contains(out, "Recurring task") {
+		t.Fatalf("expected recurring task response, got %q", out)
+	}
+
+	loaded, err := config.Load("")
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if len(loaded.Agents) != 1 || len(loaded.Agents[0].Tasks) != 1 {
+		t.Fatalf("expected one saved task, got %#v", loaded.Agents)
+	}
+	got := loaded.Agents[0].Tasks[0]
+	if got.Name != "morning-hi" || got.Schedule != "0 0 10 * * *" || got.Prompt != "send hi" {
+		t.Fatalf("unexpected saved task: %#v", got)
+	}
+
+	runOut, err := d.CallTool(context.Background(), "task_run", map[string]any{"name": "bot/morning-hi"})
+	if err != nil {
+		t.Fatalf("task_run recurring task: %v", err)
+	}
+	if !strings.Contains(runOut, "\"task_id\": \"bot/morning-hi\"") {
+		t.Fatalf("expected recurring task to be runnable, got %q", runOut)
+	}
+}
+
+func TestTaskListReturnsConfiguredTasks(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Tasks: []config.TaskConfig{{
+				Name:     "daily",
+				Schedule: "0 0 10 * * *",
+				Prompt:   "send hi",
+			}},
+		}},
+	}
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "task_list", map[string]any{})
+	if err != nil {
+		t.Fatalf("task_list: %v", err)
+	}
+	if !strings.Contains(out, "\"id\": \"bot/daily\"") || !strings.Contains(out, "\"trigger_type\": \"cron\"") {
+		t.Fatalf("expected configured task output, got %q", out)
+	}
+}
+
+func TestJobRunNowForceStartsPendingJob(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+	job, err := s.Queue().EnqueueAt("bot/daily", "agent_bot", "bot", "send hi", "", 1, time.Now().Add(1*time.Hour), "", "")
+	if err != nil {
+		t.Fatalf("enqueue pending job: %v", err)
+	}
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "job_run_now", map[string]any{"id": job.ID})
+	if err != nil {
+		t.Fatalf("job_run_now: %v", err)
+	}
+	if !strings.Contains(out, "\"id\": \""+job.ID+"\"") || !strings.Contains(out, "\"status\": \"in_progress\"") {
+		t.Fatalf("expected started job output, got %q", out)
+	}
+}
+
+func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "task_schedule", map[string]any{
+		"agent":    "bot",
+		"prompt":   "send hi",
+		"in":       "1h",
+		"schedule": "0 0 10 * * *",
+	}, "only one of")
 }
 
 func TestTaskRunTool(t *testing.T) {
@@ -591,6 +782,58 @@ func TestTaskRunTool(t *testing.T) {
 	}
 	if !strings.Contains(out, "\"task_id\": \"bot/daily\"") {
 		t.Fatalf("expected task_run to return job json, got %q", out)
+	}
+}
+
+func TestTaskStopTool(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Tasks: []config.TaskConfig{{Name: "daily", Prompt: "run now", Schedule: "0 9 * * * *"}},
+		}},
+	}
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run now", "", 1, "", "")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "task_stop", map[string]any{"name": "bot/daily"})
+	if err != nil {
+		t.Fatalf("task_stop: %v", err)
+	}
+	if !strings.Contains(out, "stopped 1 pending/running task job") {
+		t.Fatalf("unexpected task_stop output: %q", out)
+	}
+
+	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	if err != nil {
+		t.Fatalf("read job: %v", err)
+	}
+	if persisted.Status != domain.JobStatusCanceled {
+		t.Fatalf("expected canceled job, got %s", persisted.Status)
 	}
 }
 
@@ -859,22 +1102,29 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	if len(tools) == 0 {
 		t.Fatal("expected non-empty tool list")
 	}
-	// Verify core and plugin tools are present in the advertised tool list.
+	// Verify core, runtime skill, and skill-management tools are present.
 	foundPing := false
-	foundGogCLI := false
+	foundSkillGogCLI := false
+	foundSkillsList := false
 	for _, tool := range tools {
 		if tool.Name == "ping" {
 			foundPing = true
 		}
-		if tool.Name == "gogcli_run" {
-			foundGogCLI = true
+		if tool.Name == "skill_gogcli" {
+			foundSkillGogCLI = true
+		}
+		if tool.Name == "skills_list" {
+			foundSkillsList = true
 		}
 	}
 	if !foundPing {
 		t.Fatal("expected 'ping' in tool list")
 	}
-	if !foundGogCLI {
-		t.Fatal("expected 'gogcli_run' in tool list")
+	if !foundSkillGogCLI {
+		t.Fatal("expected 'skill_gogcli' in tool list")
+	}
+	if !foundSkillsList {
+		t.Fatal("expected 'skills_list' in tool list")
 	}
 
 	// CallToolText returns concatenated text.
@@ -884,6 +1134,43 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	}
 	if out != "pong" {
 		t.Fatalf("expected pong, got %q", out)
+	}
+}
+
+func TestServerVersionTools_Emulated(t *testing.T) {
+	origVersion := buildinfo.Version
+	buildinfo.Version = "dev"
+	old := GetDeps()
+	t.Cleanup(func() {
+		buildinfo.Version = origVersion
+		SetDeps(old)
+		_ = update.ConfigureEmulation("")
+	})
+	if err := update.ConfigureEmulation("1.2.3:1.3.0"); err != nil {
+		t.Fatalf("ConfigureEmulation: %v", err)
+	}
+	SetDeps(&Deps{})
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	if err != nil {
+		t.Fatalf("NewInProcessClient: %v", err)
+	}
+	defer c.Close() //nolint:errcheck
+
+	checkText, err := c.CallToolText(context.Background(), "server_version_check", map[string]any{})
+	if err != nil {
+		t.Fatalf("server_version_check: %v", err)
+	}
+	if !strings.Contains(checkText, "\"upgradeAvailable\": true") {
+		t.Fatalf("expected upgradeAvailable=true, got %q", checkText)
+	}
+
+	upgradeText, err := c.CallToolText(context.Background(), "server_upgrade", map[string]any{})
+	if err != nil {
+		t.Fatalf("server_upgrade: %v", err)
+	}
+	if !strings.Contains(upgradeText, "\"emulated\": true") {
+		t.Fatalf("expected emulated upgrade result, got %q", upgradeText)
 	}
 }
 
@@ -983,7 +1270,7 @@ func TestBraveSearch_MockServer(t *testing.T) {
 }
 
 func TestBraveSearch_ErrorResponse(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "rate limited", http.StatusTooManyRequests)
 	}))
 	defer ts.Close()
@@ -1036,7 +1323,7 @@ func TestStartProviderPingIfStale(t *testing.T) {
 	providerPingMu.Unlock()
 
 	// Factory is needed as a parameter but won't be called because the entry is fresh.
-	factory := llm.NewFactory(func(ref string) (string, error) { return "", nil })
+	factory := llm.NewFactory(func(_ string) (string, error) { return "", nil })
 	startProviderPingIfStale("test-provider-stale", "test/model", factory) // should return immediately
 
 	// Entry should still be there with ok=true.
@@ -1302,7 +1589,7 @@ func TestWebSearchTool_WithBraveAuth(t *testing.T) {
 		},
 	}
 	payloadBytes, _ := json.Marshal(mockPayload)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(payloadBytes)
 	}))
@@ -1394,8 +1681,7 @@ func TestRunGogCLI_MockBinary(t *testing.T) {
 
 	// Alternatively, use the simpler approach: override to return a real no-op command.
 	// On all platforms, `go version` exits 0.
-	gogCommand = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
-		_ = ctx
+	gogCommand = func(_ context.Context, _ string, _ ...string) *exec.Cmd {
 		// We need the command to output something and exit 0.
 		// Use a captured stdout-writer trick instead.
 		return nil
@@ -1426,7 +1712,7 @@ func TestRunGogCLI_MockBinary(t *testing.T) {
 	// the args assembly is correct via the account test below. For the mock-binary path,
 	// just verify the happy-path code branches are exercised even if the output is unexpected.
 	// We'll verify no panic and the error mentions "gogcli failed" (from a zero-output command).
-	gogCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+	gogCommand = func(_ context.Context, _ string, args ...string) *exec.Cmd {
 		capturedArgs = args
 		// Return a command that exits 0 but writes output via a fake mechanism.
 		// Use "go env GOPATH" as a cross-platform command that exits 0.

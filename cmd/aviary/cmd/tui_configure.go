@@ -87,11 +87,11 @@ func (m configureMenuModel) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(tuiSectionStyle.Render(strings.Repeat("─", maxInt(24, minInt(72, widthOrDefault(m.width)-2)))))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s  %s  %s\n\n",
+	fmt.Fprintf(&b, "%s  %s  %s\n\n",
 		tuiLabelStyle.Render("Sections"),
 		tuiDimStyle.Render(fmt.Sprintf("%d available", len(m.items))),
 		tuiDimStyle.Render(configureProvidersSummaryFromItems(m.items)),
-	))
+	)
 	for i, item := range m.items {
 		title := fmt.Sprintf("%-18s", item.title)
 		summary := item.summary
@@ -99,7 +99,7 @@ func (m configureMenuModel) View() string {
 			title = tuiSelectedStyle.Render(title)
 			summary = tuiSelectedStyle.Render(summary)
 		}
-		b.WriteString(fmt.Sprintf("%s %s  %s\n", tuiCursor(i == m.cursor), title, summary))
+		fmt.Fprintf(&b, "%s %s  %s\n", tuiCursor(i == m.cursor), title, summary)
 	}
 	if m.cursor >= 0 && m.cursor < len(m.items) {
 		b.WriteString("\n")

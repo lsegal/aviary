@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -93,7 +94,7 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			prompt := tc.Prompt
 
 			enqueue := func() {
-				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, 0, "", ""); err != nil {
+				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, tc.Channel, 0, "", ""); err != nil {
 					slog.Warn("scheduler: enqueue failed", "task", taskID, "err", err)
 				}
 			}
@@ -167,6 +168,49 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 // Queue returns the underlying job queue for external inspection.
 func (s *Scheduler) Queue() *JobQueue { return s.queue }
 
+// ListTasks returns configured task definitions currently registered with the scheduler.
+func (s *Scheduler) ListTasks() []domain.ScheduledTask {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]domain.ScheduledTask, 0, len(s.tasks))
+	for key, tc := range s.tasks {
+		parts := strings.SplitN(key, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		agentName := parts[0]
+		taskName := parts[1]
+		task := domain.ScheduledTask{
+			ID:        key,
+			AgentName: agentName,
+			AgentID:   fmt.Sprintf("agent_%s", agentName),
+			Name:      taskName,
+			Prompt:    tc.Prompt,
+			Channel:   tc.Channel,
+			RunOnce:   tc.RunOnce,
+			Schedule:  tc.Schedule,
+			Watch:     tc.Watch,
+		}
+		if tc.Watch != "" {
+			task.TriggerType = domain.TriggerTypeWatch
+		} else {
+			task.TriggerType = domain.TriggerTypeCron
+		}
+		if startAt, ok := parseStartAt(tc.StartAt); ok {
+			task.StartAt = &startAt
+		}
+		out = append(out, task)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].AgentName == out[j].AgentName {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].AgentName < out[j].AgentName
+	})
+	return out
+}
+
 // Trigger immediately starts a one-off run for a configured task by name,
 // bypassing normal queue claiming and worker-pool scheduling.
 // name may be the full "agent/task" key or just the task name.
@@ -181,7 +225,7 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 		parts := strings.SplitN(key, "/", 2)
 		agentName := parts[0]
 		agentID := fmt.Sprintf("agent_%s", agentName)
-		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, "", "")
+		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, tc.Channel, "", "")
 		if err != nil {
 			return nil, err
 		}
@@ -189,6 +233,69 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 		return job, nil
 	}
 	return nil, fmt.Errorf("task %q not found", name)
+}
+
+// SetTaskOutputDelivery registers an optional function used to deliver
+// completed task output to configured task channels.
+func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
+	s.pool.SetTaskOutputDelivery(fn)
+}
+
+// RunJobNow force-starts an existing pending job immediately, bypassing queue
+// scheduling and worker-pool concurrency limits.
+func (s *Scheduler) RunJobNow(jobID string) (*domain.Job, error) {
+	job, err := s.queue.ForceStart(jobID)
+	if err != nil {
+		return nil, err
+	}
+	s.pool.ExecuteNow(job)
+	return job, nil
+}
+
+// StopJobs cancels queued or running jobs. If target is empty, all cancellable
+// jobs are stopped. target may be a job ID, a full task key ("agent/task"), or
+// a bare task name.
+func (s *Scheduler) StopJobs(target string) (stopped int, err error) {
+	matches := func(job domain.Job) bool {
+		if strings.TrimSpace(target) == "" {
+			return true
+		}
+		if job.ID == target || job.TaskID == target {
+			return true
+		}
+		parts := strings.SplitN(job.TaskID, "/", 2)
+		return len(parts) == 2 && parts[1] == target
+	}
+
+	jobs, err := s.queue.List("")
+	if err != nil {
+		return 0, err
+	}
+
+	for _, job := range jobs {
+		if !matches(job) {
+			continue
+		}
+		if job.Status == domain.JobStatusPending {
+			if err := s.queue.Cancel(job.ID); err != nil {
+				return stopped, err
+			}
+			stopped++
+		}
+	}
+
+	stopped += s.pool.StopJobs(func(jobID, taskID string) bool {
+		if strings.TrimSpace(target) == "" {
+			return true
+		}
+		if jobID == target || taskID == target {
+			return true
+		}
+		parts := strings.SplitN(taskID, "/", 2)
+		return len(parts) == 2 && parts[1] == target
+	})
+
+	return stopped, nil
 }
 
 func taskKey(agentName, taskName string) string {

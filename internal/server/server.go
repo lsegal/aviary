@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
@@ -23,6 +26,7 @@ import (
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 // ErrRestartRequired is returned by ListenAndServe when a config change requires a server restart.
@@ -42,6 +46,7 @@ type Server struct {
 	sampler   *ProcSampler
 	watcher   *config.Watcher
 	restartCh chan struct{}
+	upgradeCh chan struct{}
 }
 
 // New creates a new Server with the given config and auth token.
@@ -61,6 +66,7 @@ func New(cfg *config.Config, token string) *Server {
 		mux:       http.NewServeMux(),
 		agents:    agent.NewManager(factory),
 		restartCh: make(chan struct{}, 1),
+		upgradeCh: make(chan struct{}, 1),
 	}
 
 	// Initial reconcile from loaded config.
@@ -76,6 +82,9 @@ func New(cfg *config.Config, token string) *Server {
 
 	s.mem = memory.New()
 	s.channels = channels.NewManager()
+	if s.sched != nil {
+		s.sched.SetTaskOutputDelivery(s.deliverTaskOutput)
+	}
 	s.sampler = NewProcSampler()
 	cdpPort := cfg.Browser.CDPPort
 	if cdpPort == 0 {
@@ -84,7 +93,14 @@ func New(cfg *config.Config, token string) *Server {
 	s.brw = browser.NewManager(cfg.Browser.Binary, cdpPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
 
 	// Inject deps into MCP tool handlers.
-	mcp.SetDeps(&mcp.Deps{Agents: s.agents, Scheduler: s.sched, Memory: s.mem, Browser: s.brw, Auth: authStore})
+	mcp.SetDeps(&mcp.Deps{
+		Agents:    s.agents,
+		Scheduler: s.sched,
+		Memory:    s.mem,
+		Browser:   s.brw,
+		Auth:      authStore,
+		Upgrade:   s.triggerUpgrade,
+	})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
 	agent.SetSessionMessageObserver(func(sessionID, role string) {
 		wsBroadcast(wsEvent{Type: "session_message", SessionID: sessionID, Role: role})
@@ -148,6 +164,8 @@ func (s *Server) registerRoutes() {
 	// Log stream SSE endpoint + history REST endpoint.
 	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
 	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, http.HandlerFunc(logsHistoryHandler)))
+	s.mux.Handle("/api/version", BearerMiddleware(s.token, http.HandlerFunc(s.versionHandler)))
+	s.mux.Handle("/api/version/upgrade", BearerMiddleware(s.token, http.HandlerFunc(s.versionUpgradeHandler)))
 
 	// Daemons status + log-stream endpoints.
 	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, http.HandlerFunc(s.daemonsHandler)))
@@ -313,6 +331,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	case <-ctx.Done():
 	case <-s.restartCh:
 		restart = true
+	case <-s.upgradeCh:
+		restart = false
 	case err := <-errCh:
 		return err
 	}
@@ -328,6 +348,31 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	if restart {
 		return ErrRestartRequired
+	}
+	return nil
+}
+
+func (s *Server) triggerUpgrade(_ context.Context, version string) error {
+	if update.EmulationActive() {
+		return nil
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locating executable: %w", err)
+	}
+	if err := update.StartHelper(update.HelperRequest{
+		TargetPath:  exePath,
+		WaitPID:     os.Getpid(),
+		Version:     version,
+		RestartArgs: append([]string{}, os.Args[1:]...),
+		Repo:        update.DefaultRepo,
+		APIBase:     update.DefaultAPIBase,
+	}); err != nil {
+		return err
+	}
+	select {
+	case s.upgradeCh <- struct{}{}:
+	default:
 	}
 	return nil
 }
@@ -366,6 +411,77 @@ func (s *Server) Addr() string {
 
 // Agents returns the agent manager.
 func (s *Server) Agents() *agent.Manager { return s.agents }
+
+func (s *Server) deliverTaskOutput(agentName, route, text string) error {
+	route = strings.TrimSpace(route)
+	if route == "" {
+		return nil
+	}
+	if route == "last" {
+		agentID := "agent_" + agentName
+		targets, err := latestAgentSessionChannels(agentID)
+		if err != nil {
+			return err
+		}
+		for _, ch := range targets {
+			if err := s.channels.RouteDelivery(ch.Type, ch.ID, text); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	parts := strings.SplitN(route, ":", 4)
+	if len(parts) != 4 || parts[0] != "route" {
+		return fmt.Errorf("invalid task channel route %q", route)
+	}
+	index, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return fmt.Errorf("invalid task channel index %q: %w", parts[2], err)
+	}
+	targetID := strings.TrimSpace(parts[3])
+	if targetID == "" {
+		return fmt.Errorf("task channel target id is required")
+	}
+	return s.channels.SendOnConfiguredChannel(agentName, parts[1], index, targetID, text)
+}
+
+func latestAgentSessionChannels(agentID string) ([]store.SessionChannel, error) {
+	sessionsDir := filepath.Join(store.AgentDir(agentID), "sessions")
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		return nil, fmt.Errorf("listing session channels: %w", err)
+	}
+	var newestPath string
+	var newestTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".channels.json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if newestPath == "" || info.ModTime().After(newestTime) {
+			newestPath = filepath.Join(sessionsDir, entry.Name())
+			newestTime = info.ModTime()
+		}
+	}
+	if newestPath == "" {
+		return nil, fmt.Errorf("no recent channel session found")
+	}
+	data, err := os.ReadFile(newestPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading latest session channel config: %w", err)
+	}
+	var cfg store.SessionChannelsConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing latest session channel config: %w", err)
+	}
+	if len(cfg.Channels) == 0 {
+		return nil, fmt.Errorf("latest channel session has no delivery targets")
+	}
+	return cfg.Channels, nil
+}
 
 // loadSessionDeliveries reads all persisted session channel configs and
 // registers delivery functions so that sessions started from channels continue

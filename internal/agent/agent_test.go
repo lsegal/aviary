@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(testDataDir)
+	defer func() { _ = os.RemoveAll(testDataDir) }()
 	store.SetDataDir(testDataDir)
 	os.Exit(m.Run())
 }
@@ -338,6 +338,60 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for event error")
+		}
+	})
+
+	t.Run("usage records zero-token throttles", func(t *testing.T) {
+		setTestDataDir(t)
+		if err := store.EnsureDirs(); err != nil {
+			t.Fatalf("EnsureDirs: %v", err)
+		}
+
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "a1", Model: "google/gemini-3-flash-preview"},
+			&config.AgentConfig{Name: "bot"},
+			&mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("429 rate limit")}}},
+			nil,
+			nil,
+		)
+
+		errCh := make(chan error, 1)
+		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
+			if e.Type == StreamEventError {
+				errCh <- e.Err
+			}
+		})
+		select {
+		case err := <-errCh:
+			if err == nil || !strings.Contains(err.Error(), "429") {
+				t.Fatalf("expected 429 error, got %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for provider error")
+		}
+
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+			if err != nil {
+				t.Fatalf("ReadJSONL usage: %v", err)
+			}
+			if len(records) == 1 {
+				if !records[0].HasThrottle {
+					t.Fatal("expected usage record to mark has_throttle=true")
+				}
+				if records[0].HasError {
+					t.Fatal("expected throttle record to keep has_error=false")
+				}
+				if records[0].InputTokens != 0 || records[0].OutputTokens != 0 {
+					t.Fatalf("expected zero-token throttle record, got input=%d output=%d", records[0].InputTokens, records[0].OutputTokens)
+				}
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("expected 1 usage record, got %d", len(records))
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	})
 }
@@ -779,7 +833,8 @@ func TestRegisterSessionMediaDelivery(t *testing.T) {
 
 func TestSetMemoryCompactionObserver(t *testing.T) {
 	var notifiedAgent string
-	SetMemoryCompactionObserver(func(agentID, poolID string, started bool) {
+	SetMemoryCompactionObserver(func(agentID, _ string, started bool) {
+		_ = started
 		notifiedAgent = agentID
 	})
 	t.Cleanup(func() { SetMemoryCompactionObserver(nil) })
@@ -844,6 +899,33 @@ func TestAppendMessageToSession(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Hello there!") {
 		t.Errorf("expected message in session, got: %s", string(data))
+	}
+}
+
+func TestAppendReplyToSession_Delivers(t *testing.T) {
+	setTestDataDir(t)
+
+	agentID := "agent_reply"
+	sessionID := "sess_reply"
+
+	var delivered string
+	RegisterSessionDelivery(sessionID, "signal", "+1555", func(text string) {
+		delivered = text
+	})
+
+	if err := AppendReplyToSession(agentID, sessionID, "hi"); err != nil {
+		t.Fatalf("AppendReplyToSession: %v", err)
+	}
+	if delivered != "hi" {
+		t.Fatalf("expected delivered reply %q, got %q", "hi", delivered)
+	}
+
+	data, err := os.ReadFile(store.SessionPath(agentID, sessionID))
+	if err != nil {
+		t.Fatalf("read session file: %v", err)
+	}
+	if !strings.Contains(string(data), "\"role\":\"assistant\"") || !strings.Contains(string(data), "hi") {
+		t.Fatalf("expected assistant reply persisted, got: %s", string(data))
 	}
 }
 
@@ -1166,9 +1248,9 @@ func TestMaybeCompactMemory_BelowThreshold(t *testing.T) {
 
 func TestParseToolCall(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantOK  bool
+		name     string
+		input    string
+		wantOK   bool
 		wantTool string
 	}{
 		{"empty", "", false, ""},
@@ -1230,6 +1312,29 @@ func TestIsRetryableError(t *testing.T) {
 	}
 	if isRetryableError(errors.New("unrelated failure")) {
 		t.Error("unrelated error should not be retryable")
+	}
+}
+
+func TestIsThrottleError(t *testing.T) {
+	if isThrottleError(nil) {
+		t.Error("nil error should not be a throttle")
+	}
+	for _, msg := range []string{
+		"429",
+		"rate limit",
+		"RATE_LIMIT_EXCEEDED",
+		"RESOURCE_EXHAUSTED",
+		"quota exceeded",
+		"capacity exhausted",
+	} {
+		if !isThrottleError(errors.New(msg)) {
+			t.Errorf("error %q should be a throttle", msg)
+		}
+	}
+	for _, msg := range []string{"503 service unavailable", "unauthorized", "boom"} {
+		if isThrottleError(errors.New(msg)) {
+			t.Errorf("error %q should not be a throttle", msg)
+		}
 	}
 }
 

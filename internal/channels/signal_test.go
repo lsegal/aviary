@@ -259,6 +259,71 @@ func TestDispatch_NilDataMessageIgnored(t *testing.T) {
 	}
 }
 
+func TestFormatSignalMarkup(t *testing.T) {
+	in := "# Title\n**bold** and *italic* and ~~gone~~ and [link](https://example.com)\n```json\n{\"ok\":true}\n```"
+	got := formatSignalMarkup(in)
+	want := "Title\n*bold* and _italic_ and ~gone~ and link (https://example.com)\n`{\"ok\":true}`"
+	if got != want {
+		t.Fatalf("formatSignalMarkup() = %q, want %q", got, want)
+	}
+}
+
+func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	if err := ch.Send("+15550001111", "**bold** and *italic*"); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		reqs := fd.SentRequests()
+		if len(reqs) == 1 {
+			params, _ := reqs[0]["params"].(map[string]any)
+			if got, _ := params["message"].(string); got != "*bold* and _italic_" {
+				t.Fatalf("formatted message = %q, want %q", got, "*bold* and _italic_")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for send request")
+}
+
+func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	if err := ch.SendMedia("+15550001111", "__bold__ ~~gone~~", "/tmp/img.png"); err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		reqs := fd.SentRequests()
+		if len(reqs) == 1 {
+			params, _ := reqs[0]["params"].(map[string]any)
+			if got, _ := params["message"].(string); got != "*bold* ~gone~" {
+				t.Fatalf("formatted caption = %q, want %q", got, "*bold* ~gone~")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for media send request")
+}
+
 func TestDispatch_MalformedJSON(t *testing.T) {
 	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	called := false

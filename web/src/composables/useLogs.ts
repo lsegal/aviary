@@ -19,7 +19,10 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 	error: 3,
 };
 
-const INITIAL_TAIL = 500;
+const INITIAL_TAIL = 200;
+const HISTORY_PAGE = 200;
+const MAX_ENTRIES = 2000;
+const TRIM_TO = 1800;
 
 export function useLogs() {
 	const auth = useAuthStore();
@@ -71,12 +74,26 @@ export function useLogs() {
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let reconnectDelay = 1_000;
 	let destroyed = false;
+	let pendingEntries: LogEntry[] = [];
+	let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function scheduleFlush() {
+		if (flushTimer !== null) return;
+		flushTimer = setTimeout(() => {
+			flushTimer = null;
+			if (pendingEntries.length === 0) return;
+			const next = entries.value.concat(pendingEntries);
+			pendingEntries = [];
+			entries.value = next.length > MAX_ENTRIES ? next.slice(-TRIM_TO) : next;
+		}, 32);
+	}
 
 	function connect() {
 		if (destroyed) return;
 		const tok = auth.getToken();
-		const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
-		es = new EventSource(`/api/logs${qs}`);
+		const qs = new URLSearchParams({ tail: String(INITIAL_TAIL) });
+		if (tok) qs.set("token", tok);
+		es = new EventSource(`/api/logs?${qs.toString()}`);
 
 		es.onopen = () => {
 			connected.value = true;
@@ -91,11 +108,8 @@ export function useLogs() {
 		es.onmessage = (evt: MessageEvent) => {
 			try {
 				const entry = JSON.parse(evt.data as string) as LogEntry;
-				// Keep the ring at ≤ 2000 entries in the UI.
-				if (entries.value.length >= 2000) {
-					entries.value = entries.value.slice(-1800);
-				}
-				entries.value.push(entry);
+				pendingEntries.push(entry);
+				scheduleFlush();
 			} catch {
 				// ignore malformed frames
 			}
@@ -120,6 +134,11 @@ export function useLogs() {
 
 	function disconnect() {
 		destroyed = true;
+		pendingEntries = [];
+		if (flushTimer !== null) {
+			clearTimeout(flushTimer);
+			flushTimer = null;
+		}
 		if (reconnectTimer !== null) {
 			clearTimeout(reconnectTimer);
 			reconnectTimer = null;
@@ -135,7 +154,7 @@ export function useLogs() {
 			const tok = auth.getToken();
 			const qs = new URLSearchParams({
 				skip: String(historySkip),
-				limit: "500",
+				limit: String(HISTORY_PAGE),
 			});
 			if (tok) qs.set("token", tok);
 			const res = await fetch(`/api/logs/history?${qs}`);
@@ -152,7 +171,8 @@ export function useLogs() {
 						? entries.value[0].seq - data.entries.length - 1
 						: -data.entries.length;
 				const prepend = data.entries.map((e, i) => ({ ...e, seq: offset + i }));
-				entries.value = [...prepend, ...entries.value];
+				const next = [...prepend, ...entries.value];
+				entries.value = next.length > MAX_ENTRIES ? next.slice(-TRIM_TO) : next;
 			}
 			hasMore.value = data.hasMore;
 		} catch {
@@ -192,6 +212,7 @@ export function useLogs() {
 		filterComponents,
 		filterLevel,
 		filterText,
+		historyPageSize: HISTORY_PAGE,
 		toggleComponent,
 		loadPrevious,
 		clearLogs,

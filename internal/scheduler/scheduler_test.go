@@ -42,7 +42,7 @@ func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", 0, "", "")
+	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", "", 0, "", "")
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -85,11 +85,32 @@ func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
 	}
 }
 
+func TestJobQueue_Cancel(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	job, err := q.Enqueue("taskCancel", "agent_a", "agentA", "hello", "", 0, "", "")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if err := q.Cancel(job.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	if err != nil {
+		t.Fatalf("read canceled job: %v", err)
+	}
+	if persisted.Status != domain.JobStatusCanceled {
+		t.Fatalf("expected canceled status, got %s", persisted.Status)
+	}
+}
+
 func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", 2, "", "")
+	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", "", 2, "", "")
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -412,6 +433,59 @@ func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
 	}
 }
 
+func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
+	setupSchedulerDataDir(t)
+	mgr := agent.NewManager(nil)
+
+	s, err := New(mgr, 1)
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	t.Cleanup(s.Stop)
+
+	startAt := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "alpha",
+			Tasks: []config.TaskConfig{
+				{
+					Name:     "daily",
+					Schedule: "0 0 10 * * *",
+					StartAt:  startAt,
+					RunOnce:  true,
+					Prompt:   "send report",
+					Channel:  "last",
+				},
+				{
+					Name:   "watch-docs",
+					Watch:  "./docs/**/*.md",
+					Prompt: "summarize changes",
+				},
+			},
+		}},
+	}
+	s.Reconcile(cfg)
+
+	tasks := s.ListTasks()
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+
+	if tasks[0].ID != "alpha/daily" || tasks[0].AgentName != "alpha" || tasks[0].Name != "daily" {
+		t.Fatalf("unexpected first task identity: %#v", tasks[0])
+	}
+	if tasks[0].TriggerType != domain.TriggerTypeCron || tasks[0].Schedule != "0 0 10 * * *" {
+		t.Fatalf("unexpected cron task trigger data: %#v", tasks[0])
+	}
+	if tasks[0].StartAt == nil || tasks[0].Channel != "last" || !tasks[0].RunOnce {
+		t.Fatalf("expected cron task metadata, got %#v", tasks[0])
+	}
+
+	if tasks[1].ID != "alpha/watch-docs" || tasks[1].TriggerType != domain.TriggerTypeWatch || tasks[1].Watch != "./docs/**/*.md" {
+		t.Fatalf("unexpected watch task: %#v", tasks[1])
+	}
+}
+
 func TestWorkerPool_ExecuteJob(t *testing.T) {
 	setupSchedulerDataDir(t)
 	mgr := agent.NewManager(nil)
@@ -430,12 +504,54 @@ func TestWorkerPool_ExecuteJob(t *testing.T) {
 	}
 }
 
+func TestWorkerPool_ExecuteJob_RepliesToSessionDelivery(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	p := NewWorkerPool(NewJobQueue(), mgr, 1)
+
+	const (
+		replyAgentID   = "agent_alpha"
+		replySessionID = "agent_alpha-signal:+15551234567"
+	)
+
+	var delivered string
+	agent.RegisterSessionDelivery(replySessionID, "signal", "+15551234567", func(text string) {
+		delivered = text
+	})
+
+	job := &domain.Job{
+		ID:             "job_reply",
+		TaskID:         "oneshot/alpha",
+		AgentID:        "agent_alpha",
+		AgentName:      "alpha",
+		Prompt:         "hello",
+		ReplyAgentID:   replyAgentID,
+		ReplySessionID: replySessionID,
+	}
+	if err := p.executeJob(context.Background(), job); err != nil {
+		t.Fatalf("executeJob: %v", err)
+	}
+	if delivered == "" {
+		t.Fatal("expected scheduled reply to be delivered to session callbacks")
+	}
+
+	data, err := os.ReadFile(store.SessionPath(replyAgentID, replySessionID))
+	if err != nil {
+		t.Fatalf("read reply session: %v", err)
+	}
+	if !strings.Contains(string(data), "\"role\":\"assistant\"") || !strings.Contains(string(data), "no LLM provider configured") {
+		t.Fatalf("expected assistant reply in session file, got: %s", string(data))
+	}
+}
+
 func TestEnqueueAt(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
 	at := time.Now().Add(1 * time.Hour)
-	job, err := q.EnqueueAt("task1", "agent_alpha", "alpha", "do something", 0, at, "", "")
+	job, err := q.EnqueueAt("task1", "agent_alpha", "alpha", "do something", "", 0, at, "", "")
 	if err != nil {
 		t.Fatalf("EnqueueAt: %v", err)
 	}
@@ -448,7 +564,7 @@ func TestUpdateOutput(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", 0, "", "")
+	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
@@ -536,6 +652,35 @@ func TestTrigger(t *testing.T) {
 	}
 }
 
+func TestRunJobNow_ForceStartsPendingJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	s, err := New(mgr, 1)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(s.Stop)
+
+	at := time.Now().Add(1 * time.Hour)
+	job, err := s.Queue().EnqueueAt("alpha/daily", "agent_alpha", "alpha", "hello", "", 1, at, "", "")
+	if err != nil {
+		t.Fatalf("EnqueueAt: %v", err)
+	}
+
+	started, err := s.RunJobNow(job.ID)
+	if err != nil {
+		t.Fatalf("RunJobNow: %v", err)
+	}
+	if started.Status != domain.JobStatusInProgress {
+		t.Fatalf("expected in_progress, got %s", started.Status)
+	}
+	if started.ScheduledFor != nil {
+		t.Fatalf("expected scheduled_for cleared, got %v", started.ScheduledFor)
+	}
+}
+
 func TestTrigger_NotFound(t *testing.T) {
 	setupSchedulerDataDir(t)
 
@@ -551,12 +696,43 @@ func TestTrigger_NotFound(t *testing.T) {
 	}
 }
 
+func TestScheduler_StopJobs_CancelsPending(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	s, err := New(mgr, 1)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	job, err := s.Queue().Enqueue("alpha/daily", "agent_alpha", "alpha", "prompt", "", 1, "", "")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	stopped, err := s.StopJobs("alpha/daily")
+	if err != nil {
+		t.Fatalf("StopJobs: %v", err)
+	}
+	if stopped != 1 {
+		t.Fatalf("expected 1 stopped job, got %d", stopped)
+	}
+
+	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	if err != nil {
+		t.Fatalf("read job: %v", err)
+	}
+	if persisted.Status != domain.JobStatusCanceled {
+		t.Fatalf("expected canceled job, got %s", persisted.Status)
+	}
+}
+
 func TestJobQueue_ListCorrupted(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
 	// Enqueue a valid job first.
-	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", 0, "", "")
+	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}

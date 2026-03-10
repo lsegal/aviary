@@ -8,32 +8,18 @@ test.beforeEach(async ({ page }) => {
 test("task config can trigger a run-now job", async ({ page }) => {
 	await mockMCP(page, {
 		job_list: [],
-		config_get: {
-			server: {
-				port: 16677,
-				tls: { cert: "", key: "" },
-				external_access: false,
-				no_tls: false,
+		task_list: [
+			{
+				id: "assistant/daily-report",
+				agent_id: "agent_assistant",
+				agent_name: "assistant",
+				name: "daily-report",
+				trigger_type: "cron",
+				schedule: "0 9 * * *",
+				prompt: "write the report",
+				channel: "last",
 			},
-			agents: [
-				{
-					name: "assistant",
-					model: "test/model",
-					fallbacks: [],
-					channels: [],
-					tasks: [
-						{
-							name: "daily-report",
-							prompt: "write the report",
-							schedule: "0 9 * * *",
-						},
-					],
-				},
-			],
-			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-			browser: { binary: "", cdp_port: 0 },
-			scheduler: { concurrency: "auto" },
-		},
+		],
 		task_run: {
 			id: "job_12345678",
 			task_id: "assistant/daily-report",

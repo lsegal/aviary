@@ -12,13 +12,41 @@ export interface Job {
 	updated_at: string;
 }
 
+export interface ScheduledTask {
+	id: string;
+	agent_id: string;
+	agent_name: string;
+	name: string;
+	trigger_type: "cron" | "watch";
+	schedule?: string;
+	start_at?: string;
+	run_once?: boolean;
+	watch?: string;
+	prompt: string;
+	channel?: string;
+}
+
 export const useTasksStore = defineStore("tasks", () => {
+	const tasks = ref<ScheduledTask[]>([]);
 	const jobs = ref<Job[]>([]);
 	const loading = ref(false);
+	const tasksLoading = ref(false);
 	const runningTaskID = ref<string | null>(null);
 	const runError = ref<string | null>(null);
 	const lastStartedJob = ref<Job | null>(null);
 	const { callTool } = useMCP();
+
+	async function fetchTasks() {
+		tasksLoading.value = true;
+		try {
+			const raw = await callTool("task_list", {});
+			tasks.value = (JSON.parse(raw) as ScheduledTask[] | null) ?? [];
+		} catch {
+			tasks.value = [];
+		} finally {
+			tasksLoading.value = false;
+		}
+	}
 
 	async function fetchJobs(taskID = "") {
 		loading.value = true;
@@ -38,7 +66,7 @@ export const useTasksStore = defineStore("tasks", () => {
 		try {
 			const raw = await callTool("task_run", { name: taskID });
 			lastStartedJob.value = (JSON.parse(raw) as Job | null) ?? null;
-			await fetchJobs();
+			await Promise.all([fetchJobs(), fetchTasks()]);
 			return lastStartedJob.value;
 		} catch (error) {
 			runError.value = error instanceof Error ? error.message : String(error);
@@ -49,11 +77,14 @@ export const useTasksStore = defineStore("tasks", () => {
 	}
 
 	return {
+		tasks,
 		jobs,
 		loading,
+		tasksLoading,
 		runningTaskID,
 		runError,
 		lastStartedJob,
+		fetchTasks,
 		fetchJobs,
 		runTask,
 	};
