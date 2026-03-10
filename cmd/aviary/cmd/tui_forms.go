@@ -189,8 +189,8 @@ func (m generalFormModel) saveCmd() tea.Cmd {
 			cfg.Browser.CDPPort = p
 		}
 		concurrency := strings.TrimSpace(m.fields[5].input.Value())
-		switch {
-		case concurrency == "", concurrency == "auto":
+		switch concurrency {
+		case "", "auto":
 			cfg.Scheduler.Concurrency = nil
 		default:
 			p, err := strconv.Atoi(concurrency)
