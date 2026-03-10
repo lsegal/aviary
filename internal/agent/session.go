@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 )
+
+var idCounter atomic.Uint64
 
 // SessionManager creates and persists agent sessions.
 type SessionManager struct{}
@@ -189,5 +192,5 @@ func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageR
 
 // newID generates a simple timestamped ID with a prefix.
 func newID(prefix string) string {
-	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), idCounter.Add(1))
 }
