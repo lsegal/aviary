@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Skill represents a discovered SKILL.md file that can be used as a prompt prefix.
 type Skill struct {
-	Name    string // filename stem, e.g. "summarise"
-	Content string // full markdown content
+	Name        string // filename stem, e.g. "summarise"
+	Description string // optional frontmatter description
+	Content     string // markdown body without frontmatter
 }
 
 // DiscoverSkills walks dir and all subdirectories looking for SKILL.md files.
@@ -40,11 +43,47 @@ func DiscoverSkills(dir string) ([]Skill, error) {
 		if name == "." || name == string(os.PathSeparator) {
 			name = "default"
 		}
-		skills = append(skills, Skill{Name: name, Content: string(data)})
+		skill, parseErr := parseSkillFile(name, data)
+		if parseErr != nil {
+			slog.Warn("skills: could not parse frontmatter", "path", path, "err", parseErr)
+			skill = Skill{Name: name, Content: string(data)}
+		}
+		skills = append(skills, skill)
 		slog.Info("skill discovered", "name", name, "path", path)
 		return nil
 	})
 	return skills, err
+}
+
+type skillFrontmatter struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+}
+
+func parseSkillFile(defaultName string, data []byte) (Skill, error) {
+	content := string(data)
+	skill := Skill{Name: defaultName, Content: content}
+	if !strings.HasPrefix(content, "---\n") {
+		return skill, nil
+	}
+
+	rest := strings.TrimPrefix(content, "---\n")
+	idx := strings.Index(rest, "\n---\n")
+	if idx < 0 {
+		return skill, nil
+	}
+
+	var fm skillFrontmatter
+	if err := yaml.Unmarshal([]byte(rest[:idx]), &fm); err != nil {
+		return Skill{}, err
+	}
+
+	if strings.TrimSpace(fm.Name) != "" {
+		skill.Name = strings.TrimSpace(fm.Name)
+	}
+	skill.Description = strings.TrimSpace(fm.Description)
+	skill.Content = strings.TrimSpace(rest[idx+5:])
+	return skill, nil
 }
 
 // sanitizeDelimitedContent escapes "</" as "&lt;/" so that embedded content
@@ -60,7 +99,13 @@ func BuildSystemPrompt(base string, skills []Skill) string {
 	}
 	var sb strings.Builder
 	for _, s := range skills {
-		fmt.Fprintf(&sb, "<skill name=%q>\n%s\n</skill>\n\n", s.Name, sanitizeDelimitedContent(s.Content))
+		fmt.Fprintf(&sb, "<skill name=%q", s.Name)
+		if s.Description != "" {
+			fmt.Fprintf(&sb, " description=%q", sanitizeDelimitedContent(s.Description))
+		}
+		sb.WriteString(">\n")
+		sb.WriteString(sanitizeDelimitedContent(s.Content))
+		sb.WriteString("\n</skill>\n\n")
 	}
 	sb.WriteString(base)
 	return sb.String()

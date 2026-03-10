@@ -17,6 +17,16 @@ type Config struct {
 	Models    ModelsConfig    `yaml:"models,omitempty"    json:"models,omitempty"`
 	Browser   BrowserConfig   `yaml:"browser,omitempty"   json:"browser,omitempty"`
 	Scheduler SchedulerConfig `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
+	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+}
+
+// SkillConfig configures an installed skill runtime.
+type SkillConfig struct {
+	Enabled         bool              `yaml:"enabled,omitempty"          json:"enabled,omitempty"`
+	Binary          string            `yaml:"binary,omitempty"           json:"binary,omitempty"`
+	AllowedCommands []string          `yaml:"allowed_commands,omitempty" json:"allowed_commands,omitempty"`
+	Env             map[string]string `yaml:"env,omitempty"              json:"env,omitempty"`
+	Timeout         string            `yaml:"timeout,omitempty"          json:"timeout,omitempty"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -233,8 +243,27 @@ func normalize(cfg *Config) {
 	if len(cfg.Models.Providers) == 0 {
 		cfg.Models.Providers = nil
 	}
+	if len(cfg.Skills) == 0 {
+		cfg.Skills = nil
+	}
 	if cfg.Models.Defaults != nil && cfg.Models.Defaults.Model == "" && len(cfg.Models.Defaults.Fallbacks) == 0 {
 		cfg.Models.Defaults = nil
+	}
+	for name, sk := range cfg.Skills {
+		if len(sk.AllowedCommands) == 0 {
+			sk.AllowedCommands = nil
+		}
+		if len(sk.Env) == 0 {
+			sk.Env = nil
+		}
+		if !sk.Enabled && sk.Binary == "" && len(sk.AllowedCommands) == 0 && len(sk.Env) == 0 && sk.Timeout == "" {
+			delete(cfg.Skills, name)
+			continue
+		}
+		cfg.Skills[name] = sk
+	}
+	if len(cfg.Skills) == 0 {
+		cfg.Skills = nil
 	}
 	for i := range cfg.Agents {
 		if len(cfg.Agents[i].Channels) == 0 {
@@ -283,6 +312,16 @@ func DefaultPath() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "aviary", "aviary.yaml")
+}
+
+// BaseDir returns the Aviary config base directory.
+// If AVIARY_CONFIG_BASE_DIR is set, it takes precedence. Otherwise it is the
+// parent directory containing aviary.yaml.
+func BaseDir() string {
+	if base := os.Getenv("AVIARY_CONFIG_BASE_DIR"); base != "" {
+		return base
+	}
+	return filepath.Dir(DefaultPath())
 }
 
 // Save writes cfg to path as YAML (creating parent directories as needed).

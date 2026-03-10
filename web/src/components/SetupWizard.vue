@@ -549,6 +549,7 @@ function emptyConfig(): AppConfig {
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 9222 },
 		scheduler: { concurrency: "auto" },
+		skills: {},
 	};
 }
 </script>

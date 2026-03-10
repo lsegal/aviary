@@ -140,26 +140,61 @@
               </div>
             </div>
 
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="field-label mb-0">Rules File
-                  <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/RULES.md)</span>
-                </label>
-                <div class="flex gap-1.5">
-                  <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).loading" @click="loadRulesFile(agent.name)">
-                    {{ getRulesState(agent.name).loading ? 'Loading…' : 'Load' }}
-                  </button>
-                  <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).saving" @click="saveRulesFile(agent.name)">
-                    {{ getRulesState(agent.name).saving ? 'Saving…' : 'Save' }}
-                  </button>
+            <div class="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Agent Files</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">Edit this agent's rules and long-term memory in one place.</p>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" :class="agentEditorTabClass(agent.name, 'rules')" @click="setAgentEditorTab(agent.name, 'rules')">Edit Rules</button>
+                  <button type="button" :class="agentEditorTabClass(agent.name, 'memory')" @click="setAgentEditorTab(agent.name, 'memory')">Edit Memory</button>
                 </div>
               </div>
-              <textarea :value="getRulesState(agent.name).content" @input="getRulesState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="8" class="field-input font-mono text-xs" :disabled="!agent.name" placeholder="# Agent Rules&#10;- Always respond in English&#10;- Never reveal internal tool names&#10;- ..."></textarea>
-              <p v-if="getRulesState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getRulesState(agent.name).error }}</p>
-              <div>
-                <label class="field-label">Inline override (inline text or explicit file path; leave blank to use the rules file above)</label>
-                <input v-model="agent.rules" type="text" class="field-input" placeholder="Leave blank to use RULES.md, or enter a path like ~/RULES.md" />
-              </div>
+
+              <template v-if="getAgentEditorTab(agent.name) === 'rules'">
+                <div class="flex items-center justify-between">
+                  <label class="field-label mb-0">Rules File
+                    <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/RULES.md)</span>
+                  </label>
+                  <div class="flex gap-1.5">
+                    <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).loading" @click="loadRulesFile(agent.name)">
+                      {{ getRulesState(agent.name).loading ? 'Loading…' : 'Load' }}
+                    </button>
+                    <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).saving" @click="saveRulesFile(agent.name)">
+                      {{ getRulesState(agent.name).saving ? 'Saving…' : 'Save' }}
+                    </button>
+                  </div>
+                </div>
+                <textarea :value="getRulesState(agent.name).content" @input="getRulesState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="8" class="field-input font-mono text-xs" :disabled="!agent.name" placeholder="# Agent Rules&#10;- Always respond in English&#10;- Never reveal internal tool names&#10;- ..."></textarea>
+                <p v-if="getRulesState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getRulesState(agent.name).error }}</p>
+                <div>
+                  <label class="field-label">Inline override (inline text or explicit file path; leave blank to use the rules file above)</label>
+                  <input v-model="agent.rules" type="text" class="field-input" placeholder="Leave blank to use RULES.md, or enter a path like ~/RULES.md" />
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="flex items-center justify-between">
+                  <label class="field-label mb-0">Memory File
+                    <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/MEMORY.md)</span>
+                  </label>
+                  <div class="flex gap-1.5">
+                    <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getMemoryState(agent.name).loading" @click="loadNotes(agent.name)">
+                      {{ getMemoryState(agent.name).loading ? 'Loading…' : 'Load' }}
+                    </button>
+                    <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getMemoryState(agent.name).saving" @click="saveNotes(agent.name)">
+                      {{ getMemoryState(agent.name).saving ? 'Saving…' : 'Save' }}
+                    </button>
+                    <button type="button" class="danger-btn disabled:opacity-50" :disabled="!agent.name || getMemoryState(agent.name).clearing" @click="clearMemory(agent.name)">
+                      {{ getMemoryState(agent.name).clearing ? 'Clearing…' : 'Clear All' }}
+                    </button>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Notes the agent has remembered. Edit freely and save back to the memory file.</p>
+                <textarea :value="getMemoryState(agent.name).content" @input="getMemoryState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="10" class="field-input resize-y font-mono text-xs" :disabled="!agent.name" :placeholder="agent.name ? 'No notes yet. The agent writes here via memory_store, or you can type directly.' : 'Name the agent first to view and edit its notes.'" />
+                <p v-if="getMemoryState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getMemoryState(agent.name).error }}</p>
+              </template>
             </div>
 
             <!-- Permissions -->
@@ -285,11 +320,20 @@
                   <div class="grid gap-2 lg:grid-cols-2">
                     <div>
                       <label class="field-label">Model override (optional)</label>
-                      <ModelSelector v-model="entry.model" placeholder="Default agent model" />
+                      <ModelSelector
+                        :model-value="entry.model ?? ''"
+                        placeholder="Default agent model"
+                        @update:model-value="entry.model = typeof $event === 'string' ? ($event || undefined) : undefined"
+                      />
                     </div>
                     <div>
                       <label class="field-label">Fallback overrides (optional)</label>
-                      <ModelSelector v-model="entry.fallbacks" multiple placeholder="Default agent fallbacks" />
+                      <ModelSelector
+                        :model-value="entry.fallbacks ?? []"
+                        multiple
+                        placeholder="Default agent fallbacks"
+                        @update:model-value="entry.fallbacks = Array.isArray($event) ? $event : []"
+                      />
                     </div>
                   </div>
                   <!-- Restrict Tools -->
@@ -351,11 +395,20 @@
               <div class="grid gap-3 lg:grid-cols-2">
                 <div>
                   <label class="field-label">Channel model override (optional)</label>
-                  <ModelSelector v-model="ch.model" placeholder="Default agent model" />
+                  <ModelSelector
+                    :model-value="ch.model ?? ''"
+                    placeholder="Default agent model"
+                    @update:model-value="ch.model = typeof $event === 'string' ? ($event || undefined) : undefined"
+                  />
                 </div>
                 <div>
                   <label class="field-label">Channel fallback overrides (optional)</label>
-                  <ModelSelector v-model="ch.fallbacks" multiple placeholder="Default agent fallbacks" />
+                  <ModelSelector
+                    :model-value="ch.fallbacks ?? []"
+                    multiple
+                    placeholder="Default agent fallbacks"
+                    @update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []"
+                  />
                 </div>
               </div>
 
@@ -485,6 +538,54 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-show="activeTab === 'skills'" class="space-y-5 pb-8">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Installed Skills</h3>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bundled skills come from the Aviary binary. Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code>.</p>
+            </div>
+            <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="skillsLoading" @click="loadInstalledSkills">
+              {{ skillsLoading ? "Loading…" : "Refresh Skills" }}
+            </button>
+          </div>
+
+          <div v-if="!installedSkills.length" class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+            No installed skills found.
+          </div>
+
+          <div v-for="skill in installedSkills" :key="skill.name" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ skill.name }}</h4>
+                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ skill.source }}</span>
+                  <span :class="skillConfig(skill.name).enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'" class="rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide">
+                    {{ skillConfig(skill.name).enabled ? "enabled" : "disabled" }}
+                  </span>
+                </div>
+                <p v-if="skill.description" class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ skill.description }}</p>
+                <p class="mt-1 font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ skill.path }}</p>
+              </div>
+
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input v-model="skillConfig(skill.name).enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                Enabled
+              </label>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label class="field-label">Binary override</label>
+                <input v-model="skillConfig(skill.name).binary" type="text" class="field-input" :placeholder="skill.name" />
+              </div>
+              <div>
+                <label class="field-label">Allowed commands</label>
+                <input :value="skillAllowedInput(skill.name)" type="text" class="field-input" placeholder="gmail, calendar, drive" @input="setSkillAllowedInput(skill.name, $event)" />
               </div>
             </div>
           </div>
@@ -653,32 +754,6 @@
           </div>
         </section>
 
-        <section v-show="activeTab === 'memory'" class="space-y-5 pb-8">
-          <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Agent Memory</h3>
-            <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Notes the agent has remembered. Edit freely — changes are saved as the agent's memory file.</p>
-
-            <div class="mb-4 flex gap-3">
-              <select v-model="memoryAgent" class="field-input max-w-[220px]">
-                <option value="">Select agent</option>
-                <option v-for="agent in draft.agents" :key="`mem-${agent.name}`" :value="agent.name">{{ agent.name }}</option>
-              </select>
-              <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50" :disabled="!memoryAgent || notesSaving" @click="saveNotes">{{ notesSaving ? 'Saving…' : 'Save' }}</button>
-              <button type="button" class="danger-btn disabled:opacity-50" :disabled="!memoryAgent || memoryClearing" @click="clearMemory">{{ memoryClearing ? 'Clearing…' : 'Clear All' }}</button>
-            </div>
-
-            <div v-if="memoryErrorMessage" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{{ memoryErrorMessage }}</div>
-            <div v-if="memoryLoading" class="text-xs text-gray-500 dark:text-gray-400">Loading…</div>
-            <template v-else>
-              <textarea
-                v-model="notesContent"
-                class="field-input min-h-[280px] resize-y font-mono text-xs"
-                :placeholder="memoryAgent ? 'No notes yet. The agent writes here via memory_store, or you can type directly.' : 'Select an agent to view and edit its notes.'"
-                :disabled="!memoryAgent"
-              />
-            </template>
-          </div>
-        </section>
       </div>
     </div>
   </AppLayout>
@@ -690,7 +765,6 @@ import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
-import { SUPPORTED_MODELS } from "../constants/models";
 import { useAuthStore } from "../stores/auth";
 import {
 	type AgentChannel,
@@ -698,10 +772,12 @@ import {
 	type AgentTask,
 	type AllowFromEntry,
 	type AppConfig,
+	type SkillConfig,
 	useSettingsStore,
 } from "../stores/settings";
 
-type Tab = "general" | "agents" | "sessions" | "providers" | "memory";
+type Tab = "general" | "agents" | "skills" | "sessions" | "providers";
+type AgentEditorTab = "rules" | "memory";
 
 interface SessionRow {
 	id: string;
@@ -713,6 +789,16 @@ interface RuntimeAgent {
 	name: string;
 	model?: string;
 	fallbacks?: string[];
+}
+
+interface InstalledSkill {
+	name: string;
+	description: string;
+	content: string;
+	path: string;
+	installed: boolean;
+	enabled: boolean;
+	source: string;
 }
 
 interface JobEntry {
@@ -728,7 +814,7 @@ interface JobEntry {
 const route = useRoute();
 const router = useRouter();
 
-const tabs: Tab[] = ["general", "agents", "sessions", "providers", "memory"];
+const tabs: Tab[] = ["general", "agents", "skills", "sessions", "providers"];
 const queryTab = route.query.tab as Tab | undefined;
 const storedTab = localStorage.getItem("settings:activeTab") as Tab | null;
 const activeTab = ref<Tab>(
@@ -897,13 +983,9 @@ const extraSecrets = computed(() => {
 const allJobs = ref<JobEntry[]>([]);
 const jobsLoading = ref(false);
 
-const memoryAgent = ref("");
-const notesContent = ref("");
-const memoryLoading = ref(false);
-const memoryClearing = ref(false);
-const notesSaving = ref(false);
-
 const availableTools = ref<MCPToolInfo[]>([]);
+const installedSkills = ref<InstalledSkill[]>([]);
+const skillsLoading = ref(false);
 
 function toolCategory(name: string): string {
 	if (
@@ -942,20 +1024,12 @@ const toolGroupEntries = computed((): [string, MCPToolInfo[]][] => {
 	}
 	return [...groups.entries()];
 });
-const memoryErrorMessage = ref("");
-
-watch(memoryAgent, (agent) => {
-	notesContent.value = "";
-	memoryErrorMessage.value = "";
-	if (agent && activeTab.value === "memory") void loadNotes();
-});
-
 watch(activeTab, (tab) => {
-	if (tab === "memory" && memoryAgent.value && !memoryLoading.value) {
-		void loadNotes();
-	}
 	if (tab === "agents") {
 		void loadAllJobs();
+	}
+	if (tab === "skills" && !installedSkills.value.length) {
+		void loadInstalledSkills();
 	}
 	if (tab === "sessions" && sessionAgent.value) {
 		void loadSessions();
@@ -969,6 +1043,15 @@ interface RulesEditorState {
 	error: string;
 }
 const rulesEditorState = ref<Record<string, RulesEditorState>>({});
+interface MemoryEditorState {
+	content: string;
+	loading: boolean;
+	saving: boolean;
+	clearing: boolean;
+	error: string;
+}
+const memoryEditorState = ref<Record<string, MemoryEditorState>>({});
+const agentEditorTabs = ref<Record<string, AgentEditorTab>>({});
 
 function getRulesState(agentName: string): RulesEditorState {
 	if (!rulesEditorState.value[agentName]) {
@@ -980,6 +1063,40 @@ function getRulesState(agentName: string): RulesEditorState {
 		};
 	}
 	return rulesEditorState.value[agentName];
+}
+
+function getMemoryState(agentName: string): MemoryEditorState {
+	if (!memoryEditorState.value[agentName]) {
+		memoryEditorState.value[agentName] = {
+			content: "",
+			loading: false,
+			saving: false,
+			clearing: false,
+			error: "",
+		};
+	}
+	return memoryEditorState.value[agentName];
+}
+
+function getAgentEditorTab(agentName: string): AgentEditorTab {
+	return agentEditorTabs.value[agentName] ?? "rules";
+}
+
+function setAgentEditorTab(agentName: string, tab: AgentEditorTab) {
+	if (!agentName) return;
+	agentEditorTabs.value[agentName] = tab;
+	if (tab === "memory") {
+		const state = getMemoryState(agentName);
+		if (!state.loading && !state.content) {
+			void loadNotes(agentName);
+		}
+	}
+}
+
+function agentEditorTabClass(agentName: string, tab: AgentEditorTab): string {
+	return getAgentEditorTab(agentName) === tab
+		? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
+		: "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
 }
 
 async function loadRulesFile(agentName: string) {
@@ -1069,14 +1186,15 @@ function emptyConfig(): AppConfig {
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
 		scheduler: { concurrency: "" },
+		skills: {},
 	};
 }
 
 function tabLabel(tab: Tab): string {
 	if (tab === "general") return "General";
 	if (tab === "agents") return "Agents & Tasks";
+	if (tab === "skills") return "Skills";
 	if (tab === "sessions") return "Sessions";
-	if (tab === "memory") return "Memory";
 	return "Providers & Auth";
 }
 
@@ -1115,19 +1233,46 @@ async function loadConfig() {
 		if (!sessionAgent.value && draft.value.agents.length) {
 			sessionAgent.value = draft.value.agents[0].name;
 		}
-		if (!memoryAgent.value && draft.value.agents.length) {
-			memoryAgent.value = draft.value.agents[0].name;
-		}
-
 		// Fetch the available tool list once so the permissions UI can render.
 		if (!availableTools.value.length) {
 			availableTools.value = await listTools().catch(() => []);
 		}
+		await loadInstalledSkills();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		loading.value = false;
 	}
+}
+
+async function loadInstalledSkills() {
+	skillsLoading.value = true;
+	try {
+		const raw = await callTool("skill_list");
+		installedSkills.value = (JSON.parse(raw) as InstalledSkill[] | null) ?? [];
+	} catch {
+		installedSkills.value = [];
+	} finally {
+		skillsLoading.value = false;
+	}
+}
+
+function skillConfig(name: string): SkillConfig {
+	if (!draft.value.skills[name]) {
+		draft.value.skills[name] = {};
+	}
+	return draft.value.skills[name];
+}
+
+function skillAllowedInput(name: string): string {
+	return (skillConfig(name).allowed_commands ?? []).join(", ");
+}
+
+function setSkillAllowedInput(name: string, event: Event) {
+	skillConfig(name).allowed_commands = (event.target as HTMLInputElement).value
+		.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean);
 }
 
 function addAgent() {
@@ -1352,9 +1497,6 @@ async function importAgents() {
 		if (!sessionAgent.value && draft.value.agents.length) {
 			sessionAgent.value = draft.value.agents[0].name;
 		}
-		if (!memoryAgent.value && draft.value.agents.length) {
-			memoryAgent.value = draft.value.agents[0].name;
-		}
 	} catch {
 		// best-effort import
 	}
@@ -1429,6 +1571,30 @@ async function saveAll() {
 					? { tools: (agent.permissions?.tools ?? []).filter(Boolean) }
 					: undefined,
 		}));
+		const normalizedSkills: Record<string, SkillConfig> = {};
+		for (const [name, skill] of Object.entries(
+			normalized.skills ?? {},
+		) as Array<[string, SkillConfig]>) {
+			const nextSkill: SkillConfig = {
+				enabled: Boolean(skill?.enabled),
+				binary: (skill?.binary ?? "").trim() || undefined,
+				allowed_commands: (skill?.allowed_commands ?? [])
+					.map((value) => value.trim())
+					.filter(Boolean),
+				timeout: (skill?.timeout ?? "").trim() || undefined,
+				env: skill?.env,
+			};
+			if (
+				nextSkill.enabled ||
+				nextSkill.binary ||
+				(nextSkill.allowed_commands?.length ?? 0) > 0 ||
+				nextSkill.timeout ||
+				(nextSkill.env && Object.keys(nextSkill.env).length > 0)
+			) {
+				normalizedSkills[name] = nextSkill;
+			}
+		}
+		normalized.skills = normalizedSkills;
 
 		await store.saveConfig(normalized);
 		draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
@@ -1636,49 +1802,52 @@ async function completeAnthropic() {
 	}
 }
 
-async function loadNotes() {
-	if (!memoryAgent.value) return;
-	memoryLoading.value = true;
-	memoryErrorMessage.value = "";
+async function loadNotes(agentName: string) {
+	if (!agentName) return;
+	const state = getMemoryState(agentName);
+	state.loading = true;
+	state.error = "";
 	try {
-		notesContent.value = await callTool("memory_show", {
-			agent: memoryAgent.value,
+		state.content = await callTool("memory_show", {
+			agent: agentName,
 		});
 	} catch (e) {
-		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
-		memoryLoading.value = false;
+		state.loading = false;
 	}
 }
 
-async function saveNotes() {
-	if (!memoryAgent.value) return;
-	notesSaving.value = true;
-	memoryErrorMessage.value = "";
+async function saveNotes(agentName: string) {
+	if (!agentName) return;
+	const state = getMemoryState(agentName);
+	state.saving = true;
+	state.error = "";
 	try {
 		await callTool("memory_notes_set", {
-			agent: memoryAgent.value,
-			content: notesContent.value,
+			agent: agentName,
+			content: state.content,
 		});
 	} catch (e) {
-		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
-		notesSaving.value = false;
+		state.saving = false;
 	}
 }
 
-async function clearMemory() {
-	if (!memoryAgent.value) return;
-	memoryClearing.value = true;
-	memoryErrorMessage.value = "";
+async function clearMemory(agentName: string) {
+	if (!agentName) return;
+	const state = getMemoryState(agentName);
+	state.clearing = true;
+	state.error = "";
 	try {
-		await callTool("memory_clear", { agent: memoryAgent.value });
-		notesContent.value = "";
-		okMessage.value = `Memory cleared for agent "${memoryAgent.value}".`;
+		await callTool("memory_clear", { agent: agentName });
+		state.content = "";
+		okMessage.value = `Memory cleared for agent "${agentName}".`;
 	} catch (e) {
-		memoryErrorMessage.value = e instanceof Error ? e.message : String(e);
+		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
-		memoryClearing.value = false;
+		state.clearing = false;
 	}
 }
 </script>

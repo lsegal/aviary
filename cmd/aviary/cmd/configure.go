@@ -26,6 +26,12 @@ var configureAgentsCmd = &cobra.Command{
 	RunE:  runConfigureAgents,
 }
 
+var configureSkillsCmd = &cobra.Command{
+	Use:   "skills",
+	Short: "Enable and configure installed skills",
+	RunE:  runConfigureSkills,
+}
+
 var configureServerCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Configure server port and TLS options",
@@ -48,6 +54,7 @@ func init() {
 	configureCmd.AddCommand(
 		configureProvidersCmd,
 		configureAgentsCmd,
+		configureSkillsCmd,
 		configureServerCmd,
 		configureBrowserCmd,
 		configureSchedulerCmd,
@@ -75,6 +82,14 @@ func runConfigureAgents(_ *cobra.Command, _ []string) error {
 		return err
 	}
 	return runAgentMgr(cfg, cfgFile)
+}
+
+func runConfigureSkills(_ *cobra.Command, _ []string) error {
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return err
+	}
+	return runSkillMgr(cfg, cfgFile)
 }
 
 func runConfigureServer(_ *cobra.Command, _ []string) error {

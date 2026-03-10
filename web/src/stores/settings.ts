@@ -34,6 +34,7 @@ export interface AgentChannel {
 	showTyping?: boolean;
 	replyToReplies?: boolean;
 	reactToEmoji?: boolean;
+	sendReadReceipts?: boolean;
 	model?: string;
 	fallbacks?: string[];
 }
@@ -86,12 +87,21 @@ export interface SchedulerConfig {
 	concurrency: string | number;
 }
 
+export interface SkillConfig {
+	enabled?: boolean;
+	binary?: string;
+	allowed_commands?: string[];
+	env?: Record<string, string>;
+	timeout?: string;
+}
+
 export interface AppConfig {
 	server: ServerConfig;
 	agents: AgentEntry[];
 	models: ModelsConfig;
 	browser: BrowserConfig;
 	scheduler: SchedulerConfig;
+	skills: Record<string, SkillConfig>;
 }
 
 function defaultConfig(): AppConfig {
@@ -106,6 +116,7 @@ function defaultConfig(): AppConfig {
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
 		scheduler: { concurrency: "" },
+		skills: {},
 	};
 }
 
@@ -151,6 +162,7 @@ export const useSettingsStore = defineStore("settings", () => {
 				},
 				browser: { ...base.browser, ...parsed.browser },
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
+				skills: parsed.skills ?? {},
 			};
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

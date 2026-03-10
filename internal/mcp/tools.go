@@ -20,6 +20,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/skills"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -103,6 +104,7 @@ func Register(s *sdkmcp.Server) {
 	registerMemoryTools(s)
 	registerAuthTools(s)
 	registerServerTools(s)
+	registerSkillTools(s)
 	registerUsageTools(s)
 }
 
@@ -1503,5 +1505,24 @@ func registerUsageTools(s *sdkmcp.Server) {
 			}
 		}
 		return jsonResult(filtered)
+	})
+}
+
+// ── Skill tools ──────────────────────────────────────────────────────────────
+
+func registerSkillTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "skill_list",
+		Description: "List installed skills and whether they are enabled in configuration",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		list, err := skills.ListInstalled(cfg)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(list)
 	})
 }

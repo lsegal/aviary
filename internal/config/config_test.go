@@ -44,6 +44,24 @@ func TestDefaultPath(t *testing.T) {
 	})
 }
 
+func TestBaseDir(t *testing.T) {
+	t.Run("env override", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_BASE_DIR", "/tmp/aviary-base")
+		if got := BaseDir(); got != "/tmp/aviary-base" {
+			t.Fatalf("BaseDir() = %q, want %q", got, "/tmp/aviary-base")
+		}
+	})
+
+	t.Run("default from config path", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_BASE_DIR", "")
+		t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-config")
+		want := filepath.Join("/tmp/xdg-config", "aviary")
+		if got := BaseDir(); got != want {
+			t.Fatalf("BaseDir() = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestLoad(t *testing.T) {
 	t.Run("missing returns empty config", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
