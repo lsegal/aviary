@@ -152,12 +152,12 @@ func TestReadJSONL(t *testing.T) {
 	})
 
 	t.Run("scanner_error_line_too_long", func(t *testing.T) {
-		// Write a line exceeding the 1 MiB scanner buffer to trigger
+		// Write a line exceeding the 16 MiB scanner buffer to trigger
 		// scanner.Err() returning bufio.ErrTooLong.
 		p := filepath.Join(tmp, "toolong.jsonl")
-		// Build a JSON string value larger than 1 MiB (1<<20 bytes).
+		// Build a JSON string value larger than 16 MiB.
 		// The JSON line must be a single line (no embedded newlines).
-		huge := make([]byte, (1<<20)+1)
+		huge := make([]byte, (16<<20)+1)
 		for i := range huge {
 			huge[i] = 'a'
 		}

@@ -84,7 +84,13 @@
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<img v-if="item.msg.mediaURL" :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									<img v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full rounded-lg" style="max-height:320px" />
+									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL" controls class="max-w-full" />
+									<a v-else-if="item.msg.mediaURL" :href="item.msg.mediaURL" target="_blank" rel="noopener noreferrer"
+										class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
+										Open attachment
+									</a>
 									<span v-if="item.msg.text && item.msg.role === 'user'" class="whitespace-pre-wrap">{{ item.msg.text }}</span>
 									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError" class="whitespace-pre-wrap font-mono text-sm">{{ item.msg.text }}</span>
 									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError" class="prose dark:prose-invert max-w-none"
@@ -275,6 +281,32 @@ function formatTime(timestamp: string): string {
 		minute: "2-digit",
 	});
 }
+
+function mediaTypeFromURL(mediaURL: string): string {
+	const s = mediaURL.trim().toLowerCase();
+	if (s.startsWith("data:")) {
+		const end = s.indexOf(";");
+		return end > 5 ? s.slice(5, end) : "";
+	}
+	if (/\.(png|apng|jpg|jpeg|gif|webp|bmp|svg)(\?|#|$)/.test(s))
+		return "image/*";
+	if (/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/.test(s)) return "video/*";
+	if (/\.(mp3|wav|ogg|m4a|aac|flac)(\?|#|$)/.test(s)) return "audio/*";
+	return "";
+}
+
+function isImageMedia(mediaURL: string): boolean {
+	return mediaTypeFromURL(mediaURL).startsWith("image/");
+}
+
+function isVideoMedia(mediaURL: string): boolean {
+	return mediaTypeFromURL(mediaURL).startsWith("video/");
+}
+
+function isAudioMedia(mediaURL: string): boolean {
+	return mediaTypeFromURL(mediaURL).startsWith("audio/");
+}
+
 const { callTool } = useMCP();
 
 const selectedAgent = ref("");
