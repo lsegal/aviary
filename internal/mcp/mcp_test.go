@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -454,4 +455,91 @@ func TestBrowserTools_WithManager(t *testing.T) {
 	if !strings.Contains(out, "closed") {
 		t.Fatalf("expected closed confirmation, got %q", out)
 	}
+}
+
+func TestParseDuration(t *testing.T) {
+	tests := []struct {
+		in   string
+		want time.Duration
+		err  bool
+	}{
+		{"5m", 5 * time.Minute, false},
+		{"5 minutes", 5 * time.Minute, false},
+		{"1 hour", time.Hour, false},
+		{"30seconds", 30 * time.Second, false},
+		{"2h", 2 * time.Hour, false},
+		{"", 0, true},
+		{"not a duration", 0, true},
+	}
+	for _, tc := range tests {
+		d, err := parseDuration(tc.in)
+		if tc.err {
+			if err == nil {
+				t.Errorf("parseDuration(%q): expected error, got %v", tc.in, d)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("parseDuration(%q): unexpected error: %v", tc.in, err)
+			} else if d != tc.want {
+				t.Errorf("parseDuration(%q) = %v; want %v", tc.in, d, tc.want)
+			}
+		}
+	}
+}
+
+func setupMCPDispatcher(t *testing.T) *Dispatcher {
+	t.Helper()
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
+	SetDeps(&Deps{Agents: mgr})
+	return NewDispatcher("https://localhost:16677", "")
+}
+
+func TestJobTools(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// job_list should return an array (empty is fine).
+	toolCallContains(t, d, "job_list", map[string]any{}, "")
+}
+
+func TestMemoryTools(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// memory_query without agent returns empty or error.
+	toolCallContains(t, d, "memory_query", map[string]any{"agent": "bot", "query": "test"}, "")
+	// memory_store requires agent+content.
+	toolCallContains(t, d, "memory_store", map[string]any{"agent": "bot", "content": "remember this"}, "")
+	// memory_clear
+	toolCallContains(t, d, "memory_clear", map[string]any{"agent": "bot"}, "")
+}
+
+func TestAgentTools_RulesGetSet(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// agent_rules_get
+	toolCallContains(t, d, "agent_rules_get", map[string]any{"agent": "bot"}, "")
+	// agent_rules_set
+	toolCallContains(t, d, "agent_rules_set", map[string]any{"agent": "bot", "rules": "be nice"}, "")
+}
+
+func TestSessionTools(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// session_list for known agent.
+	toolCallContains(t, d, "session_list", map[string]any{"agent": "bot"}, "is_processing")
+	// session_messages for unknown session.
+	toolCallContains(t, d, "session_messages", map[string]any{"agent": "bot", "session_id": "nosess"}, "")
+}
+
+func TestServerTools(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// server_status
+	toolCallContains(t, d, "server_status", map[string]any{}, "")
+}
+
+func TestTaskTools(t *testing.T) {
+	d := setupMCPDispatcher(t)
+	// task_list
+	toolCallContains(t, d, "task_list", map[string]any{}, "")
 }

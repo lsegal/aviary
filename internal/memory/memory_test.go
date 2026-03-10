@@ -194,3 +194,107 @@ func TestSummarize(t *testing.T) {
 		}
 	})
 }
+
+func setupMemoryDir(t *testing.T) {
+	t.Helper()
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+}
+
+func TestGetNotes_Missing(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+	notes, err := m.GetNotes("pool1")
+	if err != nil {
+		t.Fatalf("GetNotes missing: %v", err)
+	}
+	if notes != "" {
+		t.Errorf("expected empty string for missing notes, got %q", notes)
+	}
+}
+
+func TestSetNotesAndGetNotes(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+	if err := m.SetNotes("pool1", "hello notes"); err != nil {
+		t.Fatalf("SetNotes: %v", err)
+	}
+	got, err := m.GetNotes("pool1")
+	if err != nil {
+		t.Fatalf("GetNotes: %v", err)
+	}
+	if got != "hello notes" {
+		t.Errorf("GetNotes = %q; want %q", got, "hello notes")
+	}
+}
+
+func TestAppendNote(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+
+	// Append to empty
+	if err := m.AppendNote("pool1", "first note"); err != nil {
+		t.Fatalf("AppendNote 1: %v", err)
+	}
+	// Append second
+	if err := m.AppendNote("pool1", "second note"); err != nil {
+		t.Fatalf("AppendNote 2: %v", err)
+	}
+
+	got, err := m.GetNotes("pool1")
+	if err != nil {
+		t.Fatalf("GetNotes: %v", err)
+	}
+	if !strings.Contains(got, "- first note") {
+		t.Errorf("expected first note in output, got %q", got)
+	}
+	if !strings.Contains(got, "- second note") {
+		t.Errorf("expected second note in output, got %q", got)
+	}
+}
+
+func TestCompact_NilProvider(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+	// Add enough entries to exceed keepRecent.
+	for i := 0; i < 5; i++ {
+		_ = m.Append("pool_cp", "sess1", "user", "some content")
+	}
+	// Compact with nil provider falls back to dropping old entries without LLM; should not error.
+	err := m.Compact(context.Background(), "pool_cp", nil, 2)
+	if err != nil {
+		t.Errorf("Compact with nil provider should succeed, got: %v", err)
+	}
+	// After compaction, pool should have <= keepRecent+1 entries (summary + recent).
+	entries, err2 := m.All("pool_cp")
+	if err2 != nil {
+		t.Fatalf("All after compact: %v", err2)
+	}
+	if len(entries) > 3 {
+		t.Errorf("expected compacted pool size <= 3, got %d", len(entries))
+	}
+}
+
+func TestSearch_MultiplePools(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+
+	_ = m.Append("poolA", "sess1", "user", "apple fruit")
+	_ = m.Append("poolB", "sess1", "user", "banana fruit")
+
+	resultsA, err := m.Search("poolA", "apple")
+	if err != nil {
+		t.Fatalf("Search poolA: %v", err)
+	}
+	if len(resultsA) == 0 {
+		t.Error("expected search results for poolA")
+	}
+
+	resultsB, err := m.Search("poolB", "banana")
+	if err != nil {
+		t.Fatalf("Search poolB: %v", err)
+	}
+	if len(resultsB) == 0 {
+		t.Error("expected search results for poolB")
+	}
+}

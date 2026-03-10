@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -342,5 +343,192 @@ func TestIntegration_TokenAndBearer(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected authorized status, got %d", rr.Code)
+	}
+}
+
+func TestFmtUptime(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{-1 * time.Second, "0s"},
+		{0, "0s"},
+		{30 * time.Second, "30s"},
+		{90 * time.Second, "1m30s"},
+		{1*time.Hour + 30*time.Minute, "1h30m"},
+		{25*time.Hour + 5*time.Minute, "25h5m"},
+	}
+	for _, tc := range tests {
+		got := fmtUptime(tc.d)
+		if got != tc.want {
+			t.Errorf("fmtUptime(%v) = %q; want %q", tc.d, got, tc.want)
+		}
+	}
+}
+
+func TestParseLogLine(t *testing.T) {
+	// Valid JSON log line.
+	line := `{"time":"2024-01-01T00:00:00Z","level":"WARN","msg":"server: test message","key":"value"}`
+	entry := parseLogLine(line)
+	if entry.Level != "warn" {
+		t.Errorf("level = %q; want warn", entry.Level)
+	}
+	if entry.Message != "server: test message" {
+		t.Errorf("message = %q", entry.Message)
+	}
+	if entry.Component != "server" {
+		t.Errorf("component = %q; want server", entry.Component)
+	}
+	if entry.Attrs["key"] != "value" {
+		t.Errorf("attrs[key] = %q; want value", entry.Attrs["key"])
+	}
+
+	// Non-JSON plain text.
+	plain := "plain text log line"
+	e2 := parseLogLine(plain)
+	if e2.Message != plain {
+		t.Errorf("plain message = %q; want %q", e2.Message, plain)
+	}
+
+	// JSON with explicit component field.
+	withComp := `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"hello","component":"mycomp"}`
+	e3 := parseLogLine(withComp)
+	if e3.Component != "mycomp" {
+		t.Errorf("component from field = %q; want mycomp", e3.Component)
+	}
+}
+
+func TestLogHub_WithAttrsAndWithGroup(t *testing.T) {
+	hub := newLogHub(10)
+
+	child := hub.WithAttrs([]slog.Attr{slog.String("k", "v")})
+	if child == nil {
+		t.Fatal("WithAttrs returned nil")
+	}
+
+	grp := hub.WithGroup("mygroup")
+	if grp == nil {
+		t.Fatal("WithGroup returned nil")
+	}
+
+	// child.WithAttrs
+	child2 := child.WithAttrs([]slog.Attr{slog.String("k2", "v2")})
+	if child2 == nil {
+		t.Fatal("child.WithAttrs returned nil")
+	}
+
+	// child.WithGroup
+	grp2 := child.WithGroup("subgroup")
+	if grp2 == nil {
+		t.Fatal("child.WithGroup returned nil")
+	}
+
+	// hubChild.Handle forwards to parent ring
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "child message", 0)
+	_ = child.Handle(context.Background(), rec)
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	if len(hub.ring) == 0 {
+		t.Error("expected ring entry after child.Handle")
+	}
+}
+
+func TestLogHub_SetDelegate(t *testing.T) {
+	hub := newLogHub(10)
+	var buf bytes.Buffer
+	delegate := slog.NewTextHandler(&buf, nil)
+	hub.setDelegate(delegate)
+
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "delegated", 0)
+	_ = hub.Handle(context.Background(), rec)
+
+	if !strings.Contains(buf.String(), "delegated") {
+		t.Errorf("expected 'delegated' in delegate output, got: %s", buf.String())
+	}
+}
+
+func TestLogHub_Enabled(t *testing.T) {
+	hub := newLogHub(10)
+	if !hub.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("expected Enabled to return true")
+	}
+}
+
+func TestLogHub_ManualSubscribe(t *testing.T) {
+	hub := newLogHub(10)
+
+	// Manually add a subscriber channel.
+	ch := make(chan logEntry, 10)
+	hub.mu.Lock()
+	hub.subs[ch] = struct{}{}
+	hub.mu.Unlock()
+	defer func() {
+		hub.mu.Lock()
+		delete(hub.subs, ch)
+		hub.mu.Unlock()
+	}()
+
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "live event", 0)
+	_ = hub.Handle(context.Background(), rec)
+
+	select {
+	case got := <-ch:
+		if got.Message != "live event" {
+			t.Errorf("expected 'live event', got %q", got.Message)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected message from subscribe channel")
+	}
+}
+
+func TestLogsHistoryHandler_NoLogFile(t *testing.T) {
+	setupServerDataDir(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/history", nil)
+	rr := httptest.NewRecorder()
+	logsHistoryHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "entries") {
+		t.Errorf("expected JSON with entries, got: %s", body)
+	}
+}
+
+func TestLogsHistoryHandler_WithLogFile(t *testing.T) {
+	setupServerDataDir(t)
+
+	// Write some fake JSON log lines to the log file path.
+	logDir := filepath.Join(store.DataDir(), "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	logFile := filepath.Join(logDir, "aviary.log")
+	lines := `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"agent: hello"}
+{"time":"2024-01-01T00:00:01Z","level":"warn","msg":"server: warning","key":"val"}
+`
+	if err := os.WriteFile(logFile, []byte(lines), 0o600); err != nil {
+		t.Fatalf("write log file: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=10", nil)
+	rr := httptest.NewRecorder()
+	logsHistoryHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	var resp struct {
+		Entries []logEntry `json:"entries"`
+		HasMore bool       `json:"hasMore"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(resp.Entries))
 	}
 }

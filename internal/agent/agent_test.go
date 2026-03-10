@@ -13,6 +13,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -932,5 +933,380 @@ func TestRunnerWait(t *testing.T) {
 	case <-done:
 	case <-time.After(1 * time.Second):
 		t.Fatal("Wait() did not return promptly on idle runner")
+	}
+}
+
+func TestSessionContextHelpers(t *testing.T) {
+	ctx := context.Background()
+
+	// SessionIDFromContext on empty context
+	_, ok := SessionIDFromContext(ctx)
+	if ok {
+		t.Error("expected false on empty context")
+	}
+
+	// WithSessionID empty string is no-op
+	ctx2 := WithSessionID(ctx, "")
+	_, ok = SessionIDFromContext(ctx2)
+	if ok {
+		t.Error("empty sessionID should not be stored")
+	}
+
+	// WithSessionID non-empty
+	ctx3 := WithSessionID(ctx, "sess123")
+	sid, ok := SessionIDFromContext(ctx3)
+	if !ok || sid != "sess123" {
+		t.Errorf("SessionIDFromContext = (%q, %v); want (\"sess123\", true)", sid, ok)
+	}
+
+	// WithSessionAgentID
+	ctx4 := WithSessionAgentID(ctx, "agentX")
+	aid, ok := SessionAgentIDFromContext(ctx4)
+	if !ok || aid != "agentX" {
+		t.Errorf("SessionAgentIDFromContext = (%q, %v); want (\"agentX\", true)", aid, ok)
+	}
+
+	// WithSessionAgentID empty is no-op
+	ctx5 := WithSessionAgentID(ctx, "")
+	_, ok = SessionAgentIDFromContext(ctx5)
+	if ok {
+		t.Error("empty agentID should not be stored")
+	}
+
+	// SessionAgentIDFromContext 0-value
+	_, ok = SessionAgentIDFromContext(context.Background())
+	if ok {
+		t.Error("expected false on empty context for agent ID")
+	}
+
+	// WithChannelSession
+	ctx6 := WithChannelSession(ctx, "slack", "C123")
+	chType, chID, ok := ChannelSessionFromContext(ctx6)
+	if !ok || chType != "slack" || chID != "C123" {
+		t.Errorf("ChannelSessionFromContext = (%q, %q, %v); want slack, C123, true", chType, chID, ok)
+	}
+
+	// WithChannelSession empty type is no-op
+	ctx7 := WithChannelSession(ctx, "", "C123")
+	_, _, ok = ChannelSessionFromContext(ctx7)
+	if ok {
+		t.Error("empty channelType should not be stored")
+	}
+}
+
+func TestPickMap(t *testing.T) {
+	// map value
+	inner := map[string]any{"a": 1}
+	obj := map[string]any{"key": inner}
+	got := pickMap(obj, "key")
+	if got["a"] != 1 {
+		t.Errorf("pickMap map: got %v", got)
+	}
+
+	// string value (JSON)
+	obj2 := map[string]any{"key": `{"b":2}`}
+	got2 := pickMap(obj2, "key")
+	if got2["b"] != float64(2) {
+		t.Errorf("pickMap JSON string: got %v", got2)
+	}
+
+	// missing key falls through to next
+	obj3 := map[string]any{"other": inner}
+	got3 := pickMap(obj3, "missing", "other")
+	if got3["a"] != 1 {
+		t.Errorf("pickMap fallthrough: got %v", got3)
+	}
+
+	// no keys match returns empty map
+	got4 := pickMap(obj3, "nope")
+	if len(got4) != 0 {
+		t.Errorf("pickMap empty: got %v", got4)
+	}
+}
+
+func TestResolveSessionID_ChannelContext(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_rch", Name: "rch"},
+		&config.AgentConfig{Name: "rch"},
+		&mockProvider{}, nil, nil,
+	)
+	ctx := WithChannelSession(context.Background(), "slack", "C999")
+	sid := runner.resolveSessionID(ctx)
+	// Should be non-empty (either a created session ID or fallback)
+	if sid == "" {
+		t.Error("resolveSessionID with channel context returned empty string")
+	}
+}
+
+func TestMemoryTokens(t *testing.T) {
+	setTestDataDir(t)
+
+	t.Run("explicit", func(t *testing.T) {
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "agent_mt", Name: "mt"},
+			&config.AgentConfig{Name: "mt", MemoryTokens: 512},
+			&mockProvider{}, nil, nil,
+		)
+		if v := runner.memoryTokens(); v != 512 {
+			t.Errorf("memoryTokens = %d; want 512", v)
+		}
+	})
+
+	t.Run("default", func(t *testing.T) {
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "agent_mt2", Name: "mt2"},
+			&config.AgentConfig{Name: "mt2"},
+			&mockProvider{}, nil, nil,
+		)
+		if v := runner.memoryTokens(); v <= 0 {
+			t.Errorf("memoryTokens default should be positive, got %d", v)
+		}
+	})
+}
+
+func TestLoadMemoryContext_NilMemory(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lmc", Name: "lmc"},
+		&config.AgentConfig{Name: "lmc"},
+		&mockProvider{}, nil, nil,
+	)
+	got := runner.loadMemoryContext("sess1", 1000)
+	if got != "" {
+		t.Errorf("expected empty string with nil memory, got %q", got)
+	}
+}
+
+func TestLoadMemoryContext_WithMemory(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lmc2", Name: "lmc2"},
+		&config.AgentConfig{Name: "lmc2"},
+		&mockProvider{}, nil, mem,
+	)
+
+	// Append a memory entry then call loadMemoryContext.
+	poolID := runner.memoryPoolID()
+	if err := mem.Append(poolID, "sess1", "user", "test memory content"); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	got := runner.loadMemoryContext("sess1", 10000)
+	if !strings.Contains(got, "test memory content") {
+		t.Errorf("expected memory content in output, got %q", got)
+	}
+}
+
+func TestAppendMemoryMessage_NilMemory(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_amm", Name: "amm"},
+		&config.AgentConfig{Name: "amm"},
+		&mockProvider{}, nil, nil,
+	)
+	// Should not panic with nil memory
+	runner.appendMemoryMessage("sess1", domain.MessageRoleUser, "hello")
+}
+
+func TestAppendMemoryMessage_WithMemory(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_amm2", Name: "amm2"},
+		&config.AgentConfig{Name: "amm2"},
+		&mockProvider{}, nil, mem,
+	)
+	runner.appendMemoryMessage("sess1", domain.MessageRoleUser, "hello memory")
+
+	poolID := runner.memoryPoolID()
+	entries, err := mem.All(poolID)
+	if err != nil {
+		t.Fatalf("All: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected memory entry after appendMemoryMessage")
+	}
+
+	// Empty content should be skipped
+	runner.appendMemoryMessage("sess1", domain.MessageRoleUser, "")
+	entries2, _ := mem.All(poolID)
+	if len(entries2) != len(entries) {
+		t.Error("empty content should not be appended")
+	}
+}
+
+func TestMaybeCompactMemory_NilMemory(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_mcm", Name: "mcm"},
+		&config.AgentConfig{Name: "mcm"},
+		&mockProvider{}, nil, nil,
+	)
+	// Should not panic
+	runner.maybeCompactMemory()
+}
+
+func TestMaybeCompactMemory_BelowThreshold(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_mcm2", Name: "mcm2"},
+		&config.AgentConfig{Name: "mcm2"},
+		&mockProvider{}, nil, mem,
+	)
+	// Add a single entry — well below compaction threshold, should return without launching goroutine.
+	poolID := runner.memoryPoolID()
+	_ = mem.Append(poolID, "sess1", "user", "hello")
+	// Should not panic.
+	runner.maybeCompactMemory()
+}
+
+func TestParseToolCall(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantOK  bool
+		wantTool string
+	}{
+		{"empty", "", false, ""},
+		{"plain JSON", `{"tool":"ping","arguments":{"x":1}}`, true, "ping"},
+		{"markdown fence", "```json\n{\"tool\":\"foo\",\"arguments\":{}}\n```", true, "foo"},
+		{"nil arguments", `{"tool":"bar"}`, true, "bar"},
+		{"array first element", `[{"tool":"arr","arguments":{}}]`, true, "arr"},
+		{"embedded in text", `some text {"tool":"embed","arguments":{}} more`, true, "embed"},
+		{"invalid JSON", `not json`, false, ""},
+		{"tool_call wrapper", `{"tool_call":{"tool":"nested","arguments":{"k":"v"}}}`, true, "nested"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseToolCall(tc.input)
+			if ok != tc.wantOK {
+				t.Errorf("ok = %v; want %v (input=%q)", ok, tc.wantOK, tc.input)
+			}
+			if ok && got.Tool != tc.wantTool {
+				t.Errorf("tool = %q; want %q", got.Tool, tc.wantTool)
+			}
+		})
+	}
+}
+
+func TestBuildToolSystemPrompt(t *testing.T) {
+	tools := []ToolInfo{
+		{Name: "tool_a", Description: "does a"},
+		{Name: "tool_b"},
+	}
+	out := buildToolSystemPrompt("myagent", tools)
+	if !strings.Contains(out, "myagent") {
+		t.Error("expected agent name in system prompt")
+	}
+	if !strings.Contains(out, "tool_a") {
+		t.Error("expected tool_a in system prompt")
+	}
+	if !strings.Contains(out, "does a") {
+		t.Error("expected tool description in system prompt")
+	}
+	if !strings.Contains(out, "tool_b") {
+		t.Error("expected tool_b in system prompt")
+	}
+
+	// Without agent name.
+	out2 := buildToolSystemPrompt("", tools)
+	if strings.Contains(out2, "agent name is") {
+		t.Error("agent name section should be absent when name is empty")
+	}
+}
+
+func TestIsRetryableError(t *testing.T) {
+	if isRetryableError(nil) {
+		t.Error("nil error should not be retryable")
+	}
+	for _, msg := range []string{"429", "too many requests", "rate limit", "quota", "overloaded", "503", "service unavailable", "401", "unauthorized", "unauthenticated"} {
+		if !isRetryableError(errors.New(msg)) {
+			t.Errorf("error %q should be retryable", msg)
+		}
+	}
+	if isRetryableError(errors.New("unrelated failure")) {
+		t.Error("unrelated error should not be retryable")
+	}
+}
+
+func TestAppendSessionMessage_WithMediaURL(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_asm2", Name: "asm2"},
+		&config.AgentConfig{Name: "asm2"},
+		&mockProvider{}, nil, nil,
+	)
+	sess, err := NewSessionManager().Create(runner.agent.ID)
+	if err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+	// Empty content but non-empty mediaURL should persist.
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "", "http://example.com/img.png", "")
+
+	data, err := os.ReadFile(store.SessionPath(runner.agent.ID, sess.ID))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "img.png") {
+		t.Errorf("expected media URL in session, got: %s", string(data))
+	}
+}
+
+func TestSessionList(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+
+	// Empty list for unknown agent.
+	sessions, err := sm.List("agent_no_such")
+	if err != nil {
+		t.Fatalf("List on nonexistent agent: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected empty list, got %d", len(sessions))
+	}
+
+	// Create two sessions and list them.
+	_, err = sm.Create("agent_listtest")
+	if err != nil {
+		t.Fatalf("Create 1: %v", err)
+	}
+	_, err = sm.Create("agent_listtest")
+	if err != nil {
+		t.Fatalf("Create 2: %v", err)
+	}
+
+	sessions, err = sm.List("agent_listtest")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Errorf("expected 2 sessions, got %d", len(sessions))
+	}
+}
+
+func TestLoadMemoryContext_WithNotes(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lmcn", Name: "lmcn"},
+		&config.AgentConfig{Name: "lmcn"},
+		&mockProvider{}, nil, mem,
+	)
+
+	poolID := runner.memoryPoolID()
+	if err := mem.SetNotes(poolID, "important note"); err != nil {
+		t.Fatalf("SetNotes: %v", err)
+	}
+
+	got := runner.loadMemoryContext("sess1", 10000)
+	if !strings.Contains(got, "important note") {
+		t.Errorf("expected notes in output, got %q", got)
+	}
+	if !strings.Contains(got, "Persistent notes") {
+		t.Errorf("expected notes header in output, got %q", got)
 	}
 }

@@ -54,7 +54,7 @@ func runConfigGetSet(_ *cobra.Command, args []string) error {
 	if err := configSetKey(cfg, key, args[1]); err != nil {
 		return err
 	}
-	return writeConfig(cfg)
+	return config.Save(cfgFile, cfg)
 }
 
 // configGetKey reads a dot-separated key from cfg (using YAML field names).

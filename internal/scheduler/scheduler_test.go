@@ -428,3 +428,137 @@ func TestWorkerPool_ExecuteJob(t *testing.T) {
 		t.Fatalf("expected nil error for stubbed no-provider path, got %v", err)
 	}
 }
+
+func TestEnqueueAt(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	at := time.Now().Add(1 * time.Hour)
+	job, err := q.EnqueueAt("task1", "agent_alpha", "alpha", "do something", 0, at, "", "")
+	if err != nil {
+		t.Fatalf("EnqueueAt: %v", err)
+	}
+	if job.ScheduledFor == nil || !job.ScheduledFor.Equal(at) {
+		t.Errorf("ScheduledFor = %v; want %v", job.ScheduledFor, at)
+	}
+}
+
+func TestUpdateOutput(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", 0, "", "")
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	if err := q.UpdateOutput(job.ID, "some output"); err != nil {
+		t.Fatalf("UpdateOutput: %v", err)
+	}
+
+	// Verify output persisted.
+	jobs, err := q.List("")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var found *domain.Job
+	for i := range jobs {
+		if jobs[i].ID == job.ID {
+			found = &jobs[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("job not found after UpdateOutput")
+	}
+	if found.Output != "some output" {
+		t.Errorf("Output = %q; want %q", found.Output, "some output")
+	}
+}
+
+func TestUpdateOutput_NotFound(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+	err := q.UpdateOutput("nonexistent_job_id", "output")
+	if err == nil {
+		t.Error("expected error for nonexistent job")
+	}
+}
+
+func TestTrigger(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	s, err := New(mgr, 1)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Reconcile a config with a task to register it.
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{
+			{
+				Name:  "alpha",
+				Model: "test/model",
+				Tasks: []config.TaskConfig{
+					{Name: "daily", Prompt: "run daily", Schedule: "0 9 * * *"},
+				},
+			},
+		},
+	}
+	s.Reconcile(cfg)
+
+	job, err := s.Trigger("alpha/daily")
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	if job == nil || job.TaskID != "alpha/daily" {
+		t.Errorf("job = %+v; want TaskID=alpha/daily", job)
+	}
+}
+
+func TestTrigger_NotFound(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	s, err := New(mgr, 1)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = s.Trigger("nonexistent/task")
+	if err == nil {
+		t.Error("expected error for nonexistent task")
+	}
+}
+
+func TestJobQueue_ListCorrupted(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	// Enqueue a valid job first.
+	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", 0, "", "")
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	// Write a corrupted file alongside it.
+	jobsDir := filepath.Join(store.AgentDir("agent_alpha"), "jobs")
+	if err := os.WriteFile(filepath.Join(jobsDir, "job_bad.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// List should skip corrupted file and return the valid job.
+	jobs, err := q.List("")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, j := range jobs {
+		if j.ID == job.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected valid job in list")
+	}
+}
