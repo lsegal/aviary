@@ -106,6 +106,7 @@ jobs:
           set -euo pipefail
           export HOME="$RUNNER_TEMP/home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/xdg"
+          export AVIARY_API_BASE="http://127.0.0.1:8765"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
           node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-api" --port 8765 >/tmp/aviary-installer-http.log 2>&1 &
           server_pid=$!
