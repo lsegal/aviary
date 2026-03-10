@@ -67,3 +67,84 @@ jobs:
       - run: node scripts/build-go.mjs --output aviary
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+
+  release-build:
+    name: Release build smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:release -- --version v0.0.0-ci --targets linux/amd64,windows/amd64,darwin/arm64
+      - run: test -f dist/release/aviary_v0.0.0-ci_linux_amd64.tar.gz
+      - run: test -f dist/release/aviary_v0.0.0-ci_windows_amd64.tar.gz
+      - run: test -f dist/release/aviary_v0.0.0-ci_darwin_arm64.tar.gz
+      - run: test -f dist/release/checksums.txt
+
+  installer-posix:
+    name: Installer smoke test (POSIX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+      - name: Prepare mocked release API
+        run: node scripts/mock-installer-fixture.mjs --root "$RUNNER_TEMP/mock-api" --version v9.9.9 --os linux --arch amd64 --baseUrl http://127.0.0.1:8765
+      - name: Run installer/install.sh against mock server
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/xdg"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+          node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-api" --port 8765 >/tmp/aviary-installer-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          sleep 1
+          sh installer/install.sh --repo lsegal/aviary
+          test -f "$XDG_CONFIG_HOME/aviary/bin/aviary"
+          grep -F "export PATH=\"$XDG_CONFIG_HOME/aviary/bin:\$PATH\"" "$HOME/.profile"
+
+  installer-windows:
+    name: Installer smoke test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+      - name: Prepare mocked release API
+        shell: pwsh
+        run: |
+          node scripts/mock-installer-fixture.mjs --root "$env:RUNNER_TEMP/mock-api" --version v9.9.9 --os windows --arch amd64 --baseUrl http://127.0.0.1:8765
+      - name: Run installer/install.ps1 against mock server
+        shell: pwsh
+        run: |
+          $env:HOME = Join-Path $env:RUNNER_TEMP 'home'
+          New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
+          $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-api'), '--port', '8765' -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 1
+            ./installer/install.ps1 -Version v9.9.9 -Repo lsegal/aviary -ApiBase http://127.0.0.1:8765
+            $bin = Join-Path $env:HOME '.config\aviary\bin\aviary.exe'
+            if (-not (Test-Path $bin)) {
+              throw "installer did not create $bin"
+            }
+            if (-not (($env:Path -split ';') -contains (Split-Path $bin))) {
+              throw "installer did not prepend the bin directory to PATH"
+            }
+          } finally {
+            if ($server) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
