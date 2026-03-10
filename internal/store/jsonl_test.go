@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // jsonlItem is the type used for JSONL round-trip tests.
@@ -23,49 +25,39 @@ func TestAppendJSONL(t *testing.T) {
 		p := filepath.Join(tmp, "append.jsonl")
 
 		// Append first entry — file does not yet exist.
-		if err := AppendJSONL(p, jsonlItem{ID: "a", Score: 1}); err != nil {
-			t.Fatalf("AppendJSONL() first: %v", err)
-		}
+		err := AppendJSONL(p, jsonlItem{ID: "a", Score: 1})
+		assert.NoError(t, err)
+
 		// Append second entry.
-		if err := AppendJSONL(p, jsonlItem{ID: "b", Score: 2}); err != nil {
-			t.Fatalf("AppendJSONL() second: %v", err)
-		}
+		err = AppendJSONL(p, jsonlItem{ID: "b", Score: 2})
+		assert.NoError(t, err)
 
 		entries, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL(): %v", err)
-		}
-		if len(entries) != 2 {
-			t.Errorf("expected 2 entries, got %d", len(entries))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(entries))
+
 	})
 
 	t.Run("open_error", func(t *testing.T) {
 		// Parent directory does not exist; AppendJSONL should auto-create it.
 		p := filepath.Join(tmp, "nodir", "append.jsonl")
 		err := AppendJSONL(p, jsonlItem{ID: "x"})
-		if err != nil {
-			t.Fatalf("unexpected error when parent dir missing: %v", err)
-		}
+		assert.NoError(t, err)
+
 		items, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("reading back appended file: %v", err)
-		}
-		if len(items) != 1 || items[0].ID != "x" {
-			t.Errorf("expected [{x 0}], got %v", items)
-		}
+		assert.NoError(t, err)
+		assert.Len(t, items, 1)
+		assert.Equal(t, "x", items[0].ID)
+
 	})
 
 	t.Run("marshal_error", func(t *testing.T) {
 		// A channel cannot be marshaled.
 		p := filepath.Join(tmp, "marshal.jsonl")
 		err := AppendJSONL(p, make(chan int))
-		if err == nil {
-			t.Fatal("expected marshal error, got nil")
-		}
-		if !strings.Contains(err.Error(), "marshaling") {
-			t.Errorf("expected 'marshaling' in error, got: %v", err)
-		}
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "marshaling"))
+
 	})
 }
 
@@ -77,12 +69,9 @@ func TestReadJSONL(t *testing.T) {
 
 	t.Run("file_not_exist", func(t *testing.T) {
 		results, err := ReadJSONL[jsonlItem](filepath.Join(tmp, "nope.jsonl"))
-		if err != nil {
-			t.Errorf("expected nil error for missing file, got: %v", err)
-		}
-		if results != nil {
-			t.Errorf("expected nil results for missing file, got: %v", results)
-		}
+		assert.NoError(t, err)
+		assert.Nil(t, results)
+
 	})
 
 	t.Run("open_error_not_notexist", func(t *testing.T) {
@@ -90,33 +79,29 @@ func TestReadJSONL(t *testing.T) {
 		// file, not a directory. This produces an open error that is NOT
 		// os.IsNotExist, so ReadJSONL should propagate it.
 		blocker := filepath.Join(tmp, "blocker")
-		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := ReadJSONL[jsonlItem](filepath.Join(blocker, "sub.jsonl"))
+		err := os.WriteFile(blocker, []byte("x"), 0o600)
+		assert.NoError(t, err)
+
+		_, err = ReadJSONL[jsonlItem](filepath.Join(blocker, "sub.jsonl"))
 		if err == nil {
 			// Some platforms classify this case as not-exist and ReadJSONL
 			// intentionally returns nil,nil for not-exist paths.
 			t.Skip("platform returns nil error for file/subpath open; skipping branch assertion")
 		}
-		if !strings.Contains(err.Error(), "opening") {
-			t.Errorf("expected 'opening' in error, got: %v", err)
-		}
+		assert.True(t, strings.Contains(err.Error(), "opening"))
+
 	})
 
 	t.Run("valid_lines", func(t *testing.T) {
 		p := filepath.Join(tmp, "valid.jsonl")
 		content := `{"id":"x","score":10}` + "\n" + `{"id":"y","score":20}` + "\n"
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err := os.WriteFile(p, []byte(content), 0o600)
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL(): %v", err)
-		}
-		if len(results) != 2 {
-			t.Errorf("expected 2 results, got %d", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(results))
+
 	})
 
 	t.Run("empty_and_bad_lines", func(t *testing.T) {
@@ -125,30 +110,24 @@ func TestReadJSONL(t *testing.T) {
 		content := `{"id":"ok","score":5}` + "\n" +
 			"\n" +
 			`not valid json` + "\n"
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err := os.WriteFile(p, []byte(content), 0o600)
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL() unexpected error: %v", err)
-		}
-		if len(results) != 1 {
-			t.Errorf("expected 1 result (skipping bad lines), got %d", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
 	})
 
 	t.Run("empty_file", func(t *testing.T) {
 		p := filepath.Join(tmp, "empty.jsonl")
-		if err := os.WriteFile(p, []byte{}, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err := os.WriteFile(p, []byte{}, 0o600)
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL() on empty file: %v", err)
-		}
-		if len(results) != 0 {
-			t.Errorf("expected 0 results for empty file, got %d", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(results))
+
 	})
 
 	t.Run("scanner_error_line_too_long", func(t *testing.T) {
@@ -164,16 +143,13 @@ func TestReadJSONL(t *testing.T) {
 		// Wrap it as a JSON string in an object so the line is valid-ish JSON
 		// but way over the scanner buffer limit.
 		line := []byte(`{"id":"` + string(huge) + `","score":0}` + "\n")
-		if err := os.WriteFile(p, line, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err := os.WriteFile(p, line, 0o600)
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err == nil {
-			t.Fatal("expected scanner error for huge line, got nil")
-		}
-		if !strings.Contains(err.Error(), "reading") {
-			t.Errorf("expected 'reading' in error, got: %v", err)
-		}
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "reading"))
+
 		// results may be nil or empty — either is acceptable.
 		_ = results
 	})
@@ -189,40 +165,32 @@ func TestRewriteJSONL(t *testing.T) {
 		// Seed a file with some content.
 		p := filepath.Join(tmp, "rewrite.jsonl")
 		seed := []jsonlItem{{ID: "old", Score: 0}}
-		if err := RewriteJSONL(p, seed); err != nil {
-			t.Fatalf("RewriteJSONL() seed: %v", err)
-		}
+		err := RewriteJSONL(p, seed)
+		assert.NoError(t, err)
 
 		// Now rewrite with new entries.
 		entries := []jsonlItem{
 			{ID: "a", Score: 10},
 			{ID: "b", Score: 20},
 		}
-		if err := RewriteJSONL(p, entries); err != nil {
-			t.Fatalf("RewriteJSONL() rewrite: %v", err)
-		}
+		err = RewriteJSONL(p, entries)
+		assert.NoError(t, err)
 
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL() after RewriteJSONL: %v", err)
-		}
-		if len(results) != 2 {
-			t.Errorf("expected 2 entries after rewrite, got %d", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(results))
+
 	})
 
 	t.Run("empty_entries", func(t *testing.T) {
 		p := filepath.Join(tmp, "rewrite_empty.jsonl")
-		if err := RewriteJSONL(p, []jsonlItem{}); err != nil {
-			t.Fatalf("RewriteJSONL() with empty entries: %v", err)
-		}
+		err := RewriteJSONL(p, []jsonlItem{})
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL() after empty rewrite: %v", err)
-		}
-		if len(results) != 0 {
-			t.Errorf("expected 0 entries, got %d", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(results))
+
 	})
 
 	t.Run("fallback_rewrite_direct", func(t *testing.T) {
@@ -236,16 +204,14 @@ func TestRewriteJSONL(t *testing.T) {
 		// it is unexported but visible within the same package.
 		p := filepath.Join(tmp, "direct.jsonl")
 		entries := []jsonlItem{{ID: "d1", Score: 5}}
-		if err := rewriteDirect(p, entries); err != nil {
-			t.Fatalf("rewriteDirect() unexpected error: %v", err)
-		}
+		err := rewriteDirect(p, entries)
+		assert.NoError(t, err)
+
 		results, err := ReadJSONL[jsonlItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSONL() after rewriteDirect: %v", err)
-		}
-		if len(results) != 1 || results[0].ID != "d1" {
-			t.Errorf("rewriteDirect round-trip: got %+v", results)
-		}
+		assert.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "d1", results[0].ID)
+
 	})
 }
 
@@ -258,12 +224,9 @@ func TestRewriteDirect_Error(t *testing.T) {
 	// Path whose parent does not exist.
 	p := filepath.Join(tmp, "nosuchdir", "data.jsonl")
 	err := rewriteDirect(p, []jsonlItem{{ID: "x"}})
-	if err == nil {
-		t.Fatal("expected error from rewriteDirect when parent missing, got nil")
-	}
-	if !strings.Contains(err.Error(), "creating") {
-		t.Errorf("expected 'creating' in error, got: %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "creating"))
+
 }
 
 // TestRewriteDirect_EncodeError verifies rewriteDirect returns an error when
@@ -275,12 +238,9 @@ func TestRewriteDirect_EncodeError(t *testing.T) {
 
 	p := filepath.Join(tmp, "encode_err.jsonl")
 	err := rewriteDirect(p, []chan int{make(chan int)})
-	if err == nil {
-		t.Fatal("expected encode error from rewriteDirect, got nil")
-	}
-	if !strings.Contains(err.Error(), "encoding") {
-		t.Errorf("expected 'encoding' in error, got: %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "encoding"))
+
 }
 
 // TestRewriteJSONL_EncodeError verifies the encode-error branch inside the
@@ -293,12 +253,9 @@ func TestRewriteJSONL_EncodeError(t *testing.T) {
 	// pass an entry that cannot be encoded to reach the error branch.
 	p := filepath.Join(tmp, "encode_err2.jsonl")
 	err := RewriteJSONL(p, []chan int{make(chan int)})
-	if err == nil {
-		t.Fatal("expected encode error from RewriteJSONL, got nil")
-	}
-	if !strings.Contains(err.Error(), "encoding entry") {
-		t.Errorf("expected 'encoding entry' in error, got: %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "encoding entry"))
+
 }
 
 // TestRewriteJSONL_DeepPath verifies that RewriteJSONL auto-creates deeply
@@ -311,16 +268,13 @@ func TestRewriteJSONL_DeepPath(t *testing.T) {
 	p := filepath.Join(tmp, "noexist", "sub", "file.jsonl")
 
 	err := RewriteJSONL(p, []jsonlItem{{ID: "fb", Score: 1}})
-	if err != nil {
-		t.Fatalf("unexpected error from RewriteJSONL with deep path: %v", err)
-	}
+	assert.NoError(t, err)
+
 	items, err := ReadJSONL[jsonlItem](p)
-	if err != nil {
-		t.Fatalf("reading back rewritten file: %v", err)
-	}
-	if len(items) != 1 || items[0].ID != "fb" {
-		t.Errorf("expected [{fb 1}], got %v", items)
-	}
+	assert.NoError(t, err)
+	assert.Len(t, items, 1)
+	assert.Equal(t, "fb", items[0].ID)
+
 }
 
 // TestIntegration_JSONLRoundTrip exercises AppendJSONL + ReadJSONL +
@@ -333,18 +287,14 @@ func TestIntegration_JSONLRoundTrip(t *testing.T) {
 
 	// Append several entries.
 	for i := 0; i < 5; i++ {
-		if err := AppendJSONL(p, jsonlItem{ID: "e", Score: i}); err != nil {
-			t.Fatalf("AppendJSONL(%d): %v", i, err)
-		}
+		err := AppendJSONL(p, jsonlItem{ID: "e", Score: i})
+		assert.NoError(t, err)
+
 	}
 
 	all, err := ReadJSONL[jsonlItem](p)
-	if err != nil {
-		t.Fatalf("ReadJSONL(): %v", err)
-	}
-	if len(all) != 5 {
-		t.Errorf("expected 5 entries, got %d", len(all))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 5, len(all))
 
 	// Compact: keep only those with Score >= 2.
 	var keep []jsonlItem
@@ -353,16 +303,11 @@ func TestIntegration_JSONLRoundTrip(t *testing.T) {
 			keep = append(keep, e)
 		}
 	}
-
-	if err := RewriteJSONL(p, keep); err != nil {
-		t.Fatalf("RewriteJSONL(): %v", err)
-	}
+	err = RewriteJSONL(p, keep)
+	assert.NoError(t, err)
 
 	final, err := ReadJSONL[jsonlItem](p)
-	if err != nil {
-		t.Fatalf("ReadJSONL() after rewrite: %v", err)
-	}
-	if len(final) != 3 {
-		t.Errorf("expected 3 entries after compaction, got %d", len(final))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(final))
+
 }

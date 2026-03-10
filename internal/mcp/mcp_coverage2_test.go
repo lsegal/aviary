@@ -12,6 +12,8 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ── RemoteClient (proxy.go) ──────────────────────────────────────────────────
@@ -28,19 +30,15 @@ func TestRemoteClient_ViaHTTPTestServer(t *testing.T) {
 	defer ts.Close()
 
 	c, err := NewRemoteClient(context.Background(), ts.URL, "")
-	if err != nil {
-		t.Fatalf("NewRemoteClient: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer c.Close() //nolint:errcheck
 
 	// ListTools via remote
 	tools, err := c.ListTools(context.Background())
-	if err != nil {
-		t.Fatalf("remote ListTools: %v", err)
-	}
-	if len(tools) == 0 {
-		t.Fatal("expected at least one tool from remote server")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(tools))
+
 	found := false
 	for _, tool := range tools {
 		if tool.Name == "ping" {
@@ -48,35 +46,25 @@ func TestRemoteClient_ViaHTTPTestServer(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatal("expected 'ping' in remote tool list")
-	}
+	assert.True(t, found)
 
 	// CallTool via remote
 	result, err := c.CallTool(context.Background(), "ping", map[string]any{})
-	if err != nil {
-		t.Fatalf("remote CallTool: %v", err)
-	}
-	if extractText(result) != "pong" {
-		t.Fatalf("expected pong from remote ping, got %q", extractText(result))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "pong", extractText(result))
 
 	// CallToolText via remote
 	out, err := c.CallToolText(context.Background(), "ping", map[string]any{})
-	if err != nil {
-		t.Fatalf("remote CallToolText: %v", err)
-	}
-	if out != "pong" {
-		t.Fatalf("expected pong from remote CallToolText, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "pong", out)
+
 }
 
 func TestNewRemoteClient_ConnectionError(t *testing.T) {
 	// Connecting to a port that is definitely not listening should error
 	_, err := NewRemoteClient(context.Background(), "https://localhost:1", "")
-	if err == nil {
-		t.Fatal("expected error connecting to non-listening port")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── HTTPHandler POST path ─────────────────────────────────────────────────────
@@ -92,15 +80,15 @@ func TestHTTPHandler_PostWithToolCallPayload(t *testing.T) {
 
 	// Send a POST with a tools/call payload to exercise the logging path
 	payload := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}`
-	resp, err := http.Post(ts.URL+"/mcp", "application/json", bytes.NewBufferString(payload)) //nolint:noctx
-	if err != nil {
-		t.Fatalf("POST to HTTPHandler: %v", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	// Any non-zero status code is acceptable
-	if resp.StatusCode == 0 {
-		t.Fatal("expected a valid HTTP status code")
-	}
+	resp, err := http.Post(ts.URL+"/mcp", "application/json", bytes.NewBufferString(payload))
+	assert. //nolint:noctx
+		NoError(t, err)
+
+	defer func() { _ = resp.Body.Close() }()
+	assert. //nolint:errcheck
+		NotEqual(t, // Any non-zero status code is acceptable
+			0, resp.StatusCode)
+
 }
 
 // ── tool_logging.go ───────────────────────────────────────────────────────────
@@ -113,44 +101,28 @@ func TestRedactValue_AdditionalTypes(t *testing.T) {
 	}
 	got := redactValue("", m)
 	gotMap, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map[string]any, got %T", got)
-	}
-	if gotMap["safe_key"] != "safe_val" {
-		t.Errorf("expected safe_key unchanged, got %v", gotMap["safe_key"])
-	}
-	if gotMap["token"] != "[REDACTED]" {
-		t.Errorf("expected token to be redacted, got %v", gotMap["token"])
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "safe_val", gotMap["safe_key"])
+	assert.Equal(t, "[REDACTED]", gotMap["token"])
 
 	// []string path
 	sl := []string{"hello", "world"}
 	gotSlice := redactValue("", sl)
 	gotSliceAny, ok := gotSlice.([]any)
-	if !ok {
-		t.Fatalf("expected []any from []string, got %T", gotSlice)
-	}
-	if len(gotSliceAny) != 2 {
-		t.Fatalf("expected 2 elements, got %d", len(gotSliceAny))
-	}
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(gotSliceAny))
 
 	// boolean scalar
 	gotBool := redactValue("", true)
-	if gotBool != true {
-		t.Errorf("expected bool unchanged, got %v", gotBool)
-	}
+	assert.Equal(t, true, gotBool)
 
 	// int scalar
 	gotInt := redactValue("", 42)
-	if gotInt != 42 {
-		t.Errorf("expected int unchanged, got %v", gotInt)
-	}
+	assert.Equal(t, 42, gotInt)
 
 	// nil value
 	gotNil := redactValue("", nil)
-	if gotNil != nil {
-		t.Errorf("expected nil, got %v", gotNil)
-	}
+	assert.Nil(t, gotNil)
 
 	// struct fallback (goes through json.Marshal path)
 	type myStruct struct {
@@ -161,28 +133,24 @@ func TestRedactValue_AdditionalTypes(t *testing.T) {
 	gotStruct := redactValue("", s)
 	// Should be a map after the json round-trip
 	gotStructMap, ok := gotStruct.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map[string]any from struct, got %T", gotStruct)
-	}
-	if gotStructMap["token"] != "[REDACTED]" {
-		t.Errorf("expected token redacted in struct fallback, got %v", gotStructMap["token"])
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "[REDACTED]", gotStructMap["token"])
+
 }
 
 func TestTruncateForLog_LongString(t *testing.T) {
 	long := strings.Repeat("x", maxLoggedStringLen+100)
 	truncated := truncateForLog(long)
 	if len(truncated) <= maxLoggedStringLen {
-		// That's expected — check it has the suffix
-		if !strings.Contains(truncated, "+100 chars") {
-			t.Fatalf("expected truncated suffix, got %q", truncated[len(truncated)-30:])
-		}
+		assert.
+			// That's expected — check it has the suffix
+			True(t, strings.Contains(truncated, "+100 chars"))
+
 	}
 
 	short := "hello"
-	if truncateForLog(short) != short {
-		t.Fatalf("short string should not be truncated, got %q", truncateForLog(short))
-	}
+	assert.Equal(t, short, truncateForLog(short))
+
 }
 
 func TestLogToolCall_EmptyName(_ *testing.T) {
@@ -226,33 +194,25 @@ func TestEnsureInProcessDeps_WhenDepsNotSet(t *testing.T) {
 
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
 	cfg := &config.Config{}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	// Reset to unset state
 	globalDeps = &Deps{}
 	depsSet = false
 
 	// Calling ensureInProcessDeps should auto-initialize deps
-	err := ensureInProcessDeps()
-	if err != nil {
-		t.Fatalf("ensureInProcessDeps: %v", err)
-	}
+	err = ensureInProcessDeps()
+	assert.NoError(t, err)
+	assert.True(t, // Should have set depsSet = true
+		depsSet)
+	assert.NotNil(t, // Should have set Agents
+		globalDeps.Agents)
 
-	// Should have set depsSet = true
-	if !depsSet {
-		t.Fatal("expected depsSet to be true after ensureInProcessDeps")
-	}
-
-	// Should have set Agents
-	if globalDeps.Agents == nil {
-		t.Fatal("expected Agents to be initialized")
-	}
 }
 
 // ── jsonResult error path ─────────────────────────────────────────────────────
@@ -261,9 +221,8 @@ func TestJsonResult_UnmarshalableValue(t *testing.T) {
 	// json.Marshal fails on channels
 	ch := make(chan int)
 	_, _, err := jsonResult(ch)
-	if err == nil {
-		t.Fatal("expected error marshaling channel")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── redactedJSON with marshal error ──────────────────────────────────────────
@@ -274,15 +233,12 @@ func TestRedactedJSON_WithNonMarshalableResult(t *testing.T) {
 	// We use a custom type that marshals fine; to trigger the error path,
 	// we'd need an unmarshalable result. Instead, verify the normal case:
 	result := redactedJSON(map[string]any{"key": "value"})
-	if !strings.Contains(result, "key") {
-		t.Fatalf("expected key in redactedJSON result, got %q", result)
-	}
+	assert.True(t, strings.Contains(result, "key"))
 
 	// Nil input
 	result = redactedJSON(nil)
-	if result != "null" {
-		t.Fatalf("expected null for nil input, got %q", result)
-	}
+	assert.Equal(t, "null", result)
+
 }
 
 // ── HTTPHandler with GET (no body) ────────────────────────────────────────────
@@ -319,9 +275,8 @@ func TestAgentRun_WithNilAgentManager(t *testing.T) {
 func TestSessionStop_NeitherSessionNorAgent(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -343,16 +298,14 @@ func TestIsSensitiveKey_AdditionalCases(t *testing.T) {
 		"access_key", "private_key", "authorization",
 	}
 	for _, k := range sensitiveKeys {
-		if !isSensitiveKey(k) {
-			t.Errorf("expected %q to be sensitive", k)
-		}
+		assert.True(t, isSensitiveKey(k))
+
 	}
 
 	safeKeys := []string{"", "name", "message", "query", "agent", "url"}
 	for _, k := range safeKeys {
-		if isSensitiveKey(k) {
-			t.Errorf("expected %q to be safe, but got sensitive", k)
-		}
+		assert.False(t, isSensitiveKey(k))
+
 	}
 }
 
@@ -376,13 +329,12 @@ func TestAgentRulesGet_EmptyName(t *testing.T) {
 func TestJsonResult_WithMarshalError(t *testing.T) {
 	// Normal case
 	res, _, err := jsonResult(map[string]any{"ok": true})
-	if err != nil {
-		t.Fatalf("jsonResult: %v", err)
-	}
+	assert.NoError(t, err)
+
 	var m map[string]any
-	if jsonErr := json.Unmarshal([]byte(extractText(res)), &m); jsonErr != nil {
-		t.Fatalf("expected valid JSON from jsonResult, got %v", jsonErr)
-	}
+	jsonErr := json.Unmarshal([]byte(extractText(res)), &m)
+	assert.Nil(t, jsonErr)
+
 }
 
 // ── dispatcher dispatch to server route ──────────────────────────────────────
@@ -410,12 +362,12 @@ func TestDispatcherResolve_ServerRunningWithToken(t *testing.T) {
 	// Create a dispatcher that targets our test server's address
 	d := NewDispatcher(ts.URL, "")
 	c, err := d.Resolve(context.Background())
-	if err != nil {
-		t.Fatalf("resolve with server running: %v", err)
-	}
-	defer c.Close() //nolint:errcheck
+	assert.NoError(t, err)
 
-	if _, ok := c.(*RemoteClient); !ok {
-		t.Fatalf("expected RemoteClient when server is running, got %T", c)
-	}
+	defer func() { _ = c.Close() }()
+	//nolint:errcheck
+
+	_, ok := c.(*RemoteClient)
+	assert.True(t, ok)
+
 }

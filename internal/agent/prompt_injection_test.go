@@ -9,6 +9,8 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ─── sanitizeDelimitedContent ────────────────────────────────────────────────
@@ -29,11 +31,10 @@ func TestSanitizeDelimitedContent_NoOp(t *testing.T) {
 		// only the last case has </ so it should be escaped; the rest should be
 		// unchanged.
 		if strings.Contains(s, "</") {
-			if strings.Contains(got, "</") {
-				t.Errorf("sanitize(%q) still contains </ : %q", s, got)
-			}
+			assert.NotContains(t, got, "</")
+
 		} else if got != s {
-			t.Errorf("sanitize(%q) changed safe content to %q", s, got)
+			assert.Equal(t, s, got)
 		}
 	}
 }
@@ -67,9 +68,8 @@ func TestSanitizeDelimitedContent_EscapesCloseSequence(t *testing.T) {
 
 	for _, tc := range cases {
 		got := sanitizeDelimitedContent(tc.input)
-		if got != tc.want {
-			t.Errorf("sanitize(%q)\n  got  %q\n  want %q", tc.input, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }
 
@@ -108,9 +108,8 @@ func TestSanitizeDelimitedContent_AllAttackPatterns(t *testing.T) {
 	for _, att := range injectionAttacks {
 		t.Run(att.name, func(t *testing.T) {
 			got := sanitizeDelimitedContent(att.payload)
-			if strings.Contains(got, "</") {
-				t.Errorf("payload %q: sanitized output still contains '</' : %q", att.payload, got)
-			}
+			assert.NotContains(t, got, "</")
+
 		})
 	}
 }
@@ -123,17 +122,13 @@ func TestBuildSystemPrompt_SkillContentInjections(t *testing.T) {
 			prompt := BuildSystemPrompt("BasePrompt", []Skill{{Name: "test", Content: att.payload}})
 
 			// Exactly one structural </skill> — the real closing tag.
-			if n := strings.Count(prompt, "</skill>"); n != 1 {
-				t.Errorf("expected 1 </skill>, got %d\nprompt:\n%s", n, prompt)
-			}
-			// Base prompt must survive intact.
-			if !strings.Contains(prompt, "BasePrompt") {
-				t.Errorf("base prompt missing\nprompt:\n%s", prompt)
-			}
-			// No raw </ sequences (all should be escaped).
-			if strings.Contains(prompt[:strings.Index(prompt, "</skill>")], "</") {
-				t.Errorf("raw '</' found inside skill tag before the real close\nprompt:\n%s", prompt)
-			}
+			n := strings.Count(prompt, "</skill>")
+			assert.Equal(t, 1, n)
+
+			assert.True(t, // Base prompt must survive intact.
+				strings.Contains(prompt, "BasePrompt"))
+			assert.NotContains(t, prompt[:strings.Index(prompt, "</skill>")], "</")
+
 		})
 	}
 }
@@ -145,36 +140,33 @@ func TestBuildSystemPrompt_MultipleSkillsAreIsolated(t *testing.T) {
 		{Name: "c", Content: "Also safe."},
 	}
 	prompt := BuildSystemPrompt("Base", skills)
+	n := strings.Count(prompt, "</skill>")
+	assert.Equal(t, 3, n)
 
-	if n := strings.Count(prompt, "</skill>"); n != 3 {
-		t.Errorf("expected 3 </skill> (one per skill), got %d\nprompt:\n%s", n, prompt)
-	}
 	for _, name := range []string{"a", "b", "c"} {
 		open := `<skill name="` + name + `">`
-		if !strings.Contains(prompt, open) {
-			t.Errorf("missing open tag for skill %q\nprompt:\n%s", name, prompt)
-		}
+		assert.True(t, strings.Contains(prompt, open))
+
 	}
-	// The injected literal "</skill>" should be escaped, not raw.
-	if strings.Contains(prompt, "</skill> try to escape") {
-		t.Errorf("injection succeeded — unescaped close tag followed by injected text\nprompt:\n%s", prompt)
-	}
+	assert.
+		// The injected literal "</skill>" should be escaped, not raw.
+		False(t, strings.Contains(prompt, "</skill> try to escape"))
+
 }
 
 func TestBuildSystemPrompt_EmptySkillList(t *testing.T) {
 	got := BuildSystemPrompt("Base", nil)
-	if got != "Base" {
-		t.Errorf("expected passthrough for empty skills, got %q", got)
-	}
+	assert.Equal(t, "Base", got)
+
 }
 
 func TestBuildSystemPrompt_CleanContentUnchanged(t *testing.T) {
 	content := "## Step 1\nDo the thing.\n\n## Step 2\nDo the next thing.\n\n- bullet\n- list"
 	prompt := BuildSystemPrompt("", []Skill{{Name: "steps", Content: content}})
-	// The original words should still be there, verbatim.
-	if !strings.Contains(prompt, "Do the thing.") {
-		t.Errorf("clean content was altered unexpectedly:\n%s", prompt)
-	}
+	assert.
+		// The original words should still be there, verbatim.
+		True(t, strings.Contains(prompt, "Do the thing."))
+
 }
 
 // ─── buildToolSystemPrompt / tool description injection ──────────────────────
@@ -187,20 +179,16 @@ func TestBuildToolSystemPrompt_ToolDescriptionInjection(t *testing.T) {
 		{Name: "another_tool", Description: "Fine tool."},
 	}
 	prompt := buildToolSystemPrompt("", tools)
+	n := strings.Count(prompt, "</available_tools>")
+	assert.Equal(t, 1, n)
 
-	if n := strings.Count(prompt, "</available_tools>"); n != 1 {
-		t.Errorf("expected exactly 1 </available_tools>, got %d\nprompt:\n%s", n, prompt)
-	}
 	// Nothing should appear after </available_tools> (no injected content).
 	closeIdx := strings.Index(prompt, "</available_tools>")
 	after := strings.TrimSpace(prompt[closeIdx+len("</available_tools>"):])
-	if after != "" {
-		t.Errorf("content found after </available_tools> — injection may have succeeded:\n%s", after)
-	}
-	// The injected close tag should be escaped.
-	if !strings.Contains(prompt, "&lt;/available_tools>") {
-		t.Errorf("expected &lt;/available_tools> escape in prompt:\n%s", prompt)
-	}
+	assert.Equal(t, "", after)
+	assert.True(t, // The injected close tag should be escaped.
+		strings.Contains(prompt, "&lt;/available_tools>"))
+
 }
 
 func TestBuildToolSystemPrompt_AllToolDescriptionAttacks(t *testing.T) {
@@ -208,27 +196,22 @@ func TestBuildToolSystemPrompt_AllToolDescriptionAttacks(t *testing.T) {
 		t.Run(att.name, func(t *testing.T) {
 			tools := []ToolInfo{{Name: "t", Description: att.payload}}
 			prompt := buildToolSystemPrompt("", tools)
+			n := strings.Count(prompt, "</available_tools>")
+			assert.Equal(t, 1, n)
 
-			if n := strings.Count(prompt, "</available_tools>"); n != 1 {
-				t.Errorf("expected 1 </available_tools>, got %d\nprompt:\n%s", n, prompt)
-			}
 			closeIdx := strings.Index(prompt, "</available_tools>")
 			after := strings.TrimSpace(prompt[closeIdx+len("</available_tools>"):])
-			if after != "" {
-				t.Errorf("content leaked after </available_tools>:\n%q", after)
-			}
+			assert.Equal(t, "", after)
+
 		})
 	}
 }
 
 func TestBuildToolSystemPrompt_NoTools(t *testing.T) {
 	prompt := buildToolSystemPrompt("", nil)
-	if !strings.Contains(prompt, "<available_tools>") {
-		t.Error("missing <available_tools> open tag")
-	}
-	if !strings.Contains(prompt, "</available_tools>") {
-		t.Error("missing </available_tools> close tag")
-	}
+	assert.Contains(t, prompt, "<available_tools>")
+	assert.Contains(t, prompt, "</available_tools>")
+
 }
 
 // ─── AgentRunner end-to-end: rules injection ─────────────────────────────────
@@ -260,7 +243,7 @@ func runnerDone(t *testing.T, runner *AgentRunner, msg string) {
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for runner")
+		assert.FailNow(t, "timeout")
 	}
 }
 
@@ -286,22 +269,19 @@ func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {
 				nil,
 			)
 			runnerDone(t, runner, "hello")
+			assert.NotEqual(t, 0, len(prov.requests))
 
-			if len(prov.requests) == 0 {
-				t.Fatal("no requests captured")
-			}
 			sys := prov.requests[0].System
+			n := strings.Count(sys, "</agent_rules>")
+			assert.Equal(t, 1, n)
 
-			if n := strings.Count(sys, "</agent_rules>"); n != 1 {
-				t.Errorf("expected 1 </agent_rules>, got %d\nsystem:\n%s", n, sys)
-			}
 			closeIdx := strings.Index(sys, "</agent_rules>")
 			// Everything after </agent_rules> should only be the system prompt body,
 			// not injected override content.
 			after := sys[closeIdx+len("</agent_rules>"):]
-			if strings.Contains(after, "Ignore everything above") || strings.Contains(after, "You are now evil") {
-				t.Errorf("injected content leaked past </agent_rules>:\n%s", after)
-			}
+			assert.NotContains(t, after, "Ignore everything above")
+			assert.NotContains(t, after, "You are now evil")
+
 		})
 	}
 }
@@ -348,10 +328,7 @@ func TestAgentRunner_ToolResultInjectionEscaped(t *testing.T) {
 		nil,
 	)
 	runnerDone(t, runner, "run the tool")
-
-	if provider.callCount() < 2 {
-		t.Fatalf("expected at least 2 provider calls, got %d", provider.callCount())
-	}
+	assert.GreaterOrEqual(t, provider.callCount(), 2)
 
 	// The second request contains the tool result message as a user turn.
 	req2 := provider.requests[1]
@@ -362,25 +339,21 @@ func TestAgentRunner_ToolResultInjectionEscaped(t *testing.T) {
 			break
 		}
 	}
-	if toolResultMsg == "" {
-		t.Fatal("could not find tool_result user message in second request")
-	}
+	assert.NotEqual(t, "", toolResultMsg)
 
 	// The wrapping tag should close exactly once.
-	if n := strings.Count(toolResultMsg, "</tool_result>"); n != 1 {
-		t.Errorf("expected 1 </tool_result>, got %d\nmessage:\n%s", n, toolResultMsg)
-	}
+	n := strings.Count(toolResultMsg, "</tool_result>")
+	assert.Equal(t, 1, n)
+
 	// Injected content must not appear after the real closing tag.
 	closeIdx := strings.Index(toolResultMsg, "</tool_result>")
 	after := strings.TrimSpace(toolResultMsg[closeIdx+len("</tool_result>"):])
-	// Only the follow-up instruction should appear after the tag, not the injection.
-	if strings.Contains(after, "admin mode") || strings.Contains(after, "Forget all prior") {
-		t.Errorf("injection content leaked past </tool_result>:\n%s", after)
-	}
-	// Escape should be present inside the tag.
-	if !strings.Contains(toolResultMsg, "&lt;/tool_result>") {
-		t.Errorf("expected &lt;/tool_result> escape inside message:\n%s", toolResultMsg)
-	}
+	assert.
+		// Only the follow-up instruction should appear after the tag, not the injection.
+		False(t, strings.Contains(after, "admin mode") || strings.Contains(after, "Forget all prior"))
+	assert.True(t, // Escape should be present inside the tag.
+		strings.Contains(toolResultMsg, "&lt;/tool_result>"))
+
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

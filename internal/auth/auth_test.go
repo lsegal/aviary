@@ -16,19 +16,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestErrNotFoundAndIsNotFound(t *testing.T) {
 	err := &ErrNotFound{Key: "k1"}
-	if err.Error() != `credential "k1" not found` {
-		t.Fatalf("unexpected error string: %s", err.Error())
-	}
-	if !IsNotFound(err) {
-		t.Fatal("IsNotFound should return true for ErrNotFound")
-	}
-	if IsNotFound(errors.New("other")) {
-		t.Fatal("IsNotFound should return false for non-ErrNotFound")
-	}
+	assert.Equal(t, `credential "k1" not found`, err.Error())
+	assert.True(t, IsNotFound(err))
+	assert.False(t, IsNotFound(errors.New("other")))
+
 }
 
 type mockStore struct {
@@ -65,147 +62,119 @@ func TestResolve(t *testing.T) {
 	store := &mockStore{data: map[string]string{"anthropic:default": "sk-abc"}}
 
 	got, err := Resolve(store, "literal-token")
-	if err != nil || got != "literal-token" {
-		t.Fatalf("resolve literal got %q err %v", got, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "literal-token", got)
 
 	got, err = Resolve(store, "auth:anthropic:default")
-	if err != nil || got != "sk-abc" {
-		t.Fatalf("resolve ref got %q err %v", got, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "sk-abc", got)
 
 	_, err = Resolve(store, "auth:")
-	if err == nil {
-		t.Fatal("expected invalid auth ref error")
-	}
+	assert.Error(t, err)
 
 	_, err = Resolve(store, "auth:missing:key")
-	if err == nil {
-		t.Fatal("expected missing key error")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestParseRef(t *testing.T) {
 	provider, name, ok := ParseRef("auth:anthropic:default")
-	if !ok || provider != "anthropic" || name != "default" {
-		t.Fatalf("unexpected parse: %q %q %v", provider, name, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "anthropic", provider)
+	assert.Equal(t, "default", name)
 
 	provider, name, ok = ParseRef("auth:openai")
-	if !ok || provider != "openai" || name != "" {
-		t.Fatalf("unexpected parse short: %q %q %v", provider, name, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "openai", provider)
+	assert.Equal(t, "", name)
 
 	provider, name, ok = ParseRef("literal")
-	if ok || provider != "" || name != "" {
-		t.Fatalf("unexpected non-auth parse: %q %q %v", provider, name, ok)
-	}
+	assert.False(t, ok)
+	assert.Equal(t, "", provider)
+	assert.Equal(t, "", name)
+
 }
 
 func TestFileStoreCRUDAndReload(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	s, err := NewFileStore(path)
-	if err != nil {
-		t.Fatalf("new filestore: %v", err)
-	}
+	assert.NoError(t, err)
+	err = s.Set("a", "1")
+	assert.NoError(t, err)
 
-	if err := s.Set("a", "1"); err != nil {
-		t.Fatalf("set a: %v", err)
-	}
-	if err := s.Set("b", "2"); err != nil {
-		t.Fatalf("set b: %v", err)
-	}
+	err = s.Set("b", "2")
+	assert.NoError(t, err)
 
 	v, err := s.Get("a")
-	if err != nil || v != "1" {
-		t.Fatalf("get a got %q err %v", v, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "1", v)
 
 	keys, err := s.List()
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if !reflect.DeepEqual(keys, []string{"a", "b"}) {
-		t.Fatalf("keys = %v", keys)
-	}
+	assert.NoError(t, err)
+	assert.True(t, reflect.DeepEqual(keys, []string{"a", "b"}))
+	err = s.Delete("a")
+	assert.NoError(t, err)
 
-	if err := s.Delete("a"); err != nil {
-		t.Fatalf("delete a: %v", err)
-	}
-	if _, err := s.Get("a"); !IsNotFound(err) {
-		t.Fatalf("expected not found after delete, got %v", err)
-	}
-	if err := s.Delete("a"); !IsNotFound(err) {
-		t.Fatalf("expected delete missing not found, got %v", err)
-	}
+	_, err = s.Get("a")
+	assert.True(t, IsNotFound(err))
+
+	err = s.Delete("a")
+	assert.True(t, IsNotFound(err))
 
 	s2, err := NewFileStore(path)
-	if err != nil {
-		t.Fatalf("new filestore #2: %v", err)
-	}
+	assert.NoError(t, err)
+
 	v, err = s2.Get("b")
-	if err != nil || v != "2" {
-		t.Fatalf("reloaded get b got %q err %v", v, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "2", v)
+
 }
 
 func TestGeneratePKCE(t *testing.T) {
 	p, err := GeneratePKCE()
-	if err != nil {
-		t.Fatalf("GeneratePKCE: %v", err)
-	}
-	if p.Verifier == "" {
-		t.Fatal("Verifier is empty")
-	}
-	if p.Challenge == "" {
-		t.Fatal("Challenge is empty")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", p.Verifier)
+	assert.NotEqual(t, "", p.Challenge)
+
 	// Two calls should produce different values.
 	p2, err := GeneratePKCE()
-	if err != nil {
-		t.Fatalf("GeneratePKCE #2: %v", err)
-	}
-	if p.Verifier == p2.Verifier {
-		t.Error("expected different verifiers from two calls")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, p2.Verifier, p.Verifier)
+
 }
 
 func TestGeneratePKCE_ChallengeIsSHA256(t *testing.T) {
 	p, err := GeneratePKCE()
-	if err != nil {
-		t.Fatalf("GeneratePKCE: %v", err)
-	}
+	assert.NoError(t, err)
+
 	// Verify challenge = base64url(sha256(verifier))
 	sum := sha256.Sum256([]byte(p.Verifier))
 	want := base64.RawURLEncoding.EncodeToString(sum[:])
-	if p.Challenge != want {
-		t.Errorf("challenge mismatch: got %q want %q", p.Challenge, want)
-	}
+	assert.Equal(t, want, p.Challenge)
+
 }
 
 func TestOAuthToken_IsExpired(t *testing.T) {
 	t.Run("expired", func(t *testing.T) {
-		tok := &OAuthToken{ExpiresAt: 1000} // long past
-		if !tok.IsExpired() {
-			t.Error("expected expired token to be IsExpired=true")
-		}
+		tok := &OAuthToken{ExpiresAt: 1000}
+		assert. // long past
+			True(t, tok.IsExpired())
+
 	})
 
 	t.Run("valid future", func(t *testing.T) {
 		far := time.Now().Add(10 * time.Minute).UnixMilli()
 		tok := &OAuthToken{ExpiresAt: far}
-		if tok.IsExpired() {
-			t.Error("expected future token to be IsExpired=false")
-		}
+		assert.False(t, tok.IsExpired())
+
 	})
 
 	t.Run("within 30s buffer", func(t *testing.T) {
 		// Expires in 15 seconds — within the 30s buffer, so should be expired.
 		soon := time.Now().Add(15 * time.Second).UnixMilli()
 		tok := &OAuthToken{ExpiresAt: soon}
-		if !tok.IsExpired() {
-			t.Error("expected token expiring within buffer to be IsExpired=true")
-		}
+		assert.True(t, tok.IsExpired())
+
 	})
 }
 
@@ -214,43 +183,30 @@ func TestStorePendingPKCE_LoadPendingPKCE(t *testing.T) {
 	StorePendingPKCE("testprovider", p)
 
 	got, ok := LoadPendingPKCE("testprovider")
-	if !ok {
-		t.Fatal("expected LoadPendingPKCE to return true")
-	}
-	if got.Verifier != p.Verifier || got.Challenge != p.Challenge {
-		t.Errorf("loaded PKCE mismatch: got %+v want %+v", got, p)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, p.Verifier, got.Verifier)
+	assert.Equal(t, p.Challenge, got.Challenge)
 
 	// Load again should return false (removed after first load).
 	_, ok2 := LoadPendingPKCE("testprovider")
-	if ok2 {
-		t.Error("expected second LoadPendingPKCE to return false")
-	}
+	assert.False(t, ok2)
+
 }
 
 func TestStorePendingPKCE_MissingKey(t *testing.T) {
 	_, ok := LoadPendingPKCE("nonexistent-provider-xyz")
-	if ok {
-		t.Error("expected missing provider to return ok=false")
-	}
+	assert.False(t, ok)
+
 }
 
 func TestAnthropicBuildAuthorizeURL(t *testing.T) {
 	p := PKCEParams{Verifier: "test-verifier", Challenge: "test-challenge"}
 	u := AnthropicBuildAuthorizeURL(p, "")
+	assert.True(t, strings.Contains(u, "client_id="))
+	assert.True(t, strings.Contains(u, "code_challenge=test-challenge"))
+	assert.True(t, strings.Contains(u, "response_type=code"))
+	assert.True(t, strings.Contains(u, "claude.ai"))
 
-	if !strings.Contains(u, "client_id=") {
-		t.Errorf("expected client_id in URL: %s", u)
-	}
-	if !strings.Contains(u, "code_challenge=test-challenge") {
-		t.Errorf("expected code_challenge in URL: %s", u)
-	}
-	if !strings.Contains(u, "response_type=code") {
-		t.Errorf("expected response_type in URL: %s", u)
-	}
-	if !strings.Contains(u, "claude.ai") {
-		t.Errorf("expected claude.ai in URL: %s", u)
-	}
 }
 
 // patchDefaultClient temporarily replaces http.DefaultClient with a client
@@ -296,18 +252,11 @@ func TestAnthropicExchange_MockServer(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := AnthropicExchange(context.Background(), "mycode", "myverifier")
-	if err != nil {
-		t.Fatalf("AnthropicExchange: %v", err)
-	}
-	if tok.AccessToken != "acc-tok-123" {
-		t.Errorf("access token = %q; want acc-tok-123", tok.AccessToken)
-	}
-	if tok.RefreshToken != "ref-tok-456" {
-		t.Errorf("refresh token = %q; want ref-tok-456", tok.RefreshToken)
-	}
-	if tok.ExpiresAt == 0 {
-		t.Error("expected non-zero ExpiresAt")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "acc-tok-123", tok.AccessToken)
+	assert.Equal(t, "ref-tok-456", tok.RefreshToken)
+	assert.NotEqual(t, 0, tok.ExpiresAt)
+
 }
 
 func TestAnthropicExchange_WithCodeHashState(t *testing.T) {
@@ -325,15 +274,10 @@ func TestAnthropicExchange_WithCodeHashState(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := AnthropicExchange(context.Background(), "MYCODE#MYSTATE", "verifier")
-	if err != nil {
-		t.Fatalf("AnthropicExchange: %v", err)
-	}
-	if !strings.Contains(tok.AccessToken, "code=MYCODE") {
-		t.Errorf("expected code split correctly, got: %q", tok.AccessToken)
-	}
-	if !strings.Contains(tok.AccessToken, "state=MYSTATE") {
-		t.Errorf("expected state split correctly, got: %q", tok.AccessToken)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(tok.AccessToken, "code=MYCODE"))
+	assert.True(t, strings.Contains(tok.AccessToken, "state=MYSTATE"))
+
 }
 
 func TestAnthropicExchange_HTTPError(t *testing.T) {
@@ -344,9 +288,8 @@ func TestAnthropicExchange_HTTPError(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	_, err := AnthropicExchange(context.Background(), "code", "verifier")
-	if err == nil {
-		t.Fatal("expected error for HTTP 401")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestAnthropicRefresh_MockServer(t *testing.T) {
@@ -368,12 +311,9 @@ func TestAnthropicRefresh_MockServer(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := AnthropicRefresh(context.Background(), "old-refresh-token")
-	if err != nil {
-		t.Fatalf("AnthropicRefresh: %v", err)
-	}
-	if tok.AccessToken != "new-acc-tok" {
-		t.Errorf("access token = %q; want new-acc-tok", tok.AccessToken)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "new-acc-tok", tok.AccessToken)
+
 }
 
 func TestGeminiRefresh_MockServer(t *testing.T) {
@@ -389,16 +329,11 @@ func TestGeminiRefresh_MockServer(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := GeminiRefresh(context.Background(), "old-gemini-refresh")
-	if err != nil {
-		t.Fatalf("GeminiRefresh: %v", err)
-	}
-	if tok.AccessToken != "gemini-new-tok" {
-		t.Errorf("access token = %q; want gemini-new-tok", tok.AccessToken)
-	}
-	// Should reuse old refresh token when none returned.
-	if tok.RefreshToken != "old-gemini-refresh" {
-		t.Errorf("refresh token should be reused, got %q", tok.RefreshToken)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "gemini-new-tok", tok.AccessToken)
+	assert.Equal(t, // Should reuse old refresh token when none returned.
+		"old-gemini-refresh", tok.RefreshToken)
+
 }
 
 func TestGeminiRefresh_HTTPError(t *testing.T) {
@@ -409,9 +344,8 @@ func TestGeminiRefresh_HTTPError(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	_, err := GeminiRefresh(context.Background(), "bad-token")
-	if err == nil {
-		t.Fatal("expected error for HTTP 401")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestOpenAIExchange_MockServer(t *testing.T) {
@@ -427,12 +361,9 @@ func TestOpenAIExchange_MockServer(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := openAIExchange(context.Background(), "code123", "verifier456", "http://localhost:1455")
-	if err != nil {
-		t.Fatalf("openAIExchange: %v", err)
-	}
-	if tok.AccessToken != "openai-access-tok" {
-		t.Errorf("access token = %q; want openai-access-tok", tok.AccessToken)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "openai-access-tok", tok.AccessToken)
+
 }
 
 func TestOpenAIExchange_HTTPError(t *testing.T) {
@@ -443,9 +374,8 @@ func TestOpenAIExchange_HTTPError(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	_, err := openAIExchange(context.Background(), "code", "verifier", "http://localhost:1455")
-	if err == nil {
-		t.Fatal("expected error for HTTP 400")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestKeychainStore_CRUD(t *testing.T) {
@@ -459,67 +389,53 @@ func TestKeychainStore_CRUD(t *testing.T) {
 	t.Cleanup(func() { _ = s.Delete("test-aviary-key") })
 
 	val, err := s.Get("test-aviary-key")
-	if err != nil {
-		t.Fatalf("Get after Set: %v", err)
-	}
-	if val != "test-value" {
-		t.Errorf("Get = %q; want %q", val, "test-value")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "test-value", val)
 
 	keys, err := s.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
+	assert.NoError(t, err)
+
 	found := false
 	for _, k := range keys {
 		if k == "test-aviary-key" {
 			found = true
 		}
 	}
-	if !found {
-		t.Errorf("expected key in List, got %v", keys)
-	}
+	assert.True(t, found)
+	err = s.Delete("test-aviary-key")
+	assert.NoError(t, err)
 
-	if err := s.Delete("test-aviary-key"); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if _, err := s.Get("test-aviary-key"); !IsNotFound(err) {
-		t.Errorf("expected not found after delete, got %v", err)
-	}
+	_, err = s.Get("test-aviary-key")
+	assert.True(t, IsNotFound(err))
+
 }
 
 func TestKeychainStore_GetNotFound(t *testing.T) {
 	s := NewKeychainStore()
 	_, err := s.Get("nonexistent-aviary-key-xyz")
-	if err == nil {
-		t.Fatal("expected error for nonexistent key")
-	}
-	if !IsNotFound(err) {
-		t.Errorf("expected IsNotFound error, got %T: %v", err, err)
-	}
+	assert.Error(t, err)
+	assert.True(t, IsNotFound(err))
+
 }
 
 func TestKeychainStore_ListEmpty(t *testing.T) {
 	s := NewKeychainStore()
 	keys, err := s.List()
-	if err != nil {
-		t.Fatalf("List on empty store: %v", err)
-	}
-	if len(keys) != 0 {
-		t.Errorf("expected empty list, got %v", keys)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(keys))
+
 }
 
 func TestFileStore_CorruptedJSON(t *testing.T) {
 	path := fmt.Sprintf("%s/corrupted.json", t.TempDir())
+
 	// Write invalid JSON.
-	if err := writeFileContent(path, "{not valid json}"); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewFileStore(path)
-	if err == nil {
-		t.Fatal("expected error loading corrupted JSON")
-	}
+	err := writeFileContent(path, "{not valid json}")
+	assert.NoError(t, err)
+
+	_, err = NewFileStore(path)
+	assert.Error(t, err)
+
 }
 
 func writeFileContent(path, content string) error {
@@ -542,26 +458,24 @@ func TestSplitOnce(t *testing.T) {
 	}
 	for _, tc := range tests {
 		a, b, ok := splitOnce(tc.s, tc.sep)
-		if a != tc.wantA || b != tc.wantB || ok != tc.wantOK {
-			t.Errorf("splitOnce(%q, %q) = (%q, %q, %v); want (%q, %q, %v)",
-				tc.s, string(tc.sep), a, b, ok, tc.wantA, tc.wantB, tc.wantOK)
-		}
+		assert.Equal(t, tc.wantA, a)
+		assert.Equal(t, tc.wantB, b)
+		assert.Equal(t, tc.wantOK, ok)
+
 	}
 }
 
 func TestIntegration_FileStoreResolve(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	s, err := NewFileStore(path)
-	if err != nil {
-		t.Fatalf("new filestore: %v", err)
-	}
-	if err := s.Set("openai:default", "sk-test"); err != nil {
-		t.Fatalf("set: %v", err)
-	}
+	assert.NoError(t, err)
+	err = s.Set("openai:default", "sk-test")
+	assert.NoError(t, err)
+
 	got, err := Resolve(s, "auth:openai:default")
-	if err != nil || got != "sk-test" {
-		t.Fatalf("resolve got %q err %v", got, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "sk-test", got)
+
 }
 
 func TestGeminiExchange_MockServer(t *testing.T) {
@@ -577,18 +491,11 @@ func TestGeminiExchange_MockServer(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	tok, err := geminiExchange(context.Background(), "code123", "verifier456", "http://localhost:45289/callback")
-	if err != nil {
-		t.Fatalf("geminiExchange: %v", err)
-	}
-	if tok.AccessToken != "gemini-access-tok" {
-		t.Errorf("access token = %q; want gemini-access-tok", tok.AccessToken)
-	}
-	if tok.RefreshToken != "gemini-refresh-tok" {
-		t.Errorf("refresh token = %q; want gemini-refresh-tok", tok.RefreshToken)
-	}
-	if tok.ExpiresAt == 0 {
-		t.Error("expected non-zero ExpiresAt")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "gemini-access-tok", tok.AccessToken)
+	assert.Equal(t, "gemini-refresh-tok", tok.RefreshToken)
+	assert.NotEqual(t, 0, tok.ExpiresAt)
+
 }
 
 func TestGeminiExchange_HTTPError(t *testing.T) {
@@ -599,9 +506,8 @@ func TestGeminiExchange_HTTPError(t *testing.T) {
 	patchDefaultClient(t, srv)
 
 	_, err := geminiExchange(context.Background(), "code", "verifier", "http://localhost:45289/callback")
-	if err == nil {
-		t.Fatal("expected error for HTTP 403")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestOpenAILogin_PortInUse(t *testing.T) {
@@ -616,9 +522,8 @@ func TestOpenAILogin_PortInUse(t *testing.T) {
 	defer cancel()
 
 	_, err = OpenAILogin(ctx)
-	if err == nil {
-		t.Fatal("expected error when callback port is busy")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestGeminiLogin_PortInUse(t *testing.T) {
@@ -633,7 +538,6 @@ func TestGeminiLogin_PortInUse(t *testing.T) {
 	defer cancel()
 
 	_, err = GeminiLogin(ctx)
-	if err == nil {
-		t.Fatal("expected error when callback port is busy")
-	}
+	assert.Error(t, err)
+
 }

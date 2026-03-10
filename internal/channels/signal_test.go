@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/lsegal/aviary/internal/config"
 )
 
@@ -33,9 +35,8 @@ type fakeDaemon struct {
 func newFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoError(t, err)
+
 	fd := &fakeDaemon{
 		listener: ln,
 		stopCh:   make(chan struct{}),
@@ -166,13 +167,15 @@ func startChannel(ch *SignalChannel) (context.CancelFunc, <-chan error) {
 // waitMsg waits up to timeout for a message, or fails the test.
 func waitMsg(t *testing.T, msgs <-chan IncomingMessage, timeout time.Duration) IncomingMessage {
 	t.Helper()
+	var msg IncomingMessage
+	var ok bool
 	select {
-	case m := <-msgs:
-		return m
+	case msg = <-msgs:
+		ok = true
 	case <-time.After(timeout):
-		t.Fatal("timed out waiting for message")
-		return IncomingMessage{}
 	}
+	assert.True(t, ok)
+	return msg
 }
 
 // waitMsgTimeout waits up to timeout for a message, returning (msg, true) or
@@ -190,16 +193,18 @@ func waitMsgTimeout(msgs <-chan IncomingMessage, timeout time.Duration) (Incomin
 func waitConnected(t *testing.T, fd *fakeDaemon, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
+	connected := false
 	for time.Now().Before(deadline) {
 		fd.mu.Lock()
 		n := len(fd.conns)
 		fd.mu.Unlock()
 		if n > 0 {
-			return
+			connected = true
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("timed out waiting for TCP connection")
+	assert.True(t, connected)
 }
 
 // ── dispatch tests ────────────────────────────────────────────────────────────
@@ -213,15 +218,10 @@ func TestDispatch_ValidReceive(t *testing.T) {
 	ch.dispatch([]byte(line))
 
 	msg := waitMsg(t, msgs, time.Second)
-	if msg.From != "+15550001111" {
-		t.Errorf("From = %q, want +15550001111", msg.From)
-	}
-	if msg.Text != "hello" {
-		t.Errorf("Text = %q, want hello", msg.Text)
-	}
-	if msg.Channel != "+15550001111" {
-		t.Errorf("Channel = %q, want +15550001111", msg.Channel)
-	}
+	assert.Equal(t, "+15550001111", msg.From)
+	assert.Equal(t, "hello", msg.Text)
+	assert.Equal(t, "+15550001111", msg.Channel)
+
 }
 
 func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
@@ -230,9 +230,8 @@ func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
 	ch.dispatch([]byte(`{"jsonrpc":"2.0","method":"syncMessage","params":{}}`))
-	if called {
-		t.Error("handler called for non-receive method")
-	}
+	assert.False(t, called)
+
 }
 
 func TestDispatch_EmptyMessageIgnored(t *testing.T) {
@@ -242,9 +241,8 @@ func TestDispatch_EmptyMessageIgnored(t *testing.T) {
 
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":""}}}}`
 	ch.dispatch([]byte(line))
-	if called {
-		t.Error("handler called for empty message")
-	}
+	assert.False(t, called)
+
 }
 
 func TestDispatch_NilDataMessageIgnored(t *testing.T) {
@@ -254,18 +252,16 @@ func TestDispatch_NilDataMessageIgnored(t *testing.T) {
 
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1"}}}`
 	ch.dispatch([]byte(line))
-	if called {
-		t.Error("handler called when dataMessage is absent")
-	}
+	assert.False(t, called)
+
 }
 
 func TestFormatSignalMarkup(t *testing.T) {
 	in := "# Title\n**bold** and *italic* and ~~gone~~ and [link](https://example.com)\n```json\n{\"ok\":true}\n```"
 	got := formatSignalMarkup(in)
 	want := "Title\n*bold* and _italic_ and ~gone~ and link (https://example.com)\n`{\"ok\":true}`"
-	if got != want {
-		t.Fatalf("formatSignalMarkup() = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, got)
+
 }
 
 func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
@@ -276,24 +272,21 @@ func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
 	ch.addrMu.Lock()
 	ch.addr = fd.Addr()
 	ch.addrMu.Unlock()
-
-	if err := ch.Send("+15550001111", "**bold** and *italic*"); err != nil {
-		t.Fatalf("Send() error = %v", err)
-	}
+	err := ch.Send("+15550001111", "**bold** and *italic*")
+	assert.NoError(t, err)
 
 	deadline := time.Now().Add(time.Second)
+	got := ""
 	for time.Now().Before(deadline) {
 		reqs := fd.SentRequests()
 		if len(reqs) == 1 {
 			params, _ := reqs[0]["params"].(map[string]any)
-			if got, _ := params["message"].(string); got != "*bold* and _italic_" {
-				t.Fatalf("formatted message = %q, want %q", got, "*bold* and _italic_")
-			}
-			return
+			got, _ = params["message"].(string)
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("timed out waiting for send request")
+	assert.Equal(t, "*bold* and _italic_", got)
 }
 
 func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
@@ -304,24 +297,21 @@ func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
 	ch.addrMu.Lock()
 	ch.addr = fd.Addr()
 	ch.addrMu.Unlock()
-
-	if err := ch.SendMedia("+15550001111", "__bold__ ~~gone~~", "/tmp/img.png"); err != nil {
-		t.Fatalf("SendMedia() error = %v", err)
-	}
+	err := ch.SendMedia("+15550001111", "__bold__ ~~gone~~", "/tmp/img.png")
+	assert.NoError(t, err)
 
 	deadline := time.Now().Add(time.Second)
+	got := ""
 	for time.Now().Before(deadline) {
 		reqs := fd.SentRequests()
 		if len(reqs) == 1 {
 			params, _ := reqs[0]["params"].(map[string]any)
-			if got, _ := params["message"].(string); got != "*bold* ~gone~" {
-				t.Fatalf("formatted caption = %q, want %q", got, "*bold* ~gone~")
-			}
-			return
+			got, _ = params["message"].(string)
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("timed out waiting for media send request")
+	assert.Equal(t, "*bold* ~gone~", got)
 }
 
 func TestDispatch_MalformedJSON(t *testing.T) {
@@ -330,9 +320,8 @@ func TestDispatch_MalformedJSON(t *testing.T) {
 	ch.OnMessage(func(_ IncomingMessage) { called = true })
 
 	ch.dispatch([]byte(`{not valid json`))
-	if called {
-		t.Error("handler called for malformed JSON")
-	}
+	assert.False(t, called)
+
 }
 
 func TestDispatch_NoHandlerRegistered(_ *testing.T) {
@@ -357,16 +346,15 @@ func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {
 	// Message that @mentions the bot via the mentions array → should be received.
 	withMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"},"mentions":[{"number":"` + botPhone + `","uuid":"","start":0,"length":3}]}}}}`
 	ch.dispatch([]byte(withMention))
-	if _, ok := waitMsgTimeout(msgs, 200*time.Millisecond); !ok {
-		t.Error("expected message to be received when bot is @mentioned")
-	}
+	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
 
 	// Message without mention → should be blocked.
 	noMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"}}}}}`
 	ch.dispatch([]byte(noMention))
-	if _, ok := waitMsgTimeout(msgs, 50*time.Millisecond); ok {
-		t.Error("expected message to be blocked when bot is not @mentioned")
-	}
+	_, ok = waitMsgTimeout(msgs, 50*time.Millisecond)
+	assert.False(t, ok)
+
 }
 
 // ── checkAllowed tests ────────────────────────────────────────────────────────
@@ -388,9 +376,8 @@ func TestCheckAllowed_DirectMessages(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			result := checkAllowed(tc.allowFrom, tc.from, tc.from, "", false, "", false)
-			if result.allowed != tc.want {
-				t.Errorf("checkAllowed allowed=%v, want %v", result.allowed, tc.want)
-			}
+			assert.Equal(t, tc.want, result.allowed)
+
 		})
 	}
 }
@@ -459,9 +446,8 @@ func TestCheckAllowed_GroupMessages(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			result := checkAllowed(tc.allowFrom, tc.from, groupID, tc.text, true, "", false)
-			if result.allowed != tc.want {
-				t.Errorf("checkAllowed allowed=%v, want %v", result.allowed, tc.want)
-			}
+			assert.Equal(t, tc.want, result.allowed)
+
 		})
 	}
 }
@@ -469,12 +455,9 @@ func TestCheckAllowed_GroupMessages(t *testing.T) {
 func TestCheckAllowed_SpaceTrimming(t *testing.T) {
 	// Comma-separated IDs with spaces should behave identically to without spaces.
 	entries := []config.AllowFromEntry{{From: "+15551111111 , +15552222222"}}
-	if !checkAllowed(entries, "+15552222222", "+15552222222", "", false, "", false).allowed {
-		t.Error("space-trimmed comma list: +15552222222 should be allowed")
-	}
-	if checkAllowed(entries, "+15559999999", "+15559999999", "", false, "", false).allowed {
-		t.Error("space-trimmed comma list: +15559999999 should not be allowed")
-	}
+	assert.True(t, checkAllowed(entries, "+15552222222", "+15552222222", "", false, "", false).allowed)
+	assert.False(t, checkAllowed(entries, "+15559999999", "+15559999999", "", false, "", false).allowed)
+
 }
 
 // ── DaemonInfo tests ──────────────────────────────────────────────────────────
@@ -482,25 +465,18 @@ func TestCheckAllowed_SpaceTrimming(t *testing.T) {
 func TestDaemonInfo_ExternalMode(t *testing.T) {
 	ch := NewSignalChannel("+1", "127.0.0.1:7583", nil, true, true, true, true, "test", nil)
 	info := ch.DaemonInfo()
-	if info == nil {
-		t.Fatal("DaemonInfo returned nil for external mode")
-	}
-	if info.Addr != "127.0.0.1:7583" {
-		t.Errorf("Addr = %q, want 127.0.0.1:7583", info.Addr)
-	}
-	if !info.External {
-		t.Error("External should be true for external mode")
-	}
-	if info.PID != 0 {
-		t.Errorf("PID = %d, want 0 for external mode", info.PID)
-	}
+	assert.NotNil(t, info)
+	assert.Equal(t, "127.0.0.1:7583", info.Addr)
+	assert.True(t, info.External)
+	assert.Equal(t, 0, info.PID)
+
 }
 
 func TestDaemonInfo_ManagedMode_NotRunning(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, true, true, true, true, "test", nil)
-	if info := ch.DaemonInfo(); info != nil {
-		t.Errorf("DaemonInfo = %+v, want nil when daemon not running", info)
-	}
+	info := ch.DaemonInfo()
+	assert.Nil(t, info)
+
 }
 
 func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
@@ -514,18 +490,11 @@ func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	info := ch.DaemonInfo()
-	if info == nil {
-		t.Fatal("DaemonInfo returned nil for running managed daemon")
-	}
-	if info.PID != 1234 {
-		t.Errorf("PID = %d, want 1234", info.PID)
-	}
-	if info.Addr != "127.0.0.1:9999" {
-		t.Errorf("Addr = %q, want 127.0.0.1:9999", info.Addr)
-	}
-	if info.External {
-		t.Error("External should be false for managed mode")
-	}
+	assert.NotNil(t, info)
+	assert.Equal(t, 1234, info.PID)
+	assert.Equal(t, "127.0.0.1:9999", info.Addr)
+	assert.False(t, info.External)
+
 }
 
 // ── Send tests (HTTP POST) ────────────────────────────────────────────────────
@@ -535,39 +504,31 @@ func TestSend_PostsJSONRPCOverTCP(t *testing.T) {
 	defer fd.Close()
 
 	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
-	if err := ch.Send("+15550001111", "test message"); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
+	err := ch.Send("+15550001111", "test message")
+	assert.NoError(t, err)
 
 	reqs := fd.SentRequests()
-	if len(reqs) != 1 {
-		t.Fatalf("got %d RPC requests, want 1", len(reqs))
-	}
+	assert.Equal(t, 1, len(reqs))
+
 	req := reqs[0]
-	if req["method"] != "send" {
-		t.Errorf("method = %q, want send", req["method"])
-	}
-	if req["jsonrpc"] != "2.0" {
-		t.Errorf("jsonrpc = %q, want 2.0", req["jsonrpc"])
-	}
+	assert.Equal(t, "send", req["method"])
+	assert.Equal(t, "2.0", req["jsonrpc"])
+
 	params, _ := req["params"].(map[string]interface{})
-	if params == nil {
-		t.Fatal("params missing")
-	}
+	assert.NotNil(t, params)
+
 	recipients, _ := params["recipient"].([]interface{})
-	if len(recipients) != 1 || recipients[0] != "+15550001111" {
-		t.Errorf("recipient = %v, want [\"+15550001111\"]", recipients)
-	}
-	if params["message"] != "test message" {
-		t.Errorf("message = %q, want 'test message'", params["message"])
-	}
+	assert.Len(t, recipients, 1)
+	assert.Equal(t, "+15550001111", recipients[0])
+	assert.Equal(t, "test message", params["message"])
+
 }
 
 func TestSend_DaemonNotReady(t *testing.T) {
 	ch := NewSignalChannel("", "", nil, true, true, true, true, "test", nil)
-	if err := ch.Send("+1", "hi"); err == nil {
-		t.Error("expected error when daemon not ready, got nil")
-	}
+	err := ch.Send("+1", "hi")
+	assert.Error(t, err)
+
 }
 
 func TestSend_GroupUsesGroupId(t *testing.T) {
@@ -576,27 +537,20 @@ func TestSend_GroupUsesGroupId(t *testing.T) {
 
 	const groupID = "Z2lkPQ=="
 	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
-	if err := ch.Send(groupID, "hello group"); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
+	err := ch.Send(groupID, "hello group")
+	assert.NoError(t, err)
 
 	reqs := fd.SentRequests()
-	if len(reqs) != 1 {
-		t.Fatalf("got %d RPC requests, want 1", len(reqs))
-	}
+	assert.Equal(t, 1, len(reqs))
+
 	params, _ := reqs[0]["params"].(map[string]interface{})
-	if params == nil {
-		t.Fatal("params missing")
-	}
-	if params["groupId"] != groupID {
-		t.Errorf("groupId = %v, want %q", params["groupId"], groupID)
-	}
-	if _, hasRecipient := params["recipient"]; hasRecipient {
-		t.Error("recipient should not be set for group sends")
-	}
-	if params["message"] != "hello group" {
-		t.Errorf("message = %q, want 'hello group'", params["message"])
-	}
+	assert.NotNil(t, params)
+	assert.Equal(t, groupID, params["groupId"])
+	_, hasRecipient := params["recipient"]
+	assert.False(t, hasRecipient)
+
+	assert.Equal(t, "hello group", params["message"])
+
 }
 
 // ── Start / Stop (external mode, TCP JSON-RPC) ───────────────────────────────
@@ -616,22 +570,16 @@ func TestStart_ExternalMode_ReceivesMessages(t *testing.T) {
 	fd.PushNotification("+15550001111", "hello from signal")
 
 	msg := waitMsg(t, msgs, 2*time.Second)
-	if msg.From != "+15550001111" {
-		t.Errorf("From = %q, want +15550001111", msg.From)
-	}
-	if msg.Text != "hello from signal" {
-		t.Errorf("Text = %q, want 'hello from signal'", msg.Text)
-	}
+	assert.Equal(t, "+15550001111", msg.From)
+	assert.Equal(t, "hello from signal", msg.Text)
 
 	cancel()
+	var stopErr error
 	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Errorf("Start returned error: %v", err)
-		}
+	case stopErr = <-errCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for Start to return")
 	}
+	assert.NoError(t, stopErr)
 }
 
 func TestStart_ExternalMode_FiltersByAllowFrom(t *testing.T) {
@@ -652,15 +600,17 @@ func TestStart_ExternalMode_FiltersByAllowFrom(t *testing.T) {
 	fd.PushNotification("+15550001111", "should pass")
 
 	msg := waitMsg(t, msgs, 2*time.Second)
-	if msg.From != "+15550001111" {
-		t.Errorf("received message from wrong sender: %q", msg.From)
-	}
+	assert.Equal(t, "+15550001111", msg.From)
 
+	var extra IncomingMessage
+	var hasExtra bool
 	select {
-	case extra := <-msgs:
-		t.Errorf("unexpected extra message: %+v", extra)
+	case extra = <-msgs:
+		hasExtra = true
 	default:
 	}
+	_ = extra
+	assert.False(t, hasExtra)
 }
 
 func TestStop_StopsChannel(t *testing.T) {
@@ -674,14 +624,12 @@ func TestStop_StopsChannel(t *testing.T) {
 	waitConnected(t, fd, 2*time.Second)
 	ch.Stop()
 
+	var stopErr error
 	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Errorf("Start returned error after Stop: %v", err)
-		}
+	case stopErr = <-errCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out: Stop did not cause Start to return")
 	}
+	assert.NoError(t, stopErr)
 }
 
 func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
@@ -718,9 +666,8 @@ func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	fd2.PushNotification("+1", "after reconnect")
 
 	msg := waitMsg(t, msgs, 2*time.Second)
-	if msg.Text != "after reconnect" {
-		t.Errorf("Text = %q, want 'after reconnect'", msg.Text)
-	}
+	assert.Equal(t, "after reconnect", msg.Text)
+
 }
 
 func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
@@ -743,8 +690,7 @@ func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
 	for i := range 5 {
 		msg := waitMsg(t, msgs, 2*time.Second)
 		want := fmt.Sprintf("msg%d", i)
-		if msg.Text != want {
-			t.Errorf("msg[%d].Text = %q, want %q", i, msg.Text, want)
-		}
+		assert.Equal(t, want, msg.Text)
+
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestSplitFrom verifies comma-separated ID splitting.
@@ -20,14 +22,14 @@ func TestSplitFrom(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := splitFrom(tc.in)
+		assert.Equal(t, len(tc.want), len(got))
 		if len(got) != len(tc.want) {
-			t.Errorf("splitFrom(%q) = %v; want %v", tc.in, got, tc.want)
 			continue
 		}
+
 		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("splitFrom(%q)[%d] = %q; want %q", tc.in, i, got[i], tc.want[i])
-			}
+			assert.Equal(t, tc.want[i], got[i])
+
 		}
 	}
 }
@@ -52,9 +54,8 @@ func TestMatchesMentionPrefixes(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := matchesMentionPrefixes(tc.text, tc.prefixes)
-		if got != tc.want {
-			t.Errorf("matchesMentionPrefixes(%q, %v) = %v; want %v", tc.text, tc.prefixes, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }
 
@@ -74,18 +75,16 @@ func TestIsDirectMention(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := isDirectMention(tc.text, tc.botUserID)
-		if got != tc.want {
-			t.Errorf("isDirectMention(%q, %q) = %v; want %v", tc.text, tc.botUserID, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }
 
 // TestCheckAllowed_NoEntries verifies that an empty allow-list returns not allowed.
 func TestCheckAllowed_NoEntries(t *testing.T) {
 	result := checkAllowed(nil, "+1", "", "hello", false, "", false)
-	if result.allowed {
-		t.Error("expected not allowed with no entries")
-	}
+	assert.False(t, result.allowed)
+
 }
 
 // TestCheckAllowed_DirectMessage tests DM allow logic.
@@ -96,24 +95,20 @@ func TestCheckAllowed_DirectMessage(t *testing.T) {
 
 	// Matching sender.
 	result := checkAllowed(entries, "+15551234567", "", "hello", false, "", false)
-	if !result.allowed {
-		t.Error("expected allowed for matching DM sender")
-	}
+	assert.True(t, result.allowed)
 
 	// Non-matching sender.
 	result = checkAllowed(entries, "+19990000000", "", "hello", false, "", false)
-	if result.allowed {
-		t.Error("expected not allowed for non-matching DM sender")
-	}
+	assert.False(t, result.allowed)
+
 }
 
 // TestCheckAllowed_Wildcard tests wildcard sender matching.
 func TestCheckAllowed_Wildcard(t *testing.T) {
 	entries := []config.AllowFromEntry{{From: "*"}}
 	result := checkAllowed(entries, "anyone", "", "hello", false, "", false)
-	if !result.allowed {
-		t.Error("expected allowed for wildcard DM")
-	}
+	assert.True(t, result.allowed)
+
 }
 
 // TestCheckAllowed_GroupMessage tests group-chat allow logic.
@@ -124,15 +119,12 @@ func TestCheckAllowed_GroupMessage(t *testing.T) {
 
 	// Correct group, no mention filter.
 	result := checkAllowed(entries, "user1", "group123", "hello", true, "", false)
-	if !result.allowed {
-		t.Error("expected allowed for matching group")
-	}
+	assert.True(t, result.allowed)
 
 	// Wrong group.
 	result = checkAllowed(entries, "user1", "wronggroup", "hello", true, "", false)
-	if result.allowed {
-		t.Error("expected not allowed for wrong group")
-	}
+	assert.False(t, result.allowed)
+
 }
 
 // TestCheckAllowed_MentionPrefixes tests mention filtering in groups.
@@ -143,15 +135,12 @@ func TestCheckAllowed_MentionPrefixes(t *testing.T) {
 
 	// Message starts with prefix.
 	result := checkAllowed(entries, "user1", "groupX", "aviary help me", true, "", false)
-	if !result.allowed {
-		t.Error("expected allowed for matching prefix")
-	}
+	assert.True(t, result.allowed)
 
 	// Message doesn't match prefix.
 	result = checkAllowed(entries, "user1", "groupX", "random text", true, "", false)
-	if result.allowed {
-		t.Error("expected not allowed for non-matching prefix")
-	}
+	assert.False(t, result.allowed)
+
 }
 
 // TestCheckAllowed_RespondToMentions tests @mention handling.
@@ -162,21 +151,16 @@ func TestCheckAllowed_RespondToMentions(t *testing.T) {
 
 	// Platform mention (wasMentioned).
 	result := checkAllowed(entries, "user1", "groupX", "hey there", true, "", true)
-	if !result.allowed {
-		t.Error("expected allowed when wasMentioned=true")
-	}
+	assert.True(t, result.allowed)
 
 	// Bot @mention syntax.
 	result = checkAllowed(entries, "user1", "groupX", "<@BOTID> help", true, "BOTID", false)
-	if !result.allowed {
-		t.Error("expected allowed when message contains @mention")
-	}
+	assert.True(t, result.allowed)
 
 	// Not mentioned.
 	result = checkAllowed(entries, "user1", "groupX", "no mention", true, "BOTID", false)
-	if result.allowed {
-		t.Error("expected not allowed when not mentioned and no prefix match")
-	}
+	assert.False(t, result.allowed)
+
 }
 
 // TestCheckAllowed_RestrictTools verifies tool restriction is passed through.
@@ -185,12 +169,9 @@ func TestCheckAllowed_RestrictTools(t *testing.T) {
 		{From: "+1", RestrictTools: []string{"tool_a", "tool_b"}},
 	}
 	result := checkAllowed(entries, "+1", "", "hello", false, "", false)
-	if !result.allowed {
-		t.Fatal("expected allowed")
-	}
-	if len(result.restrictTools) != 2 {
-		t.Errorf("expected 2 restrict tools, got %d", len(result.restrictTools))
-	}
+	assert.True(t, result.allowed)
+	assert.Equal(t, 2, len(result.restrictTools))
+
 }
 
 // TestMatchesAllowedGroup verifies group matching logic.
@@ -208,8 +189,7 @@ func TestMatchesAllowedGroup(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := matchesAllowedGroup(tc.allowedGroups, tc.channelID)
-		if got != tc.want {
-			t.Errorf("matchesAllowedGroup(%q, %q) = %v; want %v", tc.allowedGroups, tc.channelID, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }

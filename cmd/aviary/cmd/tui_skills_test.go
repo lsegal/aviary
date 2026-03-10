@@ -5,20 +5,21 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfigureSkillsSummary(t *testing.T) {
 	cfg := config.Default()
-	if got := configureSkillsSummary(&cfg); got != "No skills enabled" {
-		t.Fatalf("expected no skills summary, got %q", got)
-	}
+	got := configureSkillsSummary(&cfg)
+	assert.Equal(t, "No skills enabled", got)
 
 	cfg.Skills = map[string]config.SkillConfig{
 		"gogcli": {Enabled: true},
 	}
-	if got := configureSkillsSummary(&cfg); got != "1 skill enabled" {
-		t.Fatalf("expected single skill summary, got %q", got)
-	}
+	got = configureSkillsSummary(&cfg)
+	assert.Equal(t, "1 skill enabled", got)
+
 }
 
 func TestSkillMgrSaveCurrentPersistsConfig(t *testing.T) {
@@ -29,9 +30,7 @@ func TestSkillMgrSaveCurrentPersistsConfig(t *testing.T) {
 	cfgPath := filepath.Join(tmp, "aviary.yaml")
 	m := newSkillMgrModel(&cfg, cfgPath)
 	m.refreshInstalled()
-	if len(m.installed) == 0 {
-		t.Fatal("expected installed skills")
-	}
+	assert.NotEqual(t, 0, len(m.installed))
 
 	m.binary.SetValue("gog")
 	m.allowed.SetValue("gmail, calendar")
@@ -39,21 +38,14 @@ func TestSkillMgrSaveCurrentPersistsConfig(t *testing.T) {
 	m = gotModel.(skillMgrModel)
 
 	sk := m.cfg.Skills["gogcli"]
-	if !sk.Enabled {
-		t.Fatal("expected gogcli enabled")
-	}
-	if sk.Binary != "gog" {
-		t.Fatalf("expected binary gog, got %q", sk.Binary)
-	}
-	if len(sk.AllowedCommands) != 2 || sk.AllowedCommands[0] != "gmail" || sk.AllowedCommands[1] != "calendar" {
-		t.Fatalf("unexpected allowed commands: %#v", sk.AllowedCommands)
-	}
+	assert.True(t, sk.Enabled)
+	assert.Equal(t, "gog", sk.Binary)
+	assert.Len(t, sk.AllowedCommands, 2)
+	assert.Equal(t, "gmail", sk.AllowedCommands[0])
+	assert.Equal(t, "calendar", sk.AllowedCommands[1])
 
 	loaded, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatalf("load saved config: %v", err)
-	}
-	if !loaded.Skills["gogcli"].Enabled {
-		t.Fatal("expected saved gogcli enabled")
-	}
+	assert.NoError(t, err)
+	assert.True(t, loaded.Skills["gogcli"].Enabled)
+
 }

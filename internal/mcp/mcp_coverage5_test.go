@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -23,15 +25,13 @@ func TestReconcileAgents_ConfigLoadError(t *testing.T) {
 
 	// Create the config dir
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
 
 	// Write a CORRUPTED config file (invalid YAML/JSON that can't be parsed)
 	configPath := filepath.Join(configDir, "aviary.yaml")
-	if err := os.WriteFile(configPath, []byte("{ invalid yaml: [unclosed"), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err = os.WriteFile(configPath, []byte("{ invalid yaml: [unclosed"), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	mgr := agent.NewManager(nil)
@@ -50,13 +50,12 @@ func TestSkillsList_ConfigLoadError(t *testing.T) {
 
 	// Create corrupted config file
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
+
 	configPath := filepath.Join(configDir, "aviary.yaml")
-	if err := os.WriteFile(configPath, []byte("{ bad: yaml: ["), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err = os.WriteFile(configPath, []byte("{ bad: yaml: ["), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -78,12 +77,11 @@ func TestAgentGet_ConfigLoadError(t *testing.T) {
 
 	// Create corrupted config
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -104,12 +102,11 @@ func TestAgentAdd_ConfigLoadError(t *testing.T) {
 
 	// Create corrupted config
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -131,12 +128,11 @@ func TestConfigGet_ConfigLoadError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -158,12 +154,11 @@ func TestTaskSchedule_ConfigLoadError(t *testing.T) {
 
 	// Create a corrupted config
 	configDir := filepath.Join(base, "aviary")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600); err != nil {
-		t.Fatalf("write bad config: %v", err)
-	}
+	err := os.MkdirAll(configDir, 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -174,9 +169,8 @@ func TestTaskSchedule_ConfigLoadError(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "x"}}})
 	sched, err := scheduler.New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(sched.Stop)
 	SetDeps(&Deps{Agents: mgr, Scheduler: sched})
 
@@ -198,9 +192,8 @@ func TestCallToolText_ToolNotFound(t *testing.T) {
 	SetDeps(&Deps{Agents: agent.NewManager(nil)})
 
 	c, err := NewInProcessClient(context.Background(), NewServer())
-	if err != nil {
-		t.Fatalf("new in-process client: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer c.Close() //nolint:errcheck
 
 	// Calling a non-existent tool should return an error
@@ -220,9 +213,8 @@ func TestEnsureInProcessDeps_StoreEnsureDirsError(t *testing.T) {
 
 	// Set data dir to a file (not a directory) to cause EnsureDirs to fail
 	tmpFile, err := os.CreateTemp(t.TempDir(), "not-a-dir")
-	if err != nil {
-		t.Fatalf("create temp file: %v", err)
-	}
+	assert.NoError(t, err)
+
 	tmpFile.Close() //nolint:errcheck
 
 	store.SetDataDir(tmpFile.Name())
@@ -253,9 +245,8 @@ func TestAgentRulesSet_Success(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	store.SetDataDir(filepath.Join(base, "aviary"))
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -271,21 +262,14 @@ func TestAgentRulesSet_Success(t *testing.T) {
 		"agent":   "testbot",
 		"content": "# Rules\n- Be helpful",
 	})
-	if err != nil {
-		t.Fatalf("agent_rules_set: %v", err)
-	}
-	if !strings.Contains(out, "written") {
-		t.Fatalf("expected 'written' in response, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "written"))
 
 	// Get the rules back
 	out, err = d.CallTool(context.Background(), "agent_rules_get", map[string]any{"name": "testbot"})
-	if err != nil {
-		t.Fatalf("agent_rules_get after set: %v", err)
-	}
-	if !strings.Contains(out, "helpful") {
-		t.Fatalf("expected 'helpful' in rules, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "helpful"))
+
 }
 
 // ── braveSearch decode error ──────────────────────────────────────────────────
@@ -305,7 +289,6 @@ func TestBraveSearch_DecodeError(t *testing.T) {
 	}
 
 	_, err := braveSearch(context.Background(), "test-key", "query", 5)
-	if err == nil {
-		t.Fatal("expected error for malformed JSON response")
-	}
+	assert.Error(t, err)
+
 }

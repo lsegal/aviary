@@ -19,6 +19,8 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func setupServerDataDir(t *testing.T) {
@@ -26,75 +28,57 @@ func setupServerDataDir(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv("AVIARY_PID_FILE", filepath.Join(base, "aviary.pid"))
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
 }
 
 func TestGenerateLoadTokenFlows(t *testing.T) {
 	setupServerDataDir(t)
 
 	t.Run("load missing", func(t *testing.T) {
-		if _, err := LoadToken(); err == nil {
-			t.Fatal("expected missing token error")
-		}
+		_, err := LoadToken()
+		assert.Error(t, err)
+
 	})
 
 	t.Run("generate and load", func(t *testing.T) {
 		tok, err := GenerateToken()
-		if err != nil {
-			t.Fatalf("generate: %v", err)
-		}
-		if !strings.HasPrefix(tok, tokenPrefix) {
-			t.Fatalf("token prefix mismatch: %s", tok)
-		}
+		assert.NoError(t, err)
+		assert.True(t, strings.HasPrefix(tok, tokenPrefix))
+
 		got, err := LoadToken()
-		if err != nil {
-			t.Fatalf("load token: %v", err)
-		}
-		if got != tok {
-			t.Fatalf("token mismatch got=%s want=%s", got, tok)
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, tok, got)
+
 	})
 
 	t.Run("load or generate existing", func(t *testing.T) {
 		first, isNew, err := LoadOrGenerateToken()
-		if err != nil {
-			t.Fatalf("loadorgenerate first: %v", err)
-		}
-		if isNew {
-			t.Fatalf("expected existing token, got isNew=true")
-		}
+		assert.NoError(t, err)
+		assert.False(t, isNew)
+
 		second, isNew, err := LoadOrGenerateToken()
-		if err != nil {
-			t.Fatalf("loadorgenerate second: %v", err)
-		}
-		if isNew {
-			t.Fatalf("expected existing token on second read")
-		}
-		if first != second {
-			t.Fatalf("token changed first=%s second=%s", first, second)
-		}
+		assert.NoError(t, err)
+		assert.False(t, isNew)
+		assert.Equal(t, second, first)
+
 	})
 
 	t.Run("load or generate read error does not rotate token", func(t *testing.T) {
-		if err := os.Remove(tokenPath()); err != nil && !os.IsNotExist(err) {
-			t.Fatalf("remove token file: %v", err)
-		}
-		if err := os.Mkdir(tokenPath(), 0o700); err != nil {
-			t.Fatalf("mkdir token path: %v", err)
+		err := os.Remove(tokenPath())
+		if err != nil {
+			assert.True(t, os.IsNotExist(err))
 		}
 
+		err = os.Mkdir(tokenPath(), 0o700)
+		assert.NoError(t, err)
+
 		_, isNew, err := LoadOrGenerateToken()
-		if err == nil {
-			t.Fatal("expected read error")
-		}
-		if isNew {
-			t.Fatal("expected isNew=false on read error")
-		}
-		if !strings.Contains(err.Error(), "reading token") {
-			t.Fatalf("expected token read error, got %v", err)
-		}
+		assert.Error(t, err)
+		assert.False(t, isNew)
+		assert.True(t, strings.Contains(err.Error(), "reading token"))
+
 	})
 }
 
@@ -110,9 +94,8 @@ func TestBearerMiddleware(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 	})
 
 	t.Run("valid cookie", func(t *testing.T) {
@@ -120,27 +103,24 @@ func TestBearerMiddleware(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "aviary_session", Value: token})
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 	})
 
 	t.Run("valid query token", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/logs?token="+token, nil)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+
 	})
 }
 
@@ -152,9 +132,8 @@ func TestLoginHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/login", nil)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusMethodNotAllowed {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+
 	})
 
 	t.Run("json body", func(t *testing.T) {
@@ -163,13 +142,12 @@ func TestLoginHandler(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 		cookies := rr.Result().Cookies()
-		if len(cookies) == 0 || cookies[0].Name != "aviary_session" {
-			t.Fatalf("expected aviary_session cookie, got %+v", cookies)
-		}
+		assert.NotEmpty(t, cookies)
+		assert.Equal(t, "aviary_session", cookies[0].Name)
+
 	})
 
 	t.Run("form value", func(t *testing.T) {
@@ -177,9 +155,8 @@ func TestLoginHandler(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 	})
 
 	t.Run("authorization header", func(t *testing.T) {
@@ -187,9 +164,8 @@ func TestLoginHandler(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusOK, rr.Code)
+
 	})
 
 	t.Run("invalid token", func(t *testing.T) {
@@ -197,9 +173,8 @@ func TestLoginHandler(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Fatalf("code = %d", rr.Code)
-		}
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+
 	})
 }
 
@@ -207,67 +182,52 @@ func TestPIDLifecycle(t *testing.T) {
 	setupServerDataDir(t)
 
 	pid, err := ReadPID()
-	if err != nil || pid != 0 {
-		t.Fatalf("expected missing pid to return 0,nil got %d,%v", pid, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, pid)
+	err = WritePID()
+	assert.NoError(t, err)
 
-	if err := WritePID(); err != nil {
-		t.Fatalf("write pid: %v", err)
-	}
 	pid, err = ReadPID()
-	if err != nil || pid <= 0 {
-		t.Fatalf("read pid got %d err=%v", pid, err)
-	}
+	assert.NoError(t, err)
+	assert.Positive(t, pid)
 
 	running, gotPID, err := IsRunning()
-	if err != nil {
-		t.Fatalf("is running err: %v", err)
-	}
-	if gotPID <= 0 {
-		t.Fatalf("expected pid > 0, got %d", gotPID)
-	}
+	assert.NoError(t, err)
+	assert.Positive(t, gotPID)
+
 	// On some platforms, process liveness probing may return false even for
 	// current PID; the key contract here is no error and a parsed PID.
 	_ = running
+	err = RemovePID()
+	assert.NoError(t, err)
 
-	if err := RemovePID(); err != nil {
-		t.Fatalf("remove pid: %v", err)
-	}
-	if err := RemovePID(); err != nil {
-		t.Fatalf("remove pid idempotent: %v", err)
-	}
+	err = RemovePID()
+	assert.NoError(t, err)
+
 	running, gotPID, err = IsRunning()
-	if err != nil {
-		t.Fatalf("is running after remove err: %v", err)
-	}
-	if running || gotPID != 0 {
-		t.Fatalf("expected not running after remove, got running=%v pid=%d", running, gotPID)
-	}
+	assert.NoError(t, err)
+	assert.False(t, running)
+	assert.Equal(t, 0, gotPID)
+
 }
 
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rr := httptest.NewRecorder()
 	healthHandler(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var payload struct {
 		OK      bool   `json:"ok"`
 		Version string `json:"version"`
 		GOOS    string `json:"goos"`
 	}
-	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode health response: %v", err)
-	}
-	if !payload.OK {
-		t.Error("expected ok=true in health response")
-	}
-	if payload.GOOS == "" {
-		t.Error("expected non-empty GOOS in health response")
-	}
+	err := json.NewDecoder(rr.Body).Decode(&payload)
+	assert.NoError(t, err)
+
+	assert.True(t, payload.OK)
+	assert.NotEqual(t, "", payload.GOOS)
+
 }
 
 func TestVersionHandler_Emulated(t *testing.T) {
@@ -278,27 +238,27 @@ func TestVersionHandler_Emulated(t *testing.T) {
 		buildinfo.Version = orig
 		_ = update.ConfigureEmulation("")
 	})
-	if err := update.ConfigureEmulation("1.2.3:1.3.0"); err != nil {
-		t.Fatalf("ConfigureEmulation: %v", err)
-	}
+	err := update.ConfigureEmulation("1.2.3:1.3.0")
+	assert.NoError(t, err)
+
 	srv := New(&config.Config{}, "tok")
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	rr := httptest.NewRecorder()
 	srv.versionHandler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
 	var payload struct {
 		CurrentVersion   string `json:"currentVersion"`
 		LatestVersion    string `json:"latestVersion"`
 		UpgradeAvailable bool   `json:"upgradeAvailable"`
 	}
-	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload.CurrentVersion != "1.2.3" || payload.LatestVersion != "1.3.0" || !payload.UpgradeAvailable {
-		t.Fatalf("unexpected version payload: %+v", payload)
-	}
+	err = json.NewDecoder(rr.Body).Decode(&payload)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "1.2.3", payload.CurrentVersion)
+	assert.Equal(t, "1.3.0", payload.LatestVersion)
+	assert.True(t, payload.UpgradeAvailable)
+
 }
 
 func TestVersionUpgradeHandler_Emulated(t *testing.T) {
@@ -309,19 +269,16 @@ func TestVersionUpgradeHandler_Emulated(t *testing.T) {
 		buildinfo.Version = orig
 		_ = update.ConfigureEmulation("")
 	})
-	if err := update.ConfigureEmulation("1.2.3:1.3.0"); err != nil {
-		t.Fatalf("ConfigureEmulation: %v", err)
-	}
+	err := update.ConfigureEmulation("1.2.3:1.3.0")
+	assert.NoError(t, err)
+
 	srv := New(&config.Config{}, "tok")
 	req := httptest.NewRequest(http.MethodPost, "/api/version/upgrade", strings.NewReader(`{"version":"1.3.0"}`))
 	rr := httptest.NewRecorder()
 	srv.versionUpgradeHandler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "Emulated upgrade completed") {
-		t.Fatalf("unexpected body: %s", rr.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.True(t, strings.Contains(rr.Body.String(), "Emulated upgrade completed"))
+
 }
 
 func TestProcSampler(t *testing.T) {
@@ -329,9 +286,7 @@ func TestProcSampler(t *testing.T) {
 
 	// Initially no stats.
 	_, ok := s.Get(99999)
-	if ok {
-		t.Error("expected Get on untracked PID to return ok=false")
-	}
+	assert.False(t, ok)
 
 	// Forget on untracked PID should not panic.
 	s.Forget(99999)
@@ -341,12 +296,9 @@ func TestLoadOrGenerateTLS_GeneratesSelfSigned(t *testing.T) {
 	setupServerDataDir(t)
 
 	cert, err := LoadOrGenerateTLS("", "")
-	if err != nil {
-		t.Fatalf("LoadOrGenerateTLS: %v", err)
-	}
-	if len(cert.Certificate) == 0 {
-		t.Fatal("expected non-empty certificate")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(cert.Certificate))
+
 }
 
 func TestLoadOrGenerateTLS_LoadsExisting(t *testing.T) {
@@ -354,19 +306,13 @@ func TestLoadOrGenerateTLS_LoadsExisting(t *testing.T) {
 
 	// Generate first.
 	cert1, err := LoadOrGenerateTLS("", "")
-	if err != nil {
-		t.Fatalf("first generate: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Load again — should return the same cert.
 	cert2, err := LoadOrGenerateTLS("", "")
-	if err != nil {
-		t.Fatalf("second load: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, len(cert2.Certificate), len(cert1.Certificate))
 
-	if len(cert1.Certificate) != len(cert2.Certificate) {
-		t.Error("expected same certificate on second call")
-	}
 }
 
 func TestExtractComponent(t *testing.T) {
@@ -383,9 +329,8 @@ func TestExtractComponent(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := extractComponent(tc.msg, tc.attrs)
-		if got != tc.want {
-			t.Errorf("extractComponent(%q, %v) = %q; want %q", tc.msg, tc.attrs, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }
 
@@ -398,20 +343,15 @@ func TestLogHub_Handle(t *testing.T) {
 	// Ring should have one entry.
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	if len(hub.ring) != 1 {
-		t.Fatalf("expected 1 ring entry, got %d", len(hub.ring))
-	}
-	if hub.ring[0].Message != "test message" {
-		t.Errorf("unexpected message: %q", hub.ring[0].Message)
-	}
+	assert.Equal(t, 1, len(hub.ring))
+	assert.Equal(t, "test message", hub.ring[0].Message)
+
 }
 
 func TestIntegration_TokenAndBearer(t *testing.T) {
 	setupServerDataDir(t)
 	tok, _, err := LoadOrGenerateToken()
-	if err != nil {
-		t.Fatalf("load or generate token: %v", err)
-	}
+	assert.NoError(t, err)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	h := BearerMiddleware(tok, next)
@@ -420,9 +360,8 @@ func TestIntegration_TokenAndBearer(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected authorized status, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
 }
 
 func TestFmtUptime(t *testing.T) {
@@ -439,9 +378,8 @@ func TestFmtUptime(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := fmtUptime(tc.d)
-		if got != tc.want {
-			t.Errorf("fmtUptime(%v) = %q; want %q", tc.d, got, tc.want)
-		}
+		assert.Equal(t, tc.want, got)
+
 	}
 }
 
@@ -449,67 +387,47 @@ func TestParseLogLine(t *testing.T) {
 	// Valid JSON log line.
 	line := `{"time":"2024-01-01T00:00:00Z","level":"WARN","msg":"server: test message","key":"value"}`
 	entry := parseLogLine(line)
-	if entry.Level != "warn" {
-		t.Errorf("level = %q; want warn", entry.Level)
-	}
-	if entry.Message != "server: test message" {
-		t.Errorf("message = %q", entry.Message)
-	}
-	if entry.Component != "server" {
-		t.Errorf("component = %q; want server", entry.Component)
-	}
-	if entry.Attrs["key"] != "value" {
-		t.Errorf("attrs[key] = %q; want value", entry.Attrs["key"])
-	}
+	assert.Equal(t, "warn", entry.Level)
+	assert.Equal(t, "server: test message", entry.Message)
+	assert.Equal(t, "server", entry.Component)
+	assert.Equal(t, "value", entry.Attrs["key"])
 
 	// Non-JSON plain text.
 	plain := "plain text log line"
 	e2 := parseLogLine(plain)
-	if e2.Message != plain {
-		t.Errorf("plain message = %q; want %q", e2.Message, plain)
-	}
+	assert.Equal(t, plain, e2.Message)
 
 	// JSON with explicit component field.
 	withComp := `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"hello","component":"mycomp"}`
 	e3 := parseLogLine(withComp)
-	if e3.Component != "mycomp" {
-		t.Errorf("component from field = %q; want mycomp", e3.Component)
-	}
+	assert.Equal(t, "mycomp", e3.Component)
+
 }
 
 func TestLogHub_WithAttrsAndWithGroup(t *testing.T) {
 	hub := newLogHub(10)
 
 	child := hub.WithAttrs([]slog.Attr{slog.String("k", "v")})
-	if child == nil {
-		t.Fatal("WithAttrs returned nil")
-	}
+	assert.NotNil(t, child)
 
 	grp := hub.WithGroup("mygroup")
-	if grp == nil {
-		t.Fatal("WithGroup returned nil")
-	}
+	assert.NotNil(t, grp)
 
 	// child.WithAttrs
 	child2 := child.WithAttrs([]slog.Attr{slog.String("k2", "v2")})
-	if child2 == nil {
-		t.Fatal("child.WithAttrs returned nil")
-	}
+	assert.NotNil(t, child2)
 
 	// child.WithGroup
 	grp2 := child.WithGroup("subgroup")
-	if grp2 == nil {
-		t.Fatal("child.WithGroup returned nil")
-	}
+	assert.NotNil(t, grp2)
 
 	// hubChild.Handle forwards to parent ring
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "child message", 0)
 	_ = child.Handle(context.Background(), rec)
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	if len(hub.ring) == 0 {
-		t.Error("expected ring entry after child.Handle")
-	}
+	assert.NotEqual(t, 0, len(hub.ring))
+
 }
 
 func TestLogHub_SetDelegate(t *testing.T) {
@@ -520,17 +438,14 @@ func TestLogHub_SetDelegate(t *testing.T) {
 
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "delegated", 0)
 	_ = hub.Handle(context.Background(), rec)
+	assert.True(t, strings.Contains(buf.String(), "delegated"))
 
-	if !strings.Contains(buf.String(), "delegated") {
-		t.Errorf("expected 'delegated' in delegate output, got: %s", buf.String())
-	}
 }
 
 func TestLogHub_Enabled(t *testing.T) {
 	hub := newLogHub(10)
-	if !hub.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected Enabled to return true")
-	}
+	assert.True(t, hub.Enabled(context.Background(), slog.LevelDebug))
+
 }
 
 func TestLogHub_ManualSubscribe(t *testing.T) {
@@ -550,14 +465,15 @@ func TestLogHub_ManualSubscribe(t *testing.T) {
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "live event", 0)
 	_ = hub.Handle(context.Background(), rec)
 
+	var got logEntry
+	received := false
 	select {
-	case got := <-ch:
-		if got.Message != "live event" {
-			t.Errorf("expected 'live event', got %q", got.Message)
-		}
+	case got = <-ch:
+		received = true
 	case <-time.After(1 * time.Second):
-		t.Fatal("expected message from subscribe channel")
 	}
+	assert.True(t, received)
+	assert.Equal(t, "live event", got.Message)
 }
 
 func TestLogsHistoryHandler_NoLogFile(t *testing.T) {
@@ -566,14 +482,11 @@ func TestLogsHistoryHandler_NoLogFile(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/history", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "entries") {
-		t.Errorf("expected JSON with entries, got: %s", body)
-	}
+	assert.True(t, strings.Contains(body, "entries"))
+
 }
 
 func TestLogsHistoryHandler_WithLogFile(t *testing.T) {
@@ -581,35 +494,30 @@ func TestLogsHistoryHandler_WithLogFile(t *testing.T) {
 
 	// Write some fake JSON log lines to the log file path.
 	logDir := filepath.Join(store.DataDir(), "logs")
-	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
+	err := os.MkdirAll(logDir, 0o700)
+	assert.NoError(t, err)
+
 	logFile := filepath.Join(logDir, "aviary.log")
 	lines := `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"agent: hello"}
 {"time":"2024-01-01T00:00:01Z","level":"warn","msg":"server: warning","key":"val"}
 `
-	if err := os.WriteFile(logFile, []byte(lines), 0o600); err != nil {
-		t.Fatalf("write log file: %v", err)
-	}
+	err = os.WriteFile(logFile, []byte(lines), 0o600)
+	assert.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=10", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var resp struct {
 		Entries []logEntry `json:"entries"`
 		HasMore bool       `json:"hasMore"`
 	}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp.Entries) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(resp.Entries))
-	}
+	err = json.NewDecoder(rr.Body).Decode(&resp)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 2, len(resp.Entries))
+
 }
 
 func TestHubGroup_Methods(t *testing.T) {
@@ -617,38 +525,28 @@ func TestHubGroup_Methods(t *testing.T) {
 
 	// Get a group handler via WithGroup
 	grp := hub.WithGroup("mygroup")
-	if grp == nil {
-		t.Fatal("WithGroup returned nil")
-	}
-
-	// grp is a *hubGroup; test Enabled
-	if !grp.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("hubGroup.Enabled should return true")
-	}
+	assert.NotNil(t, grp)
+	assert.True(t, // grp is a *hubGroup; test Enabled
+		grp.Enabled(context.Background(), slog.LevelDebug))
 
 	// grp.WithAttrs returns a hubChild
 	child := grp.WithAttrs([]slog.Attr{slog.String("k", "v")})
-	if child == nil {
-		t.Fatal("hubGroup.WithAttrs returned nil")
-	}
+	assert.NotNil(t, child)
 
 	// grp.WithGroup returns another hubGroup
 	grp2 := grp.WithGroup("sub")
-	if grp2 == nil {
-		t.Fatal("hubGroup.WithGroup returned nil")
-	}
+	assert.NotNil(t, grp2)
 
 	// grp.Handle forwards to parent ring
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "group message", 0)
-	if err := grp.Handle(context.Background(), rec); err != nil {
-		t.Fatalf("hubGroup.Handle: %v", err)
-	}
+	err := grp.Handle(context.Background(), rec)
+	assert.NoError(t, err)
+
 	hub.mu.Lock()
 	n := len(hub.ring)
 	hub.mu.Unlock()
-	if n == 0 {
-		t.Error("expected ring entry after hubGroup.Handle")
-	}
+	assert.NotEqual(t, 0, n)
+
 }
 
 func TestPIDPath_EnvOverride(t *testing.T) {
@@ -656,47 +554,32 @@ func TestPIDPath_EnvOverride(t *testing.T) {
 	custom := tmp + "/custom.pid"
 	t.Setenv("AVIARY_PID_FILE", custom)
 	got := PIDPath()
-	if got != custom {
-		t.Errorf("PIDPath with env = %q; want %q", got, custom)
-	}
+	assert.Equal(t, custom, got)
+
 }
 
 func TestWriteReadRemovePID(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("AVIARY_PID_FILE", tmp+"/aviary.pid")
-
-	if err := WritePID(); err != nil {
-		t.Fatalf("WritePID: %v", err)
-	}
+	err := WritePID()
+	assert.NoError(t, err)
 
 	pid, err := ReadPID()
-	if err != nil {
-		t.Fatalf("ReadPID: %v", err)
-	}
-	if pid != os.Getpid() {
-		t.Errorf("ReadPID = %d; want %d", pid, os.Getpid())
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, os.Getpid(), pid)
 
 	running, rpid, err := IsRunning()
-	if err != nil {
-		t.Fatalf("IsRunning: %v", err)
-	}
-	if !running || rpid != os.Getpid() {
-		t.Errorf("IsRunning = (%v, %d); want (true, %d)", running, rpid, os.Getpid())
-	}
-
-	if err := RemovePID(); err != nil {
-		t.Fatalf("RemovePID: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.True(t, running)
+	assert.Equal(t, os.Getpid(), rpid)
+	err = RemovePID()
+	assert.NoError(t, err)
 
 	// After remove, ReadPID should return 0.
 	pid2, err := ReadPID()
-	if err != nil {
-		t.Fatalf("ReadPID after remove: %v", err)
-	}
-	if pid2 != 0 {
-		t.Errorf("expected 0 after remove, got %d", pid2)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, pid2)
+
 }
 
 func TestMakeAuthResolver(t *testing.T) {
@@ -704,25 +587,21 @@ func TestMakeAuthResolver(t *testing.T) {
 	resolve := makeAuthResolver()
 	// Resolving a non-existent ref should return error (no credentials file).
 	_, err := resolve("auth:openai:default")
-	if err == nil {
-		t.Error("expected error for missing auth ref")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestExtractComponent_MultiWord(t *testing.T) {
 	// Multi-word prefix: "agent manager: something" → first word "agent"
 	attrs := map[string]string{}
 	got := extractComponent("agent manager: something happened", attrs)
-	if got != "agent" {
-		t.Errorf("extractComponent multiword = %q; want agent", got)
-	}
+	assert.Equal(t, "agent", got)
 
 	// Long prefix (>= 24 chars) defaults to "server"
 	attrs2 := map[string]string{}
 	got2 := extractComponent("this is way too long prefix: msg", attrs2)
-	if got2 != "server" {
-		t.Errorf("extractComponent long prefix = %q; want server", got2)
-	}
+	assert.Equal(t, "server", got2)
+
 }
 
 func TestProcSampler_Sample(t *testing.T) {
@@ -731,12 +610,9 @@ func TestProcSampler_Sample(t *testing.T) {
 	s.Sample([]int{os.Getpid()})
 
 	stats, ok := s.Get(os.Getpid())
-	if !ok {
-		t.Fatal("expected stats for current PID")
-	}
-	if stats.Status != "running" && stats.Status != "sleeping" {
-		t.Errorf("expected status running or sleeping, got %q", stats.Status)
-	}
+	assert.True(t, ok)
+	assert.Contains(t, []string{"running", "sleeping"}, stats.Status)
+
 }
 
 func TestLogsHistoryHandler_SkipAndLimit(t *testing.T) {
@@ -761,12 +637,10 @@ func TestLogsHistoryHandler_SkipAndLimit(t *testing.T) {
 		Entries []logEntry `json:"entries"`
 		HasMore bool       `json:"hasMore"`
 	}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp.Entries) != 5 {
-		t.Errorf("expected 5 entries with skip=5, got %d", len(resp.Entries))
-	}
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 5, len(resp.Entries))
 
 	// skip > total returns empty.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/logs/history?skip=20", nil)
@@ -776,9 +650,7 @@ func TestLogsHistoryHandler_SkipAndLimit(t *testing.T) {
 		Entries []logEntry `json:"entries"`
 	}
 	_ = json.NewDecoder(rr2.Body).Decode(&resp2)
-	if len(resp2.Entries) != 0 {
-		t.Errorf("expected empty with skip>total, got %d", len(resp2.Entries))
-	}
+	assert.Equal(t, 0, len(resp2.Entries))
 
 	// limit=2 with hasMore=true.
 	req3 := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=2", nil)
@@ -789,38 +661,30 @@ func TestLogsHistoryHandler_SkipAndLimit(t *testing.T) {
 		HasMore bool       `json:"hasMore"`
 	}
 	_ = json.NewDecoder(rr3.Body).Decode(&resp3)
-	if !resp3.HasMore {
-		t.Error("expected hasMore=true when limit < total")
-	}
+	assert.True(t, resp3.HasMore)
+
 }
 
 func TestParseLogLine_MissingTimestamp(t *testing.T) {
 	// JSON without time field gets a generated timestamp.
 	line := `{"level":"ERROR","msg":"no time here"}`
 	e := parseLogLine(line)
-	if e.Level != "error" {
-		t.Errorf("level = %q; want error", e.Level)
-	}
-	if e.Timestamp == "" {
-		t.Error("expected non-empty generated timestamp")
-	}
+	assert.Equal(t, "error", e.Level)
+	assert.NotEqual(t, "", e.Timestamp)
+
 }
 
 func TestGenerateToken(t *testing.T) {
 	setupServerDataDir(t)
 
 	tok, err := GenerateToken()
-	if err != nil {
-		t.Fatalf("GenerateToken: %v", err)
-	}
-	if len(tok) < 32 {
-		t.Errorf("token too short: %q", tok)
-	}
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(tok), 32)
+
 	// Two calls should produce different tokens.
 	tok2, _ := GenerateToken()
-	if tok == tok2 {
-		t.Error("expected different tokens from two calls")
-	}
+	assert.NotEqual(t, tok2, tok)
+
 }
 
 // ── New tests for increased coverage ─────────────────────────────────────────
@@ -839,9 +703,8 @@ func TestServerNew(t *testing.T) {
 	resetSlogForTest()
 	cfg := &config.Config{}
 	srv := New(cfg, "test-token")
-	if srv == nil {
-		t.Fatal("expected non-nil server")
-	}
+	assert.NotNil(t, srv)
+
 }
 
 func TestServerAddr(t *testing.T) {
@@ -852,12 +715,9 @@ func TestServerAddr(t *testing.T) {
 		cfg := &config.Config{}
 		srv := New(cfg, "tok")
 		addr := srv.Addr()
-		if !strings.HasPrefix(addr, "https://") {
-			t.Errorf("expected https prefix, got %q", addr)
-		}
-		if !strings.Contains(addr, "16677") {
-			t.Errorf("expected default port 16677 in addr %q", addr)
-		}
+		assert.True(t, strings.HasPrefix(addr, "https://"))
+		assert.True(t, strings.Contains(addr, "16677"))
+
 	})
 
 	t.Run("custom port no-tls", func(t *testing.T) {
@@ -867,12 +727,9 @@ func TestServerAddr(t *testing.T) {
 		cfg.Server.NoTLS = true
 		srv := New(cfg, "tok")
 		addr := srv.Addr()
-		if !strings.HasPrefix(addr, "http://") {
-			t.Errorf("expected http prefix for no-tls, got %q", addr)
-		}
-		if !strings.Contains(addr, "9999") {
-			t.Errorf("expected port 9999 in addr %q", addr)
-		}
+		assert.True(t, strings.HasPrefix(addr, "http://"))
+		assert.True(t, strings.Contains(addr, "9999"))
+
 	})
 }
 
@@ -883,35 +740,31 @@ func TestServerSettingsChanged(t *testing.T) {
 	t.Run("unchanged", func(t *testing.T) {
 		other := &config.Config{}
 		other.Server.Port = 16677
-		if serverSettingsChanged(base, other) {
-			t.Error("expected false for identical config")
-		}
+		assert.False(t, serverSettingsChanged(base, other))
+
 	})
 
 	t.Run("port changed", func(t *testing.T) {
 		other := &config.Config{}
 		other.Server.Port = 9999
-		if !serverSettingsChanged(base, other) {
-			t.Error("expected true when port changes")
-		}
+		assert.True(t, serverSettingsChanged(base, other))
+
 	})
 
 	t.Run("no_tls changed", func(t *testing.T) {
 		other := &config.Config{}
 		other.Server.Port = 16677
 		other.Server.NoTLS = true
-		if !serverSettingsChanged(base, other) {
-			t.Error("expected true when NoTLS changes")
-		}
+		assert.True(t, serverSettingsChanged(base, other))
+
 	})
 
 	t.Run("external_access changed", func(t *testing.T) {
 		other := &config.Config{}
 		other.Server.Port = 16677
 		other.Server.ExternalAccess = true
-		if !serverSettingsChanged(base, other) {
-			t.Error("expected true when ExternalAccess changes")
-		}
+		assert.True(t, serverSettingsChanged(base, other))
+
 	})
 
 	t.Run("tls cert changed", func(t *testing.T) {
@@ -919,42 +772,35 @@ func TestServerSettingsChanged(t *testing.T) {
 		cfgA.Server.TLS = &config.TLSConfig{Cert: "a.pem", Key: "a.key"}
 		cfgB := &config.Config{}
 		cfgB.Server.TLS = &config.TLSConfig{Cert: "b.pem", Key: "b.key"}
-		if !serverSettingsChanged(cfgA, cfgB) {
-			t.Error("expected true when TLS cert changes")
-		}
+		assert.True(t, serverSettingsChanged(cfgA, cfgB))
+
 	})
 }
 
 func TestTLSConfigChanged(t *testing.T) {
 	t.Run("both nil", func(t *testing.T) {
-		if tlsConfigChanged(nil, nil) {
-			t.Error("expected false for both nil")
-		}
+		assert.False(t, tlsConfigChanged(nil, nil))
+
 	})
 
 	t.Run("nil and non-nil", func(t *testing.T) {
-		if !tlsConfigChanged(nil, &config.TLSConfig{}) {
-			t.Error("expected true when one is nil")
-		}
-		if !tlsConfigChanged(&config.TLSConfig{}, nil) {
-			t.Error("expected true when one is nil")
-		}
+		assert.True(t, tlsConfigChanged(nil, &config.TLSConfig{}))
+		assert.True(t, tlsConfigChanged(&config.TLSConfig{}, nil))
+
 	})
 
 	t.Run("same values", func(t *testing.T) {
 		a := &config.TLSConfig{Cert: "c.pem", Key: "k.key"}
 		b := &config.TLSConfig{Cert: "c.pem", Key: "k.key"}
-		if tlsConfigChanged(a, b) {
-			t.Error("expected false for same TLS config")
-		}
+		assert.False(t, tlsConfigChanged(a, b))
+
 	})
 
 	t.Run("different cert", func(t *testing.T) {
 		a := &config.TLSConfig{Cert: "a.pem", Key: "k.key"}
 		b := &config.TLSConfig{Cert: "b.pem", Key: "k.key"}
-		if !tlsConfigChanged(a, b) {
-			t.Error("expected true for different cert")
-		}
+		assert.True(t, tlsConfigChanged(a, b))
+
 	})
 }
 
@@ -967,28 +813,20 @@ func TestDaemonsHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/daemons", nil)
 	rr := httptest.NewRecorder()
 	srv.daemonsHandler(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
 	ct := rr.Header().Get("Content-Type")
-	if !strings.Contains(ct, "application/json") {
-		t.Errorf("expected JSON content-type, got %q", ct)
-	}
+	assert.True(t, strings.Contains(ct, "application/json"))
+
 	var daemons []DaemonStatus
-	if err := json.NewDecoder(rr.Body).Decode(&daemons); err != nil {
-		t.Fatalf("decode daemons: %v", err)
-	}
-	if len(daemons) == 0 {
-		t.Fatal("expected at least one daemon entry")
-	}
-	// The first entry should be the aviary server itself.
-	if daemons[0].Name != "aviary" {
-		t.Errorf("expected first daemon to be 'aviary', got %q", daemons[0].Name)
-	}
-	if daemons[0].Type != "server" {
-		t.Errorf("expected type 'server', got %q", daemons[0].Type)
-	}
+	err := json.NewDecoder(rr.Body).Decode(&daemons)
+	assert.NoError(t, err)
+
+	assert.NotEqual(t, 0, len(daemons))
+	assert.Equal(t, // The first entry should be the aviary server itself.
+		"aviary", daemons[0].Name)
+	assert.Equal(t, "server", daemons[0].Type)
+
 }
 
 func TestDaemonLogsHandler_MissingKey(t *testing.T) {
@@ -1000,10 +838,8 @@ func TestDaemonLogsHandler_MissingKey(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/daemons/logs", nil)
 	rr := httptest.NewRecorder()
 	srv.daemonLogsHandler(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
 }
 
 func TestDaemonLogsHandler_NotFound(t *testing.T) {
@@ -1015,10 +851,8 @@ func TestDaemonLogsHandler_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/daemons/logs?key=nonexistent", nil)
 	rr := httptest.NewRecorder()
 	srv.daemonLogsHandler(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
 
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
-	}
 }
 
 func TestLogsHandler_SSE(t *testing.T) {
@@ -1037,16 +871,17 @@ func TestLogsHandler_SSE(t *testing.T) {
 		logsHandler(rr, req)
 	}()
 
+	completed := false
 	select {
 	case <-done:
+		completed = true
 	case <-time.After(2 * time.Second):
-		t.Fatal("logsHandler did not return after context cancellation")
 	}
+	assert.True(t, completed)
 
 	ct := rr.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/event-stream") {
-		t.Errorf("expected text/event-stream, got %q", ct)
-	}
+	assert.True(t, strings.Contains(ct, "text/event-stream"))
+
 }
 
 func TestWsBroadcast_NoSubscribers(_ *testing.T) {
@@ -1072,10 +907,8 @@ func TestWsRegisterUnregister(t *testing.T) {
 	wsClients.mu.Lock()
 	after := len(wsClients.m)
 	wsClients.mu.Unlock()
+	assert.Equal(t, after, before)
 
-	if before != after {
-		t.Errorf("map size changed after unregister of unknown key: %d -> %d", before, after)
-	}
 }
 
 func TestSPAHandler_FileNotFound_FallsBackToIndex(t *testing.T) {
@@ -1089,13 +922,9 @@ func TestSPAHandler_FileNotFound_FallsBackToIndex(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/some/spa/route", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.True(t, strings.Contains(rr.Body.String(), "index"))
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "index") {
-		t.Errorf("expected index.html content, got %q", rr.Body.String())
-	}
 }
 
 func TestSPAHandler_ServeIndex_NoIndexHTML(t *testing.T) {
@@ -1106,35 +935,29 @@ func TestSPAHandler_ServeIndex_NoIndexHTML(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	rr := httptest.NewRecorder()
 	h.serveIndex(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
 
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
-	}
 }
 
 func TestWebFileServer_ReturnsHandler(t *testing.T) {
 	// webFileServer() should always return a non-nil handler even if
 	// webdist is empty or not embedded.
 	h := webFileServer()
-	if h == nil {
-		t.Fatal("expected non-nil handler from webFileServer()")
-	}
+	assert.NotNil(t, h)
+
 	// Serving / should not panic.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	// Either 200 (index.html found) or 404 (web UI not embedded) is acceptable.
-	if rr.Code != http.StatusOK && rr.Code != http.StatusNotFound {
-		t.Errorf("unexpected status %d", rr.Code)
-	}
+	assert.Contains(t, []int{http.StatusOK, http.StatusNotFound}, rr.Code)
+
 }
 
 func TestFmtUptime_NegativeDuration(t *testing.T) {
 	// Additional edge cases.
 	got := fmtUptime(-5 * time.Second)
-	if got != "0s" {
-		t.Errorf("fmtUptime(-5s) = %q; want 0s", got)
-	}
+	assert.Equal(t, "0s", got)
+
 }
 
 func TestLogsHistoryHandler_InvalidParams(t *testing.T) {
@@ -1143,9 +966,8 @@ func TestLogsHistoryHandler_InvalidParams(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?skip=notanumber&limit=notanumber", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for invalid params, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
 }
 
 func TestLogHub_RingCapOverflow(t *testing.T) {
@@ -1157,9 +979,8 @@ func TestLogHub_RingCapOverflow(t *testing.T) {
 	hub.mu.Lock()
 	n := len(hub.ring)
 	hub.mu.Unlock()
-	if n > 3 {
-		t.Errorf("ring grew beyond cap: len=%d", n)
-	}
+	assert.LessOrEqual(t, n, 3)
+
 }
 
 func TestLogHub_WithAttrs_HasDelegate(t *testing.T) {
@@ -1168,17 +989,14 @@ func TestLogHub_WithAttrs_HasDelegate(t *testing.T) {
 	hub.setDelegate(slog.NewTextHandler(&buf, nil))
 
 	child := hub.WithAttrs([]slog.Attr{slog.String("x", "y")})
-	if child == nil {
-		t.Fatal("WithAttrs returned nil")
-	}
+	assert.NotNil(t, child)
+
 	child2 := child.WithAttrs([]slog.Attr{slog.String("a", "b")})
-	if child2 == nil {
-		t.Fatal("child.WithAttrs returned nil")
-	}
+	assert.NotNil(t, child2)
+
 	grp := child.WithGroup("g")
-	if grp == nil {
-		t.Fatal("child.WithGroup returned nil")
-	}
+	assert.NotNil(t, grp)
+
 }
 
 func TestLogHub_WithGroup_HasDelegate(t *testing.T) {
@@ -1187,21 +1005,18 @@ func TestLogHub_WithGroup_HasDelegate(t *testing.T) {
 	hub.setDelegate(slog.NewTextHandler(&buf, nil))
 
 	grp := hub.WithGroup("grp")
-	if grp == nil {
-		t.Fatal("WithGroup returned nil")
-	}
+	assert.NotNil(t, grp)
+
 	grp2 := grp.WithGroup("sub")
-	if grp2 == nil {
-		t.Fatal("grp.WithGroup returned nil")
-	}
+	assert.NotNil(t, grp2)
+
 	child := grp.WithAttrs([]slog.Attr{slog.String("k", "v")})
-	if child == nil {
-		t.Fatal("grp.WithAttrs returned nil")
-	}
+	assert.NotNil(t, child)
+
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "grp msg", 0)
-	if err := grp.Handle(context.Background(), rec); err != nil {
-		t.Fatalf("grp.Handle: %v", err)
-	}
+	err := grp.Handle(context.Background(), rec)
+	assert.NoError(t, err)
+
 }
 
 // memFS is a minimal http.FileSystem backed by a string map for testing.
@@ -1253,17 +1068,14 @@ func TestWsHandler_Unauthorized(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/ws", nil)
 	rr := httptest.NewRecorder()
 	h(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 
 	// Wrong token → 401.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/ws?token=wrong", nil)
 	rr2 := httptest.NewRecorder()
 	h(rr2, req2)
-	if rr2.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for wrong token, got %d", rr2.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr2.Code)
+
 }
 
 func TestWsHandler_ValidCookieAuthUpgradeFails(_ *testing.T) {
@@ -1308,9 +1120,8 @@ func TestServerAgents(t *testing.T) {
 	cfg := &config.Config{}
 	srv := New(cfg, "tok")
 	agents := srv.Agents()
-	if agents == nil {
-		t.Fatal("expected non-nil Agents()")
-	}
+	assert.NotNil(t, agents)
+
 }
 
 func TestServerLoadSessionDeliveries(t *testing.T) {
@@ -1326,10 +1137,10 @@ func TestServerLoadSessionDeliveries(t *testing.T) {
 func TestHubChild_Enabled(t *testing.T) {
 	hub := newLogHub(10)
 	child := hub.WithAttrs([]slog.Attr{slog.String("k", "v")})
-	// child is a *hubChild; Enabled should always return true.
-	if !child.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("hubChild.Enabled should return true")
-	}
+	assert.
+		// child is a *hubChild; Enabled should always return true.
+		True(t, child.Enabled(context.Background(), slog.LevelDebug))
+
 }
 
 func TestLogHub_LevelCoverage(t *testing.T) {
@@ -1343,9 +1154,8 @@ func TestLogHub_LevelCoverage(t *testing.T) {
 	hub.mu.Lock()
 	n := len(hub.ring)
 	hub.mu.Unlock()
-	if n != 4 {
-		t.Errorf("expected 4 entries, got %d", n)
-	}
+	assert.Equal(t, 4, n)
+
 }
 
 func TestLogsHandler_WithLogFile(t *testing.T) {
@@ -1369,16 +1179,17 @@ func TestLogsHandler_WithLogFile(t *testing.T) {
 		logsHandler(rr, req)
 	}()
 
+	completed := false
 	select {
 	case <-done:
+		completed = true
 	case <-time.After(2 * time.Second):
-		t.Fatal("logsHandler did not return after context cancellation")
 	}
+	assert.True(t, completed)
 
 	body := rr.Body.String()
-	if !strings.Contains(body, "data:") {
-		t.Errorf("expected SSE data in body, got: %q", body)
-	}
+	assert.True(t, strings.Contains(body, "data:"))
+
 }
 
 func TestDaemonsHandler_DefaultPort(t *testing.T) {
@@ -1395,12 +1206,9 @@ func TestDaemonsHandler_DefaultPort(t *testing.T) {
 
 	var daemons []DaemonStatus
 	_ = json.NewDecoder(rr.Body).Decode(&daemons)
-	if len(daemons) == 0 {
-		t.Fatal("expected at least one daemon")
-	}
-	if daemons[0].Addr != ":16677" {
-		t.Errorf("expected addr :16677, got %q", daemons[0].Addr)
-	}
+	assert.NotEqual(t, 0, len(daemons))
+	assert.Equal(t, ":16677", daemons[0].Addr)
+
 }
 
 func TestSPAHandler_DirectoryFallback(t *testing.T) {
@@ -1414,13 +1222,9 @@ func TestSPAHandler_DirectoryFallback(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.True(t, strings.Contains(rr.Body.String(), "home"))
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for directory path, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "home") {
-		t.Errorf("expected index content for dir path, got %q", rr.Body.String())
-	}
 }
 
 // memFSWithDir extends memFS to support directories.
@@ -1463,9 +1267,8 @@ func TestLogsHistoryHandler_LimitCap(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=9999", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
 }
 
 func TestRecordToEntry_AttrsCoverage(t *testing.T) {
@@ -1473,12 +1276,9 @@ func TestRecordToEntry_AttrsCoverage(t *testing.T) {
 	rec := slog.NewRecord(time.Now(), slog.LevelWarn, "component:warning", 0)
 	rec.AddAttrs(slog.String("key1", "val1"), slog.Int("count", 42))
 	entry := hub.recordToEntry(rec)
-	if entry.Level != "warn" {
-		t.Errorf("level = %q; want warn", entry.Level)
-	}
-	if entry.Attrs["key1"] != "val1" {
-		t.Errorf("attrs[key1] = %q; want val1", entry.Attrs["key1"])
-	}
+	assert.Equal(t, "warn", entry.Level)
+	assert.Equal(t, "val1", entry.Attrs["key1"])
+
 }
 
 func TestServerLoadSessionDeliveries_WithData(t *testing.T) {
@@ -1486,9 +1286,8 @@ func TestServerLoadSessionDeliveries_WithData(t *testing.T) {
 	resetSlogForTest()
 
 	// Write a session channels config file so loadSessionDeliveries has something to read.
-	if err := store.EnsureSessionChannel("agent_test", "sess1", "slack", "C123"); err != nil {
-		t.Fatalf("EnsureSessionChannel: %v", err)
-	}
+	err := store.EnsureSessionChannel("agent_test", "sess1", "slack", "C123")
+	assert.NoError(t, err)
 
 	cfg := &config.Config{}
 	srv := New(cfg, "tok")
@@ -1500,9 +1299,8 @@ func TestLoadOrGenerateTLS_WithCustomCertError(t *testing.T) {
 	setupServerDataDir(t)
 	// Providing a non-existent cert/key path should return an error.
 	_, err := LoadOrGenerateTLS("/nonexistent/cert.pem", "/nonexistent/key.pem")
-	if err == nil {
-		t.Error("expected error for missing custom cert files")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestPIDPath_WindowsFallback(t *testing.T) {
@@ -1511,10 +1309,10 @@ func TestPIDPath_WindowsFallback(t *testing.T) {
 	t.Setenv("AVIARY_PID_FILE", "")
 	t.Setenv("PROGRAMDATA", tmp)
 	p := PIDPath()
-	// On Windows this will use PROGRAMDATA; on others it uses TempDir.
-	if p == "" {
-		t.Error("expected non-empty PIDPath")
-	}
+	assert.
+		// On Windows this will use PROGRAMDATA; on others it uses TempDir.
+		NotEqual(t, "", p)
+
 }
 
 func TestLogsHandler_FilePoll(t *testing.T) {
@@ -1551,17 +1349,19 @@ func TestLogsHandler_FilePoll(t *testing.T) {
 		logsHandler(rr, req)
 	}()
 
+	completed := false
 	select {
 	case <-done:
+		completed = true
 	case <-time.After(3 * time.Second):
-		t.Fatal("logsHandler did not return after context cancellation")
 	}
+	assert.True(t, completed)
 
 	body := rr.Body.String()
-	// Should contain at least the initial entry.
-	if !strings.Contains(body, "data:") {
-		t.Errorf("expected SSE events in body, got: %q", body[:min(len(body), 200)])
-	}
+	assert.
+		// Should contain at least the initial entry.
+		True(t, strings.Contains(body, "data:"))
+
 }
 
 func TestGenerateSelfSigned_Direct(t *testing.T) {
@@ -1571,31 +1371,25 @@ func TestGenerateSelfSigned_Direct(t *testing.T) {
 	certFile := filepath.Join(dir, "cert.pem")
 	keyFile := filepath.Join(dir, "key.pem")
 	cert, err := generateSelfSigned(certFile, keyFile)
-	if err != nil {
-		t.Fatalf("generateSelfSigned: %v", err)
-	}
-	if len(cert.Certificate) == 0 {
-		t.Error("expected non-empty certificate")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(cert.Certificate))
+
 	// Verify files were written.
-	if _, err := os.Stat(certFile); err != nil {
-		t.Errorf("cert file not written: %v", err)
-	}
-	if _, err := os.Stat(keyFile); err != nil {
-		t.Errorf("key file not written: %v", err)
-	}
+	_, err = os.Stat(certFile)
+	assert.NoError(t, err)
+
+	_, err = os.Stat(keyFile)
+	assert.NoError(t, err)
+
 }
 
 func TestParseLogLine_NoAttrs(t *testing.T) {
 	// JSON with only standard fields — attrs should be nil.
 	line := `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"simple"}`
 	e := parseLogLine(line)
-	if e.Attrs != nil {
-		t.Errorf("expected nil attrs for simple entry, got %v", e.Attrs)
-	}
-	if e.Message != "simple" {
-		t.Errorf("message = %q; want simple", e.Message)
-	}
+	assert.Nil(t, e.Attrs)
+	assert.Equal(t, "simple", e.Message)
+
 }
 
 func TestWsBroadcast_WithEntry(_ *testing.T) {
@@ -1623,9 +1417,8 @@ func TestReadPID_InvalidContent(t *testing.T) {
 	_ = os.WriteFile(pidFile, []byte("notanumber\n"), 0o644)
 
 	_, err := ReadPID()
-	if err == nil {
-		t.Error("expected error for non-numeric PID file content")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestLogsHistoryHandler_HasMoreTrue(t *testing.T) {
@@ -1650,12 +1443,9 @@ func TestLogsHistoryHandler_HasMoreTrue(t *testing.T) {
 		HasMore bool       `json:"hasMore"`
 	}
 	_ = json.NewDecoder(rr.Body).Decode(&resp)
-	if !resp.HasMore {
-		t.Error("expected hasMore=true when limit < total lines")
-	}
-	if len(resp.Entries) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(resp.Entries))
-	}
+	assert.True(t, resp.HasMore)
+	assert.Equal(t, 2, len(resp.Entries))
+
 }
 
 func TestReadLogLinesFromEnd_SkipLimitWithoutTrailingNewline(t *testing.T) {
@@ -1673,21 +1463,12 @@ func TestReadLogLinesFromEnd_SkipLimitWithoutTrailingNewline(t *testing.T) {
 	_ = os.WriteFile(logFile, []byte(content), 0o600)
 
 	lines, hasMore, err := readLogLinesFromEnd(logFile, 1, 2)
-	if err != nil {
-		t.Fatalf("readLogLinesFromEnd: %v", err)
-	}
-	if !hasMore {
-		t.Fatal("expected hasMore=true with earlier lines remaining")
-	}
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d", len(lines))
-	}
-	if !strings.Contains(string(lines[0]), "line-2") {
-		t.Fatalf("expected first returned line to be line-2, got %q", string(lines[0]))
-	}
-	if !strings.Contains(string(lines[1]), "line-3") {
-		t.Fatalf("expected second returned line to be line-3, got %q", string(lines[1]))
-	}
+	assert.NoError(t, err)
+	assert.True(t, hasMore)
+	assert.Equal(t, 2, len(lines))
+	assert.True(t, strings.Contains(string(lines[0]), "line-2"))
+	assert.True(t, strings.Contains(string(lines[1]), "line-3"))
+
 }
 
 func TestWsRegisterUnregister_NilConn(t *testing.T) {
@@ -1696,14 +1477,12 @@ func TestWsRegisterUnregister_NilConn(t *testing.T) {
 	before := mapLen()
 	wsRegister(nil)
 	after := mapLen()
-	if after != before+1 {
-		t.Errorf("wsRegister: map len %d -> %d, expected +1", before, after)
-	}
+	assert.Equal(t, before+1, after)
+
 	wsUnregister(nil)
 	final := mapLen()
-	if final != before {
-		t.Errorf("wsUnregister: map len %d -> %d, expected back to %d", after, final, before)
-	}
+	assert.Equal(t, before, final)
+
 }
 
 func mapLen() int {
@@ -1756,11 +1535,13 @@ func TestLogsHandler_LogFileGrows(t *testing.T) {
 		logsHandler(rr, req)
 	}()
 
+	completed := false
 	select {
 	case <-done:
+		completed = true
 	case <-time.After(3 * time.Second):
-		t.Fatal("logsHandler did not return")
 	}
+	assert.True(t, completed)
 	// Anything without panic is success — the body may or may not have events.
 }
 
@@ -1785,9 +1566,8 @@ func TestLogHub_RingCapWithSubs(t *testing.T) {
 	hub.mu.Lock()
 	n := len(hub.ring)
 	hub.mu.Unlock()
-	if n > 5 {
-		t.Errorf("ring exceeded cap: %d > 5", n)
-	}
+	assert.LessOrEqual(t, n, 5)
+
 }
 
 func TestProcSampler_MultiPID(_ *testing.T) {
@@ -1803,10 +1583,10 @@ func TestServerNew_Agents(t *testing.T) {
 	resetSlogForTest()
 	cfg := &config.Config{}
 	srv := New(cfg, "tok")
-	// Agents() should not be nil.
-	if srv.Agents() == nil {
-		t.Error("expected non-nil Agents()")
-	}
+	assert.
+		// Agents() should not be nil.
+		NotNil(t, srv.Agents())
+
 }
 
 func TestServerAddr_ExplicitPort(t *testing.T) {
@@ -1816,9 +1596,8 @@ func TestServerAddr_ExplicitPort(t *testing.T) {
 	cfg.Server.Port = 8443
 	srv := New(cfg, "tok")
 	addr := srv.Addr()
-	if !strings.Contains(addr, "8443") {
-		t.Errorf("expected port 8443 in addr %q", addr)
-	}
+	assert.True(t, strings.Contains(addr, "8443"))
+
 }
 
 func TestBearerMiddleware_EmptyToken(t *testing.T) {
@@ -1835,9 +1614,8 @@ func TestBearerMiddleware_EmptyToken(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer ")
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for empty bearer, got %d", rr.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+
 }
 
 func TestDaemonsHandler_WithSampler(t *testing.T) {
@@ -1852,38 +1630,31 @@ func TestDaemonsHandler_WithSampler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/daemons", nil)
 	rr := httptest.NewRecorder()
 	srv.daemonsHandler(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
 	var daemons []DaemonStatus
 	_ = json.NewDecoder(rr.Body).Decode(&daemons)
-	if len(daemons) == 0 {
-		t.Fatal("expected at least one daemon")
-	}
+	assert.NotEqual(t, 0, len(daemons))
+
 }
 
 func TestExtractComponent_EdgeCases(t *testing.T) {
 	// Empty message.
 	got := extractComponent("", map[string]string{})
-	if got != "server" {
-		t.Errorf("empty msg = %q; want server", got)
-	}
+	assert.Equal(t, "server", got)
 
 	// Message with colon at position 0 — no prefix.
 	got2 := extractComponent(":nodeName", map[string]string{})
-	if got2 != "server" {
-		t.Errorf("colon at 0 = %q; want server", got2)
-	}
+	assert.Equal(t, "server", got2)
+
 }
 
 func TestParseLogLine_JSONWithMissingLevel(t *testing.T) {
 	// JSON without level defaults to "info".
 	line := `{"time":"2024-01-01T00:00:00Z","msg":"no level here"}`
 	e := parseLogLine(line)
-	if e.Level != "info" {
-		t.Errorf("level = %q; want info", e.Level)
-	}
+	assert.Equal(t, "info", e.Level)
+
 }
 
 // ── deliverTaskOutput ────────────────────────────────────────────────────────
@@ -1893,9 +1664,8 @@ func TestDeliverTaskOutput_EmptyRoute(t *testing.T) {
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
 	err := srv.deliverTaskOutput("bot", "", "text")
-	if err != nil {
-		t.Fatalf("expected nil for empty route, got %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestDeliverTaskOutput_InvalidRoute(t *testing.T) {
@@ -1903,9 +1673,8 @@ func TestDeliverTaskOutput_InvalidRoute(t *testing.T) {
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
 	err := srv.deliverTaskOutput("bot", "badroute", "text")
-	if err == nil {
-		t.Fatal("expected error for invalid route format")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestDeliverTaskOutput_InvalidRouteIndex(t *testing.T) {
@@ -1913,9 +1682,8 @@ func TestDeliverTaskOutput_InvalidRouteIndex(t *testing.T) {
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
 	err := srv.deliverTaskOutput("bot", "route:slack:notanumber:C123", "text")
-	if err == nil {
-		t.Fatal("expected error for non-numeric route index")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
@@ -1923,9 +1691,8 @@ func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
 	err := srv.deliverTaskOutput("bot", "route:slack:0:   ", "text")
-	if err == nil {
-		t.Fatal("expected error for empty target ID")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestDeliverTaskOutput_LastRouteNoSessions(t *testing.T) {
@@ -1934,9 +1701,8 @@ func TestDeliverTaskOutput_LastRouteNoSessions(t *testing.T) {
 	srv := New(&config.Config{}, "tok")
 	// No session channel files → latestAgentSessionChannels returns error.
 	err := srv.deliverTaskOutput("bot", "last", "text")
-	if err == nil {
-		t.Fatal("expected error when no session channels exist")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── latestAgentSessionChannels ───────────────────────────────────────────────
@@ -1944,25 +1710,20 @@ func TestDeliverTaskOutput_LastRouteNoSessions(t *testing.T) {
 func TestLatestAgentSessionChannels_NoSessions(t *testing.T) {
 	setupServerDataDir(t)
 	_, err := latestAgentSessionChannels("agent_nonexistent")
-	if err == nil {
-		t.Fatal("expected error for missing sessions dir")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestLatestAgentSessionChannels_WithSession(t *testing.T) {
 	setupServerDataDir(t)
+
 	// Create a real session channel config via store.
-	if err := store.EnsureSessionChannel("agent_mybot", "sess1", "slack", "C999"); err != nil {
-		t.Fatalf("EnsureSessionChannel: %v", err)
-	}
+	err := store.EnsureSessionChannel("agent_mybot", "sess1", "slack", "C999")
+	assert.NoError(t, err)
+
 	channels, err := latestAgentSessionChannels("agent_mybot")
-	if err != nil {
-		t.Fatalf("latestAgentSessionChannels: %v", err)
-	}
-	if len(channels) == 0 {
-		t.Fatal("expected at least one channel")
-	}
-	if channels[0].Type != "slack" {
-		t.Errorf("channel type = %q, want slack", channels[0].Type)
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(channels))
+	assert.Equal(t, "slack", channels[0].Type)
+
 }

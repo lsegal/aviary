@@ -3,43 +3,38 @@ package domain
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConstants_NonEmpty(t *testing.T) {
 	for _, state := range []AgentState{AgentStateIdle, AgentStateRunning, AgentStateStopped} {
-		if state == "" {
-			t.Fatal("agent state should not be empty")
-		}
+		assert.NotEqual(t, "", state)
+
 	}
 	for _, status := range []JobStatus{JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed, JobStatusCanceled} {
-		if status == "" {
-			t.Fatal("job status should not be empty")
-		}
+		assert.NotEqual(t, "", status)
+
 	}
 	for _, status := range []RunStatus{RunStatusPending, RunStatusInProgress, RunStatusCompleted, RunStatusFailed} {
-		if status == "" {
-			t.Fatal("run status should not be empty")
-		}
+		assert.NotEqual(t, "", status)
+
 	}
 	for _, tr := range []TriggerType{TriggerTypeCron, TriggerTypeWatch} {
-		if tr == "" {
-			t.Fatal("trigger type should not be empty")
-		}
+		assert.NotEqual(t, "", tr)
+
 	}
 	for _, typ := range []ChannelType{ChannelTypeSlack, ChannelTypeDiscord, ChannelTypeSignal} {
-		if typ == "" {
-			t.Fatal("channel type should not be empty")
-		}
+		assert.NotEqual(t, "", typ)
+
 	}
 	for _, provider := range []Provider{ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderStdio} {
-		if provider == "" {
-			t.Fatal("provider should not be empty")
-		}
+		assert.NotEqual(t, "", provider)
+
 	}
 	for _, role := range []MessageRole{MessageRoleUser, MessageRoleAssistant, MessageRoleSystem} {
-		if role == "" {
-			t.Fatal("message role should not be empty")
-		}
+		assert.NotEqual(t, "", role)
+
 	}
 }
 
@@ -47,52 +42,41 @@ func TestStructs_Construct(t *testing.T) {
 	now := time.Now()
 
 	a := Agent{ID: "a1", Name: "agent", State: AgentStateIdle, CreatedAt: now, UpdatedAt: now}
-	if a.ID != "a1" || a.Name != "agent" || a.State != AgentStateIdle {
-		t.Fatalf("unexpected agent: %+v", a)
-	}
+	assert.Equal(t, "a1", a.ID)
+	assert.Equal(t, "agent", a.Name)
+	assert.Equal(t, AgentStateIdle, a.State)
 
 	ch := Channel{ID: "c1", AgentID: "a1", Type: ChannelTypeSlack, ChannelID: "general"}
-	if ch.Type != ChannelTypeSlack || ch.AgentID != "a1" {
-		t.Fatalf("unexpected channel: %+v", ch)
-	}
+	assert.Equal(t, ChannelTypeSlack, ch.Type)
+	assert.Equal(t, "a1", ch.AgentID)
 
 	mp := MemoryPool{ID: "m1", Name: "shared"}
-	if mp.Name != "shared" {
-		t.Fatalf("unexpected pool: %+v", mp)
-	}
+	assert.Equal(t, "shared", mp.Name)
 
 	me := MemoryEntry{ID: "e1", PoolID: "m1", Role: "user", Content: "hello", Tokens: 1, Timestamp: now}
-	if me.Content != "hello" || me.Tokens != 1 {
-		t.Fatalf("unexpected memory entry: %+v", me)
-	}
+	assert.Equal(t, "hello", me.Content)
+	assert.Equal(t, 1, me.Tokens)
 
 	model := Model{ID: "mod1", Name: "anthropic/claude", Provider: ProviderAnthropic, Auth: "auth:anthropic:default"}
-	if model.Provider != ProviderAnthropic {
-		t.Fatalf("unexpected model: %+v", model)
-	}
+	assert.Equal(t, ProviderAnthropic, model.Provider)
 
 	task := ScheduledTask{ID: "t1", AgentID: "a1", Name: "heartbeat", TriggerType: TriggerTypeCron, Schedule: "@hourly", Prompt: "ping", CreatedAt: now}
-	if task.TriggerType != TriggerTypeCron || task.Name != "heartbeat" {
-		t.Fatalf("unexpected task: %+v", task)
-	}
+	assert.Equal(t, TriggerTypeCron, task.TriggerType)
+	assert.Equal(t, "heartbeat", task.Name)
 
 	job := Job{ID: "j1", TaskID: "t1", AgentID: "a1", Status: JobStatusPending, Attempts: 0, MaxRetries: 3, CreatedAt: now, UpdatedAt: now}
-	if job.Status != JobStatusPending || job.MaxRetries != 3 {
-		t.Fatalf("unexpected job: %+v", job)
-	}
+	assert.Equal(t, JobStatusPending, job.Status)
+	assert.Equal(t, 3, job.MaxRetries)
 
 	run := Run{ID: "r1", JobID: "j1", Status: RunStatusInProgress, StartedAt: now}
-	if run.JobID != "j1" || run.Status != RunStatusInProgress {
-		t.Fatalf("unexpected run: %+v", run)
-	}
+	assert.Equal(t, "j1", run.JobID)
+	assert.Equal(t, RunStatusInProgress, run.Status)
 
 	s := Session{ID: "s1", AgentID: "a1", CreatedAt: now, UpdatedAt: now}
-	if s.AgentID != "a1" {
-		t.Fatalf("unexpected session: %+v", s)
-	}
+	assert.Equal(t, "a1", s.AgentID)
 
 	msg := Message{ID: "msg1", SessionID: "s1", Role: MessageRoleUser, Content: "hi", Timestamp: now}
-	if msg.Role != MessageRoleUser || msg.Content != "hi" {
-		t.Fatalf("unexpected message: %+v", msg)
-	}
+	assert.Equal(t, MessageRoleUser, msg.Role)
+	assert.Equal(t, "hi", msg.Content)
+
 }

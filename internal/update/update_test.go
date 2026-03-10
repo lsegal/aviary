@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfigureEmulationAndCheck(t *testing.T) {
@@ -15,32 +17,25 @@ func TestConfigureEmulationAndCheck(t *testing.T) {
 		buildinfo.Version = orig
 		_ = ConfigureEmulation("")
 	})
+	err := ConfigureEmulation("1.2.3:1.3.0")
+	assert.NoError(t, err)
 
-	if err := ConfigureEmulation("1.2.3:1.3.0"); err != nil {
-		t.Fatalf("ConfigureEmulation: %v", err)
-	}
 	check, err := Check(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("Check: %v", err)
-	}
-	if !check.Emulated {
-		t.Fatal("expected emulated check result")
-	}
-	if !check.UpgradeAvailable {
-		t.Fatal("expected upgrade to be available")
-	}
-	if check.CurrentVersion != "1.2.3" || check.LatestVersion != "1.3.0" {
-		t.Fatalf("unexpected versions: %+v", check)
-	}
+	assert.NoError(t, err)
+	assert.True(t, check.Emulated)
+	assert.True(t, check.UpgradeAvailable)
+	assert.Equal(t, "1.2.3", check.CurrentVersion)
+	assert.Equal(t, "1.3.0", check.LatestVersion)
+
 }
 
 func TestConfigureEmulationRejectsReleaseBuild(t *testing.T) {
 	orig := buildinfo.Version
 	buildinfo.Version = "1.2.3"
 	t.Cleanup(func() { buildinfo.Version = orig })
-	if err := ConfigureEmulation("1.2.3:1.3.0"); err == nil {
-		t.Fatal("expected release build emulation to fail")
-	}
+	err := ConfigureEmulation("1.2.3:1.3.0")
+	assert.Error(t, err)
+
 }
 
 func TestInstallNoopWhenEmulated(t *testing.T) {
@@ -50,17 +45,15 @@ func TestInstallNoopWhenEmulated(t *testing.T) {
 		buildinfo.Version = orig
 		_ = ConfigureEmulation("")
 	})
-	if err := ConfigureEmulation("1.2.3:1.3.0"); err != nil {
-		t.Fatalf("ConfigureEmulation: %v", err)
-	}
+	err := ConfigureEmulation("1.2.3:1.3.0")
+	assert.NoError(t, err)
+
 	result, err := Install(context.Background(), InstallOptions{
 		Version:    "1.3.0",
 		TargetPath: filepath.Join(t.TempDir(), "aviary"),
 	})
-	if err != nil {
-		t.Fatalf("Install: %v", err)
-	}
-	if !result.Noop || !result.Emulated {
-		t.Fatalf("expected noop emulated install, got %+v", result)
-	}
+	assert.NoError(t, err)
+	assert.True(t, result.Noop)
+	assert.True(t, result.Emulated)
+
 }

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
@@ -26,9 +28,8 @@ func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Schedul
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -39,16 +40,14 @@ func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Schedul
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 	s.Reconcile(cfg)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
@@ -79,9 +78,8 @@ func TestAgentTools_NilDeps(t *testing.T) {
 func TestAgentStop_FoundAndStopped(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -97,12 +95,8 @@ func TestAgentStop_FoundAndStopped(t *testing.T) {
 
 	// stop known agent
 	out, err := d.CallTool(context.Background(), "agent_stop", map[string]any{"name": "bot"})
-	if err != nil {
-		t.Fatalf("agent_stop: %v", err)
-	}
-	if !strings.Contains(out, "stopped") {
-		t.Fatalf("expected 'stopped' in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "stopped"))
 
 	// stop unknown agent
 	toolCallContains(t, d, "agent_stop", map[string]any{"name": "unknown-agent"}, "not found")
@@ -111,9 +105,8 @@ func TestAgentStop_FoundAndStopped(t *testing.T) {
 func TestAgentGet_Tool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -124,9 +117,8 @@ func TestAgentGet_Tool(t *testing.T) {
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "alpha", Model: "claude-3"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
@@ -136,12 +128,9 @@ func TestAgentGet_Tool(t *testing.T) {
 
 	// agent_get for known agent
 	out, err := d.CallTool(context.Background(), "agent_get", map[string]any{"name": "alpha"})
-	if err != nil {
-		t.Fatalf("agent_get: %v", err)
-	}
-	if !strings.Contains(out, "alpha") || !strings.Contains(out, "claude-3") {
-		t.Fatalf("expected agent details in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.Contains(t, out, "alpha")
+	assert.Contains(t, out, "claude-3")
 
 	// agent_get for unknown agent
 	toolCallContains(t, d, "agent_get", map[string]any{"name": "unknown"}, "not found")
@@ -150,9 +139,8 @@ func TestAgentGet_Tool(t *testing.T) {
 func TestAgentAdd_Update_Delete(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -163,9 +151,8 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "existing", Model: "x"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
@@ -181,12 +168,8 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 		"name":  "newbot",
 		"model": "claude-3",
 	})
-	if err != nil {
-		t.Fatalf("agent_add: %v", err)
-	}
-	if !strings.Contains(out, "added") {
-		t.Fatalf("expected 'added' in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "added"))
 
 	// agent_add duplicate
 	toolCallContains(t, d, "agent_add", map[string]any{"name": "newbot", "model": "x"}, "already exists")
@@ -199,12 +182,8 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 		"name":  "newbot",
 		"model": "claude-4",
 	})
-	if err != nil {
-		t.Fatalf("agent_update: %v", err)
-	}
-	if !strings.Contains(out, "updated") {
-		t.Fatalf("expected 'updated' in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "updated"))
 
 	// agent_update unknown agent
 	toolCallContains(t, d, "agent_update", map[string]any{"name": "ghost"}, "not found")
@@ -214,12 +193,9 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 
 	// agent_delete known agent
 	out, err = d.CallTool(context.Background(), "agent_delete", map[string]any{"name": "newbot"})
-	if err != nil {
-		t.Fatalf("agent_delete: %v", err)
-	}
-	if !strings.Contains(out, "deleted") {
-		t.Fatalf("expected 'deleted' in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "deleted"))
+
 }
 
 // ── Browser tools (nil deps) ──────────────────────────────────────────────────
@@ -253,9 +229,8 @@ func TestBrowserTools_WithManager_TabsAndErrors(t *testing.T) {
 
 	// browser_tabs succeeds (returns empty list when no Chrome running)
 	out, err := d.CallTool(context.Background(), "browser_tabs", nil)
-	if err != nil {
-		t.Fatalf("browser_tabs: %v", err)
-	}
+	assert.NoError(t, err)
+
 	// Should return JSON array or error
 	_ = out
 
@@ -272,9 +247,8 @@ func TestJobLogsTool(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -286,9 +260,8 @@ func TestJobLogsTool(t *testing.T) {
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
@@ -299,23 +272,17 @@ func TestJobLogsTool(t *testing.T) {
 
 	// Create a real job, then fetch its logs
 	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
-	if err != nil {
-		t.Fatalf("enqueue job: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Write output to the job
 	job.Output = "hello from job"
-	if err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), job); err != nil {
-		t.Fatalf("write job: %v", err)
-	}
+	err = store.WriteJSON(store.JobPath(job.AgentID, job.ID), job)
+	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "job_logs", map[string]any{"id": job.ID})
-	if err != nil {
-		t.Fatalf("job_logs: %v", err)
-	}
-	if !strings.Contains(out, "hello from job") {
-		t.Fatalf("expected job output in logs, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "hello from job"))
+
 }
 
 func TestJobLogsNoOutput(t *testing.T) {
@@ -323,9 +290,8 @@ func TestJobLogsNoOutput(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -337,26 +303,20 @@ func TestJobLogsNoOutput(t *testing.T) {
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	d := NewDispatcher("https://localhost:16677", "")
 
 	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
-	if err != nil {
-		t.Fatalf("enqueue job: %v", err)
-	}
+	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "job_logs", map[string]any{"id": job.ID})
-	if err != nil {
-		t.Fatalf("job_logs no output: %v", err)
-	}
-	if !strings.Contains(out, "no output") {
-		t.Fatalf("expected 'no output' message, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "no output"))
+
 }
 
 func TestJobQueryWithDateRange(t *testing.T) {
@@ -364,9 +324,8 @@ func TestJobQueryWithDateRange(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -378,17 +337,14 @@ func TestJobQueryWithDateRange(t *testing.T) {
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	// Enqueue a job so there is something to query.
 	_, err = s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
+	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
 
@@ -396,13 +352,10 @@ func TestJobQueryWithDateRange(t *testing.T) {
 	start := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
 	end := time.Now().Add(24 * time.Hour).Format("2006-01-02")
 	out, err := d.CallTool(context.Background(), "job_query", map[string]any{"start": start, "end": end})
-	if err != nil {
-		t.Fatalf("job_query with date range: %v", err)
-	}
-	// Should return an array containing our job
-	if strings.TrimSpace(out) == "null" {
-		t.Fatalf("expected non-null result when job is in range, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, // Should return an array containing our job
+		"null", strings.TrimSpace(out))
+
 }
 
 func TestJobListQueryRunNow_NilScheduler(t *testing.T) {
@@ -473,14 +426,12 @@ func TestReconcileAgents_NilAgentManager(t *testing.T) {
 func TestReconcileAgents_WithManager(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	mgr := agent.NewManager(nil)
@@ -496,40 +447,31 @@ func TestReconcileAgents_WithManager(t *testing.T) {
 
 func TestGeneratedTaskName(t *testing.T) {
 	name := generatedTaskName("Send the daily report")
-	if name == "" {
-		t.Fatal("expected non-empty name")
-	}
-	if strings.Contains(name, " ") {
-		t.Fatalf("generated task name should not contain spaces, got %q", name)
-	}
-	// Should contain slug characters and a unix timestamp suffix
-	if !strings.Contains(name, "-") {
-		t.Fatalf("expected dash separator in generated name, got %q", name)
-	}
+	assert.NotEqual(t, "", name)
+	assert.False(t, strings.Contains(name, " "))
+	assert.True(t, // Should contain slug characters and a unix timestamp suffix
+		strings.Contains(name, "-"))
 
 	// Empty / symbol-only prompt falls back to "scheduled"
 	fallbackName := generatedTaskName("!!!???")
-	if !strings.HasPrefix(fallbackName, "scheduled") {
-		t.Fatalf("expected 'scheduled' prefix for empty prompt, got %q", fallbackName)
-	}
+	assert.True(t, strings.HasPrefix(fallbackName, "scheduled"))
 
 	// Long prompt gets truncated at 24 characters (base part)
 	longName := generatedTaskName("averylongnamewithoutspacessoitdoesnotget truncated early")
 	base := strings.Split(longName, "-")
-	if len(base[0]) > 24 {
-		t.Fatalf("expected base to be at most 24 chars, got %d", len(base[0]))
-	}
+	assert.LessOrEqual(t, len(base[0]), 24)
+
 }
 
 // ── cdpPortOrDefault ─────────────────────────────────────────────────────────
 
 func TestCDPPortOrDefault(t *testing.T) {
-	if got := cdpPortOrDefault(0); got != config.DefaultCDPPort {
-		t.Fatalf("expected default port %d, got %d", config.DefaultCDPPort, got)
-	}
-	if got := cdpPortOrDefault(9999); got != 9999 {
-		t.Fatalf("expected 9999, got %d", got)
-	}
+	got := cdpPortOrDefault(0)
+	assert.Equal(t, config.DefaultCDPPort, got)
+
+	got = cdpPortOrDefault(9999)
+	assert.Equal(t, 9999, got)
+
 }
 
 // ── agent_tools.go ────────────────────────────────────────────────────────────
@@ -540,28 +482,20 @@ func TestNewAgentToolClient(t *testing.T) {
 	SetDeps(&Deps{Agents: agent.NewManager(nil)})
 
 	tc, err := NewAgentToolClient(context.Background())
-	if err != nil {
-		t.Fatalf("NewAgentToolClient: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer tc.Close() //nolint:errcheck
 
 	// ListTools returns a non-empty list
 	tools, err := tc.ListTools(context.Background())
-	if err != nil {
-		t.Fatalf("ListTools: %v", err)
-	}
-	if len(tools) == 0 {
-		t.Fatal("expected non-empty tool list from agent tool client")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(tools))
 
 	// CallToolText returns text
 	out, err := tc.CallToolText(context.Background(), "ping", map[string]any{})
-	if err != nil {
-		t.Fatalf("CallToolText: %v", err)
-	}
-	if out != "pong" {
-		t.Fatalf("expected pong, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "pong", out)
+
 }
 
 // ── config_get / config_save / config_validate tools ─────────────────────────
@@ -569,16 +503,14 @@ func TestNewAgentToolClient(t *testing.T) {
 func TestConfigGetSaveValidateTools(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -594,32 +526,20 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 
 	// config_get returns current config
 	out, err := d.CallTool(context.Background(), "config_get", map[string]any{})
-	if err != nil {
-		t.Fatalf("config_get: %v", err)
-	}
-	if !strings.Contains(out, "bot") {
-		t.Fatalf("expected agent name in config_get output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "bot"))
 
 	// config_validate returns issues array
 	out, err = d.CallTool(context.Background(), "config_validate", map[string]any{})
-	if err != nil {
-		t.Fatalf("config_validate: %v", err)
-	}
-	// Should return a JSON array
-	if !strings.HasPrefix(strings.TrimSpace(out), "[") && strings.TrimSpace(out) != "null" {
-		t.Fatalf("expected JSON array from config_validate, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.False(t, // Should return a JSON array
+		!strings.HasPrefix(strings.TrimSpace(out), "[") && strings.TrimSpace(out) != "null")
 
 	// config_save with valid JSON config
 	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku"}]}`
 	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
-	if err != nil {
-		t.Fatalf("config_save: %v", err)
-	}
-	if !strings.Contains(out, "saved") {
-		t.Fatalf("expected 'saved' in config_save output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
 
 	// config_save with invalid JSON
 	toolCallContains(t, d, "config_save", map[string]any{"config": "not-json"}, "invalid config")
@@ -630,9 +550,8 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 func TestSessionCreateTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -651,12 +570,9 @@ func TestSessionCreateTool(t *testing.T) {
 
 	// Valid create
 	out, err := d.CallTool(context.Background(), "session_create", map[string]any{"agent": "bot"})
-	if err != nil {
-		t.Fatalf("session_create: %v", err)
-	}
-	if !strings.Contains(out, "agent_bot") {
-		t.Fatalf("expected agent_id in session_create output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "agent_bot"))
+
 }
 
 // ── session_stop with agent param ─────────────────────────────────────────────
@@ -664,9 +580,8 @@ func TestSessionCreateTool(t *testing.T) {
 func TestSessionStop_ByAgentParam(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -685,12 +600,9 @@ func TestSessionStop_ByAgentParam(t *testing.T) {
 		"agent":   "bot",
 		"session": "main",
 	})
-	if err != nil {
-		t.Fatalf("session_stop by agent: %v", err)
-	}
-	if !strings.Contains(out, "no active") {
-		t.Fatalf("expected 'no active' message, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "no active"))
+
 }
 
 // ── local file data URL + channel_send_file error paths ──────────────────────
@@ -698,19 +610,17 @@ func TestSessionStop_ByAgentParam(t *testing.T) {
 func TestLocalFileToDataURL_Errors(t *testing.T) {
 	// File not found
 	_, err := localFileToDataURL("/nonexistent/path/file.png")
-	if err == nil {
-		t.Fatal("expected error for missing file")
-	}
+	assert.Error(t, err)
 
 	// Empty file
 	emptyFile := filepath.Join(t.TempDir(), "empty.txt")
-	if err := os.WriteFile(emptyFile, []byte{}, 0o600); err != nil {
-		t.Fatalf("write empty file: %v", err)
-	}
+	err = os.WriteFile(emptyFile, []byte{}, 0o600)
+	assert.NoError(t, err)
+
 	_, err = localFileToDataURL(emptyFile)
-	if err == nil || !strings.Contains(err.Error(), "empty") {
-		t.Fatalf("expected 'empty' error, got %v", err)
-	}
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+
 }
 
 func TestChannelSendFile_NoSession(t *testing.T) {
@@ -718,9 +628,8 @@ func TestChannelSendFile_NoSession(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -743,14 +652,12 @@ func TestChannelSendFile_NoSession(t *testing.T) {
 func TestSkillsListTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	cfg := &config.Config{}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -761,13 +668,12 @@ func TestSkillsListTool(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "skills_list", map[string]any{})
-	if err != nil {
-		t.Fatalf("skills_list: %v", err)
+	assert.NoError(t, err)
+	out = strings.TrimSpace(out)
+	if out != "null" {
+		assert.True(t, strings.HasPrefix(out, "["))
 	}
-	// Should return a JSON array (possibly empty)
-	if !strings.HasPrefix(strings.TrimSpace(out), "[") && strings.TrimSpace(out) != "null" {
-		t.Fatalf("expected JSON array from skills_list, got %q", out)
-	}
+
 }
 
 // ── memory tools (nil deps) ───────────────────────────────────────────────────
@@ -791,9 +697,8 @@ func TestMemoryToolsQuery_NilDeps(t *testing.T) {
 func TestMemorySearch_EmptyQuery(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -808,9 +713,8 @@ func TestMemorySearch_EmptyQuery(t *testing.T) {
 
 	// memory_search with empty query returns all notes (empty)
 	out, err := d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": ""})
-	if err != nil {
-		t.Fatalf("memory_search empty query: %v", err)
-	}
+	assert.NoError(t, err)
+
 	_ = out // may be empty string, that's fine
 }
 
@@ -874,12 +778,9 @@ func TestTaskSchedule_ImmediateTask(t *testing.T) {
 		"agent":  "bot",
 		"prompt": "run now",
 	})
-	if err != nil {
-		t.Fatalf("task_schedule immediate: %v", err)
-	}
-	if !strings.Contains(out, "immediately") {
-		t.Fatalf("expected 'immediately' in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "immediately"))
+
 }
 
 func TestTaskSchedule_CapturesReplySessionContext(t *testing.T) {
@@ -890,25 +791,19 @@ func TestTaskSchedule_CapturesReplySessionContext(t *testing.T) {
 		sessionID = "agent_bot-signal:+15551234567"
 	)
 	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sessionID), agentID)
-
-	if _, err := d.CallTool(ctx, "task_schedule", map[string]any{
+	_, err := d.CallTool(ctx, "task_schedule", map[string]any{
 		"agent":  "bot",
 		"prompt": "run now",
 		"in":     "30s",
-	}); err != nil {
-		t.Fatalf("task_schedule with session context: %v", err)
-	}
+	})
+	assert.NoError(t, err)
 
 	jobs, err := s.Queue().List("")
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected one queued job, got %d", len(jobs))
-	}
-	if jobs[0].ReplyAgentID != agentID || jobs[0].ReplySessionID != sessionID {
-		t.Fatalf("expected reply context %q/%q, got %q/%q", agentID, sessionID, jobs[0].ReplyAgentID, jobs[0].ReplySessionID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(jobs))
+	assert.Equal(t, agentID, jobs[0].ReplyAgentID)
+	assert.Equal(t, sessionID, jobs[0].ReplySessionID)
+
 }
 
 func TestTaskSchedule_WithDelay(t *testing.T) {
@@ -919,47 +814,38 @@ func TestTaskSchedule_WithDelay(t *testing.T) {
 		"prompt": "run later",
 		"in":     "5m",
 	})
-	if err != nil {
-		t.Fatalf("task_schedule with delay: %v", err)
-	}
-	if !strings.Contains(out, "job ID") {
-		t.Fatalf("expected job ID in output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "job ID"))
+
 }
 
 func TestTaskStopNoJobs(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 
 	out, err := d.CallTool(context.Background(), "task_stop", map[string]any{})
-	if err != nil {
-		t.Fatalf("task_stop no jobs: %v", err)
-	}
-	if !strings.Contains(out, "no pending") {
-		t.Fatalf("expected 'no pending' message, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "no pending"))
+
 }
 
 func TestTaskStopByNameNoMatch(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 
 	out, err := d.CallTool(context.Background(), "task_stop", map[string]any{"name": "nonexistent-task"})
-	if err != nil {
-		t.Fatalf("task_stop no match: %v", err)
-	}
-	if !strings.Contains(out, "no pending") {
-		t.Fatalf("expected 'no pending' message, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "no pending"))
+
 }
 
 // ── validateTaskSchedule ──────────────────────────────────────────────────────
 
 func TestValidateTaskSchedule(t *testing.T) {
-	if err := validateTaskSchedule("0 0 10 * * *"); err != nil {
-		t.Fatalf("valid schedule should not error: %v", err)
-	}
-	if err := validateTaskSchedule("not-a-cron"); err == nil {
-		t.Fatal("expected error for invalid cron")
-	}
+	err := validateTaskSchedule("0 0 10 * * *")
+	assert.NoError(t, err)
+
+	err = validateTaskSchedule("not-a-cron")
+	assert.Error(t, err)
+
 }
 
 // ── agent_run error paths ─────────────────────────────────────────────────────
@@ -998,9 +884,8 @@ func TestJobRunNow_NilScheduler(t *testing.T) {
 func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -1018,9 +903,8 @@ func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 		OutputTokens: 5,
 	}
 	usagePath := store.UsagePath()
-	if err := store.AppendJSONL(usagePath, rec); err != nil {
-		t.Fatalf("write usage: %v", err)
-	}
+	err = store.AppendJSONL(usagePath, rec)
+	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
 
@@ -1028,10 +912,7 @@ func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).Format(time.RFC3339)
 	end := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
 	out, err := d.CallTool(context.Background(), "usage_query", map[string]any{"start": start, "end": end})
-	if err != nil {
-		t.Fatalf("usage_query RFC3339: %v", err)
-	}
-	if !strings.Contains(out, "rfc-bot") {
-		t.Fatalf("expected rfc-bot in RFC3339 filtered query, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "rfc-bot"))
+
 }

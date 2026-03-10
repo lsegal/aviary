@@ -7,22 +7,22 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInstalledDirUsesConfigBaseDir(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(t.TempDir(), "aviary-config"))
 	got := InstalledDir()
-	if !strings.Contains(got, "aviary-config") {
-		t.Fatalf("expected InstalledDir to use AVIARY_CONFIG_BASE_DIR, got %q", got)
-	}
+	assert.True(t, strings.Contains(got, "aviary-config"))
+
 }
 
 func TestListInstalledIncludesBuiltinSkill(t *testing.T) {
 	cfg := &config.Config{}
 	skills, err := ListInstalled(cfg)
-	if err != nil {
-		t.Fatalf("ListInstalled: %v", err)
-	}
+	assert.NoError(t, err)
+
 	found := false
 	for _, skill := range skills {
 		if skill.Name == "gogcli" && skill.Source == "builtin" {
@@ -30,9 +30,8 @@ func TestListInstalledIncludesBuiltinSkill(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatalf("expected builtin gogcli skill in installed list, got %+v", skills)
-	}
+	assert.True(t, found)
+
 }
 
 func TestListInstalledDiskOverridesBuiltin(t *testing.T) {
@@ -40,36 +39,30 @@ func TestListInstalledDiskOverridesBuiltin(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_BASE_DIR", base)
 
 	overrideDir := filepath.Join(base, "skills", "gogcli")
-	if err := os.MkdirAll(overrideDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
+	err := os.MkdirAll(overrideDir, 0o700)
+	assert.NoError(t, err)
+
 	data := `---
 name: gogcli
 description: Disk override.
 ---
 Disk version
 `
-	if err := os.WriteFile(filepath.Join(overrideDir, "SKILL.md"), []byte(data), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	err = os.WriteFile(filepath.Join(overrideDir, "SKILL.md"), []byte(data), 0o600)
+	assert.NoError(t, err)
 
 	skills, err := ListInstalled(&config.Config{})
-	if err != nil {
-		t.Fatalf("ListInstalled: %v", err)
-	}
+	assert.NoError(t, err)
 
+	found := false
 	for _, skill := range skills {
 		if skill.Name == "gogcli" {
-			if skill.Source != "disk" {
-				t.Fatalf("expected disk override source, got %+v", skill)
-			}
-			if skill.Description != "Disk override." {
-				t.Fatalf("expected disk override description, got %+v", skill)
-			}
-			return
+			found = true
+			assert.Equal(t, "disk", skill.Source)
+			assert.Equal(t, "Disk override.", skill.Description)
 		}
 	}
-	t.Fatal("expected gogcli skill in installed list")
+	assert.True(t, found)
 }
 
 func TestListInstalledMarksEnabledFromConfig(t *testing.T) {
@@ -79,16 +72,14 @@ func TestListInstalledMarksEnabledFromConfig(t *testing.T) {
 		},
 	}
 	skills, err := ListInstalled(cfg)
-	if err != nil {
-		t.Fatalf("ListInstalled: %v", err)
-	}
+	assert.NoError(t, err)
+
+	found := false
 	for _, skill := range skills {
 		if skill.Name == "gogcli" {
-			if !skill.Enabled {
-				t.Fatalf("expected gogcli to be enabled, got %+v", skill)
-			}
-			return
+			found = true
+			assert.True(t, skill.Enabled)
 		}
 	}
-	t.Fatal("expected gogcli skill in installed list")
+	assert.True(t, found)
 }

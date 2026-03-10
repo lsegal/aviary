@@ -9,6 +9,8 @@ import (
 	authpkg "github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ── parseInt ─────────────────────────────────────────────────────────────────
@@ -21,9 +23,9 @@ func TestParseInt(t *testing.T) {
 		{"42", 42}, {"0", 0}, {"", 0}, {"  7  ", 7}, {"abc", 0},
 	}
 	for _, c := range cases {
-		if got := parseInt(c.in); got != c.want {
-			t.Errorf("parseInt(%q) = %d, want %d", c.in, got, c.want)
-		}
+		got := parseInt(c.in)
+		assert.Equal(t, c.want, got)
+
 	}
 }
 
@@ -32,20 +34,20 @@ func TestParseInt(t *testing.T) {
 func TestToggleBoolPtr(t *testing.T) {
 	// nil with default=true → toggles to false
 	got := toggleBoolPtr(nil, true)
-	if got == nil || *got != false {
-		t.Errorf("toggleBoolPtr(nil, true) = %v, want false", got)
-	}
+	assert.NotNil(t, got)
+	assert.Equal(t, false, *got)
+
 	// nil with default=false → toggles to true
 	got2 := toggleBoolPtr(nil, false)
-	if got2 == nil || *got2 != true {
-		t.Errorf("toggleBoolPtr(nil, false) = %v, want true", got2)
-	}
+	assert.NotNil(t, got2)
+	assert.Equal(t, true, *got2)
+
 	// explicit true → toggles to false
 	b := true
 	got3 := toggleBoolPtr(&b, false)
-	if got3 == nil || *got3 != false {
-		t.Errorf("toggleBoolPtr(&true, false) = %v, want false", got3)
-	}
+	assert.NotNil(t, got3)
+	assert.Equal(t, false, *got3)
+
 }
 
 // ── joinAllowFrom / parseAllowFrom ────────────────────────────────────────────
@@ -61,72 +63,51 @@ func TestJoinAllowFrom(t *testing.T) {
 		{[]config.AllowFromEntry{{From: "  "}, {From: "+3"}}, "+3"}, // blank entries skipped
 	}
 	for _, c := range cases {
-		if got := joinAllowFrom(c.in); got != c.want {
-			t.Errorf("joinAllowFrom(%v) = %q, want %q", c.in, got, c.want)
-		}
+		got := joinAllowFrom(c.in)
+		assert.Equal(t, c.want, got)
+
 	}
 }
 
 func TestParseAllowFrom(t *testing.T) {
 	got := parseAllowFrom("+1, +2, +3")
-	if len(got) != 3 {
-		t.Fatalf("parseAllowFrom: len=%d, want 3", len(got))
-	}
-	if got[1].From != "+2" {
-		t.Errorf("parseAllowFrom[1].From = %q, want +2", got[1].From)
-	}
-	// empty string → nil
-	if parseAllowFrom("") != nil {
-		t.Error("parseAllowFrom(\"\") should return nil")
-	}
+	assert.Equal(t, 3, len(got))
+	assert.Equal(t, "+2", got[1].From)
+	assert.Nil(t, // empty string → nil
+		parseAllowFrom(""))
+
 }
 
 // ── intString ─────────────────────────────────────────────────────────────────
 
 func TestIntString(t *testing.T) {
-	if intString(0) != "" {
-		t.Error("intString(0) should return empty")
-	}
-	if intString(42) != "42" {
-		t.Errorf("intString(42) = %q, want 42", intString(42))
-	}
+	assert.Equal(t, "", intString(0))
+	assert.Equal(t, "42", intString(42))
+
 }
 
 // ── boolLabel ─────────────────────────────────────────────────────────────────
 
 func TestBoolLabel(t *testing.T) {
-	if boolLabel(true) != "on" {
-		t.Error("boolLabel(true) should be 'on'")
-	}
-	if boolLabel(false) != "off" {
-		t.Error("boolLabel(false) should be 'off'")
-	}
+	assert.Equal(t, "on", boolLabel(true))
+	assert.Equal(t, "off", boolLabel(false))
+
 }
 
 // ── fallback / firstNonEmpty ──────────────────────────────────────────────────
 
 func TestFallback(t *testing.T) {
-	if fallback("val", "default") != "val" {
-		t.Error("fallback with non-empty should return value")
-	}
-	if fallback("", "default") != "default" {
-		t.Error("fallback with empty should return default")
-	}
-	if fallback("  ", "default") != "default" {
-		t.Error("fallback with whitespace should return default")
-	}
+	assert.Equal(t, "val", fallback("val", "default"))
+	assert.Equal(t, "default", fallback("", "default"))
+	assert.Equal(t, "default", fallback("  ", "default"))
+
 }
 
 func TestFirstNonEmpty(t *testing.T) {
-	if firstNonEmpty("", "  ", "x", "y") != "x" {
-		t.Error("firstNonEmpty should return first non-blank")
-	}
-	if firstNonEmpty("", "") != "" {
-		t.Error("firstNonEmpty with all empty should return empty")
-	}
-	if firstNonEmpty("a") != "a" {
-		t.Error("firstNonEmpty single value")
-	}
+	assert.Equal(t, "x", firstNonEmpty("", "  ", "x", "y"))
+	assert.Equal(t, "", firstNonEmpty("", ""))
+	assert.Equal(t, "a", firstNonEmpty("a"))
+
 }
 
 // ── marshalOAuthToken ─────────────────────────────────────────────────────────
@@ -138,12 +119,9 @@ func TestMarshalOAuthToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour).UnixMilli(),
 	}
 	data, err := marshalOAuthToken(tok)
-	if err != nil {
-		t.Fatalf("marshalOAuthToken: %v", err)
-	}
-	if data == "" {
-		t.Error("expected non-empty JSON")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", data)
+
 }
 
 // ── authStore ─────────────────────────────────────────────────────────────────
@@ -153,22 +131,20 @@ func TestAuthStore_TempDir(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	st := authStore()
-	if st == nil {
-		t.Fatal("authStore returned nil")
-	}
+	assert.NotNil(t, st)
+
 	// Should be able to set and get a value.
-	if err := st.Set("test:key", "secret"); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
+	err = st.Set("test:key", "secret")
+	assert.NoError(t, err)
+
 	val, err := st.Get("test:key")
-	if err != nil || val != "secret" {
-		t.Errorf("Get: val=%q err=%v", val, err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "secret", val)
+
 }
 
 // ── runDoctor ─────────────────────────────────────────────────────────────────
@@ -178,26 +154,23 @@ func TestRunDoctor_NoConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	// runDoctor calls os.Exit(1) when there are errors.
 	// We can only safely test the no-exit path (no models configured).
 	cfgPath := filepath.Join(base, "aviary", "aviary.yaml")
 	cfg := config.Default()
-	if err := config.Save(cfgPath, &cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save(cfgPath, &cfg)
+	assert.NoError(t, err)
 
 	cfgFile = cfgPath
 	t.Cleanup(func() { cfgFile = "" })
 
 	// No agents/models → no errors → exits cleanly.
-	err := runDoctor(nil, nil)
-	if err != nil {
-		t.Fatalf("runDoctor: %v", err)
-	}
+	err = runDoctor(nil, nil)
+	assert.NoError(t, err)
+
 }
 
 func TestRunDoctor_MissingConfig(t *testing.T) {
@@ -205,19 +178,17 @@ func TestRunDoctor_MissingConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	// Point to a config file that doesn't exist.
 	cfgFile = filepath.Join(base, "nonexistent.yaml")
 	t.Cleanup(func() { cfgFile = "" })
 
 	// Missing config file — should print a warning but not error.
-	err := runDoctor(nil, nil)
-	if err != nil {
-		t.Fatalf("runDoctor with missing config: %v", err)
-	}
+	err = runDoctor(nil, nil)
+	assert.NoError(t, err)
+
 }
 
 func TestRunDoctor_InvalidYAML(t *testing.T) {
@@ -225,17 +196,15 @@ func TestRunDoctor_InvalidYAML(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	cfgPath := filepath.Join(base, "bad.yaml")
 	_ = os.WriteFile(cfgPath, []byte(": invalid: yaml: ["), 0o600)
 	cfgFile = cfgPath
 	t.Cleanup(func() { cfgFile = "" })
 
-	err := runDoctor(nil, nil)
-	if err == nil {
-		t.Fatal("expected error for invalid YAML")
-	}
+	err = runDoctor(nil, nil)
+	assert.Error(t, err)
+
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var testDataDir string
@@ -103,9 +105,8 @@ func (m *mockProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Even
 
 func TestStreamEventConstants(t *testing.T) {
 	for _, typ := range []StreamEventType{StreamEventText, StreamEventDone, StreamEventError, StreamEventStop} {
-		if typ == "" {
-			t.Fatal("stream event type should not be empty")
-		}
+		assert.NotEqual(t, "", typ)
+
 	}
 }
 
@@ -140,12 +141,9 @@ func TestParseToolCall_Variants(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed, ok := parseToolCall(tc.in)
-			if !ok {
-				t.Fatalf("parseToolCall(%q) failed", tc.in)
-			}
-			if parsed.Tool != tc.tool {
-				t.Fatalf("expected tool %q, got %q", tc.tool, parsed.Tool)
-			}
+			assert.True(t, ok)
+			assert.Equal(t, tc.tool, parsed.Tool)
+
 		})
 	}
 }
@@ -183,16 +181,11 @@ func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for runner")
+		assert.FailNow(t, "timeout")
 	}
+	assert.GreaterOrEqual(t, provider.callCount(), 2)
+	assert.False(t, strings.Contains(strings.ToLower(gotText.String()), "don't have direct access"))
 
-	if provider.callCount() < 2 {
-		t.Fatalf("expected at least 2 provider calls (includes one retry), got %d", provider.callCount())
-	}
-
-	if strings.Contains(strings.ToLower(gotText.String()), "don't have direct access") {
-		t.Fatalf("unexpected toolless refusal in final output: %q", gotText.String())
-	}
 }
 
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
@@ -217,41 +210,34 @@ func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	untrack := trackSessionRun("sess-test", cancel)
-
-	if !IsSessionProcessing("sess-test") {
-		t.Fatal("expected session to be processing after trackSessionRun")
-	}
-
-	if stopped := StopSession("sess-test"); stopped != 1 {
-		t.Fatalf("expected exactly one stopped run, got %d", stopped)
-	}
+	assert.True(t, IsSessionProcessing("sess-test"))
+	stopped := StopSession("sess-test")
+	assert.Equal(t, 1, stopped)
 
 	select {
 	case <-ctx.Done():
 	case <-time.After(1 * time.Second):
-		t.Fatal("expected StopSession to cancel tracked context")
+		assert.FailNow(t, "timeout")
 	}
-
-	if IsSessionProcessing("sess-test") {
-		t.Fatal("expected session to be idle after StopSession")
-	}
+	assert.False(t, IsSessionProcessing("sess-test"))
 
 	// Cleanup should be idempotent even after StopSession removed the run.
 	untrack()
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(changes) < 2 || !changes[0] || changes[len(changes)-1] {
-		t.Fatalf("expected processing transitions [true ... false], got %+v", changes)
-	}
+	assert.GreaterOrEqual(t, len(changes), 2)
+	assert.True(t, changes[0])
+	assert.False(t, changes[len(changes)-1])
+
 }
 
 func TestNewID(t *testing.T) {
 	a := newID("sess")
 	b := newID("sess")
-	if !strings.HasPrefix(a, "sess_") || !strings.HasPrefix(b, "sess_") {
-		t.Fatalf("newID prefix mismatch: %s %s", a, b)
-	}
+	assert.True(t, strings.HasPrefix(a, "sess_"))
+	assert.True(t, strings.HasPrefix(b, "sess_"))
+
 }
 
 func TestAgentRunner_NilProvider(t *testing.T) {
@@ -269,14 +255,12 @@ func TestAgentRunner_NilProvider(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for runner")
+		assert.FailNow(t, "timeout")
 	}
-	if len(got) < 2 {
-		t.Fatalf("expected at least text+done events, got %d", len(got))
-	}
-	if got[0].Type != StreamEventText || got[len(got)-1].Type != StreamEventDone {
-		t.Fatalf("unexpected events: %+v", got)
-	}
+	assert.GreaterOrEqual(t, len(got), 2)
+	assert.Equal(t, StreamEventText, got[0].Type)
+	assert.Equal(t, StreamEventDone, got[len(got)-1].Type)
+
 }
 
 func TestAgentRunner_WithProvider(t *testing.T) {
@@ -297,11 +281,10 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for done")
+		assert.FailNow(t, "timeout")
 	}
-	if text != "hello world" {
-		t.Fatalf("unexpected text: %q", text)
-	}
+	assert.Equal(t, "hello world", text)
+
 }
 
 func TestAgentRunner_ErrorCases(t *testing.T) {
@@ -315,11 +298,9 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		})
 		select {
 		case err := <-errCh:
-			if err == nil {
-				t.Fatal("expected non-nil err")
-			}
+			assert.Error(t, err)
 		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for stream setup error")
+			assert.FailNow(t, "timeout")
 		}
 	})
 
@@ -333,19 +314,16 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		})
 		select {
 		case err := <-errCh:
-			if err == nil {
-				t.Fatal("expected non-nil err")
-			}
+			assert.Error(t, err)
 		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for event error")
+			assert.FailNow(t, "timeout")
 		}
 	})
 
 	t.Run("usage records zero-token throttles", func(t *testing.T) {
 		setTestDataDir(t)
-		if err := store.EnsureDirs(); err != nil {
-			t.Fatalf("EnsureDirs: %v", err)
-		}
+		err := store.EnsureDirs()
+		assert.NoError(t, err)
 
 		runner := NewAgentRunner(
 			&domain.Agent{ID: "a1", Model: "google/gemini-3-flash-preview"},
@@ -363,34 +341,26 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		})
 		select {
 		case err := <-errCh:
-			if err == nil || !strings.Contains(err.Error(), "429") {
-				t.Fatalf("expected 429 error, got %v", err)
-			}
+			assert.ErrorContains(t, err, "429")
 		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for provider error")
+			assert.FailNow(t, "timeout")
 		}
 
 		deadline := time.Now().Add(2 * time.Second)
 		for {
 			records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
-			if err != nil {
-				t.Fatalf("ReadJSONL usage: %v", err)
-			}
+			assert.NoError(t, err)
+
 			if len(records) == 1 {
-				if !records[0].HasThrottle {
-					t.Fatal("expected usage record to mark has_throttle=true")
-				}
-				if records[0].HasError {
-					t.Fatal("expected throttle record to keep has_error=false")
-				}
-				if records[0].InputTokens != 0 || records[0].OutputTokens != 0 {
-					t.Fatalf("expected zero-token throttle record, got input=%d output=%d", records[0].InputTokens, records[0].OutputTokens)
-				}
+				assert.True(t, records[0].HasThrottle)
+				assert.False(t, records[0].HasError)
+				assert.Equal(t, 0, records[0].InputTokens)
+				assert.Equal(t, 0, records[0].OutputTokens)
+
 				break
 			}
-			if time.Now().After(deadline) {
-				t.Fatalf("expected 1 usage record, got %d", len(records))
-			}
+			assert.False(t, time.Now().After(deadline))
+
 			time.Sleep(10 * time.Millisecond)
 		}
 	})
@@ -406,19 +376,13 @@ func TestAgentRunner_StopAndAccessors(t *testing.T) {
 	runner.Prompt(context.Background(), "hi", func(e StreamEvent) { typCh <- e.Type })
 	select {
 	case typ := <-typCh:
-		if typ != StreamEventStop {
-			t.Fatalf("expected stop event, got %s", typ)
-		}
+		assert.Equal(t, StreamEventStop, typ)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for stop event")
+		assert.FailNow(t, "timeout")
 	}
+	assert.Equal(t, a, runner.Agent())
+	assert.Equal(t, cfg, runner.Config())
 
-	if runner.Agent() != a {
-		t.Fatal("Agent accessor mismatch")
-	}
-	if runner.Config() != cfg {
-		t.Fatal("Config accessor mismatch")
-	}
 }
 
 func TestManager_ReconcileAndLookup(t *testing.T) {
@@ -426,28 +390,23 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot1", Model: "anthropic/claude"}, {Name: "bot2", Model: "openai/gpt-4"}}}
 	mgr.Reconcile(cfg)
+	_, ok := mgr.Get("bot1")
+	assert.True(t, ok)
 
-	if _, ok := mgr.Get("bot1"); !ok {
-		t.Fatal("bot1 should exist")
-	}
-	if _, ok := mgr.Get("bot2"); !ok {
-		t.Fatal("bot2 should exist")
-	}
-	if got := len(mgr.List()); got != 2 {
-		t.Fatalf("expected 2 agents, got %d", got)
-	}
+	_, ok = mgr.Get("bot2")
+	assert.True(t, ok)
+
+	got := len(mgr.List())
+	assert.Equal(t, 2, got)
 
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot1", Model: "anthropic/claude"}}})
-	if _, ok := mgr.Get("bot2"); ok {
-		t.Fatal("bot2 should have been removed")
-	}
+	_, ok = mgr.Get("bot2")
+	assert.False(t, ok)
 
 	r1, _ := mgr.Get("bot1")
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot1", Model: "openai/gpt-4.1"}}})
 	r2, _ := mgr.Get("bot1")
-	if r1 == r2 {
-		t.Fatal("bot1 runner should be replaced when model changes")
-	}
+	assert.NotEqual(t, r2, r1)
 
 	mgr.Stop()
 }
@@ -468,15 +427,13 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 	mgr.Reconcile(cfg)
 
 	runner, ok := mgr.Get("bot")
-	if !ok {
-		t.Fatal("bot should exist")
-	}
-	if got := runner.Agent().Model; got != "google/gemini-2.0-flash" {
-		t.Fatalf("runner model = %q; want global default", got)
-	}
-	if got := runner.Agent().Fallbacks; len(got) != 1 || got[0] != "openai-codex/gpt-5.2" {
-		t.Fatalf("runner fallbacks = %v; want global defaults", got)
-	}
+	assert.True(t, ok)
+	got := runner.Agent().Model
+	assert.Equal(t, "google/gemini-2.0-flash", got)
+
+	fallbacks := runner.Agent().Fallbacks
+	assert.Len(t, fallbacks, 1)
+	assert.Equal(t, "openai-codex/gpt-5.2", fallbacks[0])
 
 	mgr.Reconcile(&config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},
@@ -489,46 +446,38 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 	})
 
 	runner, ok = mgr.Get("bot")
-	if !ok {
-		t.Fatal("bot should still exist")
-	}
-	if got := runner.Agent().Model; got != "openai/gpt-4.1" {
-		t.Fatalf("runner model after defaults change = %q; want updated global default", got)
-	}
-	if got := runner.Agent().Fallbacks; len(got) != 1 || got[0] != "anthropic/claude-sonnet-4.5" {
-		t.Fatalf("runner fallbacks after defaults change = %v; want updated global defaults", got)
-	}
+	assert.True(t, ok)
+	got = runner.Agent().Model
+	assert.Equal(t, "openai/gpt-4.1", got)
+
+	fallbacks = runner.Agent().Fallbacks
+	assert.Len(t, fallbacks, 1)
+	assert.Equal(t, "anthropic/claude-sonnet-4.5", fallbacks[0])
+
 }
 
 func TestSessionManager_CreateAndGetOrCreate(t *testing.T) {
 	setTestDataDir(t)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	sm := NewSessionManager()
 	s1, err := sm.Create("agent1")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if s1.ID == "" || s1.AgentID != "agent1" {
-		t.Fatalf("unexpected session: %+v", s1)
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", s1.ID)
+	assert.Equal(t, "agent1", s1.AgentID)
 
 	s2, err := sm.GetOrCreate("agent1")
-	if err != nil {
-		t.Fatalf("getorcreate: %v", err)
-	}
-	if s2.ID == "" || s2.AgentID != "agent1" {
-		t.Fatalf("unexpected session 2: %+v", s2)
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", s2.ID)
+	assert.Equal(t, "agent1", s2.AgentID)
+
 }
 
 func TestSessionManager_List(t *testing.T) {
 	setTestDataDir(t)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	sm := NewSessionManager()
 	agentID := "agent_assistant"
@@ -541,9 +490,8 @@ func TestSessionManager_List(t *testing.T) {
 		CreatedAt: time.Now().Add(-time.Hour),
 		UpdatedAt: time.Now().Add(-time.Hour),
 	}
-	if err := store.AppendJSONL(store.SessionPath(agentID, s1.ID), s1); err != nil {
-		t.Fatalf("setup s1: %v", err)
-	}
+	err = store.AppendJSONL(store.SessionPath(agentID, s1.ID), s1)
+	assert.NoError(t, err)
 
 	// Create another session with new AgentID format (agent_assistant)
 	s2 := &domain.Session{
@@ -553,22 +501,15 @@ func TestSessionManager_List(t *testing.T) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	if err := store.AppendJSONL(store.SessionPath(agentID, s2.ID), s2); err != nil {
-		t.Fatalf("setup s2: %v", err)
-	}
+	err = store.AppendJSONL(store.SessionPath(agentID, s2.ID), s2)
+	assert.NoError(t, err)
 
 	list, err := sm.List(agentID)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(list) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(list))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(list))
+	assert.Equal(t, // Verify "main" is first
+		"main", list[0].Name)
 
-	// Verify "main" is first
-	if list[0].Name != "main" {
-		t.Errorf("expected main session first, got %q", list[0].Name)
-	}
 }
 
 func TestDiscoverSkillsAndBuildPrompt(t *testing.T) {
@@ -578,25 +519,21 @@ func TestDiscoverSkillsAndBuildPrompt(t *testing.T) {
 		// EnsureDirs unrelated to this test; ignore data-dir setup state.
 		_ = err
 	}
-	if err := os.MkdirAll(skillDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("Plan steps carefully."), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
+	err := os.MkdirAll(skillDir, 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("Plan steps carefully."), 0o600)
+	assert.NoError(t, err)
 
 	skills, err := DiscoverSkills(dir)
-	if err != nil {
-		t.Fatalf("discover skills: %v", err)
-	}
-	if len(skills) != 1 || skills[0].Name != "planner" {
-		t.Fatalf("unexpected skills: %+v", skills)
-	}
+	assert.NoError(t, err)
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "planner", skills[0].Name)
 
 	prompt := BuildSystemPrompt("Base prompt", skills)
-	if !strings.Contains(prompt, `<skill name="planner">`) || !strings.Contains(prompt, "Base prompt") {
-		t.Fatalf("unexpected prompt: %s", prompt)
-	}
+	assert.Contains(t, prompt, `<skill name="planner">`)
+	assert.Contains(t, prompt, "Base prompt")
+
 }
 
 func TestFilterTools_AllowList(t *testing.T) {
@@ -619,13 +556,11 @@ func TestFilterTools_AllowList(t *testing.T) {
 
 	// Agent-level permissions apply when no per-message restrictions.
 	filtered := runner.filterTools(tools, nil, nil)
-	if len(filtered) != 2 {
-		t.Fatalf("expected 2 filtered tools, got %d", len(filtered))
-	}
+	assert.Equal(t, 2, len(filtered))
+
 	for _, tool := range filtered {
-		if tool.Name != "tool_a" && tool.Name != "tool_b" {
-			t.Errorf("unexpected tool: %s", tool.Name)
-		}
+		assert.Contains(t, []string{"tool_a", "tool_b"}, tool.Name)
+
 	}
 }
 
@@ -649,9 +584,9 @@ func TestFilterTools_PerMessageOverride(t *testing.T) {
 
 	// Per-message override restricts to only tool_c.
 	filtered := runner.filterTools(tools, []string{"tool_c"}, nil)
-	if len(filtered) != 1 || filtered[0].Name != "tool_c" {
-		t.Fatalf("expected 1 filtered tool (tool_c), got %v", filtered)
-	}
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "tool_c", filtered[0].Name)
+
 }
 
 func TestFilterTools_DisabledWinsAfterAllowList(t *testing.T) {
@@ -676,9 +611,9 @@ func TestFilterTools_DisabledWinsAfterAllowList(t *testing.T) {
 	}
 
 	filtered := runner.filterTools(tools, nil, nil)
-	if len(filtered) != 1 || filtered[0].Name != "tool_a" {
-		t.Fatalf("expected only tool_a after disabled filter, got %v", filtered)
-	}
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "tool_a", filtered[0].Name)
+
 }
 
 func TestFilterTools_PerMessageDisabledAppliedAfterRestrict(t *testing.T) {
@@ -696,9 +631,9 @@ func TestFilterTools_PerMessageDisabledAppliedAfterRestrict(t *testing.T) {
 	}
 
 	filtered := runner.filterTools(tools, []string{"tool_a", "tool_b"}, []string{"tool_b"})
-	if len(filtered) != 1 || filtered[0].Name != "tool_a" {
-		t.Fatalf("expected only tool_a after per-message disabled filter, got %v", filtered)
-	}
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "tool_a", filtered[0].Name)
+
 }
 
 func TestFilterTools_NoRestrictions(t *testing.T) {
@@ -712,9 +647,8 @@ func TestFilterTools_NoRestrictions(t *testing.T) {
 
 	tools := []ToolInfo{{Name: "tool_a"}, {Name: "tool_b"}}
 	filtered := runner.filterTools(tools, nil, nil)
-	if len(filtered) != 2 {
-		t.Fatalf("expected all 2 tools, got %d", len(filtered))
-	}
+	assert.Equal(t, 2, len(filtered))
+
 }
 
 func TestLoadRules_InlineText(t *testing.T) {
@@ -729,9 +663,8 @@ func TestLoadRules_InlineText(t *testing.T) {
 	)
 
 	rules := runner.loadRules()
-	if rules != "Be helpful." {
-		t.Errorf("expected inline rules, got %q", rules)
-	}
+	assert.Equal(t, "Be helpful.", rules)
+
 }
 
 func TestLoadRules_FilePath(t *testing.T) {
@@ -739,9 +672,8 @@ func TestLoadRules_FilePath(t *testing.T) {
 
 	dir := t.TempDir()
 	rulesFile := filepath.Join(dir, "RULES.md")
-	if err := os.WriteFile(rulesFile, []byte("# Rules\nBe safe."), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	err := os.WriteFile(rulesFile, []byte("# Rules\nBe safe."), 0o600)
+	assert.NoError(t, err)
 
 	runner := NewAgentRunner(
 		&domain.Agent{ID: "agent_bot", Name: "bot"},
@@ -752,9 +684,8 @@ func TestLoadRules_FilePath(t *testing.T) {
 	)
 
 	rules := runner.loadRules()
-	if !strings.Contains(rules, "Be safe.") {
-		t.Errorf("expected file rules, got %q", rules)
-	}
+	assert.True(t, strings.Contains(rules, "Be safe."))
+
 }
 
 func TestLoadRules_FallbackToDataDir(t *testing.T) {
@@ -763,12 +694,11 @@ func TestLoadRules_FallbackToDataDir(t *testing.T) {
 	// Write RULES.md to the agent's data directory.
 	agentID := "agent_ruletest"
 	rulesPath := store.AgentRulesPath(agentID)
-	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(rulesPath, []byte("Follow safety guidelines."), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	err := os.MkdirAll(filepath.Dir(rulesPath), 0o700)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(rulesPath, []byte("Follow safety guidelines."), 0o600)
+	assert.NoError(t, err)
 
 	runner := NewAgentRunner(
 		&domain.Agent{ID: agentID, Name: "ruletest"},
@@ -779,9 +709,8 @@ func TestLoadRules_FallbackToDataDir(t *testing.T) {
 	)
 
 	rules := runner.loadRules()
-	if !strings.Contains(rules, "Follow safety guidelines.") {
-		t.Errorf("expected fallback rules from data dir, got %q", rules)
-	}
+	assert.True(t, strings.Contains(rules, "Follow safety guidelines."))
+
 }
 
 func TestLoadRules_Empty(t *testing.T) {
@@ -796,9 +725,8 @@ func TestLoadRules_Empty(t *testing.T) {
 	)
 
 	rules := runner.loadRules()
-	if rules != "" {
-		t.Errorf("expected empty rules, got %q", rules)
-	}
+	assert.Equal(t, "", rules)
+
 }
 
 func TestAppendSessionMessage_SkipsEmptyContent(t *testing.T) {
@@ -815,9 +743,9 @@ func TestAppendSessionMessage_SkipsEmptyContent(t *testing.T) {
 	// Empty content should not create a file.
 	runner.appendSessionMessage("sess1", domain.MessageRoleUser, "", "", "")
 	p := store.SessionPath("agent_msg", "sess1")
-	if _, err := os.Stat(p); err == nil {
-		t.Error("expected no session file for empty content")
-	}
+	_, err := os.Stat(p)
+	assert.Error(t, err)
+
 }
 
 func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
@@ -835,12 +763,9 @@ func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
 
 	p := store.SessionPath("agent_persist", "sess2")
 	data, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatalf("expected session file: %v", err)
-	}
-	if !strings.Contains(string(data), "Hello, world!") {
-		t.Errorf("expected message in session file, got: %s", string(data))
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), "Hello, world!"))
+
 }
 
 func TestResolveSessionID_FromContext(t *testing.T) {
@@ -856,9 +781,8 @@ func TestResolveSessionID_FromContext(t *testing.T) {
 
 	ctx := WithSessionID(context.Background(), "explicit-session-id")
 	sessionID := runner.resolveSessionID(ctx)
-	if sessionID != "explicit-session-id" {
-		t.Errorf("expected explicit session ID, got %q", sessionID)
-	}
+	assert.Equal(t, "explicit-session-id", sessionID)
+
 }
 
 func TestSetSessionMessageObserver(t *testing.T) {
@@ -869,9 +793,8 @@ func TestSetSessionMessageObserver(t *testing.T) {
 	t.Cleanup(func() { SetSessionMessageObserver(nil) })
 
 	notifySessionMessage("sess123", "user")
-	if notified != "sess123/user" {
-		t.Errorf("expected sess123/user, got %q", notified)
-	}
+	assert.Equal(t, "sess123/user", notified)
+
 }
 
 func TestRegisterSessionDelivery(t *testing.T) {
@@ -879,16 +802,12 @@ func TestRegisterSessionDelivery(t *testing.T) {
 	RegisterSessionDelivery("test-sess", "signal", "+1", func(text string) { received = text })
 
 	deliverToSession("test-sess", "hello delivery")
-	if received != "hello delivery" {
-		t.Errorf("expected 'hello delivery', got %q", received)
-	}
+	assert.Equal(t, "hello delivery", received)
 
 	// Empty text should not call delivery function.
 	received = ""
 	deliverToSession("test-sess", "")
-	if received != "" {
-		t.Error("expected no delivery for empty text")
-	}
+	assert.Equal(t, "", received)
 
 	// Unknown session should not panic.
 	deliverToSession("unknown-sess", "no delivery")
@@ -901,9 +820,8 @@ func TestRegisterSessionDelivery_Idempotent(t *testing.T) {
 
 	// Second registration overwrites the first.
 	deliverToSession("sess-idem", "msg")
-	if calls != 10 {
-		t.Errorf("expected calls=10 (second fn overwrites), got %d", calls)
-	}
+	assert.Equal(t, 10, calls)
+
 }
 
 func TestRegisterSessionMediaDelivery(t *testing.T) {
@@ -914,16 +832,14 @@ func TestRegisterSessionMediaDelivery(t *testing.T) {
 	})
 
 	DeliverMediaToSession("media-sess", "my caption", "/path/to/file.jpg")
-	if captionGot != "my caption" || pathGot != "/path/to/file.jpg" {
-		t.Errorf("unexpected delivery: caption=%q path=%q", captionGot, pathGot)
-	}
+	assert.Equal(t, "my caption", captionGot)
+	assert.Equal(t, "/path/to/file.jpg", pathGot)
 
 	// Empty path should not call delivery function.
 	captionGot = ""
 	DeliverMediaToSession("media-sess", "ignored", "")
-	if captionGot != "" {
-		t.Error("expected no media delivery for empty path")
-	}
+	assert.Equal(t, "", captionGot)
+
 }
 
 func TestSetMemoryCompactionObserver(t *testing.T) {
@@ -935,9 +851,8 @@ func TestSetMemoryCompactionObserver(t *testing.T) {
 	t.Cleanup(func() { SetMemoryCompactionObserver(nil) })
 
 	notifyMemoryCompaction("agent_test", "pool1", true)
-	if notifiedAgent != "agent_test" {
-		t.Errorf("expected agent_test, got %q", notifiedAgent)
-	}
+	assert.Equal(t, "agent_test", notifiedAgent)
+
 }
 
 func TestSessionManager_CreateWithName(t *testing.T) {
@@ -945,18 +860,11 @@ func TestSessionManager_CreateWithName(t *testing.T) {
 	sm := NewSessionManager()
 
 	sess, err := sm.CreateWithName("agent_named", "mysession")
-	if err != nil {
-		t.Fatalf("CreateWithName: %v", err)
-	}
-	if sess.Name != "mysession" {
-		t.Errorf("Name = %q; want %q", sess.Name, "mysession")
-	}
-	if sess.AgentID != "agent_named" {
-		t.Errorf("AgentID = %q; want %q", sess.AgentID, "agent_named")
-	}
-	if sess.ID == "" {
-		t.Error("expected non-empty session ID")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "mysession", sess.Name)
+	assert.Equal(t, "agent_named", sess.AgentID)
+	assert.NotEqual(t, "", sess.ID)
+
 }
 
 func TestSessionManager_CreateWithName_AlwaysNew(t *testing.T) {
@@ -965,10 +873,8 @@ func TestSessionManager_CreateWithName_AlwaysNew(t *testing.T) {
 
 	sess1, _ := sm.CreateWithName("agent_new", "myname")
 	sess2, _ := sm.CreateWithName("agent_new", "myname")
+	assert.NotEqual(t, sess2.ID, sess1.ID)
 
-	if sess1.ID == sess2.ID {
-		t.Error("expected different IDs from two CreateWithName calls")
-	}
 }
 
 func TestAppendMessageToSession(t *testing.T) {
@@ -982,19 +888,14 @@ func TestAppendMessageToSession(t *testing.T) {
 	_, _ = sm.CreateWithName(agentID, "amsg")
 
 	err := AppendMessageToSession(agentID, sessionID, domain.MessageRoleUser, "Hello there!")
-	if err != nil {
-		t.Fatalf("AppendMessageToSession: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Verify message was written.
 	p := store.SessionPath(agentID, sessionID)
 	data, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatalf("read session file: %v", err)
-	}
-	if !strings.Contains(string(data), "Hello there!") {
-		t.Errorf("expected message in session, got: %s", string(data))
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), "Hello there!"))
+
 }
 
 func TestAppendReplyToSession_Delivers(t *testing.T) {
@@ -1007,21 +908,16 @@ func TestAppendReplyToSession_Delivers(t *testing.T) {
 	RegisterSessionDelivery(sessionID, "signal", "+1555", func(text string) {
 		delivered = text
 	})
+	err := AppendReplyToSession(agentID, sessionID, "hi")
+	assert.NoError(t, err)
 
-	if err := AppendReplyToSession(agentID, sessionID, "hi"); err != nil {
-		t.Fatalf("AppendReplyToSession: %v", err)
-	}
-	if delivered != "hi" {
-		t.Fatalf("expected delivered reply %q, got %q", "hi", delivered)
-	}
+	assert.Equal(t, "hi", delivered)
 
 	data, err := os.ReadFile(store.SessionPath(agentID, sessionID))
-	if err != nil {
-		t.Fatalf("read session file: %v", err)
-	}
-	if !strings.Contains(string(data), "\"role\":\"assistant\"") || !strings.Contains(string(data), "hi") {
-		t.Fatalf("expected assistant reply persisted, got: %s", string(data))
-	}
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "\"role\":\"assistant\"")
+	assert.Contains(t, string(data), "hi")
+
 }
 
 func TestRunnerMemoryPoolID(t *testing.T) {
@@ -1036,9 +932,8 @@ func TestRunnerMemoryPoolID(t *testing.T) {
 	)
 
 	poolID := runner.memoryPoolID()
-	if poolID != "shared" {
-		t.Errorf("memoryPoolID = %q; want %q", poolID, "shared")
-	}
+	assert.Equal(t, "shared", poolID)
+
 }
 
 func TestRunnerMemoryPoolID_Default(t *testing.T) {
@@ -1053,9 +948,8 @@ func TestRunnerMemoryPoolID_Default(t *testing.T) {
 	)
 
 	poolID := runner.memoryPoolID()
-	if poolID != "private:mpid2" {
-		t.Errorf("memoryPoolID default = %q; want %q", poolID, "private:mpid2")
-	}
+	assert.Equal(t, "private:mpid2", poolID)
+
 }
 
 func TestRunnerCompactKeep(t *testing.T) {
@@ -1069,9 +963,9 @@ func TestRunnerCompactKeep(t *testing.T) {
 			nil,
 			nil,
 		)
-		if v := runner.compactKeep(); v != 50 {
-			t.Errorf("compactKeep = %d; want 50", v)
-		}
+		v := runner.compactKeep()
+		assert.Equal(t, 50, v)
+
 	})
 
 	t.Run("default value", func(t *testing.T) {
@@ -1082,9 +976,9 @@ func TestRunnerCompactKeep(t *testing.T) {
 			nil,
 			nil,
 		)
-		if v := runner.compactKeep(); v <= 0 {
-			t.Errorf("compactKeep default should be positive, got %d", v)
-		}
+		v := runner.compactKeep()
+		assert.Greater(t, v, 0)
+
 	})
 }
 
@@ -1109,7 +1003,7 @@ func TestRunnerWait(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(1 * time.Second):
-		t.Fatal("Wait() did not return promptly on idle runner")
+		assert.FailNow(t, "timeout")
 	}
 }
 
@@ -1118,57 +1012,46 @@ func TestSessionContextHelpers(t *testing.T) {
 
 	// SessionIDFromContext on empty context
 	_, ok := SessionIDFromContext(ctx)
-	if ok {
-		t.Error("expected false on empty context")
-	}
+	assert.False(t, ok)
 
 	// WithSessionID empty string is no-op
 	ctx2 := WithSessionID(ctx, "")
 	_, ok = SessionIDFromContext(ctx2)
-	if ok {
-		t.Error("empty sessionID should not be stored")
-	}
+	assert.False(t, ok)
 
 	// WithSessionID non-empty
 	ctx3 := WithSessionID(ctx, "sess123")
 	sid, ok := SessionIDFromContext(ctx3)
-	if !ok || sid != "sess123" {
-		t.Errorf("SessionIDFromContext = (%q, %v); want (\"sess123\", true)", sid, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "sess123", sid)
 
 	// WithSessionAgentID
 	ctx4 := WithSessionAgentID(ctx, "agentX")
 	aid, ok := SessionAgentIDFromContext(ctx4)
-	if !ok || aid != "agentX" {
-		t.Errorf("SessionAgentIDFromContext = (%q, %v); want (\"agentX\", true)", aid, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "agentX", aid)
 
 	// WithSessionAgentID empty is no-op
 	ctx5 := WithSessionAgentID(ctx, "")
 	_, ok = SessionAgentIDFromContext(ctx5)
-	if ok {
-		t.Error("empty agentID should not be stored")
-	}
+	assert.False(t, ok)
 
 	// SessionAgentIDFromContext 0-value
 	_, ok = SessionAgentIDFromContext(context.Background())
-	if ok {
-		t.Error("expected false on empty context for agent ID")
-	}
+	assert.False(t, ok)
 
 	// WithChannelSession
 	ctx6 := WithChannelSession(ctx, "slack", "C123")
 	chType, chID, ok := ChannelSessionFromContext(ctx6)
-	if !ok || chType != "slack" || chID != "C123" {
-		t.Errorf("ChannelSessionFromContext = (%q, %q, %v); want slack, C123, true", chType, chID, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "slack", chType)
+	assert.Equal(t, "C123", chID)
 
 	// WithChannelSession empty type is no-op
 	ctx7 := WithChannelSession(ctx, "", "C123")
 	_, _, ok = ChannelSessionFromContext(ctx7)
-	if ok {
-		t.Error("empty channelType should not be stored")
-	}
+	assert.False(t, ok)
+
 }
 
 func TestPickMap(t *testing.T) {
@@ -1176,29 +1059,22 @@ func TestPickMap(t *testing.T) {
 	inner := map[string]any{"a": 1}
 	obj := map[string]any{"key": inner}
 	got := pickMap(obj, "key")
-	if got["a"] != 1 {
-		t.Errorf("pickMap map: got %v", got)
-	}
+	assert.Equal(t, 1, got["a"])
 
 	// string value (JSON)
 	obj2 := map[string]any{"key": `{"b":2}`}
 	got2 := pickMap(obj2, "key")
-	if got2["b"] != float64(2) {
-		t.Errorf("pickMap JSON string: got %v", got2)
-	}
+	assert.Equal(t, float64(2), got2["b"])
 
 	// missing key falls through to next
 	obj3 := map[string]any{"other": inner}
 	got3 := pickMap(obj3, "missing", "other")
-	if got3["a"] != 1 {
-		t.Errorf("pickMap fallthrough: got %v", got3)
-	}
+	assert.Equal(t, 1, got3["a"])
 
 	// no keys match returns empty map
 	got4 := pickMap(obj3, "nope")
-	if len(got4) != 0 {
-		t.Errorf("pickMap empty: got %v", got4)
-	}
+	assert.Equal(t, 0, len(got4))
+
 }
 
 func TestResolveSessionID_ChannelContext(t *testing.T) {
@@ -1211,10 +1087,10 @@ func TestResolveSessionID_ChannelContext(t *testing.T) {
 	)
 	ctx := WithChannelSession(context.Background(), "slack", "C999")
 	sid := runner.resolveSessionID(ctx)
-	// Should be non-empty (either a created session ID or fallback)
-	if sid == "" {
-		t.Error("resolveSessionID with channel context returned empty string")
-	}
+	assert.
+		// Should be non-empty (either a created session ID or fallback)
+		NotEqual(t, "", sid)
+
 }
 
 func TestMemoryTokens(t *testing.T) {
@@ -1226,9 +1102,9 @@ func TestMemoryTokens(t *testing.T) {
 			&config.AgentConfig{Name: "mt", MemoryTokens: 512},
 			&mockProvider{}, nil, nil,
 		)
-		if v := runner.memoryTokens(); v != 512 {
-			t.Errorf("memoryTokens = %d; want 512", v)
-		}
+		v := runner.memoryTokens()
+		assert.Equal(t, 512, v)
+
 	})
 
 	t.Run("default", func(t *testing.T) {
@@ -1237,9 +1113,9 @@ func TestMemoryTokens(t *testing.T) {
 			&config.AgentConfig{Name: "mt2"},
 			&mockProvider{}, nil, nil,
 		)
-		if v := runner.memoryTokens(); v <= 0 {
-			t.Errorf("memoryTokens default should be positive, got %d", v)
-		}
+		v := runner.memoryTokens()
+		assert.Greater(t, v, 0)
+
 	})
 }
 
@@ -1251,9 +1127,8 @@ func TestLoadMemoryContext_NilMemory(t *testing.T) {
 		&mockProvider{}, nil, nil,
 	)
 	got := runner.loadMemoryContext("sess1", 1000)
-	if got != "" {
-		t.Errorf("expected empty string with nil memory, got %q", got)
-	}
+	assert.Equal(t, "", got)
+
 }
 
 func TestLoadMemoryContext_WithMemory(t *testing.T) {
@@ -1267,14 +1142,12 @@ func TestLoadMemoryContext_WithMemory(t *testing.T) {
 
 	// Append a memory entry then call loadMemoryContext.
 	poolID := runner.memoryPoolID()
-	if err := mem.Append(poolID, "sess1", "user", "test memory content"); err != nil {
-		t.Fatalf("Append: %v", err)
-	}
+	err := mem.Append(poolID, "sess1", "user", "test memory content")
+	assert.NoError(t, err)
 
 	got := runner.loadMemoryContext("sess1", 10000)
-	if !strings.Contains(got, "test memory content") {
-		t.Errorf("expected memory content in output, got %q", got)
-	}
+	assert.True(t, strings.Contains(got, "test memory content"))
+
 }
 
 func TestAppendMemoryMessage_NilMemory(t *testing.T) {
@@ -1300,19 +1173,14 @@ func TestAppendMemoryMessage_WithMemory(t *testing.T) {
 
 	poolID := runner.memoryPoolID()
 	entries, err := mem.All(poolID)
-	if err != nil {
-		t.Fatalf("All: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Error("expected memory entry after appendMemoryMessage")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(entries))
 
 	// Empty content should be skipped
 	runner.appendMemoryMessage("sess1", domain.MessageRoleUser, "")
 	entries2, _ := mem.All(poolID)
-	if len(entries2) != len(entries) {
-		t.Error("empty content should not be appended")
-	}
+	assert.Equal(t, len(entries), len(entries2))
+
 }
 
 func TestMaybeCompactMemory_NilMemory(t *testing.T) {
@@ -1360,12 +1228,11 @@ func TestParseToolCall(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := parseToolCall(tc.input)
-			if ok != tc.wantOK {
-				t.Errorf("ok = %v; want %v (input=%q)", ok, tc.wantOK, tc.input)
+			assert.Equal(t, tc.wantOK, ok)
+			if ok {
+				assert.Equal(t, tc.wantTool, got.Tool)
 			}
-			if ok && got.Tool != tc.wantTool {
-				t.Errorf("tool = %q; want %q", got.Tool, tc.wantTool)
-			}
+
 		})
 	}
 }
@@ -1376,44 +1243,31 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 		{Name: "tool_b"},
 	}
 	out := buildToolSystemPrompt("myagent", tools)
-	if !strings.Contains(out, "myagent") {
-		t.Error("expected agent name in system prompt")
-	}
-	if !strings.Contains(out, "tool_a") {
-		t.Error("expected tool_a in system prompt")
-	}
-	if !strings.Contains(out, "does a") {
-		t.Error("expected tool description in system prompt")
-	}
-	if !strings.Contains(out, "tool_b") {
-		t.Error("expected tool_b in system prompt")
-	}
+	assert.True(t, strings.Contains(out, "myagent"))
+	assert.True(t, strings.Contains(out, "tool_a"))
+	assert.True(t, strings.Contains(out, "does a"))
+	assert.True(t, strings.Contains(out, "tool_b"))
 
 	// Without agent name.
 	out2 := buildToolSystemPrompt("", tools)
-	if strings.Contains(out2, "agent name is") {
-		t.Error("agent name section should be absent when name is empty")
-	}
+	assert.False(t, strings.Contains(out2, "agent name is"))
+
 }
 
 func TestIsRetryableError(t *testing.T) {
-	if isRetryableError(nil) {
-		t.Error("nil error should not be retryable")
-	}
+	assert.False(t, isRetryableError(nil))
+
 	for _, msg := range []string{"429", "too many requests", "rate limit", "quota", "overloaded", "503", "service unavailable", "401", "unauthorized", "unauthenticated"} {
-		if !isRetryableError(errors.New(msg)) {
-			t.Errorf("error %q should be retryable", msg)
-		}
+		assert.True(t, isRetryableError(errors.New(msg)))
+
 	}
-	if isRetryableError(errors.New("unrelated failure")) {
-		t.Error("unrelated error should not be retryable")
-	}
+	assert.False(t, isRetryableError(errors.New("unrelated failure")))
+
 }
 
 func TestIsThrottleError(t *testing.T) {
-	if isThrottleError(nil) {
-		t.Error("nil error should not be a throttle")
-	}
+	assert.False(t, isThrottleError(nil))
+
 	for _, msg := range []string{
 		"429",
 		"rate limit",
@@ -1422,14 +1276,12 @@ func TestIsThrottleError(t *testing.T) {
 		"quota exceeded",
 		"capacity exhausted",
 	} {
-		if !isThrottleError(errors.New(msg)) {
-			t.Errorf("error %q should be a throttle", msg)
-		}
+		assert.True(t, isThrottleError(errors.New(msg)))
+
 	}
 	for _, msg := range []string{"503 service unavailable", "unauthorized", "boom"} {
-		if isThrottleError(errors.New(msg)) {
-			t.Errorf("error %q should not be a throttle", msg)
-		}
+		assert.False(t, isThrottleError(errors.New(msg)))
+
 	}
 }
 
@@ -1441,19 +1293,15 @@ func TestAppendSessionMessage_WithMediaURL(t *testing.T) {
 		&mockProvider{}, nil, nil,
 	)
 	sess, err := NewSessionManager().Create(runner.agent.ID)
-	if err != nil {
-		t.Fatalf("Create session: %v", err)
-	}
+	assert.NoError(t, err)
+
 	// Empty content but non-empty mediaURL should persist.
 	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "", "http://example.com/img.png", "")
 
 	data, err := os.ReadFile(store.SessionPath(runner.agent.ID, sess.ID))
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if !strings.Contains(string(data), "img.png") {
-		t.Errorf("expected media URL in session, got: %s", string(data))
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), "img.png"))
+
 }
 
 func TestSessionList(t *testing.T) {
@@ -1462,30 +1310,20 @@ func TestSessionList(t *testing.T) {
 
 	// Empty list for unknown agent.
 	sessions, err := sm.List("agent_no_such")
-	if err != nil {
-		t.Fatalf("List on nonexistent agent: %v", err)
-	}
-	if len(sessions) != 0 {
-		t.Errorf("expected empty list, got %d", len(sessions))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(sessions))
 
 	// Create two sessions and list them.
 	_, err = sm.Create("agent_listtest")
-	if err != nil {
-		t.Fatalf("Create 1: %v", err)
-	}
+	assert.NoError(t, err)
+
 	_, err = sm.Create("agent_listtest")
-	if err != nil {
-		t.Fatalf("Create 2: %v", err)
-	}
+	assert.NoError(t, err)
 
 	sessions, err = sm.List("agent_listtest")
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(sessions) != 2 {
-		t.Errorf("expected 2 sessions, got %d", len(sessions))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(sessions))
+
 }
 
 func TestLoadMemoryContext_WithNotes(t *testing.T) {
@@ -1498,15 +1336,11 @@ func TestLoadMemoryContext_WithNotes(t *testing.T) {
 	)
 
 	poolID := runner.memoryPoolID()
-	if err := mem.SetNotes(poolID, "important note"); err != nil {
-		t.Fatalf("SetNotes: %v", err)
-	}
+	err := mem.SetNotes(poolID, "important note")
+	assert.NoError(t, err)
 
 	got := runner.loadMemoryContext("sess1", 10000)
-	if !strings.Contains(got, "important note") {
-		t.Errorf("expected notes in output, got %q", got)
-	}
-	if !strings.Contains(got, "Persistent notes") {
-		t.Errorf("expected notes header in output, got %q", got)
-	}
+	assert.True(t, strings.Contains(got, "important note"))
+	assert.True(t, strings.Contains(got, "Persistent notes"))
+
 }

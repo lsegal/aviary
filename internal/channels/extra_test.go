@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/slack-go/slack/socketmode"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/lsegal/aviary/internal/config"
 )
@@ -32,9 +33,8 @@ func socketmodeEventNonAPI() socketmode.Event {
 func TestSendOnConfiguredChannel_NotFound(t *testing.T) {
 	mgr := NewManager()
 	err := mgr.SendOnConfiguredChannel("bot", "signal", 0, "+1", "hi")
-	if err == nil {
-		t.Fatal("expected error for missing channel")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSendOnConfiguredChannel_Success(t *testing.T) {
@@ -49,17 +49,14 @@ func TestSendOnConfiguredChannel_Success(t *testing.T) {
 	mgr.mu.Unlock()
 
 	err := mgr.SendOnConfiguredChannel("bot", "signal", 0, "+15550001111", "hello")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
-	if len(mock.sendCalls) != 1 {
-		t.Fatalf("expected 1 send call, got %d", len(mock.sendCalls))
-	}
-	if mock.sendCalls[0].channel != "+15550001111" || mock.sendCalls[0].text != "hello" {
-		t.Errorf("unexpected send args: %+v", mock.sendCalls[0])
-	}
+	assert.Equal(t, 1, len(mock.sendCalls))
+	assert.Equal(t, "+15550001111", mock.sendCalls[0].channel)
+	assert.Equal(t, "hello", mock.sendCalls[0].text)
+
 }
 
 // ── Signal.Start no-phone no-addr path ───────────────────────────────────────
@@ -71,9 +68,8 @@ func TestStart_NoPhoneNoAddr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	err := ch.Start(ctx)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // ── Signal.managedLoop: binary-not-found error path ──────────────────────────
@@ -101,9 +97,8 @@ func TestManagedLoop_CancelBeforeLaunch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
 	err := ch.managedLoop(ctx)
-	if err != nil {
-		t.Fatalf("expected nil after pre-cancel, got %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // TestManagedLoop_StopBeforeLaunch verifies that calling Stop() before
@@ -113,9 +108,8 @@ func TestManagedLoop_StopBeforeLaunch(t *testing.T) {
 	ch.Stop() // close done channel before calling
 	ctx := context.Background()
 	err := ch.managedLoop(ctx)
-	if err != nil {
-		t.Fatalf("expected nil after pre-stop, got %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // ── fetchLinkPreviews: additional branch coverage ────────────────────────────
@@ -134,12 +128,9 @@ func TestFetchLinkPreviews_TitleFromTitleTag(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	if previews[0].Title != "Page Title" {
-		t.Errorf("Title = %q, want 'Page Title'", previews[0].Title)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, "Page Title", previews[0].Title)
+
 }
 
 // TestFetchLinkPreviews_ImageFromOGImage tests that og:image triggers download.
@@ -164,13 +155,10 @@ func TestFetchLinkPreviews_ImageFromOGImage(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	// Image may or may not be set depending on download success; just verify title.
-	if previews[0].Title != "Article" {
-		t.Errorf("Title = %q, want 'Article'", previews[0].Title)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, // Image may or may not be set depending on download success; just verify title.
+		"Article", previews[0].Title)
+
 }
 
 // TestFetchLinkPreviews_ImageFromLinkIcon tests the <link rel="icon"> path.
@@ -194,12 +182,9 @@ func TestFetchLinkPreviews_ImageFromLinkIcon(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	if previews[0].Title != "Site" {
-		t.Errorf("Title = %q, want 'Site'", previews[0].Title)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, "Site", previews[0].Title)
+
 }
 
 // TestFetchLinkPreviews_ImageFromImgTag tests the <img src="..."> path.
@@ -222,12 +207,9 @@ func TestFetchLinkPreviews_ImageFromImgTag(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	if previews[0].Title != "Post" {
-		t.Errorf("Title = %q, want 'Post'", previews[0].Title)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, "Post", previews[0].Title)
+
 }
 
 // TestFetchLinkPreviews_NoTitle verifies nil returned when no title found.
@@ -242,9 +224,8 @@ func TestFetchLinkPreviews_NoTitle(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews != nil {
-		t.Errorf("expected nil previews when no title, got %v", previews)
-	}
+	assert.Nil(t, previews)
+
 }
 
 // TestFetchLinkPreviews_TwitterTitle tests twitter:title meta tag.
@@ -263,12 +244,9 @@ func TestFetchLinkPreviews_TwitterTitle(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	if previews[0].Title != "Twitter Article" {
-		t.Errorf("Title = %q, want 'Twitter Article'", previews[0].Title)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, "Twitter Article", previews[0].Title)
+
 }
 
 // TestFetchLinkPreviews_Description tests og:description parsing.
@@ -286,12 +264,9 @@ func TestFetchLinkPreviews_Description(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews")
-	}
-	if previews[0].Description != "My page description" {
-		t.Errorf("Description = %q, want 'My page description'", previews[0].Description)
-	}
+	assert.NotNil(t, previews)
+	assert.Equal(t, "My page description", previews[0].Description)
+
 }
 
 // TestFetchLinkPreviews_URLWithTrailingPunct verifies URL is trimmed of trailing punctuation.
@@ -307,9 +282,8 @@ func TestFetchLinkPreviews_URLWithTrailingPunct(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Fatal("expected non-nil previews after URL punctuation trimming")
-	}
+	assert.NotNil(t, previews)
+
 }
 
 // TestFetchLinkPreviews_FetchError verifies graceful handling of a URL that can't be fetched.
@@ -319,9 +293,8 @@ func TestFetchLinkPreviews_FetchError(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews != nil {
-		t.Errorf("expected nil previews on fetch error, got %v", previews)
-	}
+	assert.Nil(t, previews)
+
 }
 
 // ── Signal.launchDaemon: stop-channel path ───────────────────────────────────
@@ -345,9 +318,9 @@ func TestLaunchDaemon_StopDuringPoll(t *testing.T) {
 		}
 		t.Skipf("signal-cli is installed at %s; skipping", addr)
 	}
-	if addr != "" || cmd != nil {
-		t.Errorf("expected empty addr/nil cmd on error, got addr=%q cmd=%v", addr, cmd)
-	}
+	assert.Empty(t, addr)
+	assert.Nil(t, cmd)
+
 }
 
 // ── Signal.dispatchEnvelope: read receipt path ───────────────────────────────
@@ -402,9 +375,7 @@ func TestDispatchEnvelope_SendReadReceipt(t *testing.T) {
 
 	// Should receive the message.
 	msg := waitMsg(t, msgs, 2*time.Second)
-	if msg.From != sender {
-		t.Errorf("From = %q, want %q", msg.From, sender)
-	}
+	assert.Equal(t, sender, msg.From)
 
 	// The fake daemon should also have received a sendReceipt RPC request.
 	// Give it a moment to arrive.
@@ -445,10 +416,9 @@ func TestDispatch_ReplyToSelf(t *testing.T) {
 	// A message from "+18005551234" (not in allowFrom) that quotes the bot.
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+18005551234","dataMessage":{"message":"thanks for the reply","quote":{"id":1,"author":"` + botPhone + `","text":"original"}}}}}`
 	ch.dispatch([]byte(line))
+	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
 
-	if _, ok := waitMsgTimeout(msgs, 200*time.Millisecond); !ok {
-		t.Error("expected message to be dispatched for reply-to-self even from non-allow-listed sender")
-	}
 }
 
 // TestDispatch_ReplyToOther verifies that a quoted reply targeting someone
@@ -467,10 +437,9 @@ func TestDispatch_ReplyToOther(t *testing.T) {
 	// A message from "+18005551234" quoting some third party (not the bot).
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+18005551234","dataMessage":{"message":"thanks","quote":{"id":1,"author":"+13330000000","text":"other msg"}}}}}`
 	ch.dispatch([]byte(line))
+	_, ok := waitMsgTimeout(msgs, 50*time.Millisecond)
+	assert.False(t, ok)
 
-	if _, ok := waitMsgTimeout(msgs, 50*time.Millisecond); ok {
-		t.Error("expected message to be blocked for reply-to-other from non-allow-listed sender")
-	}
 }
 
 // ── Signal.Send: RPC error response path ─────────────────────────────────────
@@ -480,9 +449,8 @@ func TestDispatch_ReplyToOther(t *testing.T) {
 func newSignalErrorTCPServer(t *testing.T, code int, message string) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	assert.NoError(t, err)
+
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -515,12 +483,9 @@ func TestSend_RPCError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.Send("+5551111111", "hi")
-	if err == nil {
-		t.Fatal("expected error from RPC error response")
-	}
-	if !strings.Contains(err.Error(), "rate limited") {
-		t.Errorf("error message missing 'rate limited': %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "rate limited"))
+
 }
 
 func TestSendTyping_RPCError(t *testing.T) {
@@ -531,12 +496,9 @@ func TestSendTyping_RPCError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.SendTyping("+5551111111", false)
-	if err == nil {
-		t.Fatal("expected error from RPC error response")
-	}
-	if !strings.Contains(err.Error(), "bad request") {
-		t.Errorf("error message missing 'bad request': %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "bad request"))
+
 }
 
 // ── Signal.dispatchEnvelope: reaction-mirror path ────────────────────────────
@@ -614,12 +576,9 @@ func TestDispatch_GroupMessage(t *testing.T) {
 	ch.dispatch([]byte(line))
 
 	msg := waitMsg(t, msgs, time.Second)
-	if msg.Channel != groupID {
-		t.Errorf("Channel = %q, want %q", msg.Channel, groupID)
-	}
-	if msg.Text != "hello group" {
-		t.Errorf("Text = %q, want 'hello group'", msg.Text)
-	}
+	assert.Equal(t, groupID, msg.Channel)
+	assert.Equal(t, "hello group", msg.Text)
+
 }
 
 // ── Signal.dispatchEnvelope: model/fallback override ─────────────────────────
@@ -636,12 +595,10 @@ func TestDispatch_ModelFallbackFromEntry(t *testing.T) {
 	ch.dispatch([]byte(line))
 
 	msg := waitMsg(t, msgs, time.Second)
-	if msg.Model != "gpt-4" {
-		t.Errorf("Model = %q, want gpt-4", msg.Model)
-	}
-	if len(msg.Fallbacks) == 0 || msg.Fallbacks[0] != "gpt-3" {
-		t.Errorf("Fallbacks = %v, want [gpt-3]", msg.Fallbacks)
-	}
+	assert.Equal(t, "gpt-4", msg.Model)
+	assert.NotEmpty(t, msg.Fallbacks)
+	assert.Equal(t, "gpt-3", msg.Fallbacks[0])
+
 }
 
 func TestDispatch_ModelFromChannel(t *testing.T) {
@@ -657,9 +614,8 @@ func TestDispatch_ModelFromChannel(t *testing.T) {
 	ch.dispatch([]byte(line))
 
 	msg := waitMsg(t, msgs, time.Second)
-	if msg.Model != "channel-model" {
-		t.Errorf("Model = %q, want 'channel-model'", msg.Model)
-	}
+	assert.Equal(t, "channel-model", msg.Model)
+
 }
 
 // ── Signal.Send: dial error path ─────────────────────────────────────────────
@@ -672,9 +628,8 @@ func TestSend_DialError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.Send("+5551111111", "hi")
-	if err == nil {
-		t.Fatal("expected dial error")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── Manager.RouteMediaDelivery: non-media-sender skipped ─────────────────────
@@ -692,9 +647,8 @@ func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
 
 	// Should fail since mockChannel doesn't implement MediaSender.
 	err := mgr.RouteMediaDelivery("slack", "C123", "caption", "/tmp/f.png")
-	if err == nil {
-		t.Error("expected error when channel doesn't support media")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── Signal.Send: read-response error (server closes without responding) ───────
@@ -703,9 +657,8 @@ func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
 func newSignalCloseImmediatelyServer(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	assert.NoError(t, err)
+
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -725,9 +678,8 @@ func TestSend_ReadResponseError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.Send("+5551111111", "hi")
-	if err == nil {
-		t.Fatal("expected error when server closes without response")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSendTyping_ReadResponseError(t *testing.T) {
@@ -738,9 +690,8 @@ func TestSendTyping_ReadResponseError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.SendTyping("+5551111111", false)
-	if err == nil {
-		t.Fatal("expected error when server closes without response")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSendReadReceipt_ReadResponseError(t *testing.T) {
@@ -751,9 +702,8 @@ func TestSendReadReceipt_ReadResponseError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.sendReadReceipt("+5551111111", 12345)
-	if err == nil {
-		t.Fatal("expected error when server closes without response")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSendMedia_ReadResponseError(t *testing.T) {
@@ -764,9 +714,8 @@ func TestSendMedia_ReadResponseError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.SendMedia("+5551111111", "caption", "/tmp/f.png")
-	if err == nil {
-		t.Fatal("expected error when server closes without response")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSendReaction_ReadResponseError(t *testing.T) {
@@ -777,9 +726,8 @@ func TestSendReaction_ReadResponseError(t *testing.T) {
 	ch.addrMu.Unlock()
 
 	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
-	if err == nil {
-		t.Fatal("expected error when server closes without response")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── Signal.Send: with link preview (covers the fetchLinkPreviews path in Send) ─
@@ -803,14 +751,12 @@ func TestSend_WithLinkPreview(t *testing.T) {
 
 	msg := "Check out " + pageSrv.URL + " for details"
 	err := ch.Send("+5551111111", msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	// Verify the send RPC was received.
 	reqs := fd.SentRequests()
-	if len(reqs) != 1 {
-		t.Fatalf("expected 1 RPC request, got %d", len(reqs))
-	}
+	assert.Equal(t, 1, len(reqs))
+
 }
 
 // ── downloadTempImage: bad URL (request creation error) ───────────────────────
@@ -819,9 +765,8 @@ func TestDownloadTempImage_BadURL(t *testing.T) {
 	ctx := context.Background()
 	// ":" is not a valid URL.
 	_, err := downloadTempImage(ctx, ":")
-	if err == nil {
-		t.Fatal("expected error for bad URL")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── Signal.listen: scanner error path (connection closed mid-scan) ────────────
@@ -829,9 +774,8 @@ func TestDownloadTempImage_BadURL(t *testing.T) {
 func TestListen_ScannerErrorOnDone(t *testing.T) {
 	// A server that accepts, writes partial data, then closes.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	assert.NoError(t, err)
+
 	addr := ln.Addr().String()
 	go func() {
 		conn, err := ln.Accept()
@@ -875,12 +819,13 @@ func TestRunLoop_StopExits(t *testing.T) {
 	waitConnected(t, fd, time.Second)
 	ch.Stop()
 
+	var stopped bool
 	select {
 	case <-done:
-		// runLoop exited as expected.
+		stopped = true
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for runLoop to exit after Stop")
 	}
+	assert.True(t, stopped)
 }
 
 // ── Manager.RouteDelivery: Send error falls through to next ──────────────────
@@ -905,9 +850,8 @@ func TestRouteDelivery_AllFail(t *testing.T) {
 	mgr.mu.Unlock()
 
 	err := mgr.RouteDelivery("signal", "+1", "hi")
-	if err == nil {
-		t.Fatal("expected error when all channels fail to send")
-	}
+	assert.Error(t, err)
+
 }
 
 // ── Slack.Stop: with cancel set ───────────────────────────────────────────────
@@ -918,9 +862,8 @@ func TestSlackChannel_Stop_WithCancel(t *testing.T) {
 	called := false
 	ch.cancel = func() { called = true }
 	ch.Stop()
-	if !called {
-		t.Error("expected cancel to be called in Stop")
-	}
+	assert.True(t, called)
+
 }
 
 // ── Slack.Send: call PostMessage (will fail without real token, error is ok) ──
@@ -949,10 +892,7 @@ func TestDiscordChannel_Send_NotConnected_Again(t *testing.T) {
 	ch := NewDiscordChannel("token", nil, "m", nil)
 	// session is nil → should return "not connected".
 	err := ch.Send("C123", "hello")
-	if err == nil {
-		t.Fatal("expected error when not connected")
-	}
-	if !strings.Contains(err.Error(), "not connected") {
-		t.Errorf("unexpected error: %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not connected"))
+
 }

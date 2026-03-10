@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/slack-go/slack/socketmode"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/lsegal/aviary/internal/config"
 )
@@ -67,12 +68,9 @@ func (m *mockChannel) OnMessage(fn func(IncomingMessage)) {
 // TestManager_NewManager verifies constructor initializes properly.
 func TestManager_NewManager(t *testing.T) {
 	mgr := NewManager()
-	if mgr == nil {
-		t.Fatal("NewManager returned nil")
-	}
-	if len(mgr.List()) != 0 {
-		t.Fatal("expected empty channel list")
-	}
+	assert.NotNil(t, mgr)
+	assert.Equal(t, 0, len(mgr.List()))
+
 }
 
 // TestManager_Stop_Empty verifies Stop on empty manager doesn't panic.
@@ -98,13 +96,9 @@ func TestManager_Stop_ClearsChannels(t *testing.T) {
 	mgr.mu.Unlock()
 
 	mgr.Stop()
+	assert.Equal(t, 0, len(mgr.channels))
+	assert.True(t, mock.stopped)
 
-	if len(mgr.channels) != 0 {
-		t.Errorf("expected empty channels after Stop, got %d", len(mgr.channels))
-	}
-	if !mock.stopped {
-		t.Error("expected mock channel to be stopped")
-	}
 }
 
 // TestManager_List verifies List returns correct status entries.
@@ -123,19 +117,13 @@ func TestManager_List(t *testing.T) {
 	mgr.mu.Unlock()
 
 	list := mgr.List()
-	if len(list) != 1 {
-		t.Fatalf("expected 1 channel status, got %d", len(list))
-	}
+	assert.Equal(t, 1, len(list))
+
 	s := list[0]
-	if s.Agent != "myagent" {
-		t.Errorf("Agent = %q; want %q", s.Agent, "myagent")
-	}
-	if s.Type != "slack" {
-		t.Errorf("Type = %q; want %q", s.Type, "slack")
-	}
-	if s.Index != 2 {
-		t.Errorf("Index = %d; want 2", s.Index)
-	}
+	assert.Equal(t, "myagent", s.Agent)
+	assert.Equal(t, "slack", s.Type)
+	assert.Equal(t, 2, s.Index)
+
 }
 
 // TestManager_SubscribeLogs verifies SubscribeLogs returns history for known keys.
@@ -151,15 +139,13 @@ func TestManager_SubscribeLogs(t *testing.T) {
 	mgr.mu.Unlock()
 
 	history, live, unsub, ok := mgr.SubscribeLogs(key)
-	if !ok {
-		t.Fatal("expected SubscribeLogs to return ok=true for known key")
-	}
+	assert.True(t, ok)
+
 	defer unsub()
 	_ = live
+	assert.Len(t, history, 1)
+	assert.Equal(t, "test log line", history[0])
 
-	if len(history) != 1 || history[0] != "test log line" {
-		t.Errorf("unexpected history: %v", history)
-	}
 }
 
 // TestManager_SubscribeLogs_UnknownKey verifies ok=false for unknown key.
@@ -167,18 +153,16 @@ func TestManager_SubscribeLogs_UnknownKey(t *testing.T) {
 	mgr := NewManager()
 
 	_, _, _, ok := mgr.SubscribeLogs("nonexistent/key/0")
-	if ok {
-		t.Error("expected SubscribeLogs to return ok=false for unknown key")
-	}
+	assert.False(t, ok)
+
 }
 
 // TestManager_RouteDelivery_NoChannels verifies error when no channels match.
 func TestManager_RouteDelivery_NoChannels(t *testing.T) {
 	mgr := NewManager()
 	err := mgr.RouteDelivery("signal", "+1", "hello")
-	if err == nil {
-		t.Fatal("expected error when no channels present")
-	}
+	assert.Error(t, err)
+
 }
 
 // TestManager_RouteDelivery_Success verifies message is delivered via matching channel.
@@ -196,20 +180,15 @@ func TestManager_RouteDelivery_Success(t *testing.T) {
 	mgr.mu.Unlock()
 
 	err := mgr.RouteDelivery("signal", "+15551111111", "hello there")
-	if err != nil {
-		t.Fatalf("RouteDelivery: %v", err)
-	}
+	assert.NoError(t, err)
 
 	mock.mu.Lock()
 	calls := mock.sendCalls
 	mock.mu.Unlock()
+	assert.Equal(t, 1, len(calls))
+	assert.Equal(t, "+15551111111", calls[0].channel)
+	assert.Equal(t, "hello there", calls[0].text)
 
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 send call, got %d", len(calls))
-	}
-	if calls[0].channel != "+15551111111" || calls[0].text != "hello there" {
-		t.Errorf("unexpected send call: %+v", calls[0])
-	}
 }
 
 // TestManager_RouteDelivery_WrongType verifies non-matching channel type returns error.
@@ -226,9 +205,8 @@ func TestManager_RouteDelivery_WrongType(t *testing.T) {
 	mgr.mu.Unlock()
 
 	err := mgr.RouteDelivery("signal", "+1", "msg")
-	if err == nil {
-		t.Error("expected error routing to non-existent type")
-	}
+	assert.Error(t, err)
+
 }
 
 // TestManager_Reconcile_Idempotent verifies calling Reconcile twice with same
@@ -258,9 +236,7 @@ func TestManager_Reconcile_Idempotent(t *testing.T) {
 	mgr.Reconcile(ctx, cfg, msgFn) // second call should be idempotent
 
 	list := mgr.List()
-	if len(list) != 1 {
-		t.Fatalf("expected 1 channel after idempotent reconcile, got %d", len(list))
-	}
+	assert.Equal(t, 1, len(list))
 
 	mgr.Stop()
 }
@@ -284,14 +260,11 @@ func TestManager_Reconcile_RemovesChannel(t *testing.T) {
 	cfg2 := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}} // no channels
 
 	mgr.Reconcile(ctx, cfg1, func(_ string, _ Channel, _ IncomingMessage) {})
-	if len(mgr.List()) != 1 {
-		t.Fatalf("expected 1 channel before remove reconcile, got %d", len(mgr.List()))
-	}
+	assert.Equal(t, 1, len(mgr.List()))
 
 	mgr.Reconcile(ctx, cfg2, func(_ string, _ Channel, _ IncomingMessage) {})
-	if len(mgr.List()) != 0 {
-		t.Fatalf("expected 0 channels after remove reconcile, got %d", len(mgr.List()))
-	}
+	assert.Equal(t, 0, len(mgr.List()))
+
 }
 
 // mockMediaSender implements both Channel and MediaSender.
@@ -316,9 +289,8 @@ func (m *mockMediaSender) SendMedia(channelID, caption, filePath string) error {
 func TestRouteMediaDelivery_NoChannels(t *testing.T) {
 	mgr := NewManager()
 	err := mgr.RouteMediaDelivery("slack", "C123", "caption", "/tmp/file.png")
-	if err == nil {
-		t.Error("expected error with no channels")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestRouteMediaDelivery_WithMediaSender(t *testing.T) {
@@ -332,14 +304,12 @@ func TestRouteMediaDelivery_WithMediaSender(t *testing.T) {
 	mgr.mu.Unlock()
 
 	err := mgr.RouteMediaDelivery("slack", "C123", "hi", "/tmp/img.png")
-	if err != nil {
-		t.Fatalf("RouteMediaDelivery: %v", err)
-	}
+	assert.NoError(t, err)
+
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	if len(ms.mediaCalls) != 1 {
-		t.Errorf("expected 1 media call, got %d", len(ms.mediaCalls))
-	}
+	assert.Equal(t, 1, len(ms.mediaCalls))
+
 }
 
 func TestRouteMediaDelivery_WrongType(t *testing.T) {
@@ -354,16 +324,14 @@ func TestRouteMediaDelivery_WrongType(t *testing.T) {
 
 	// Routing to "slack" but channel is "discord" → error.
 	err := mgr.RouteMediaDelivery("slack", "C123", "hi", "/tmp/img.png")
-	if err == nil {
-		t.Error("expected error when no channel of matching type")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestNewChannel_UnknownType(t *testing.T) {
 	ch := newChannel(config.ChannelConfig{Type: "unknown"}, "model", nil)
-	if ch != nil {
-		t.Errorf("expected nil for unknown channel type, got %T", ch)
-	}
+	assert.Nil(t, ch)
+
 }
 
 func TestNewChannel_Signal(t *testing.T) {
@@ -373,18 +341,16 @@ func TestNewChannel_Signal(t *testing.T) {
 		Phone: "+15551234567",
 		URL:   "http://localhost:8080",
 	}, "model", nil)
-	if ch == nil {
-		t.Error("expected non-nil Signal channel")
-	}
+	assert.NotNil(t, ch)
+
 }
 
 // ── Discord tests ─────────────────────────────────────────────────────────────
 
 func TestDiscordChannel_Constructor(t *testing.T) {
 	ch := NewDiscordChannel("token123", nil, "gpt-4", []string{"fallback"})
-	if ch == nil {
-		t.Fatal("expected non-nil channel")
-	}
+	assert.NotNil(t, ch)
+
 }
 
 func TestDiscordChannel_OnMessage(t *testing.T) {
@@ -393,17 +359,15 @@ func TestDiscordChannel_OnMessage(t *testing.T) {
 	ch.handlerMu.RLock()
 	fn := ch.handler
 	ch.handlerMu.RUnlock()
-	if fn == nil {
-		t.Error("expected handler to be set")
-	}
+	assert.NotNil(t, fn)
+
 }
 
 func TestDiscordChannel_Send_NotConnected(t *testing.T) {
 	ch := NewDiscordChannel("t", nil, "m", nil)
 	err := ch.Send("C123", "hello")
-	if err == nil {
-		t.Fatal("expected error when not connected")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestDiscordChannel_Stop_Idempotent(_ *testing.T) {
@@ -417,18 +381,16 @@ func TestNewChannel_Discord(t *testing.T) {
 		Type:  "discord",
 		Token: "bot-token",
 	}, "model", nil)
-	if ch == nil {
-		t.Error("expected non-nil Discord channel")
-	}
+	assert.NotNil(t, ch)
+
 }
 
 // ── Slack tests ───────────────────────────────────────────────────────────────
 
 func TestSlackChannel_Constructor(t *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "gpt-4", nil)
-	if ch == nil {
-		t.Fatal("expected non-nil channel")
-	}
+	assert.NotNil(t, ch)
+
 }
 
 func TestSlackChannel_OnMessage(t *testing.T) {
@@ -437,9 +399,8 @@ func TestSlackChannel_OnMessage(t *testing.T) {
 	ch.handlerMu.RLock()
 	fn := ch.handler
 	ch.handlerMu.RUnlock()
-	if fn == nil {
-		t.Error("expected handler to be set")
-	}
+	assert.NotNil(t, fn)
+
 }
 
 func TestSlackChannel_Stop_NilCancel(_ *testing.T) {
@@ -460,9 +421,8 @@ func TestNewChannel_Slack(t *testing.T) {
 		Token: "xoxb-token",
 		URL:   "xapp-token",
 	}, "model", nil)
-	if ch == nil {
-		t.Error("expected non-nil Slack channel")
-	}
+	assert.NotNil(t, ch)
+
 }
 
 // ── Signal helper: single-request mock TCP server ────────────────────────────
@@ -488,9 +448,8 @@ type jsonrpcResponseMock struct {
 func newSignalMockTCPServer(t *testing.T, response jsonrpcResponseMock) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	assert.NoError(t, err)
+
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -510,21 +469,18 @@ func newSignalMockTCPServer(t *testing.T, response jsonrpcResponseMock) string {
 
 func TestSignalChannel_ShowTyping(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, true, false, false, false, "m", nil)
-	if !ch.ShowTyping() {
-		t.Error("expected ShowTyping=true")
-	}
+	assert.True(t, ch.ShowTyping())
+
 	ch2 := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	if ch2.ShowTyping() {
-		t.Error("expected ShowTyping=false")
-	}
+	assert.False(t, ch2.ShowTyping())
+
 }
 
 func TestSignalChannel_SendTyping_NoAddr(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	err := ch.SendTyping("+5551111111", false)
-	if err == nil {
-		t.Fatal("expected error when no addr")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSignalChannel_SendTyping_Success(t *testing.T) {
@@ -534,9 +490,8 @@ func TestSignalChannel_SendTyping_Success(t *testing.T) {
 	ch.addr = addr
 	ch.addrMu.Unlock()
 	err := ch.SendTyping("+5551111111", false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestSignalChannel_SendTyping_GroupID(t *testing.T) {
@@ -547,9 +502,8 @@ func TestSignalChannel_SendTyping_GroupID(t *testing.T) {
 	ch.addrMu.Unlock()
 	// Group IDs don't start with "+".
 	err := ch.SendTyping("group-base64-id", true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // ── Signal SendMedia tests ────────────────────────────────────────────────────
@@ -557,9 +511,8 @@ func TestSignalChannel_SendTyping_GroupID(t *testing.T) {
 func TestSignalChannel_SendMedia_NoAddr(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	err := ch.SendMedia("+5551111111", "caption", "/tmp/img.png")
-	if err == nil {
-		t.Fatal("expected error when no addr")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSignalChannel_SendMedia_Success(t *testing.T) {
@@ -569,9 +522,8 @@ func TestSignalChannel_SendMedia_Success(t *testing.T) {
 	ch.addr = addr
 	ch.addrMu.Unlock()
 	err := ch.SendMedia("+5551111111", "caption", "/tmp/img.png")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // ── Signal sendReadReceipt tests ──────────────────────────────────────────────
@@ -579,9 +531,8 @@ func TestSignalChannel_SendMedia_Success(t *testing.T) {
 func TestSignalChannel_SendReadReceipt_NoAddr(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	err := ch.sendReadReceipt("+5551111111", 12345)
-	if err == nil {
-		t.Fatal("expected error when no addr")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSignalChannel_SendReadReceipt_Success(t *testing.T) {
@@ -591,21 +542,17 @@ func TestSignalChannel_SendReadReceipt_Success(t *testing.T) {
 	ch.addr = addr
 	ch.addrMu.Unlock()
 	err := ch.sendReadReceipt("+5551111111", 12345)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 // ── fetchLinkPreviews tests ───────────────────────────────────────────────────
 
 func TestFetchLinkPreviews_NoURL(t *testing.T) {
 	previews, cleanup := fetchLinkPreviews("no url here, just text")
-	if previews != nil {
-		t.Errorf("expected nil previews, got %v", previews)
-	}
-	if cleanup != nil {
-		t.Error("expected nil cleanup")
-	}
+	assert.Nil(t, previews)
+	assert.Nil(t, cleanup)
+
 }
 
 func TestFetchLinkPreviews_WithURL(t *testing.T) {
@@ -623,10 +570,10 @@ func TestFetchLinkPreviews_WithURL(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil {
-		t.Error("expected non-nil previews for valid HTML with og:title")
-	} else if len(previews) == 0 || previews[0].Title != "Test Title" {
-		t.Errorf("unexpected previews: %v", previews)
+	assert.NotNil(t, previews)
+	assert.NotEmpty(t, previews)
+	if len(previews) > 0 {
+		assert.Equal(t, "Test Title", previews[0].Title)
 	}
 }
 
@@ -641,9 +588,8 @@ func TestFetchLinkPreviews_NonHTMLResponse(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews != nil {
-		t.Errorf("expected nil previews for non-HTML response, got %v", previews)
-	}
+	assert.Nil(t, previews)
+
 }
 
 // ── downloadTempImage tests ───────────────────────────────────────────────────
@@ -656,20 +602,16 @@ func TestDownloadTempImage_Success(t *testing.T) {
 	defer srv.Close()
 
 	path, err := downloadTempImage(context.Background(), srv.URL+"/img.png")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	defer os.Remove(path) //nolint:errcheck
-	if path == "" {
-		t.Error("expected non-empty path")
-	}
+	assert.NoError(t, err)
+
+	defer func() { _ = os.Remove(path) }()
+	assert. //nolint:errcheck
+		NotEqual(t, "", path)
+
 	data, readErr := os.ReadFile(path)
-	if readErr != nil {
-		t.Fatalf("could not read temp file: %v", readErr)
-	}
-	if string(data) != "fake image data" {
-		t.Errorf("unexpected file contents: %q", data)
-	}
+	assert.Nil(t, readErr)
+	assert.Equal(t, "fake image data", string(data))
+
 }
 
 func TestDownloadTempImage_NotFound(_ *testing.T) {
@@ -705,9 +647,8 @@ func TestSignalChannel_StreamToSink(t *testing.T) {
 
 	history, _, unsub := sink.Subscribe()
 	unsub()
-	if len(history) < 3 {
-		t.Errorf("expected at least 3 lines, got %d: %v", len(history), history)
-	}
+	assert.GreaterOrEqual(t, len(history), 3)
+
 }
 
 func TestSignalChannel_StreamToSink_NoSink(_ *testing.T) {
@@ -723,9 +664,8 @@ func TestSignalChannel_StreamToSink_NoSink(_ *testing.T) {
 func TestSignalChannel_SendReaction_NoAddr(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
-	if err == nil {
-		t.Fatal("expected error when no addr")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSignalChannel_SendReaction_Success(t *testing.T) {
@@ -735,9 +675,8 @@ func TestSignalChannel_SendReaction_Success(t *testing.T) {
 	ch.addr = addr
 	ch.addrMu.Unlock()
 	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestSignalChannel_SendReaction_GroupID(t *testing.T) {
@@ -747,7 +686,6 @@ func TestSignalChannel_SendReaction_GroupID(t *testing.T) {
 	ch.addr = addr
 	ch.addrMu.Unlock()
 	err := ch.sendReaction("group-base64-id", "👍", "+1", 12345)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }

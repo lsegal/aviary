@@ -16,30 +16,30 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConstants(t *testing.T) {
 	for _, role := range []Role{RoleUser, RoleAssistant, RoleSystem} {
-		if role == "" {
-			t.Fatal("role constant should not be empty")
-		}
+		assert.NotEqual(t, "", role)
+
 	}
 	for _, typ := range []EventType{EventTypeText, EventTypeError, EventTypeDone} {
-		if typ == "" {
-			t.Fatal("event type constant should not be empty")
-		}
+		assert.NotEqual(t, "", typ)
+
 	}
 }
 
 func TestRequestAndMessageZeroValues(t *testing.T) {
 	r := Request{}
-	if r.Model != "" || r.MaxToks != 0 || r.Stream {
-		t.Fatalf("unexpected zero request: %+v", r)
-	}
+	assert.Equal(t, "", r.Model)
+	assert.Equal(t, 0, r.MaxToks)
+	assert.False(t, r.Stream)
+
 	m := Message{Role: RoleUser, Content: "hello"}
-	if m.Role != RoleUser || m.Content != "hello" {
-		t.Fatalf("unexpected message: %+v", m)
-	}
+	assert.Equal(t, RoleUser, m.Role)
+	assert.Equal(t, "hello", m.Content)
+
 }
 
 func TestFactoryForModel(t *testing.T) {
@@ -62,17 +62,13 @@ func TestFactoryForModel(t *testing.T) {
 		t.Run(tc.model, func(t *testing.T) {
 			p, err := f.ForModel(tc.model)
 			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error for model %s", tc.model)
-				}
+				assert.Error(t, err)
+
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error for %s: %v", tc.model, err)
-			}
-			if p == nil {
-				t.Fatalf("provider should not be nil for %s", tc.model)
-			}
+			assert.NoError(t, err)
+			assert.NotNil(t, p)
+
 		})
 	}
 }
@@ -81,14 +77,12 @@ func TestFactoryResolverError(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) {
 		return "", errors.New("boom")
 	})
+	_, err := f.ForModel("openai/gpt-4o")
+	assert.Error(t, err)
 
-	if _, err := f.ForModel("openai/gpt-4o"); err == nil {
-		t.Fatal("expected auth resolver error")
-	}
+	_, err = f.ForModel("stdio/codex")
+	assert.NoError(t, err)
 
-	if _, err := f.ForModel("stdio/codex"); err != nil {
-		t.Fatalf("stdio should not require auth resolver, got %v", err)
-	}
 }
 
 func TestFactoryOpenAICodexRequiresOAuth(t *testing.T) {
@@ -98,17 +92,16 @@ func TestFactoryOpenAICodexRequiresOAuth(t *testing.T) {
 		}
 		return "key", nil
 	})
+	_, err := f.ForModel("openai-codex/gpt-5.2")
+	assert.Error(t, err)
 
-	if _, err := f.ForModel("openai-codex/gpt-5.2"); err == nil {
-		t.Fatal("expected missing oauth error for openai-codex")
-	}
 }
 
 func TestFactoryNilResolver(t *testing.T) {
 	f := NewFactory(nil)
-	if _, err := f.ForModel("anthropic/claude-3-5-sonnet"); err != nil {
-		t.Fatalf("expected nil resolver to still construct provider, got %v", err)
-	}
+	_, err := f.ForModel("anthropic/claude-3-5-sonnet")
+	assert.NoError(t, err)
+
 }
 
 func TestIntegration_AllProviderKinds(t *testing.T) {
@@ -123,12 +116,9 @@ func TestIntegration_AllProviderKinds(t *testing.T) {
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
 			p, err := f.ForModel(model)
-			if err != nil {
-				t.Fatalf("for model %s: %v", model, err)
-			}
-			if p == nil {
-				t.Fatalf("provider is nil for %s", model)
-			}
+			assert.NoError(t, err)
+			assert.NotNil(t, p)
+
 		})
 	}
 }
@@ -150,12 +140,11 @@ func TestParseImageDataURL(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mime, _, ok := ParseImageDataURL(tc.input)
-			if ok != tc.wantOK {
-				t.Errorf("ok = %v; want %v", ok, tc.wantOK)
+			assert.Equal(t, tc.wantOK, ok)
+			if ok {
+				assert.Equal(t, tc.wantMime, mime)
 			}
-			if ok && mime != tc.wantMime {
-				t.Errorf("mime = %q; want %q", mime, tc.wantMime)
-			}
+
 		})
 	}
 }
@@ -163,33 +152,29 @@ func TestParseImageDataURL(t *testing.T) {
 func TestExtractFirstImageDataURL(t *testing.T) {
 	// No image in text.
 	cleaned, url := ExtractFirstImageDataURL("no image here")
-	if cleaned != "no image here" || url != "" {
-		t.Errorf("no image: got (%q, %q)", cleaned, url)
-	}
+	assert.Equal(t, "no image here", cleaned)
+	assert.Equal(t, "", url)
 
 	// Image embedded in text.
 	text := "prefix data:image/png;base64,abc123== suffix"
 	cleaned2, url2 := ExtractFirstImageDataURL(text)
-	if url2 == "" {
-		t.Error("expected extracted URL")
-	}
-	if url2 == text {
-		t.Error("cleaned text should not contain data URL")
-	}
+	assert.NotEqual(t, "", url2)
+	assert.NotEqual(t, text, url2)
+
 	_ = cleaned2
 }
 
 func TestTruncate(t *testing.T) {
+
 	// Under limit.
-	if got := truncate([]byte("hello"), 10); got != "hello" {
-		t.Errorf("truncate under limit = %q; want hello", got)
-	}
+	got := truncate([]byte("hello"), 10)
+	assert.Equal(t, "hello", got)
+
 	// Over limit.
 	long := []byte("abcdefghij")
-	got := truncate(long, 5)
-	if got != "abcde …+5 bytes" {
-		t.Errorf("truncate over limit = %q", got)
-	}
+	got = truncate(long, 5)
+	assert.Equal(t, "abcde …+5 bytes", got)
+
 }
 
 func TestWithTokenSetter(t *testing.T) {
@@ -199,9 +184,8 @@ func TestWithTokenSetter(t *testing.T) {
 		called = true
 		return nil
 	})
-	if f2 == nil {
-		t.Fatal("WithTokenSetter returned nil")
-	}
+	assert.NotNil(t, f2)
+
 	// Calling the setter should work.
 	_ = called
 }
@@ -210,9 +194,8 @@ func TestResolveOAuthToken_Empty(t *testing.T) {
 	// Factory with nil resolver → no token.
 	f := NewFactory(nil)
 	_, ok := f.resolveOAuthToken("anthropic:oauth")
-	if ok {
-		t.Error("expected false when no auth resolver")
-	}
+	assert.False(t, ok)
+
 }
 
 func TestResolveOAuthToken_PlainString(t *testing.T) {
@@ -221,29 +204,27 @@ func TestResolveOAuthToken_PlainString(t *testing.T) {
 		return "sk-test-key", nil
 	})
 	tok, ok := f.resolveOAuthToken("anthropic:oauth")
-	if !ok || tok != "sk-test-key" {
-		t.Errorf("resolveOAuthToken plain = (%q, %v); want (sk-test-key, true)", tok, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "sk-test-key", tok)
+
 }
 
 func TestForModel_UnknownProvider(t *testing.T) {
 	f := NewFactory(nil)
 	_, err := f.ForModel("unknown/model")
-	if err == nil {
-		t.Error("expected error for unknown provider")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestExtractChatGPTAccountID(t *testing.T) {
+
 	// Malformed JWT (no dots).
-	if got := extractChatGPTAccountID("notajwt"); got != "" {
-		t.Errorf("expected empty for malformed JWT, got %q", got)
-	}
+	got := extractChatGPTAccountID("notajwt")
+	assert.Equal(t, "", got)
 
 	// JWT with invalid base64 payload.
-	if got := extractChatGPTAccountID("header.!!!invalid.sig"); got != "" {
-		t.Errorf("expected empty for invalid base64, got %q", got)
-	}
+	got = extractChatGPTAccountID("header.!!!invalid.sig")
+	assert.Equal(t, "", got)
 
 	// Valid JWT-like payload with account ID.
 	claims := map[string]any{
@@ -254,9 +235,9 @@ func TestExtractChatGPTAccountID(t *testing.T) {
 	payload, _ := json.Marshal(claims)
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
 	jwt := "header." + encoded + ".sig"
-	if got := extractChatGPTAccountID(jwt); got != "acc-123" {
-		t.Errorf("extractChatGPTAccountID = %q; want acc-123", got)
-	}
+	got = extractChatGPTAccountID(jwt)
+	assert.Equal(t, "acc-123", got)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +293,7 @@ func collectEvents(t *testing.T, ch <-chan Event) []Event {
 			}
 			events = append(events, ev)
 		case <-deadline:
-			t.Fatal("timeout waiting for events")
+			assert.FailNow(t, "timeout")
 		}
 	}
 }
@@ -323,20 +304,16 @@ func collectEvents(t *testing.T, ch <-chan Event) []Event {
 
 func TestDebugHTTP_Disabled(t *testing.T) {
 	t.Setenv("AVIARY_DEBUG_HTTP", "0")
-	if DebugHTTP() {
-		t.Error("expected DebugHTTP() == false when env is 0")
-	}
+	assert.False(t, DebugHTTP())
+
 	c := newDebugClient(nil)
-	if c == nil {
-		t.Error("newDebugClient returned nil")
-	}
+	assert.NotNil(t, c)
+
 }
 
 func TestDebugHTTP_Enabled(t *testing.T) {
 	t.Setenv("AVIARY_DEBUG_HTTP", "1")
-	if !DebugHTTP() {
-		t.Error("expected DebugHTTP() == true when env is 1")
-	}
+	assert.True(t, DebugHTTP())
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Test", "yes")
@@ -350,13 +327,11 @@ func TestDebugHTTP_Enabled(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("X-Custom", "value")
 	resp, err := c.Do(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
 }
 
 func TestDebugTransport_WithBody(t *testing.T) {
@@ -371,14 +346,12 @@ func TestDebugTransport_WithBody(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("hello world"))
 	req.Header.Set("Content-Type", "text/plain")
 	resp, err := c.Do(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer func() { _ = resp.Body.Close() }()
 	got, _ := io.ReadAll(resp.Body)
-	if string(got) != "hello world" {
-		t.Errorf("body roundtrip: got %q", string(got))
-	}
+	assert.Equal(t, "hello world", string(got))
+
 }
 
 func TestDebugTransport_Error(t *testing.T) {
@@ -387,9 +360,8 @@ func TestDebugTransport_Error(t *testing.T) {
 	// Use an invalid URL to trigger transport error.
 	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:1", nil)
 	_, err := c.Do(req)
-	if err == nil {
-		t.Error("expected error for unreachable server")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestWriteHeaders_Sensitive(t *testing.T) {
@@ -400,26 +372,18 @@ func TestWriteHeaders_Sensitive(t *testing.T) {
 	h.Set("Content-Type", "application/json")
 	writeHeaders(&sb, h, "  ")
 	out := sb.String()
-	if strings.Contains(out, "secret") {
-		t.Error("Authorization value should be redacted")
-	}
-	if strings.Contains(out, "mykey") {
-		t.Error("X-Api-Key value should be redacted")
-	}
-	if !strings.Contains(out, "[REDACTED]") {
-		t.Error("expected [REDACTED] marker")
-	}
-	if !strings.Contains(out, "application/json") {
-		t.Error("Content-Type should appear unredacted")
-	}
+	assert.False(t, strings.Contains(out, "secret"))
+	assert.False(t, strings.Contains(out, "mykey"))
+	assert.True(t, strings.Contains(out, "[REDACTED]"))
+	assert.True(t, strings.Contains(out, "application/json"))
+
 }
 
 func TestWriteHeaders_Empty(t *testing.T) {
 	var sb strings.Builder
 	writeHeaders(&sb, http.Header{}, "  ")
-	if sb.Len() != 0 {
-		t.Errorf("expected empty output for empty headers, got %q", sb.String())
-	}
+	assert.Equal(t, 0, sb.Len())
+
 }
 
 func TestNoAPIKeyTransport(t *testing.T) {
@@ -438,17 +402,12 @@ func TestNoAPIKeyTransport(t *testing.T) {
 	req.Header.Set("X-Api-Key", "should-be-removed")
 	req.Header.Set("Authorization", "Bearer mytoken")
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	_ = resp.Body.Close()
+	assert.NoError(t, err)
 
-	if gotHeaders.Get("X-Api-Key") != "" {
-		t.Error("x-api-key header should have been stripped by noAPIKeyTransport")
-	}
-	if gotHeaders.Get("Authorization") == "" {
-		t.Error("Authorization header should have been preserved")
-	}
+	_ = resp.Body.Close()
+	assert.Equal(t, "", gotHeaders.Get("X-Api-Key"))
+	assert.NotEqual(t, "", gotHeaders.Get("Authorization"))
+
 }
 
 // ---------------------------------------------------------------------------
@@ -468,9 +427,9 @@ func TestAnthropicProvider_Ping_Success(t *testing.T) {
 	defer srv.Close()
 
 	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	if err := p.Ping(context.Background()); err != nil {
-		t.Fatalf("Ping() error: %v", err)
-	}
+	err := p.Ping(context.Background())
+	assert.NoError(t, err)
+
 }
 
 func TestAnthropicProvider_Ping_Error(t *testing.T) {
@@ -482,9 +441,8 @@ func TestAnthropicProvider_Ping_Error(t *testing.T) {
 
 	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
 	err := p.Ping(context.Background())
-	if err == nil {
-		t.Fatal("expected Ping() to fail with 401")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
@@ -499,9 +457,7 @@ func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
 		MaxToks:  100,
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
 
 	events := collectEvents(t, ch)
 	var texts []string
@@ -515,18 +471,14 @@ func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
 		case EventTypeUsage:
 			gotUsage = true
 		case EventTypeError:
-			t.Fatalf("unexpected error event: %v", ev.Error)
+			assert.NoError(t, ev.Error)
+			return
 		}
 	}
-	if len(texts) == 0 {
-		t.Error("expected text events")
-	}
-	if !gotDone {
-		t.Error("expected done event")
-	}
-	if !gotUsage {
-		t.Error("expected usage event")
-	}
+	assert.NotEqual(t, 0, len(texts))
+	assert.True(t, gotDone)
+	assert.True(t, gotUsage)
+
 }
 
 func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
@@ -541,9 +493,8 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 		Messages: []Message{{Role: RoleUser, Content: "Hello"}},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var gotDone bool
 	for _, ev := range events {
@@ -551,9 +502,8 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 			gotDone = true
 		}
 	}
-	if !gotDone {
-		t.Error("expected done event")
-	}
+	assert.True(t, gotDone)
+
 }
 
 func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {
@@ -571,9 +521,8 @@ func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -590,9 +539,8 @@ func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -609,9 +557,8 @@ func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -629,9 +576,8 @@ func TestAnthropicProvider_Stream_WithMediaURL_NoContent(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -658,9 +604,8 @@ func TestAnthropicProvider_Stream_ServerError(t *testing.T) {
 			gotErr = true
 		}
 	}
-	if !gotErr {
-		t.Error("expected error event on 500 response")
-	}
+	assert.True(t, gotErr)
+
 }
 
 func TestAnthropicProvider_Stream_DefaultMaxToks(t *testing.T) {
@@ -676,27 +621,22 @@ func TestAnthropicProvider_Stream_DefaultMaxToks(t *testing.T) {
 		MaxToks:  0,
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
 func TestNewAnthropicOAuthProvider(t *testing.T) {
 	p := NewAnthropicOAuthProvider("test-access-token", "claude-3-5-sonnet-20241022")
-	if p == nil {
-		t.Fatal("NewAnthropicOAuthProvider returned nil")
-	}
-	if p.model != "claude-3-5-sonnet-20241022" {
-		t.Errorf("model = %q; want claude-3-5-sonnet-20241022", p.model)
-	}
+	assert.NotNil(t, p)
+	assert.Equal(t, "claude-3-5-sonnet-20241022", p.model)
+
 }
 
 func TestNewAnthropicProvider_EmptyKey(t *testing.T) {
 	p := NewAnthropicProvider("", "claude-3-5-sonnet-20241022")
-	if p == nil {
-		t.Fatal("NewAnthropicProvider returned nil")
-	}
+	assert.NotNil(t, p)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -712,9 +652,9 @@ func TestOpenAIProvider_Ping_Success(t *testing.T) {
 	defer srv.Close()
 
 	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
-	if err := p.Ping(context.Background()); err != nil {
-		t.Fatalf("Ping() error: %v", err)
-	}
+	err := p.Ping(context.Background())
+	assert.NoError(t, err)
+
 }
 
 func TestOpenAIProvider_Ping_Error(t *testing.T) {
@@ -726,9 +666,8 @@ func TestOpenAIProvider_Ping_Error(t *testing.T) {
 
 	p := NewOpenAIProvider("bad-key", "gpt-4o", srv.URL)
 	err := p.Ping(context.Background())
-	if err == nil {
-		t.Fatal("expected error for 401")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestOpenAIProvider_Stream_TextAndUsage(t *testing.T) {
@@ -742,9 +681,7 @@ func TestOpenAIProvider_Stream_TextAndUsage(t *testing.T) {
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
 
 	events := collectEvents(t, ch)
 	var texts []string
@@ -758,18 +695,14 @@ func TestOpenAIProvider_Stream_TextAndUsage(t *testing.T) {
 		case EventTypeUsage:
 			gotUsage = true
 		case EventTypeError:
-			t.Fatalf("unexpected error: %v", ev.Error)
+			assert.NoError(t, ev.Error)
+			return
 		}
 	}
-	if len(texts) == 0 {
-		t.Error("expected text events")
-	}
-	if !gotDone {
-		t.Error("expected done event")
-	}
-	if !gotUsage {
-		t.Error("expected usage event")
-	}
+	assert.NotEqual(t, 0, len(texts))
+	assert.True(t, gotDone)
+	assert.True(t, gotUsage)
+
 }
 
 func TestOpenAIProvider_Stream_WithSystem(t *testing.T) {
@@ -784,9 +717,8 @@ func TestOpenAIProvider_Stream_WithSystem(t *testing.T) {
 		Messages: []Message{{Role: RoleUser, Content: "Tell me a joke"}},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -806,9 +738,8 @@ func TestOpenAIProvider_Stream_AllRoles(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -825,9 +756,8 @@ func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -844,9 +774,8 @@ func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -872,16 +801,14 @@ func TestOpenAIProvider_Stream_ServerError(t *testing.T) {
 			gotErr = true
 		}
 	}
-	if !gotErr {
-		t.Error("expected error event on 500 response")
-	}
+	assert.True(t, gotErr)
+
 }
 
 func TestNewOpenAIProvider_EmptyKey(t *testing.T) {
 	p := NewOpenAIProvider("", "gpt-4o", "")
-	if p == nil {
-		t.Fatal("expected non-nil provider")
-	}
+	assert.NotNil(t, p)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -906,9 +833,7 @@ func TestOpenAICodexProvider_Stream_Success(t *testing.T) {
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
 
 	events := collectEvents(t, ch)
 	var texts []string
@@ -922,18 +847,14 @@ func TestOpenAICodexProvider_Stream_Success(t *testing.T) {
 		case EventTypeUsage:
 			gotUsage = true
 		case EventTypeError:
-			t.Fatalf("unexpected error: %v", ev.Error)
+			assert.NoError(t, ev.Error)
+			return
 		}
 	}
-	if strings.Join(texts, "") != "Hello World" {
-		t.Errorf("text = %q; want %q", strings.Join(texts, ""), "Hello World")
-	}
-	if !gotDone {
-		t.Error("expected done event")
-	}
-	if !gotUsage {
-		t.Error("expected usage event")
-	}
+	assert.Equal(t, "Hello World", strings.Join(texts, ""))
+	assert.True(t, gotDone)
+	assert.True(t, gotUsage)
+
 }
 
 func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
@@ -958,9 +879,8 @@ func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -981,9 +901,8 @@ func TestOpenAICodexProvider_Stream_WithMedia_NoContent(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -1001,22 +920,19 @@ func TestOpenAICodexProvider_Stream_Failed(t *testing.T) {
 	ch, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("Stream() returned error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var gotErr bool
 	for _, ev := range events {
 		if ev.Type == EventTypeError {
 			gotErr = true
-			if !strings.Contains(ev.Error.Error(), "rate_limit") {
-				t.Errorf("error message should contain code, got: %v", ev.Error)
-			}
+			assert.True(t, strings.Contains(ev.Error.Error(), "rate_limit"))
+
 		}
 	}
-	if !gotErr {
-		t.Error("expected error event")
-	}
+	assert.True(t, gotErr)
+
 }
 
 func TestOpenAICodexProvider_Stream_FailedNoError(t *testing.T) {
@@ -1034,9 +950,8 @@ func TestOpenAICodexProvider_Stream_FailedNoError(t *testing.T) {
 	ch, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var gotErr bool
 	for _, ev := range events {
@@ -1044,9 +959,8 @@ func TestOpenAICodexProvider_Stream_FailedNoError(t *testing.T) {
 			gotErr = true
 		}
 	}
-	if !gotErr {
-		t.Error("expected error event for response.failed")
-	}
+	assert.True(t, gotErr)
+
 }
 
 func TestOpenAICodexProvider_Stream_HTTPError(t *testing.T) {
@@ -1062,9 +976,8 @@ func TestOpenAICodexProvider_Stream_HTTPError(t *testing.T) {
 	_, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err == nil {
-		t.Fatal("expected error for 403")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestOpenAICodexProvider_Stream_WithAccountID(t *testing.T) {
@@ -1092,13 +1005,11 @@ func TestOpenAICodexProvider_Stream_WithAccountID(t *testing.T) {
 	ch, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
-	if gotAccountID != "acc-456" {
-		t.Errorf("ChatGPT-Account-ID = %q; want acc-456", gotAccountID)
-	}
+	assert.Equal(t, "acc-456", gotAccountID)
+
 }
 
 func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {
@@ -1119,9 +1030,8 @@ func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {
 	ch, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var texts []string
 	for _, ev := range events {
@@ -1129,9 +1039,8 @@ func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {
 			texts = append(texts, ev.Text)
 		}
 	}
-	if len(texts) == 0 {
-		t.Error("expected text event despite bad lines")
-	}
+	assert.NotEqual(t, 0, len(texts))
+
 }
 
 // rewriteURLTransport redirects all requests to a target server (for testing
@@ -1163,9 +1072,8 @@ func TestGeminiProvider_Stream_Success(t *testing.T) {
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var texts []string
 	for _, ev := range events {
@@ -1173,9 +1081,8 @@ func TestGeminiProvider_Stream_Success(t *testing.T) {
 			texts = append(texts, ev.Text)
 		}
 	}
-	if len(texts) == 0 {
-		t.Error("expected text events")
-	}
+	assert.NotEqual(t, 0, len(texts))
+
 }
 
 func TestGeminiProvider_Ping_Success(t *testing.T) {
@@ -1199,9 +1106,8 @@ func TestGeminiProvider_Ping_Success(t *testing.T) {
 
 	p := newTestGeminiProvider(srv.URL, "gemini-2.0-flash")
 	err := p.Ping(context.Background())
-	if err != nil {
-		t.Fatalf("Ping() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestGeminiProvider_Ping_Error(t *testing.T) {
@@ -1216,19 +1122,15 @@ func TestGeminiProvider_Ping_Error(t *testing.T) {
 
 	p := newTestGeminiProvider(srv.URL, "gemini-2.0-flash")
 	err := p.Ping(context.Background())
-	if err == nil {
-		t.Fatal("expected error for 403")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestNewGeminiProvider(t *testing.T) {
 	p := NewGeminiProvider("test-key", "gemini-2.0-flash")
-	if p == nil {
-		t.Fatal("NewGeminiProvider returned nil")
-	}
-	if p.apiKey != "test-key" {
-		t.Errorf("apiKey = %q; want test-key", p.apiKey)
-	}
+	assert.NotNil(t, p)
+	assert.Equal(t, "test-key", p.apiKey)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1259,9 +1161,8 @@ func TestPingGoogleOAuthToken_Success(t *testing.T) {
 	})
 
 	err := pingGoogleOAuthToken(context.Background(), "test-access-token")
-	if err != nil {
-		t.Fatalf("pingGoogleOAuthToken error: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestPingGoogleOAuthToken_Invalid(t *testing.T) {
@@ -1271,12 +1172,9 @@ func TestPingGoogleOAuthToken_Invalid(t *testing.T) {
 	})
 
 	err := pingGoogleOAuthToken(context.Background(), "bad-token")
-	if err == nil {
-		t.Fatal("expected error for invalid token")
-	}
-	if !strings.Contains(err.Error(), "invalid token") {
-		t.Errorf("error should mention invalid token, got: %v", err)
-	}
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "invalid token"))
+
 }
 
 func TestFetchCodeAssistProject_Success(t *testing.T) {
@@ -1287,12 +1185,9 @@ func TestFetchCodeAssistProject_Success(t *testing.T) {
 	})
 
 	proj, err := fetchCodeAssistProject(context.Background(), "test-access-token")
-	if err != nil {
-		t.Fatalf("fetchCodeAssistProject error: %v", err)
-	}
-	if proj != "my-project-123456" {
-		t.Errorf("project = %q; want my-project-123456", proj)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "my-project-123456", proj)
+
 }
 
 func TestFetchCodeAssistProject_HTTPError(t *testing.T) {
@@ -1302,9 +1197,8 @@ func TestFetchCodeAssistProject_HTTPError(t *testing.T) {
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "bad-token")
-	if err == nil {
-		t.Fatal("expected error for 403")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestFetchCodeAssistProject_BadJSON(t *testing.T) {
@@ -1314,9 +1208,8 @@ func TestFetchCodeAssistProject_BadJSON(t *testing.T) {
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "test-token")
-	if err == nil {
-		t.Fatal("expected error for missing cloudaicompanionProject")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestFetchCodeAssistProject_InvalidJSON(t *testing.T) {
@@ -1326,9 +1219,8 @@ func TestFetchCodeAssistProject_InvalidJSON(t *testing.T) {
 	})
 
 	_, err := fetchCodeAssistProject(context.Background(), "test-token")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestGeminiCodeAssistProvider_Ping_Success(t *testing.T) {
@@ -1338,9 +1230,9 @@ func TestGeminiCodeAssistProvider_Ping_Success(t *testing.T) {
 	})
 
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
-	if err := p.Ping(context.Background()); err != nil {
-		t.Fatalf("Ping() error: %v", err)
-	}
+	err := p.Ping(context.Background())
+	assert.NoError(t, err)
+
 }
 
 func TestGeminiCodeAssistProvider_Ping_Error(t *testing.T) {
@@ -1349,9 +1241,9 @@ func TestGeminiCodeAssistProvider_Ping_Error(t *testing.T) {
 	})
 
 	p := NewGeminiCodeAssistProvider("bad-token", "gemini-2.0-flash")
-	if err := p.Ping(context.Background()); err == nil {
-		t.Fatal("expected error")
-	}
+	err := p.Ping(context.Background())
+	assert.Error(t, err)
+
 }
 
 func TestGeminiCodeAssistProvider_ResolveProject_Cached(t *testing.T) {
@@ -1364,20 +1256,15 @@ func TestGeminiCodeAssistProvider_ResolveProject_Cached(t *testing.T) {
 
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
 	proj1, err := p.resolveProject(context.Background())
-	if err != nil {
-		t.Fatalf("first resolveProject error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	proj2, err := p.resolveProject(context.Background())
-	if err != nil {
-		t.Fatalf("second resolveProject error: %v", err)
-	}
-	if proj1 != "cached-project" || proj2 != "cached-project" {
-		t.Errorf("projects = (%q, %q); want (cached-project, cached-project)", proj1, proj2)
-	}
-	// Should only have called the API once (second call uses cache).
-	if callCount != 1 {
-		t.Errorf("expected 1 API call, got %d", callCount)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "cached-project", proj1)
+	assert.Equal(t, "cached-project", proj2)
+	assert.Equal(t, // Should only have called the API once (second call uses cache).
+		1, callCount)
+
 }
 
 func TestGeminiCodeAssistProvider_ResolveProject_Error(t *testing.T) {
@@ -1388,9 +1275,8 @@ func TestGeminiCodeAssistProvider_ResolveProject_Error(t *testing.T) {
 
 	p := NewGeminiCodeAssistProvider("bad-token", "gemini-2.0-flash")
 	_, err := p.resolveProject(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestGeminiCodeAssistProvider_Stream_Success(t *testing.T) {
@@ -1419,9 +1305,7 @@ func TestGeminiCodeAssistProvider_Stream_Success(t *testing.T) {
 		MaxToks:  100,
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
 
 	events := collectEvents(t, ch)
 	var texts []string
@@ -1435,18 +1319,14 @@ func TestGeminiCodeAssistProvider_Stream_Success(t *testing.T) {
 		case EventTypeUsage:
 			gotUsage = true
 		case EventTypeError:
-			t.Fatalf("unexpected error: %v", ev.Error)
+			assert.NoError(t, ev.Error)
+			return
 		}
 	}
-	if strings.Join(texts, "") != "Hello from Gemini!" {
-		t.Errorf("text = %q; want 'Hello from Gemini!'", strings.Join(texts, ""))
-	}
-	if !gotDone {
-		t.Error("expected done event")
-	}
-	if !gotUsage {
-		t.Error("expected usage event")
-	}
+	assert.Equal(t, "Hello from Gemini!", strings.Join(texts, ""))
+	assert.True(t, gotDone)
+	assert.True(t, gotUsage)
+
 }
 
 func TestGeminiCodeAssistProvider_Stream_AllRoles(t *testing.T) {
@@ -1474,9 +1354,8 @@ func TestGeminiCodeAssistProvider_Stream_AllRoles(t *testing.T) {
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	collectEvents(t, ch)
 }
 
@@ -1490,9 +1369,8 @@ func TestGeminiCodeAssistProvider_Stream_ProjectError(t *testing.T) {
 	_, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err == nil {
-		t.Fatal("expected error when resolveProject fails")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestGeminiCodeAssistProvider_Stream_500Retry(t *testing.T) {
@@ -1526,9 +1404,8 @@ func TestGeminiCodeAssistProvider_Stream_500Retry(t *testing.T) {
 	ch, err := p.Stream(ctx, Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var texts []string
 	for _, ev := range events {
@@ -1536,9 +1413,8 @@ func TestGeminiCodeAssistProvider_Stream_500Retry(t *testing.T) {
 			texts = append(texts, ev.Text)
 		}
 	}
-	if strings.Join(texts, "") != "retry worked" {
-		t.Errorf("text after retry = %q; want 'retry worked'", strings.Join(texts, ""))
-	}
+	assert.Equal(t, "retry worked", strings.Join(texts, ""))
+
 }
 
 func TestGeminiCodeAssistProvider_Stream_4xxNoRetry(t *testing.T) {
@@ -1558,12 +1434,9 @@ func TestGeminiCodeAssistProvider_Stream_4xxNoRetry(t *testing.T) {
 	_, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err == nil {
-		t.Fatal("expected error on 403")
-	}
-	if requestCount > 2 {
-		t.Errorf("expected no retry on 4xx, but got %d requests", requestCount)
-	}
+	assert.Error(t, err)
+	assert.LessOrEqual(t, requestCount, 2)
+
 }
 
 func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
@@ -1587,9 +1460,8 @@ func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
 	ch, err := p.Stream(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	events := collectEvents(t, ch)
 	var texts []string
 	for _, ev := range events {
@@ -1597,9 +1469,8 @@ func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
 			texts = append(texts, ev.Text)
 		}
 	}
-	if len(texts) == 0 {
-		t.Error("expected text event despite bad JSON line")
-	}
+	assert.NotEqual(t, 0, len(texts))
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1622,9 +1493,8 @@ func TestFactory_PingModel_Pinger(t *testing.T) {
 	// We test PingModel indirectly by verifying it calls Ping on the provider.
 	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
 	err := p.Ping(context.Background())
-	if err != nil {
-		t.Fatalf("Ping() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	_ = f
 }
 
@@ -1654,22 +1524,19 @@ func TestFactory_PingModel_FallbackStream(t *testing.T) {
 		MaxToks:  1,
 		Stream:   true,
 	})
-	if err != nil {
-		t.Fatalf("Stream() error: %v", err)
-	}
+	assert.NoError(t, err)
+
 	for ev := range ch {
-		if ev.Type == EventTypeError {
-			t.Fatalf("unexpected error: %v", ev.Error)
-		}
+		assert.NotEqual(t, EventTypeError, ev.Type)
+
 	}
 }
 
 func TestFactory_PingModel_Error(t *testing.T) {
 	f := NewFactory(nil)
 	err := f.PingModel(context.Background(), "invalid")
-	if err == nil {
-		t.Fatal("expected error for invalid model")
-	}
+	assert.Error(t, err)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1686,9 +1553,9 @@ func TestResolveOAuthToken_JSONToken(t *testing.T) {
 		return tokenJSON, nil
 	})
 	tok, ok := f.resolveOAuthToken("auth:anthropic:oauth")
-	if !ok || tok == "" {
-		t.Errorf("resolveOAuthToken JSON = (%q, %v); want non-empty, true", tok, ok)
-	}
+	assert.True(t, ok)
+	assert.NotEqual(t, "", tok)
+
 }
 
 func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
@@ -1696,9 +1563,8 @@ func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
 		return `{invalid json`, nil
 	})
 	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
-	if ok {
-		t.Error("expected false for invalid JSON token")
-	}
+	assert.False(t, ok)
+
 }
 
 func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
@@ -1706,7 +1572,6 @@ func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
 		return `{"access_token":"","refresh_token":"rt"}`, nil
 	})
 	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
-	if ok {
-		t.Error("expected false for empty access token")
-	}
+	assert.False(t, ok)
+
 }

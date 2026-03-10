@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/store"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func setTestDataDir(t *testing.T) {
@@ -24,30 +26,25 @@ func setTestDataDir(t *testing.T) {
 func TestLogDir(t *testing.T) {
 	setTestDataDir(t)
 	dir := LogDir()
-	if dir == "" {
-		t.Fatal("LogDir() returned empty string")
-	}
-	if !strings.HasSuffix(dir, "logs") {
-		t.Fatalf("LogDir() should end with 'logs', got: %s", dir)
-	}
+	assert.NotEqual(t, "", dir)
+	assert.True(t, strings.HasSuffix(dir, "logs"))
+
 }
 
 func TestLogFilePath(t *testing.T) {
 	setTestDataDir(t)
 	p := LogFilePath()
 	want := filepath.Join(LogDir(), "aviary.log")
-	if p != want {
-		t.Fatalf("LogFilePath() = %q; want %q", p, want)
-	}
+	assert.Equal(t, want, p)
+
 }
 
 func TestLogDir_ContainsDataDir(t *testing.T) {
 	setTestDataDir(t)
 	dir := LogDir()
 	dataDir := store.DataDir()
-	if !strings.HasPrefix(dir, dataDir) {
-		t.Fatalf("LogDir() %q should be under DataDir %q", dir, dataDir)
-	}
+	assert.True(t, strings.HasPrefix(dir, dataDir))
+
 }
 
 func TestTeeHandler_Enabled(t *testing.T) {
@@ -55,19 +52,15 @@ func TestTeeHandler_Enabled(t *testing.T) {
 	a := slog.NewTextHandler(&bufA, &slog.HandlerOptions{Level: slog.LevelWarn})
 	b := slog.NewTextHandler(&bufB, &slog.HandlerOptions{Level: slog.LevelDebug})
 	h := &teeHandler{a: a, b: b}
+	assert.
 
-	// Debug is enabled because b handles LevelDebug.
-	if !h.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected Enabled(Debug)=true when b allows debug")
-	}
-	// Warn is enabled by both.
-	if !h.Enabled(context.Background(), slog.LevelWarn) {
-		t.Error("expected Enabled(Warn)=true")
-	}
-	// Error is enabled by both.
-	if !h.Enabled(context.Background(), slog.LevelError) {
-		t.Error("expected Enabled(Error)=true")
-	}
+		// Debug is enabled because b handles LevelDebug.
+		True(t, h.Enabled(context.Background(), slog.LevelDebug))
+	assert.True(t, // Warn is enabled by both.
+		h.Enabled(context.Background(), slog.LevelWarn))
+	assert.True(t, // Error is enabled by both.
+		h.Enabled(context.Background(), slog.LevelError))
+
 }
 
 func TestTeeHandler_Enabled_BothDisabled(t *testing.T) {
@@ -76,17 +69,13 @@ func TestTeeHandler_Enabled_BothDisabled(t *testing.T) {
 	a := slog.NewTextHandler(&bufA, &slog.HandlerOptions{Level: slog.LevelError})
 	b := slog.NewTextHandler(&bufB, &slog.HandlerOptions{Level: slog.LevelError})
 	h := &teeHandler{a: a, b: b}
+	assert.
 
-	// Debug and Info should be disabled.
-	if h.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected Enabled(Debug)=false when both handlers require Error+")
-	}
-	if h.Enabled(context.Background(), slog.LevelInfo) {
-		t.Error("expected Enabled(Info)=false when both handlers require Error+")
-	}
-	if !h.Enabled(context.Background(), slog.LevelError) {
-		t.Error("expected Enabled(Error)=true")
-	}
+		// Debug and Info should be disabled.
+		False(t, h.Enabled(context.Background(), slog.LevelDebug))
+	assert.False(t, h.Enabled(context.Background(), slog.LevelInfo))
+	assert.True(t, h.Enabled(context.Background(), slog.LevelError))
+
 }
 
 func TestTeeHandler_Handle_WritesToBoth(t *testing.T) {
@@ -96,15 +85,12 @@ func TestTeeHandler_Handle_WritesToBoth(t *testing.T) {
 	h := &teeHandler{a: a, b: b}
 
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "hello world", 0)
-	if err := h.Handle(context.Background(), rec); err != nil {
-		t.Fatalf("Handle error: %v", err)
-	}
-	if !strings.Contains(bufA.String(), "hello world") {
-		t.Errorf("handler A did not receive message, got: %q", bufA.String())
-	}
-	if !strings.Contains(bufB.String(), "hello world") {
-		t.Errorf("handler B did not receive message, got: %q", bufB.String())
-	}
+	err := h.Handle(context.Background(), rec)
+	assert.NoError(t, err)
+
+	assert.True(t, strings.Contains(bufA.String(), "hello world"))
+	assert.True(t, strings.Contains(bufB.String(), "hello world"))
+
 }
 
 func TestTeeHandler_Handle_ReturnsNil(t *testing.T) {
@@ -115,9 +101,8 @@ func TestTeeHandler_Handle_ReturnsNil(t *testing.T) {
 
 	rec := slog.NewRecord(time.Now(), slog.LevelError, "error message", 0)
 	err := h.Handle(context.Background(), rec)
-	if err != nil {
-		t.Fatalf("Handle should return nil, got: %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestTeeHandler_WithAttrs(t *testing.T) {
@@ -127,26 +112,19 @@ func TestTeeHandler_WithAttrs(t *testing.T) {
 	h := &teeHandler{a: a, b: b}
 
 	h2 := h.WithAttrs([]slog.Attr{slog.String("key", "val")})
-	if h2 == nil {
-		t.Fatal("WithAttrs returned nil")
-	}
+	assert.NotNil(t, h2)
+
 	th2, ok := h2.(*teeHandler)
-	if !ok {
-		t.Fatalf("WithAttrs did not return *teeHandler, got %T", h2)
-	}
-	if th2.a == nil || th2.b == nil {
-		t.Fatal("WithAttrs inner handlers are nil")
-	}
+	assert.True(t, ok)
+	assert.NotNil(t, th2.a)
+	assert.NotNil(t, th2.b)
 
 	// Writing via th2 should include the attr in the output.
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "attributed", 0)
 	_ = th2.Handle(context.Background(), rec)
-	if !strings.Contains(bufA.String(), "val") {
-		t.Errorf("expected attr value in output A, got: %q", bufA.String())
-	}
-	if !strings.Contains(bufB.String(), "val") {
-		t.Errorf("expected attr value in output B, got: %q", bufB.String())
-	}
+	assert.True(t, strings.Contains(bufA.String(), "val"))
+	assert.True(t, strings.Contains(bufB.String(), "val"))
+
 }
 
 func TestTeeHandler_WithGroup(t *testing.T) {
@@ -156,27 +134,20 @@ func TestTeeHandler_WithGroup(t *testing.T) {
 	h := &teeHandler{a: a, b: b}
 
 	h2 := h.WithGroup("mygroup")
-	if h2 == nil {
-		t.Fatal("WithGroup returned nil")
-	}
+	assert.NotNil(t, h2)
+
 	th2, ok := h2.(*teeHandler)
-	if !ok {
-		t.Fatalf("WithGroup did not return *teeHandler, got %T", h2)
-	}
-	if th2.a == nil || th2.b == nil {
-		t.Fatal("WithGroup inner handlers are nil")
-	}
+	assert.True(t, ok)
+	assert.NotNil(t, th2.a)
+	assert.NotNil(t, th2.b)
 
 	// After WithGroup, record with attrs should contain the group name in output.
 	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "grouped", 0)
 	rec.AddAttrs(slog.String("field", "value"))
 	_ = th2.Handle(context.Background(), rec)
-	if !strings.Contains(bufA.String(), "mygroup") {
-		t.Errorf("expected group name in output A, got: %q", bufA.String())
-	}
-	if !strings.Contains(bufB.String(), "mygroup") {
-		t.Errorf("expected group name in output B, got: %q", bufB.String())
-	}
+	assert.True(t, strings.Contains(bufA.String(), "mygroup"))
+	assert.True(t, strings.Contains(bufB.String(), "mygroup"))
+
 }
 
 func TestTeeHandler_WithAttrs_Empty(t *testing.T) {
@@ -187,18 +158,16 @@ func TestTeeHandler_WithAttrs_Empty(t *testing.T) {
 
 	// Empty attrs should work without panic.
 	h2 := h.WithAttrs([]slog.Attr{})
-	if h2 == nil {
-		t.Fatal("WithAttrs(empty) returned nil")
-	}
+	assert.NotNil(t, h2)
+
 }
 
 func TestInit(t *testing.T) {
 	// Use os.TempDir() directly (not t.TempDir()) so the directory persists
 	// past test cleanup and avoids Windows file-lock issues with open log files.
 	tmp, err := os.MkdirTemp("", "aviary-init-test-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
+	assert.NoError(t, err)
+
 	// Best-effort cleanup; may fail on Windows due to open file handle.
 	defer os.RemoveAll(tmp) //nolint:errcheck
 
@@ -209,12 +178,10 @@ func TestInit(t *testing.T) {
 	once = sync.Once{}
 
 	err = Init()
-	if err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Log file should now exist.
-	if _, serr := os.Stat(LogFilePath()); serr != nil {
-		t.Errorf("expected log file to exist after Init(), got: %v", serr)
-	}
+	_, serr := os.Stat(LogFilePath())
+	assert.Nil(t, serr)
+
 }

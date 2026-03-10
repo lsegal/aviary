@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // testItem is a simple struct used as the type parameter in generic functions.
@@ -20,40 +22,32 @@ func TestReadJSON(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		p := filepath.Join(tmp, "item.json")
-		if err := os.WriteFile(p, []byte(`{"name":"foo","value":42}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err := os.WriteFile(p, []byte(`{"name":"foo","value":42}`), 0o600)
+		assert.NoError(t, err)
+
 		got, err := ReadJSON[testItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSON() error: %v", err)
-		}
-		if got.Name != "foo" || got.Value != 42 {
-			t.Errorf("ReadJSON() = %+v; want {Name:foo Value:42}", got)
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, "foo", got.Name)
+		assert.Equal(t, 42, got.Value)
+
 	})
 
 	t.Run("file_not_found", func(t *testing.T) {
 		_, err := ReadJSON[testItem](filepath.Join(tmp, "nonexistent.json"))
-		if err == nil {
-			t.Fatal("expected error for missing file, got nil")
-		}
-		if !strings.Contains(err.Error(), "reading") {
-			t.Errorf("expected 'reading' in error, got: %v", err)
-		}
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "reading"))
+
 	})
 
 	t.Run("bad_json", func(t *testing.T) {
 		p := filepath.Join(tmp, "bad.json")
-		if err := os.WriteFile(p, []byte(`not valid json`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := ReadJSON[testItem](p)
-		if err == nil {
-			t.Fatal("expected error for bad JSON, got nil")
-		}
-		if !strings.Contains(err.Error(), "parsing") {
-			t.Errorf("expected 'parsing' in error, got: %v", err)
-		}
+		err := os.WriteFile(p, []byte(`not valid json`), 0o600)
+		assert.NoError(t, err)
+
+		_, err = ReadJSON[testItem](p)
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "parsing"))
+
 	})
 }
 
@@ -66,44 +60,35 @@ func TestWriteJSON(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		p := filepath.Join(tmp, "out.json")
 		item := testItem{Name: "bar", Value: 99}
-		if err := WriteJSON(p, item); err != nil {
-			t.Fatalf("WriteJSON() error: %v", err)
-		}
+		err := WriteJSON(p, item)
+		assert.NoError(t, err)
+
 		got, err := ReadJSON[testItem](p)
-		if err != nil {
-			t.Fatalf("ReadJSON() after WriteJSON error: %v", err)
-		}
-		if got.Name != item.Name || got.Value != item.Value {
-			t.Errorf("round-trip mismatch: got %+v, want %+v", got, item)
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, item.Name, got.Name)
+		assert.Equal(t, item.Value, got.Value)
+
 	})
 
 	t.Run("dir_not_exist", func(t *testing.T) {
 		// Parent directory does not exist; WriteJSON should auto-create it.
 		p := filepath.Join(tmp, "nosuchdir", "out.json")
 		err := WriteJSON(p, testItem{Name: "x"})
-		if err != nil {
-			t.Fatalf("unexpected error when parent dir missing: %v", err)
-		}
+		assert.NoError(t, err)
+
 		got, err := ReadJSON[testItem](p)
-		if err != nil {
-			t.Fatalf("reading back written file: %v", err)
-		}
-		if got.Name != "x" {
-			t.Errorf("expected Name=x, got %q", got.Name)
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, "x", got.Name)
+
 	})
 
 	t.Run("unmarshalable", func(t *testing.T) {
 		// A channel cannot be marshaled to JSON.
 		p := filepath.Join(tmp, "bad.json")
 		err := WriteJSON(p, make(chan int))
-		if err == nil {
-			t.Fatal("expected marshal error, got nil")
-		}
-		if !strings.Contains(err.Error(), "marshaling") {
-			t.Errorf("expected 'marshaling' in error, got: %v", err)
-		}
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "marshaling"))
+
 	})
 }
 
@@ -115,43 +100,42 @@ func TestDeleteJSON(t *testing.T) {
 
 	t.Run("existing_file", func(t *testing.T) {
 		p := filepath.Join(tmp, "del.json")
-		if err := os.WriteFile(p, []byte(`{}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := DeleteJSON(p); err != nil {
-			t.Fatalf("DeleteJSON() unexpected error: %v", err)
-		}
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Errorf("file should not exist after DeleteJSON")
-		}
+		err := os.WriteFile(p, []byte(`{}`), 0o600)
+		assert.NoError(t, err)
+
+		err = DeleteJSON(p)
+		assert.NoError(t, err)
+
+		_, err = os.Stat(p)
+		assert.True(t, os.IsNotExist(err))
+
 	})
 
 	t.Run("not_exist", func(t *testing.T) {
 		// Should NOT return an error when the file is already missing.
 		p := filepath.Join(tmp, "gone.json")
-		if err := DeleteJSON(p); err != nil {
-			t.Errorf("DeleteJSON() on missing file returned error: %v", err)
-		}
+		err := DeleteJSON(p)
+		assert.NoError(t, err)
+
 	})
 
 	t.Run("error_other", func(t *testing.T) {
 		// Attempting to remove a directory as if it were a file returns an
 		// error that is not os.IsNotExist, so DeleteJSON should propagate it.
 		dir := filepath.Join(tmp, "notempty")
-		if err := os.MkdirAll(filepath.Join(dir, "child"), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		err := os.MkdirAll(filepath.Join(dir, "child"), 0o700)
+		assert.NoError(t, err)
+
 		// On most OSes, removing a non-empty directory path with os.Remove
 		// fails with a non-not-exist error.
-		err := DeleteJSON(dir)
+		err = DeleteJSON(dir)
 		if err == nil {
 			// Some platforms (e.g., Windows) may succeed or behave differently;
 			// skip rather than fail.
 			t.Skip("os.Remove on directory did not error on this platform")
 		}
-		if !strings.Contains(err.Error(), "deleting") {
-			t.Errorf("expected 'deleting' in error, got: %v", err)
-		}
+		assert.True(t, strings.Contains(err.Error(), "deleting"))
+
 	})
 }
 
@@ -163,12 +147,9 @@ func TestListJSON(t *testing.T) {
 
 	t.Run("dir_not_exist", func(t *testing.T) {
 		results, err := ListJSON[testItem](filepath.Join(tmp, "nope"), ".json")
-		if err != nil {
-			t.Errorf("expected nil error for missing dir, got: %v", err)
-		}
-		if results != nil {
-			t.Errorf("expected nil results for missing dir, got: %v", results)
-		}
+		assert.NoError(t, err)
+		assert.Nil(t, results)
+
 	})
 
 	t.Run("dir_is_a_file", func(t *testing.T) {
@@ -178,24 +159,22 @@ func TestListJSON(t *testing.T) {
 		// returns an IsNotExist error, which makes this branch unreachable;
 		// skip in that case.
 		p := filepath.Join(tmp, "notadir.json")
-		if err := os.WriteFile(p, []byte(`{}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := ListJSON[testItem](p, ".json")
+		err := os.WriteFile(p, []byte(`{}`), 0o600)
+		assert.NoError(t, err)
+
+		_, err = ListJSON[testItem](p, ".json")
 		if err == nil {
 			// Windows returns nil,nil for this case (IsNotExist path).
 			t.Skip("platform returns nil error for ReadDir on file; skipping branch coverage")
 		}
-		if !strings.Contains(err.Error(), "reading directory") {
-			t.Errorf("expected 'reading directory' in error, got: %v", err)
-		}
+		assert.True(t, strings.Contains(err.Error(), "reading directory"))
+
 	})
 
 	t.Run("normal", func(t *testing.T) {
 		dir := filepath.Join(tmp, "listdir")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		err := os.MkdirAll(dir, 0o700)
+		assert.NoError(t, err)
 
 		items := []testItem{
 			{Name: "alpha", Value: 1},
@@ -205,33 +184,27 @@ func TestListJSON(t *testing.T) {
 			p := filepath.Join(dir, filepath.Base(item.Name)+".json")
 			_ = i
 			data := []byte(`{"name":"` + item.Name + `","value":` + itoa(item.Value) + `}`)
-			if err := os.WriteFile(p, data, 0o600); err != nil {
-				t.Fatal(err)
-			}
+			err := os.WriteFile(p, data, 0o600)
+			assert.NoError(t, err)
+
 		}
 
 		// Non-matching file (wrong suffix) — should be ignored.
-		if err := os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte(`{"name":"skip"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err = os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte(`{"name":"skip"}`), 0o600)
+		assert.NoError(t, err)
 
 		// Corrupted JSON file — should be skipped.
-		if err := os.WriteFile(filepath.Join(dir, "corrupt.json"), []byte(`not json`), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		err = os.WriteFile(filepath.Join(dir, "corrupt.json"), []byte(`not json`), 0o600)
+		assert.NoError(t, err)
 
 		// Sub-directory — should be skipped.
-		if err := os.MkdirAll(filepath.Join(dir, "subdir.json"), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		err = os.MkdirAll(filepath.Join(dir, "subdir.json"), 0o700)
+		assert.NoError(t, err)
 
 		results, err := ListJSON[testItem](dir, ".json")
-		if err != nil {
-			t.Fatalf("ListJSON() error: %v", err)
-		}
-		if len(results) != 2 {
-			t.Errorf("ListJSON() returned %d items; want 2", len(results))
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(results))
+
 	})
 }
 
@@ -263,9 +236,8 @@ func TestIntegration_JSONRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	dir := filepath.Join(tmp, "jobs")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	err := os.MkdirAll(dir, 0o700)
+	assert.NoError(t, err)
 
 	// Write two items.
 	items := []testItem{
@@ -274,41 +246,30 @@ func TestIntegration_JSONRoundTrip(t *testing.T) {
 	}
 	for _, item := range items {
 		p := filepath.Join(dir, item.Name+".json")
-		if err := WriteJSON(p, item); err != nil {
-			t.Fatalf("WriteJSON(%q): %v", p, err)
-		}
+		err := WriteJSON(p, item)
+		assert.NoError(t, err)
+
 	}
 
 	// List should return both.
 	list, err := ListJSON[testItem](dir, ".json")
-	if err != nil {
-		t.Fatalf("ListJSON(): %v", err)
-	}
-	if len(list) != 2 {
-		t.Errorf("ListJSON() count = %d; want 2", len(list))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(list))
 
 	// Read one directly.
 	p := filepath.Join(dir, "job1.json")
 	got, err := ReadJSON[testItem](p)
-	if err != nil {
-		t.Fatalf("ReadJSON(): %v", err)
-	}
-	if got.Name != "job1" || got.Value != 100 {
-		t.Errorf("ReadJSON() = %+v; want {job1 100}", got)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "job1", got.Name)
+	assert.Equal(t, 100, got.Value)
 
 	// Delete one.
-	if err := DeleteJSON(p); err != nil {
-		t.Fatalf("DeleteJSON(): %v", err)
-	}
+	err = DeleteJSON(p)
+	assert.NoError(t, err)
 
 	// Now list should return only one.
 	list2, err := ListJSON[testItem](dir, ".json")
-	if err != nil {
-		t.Fatalf("ListJSON() after delete: %v", err)
-	}
-	if len(list2) != 1 {
-		t.Errorf("ListJSON() after delete count = %d; want 1", len(list2))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(list2))
+
 }

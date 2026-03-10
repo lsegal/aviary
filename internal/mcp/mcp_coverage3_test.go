@@ -17,29 +17,31 @@ import (
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ── localFileToDataURL large file ─────────────────────────────────────────────
 
 func TestLocalFileToDataURL_FileTooLarge(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "large*.bin")
-	if err != nil {
-		t.Fatalf("create temp file: %v", err)
-	}
+	assert.NoError(t, err)
+
 	defer f.Close() //nolint:errcheck
 
 	// Write more than maxInlineSessionMediaBytes
 	huge := make([]byte, maxInlineSessionMediaBytes+1)
-	huge[0] = 0x89 // make non-empty
-	if _, err := f.Write(huge); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	huge[0] = 0x89
+	// make non-empty
+	_, err = f.Write(huge)
+	assert.NoError(t, err)
+
 	f.Close() //nolint:errcheck
 
 	_, err = localFileToDataURL(f.Name())
-	if err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("expected 'too large' error, got %v", err)
-	}
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "too large")
+
 }
 
 // ── startProviderPingIfStale "already in flight" ──────────────────────────────
@@ -65,9 +67,8 @@ func TestStartProviderPingIfStale_AlreadyInFlight(t *testing.T) {
 	providerPingMu.RLock()
 	_, cached := providerPingCache[provider]
 	providerPingMu.RUnlock()
-	if cached {
-		t.Fatal("expected no cache entry for in-flight provider")
-	}
+	assert.False(t, cached)
+
 }
 
 // ── web_search Brave fallback (no results → browser) ─────────────────────────
@@ -75,9 +76,8 @@ func TestStartProviderPingIfStale_AlreadyInFlight(t *testing.T) {
 func TestWebSearch_BraveNoResults_FallbackNoBrowser(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -88,19 +88,17 @@ func TestWebSearch_BraveNoResults_FallbackNoBrowser(t *testing.T) {
 	// Set up auth with a brave key
 	authPath := filepath.Join(base, "aviary", "auth", "credentials.json")
 	as, err := auth.NewFileStore(authPath)
-	if err != nil {
-		t.Fatalf("new file store: %v", err)
-	}
-	if err := as.Set("brave_api_key", "test-key"); err != nil {
-		t.Fatalf("set brave key: %v", err)
-	}
-	if err := config.Save("", &config.Config{
+	assert.NoError(t, err)
+	err = as.Set("brave_api_key", "test-key")
+	assert.NoError(t, err)
+
+	err = config.Save("", &config.Config{
 		Search: config.SearchConfig{
 			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
 		},
-	}); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	})
+	assert.NoError(t, err)
+
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
 	// Mock Brave to return empty results
@@ -125,9 +123,8 @@ func TestWebSearch_BraveNoResults_FallbackNoBrowser(t *testing.T) {
 func TestWebSearch_BraveError_FallbackNoBrowser(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -137,19 +134,17 @@ func TestWebSearch_BraveError_FallbackNoBrowser(t *testing.T) {
 
 	authPath := filepath.Join(base, "aviary", "auth", "credentials.json")
 	as, err := auth.NewFileStore(authPath)
-	if err != nil {
-		t.Fatalf("new file store: %v", err)
-	}
-	if err := as.Set("brave_api_key", "bad-key"); err != nil {
-		t.Fatalf("set brave key: %v", err)
-	}
-	if err := config.Save("", &config.Config{
+	assert.NoError(t, err)
+	err = as.Set("brave_api_key", "bad-key")
+	assert.NoError(t, err)
+
+	err = config.Save("", &config.Config{
 		Search: config.SearchConfig{
 			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
 		},
-	}); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	})
+	assert.NoError(t, err)
+
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
 	// Mock Brave to return an error
@@ -172,9 +167,8 @@ func TestWebSearch_BraveError_FallbackNoBrowser(t *testing.T) {
 func TestWebSearch_CountClamping(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -184,19 +178,17 @@ func TestWebSearch_CountClamping(t *testing.T) {
 
 	authPath := filepath.Join(base, "aviary", "auth", "credentials.json")
 	as, err := auth.NewFileStore(authPath)
-	if err != nil {
-		t.Fatalf("new file store: %v", err)
-	}
-	if err := as.Set("brave_api_key", "test-key"); err != nil {
-		t.Fatalf("set brave key: %v", err)
-	}
-	if err := config.Save("", &config.Config{
+	assert.NoError(t, err)
+	err = as.Set("brave_api_key", "test-key")
+	assert.NoError(t, err)
+
+	err = config.Save("", &config.Config{
 		Search: config.SearchConfig{
 			Web: config.WebSearchConfig{BraveAPIKey: "auth:brave_api_key"},
 		},
-	}); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	})
+	assert.NoError(t, err)
+
 	SetDeps(&Deps{Auth: as, Browser: nil})
 
 	// Mock brave to return a single result
@@ -217,18 +209,13 @@ func TestWebSearch_CountClamping(t *testing.T) {
 
 	// count > 20 should be clamped to 20
 	out, err := d.CallTool(context.Background(), "web_search", map[string]any{"query": "test", "count": 100})
-	if err != nil {
-		t.Fatalf("web_search count > 20: %v", err)
-	}
-	if !strings.Contains(out, "R") {
-		t.Fatalf("expected result, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "R"))
 
 	// count <= 0 should default to 10
 	out, err = d.CallTool(context.Background(), "web_search", map[string]any{"query": "test", "count": 0})
-	if err != nil {
-		t.Fatalf("web_search count 0: %v", err)
-	}
+	assert.NoError(t, err)
+
 	_ = out
 }
 
@@ -254,21 +241,14 @@ func TestAuthGet_ShortValue(t *testing.T) {
 
 	// Store a very short credential (≤4 chars) to exercise the "****" masking path
 	_, err := d.CallTool(context.Background(), "auth_set", map[string]any{"name": "test:short", "value": "abc"})
-	if err != nil {
-		t.Fatalf("auth_set short: %v", err)
-	}
+	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "auth_get", map[string]any{"name": "test:short"})
-	if err != nil {
-		t.Fatalf("auth_get short: %v", err)
-	}
-	// Value ≤4 chars → masked as "****"
-	if !strings.Contains(out, "****") {
-		t.Fatalf("expected '****' masking for short value, got %q", out)
-	}
-	if strings.Contains(out, "abc") {
-		t.Fatalf("credential value should not be visible, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, // Value ≤4 chars → masked as "****"
+		strings.Contains(out, "****"))
+	assert.False(t, strings.Contains(out, "abc"))
+
 }
 
 // ── config_save validation error path ─────────────────────────────────────────
@@ -276,13 +256,12 @@ func TestAuthGet_ShortValue(t *testing.T) {
 func TestConfigSave_ValidationError(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
 	cfg := &config.Config{}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save empty config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -297,12 +276,9 @@ func TestConfigSave_ValidationError(t *testing.T) {
 	// Use empty config which should pass validation
 	cfgJSON := `{"agents":[]}`
 	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
-	if err != nil {
-		t.Fatalf("config_save valid: %v", err)
-	}
-	if !strings.Contains(out, "saved") {
-		t.Fatalf("expected 'saved', got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
+
 }
 
 // ── concurrent startProviderPingIfStale ──────────────────────────────────────
@@ -350,9 +326,8 @@ func TestStartProviderPingIfStale_Concurrent(_ *testing.T) {
 func TestMemoryQueryTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -368,35 +343,23 @@ func TestMemoryQueryTool(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 
 	// Store and then query
-	if _, err := d.CallTool(context.Background(), "memory_store", map[string]any{"agent": "bot", "content": "cats are great"}); err != nil {
-		t.Fatalf("memory_store: %v", err)
-	}
+	_, err = d.CallTool(context.Background(), "memory_store", map[string]any{"agent": "bot", "content": "cats are great"})
+	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": "cats"})
-	if err != nil {
-		t.Fatalf("memory_search: %v", err)
-	}
-	if !strings.Contains(out, "cats") {
-		t.Fatalf("expected 'cats' in memory_search result, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "cats"))
 
 	// memory_show
 	out, err = d.CallTool(context.Background(), "memory_show", map[string]any{"agent": "bot"})
-	if err != nil {
-		t.Fatalf("memory_show: %v", err)
-	}
-	if !strings.Contains(out, "cats") {
-		t.Fatalf("expected 'cats' in memory_show, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "cats"))
 
 	// memory_clear
 	out, err = d.CallTool(context.Background(), "memory_clear", map[string]any{"agent": "bot"})
-	if err != nil {
-		t.Fatalf("memory_clear: %v", err)
-	}
-	if !strings.Contains(out, "cleared") {
-		t.Fatalf("expected 'cleared' in memory_clear output, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "cleared"))
+
 }
 
 // ── job_list with scheduler ───────────────────────────────────────────────────
@@ -406,17 +369,12 @@ func TestJobListWithScheduler(t *testing.T) {
 
 	// Enqueue a job
 	_, err := s.Queue().Enqueue("bot/task", "agent_bot", "bot", "run", "", 1, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
+	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "job_list", map[string]any{})
-	if err != nil {
-		t.Fatalf("job_list: %v", err)
-	}
-	if !strings.Contains(out, "bot/task") {
-		t.Fatalf("expected 'bot/task' in job_list, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "bot/task"))
+
 }
 
 // ── agent_update with fallbacks ───────────────────────────────────────────────
@@ -424,9 +382,8 @@ func TestJobListWithScheduler(t *testing.T) {
 func TestAgentUpdate_WithFallbacks(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -437,9 +394,8 @@ func TestAgentUpdate_WithFallbacks(t *testing.T) {
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: "x"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
@@ -451,20 +407,16 @@ func TestAgentUpdate_WithFallbacks(t *testing.T) {
 		"name":      "bot",
 		"fallbacks": []any{"fallback-model"},
 	})
-	if err != nil {
-		t.Fatalf("agent_update fallbacks: %v", err)
-	}
-	if !strings.Contains(out, "updated") {
-		t.Fatalf("expected 'updated', got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "updated"))
+
 }
 
 func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -481,9 +433,8 @@ func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 			},
 		},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
@@ -492,15 +443,10 @@ func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 
 	out, err := d.CallTool(context.Background(), "agent_list", map[string]any{})
-	if err != nil {
-		t.Fatalf("agent_list: %v", err)
-	}
-	if !strings.Contains(out, "google/gemini-2.0-flash") {
-		t.Fatalf("expected effective default model in agent_list, got %q", out)
-	}
-	if !strings.Contains(out, "openai-codex/gpt-5.2") {
-		t.Fatalf("expected effective default fallback in agent_list, got %q", out)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "google/gemini-2.0-flash"))
+	assert.True(t, strings.Contains(out, "openai-codex/gpt-5.2"))
+
 }
 
 // ── registerSkillTools (skills_list) coverage ────────────────────────────────
@@ -508,16 +454,14 @@ func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 func TestSkillsListTool_WithAgents(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
 
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}},
 	}
-	if err := config.Save("", cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -531,9 +475,8 @@ func TestSkillsListTool_WithAgents(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "skills_list", map[string]any{})
-	if err != nil {
-		t.Fatalf("skills_list with agents: %v", err)
-	}
+	assert.NoError(t, err)
+
 	_ = out
 }
 
@@ -555,8 +498,8 @@ func TestDispatcherCallTool_ToolError(t *testing.T) {
 		_ = err
 		return
 	}
-	// Or it might return an MCP error result as text
-	if !strings.Contains(out, "scheduler not initialized") {
-		t.Fatalf("expected scheduler error in output, got %q", out)
-	}
+	assert.
+		// Or it might return an MCP error result as text
+		True(t, strings.Contains(out, "scheduler not initialized"))
+
 }

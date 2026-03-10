@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func setupStoreDir(t *testing.T) {
@@ -19,18 +21,11 @@ func TestReadSessionChannels_Missing(t *testing.T) {
 	setupStoreDir(t)
 
 	cfg, err := ReadSessionChannels("agent_foo", "sess1")
-	if err != nil {
-		t.Fatalf("ReadSessionChannels missing: %v", err)
-	}
-	if cfg.SessionID != "sess1" {
-		t.Fatalf("expected SessionID=sess1, got %q", cfg.SessionID)
-	}
-	if cfg.AgentID != "agent_foo" {
-		t.Fatalf("expected AgentID=agent_foo, got %q", cfg.AgentID)
-	}
-	if len(cfg.Channels) != 0 {
-		t.Fatalf("expected empty channels, got %v", cfg.Channels)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "sess1", cfg.SessionID)
+	assert.Equal(t, "agent_foo", cfg.AgentID)
+	assert.Equal(t, 0, len(cfg.Channels))
+
 }
 
 // TestReadWriteSessionChannels verifies a round-trip persists correctly.
@@ -45,26 +40,17 @@ func TestReadWriteSessionChannels(t *testing.T) {
 			{Type: "slack", ID: "C123456"},
 		},
 	}
-	if err := WriteSessionChannels(orig); err != nil {
-		t.Fatalf("WriteSessionChannels: %v", err)
-	}
+	err := WriteSessionChannels(orig)
+	assert.NoError(t, err)
 
 	got, err := ReadSessionChannels("agent_bot", "sess42")
-	if err != nil {
-		t.Fatalf("ReadSessionChannels: %v", err)
-	}
-	if got.SessionID != orig.SessionID {
-		t.Errorf("SessionID mismatch: got %q want %q", got.SessionID, orig.SessionID)
-	}
-	if got.AgentID != orig.AgentID {
-		t.Errorf("AgentID mismatch: got %q want %q", got.AgentID, orig.AgentID)
-	}
-	if len(got.Channels) != 2 {
-		t.Fatalf("expected 2 channels, got %d", len(got.Channels))
-	}
-	if got.Channels[0].Type != "signal" || got.Channels[0].ID != "+15551234567" {
-		t.Errorf("channel[0] mismatch: %+v", got.Channels[0])
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, orig.SessionID, got.SessionID)
+	assert.Equal(t, orig.AgentID, got.AgentID)
+	assert.Equal(t, 2, len(got.Channels))
+	assert.Equal(t, "signal", got.Channels[0].Type)
+	assert.Equal(t, "+15551234567", got.Channels[0].ID)
+
 }
 
 // TestWriteSessionChannels_CreatesDirs verifies parent directories are
@@ -77,14 +63,13 @@ func TestWriteSessionChannels_CreatesDirs(t *testing.T) {
 		AgentID:   "agent_newbot",
 		Channels:  []SessionChannel{{Type: "discord", ID: "987654321"}},
 	}
-	if err := WriteSessionChannels(cfg); err != nil {
-		t.Fatalf("WriteSessionChannels: %v", err)
-	}
+	err := WriteSessionChannels(cfg)
+	assert.NoError(t, err)
 
 	p := SessionChannelsPath("agent_newbot", "newsess")
-	if _, err := os.Stat(p); err != nil {
-		t.Fatalf("expected file %q to exist: %v", p, err)
-	}
+	_, err = os.Stat(p)
+	assert.NoError(t, err)
+
 }
 
 // TestEnsureSessionChannel_IdempotentAdd verifies EnsureSessionChannel adds
@@ -100,22 +85,19 @@ func TestEnsureSessionChannel_IdempotentAdd(t *testing.T) {
 	)
 
 	// First call should add.
-	if err := EnsureSessionChannel(agentID, sessionID, chanType, chanID); err != nil {
-		t.Fatalf("first EnsureSessionChannel: %v", err)
-	}
+	err := EnsureSessionChannel(agentID, sessionID, chanType, chanID)
+	assert.NoError(t, err)
+
 	cfg, _ := ReadSessionChannels(agentID, sessionID)
-	if len(cfg.Channels) != 1 {
-		t.Fatalf("expected 1 channel after first ensure, got %d", len(cfg.Channels))
-	}
+	assert.Equal(t, 1, len(cfg.Channels))
 
 	// Second call should be a no-op.
-	if err := EnsureSessionChannel(agentID, sessionID, chanType, chanID); err != nil {
-		t.Fatalf("second EnsureSessionChannel: %v", err)
-	}
+	err = EnsureSessionChannel(agentID, sessionID, chanType, chanID)
+	assert.NoError(t, err)
+
 	cfg, _ = ReadSessionChannels(agentID, sessionID)
-	if len(cfg.Channels) != 1 {
-		t.Fatalf("expected still 1 channel after idempotent ensure, got %d", len(cfg.Channels))
-	}
+	assert.Equal(t, 1, len(cfg.Channels))
+
 }
 
 // TestEnsureSessionChannel_PreservesExisting verifies adding a new channel
@@ -124,20 +106,16 @@ func TestEnsureSessionChannel_PreservesExisting(t *testing.T) {
 	setupStoreDir(t)
 
 	const agentID, sessionID = "agent_multi", "sess-multi"
-	if err := EnsureSessionChannel(agentID, sessionID, "signal", "+1111"); err != nil {
-		t.Fatal(err)
-	}
-	if err := EnsureSessionChannel(agentID, sessionID, "slack", "CSLACK1"); err != nil {
-		t.Fatal(err)
-	}
+	err := EnsureSessionChannel(agentID, sessionID, "signal", "+1111")
+	assert.NoError(t, err)
+
+	err = EnsureSessionChannel(agentID, sessionID, "slack", "CSLACK1")
+	assert.NoError(t, err)
 
 	cfg, err := ReadSessionChannels(agentID, sessionID)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if len(cfg.Channels) != 2 {
-		t.Fatalf("expected 2 channels, got %d: %v", len(cfg.Channels), cfg.Channels)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(cfg.Channels))
+
 }
 
 // TestFindAllSessionChannelsConfigs scans multiple agent dirs.
@@ -150,18 +128,15 @@ func TestFindAllSessionChannelsConfigs(t *testing.T) {
 		{SessionID: "s2", AgentID: "agent_beta", Channels: []SessionChannel{{Type: "slack", ID: "C1"}}},
 	}
 	for _, c := range cfgs {
-		if err := WriteSessionChannels(c); err != nil {
-			t.Fatalf("write: %v", err)
-		}
+		err := WriteSessionChannels(c)
+		assert.NoError(t, err)
+
 	}
 
 	found, err := FindAllSessionChannelsConfigs()
-	if err != nil {
-		t.Fatalf("FindAllSessionChannelsConfigs: %v", err)
-	}
-	if len(found) != 2 {
-		t.Fatalf("expected 2 configs, got %d", len(found))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(found))
+
 }
 
 // TestFindAllSessionChannelsConfigs_SkipsInvalid verifies that malformed JSON
@@ -175,25 +150,20 @@ func TestFindAllSessionChannelsConfigs_SkipsInvalid(t *testing.T) {
 		AgentID:   "agent_valid",
 		Channels:  []SessionChannel{{Type: "signal", ID: "+2"}},
 	}
-	if err := WriteSessionChannels(valid); err != nil {
-		t.Fatal(err)
-	}
+	err := WriteSessionChannels(valid)
+	assert.NoError(t, err)
 
 	// Write a malformed .channels.json file.
 	sessDir := filepath.Join(AgentDir("agent_valid"), "sessions")
 	badFile := filepath.Join(sessDir, "bad.channels.json")
-	if err := os.WriteFile(badFile, []byte("{not valid json}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	err = os.WriteFile(badFile, []byte("{not valid json}"), 0o600)
+	assert.NoError(t, err)
 
 	found, err := FindAllSessionChannelsConfigs()
-	if err != nil {
-		t.Fatalf("FindAllSessionChannelsConfigs: %v", err)
-	}
-	// Only the valid one should be returned.
-	if len(found) != 1 {
-		t.Fatalf("expected 1 valid config, got %d", len(found))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, // Only the valid one should be returned.
+		1, len(found))
+
 }
 
 // TestFindAllSessionChannelsConfigs_Empty verifies empty data dir returns nil.
@@ -201,12 +171,9 @@ func TestFindAllSessionChannelsConfigs_Empty(t *testing.T) {
 	setupStoreDir(t)
 
 	found, err := FindAllSessionChannelsConfigs()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(found) != 0 {
-		t.Fatalf("expected 0 configs, got %d", len(found))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(found))
+
 }
 
 // TestSessionChannelsPath verifies the path follows the same naming as SessionPath.
@@ -215,13 +182,11 @@ func TestSessionChannelsPath(t *testing.T) {
 
 	p := SessionChannelsPath("agent_foo", "sess1")
 	sessP := SessionPath("agent_foo", "sess1")
+	assert.
 
-	// channels path should share the same base as the session path.
-	if filepath.Dir(p) != filepath.Dir(sessP) {
-		t.Errorf("dir mismatch: channels=%q session=%q", filepath.Dir(p), filepath.Dir(sessP))
-	}
-	// channels path should end with .channels.json.
-	if filepath.Ext(p) != ".json" {
-		t.Errorf("expected .json extension, got: %s", p)
-	}
+		// channels path should share the same base as the session path.
+		Equal(t, filepath.Dir(sessP), filepath.Dir(p))
+	assert.Equal(t, // channels path should end with .channels.json.
+		".json", filepath.Ext(p))
+
 }

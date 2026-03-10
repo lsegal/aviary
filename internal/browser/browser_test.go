@@ -13,48 +13,37 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/lsegal/aviary/internal/config"
 )
 
 func TestNewManager_Defaults(t *testing.T) {
 	m := NewManager("", 0, "", false)
-	if m.cdpPort != 9222 {
-		t.Fatalf("expected default cdpPort 9222, got %d", m.cdpPort)
-	}
-	if m.binary != "" {
-		t.Fatalf("expected empty binary, got %q", m.binary)
-	}
+	assert.Equal(t, 9222, m.cdpPort)
+	assert.Equal(t, "", m.binary)
+
 }
 
 func TestNewManager_CustomPort(t *testing.T) {
 	m := NewManager("/usr/bin/chromium", 9333, "/tmp/profile", true)
-	if m.cdpPort != 9333 {
-		t.Fatalf("expected cdpPort 9333, got %d", m.cdpPort)
-	}
-	if m.binary != "/usr/bin/chromium" {
-		t.Fatalf("expected binary /usr/bin/chromium, got %q", m.binary)
-	}
-	if m.profileDir != "/tmp/profile" {
-		t.Fatalf("expected profileDir /tmp/profile, got %q", m.profileDir)
-	}
-	if !m.headless {
-		t.Fatal("expected headless=true")
-	}
+	assert.Equal(t, 9333, m.cdpPort)
+	assert.Equal(t, "/usr/bin/chromium", m.binary)
+	assert.Equal(t, "/tmp/profile", m.profileDir)
+	assert.True(t, m.headless)
+
 }
 
 func TestManager_UserDataDirDefault(t *testing.T) {
 	m := NewManager("", 0, "", false)
 	got := m.userDataDir()
 	want := filepath.Join(filepath.Dir(config.DefaultPath()), "browser")
-	if got != want {
-		t.Fatalf("expected default user data dir %q, got %q", want, got)
-	}
+	assert.Equal(t, want, got)
+
 	// Explicit profileDir is used as-is.
 	m2 := NewManager("", 0, "/tmp/my-profile", false)
-	if m2.userDataDir() != "/tmp/my-profile" {
-		t.Fatalf("expected '/tmp/my-profile', got %q", m2.userDataDir())
-	}
+	assert.Equal(t, "/tmp/my-profile", m2.userDataDir())
+
 }
 
 // cancelledCtx returns a context that is already cancelled, suitable for
@@ -68,39 +57,31 @@ func cancelledCtx() context.Context {
 func TestManager_ClickWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false) // unlikely port
 	err := m.Click(cancelledCtx(), "tab-id", "#btn")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestManager_TypeWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	err := m.Type(cancelledCtx(), "tab-id", "#input", "hello")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestManager_ScreenshotWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	buf, err := m.Screenshot(cancelledCtx(), "tab-id")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if buf != nil {
-		t.Fatal("expected nil bytes on error")
-	}
+	assert.Error(t, err)
+	assert.Nil(t, buf)
+
 }
 
 func TestManager_EvalJSWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	result, err := m.EvalJS(cancelledCtx(), "tab-id", "1+1")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if result != "" {
-		t.Fatal("expected empty result on error")
-	}
+	assert.Error(t, err)
+	assert.Equal(t, "", result)
+
 }
 
 func TestManager_CloseIsNoOp(_ *testing.T) {
@@ -114,13 +95,11 @@ func TestManager_CloseIsNoOp(_ *testing.T) {
 func parseCDPPort(t *testing.T, srvURL string) int {
 	t.Helper()
 	u, err := url.Parse(srvURL)
-	if err != nil {
-		t.Fatalf("parse URL %q: %v", srvURL, err)
-	}
+	assert.NoError(t, err)
+
 	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		t.Fatalf("port from %q: %v", srvURL, err)
-	}
+	assert.NoError(t, err)
+
 	return port
 }
 
@@ -139,22 +118,17 @@ func TestFetchTabs_Success(t *testing.T) {
 	defer srv.Close()
 
 	tabs, err := fetchTabs(srv.URL)
-	if err != nil {
-		t.Fatalf("fetchTabs: %v", err)
-	}
-	if len(tabs) != 2 {
-		t.Fatalf("expected 2 tabs, got %d", len(tabs))
-	}
-	if tabs[0].ID != "tab1" {
-		t.Errorf("expected tab1, got %q", tabs[0].ID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(tabs))
+	assert.Equal(t, "tab1", tabs[0].ID)
+
 }
 
 func TestFetchTabs_ConnectionError(t *testing.T) {
-	_, err := fetchTabs("http://127.0.0.1:1") // nothing listening
-	if err == nil {
-		t.Fatal("expected error for connection refused")
-	}
+	_, err := fetchTabs("http://127.0.0.1:1")
+	assert. // nothing listening
+		Error(t, err)
+
 }
 
 func TestFetchTabs_InvalidJSON(t *testing.T) {
@@ -165,9 +139,8 @@ func TestFetchTabs_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	_, err := fetchTabs(srv.URL)
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- createTab ---
@@ -186,12 +159,9 @@ func TestCreateTab_Success(t *testing.T) {
 	defer srv.Close()
 
 	tab, err := createTab(context.Background(), srv.URL, "https://example.com")
-	if err != nil {
-		t.Fatalf("createTab: %v", err)
-	}
-	if tab.ID != "newtab1" {
-		t.Errorf("expected newtab1, got %q", tab.ID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "newtab1", tab.ID)
+
 }
 
 func TestCreateTab_EmptyID(t *testing.T) {
@@ -202,9 +172,8 @@ func TestCreateTab_EmptyID(t *testing.T) {
 	defer srv.Close()
 
 	_, err := createTab(context.Background(), srv.URL, "https://example.com")
-	if err == nil {
-		t.Fatal("expected error for empty tab ID")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestCreateTab_HTTPError(t *testing.T) {
@@ -214,9 +183,8 @@ func TestCreateTab_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	_, err := createTab(context.Background(), srv.URL, "https://example.com")
-	if err == nil {
-		t.Fatal("expected error for 500 status")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestCreateTab_InvalidJSON(t *testing.T) {
@@ -227,9 +195,8 @@ func TestCreateTab_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	_, err := createTab(context.Background(), srv.URL, "https://example.com")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- fetchWebSocketURL ---
@@ -246,12 +213,9 @@ func TestFetchWebSocketURL_Success(t *testing.T) {
 	defer srv.Close()
 
 	wsURL, err := fetchWebSocketURL(srv.URL)
-	if err != nil {
-		t.Fatalf("fetchWebSocketURL: %v", err)
-	}
-	if !strings.HasPrefix(wsURL, "ws://") {
-		t.Errorf("expected ws:// URL, got %q", wsURL)
-	}
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(wsURL, "ws://"))
+
 }
 
 func TestFetchWebSocketURL_EmptyURL(t *testing.T) {
@@ -262,16 +226,14 @@ func TestFetchWebSocketURL_EmptyURL(t *testing.T) {
 	defer srv.Close()
 
 	_, err := fetchWebSocketURL(srv.URL)
-	if err == nil {
-		t.Fatal("expected error for empty WebSocket URL")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestFetchWebSocketURL_ConnectionError(t *testing.T) {
 	_, err := fetchWebSocketURL("http://127.0.0.1:1")
-	if err == nil {
-		t.Fatal("expected error for connection refused")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
@@ -281,9 +243,8 @@ func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	_, err := fetchWebSocketURL(srv.URL)
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- waitForChrome ---
@@ -301,12 +262,9 @@ func TestWaitForChrome_Success(t *testing.T) {
 	defer cancel()
 
 	wsURL, err := waitForChrome(ctx, srv.URL)
-	if err != nil {
-		t.Fatalf("waitForChrome: %v", err)
-	}
-	if wsURL == "" {
-		t.Error("expected non-empty wsURL")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", wsURL)
+
 }
 
 func TestWaitForChrome_Timeout(t *testing.T) {
@@ -319,9 +277,8 @@ func TestWaitForChrome_Timeout(t *testing.T) {
 	defer cancel()
 
 	_, err := waitForChrome(ctx, srv.URL)
-	if err == nil {
-		t.Fatal("expected timeout error")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- Manager.Tabs ---
@@ -341,33 +298,26 @@ func TestManager_Tabs_Success(t *testing.T) {
 	m := NewManager("", port, "", false)
 
 	tabs, err := m.Tabs()
-	if err != nil {
-		t.Fatalf("Tabs: %v", err)
-	}
-	// Only "page" type tabs should be returned.
-	if len(tabs) != 2 {
-		t.Fatalf("expected 2 page tabs, got %d", len(tabs))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, // Only "page" type tabs should be returned.
+		2, len(tabs))
+
 }
 
 func TestManager_Tabs_ChromeNotRunning(t *testing.T) {
 	m := NewManager("", 1, "", false) // port 1 - nothing listening
 	_, err := m.Tabs()
-	if err == nil {
-		t.Fatal("expected error when Chrome not running")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- findChrome ---
 
 func TestFindChrome_ExplicitBinary(t *testing.T) {
 	path, err := findChrome("/explicit/path/chrome")
-	if err != nil {
-		t.Fatalf("findChrome explicit: %v", err)
-	}
-	if path != "/explicit/path/chrome" {
-		t.Errorf("expected path as-is, got %q", path)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "/explicit/path/chrome", path)
+
 }
 
 func TestFindChrome_NotFound(t *testing.T) {
@@ -377,9 +327,8 @@ func TestFindChrome_NotFound(t *testing.T) {
 	if err == nil {
 		t.Skipf("Chrome found at %q, cannot test not-found path", path)
 	}
-	if !strings.Contains(err.Error(), "Chrome") && !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected chrome not found error, got: %v", err)
-	}
+	assert.Regexp(t, "Chrome|not found", err.Error())
+
 }
 
 // --- Manager.CloseTab ---
@@ -399,20 +348,16 @@ func TestManager_CloseTab(t *testing.T) {
 	m := NewManager("", port, "", false)
 
 	err := m.CloseTab("tab-xyz")
-	if err != nil {
-		t.Fatalf("CloseTab: %v", err)
-	}
-	if closedTabID != "tab-xyz" {
-		t.Errorf("expected tab-xyz, got %q", closedTabID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "tab-xyz", closedTabID)
+
 }
 
 func TestManager_CloseTab_ConnectionError(t *testing.T) {
 	m := NewManager("", 1, "", false)
 	err := m.CloseTab("tab-xyz")
-	if err == nil {
-		t.Fatal("expected error when Chrome not running")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- withDefaultTimeout ---
@@ -422,9 +367,8 @@ func TestWithDefaultTimeout_NoDeadline(t *testing.T) {
 	dCtx, cancel := withDefaultTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, ok := dCtx.Deadline()
-	if !ok {
-		t.Error("expected deadline to be set when ctx has none")
-	}
+	assert.True(t, ok)
+
 }
 
 func TestWithDefaultTimeout_ExistingDeadline(t *testing.T) {
@@ -436,14 +380,13 @@ func TestWithDefaultTimeout_ExistingDeadline(t *testing.T) {
 	cancelNew()
 
 	got, ok := dCtx.Deadline()
-	if !ok {
-		t.Error("expected deadline")
-	}
+	assert.True(t, ok)
+
 	// Should preserve the original deadline (not add a new shorter one).
 	diff := got.Sub(deadline)
-	if diff < -time.Second || diff > time.Second {
-		t.Errorf("expected original deadline preserved, got diff=%v", diff)
-	}
+	assert.GreaterOrEqual(t, diff, -time.Second)
+	assert.LessOrEqual(t, diff, time.Second)
+
 }
 
 // --- Manager.Navigate/Fill (cancelled context paths) ---
@@ -451,17 +394,15 @@ func TestWithDefaultTimeout_ExistingDeadline(t *testing.T) {
 func TestManager_NavigateWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	err := m.Navigate(cancelledCtx(), "tab-id", "https://example.com")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestManager_FillWithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	err := m.Fill(cancelledCtx(), "tab-id", "#input", "hello")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- Session direct tests ---
@@ -509,10 +450,10 @@ func TestSession_TabID_NoTarget(_ *testing.T) {
 func TestSession_Run_CancelledContext(t *testing.T) {
 	s := makeTestSession()
 	err := s.Run(chromedp.ActionFunc(func(_ context.Context) error { return nil }))
-	// With a cancelled context, chromedp.Run returns an error.
-	if err == nil {
-		t.Fatal("expected error from Run with cancelled context")
-	}
+	assert.
+		// With a cancelled context, chromedp.Run returns an error.
+		Error(t, err)
+
 }
 
 // --- Session ops tests (error paths via cancelled session) ---
@@ -520,55 +461,45 @@ func TestSession_Run_CancelledContext(t *testing.T) {
 func TestSession_Navigate_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Navigate("https://example.com")
-	if err == nil {
-		t.Fatal("expected error from Navigate on cancelled session")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSession_Type_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Type("#input", "hello")
-	if err == nil {
-		t.Fatal("expected error from Type on cancelled session")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSession_Fill_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Fill("#input", "hello")
-	if err == nil {
-		t.Fatal("expected error from Fill on cancelled session")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestSession_Screenshot_Error(t *testing.T) {
 	s := makeTestSession()
 	buf, err := s.Screenshot()
-	if err == nil {
-		t.Fatal("expected error from Screenshot on cancelled session")
-	}
-	if buf != nil {
-		t.Fatal("expected nil buf on error")
-	}
+	assert.Error(t, err)
+	assert.Nil(t, buf)
+
 }
 
 func TestSession_EvalJS_Error(t *testing.T) {
 	s := makeTestSession()
 	result, err := s.EvalJS("1+1")
-	if err == nil {
-		t.Fatal("expected error from EvalJS on cancelled session")
-	}
-	if result != "" {
-		t.Fatal("expected empty result on error")
-	}
+	assert.Error(t, err)
+	assert.Equal(t, "", result)
+
 }
 
 func TestSession_Click_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Click("#btn")
-	if err == nil {
-		t.Fatal("expected error from Click on cancelled session")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- newRemoteSessionForTab error path ---
@@ -578,9 +509,8 @@ func TestNewRemoteSessionForTab_InvalidWS(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := newRemoteSessionForTab(ctx, "ws://127.0.0.1:1/devtools/browser/fake", "tab-fake")
-	if err == nil {
-		t.Fatal("expected error connecting to invalid WebSocket URL")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- ensureChrome when chrome is already running ---
@@ -618,21 +548,17 @@ func TestEnsureChrome_AlreadyRunning(t *testing.T) {
 	defer cancel()
 
 	wsURL, err := m.ensureChrome(ctx)
-	if err != nil {
-		t.Fatalf("ensureChrome: %v", err)
-	}
-	if wsURL == "" {
-		t.Fatal("expected non-empty wsURL")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", wsURL)
+
 }
 
 func TestEnsureChrome_CancelledContext(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	// With a cancelled context and no chrome running, ensureChrome must return an error.
 	_, err := m.ensureChrome(cancelledCtx())
-	if err == nil {
-		t.Fatal("expected error with cancelled context")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- Manager.Open via mock CDP ---
@@ -664,20 +590,16 @@ func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {
 	defer cancel()
 
 	tabID, err := m.Open(ctx, "https://example.com")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if tabID != "opened-tab-1" {
-		t.Errorf("expected 'opened-tab-1', got %q", tabID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "opened-tab-1", tabID)
+
 }
 
 func TestManager_Open_WithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	_, err := m.Open(cancelledCtx(), "https://example.com")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- Manager.Close ---
@@ -704,9 +626,8 @@ func TestManager_withTab_AttachFails(t *testing.T) {
 
 	// Navigate calls withTab → ensureChrome succeeds → newRemoteSessionForTab fails.
 	err := m.Navigate(ctx, "nonexistent-tab", "https://example.com")
-	if err == nil {
-		t.Fatal("expected error when attaching to non-existent tab fails")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestManager_withTab_ReusesCachedSession(t *testing.T) {
@@ -729,9 +650,8 @@ func TestManager_withTab_ReusesCachedSession(t *testing.T) {
 	// The session's context is cancelled so the operation will fail, but that
 	// still proves the cached-session branch was reached (no attach attempt).
 	err := m.Navigate(ctx, "cached-tab", "https://example.com")
-	if err == nil {
-		t.Fatal("expected error from cancelled cached session")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- launchChrome: binary not found ---
@@ -741,9 +661,8 @@ func TestLaunchChrome_BinaryNotFound(t *testing.T) {
 	// findChrome returns the path as-is for explicit binaries, so launchChrome
 	// will try to exec it and fail at cmd.Start().
 	err := launchChrome(m)
-	if err == nil {
-		t.Fatal("expected error launching non-existent chrome binary")
-	}
+	assert.Error(t, err)
+
 }
 
 // --- findChrome: platform paths ---
@@ -777,17 +696,12 @@ func TestManager_CloseTab_RemovesCachedSession(t *testing.T) {
 	m.mu.Unlock()
 
 	err := m.CloseTab("tab-cache")
-	if err != nil {
-		t.Fatalf("CloseTab: %v", err)
-	}
-	if closedTabID != "tab-cache" {
-		t.Errorf("expected tab-cache closed, got %q", closedTabID)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, "tab-cache", closedTabID)
 
 	m.mu.Lock()
 	_, still := m.sessions["tab-cache"]
 	m.mu.Unlock()
-	if still {
-		t.Error("expected session to be removed from cache after CloseTab")
-	}
+	assert.False(t, still)
+
 }

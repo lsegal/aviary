@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
@@ -19,23 +21,18 @@ func setupSchedulerDataDir(t *testing.T) {
 	t.Helper()
 	store.SetDataDir(t.TempDir())
 	t.Cleanup(func() { store.SetDataDir("") })
-	if err := store.EnsureDirs(); err != nil {
-		t.Fatalf("ensure dirs: %v", err)
-	}
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
 }
 
 func TestNewIDAndTaskKey(t *testing.T) {
 	id := newID("job")
-	if !strings.HasPrefix(id, "job_") {
-		t.Fatalf("expected prefix in id, got %q", id)
-	}
-	if strings.Contains(id, ".") {
-		t.Fatalf("id should not contain dots, got %q", id)
-	}
+	assert.True(t, strings.HasPrefix(id, "job_"))
+	assert.False(t, strings.Contains(id, "."))
+	got := taskKey("agentA", "task1")
+	assert.Equal(t, "agentA/task1", got)
 
-	if got := taskKey("agentA", "task1"); got != "agentA/task1" {
-		t.Fatalf("unexpected task key: %q", got)
-	}
 }
 
 func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
@@ -43,46 +40,28 @@ func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
 	q := NewJobQueue()
 
 	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", "", 0, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-	if job.Status != domain.JobStatusPending {
-		t.Fatalf("expected pending, got %s", job.Status)
-	}
-	if job.MaxRetries != defaultRetries {
-		t.Fatalf("expected default retries %d, got %d", defaultRetries, job.MaxRetries)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusPending, job.Status)
+	assert.Equal(t, defaultRetries, job.MaxRetries)
 
 	claimed, err := q.Claim()
-	if err != nil {
-		t.Fatalf("claim: %v", err)
-	}
-	if claimed == nil {
-		t.Fatal("expected claimed job, got nil")
-	}
-	if claimed.Status != domain.JobStatusInProgress || claimed.Attempts != 1 || claimed.LockedAt == nil {
-		t.Fatalf("unexpected claimed state: %+v", claimed)
-	}
-
-	if err := q.Complete(claimed.ID); err != nil {
-		t.Fatalf("complete: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, claimed)
+	assert.Equal(t, domain.JobStatusInProgress, claimed.Status)
+	assert.Equal(t, 1, claimed.Attempts)
+	assert.NotNil(t, claimed.LockedAt)
+	err = q.Complete(claimed.ID)
+	assert.NoError(t, err)
 
 	jobs, err := q.List("taskA")
-	if err != nil {
-		t.Fatalf("list by task: %v", err)
-	}
-	if len(jobs) != 1 || jobs[0].Status != domain.JobStatusCompleted {
-		t.Fatalf("unexpected list result: %+v", jobs)
-	}
+	assert.NoError(t, err)
+	assert.Len(t, jobs, 1)
+	assert.Equal(t, domain.JobStatusCompleted, jobs[0].Status)
 
 	all, err := q.List("")
-	if err != nil {
-		t.Fatalf("list all: %v", err)
-	}
-	if len(all) != 1 {
-		t.Fatalf("expected one job in list all, got %d", len(all))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(all))
+
 }
 
 func TestJobQueue_Cancel(t *testing.T) {
@@ -90,20 +69,14 @@ func TestJobQueue_Cancel(t *testing.T) {
 	q := NewJobQueue()
 
 	job, err := q.Enqueue("taskCancel", "agent_a", "agentA", "hello", "", 0, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-	if err := q.Cancel(job.ID); err != nil {
-		t.Fatalf("cancel: %v", err)
-	}
+	assert.NoError(t, err)
+	err = q.Cancel(job.ID)
+	assert.NoError(t, err)
 
 	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-	if err != nil {
-		t.Fatalf("read canceled job: %v", err)
-	}
-	if persisted.Status != domain.JobStatusCanceled {
-		t.Fatalf("expected canceled status, got %s", persisted.Status)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusCanceled, persisted.Status)
+
 }
 
 func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
@@ -111,49 +84,34 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	q := NewJobQueue()
 
 	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", "", 2, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
+	assert.NoError(t, err)
 
 	first, err := q.Claim()
-	if err != nil || first == nil {
-		t.Fatalf("claim first: %v, job=%v", err, first)
-	}
-	if err := q.Fail(first.ID, errors.New("boom1")); err != nil {
-		t.Fatalf("fail first: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, first)
+	err = q.Fail(first.ID, errors.New("boom1"))
+	assert.NoError(t, err)
+
 	afterFirst, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-	if err != nil {
-		t.Fatalf("read after first fail: %v", err)
-	}
-	if afterFirst.Status != domain.JobStatusPending {
-		t.Fatalf("expected pending after retryable fail, got %s", afterFirst.Status)
-	}
-	if afterFirst.NextRetryAt == nil {
-		t.Fatal("expected next retry time to be set")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusPending, afterFirst.Status)
+	assert.NotNil(t, afterFirst.NextRetryAt)
 
 	next := time.Now().Add(-time.Second)
 	afterFirst.NextRetryAt = &next
-	if err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &afterFirst); err != nil {
-		t.Fatalf("forcing retry due time: %v", err)
-	}
+	err = store.WriteJSON(store.JobPath(job.AgentID, job.ID), &afterFirst)
+	assert.NoError(t, err)
 
 	second, err := q.Claim()
-	if err != nil || second == nil {
-		t.Fatalf("claim second: %v, job=%v", err, second)
-	}
-	if err := q.Fail(second.ID, errors.New("boom2")); err != nil {
-		t.Fatalf("fail second: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, second)
+	err = q.Fail(second.ID, errors.New("boom2"))
+	assert.NoError(t, err)
 
 	afterSecond, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-	if err != nil {
-		t.Fatalf("read after second fail: %v", err)
-	}
-	if afterSecond.Status != domain.JobStatusFailed {
-		t.Fatalf("expected terminal failed status, got %s", afterSecond.Status)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusFailed, afterSecond.Status)
+
 }
 
 func TestJobQueue_RecoverStuck(t *testing.T) {
@@ -174,36 +132,31 @@ func TestJobQueue_RecoverStuck(t *testing.T) {
 	}
 	lockedAt := time.Now().Add(-lockTimeout - time.Second)
 	job.LockedAt = &lockedAt
-	if err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job); err != nil {
-		t.Fatalf("write stuck job: %v", err)
-	}
+	err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job)
+	assert.NoError(t, err)
 
 	q.RecoverStuck()
 
 	recovered, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-	if err != nil {
-		t.Fatalf("read recovered job: %v", err)
-	}
-	if recovered.Status != domain.JobStatusPending || recovered.LockedAt != nil {
-		t.Fatalf("expected recovered pending unlocked job, got %+v", recovered)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusPending, recovered.Status)
+	assert.Nil(t, recovered.LockedAt)
+
 }
 
 func TestCronRunner_AddRemove(t *testing.T) {
 	r := NewCronRunner()
 	called := make(chan struct{}, 1)
-
-	if err := r.Add("task", "*/1 * * * * *", func() {
+	err := r.Add("task", "*/1 * * * * *", func() {
 		select {
 		case called <- struct{}{}:
 		default:
 		}
-	}); err != nil {
-		t.Fatalf("add cron: %v", err)
-	}
-	if _, ok := r.ids["task"]; !ok {
-		t.Fatal("expected cron id to be tracked")
-	}
+	})
+	assert.NoError(t, err)
+
+	_, ok := r.ids["task"]
+	assert.True(t, ok)
 
 	r.Start()
 	defer r.Stop()
@@ -211,58 +164,51 @@ func TestCronRunner_AddRemove(t *testing.T) {
 	select {
 	case <-called:
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("expected cron callback to run")
+		assert.FailNow(t, "timeout")
 	}
 
 	r.Remove("task")
-	if _, ok := r.ids["task"]; ok {
-		t.Fatal("expected cron id removed")
-	}
+	_, ok = r.ids["task"]
+	assert.False(t, ok)
+
 }
 
 func TestFileWatcher_AddStartAndRemove(t *testing.T) {
 	fw, err := NewFileWatcher()
-	if err != nil {
-		t.Fatalf("new file watcher: %v", err)
-	}
+	assert.NoError(t, err)
 
 	tmp := t.TempDir()
 	glob := filepath.Join(tmp, "*.txt")
 	triggered := make(chan string, 1)
-
-	if err := fw.Add("watch1", glob, func(path string) {
+	err = fw.Add("watch1", glob, func(path string) {
 		select {
 		case triggered <- path:
 		default:
 		}
-	}); err != nil {
-		t.Fatalf("add watcher: %v", err)
-	}
-	if _, ok := fw.handlers["watch1"]; !ok {
-		t.Fatal("expected handler to be registered")
-	}
+	})
+	assert.NoError(t, err)
+
+	_, ok := fw.handlers["watch1"]
+	assert.True(t, ok)
 
 	go fw.Start()
 	t.Cleanup(fw.Stop)
 
 	path := filepath.Join(tmp, "event.txt")
-	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
-		t.Fatalf("write watched file: %v", err)
-	}
+	err = os.WriteFile(path, []byte("hello"), 0o644)
+	assert.NoError(t, err)
 
 	select {
 	case got := <-triggered:
-		if got != path {
-			t.Fatalf("unexpected path in callback: got %q want %q", got, path)
-		}
+		assert.Equal(t, path, got)
 	case <-time.After(3 * time.Second):
-		t.Fatal("expected file watcher callback")
+		assert.FailNow(t, "timeout")
 	}
 
 	fw.Remove("watch1")
-	if _, ok := fw.handlers["watch1"]; ok {
-		t.Fatal("expected handler removed")
-	}
+	_, ok = fw.handlers["watch1"]
+	assert.False(t, ok)
+
 }
 
 func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
@@ -270,12 +216,8 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 	mgr := agent.NewManager(nil)
 
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
-	if s.Queue() == nil {
-		t.Fatal("expected queue to be initialized")
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, s.Queue())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -295,21 +237,18 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 		},
 	}
 	s.Reconcile(cfg)
+	assert.Equal(t, 2, len(s.tasks))
+	_, ok := s.cron.ids["alpha/cronTask"]
+	assert.True(t, ok)
 
-	if len(s.tasks) != 2 {
-		t.Fatalf("expected 2 registered tasks, got %d", len(s.tasks))
-	}
-	if _, ok := s.cron.ids["alpha/cronTask"]; !ok {
-		t.Fatal("expected cron task to be registered")
-	}
-	if _, ok := s.watch.handlers["alpha/watchTask"]; !ok {
-		t.Fatal("expected watch task to be registered")
-	}
+	_, ok = s.watch.handlers["alpha/watchTask"]
+	assert.True(t, ok)
 
 	s.Reconcile(&config.Config{})
-	if len(s.tasks) != 0 || len(s.cron.ids) != 0 || len(s.watch.handlers) != 0 {
-		t.Fatalf("expected all tasks removed, got tasks=%d cron=%d watch=%d", len(s.tasks), len(s.cron.ids), len(s.watch.handlers))
-	}
+	assert.Len(t, s.tasks, 0)
+	assert.Len(t, s.cron.ids, 0)
+	assert.Len(t, s.watch.handlers, 0)
+
 }
 
 func TestScheduler_RunOnceStartAt_EnqueuesSingleJob(t *testing.T) {
@@ -317,9 +256,8 @@ func TestScheduler_RunOnceStartAt_EnqueuesSingleJob(t *testing.T) {
 	mgr := agent.NewManager(nil)
 
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 
 	startAt := time.Now().UTC().Add(250 * time.Millisecond).Format(time.RFC3339)
@@ -338,21 +276,14 @@ func TestScheduler_RunOnceStartAt_EnqueuesSingleJob(t *testing.T) {
 
 	time.Sleep(1200 * time.Millisecond)
 	jobs, err := s.Queue().List("alpha/once")
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected exactly one enqueued job, got %d", len(jobs))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(jobs))
 
 	time.Sleep(1200 * time.Millisecond)
 	jobs, err = s.Queue().List("alpha/once")
-	if err != nil {
-		t.Fatalf("list jobs after wait: %v", err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected one-time task to remain single-run, got %d jobs", len(jobs))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(jobs))
+
 }
 
 func TestScheduler_DelayedCronStart(t *testing.T) {
@@ -360,9 +291,8 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 	mgr := agent.NewManager(nil)
 
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	s.cron.Start()
 	t.Cleanup(s.Stop)
 
@@ -382,21 +312,14 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 
 	time.Sleep(1200 * time.Millisecond)
 	before, err := s.Queue().List("alpha/delayed")
-	if err != nil {
-		t.Fatalf("list jobs before start_at: %v", err)
-	}
-	if len(before) != 0 {
-		t.Fatalf("expected no jobs before delayed start, got %d", len(before))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(before))
 
 	time.Sleep(2200 * time.Millisecond)
 	after, err := s.Queue().List("alpha/delayed")
-	if err != nil {
-		t.Fatalf("list jobs after start_at: %v", err)
-	}
-	if len(after) == 0 {
-		t.Fatal("expected jobs after delayed cron start")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, len(after))
+
 }
 
 func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
@@ -404,9 +327,8 @@ func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
 	mgr := agent.NewManager(nil)
 
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	s.cron.Start()
 	t.Cleanup(s.Stop)
 
@@ -425,12 +347,9 @@ func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
 
 	time.Sleep(3200 * time.Millisecond)
 	jobs, err := s.Queue().List("alpha/oncecron")
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected run_once cron task to enqueue once, got %d", len(jobs))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(jobs))
+
 }
 
 func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
@@ -438,9 +357,8 @@ func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
 	mgr := agent.NewManager(nil)
 
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("new scheduler: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 
 	startAt := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
@@ -467,23 +385,19 @@ func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
 	s.Reconcile(cfg)
 
 	tasks := s.ListTasks()
-	if len(tasks) != 2 {
-		t.Fatalf("expected 2 tasks, got %d", len(tasks))
-	}
+	assert.Equal(t, 2, len(tasks))
+	assert.Equal(t, "alpha/daily", tasks[0].ID)
+	assert.Equal(t, "alpha", tasks[0].AgentName)
+	assert.Equal(t, "daily", tasks[0].Name)
+	assert.Equal(t, domain.TriggerTypeCron, tasks[0].TriggerType)
+	assert.Equal(t, "0 0 10 * * *", tasks[0].Schedule)
+	assert.NotNil(t, tasks[0].StartAt)
+	assert.Equal(t, "last", tasks[0].Channel)
+	assert.True(t, tasks[0].RunOnce)
+	assert.Equal(t, "alpha/watch-docs", tasks[1].ID)
+	assert.Equal(t, domain.TriggerTypeWatch, tasks[1].TriggerType)
+	assert.Equal(t, "./docs/**/*.md", tasks[1].Watch)
 
-	if tasks[0].ID != "alpha/daily" || tasks[0].AgentName != "alpha" || tasks[0].Name != "daily" {
-		t.Fatalf("unexpected first task identity: %#v", tasks[0])
-	}
-	if tasks[0].TriggerType != domain.TriggerTypeCron || tasks[0].Schedule != "0 0 10 * * *" {
-		t.Fatalf("unexpected cron task trigger data: %#v", tasks[0])
-	}
-	if tasks[0].StartAt == nil || tasks[0].Channel != "last" || !tasks[0].RunOnce {
-		t.Fatalf("expected cron task metadata, got %#v", tasks[0])
-	}
-
-	if tasks[1].ID != "alpha/watch-docs" || tasks[1].TriggerType != domain.TriggerTypeWatch || tasks[1].Watch != "./docs/**/*.md" {
-		t.Fatalf("unexpected watch task: %#v", tasks[1])
-	}
 }
 
 func TestWorkerPool_ExecuteJob(t *testing.T) {
@@ -494,14 +408,12 @@ func TestWorkerPool_ExecuteJob(t *testing.T) {
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
 	err := p.executeJob(context.Background(), &domain.Job{AgentName: "missing", Prompt: "hello"})
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected not found error, got %v", err)
-	}
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
 
 	err = p.executeJob(context.Background(), &domain.Job{AgentName: "alpha", Prompt: "hello"})
-	if err != nil {
-		t.Fatalf("expected nil error for stubbed no-provider path, got %v", err)
-	}
+	assert.NoError(t, err)
+
 }
 
 func TestWorkerPool_ExecuteJob_RepliesToSessionDelivery(t *testing.T) {
@@ -530,20 +442,16 @@ func TestWorkerPool_ExecuteJob_RepliesToSessionDelivery(t *testing.T) {
 		ReplyAgentID:   replyAgentID,
 		ReplySessionID: replySessionID,
 	}
-	if err := p.executeJob(context.Background(), job); err != nil {
-		t.Fatalf("executeJob: %v", err)
-	}
-	if delivered == "" {
-		t.Fatal("expected scheduled reply to be delivered to session callbacks")
-	}
+	err := p.executeJob(context.Background(), job)
+	assert.NoError(t, err)
+
+	assert.NotEqual(t, "", delivered)
 
 	data, err := os.ReadFile(store.SessionPath(replyAgentID, replySessionID))
-	if err != nil {
-		t.Fatalf("read reply session: %v", err)
-	}
-	if !strings.Contains(string(data), "\"role\":\"assistant\"") || !strings.Contains(string(data), "no LLM provider configured") {
-		t.Fatalf("expected assistant reply in session file, got: %s", string(data))
-	}
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "\"role\":\"assistant\"")
+	assert.Contains(t, string(data), "no LLM provider configured")
+
 }
 
 func TestEnqueueAt(t *testing.T) {
@@ -552,12 +460,10 @@ func TestEnqueueAt(t *testing.T) {
 
 	at := time.Now().Add(1 * time.Hour)
 	job, err := q.EnqueueAt("task1", "agent_alpha", "alpha", "do something", "", 0, at, "", "")
-	if err != nil {
-		t.Fatalf("EnqueueAt: %v", err)
-	}
-	if job.ScheduledFor == nil || !job.ScheduledFor.Equal(at) {
-		t.Errorf("ScheduledFor = %v; want %v", job.ScheduledFor, at)
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, job.ScheduledFor)
+	assert.True(t, job.ScheduledFor.Equal(at))
+
 }
 
 func TestUpdateOutput(t *testing.T) {
@@ -565,40 +471,31 @@ func TestUpdateOutput(t *testing.T) {
 	q := NewJobQueue()
 
 	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-
-	if err := q.UpdateOutput(job.ID, "some output"); err != nil {
-		t.Fatalf("UpdateOutput: %v", err)
-	}
+	assert.NoError(t, err)
+	err = q.UpdateOutput(job.ID, "some output")
+	assert.NoError(t, err)
 
 	// Verify output persisted.
 	jobs, err := q.List("")
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
+	assert.NoError(t, err)
+
 	var found *domain.Job
 	for i := range jobs {
 		if jobs[i].ID == job.ID {
 			found = &jobs[i]
 		}
 	}
-	if found == nil {
-		t.Fatal("job not found after UpdateOutput")
-	}
-	if found.Output != "some output" {
-		t.Errorf("Output = %q; want %q", found.Output, "some output")
-	}
+	assert.NotNil(t, found)
+	assert.Equal(t, "some output", found.Output)
+
 }
 
 func TestUpdateOutput_NotFound(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 	err := q.UpdateOutput("nonexistent_job_id", "output")
-	if err == nil {
-		t.Error("expected error for nonexistent job")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestTrigger(t *testing.T) {
@@ -606,9 +503,7 @@ func TestTrigger(t *testing.T) {
 
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Reconcile a config with a task to register it.
 	cfg := &config.Config{
@@ -626,28 +521,21 @@ func TestTrigger(t *testing.T) {
 	s.Reconcile(cfg)
 
 	job, err := s.Trigger("alpha/daily")
-	if err != nil {
-		t.Fatalf("Trigger: %v", err)
-	}
-	if job == nil || job.TaskID != "alpha/daily" {
-		t.Errorf("job = %+v; want TaskID=alpha/daily", job)
-	}
-	if job.Status != domain.JobStatusInProgress {
-		t.Fatalf("expected immediate job to start in_progress, got %s", job.Status)
-	}
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+	assert.Equal(t, "alpha/daily", job.TaskID)
+	assert.Equal(t, domain.JobStatusInProgress, job.Status)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		persisted, readErr := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-		if readErr != nil {
-			t.Fatalf("read job: %v", readErr)
-		}
+		assert.Nil(t, readErr)
+
 		if persisted.Status == domain.JobStatusCompleted {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("expected immediate job to complete, got status %s", persisted.Status)
-		}
+		assert.False(t, time.Now().After(deadline))
+
 		time.Sleep(25 * time.Millisecond)
 	}
 }
@@ -658,27 +546,19 @@ func TestRunJobNow_ForceStartsPendingJob(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	assert.NoError(t, err)
+
 	t.Cleanup(s.Stop)
 
 	at := time.Now().Add(1 * time.Hour)
 	job, err := s.Queue().EnqueueAt("alpha/daily", "agent_alpha", "alpha", "hello", "", 1, at, "", "")
-	if err != nil {
-		t.Fatalf("EnqueueAt: %v", err)
-	}
+	assert.NoError(t, err)
 
 	started, err := s.RunJobNow(job.ID)
-	if err != nil {
-		t.Fatalf("RunJobNow: %v", err)
-	}
-	if started.Status != domain.JobStatusInProgress {
-		t.Fatalf("expected in_progress, got %s", started.Status)
-	}
-	if started.ScheduledFor != nil {
-		t.Fatalf("expected scheduled_for cleared, got %v", started.ScheduledFor)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusInProgress, started.Status)
+	assert.Nil(t, started.ScheduledFor)
+
 }
 
 func TestTrigger_NotFound(t *testing.T) {
@@ -686,14 +566,11 @@ func TestTrigger_NotFound(t *testing.T) {
 
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	assert.NoError(t, err)
 
 	_, err = s.Trigger("nonexistent/task")
-	if err == nil {
-		t.Error("expected error for nonexistent task")
-	}
+	assert.Error(t, err)
+
 }
 
 func TestScheduler_StopJobs_CancelsPending(t *testing.T) {
@@ -701,30 +578,19 @@ func TestScheduler_StopJobs_CancelsPending(t *testing.T) {
 
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	assert.NoError(t, err)
 
 	job, err := s.Queue().Enqueue("alpha/daily", "agent_alpha", "alpha", "prompt", "", 1, "", "")
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
+	assert.NoError(t, err)
 
 	stopped, err := s.StopJobs("alpha/daily")
-	if err != nil {
-		t.Fatalf("StopJobs: %v", err)
-	}
-	if stopped != 1 {
-		t.Fatalf("expected 1 stopped job, got %d", stopped)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, stopped)
 
 	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
-	if err != nil {
-		t.Fatalf("read job: %v", err)
-	}
-	if persisted.Status != domain.JobStatusCanceled {
-		t.Fatalf("expected canceled job, got %s", persisted.Status)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusCanceled, persisted.Status)
+
 }
 
 func TestJobQueue_ListCorrupted(t *testing.T) {
@@ -733,28 +599,23 @@ func TestJobQueue_ListCorrupted(t *testing.T) {
 
 	// Enqueue a valid job first.
 	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Write a corrupted file alongside it.
 	jobsDir := filepath.Join(store.AgentDir("agent_alpha"), "jobs")
-	if err := os.WriteFile(filepath.Join(jobsDir, "job_bad.json"), []byte("not-json"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	err = os.WriteFile(filepath.Join(jobsDir, "job_bad.json"), []byte("not-json"), 0o600)
+	assert.NoError(t, err)
 
 	// List should skip corrupted file and return the valid job.
 	jobs, err := q.List("")
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
+	assert.NoError(t, err)
+
 	found := false
 	for _, j := range jobs {
 		if j.ID == job.ID {
 			found = true
 		}
 	}
-	if !found {
-		t.Error("expected valid job in list")
-	}
+	assert.True(t, found)
+
 }
