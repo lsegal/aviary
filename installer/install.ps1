@@ -7,6 +7,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-ConfigRoot {
+	if ($env:XDG_CONFIG_HOME) {
+		return Join-Path $env:XDG_CONFIG_HOME "aviary"
+	}
+	if ($env:AVIARY_HOME) {
+		return Join-Path $env:AVIARY_HOME ".config\aviary"
+	}
+	if ($env:HOME) {
+		return Join-Path $env:HOME ".config\aviary"
+	}
+	return Join-Path $HOME ".config\aviary"
+}
+
 function Get-Release {
 	param(
 		[string]$RepoName,
@@ -40,7 +53,7 @@ if (-not $asset) {
 	$assetUrl = $asset.browser_download_url
 }
 
-$configRoot = Join-Path $HOME ".config\aviary"
+$configRoot = Get-ConfigRoot
 $binDir = Join-Path $configRoot "bin"
 $null = New-Item -ItemType Directory -Path $binDir -Force
 
