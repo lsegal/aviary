@@ -32,7 +32,7 @@
 		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"
 	},
 	"dependencies": {
-		"marked": "^17.0.3",
+		"marked": "^17.0.4",
 		"pinia": "^3.0.4",
 		"vue": "^3.5.29",
 		"vue-router": "^5.0.3"

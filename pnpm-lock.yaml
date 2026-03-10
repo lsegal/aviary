@@ -6,8 +6,8 @@ settings:
 
 dependencies:
   marked:
-    specifier: ^17.0.3
-    version: 17.0.3
+    specifier: ^17.0.4
+    version: 17.0.4
   pinia:
     specifier: ^3.0.4
     version: 3.0.4(typescript@5.9.3)(vue@3.5.29)
@@ -2024,8 +2024,8 @@ packages:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  /marked@17.0.3:
-    resolution: {integrity: sha512-jt1v2ObpyOKR8p4XaUJVk3YWRJ5n+i4+rjQopxvV32rSndTJXvIzuUdWWIy/1pFQMkQmvTXawzDNqOH/CUmx6A==}
+  /marked@17.0.4:
+    resolution: {integrity: sha512-NOmVMM+KAokHMvjWmC5N/ZOvgmSWuqJB8FoYI019j4ogb/PeRMKoKIjReZ2w3376kkA8dSJIP8uD993Kxc0iRQ==}
     engines: {node: '>= 20'}
     hasBin: true
     dev: false
