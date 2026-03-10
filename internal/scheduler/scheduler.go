@@ -167,19 +167,26 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 // Queue returns the underlying job queue for external inspection.
 func (s *Scheduler) Queue() *JobQueue { return s.queue }
 
-// Trigger immediately enqueues a configured task by name.
+// Trigger immediately starts a one-off run for a configured task by name,
+// bypassing normal queue claiming and worker-pool scheduling.
 // name may be the full "agent/task" key or just the task name.
 func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for key, tc := range s.tasks {
-		if key == name || tc.Name == name {
-			parts := strings.SplitN(key, "/", 2)
-			agentName := parts[0]
-			agentID := fmt.Sprintf("agent_%s", agentName)
-			return s.queue.Enqueue(key, agentID, agentName, tc.Prompt, 0, "", "")
+		if key != name && tc.Name != name {
+			continue
 		}
+		parts := strings.SplitN(key, "/", 2)
+		agentName := parts[0]
+		agentID := fmt.Sprintf("agent_%s", agentName)
+		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, "", "")
+		if err != nil {
+			return nil, err
+		}
+		s.pool.ExecuteNow(job)
+		return job, nil
 	}
 	return nil, fmt.Errorf("task %q not found", name)
 }

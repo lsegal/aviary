@@ -34,13 +34,7 @@ type JobQueue struct {
 // NewJobQueue creates a JobQueue.
 func NewJobQueue() *JobQueue { return &JobQueue{} }
 
-// Enqueue writes a new pending job to disk.
-// replyAgentID and replySessionID, if set, identify the session that should
-// receive the job's output when it completes (the "call-back" channel).
-func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
+func (q *JobQueue) newJob(taskID, agentID, agentName, prompt string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
 	if maxRetries <= 0 {
 		maxRetries = defaultRetries
 	}
@@ -50,17 +44,48 @@ func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries
 		AgentID:        agentID,
 		AgentName:      agentName,
 		Prompt:         prompt,
-		Status:         domain.JobStatusPending,
+		Status:         status,
 		MaxRetries:     maxRetries,
 		ReplyAgentID:   replyAgentID,
 		ReplySessionID: replySessionID,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+		ScheduledFor:   scheduledFor,
 	}
+	if status == domain.JobStatusInProgress {
+		now := time.Now()
+		job.Attempts = 1
+		job.LockedAt = &now
+	}
+	return job
+}
+
+// Enqueue writes a new pending job to disk.
+// replyAgentID and replySessionID, if set, identify the session that should
+// receive the job's output when it completes (the "call-back" channel).
+func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusPending, maxRetries, nil, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}
 	slog.Info("job enqueued", "id", job.ID, "task", taskID)
+	return job, nil
+}
+
+// StartImmediate writes a job that is already marked in_progress so it can be
+// executed outside the normal queue claim loop.
+func (q *JobQueue) StartImmediate(taskID, agentID, agentName, prompt string, replyAgentID, replySessionID string) (*domain.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusInProgress, 1, nil, replyAgentID, replySessionID)
+	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
+		return nil, fmt.Errorf("start immediate job: %w", err)
+	}
+	slog.Info("job started immediately", "id", job.ID, "task", taskID)
 	return job, nil
 }
 
@@ -156,23 +181,7 @@ func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt string, maxRetri
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if maxRetries <= 0 {
-		maxRetries = defaultRetries
-	}
-	job := &domain.Job{
-		ID:             newID("job"),
-		TaskID:         taskID,
-		AgentID:        agentID,
-		AgentName:      agentName,
-		Prompt:         prompt,
-		Status:         domain.JobStatusPending,
-		MaxRetries:     maxRetries,
-		ScheduledFor:   &at,
-		ReplyAgentID:   replyAgentID,
-		ReplySessionID: replySessionID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
+	job := q.newJob(taskID, agentID, agentName, prompt, domain.JobStatusPending, maxRetries, &at, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}

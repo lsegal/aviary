@@ -7,6 +7,7 @@ export interface ToolFixtures {
 	config_validate?: object[];
 	session_list?: object[];
 	server_status?: object;
+	task_run?: object | null;
 	[key: string]: unknown;
 }
 

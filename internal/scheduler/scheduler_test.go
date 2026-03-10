@@ -17,7 +17,8 @@ import (
 
 func setupSchedulerDataDir(t *testing.T) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
 	if err := store.EnsureDirs(); err != nil {
 		t.Fatalf("ensure dirs: %v", err)
 	}
@@ -505,6 +506,7 @@ func TestTrigger(t *testing.T) {
 			},
 		},
 	}
+	mgr.Reconcile(cfg)
 	s.Reconcile(cfg)
 
 	job, err := s.Trigger("alpha/daily")
@@ -513,6 +515,24 @@ func TestTrigger(t *testing.T) {
 	}
 	if job == nil || job.TaskID != "alpha/daily" {
 		t.Errorf("job = %+v; want TaskID=alpha/daily", job)
+	}
+	if job.Status != domain.JobStatusInProgress {
+		t.Fatalf("expected immediate job to start in_progress, got %s", job.Status)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		persisted, readErr := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+		if readErr != nil {
+			t.Fatalf("read job: %v", readErr)
+		}
+		if persisted.Status == domain.JobStatusCompleted {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected immediate job to complete, got status %s", persisted.Status)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

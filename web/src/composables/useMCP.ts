@@ -15,6 +15,16 @@ type JsonRpcResponse = {
 	params?: Record<string, unknown>;
 };
 
+class MCPHTTPError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "MCPHTTPError";
+		this.status = status;
+	}
+}
+
 interface CallToolOptions {
 	onProgress?: (chunk: string) => void;
 }
@@ -41,6 +51,22 @@ export function useMCP() {
 		return sessionId ? { "Mcp-Session-Id": sessionId } : {};
 	}
 
+	function resetSession() {
+		sessionId = null;
+		initPromise = null;
+	}
+
+	function isRecoverableSessionError(error: unknown): error is MCPHTTPError {
+		return error instanceof MCPHTTPError && error.status === 404;
+	}
+
+	function httpError(prefix: string, res: Response): MCPHTTPError {
+		return new MCPHTTPError(
+			`${prefix}: ${res.status} ${res.statusText}`,
+			res.status,
+		);
+	}
+
 	async function post(body: unknown): Promise<Response> {
 		const res = await fetch("/mcp", {
 			method: "POST",
@@ -58,6 +84,17 @@ export function useMCP() {
 			throw new Error("Unauthorized");
 		}
 		return res;
+	}
+
+	async function withSessionRetry<T>(op: () => Promise<T>): Promise<T> {
+		try {
+			return await op();
+		} catch (error) {
+			if (!isRecoverableSessionError(error)) throw error;
+			resetSession();
+			await ensureInitialized();
+			return op();
+		}
 	}
 
 	async function readResponse(
@@ -134,7 +171,7 @@ export function useMCP() {
 				clientInfo: { name: "aviary-web", version: "0.1.0" },
 			},
 		});
-		if (!res.ok) throw new Error(`MCP init failed: ${res.status}`);
+		if (!res.ok) throw httpError("MCP init failed", res);
 
 		// Capture session ID if the server issued one.
 		const sid = res.headers.get("Mcp-Session-Id");
@@ -185,7 +222,7 @@ export function useMCP() {
 			},
 		});
 
-		if (!res.ok) throw new Error(`MCP error: ${res.status} ${res.statusText}`);
+		if (!res.ok) throw httpError("MCP error", res);
 
 		const data = await readResponse(res, (evt) => {
 			if (evt.method !== "notifications/progress") return;
@@ -206,18 +243,28 @@ export function useMCP() {
 	}
 
 	async function listTools(): Promise<MCPToolInfo[]> {
-		await ensureInitialized();
-		const res = await post({
-			jsonrpc: "2.0",
-			id: Date.now(),
-			method: "tools/list",
-			params: {},
+		return withSessionRetry(async () => {
+			await ensureInitialized();
+			const res = await post({
+				jsonrpc: "2.0",
+				id: Date.now(),
+				method: "tools/list",
+				params: {},
+			});
+			if (!res.ok) throw httpError("MCP error", res);
+			const data = await readResponse(res);
+			if (data.error) throw new Error(data.error.message);
+			return (data.result?.tools as MCPToolInfo[] | undefined) ?? [];
 		});
-		if (!res.ok) throw new Error(`MCP error: ${res.status} ${res.statusText}`);
-		const data = await readResponse(res);
-		if (data.error) throw new Error(data.error.message);
-		return (data.result?.tools as MCPToolInfo[] | undefined) ?? [];
 	}
 
-	return { callTool, listTools };
+	async function callToolWithRetry(
+		name: string,
+		args?: Record<string, unknown>,
+		options?: CallToolOptions,
+	): Promise<string> {
+		return withSessionRetry(() => callTool(name, args, options));
+	}
+
+	return { callTool: callToolWithRetry, listTools };
 }

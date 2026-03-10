@@ -23,6 +23,8 @@ type WorkerPool struct {
 	wg       sync.WaitGroup
 	stopOnce sync.Once
 	stop     chan struct{}
+	ctxMu    sync.RWMutex
+	ctx      context.Context
 }
 
 // NewWorkerPool creates a WorkerPool with n concurrent workers.
@@ -41,6 +43,9 @@ func NewWorkerPool(q *JobQueue, agents *agent.Manager, n int) *WorkerPool {
 
 // Start launches worker goroutines. Returns immediately.
 func (p *WorkerPool) Start(ctx context.Context) {
+	p.ctxMu.Lock()
+	p.ctx = ctx
+	p.ctxMu.Unlock()
 	for range p.n {
 		p.wg.Add(1)
 		go p.run(ctx)
@@ -79,17 +84,38 @@ func (p *WorkerPool) run(ctx context.Context) {
 			continue
 		}
 
-		slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
-		if err := p.executeJob(ctx, job); err != nil {
-			slog.Warn("job failed", "id", job.ID, "err", err)
-			if failErr := p.queue.Fail(job.ID, err); failErr != nil {
-				slog.Warn("marking job failed", "id", job.ID, "err", failErr)
-			}
-		} else {
-			if err := p.queue.Complete(job.ID); err != nil {
-				slog.Warn("marking job complete", "id", job.ID, "err", err)
-			}
+		p.processJob(ctx, job)
+	}
+}
+
+// ExecuteNow runs a job immediately in its own goroutine, bypassing queue
+// claiming and worker-pool concurrency limits while still persisting status.
+func (p *WorkerPool) ExecuteNow(job *domain.Job) {
+	ctx := context.Background()
+	p.ctxMu.RLock()
+	if p.ctx != nil {
+		ctx = p.ctx
+	}
+	p.ctxMu.RUnlock()
+
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.processJob(ctx, job)
+	}()
+}
+
+func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
+	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
+	if err := p.executeJob(ctx, job); err != nil {
+		slog.Warn("job failed", "id", job.ID, "err", err)
+		if failErr := p.queue.Fail(job.ID, err); failErr != nil {
+			slog.Warn("marking job failed", "id", job.ID, "err", failErr)
 		}
+		return
+	}
+	if err := p.queue.Complete(job.ID); err != nil {
+		slog.Warn("marking job complete", "id", job.ID, "err", err)
 	}
 }
 

@@ -144,6 +144,79 @@ test("re-check button refreshes doctor status", async ({ page }) => {
 	await expect(page.getByText("No issues found")).toBeVisible();
 });
 
+test("recovers when the MCP session expires", async ({ page }) => {
+	let initializeCount = 0;
+	let firstToolCallFails = true;
+
+	await page.route("/mcp", async (route) => {
+		const body = route.request().postDataJSON() as {
+			jsonrpc: string;
+			id?: number;
+			method: string;
+			params?: { name?: string };
+		};
+
+		if (body.method === "initialize") {
+			initializeCount += 1;
+			return route.fulfill({
+				status: 200,
+				headers: {
+					"Content-Type": "application/json",
+					"Mcp-Session-Id": `mock-session-${initializeCount}`,
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: body.id,
+					result: {
+						protocolVersion: "2024-11-05",
+						capabilities: {},
+						serverInfo: { name: "aviary-mock", version: "0.0.0" },
+					},
+				}),
+			});
+		}
+
+		if (body.method === "notifications/initialized") {
+			return route.fulfill({ status: 200, body: "{}" });
+		}
+
+		if (body.method === "tools/call") {
+			if (firstToolCallFails) {
+				firstToolCallFails = false;
+				return route.fulfill({ status: 404, body: "session not found" });
+			}
+
+			const fixtures = {
+				agent_list: AGENTS,
+				job_list: JOBS,
+				config_validate: [],
+			};
+			const toolName = body.params?.name as keyof typeof fixtures;
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: body.id,
+					result: {
+						content: [
+							{ type: "text", text: JSON.stringify(fixtures[toolName] ?? []) },
+						],
+					},
+				}),
+			});
+		}
+
+		return route.fulfill({ status: 200, body: "{}" });
+	});
+
+	await page.goto("/overview");
+
+	await expect(page.getByText("2").first()).toBeVisible();
+	await expect(page.getByText("No issues found")).toBeVisible();
+	expect(initializeCount).toBe(2);
+});
+
 test("stat cards link to their detail views", async ({ page }) => {
 	await mockMCP(page, {
 		agent_list: [{ name: "bot", state: "idle" }],

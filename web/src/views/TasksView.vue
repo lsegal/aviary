@@ -37,6 +37,13 @@
         </tbody>
       </table>
 
+      <div v-if="store.runError" class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
+        {{ store.runError }}
+      </div>
+      <div v-else-if="store.lastStartedJob" class="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
+        Started {{ store.lastStartedJob.task_id }} as {{ store.lastStartedJob.id.slice(-8) }}.
+      </div>
+
       <section class="mt-8">
         <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Task Config</h3>
         <div class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -51,6 +58,7 @@
                 <th class="px-4 py-2">Trigger</th>
                 <th class="px-4 py-2">Channel</th>
                 <th class="px-4 py-2">Prompt</th>
+                <th class="px-4 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -61,6 +69,15 @@
                 <td class="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ task.trigger }}</td>
                 <td class="px-4 py-2">{{ task.channel }}</td>
                 <td class="max-w-lg truncate px-4 py-2" :title="task.prompt">{{ task.prompt }}</td>
+                <td class="px-4 py-2 text-right">
+                  <button
+                    class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="!task.id || store.runningTaskID === task.id"
+                    @click="runTask(task.id)"
+                  >
+                    {{ store.runningTaskID === task.id ? "Running…" : "Run Now" }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -82,6 +99,7 @@ const settingsStore = useSettingsStore();
 const configuredTasks = computed(() =>
 	(settingsStore.config?.agents ?? []).flatMap((agent) =>
 		(agent.tasks ?? []).map((task) => ({
+			id: task.name ? `${agent.name}/${task.name}` : "",
 			agent: agent.name,
 			name: task.name || "—",
 			trigger: (() => {
@@ -102,6 +120,11 @@ onMounted(() => {
 	store.fetchJobs();
 	settingsStore.fetchConfig();
 });
+
+async function runTask(taskID: string) {
+	if (!taskID) return;
+	await store.runTask(taskID);
+}
 
 function statusClass(status: string): string {
 	const map: Record<string, string> = {
