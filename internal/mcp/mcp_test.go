@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -593,6 +594,77 @@ func TestTaskRunTool(t *testing.T) {
 	}
 }
 
+func TestChannelSendFile_PersistsMediaForWebSession(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	if err := store.EnsureDirs(); err != nil {
+		t.Fatalf("ensure dirs: %v", err)
+	}
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	SetDeps(&Deps{})
+
+	agentID := "agent_bot"
+	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	filePath := filepath.Join(t.TempDir(), "shot.png")
+	pngBytes := []byte{
+		0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+		0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 'w', 'S', 0xde,
+	}
+	if err := os.WriteFile(filePath, pngBytes, 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), agentID)
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(ctx, "channel_send_file", map[string]any{
+		"file_path": filePath,
+		"caption":   "calendar screenshot",
+	})
+	if err != nil {
+		t.Fatalf("channel_send_file: %v", err)
+	}
+	if !strings.Contains(out, "file sent:") {
+		t.Fatalf("unexpected tool output: %q", out)
+	}
+
+	raw, err := d.CallTool(context.Background(), "session_messages", map[string]any{"session_id": sess.ID})
+	if err != nil {
+		t.Fatalf("session_messages: %v", err)
+	}
+	var messages []struct {
+		Role     string `json:"role"`
+		Content  string `json:"content"`
+		MediaURL string `json:"media_url"`
+	}
+	if err := json.Unmarshal([]byte(raw), &messages); err != nil {
+		t.Fatalf("unmarshal messages: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected persisted session messages")
+	}
+	last := messages[len(messages)-1]
+	if last.Role != "assistant" {
+		t.Fatalf("expected assistant media message, got role %q", last.Role)
+	}
+	if last.Content != "calendar screenshot" {
+		t.Fatalf("expected caption to persist, got %q", last.Content)
+	}
+	if !strings.HasPrefix(last.MediaURL, "data:image/png;base64,") {
+		t.Fatalf("expected inline PNG media URL, got %q", last.MediaURL)
+	}
+}
+
 // setupMCPWithAuth creates a Dispatcher and a FileStore-backed auth store in a
 // temp dir, then wires them into the global Deps.
 func setupMCPWithAuth(t *testing.T) (*Dispatcher, string) {
@@ -787,16 +859,22 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	if len(tools) == 0 {
 		t.Fatal("expected non-empty tool list")
 	}
-	// Verify ping is present.
-	found := false
+	// Verify core and plugin tools are present in the advertised tool list.
+	foundPing := false
+	foundGogCLI := false
 	for _, tool := range tools {
 		if tool.Name == "ping" {
-			found = true
-			break
+			foundPing = true
+		}
+		if tool.Name == "gogcli_run" {
+			foundGogCLI = true
 		}
 	}
-	if !found {
+	if !foundPing {
 		t.Fatal("expected 'ping' in tool list")
+	}
+	if !foundGogCLI {
+		t.Fatal("expected 'gogcli_run' in tool list")
 	}
 
 	// CallToolText returns concatenated text.
@@ -1247,7 +1325,7 @@ func TestWebSearchTool_WithBraveAuth(t *testing.T) {
 }
 
 func TestRunGogCLI_CommandRequired(t *testing.T) {
-	// runGogCLI called directly (registerPluginTools is not wired into NewServer).
+	// runGogCLI is still tested directly so command validation stays isolated.
 	_, err := runGogCLI(context.Background(), gogcliRunArgs{Command: []string{}})
 	if err == nil {
 		t.Fatal("expected error for empty command")

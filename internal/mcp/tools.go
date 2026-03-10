@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +22,8 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
-	"github.com/lsegal/aviary/skills"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/skills"
 )
 
 // ── Provider connectivity ping cache ─────────────────────────────────────────
@@ -40,6 +42,8 @@ var (
 	providerPingCache  = map[string]providerPingEntry{}
 	providerPingActive sync.Map // provider → struct{} while in flight
 )
+
+const maxInlineSessionMediaBytes = 8 << 20
 
 // startProviderPingIfStale fires a background goroutine to ping the provider
 // unless a fresh result is already cached or a goroutine is already in flight.
@@ -66,6 +70,21 @@ func startProviderPingIfStale(provider, model string, factory *llm.Factory) {
 		providerPingCache[provider] = e
 		providerPingMu.Unlock()
 	}()
+}
+
+func localFileToDataURL(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading file: %w", err)
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("file is empty")
+	}
+	if len(data) > maxInlineSessionMediaBytes {
+		return "", fmt.Errorf("file too large to attach inline (%d bytes > %d bytes)", len(data), maxInlineSessionMediaBytes)
+	}
+	mediaType := http.DetectContentType(data)
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
 // text returns a CallToolResult with a single text content item.
@@ -104,6 +123,7 @@ func Register(s *sdkmcp.Server) {
 	registerMemoryTools(s)
 	registerAuthTools(s)
 	registerServerTools(s)
+	registerPluginTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)
 }
@@ -975,7 +995,21 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		if !ok || sessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("no active channel session; cannot send file")
 		}
-		agent.DeliverMediaToSession(sessionID, args.Caption, args.FilePath)
+		if agent.HasSessionMediaDelivery(sessionID) {
+			agent.DeliverMediaToSession(sessionID, args.Caption, args.FilePath)
+			return text(fmt.Sprintf("file sent: %s", args.FilePath))
+		}
+		agentID, ok := agent.SessionAgentIDFromContext(ctx)
+		if !ok || agentID == "" {
+			return nil, struct{}{}, fmt.Errorf("no active session agent; cannot attach file to session")
+		}
+		mediaURL, err := localFileToDataURL(args.FilePath)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := agent.AppendMediaMessageToSession(agentID, sessionID, domain.MessageRoleAssistant, args.Caption, mediaURL); err != nil {
+			return nil, struct{}{}, fmt.Errorf("persisting session media: %w", err)
+		}
 		return text(fmt.Sprintf("file sent: %s", args.FilePath))
 	})
 

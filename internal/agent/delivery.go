@@ -40,6 +40,14 @@ func RegisterSessionMediaDelivery(sessionID, channelType, channelID string, fn f
 	deliveryRegistry.mfns[sessionID][key] = fn
 }
 
+// HasSessionMediaDelivery reports whether the session has any registered media
+// delivery functions.
+func HasSessionMediaDelivery(sessionID string) bool {
+	deliveryRegistry.mu.RLock()
+	defer deliveryRegistry.mu.RUnlock()
+	return len(deliveryRegistry.mfns[sessionID]) > 0
+}
+
 // deliverToSession calls all registered delivery functions for the session,
 // forwarding text to each associated channel. It is called by the runner
 // before emitting StreamEventDone so every code path (web UI, MCP, scheduled

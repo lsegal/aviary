@@ -45,8 +45,9 @@ func ReadJSONL[T any](path string) ([]T, error) {
 
 	var results []T
 	scanner := bufio.NewScanner(f)
-	// Allow lines up to 1 MiB (for large memory entries).
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	// Allow larger lines so media data URLs and large memory entries remain
+	// readable from session history.
+	scanner.Buffer(make([]byte, 1<<20), 16<<20)
 
 	lineNum := 0
 	for scanner.Scan() {

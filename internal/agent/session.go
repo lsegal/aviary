@@ -159,6 +159,24 @@ func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, 
 	return nil
 }
 
+// AppendMediaMessageToSession appends a message with optional text and media to
+// an existing session and fires the session-message observer.
+func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageRole, content, mediaURL string) error {
+	msg := domain.Message{
+		ID:        newID("msg"),
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		MediaURL:  mediaURL,
+		Timestamp: time.Now(),
+	}
+	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
+		return err
+	}
+	notifySessionMessage(sessionID, string(role))
+	return nil
+}
+
 // newID generates a simple timestamped ID with a prefix.
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
