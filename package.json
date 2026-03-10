@@ -6,12 +6,13 @@
 	"type": "module",
 	"scripts": {
 		"dev": "concurrently -n vite,go -c cyan,green \"vite\" \"wgo run ./cmd/aviary start\"",
-		"build": "vue-tsc --noEmit && vite build && pnpm run build:copy && pnpm run build:go",
+		"build": "pnpm run build:web && pnpm run build:go",
 		"build:web": "vue-tsc --noEmit && vite build && pnpm run build:copy",
-		"build:go": "go build -ldflags \"-X github.com/lsegal/aviary/internal/server.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o aviary ./cmd/aviary",
-		"build:copy": "mkdir -p internal/server/webdist && cp -r web/dist/. internal/server/webdist/",
+		"build:go": "node scripts/build-go.mjs",
+		"build:copy": "node scripts/build-webdist.mjs",
+		"build:release": "pnpm run build:web && node scripts/build-release.mjs",
 		"build:generate": "go generate ./...",
-		"build:clean": "rm -f aviary && rm -rf web/dist internal/server/webdist",
+		"build:clean": "node scripts/clean.mjs",
 		"preview": "vite preview",
 		"lint": "pnpm lint:go && pnpm lint:web",
 		"lint:go": "golangci-lint run ./...",
@@ -21,7 +22,14 @@
 		"test": "pnpm lint && pnpm test:go && pnpm test:e2e",
 		"test:go": "go test ./...",
 		"test:e2e": "playwright test",
-		"test:e2e:ui": "playwright test --ui"
+		"test:e2e:ui": "playwright test --ui",
+		"release:prepare": "pnpm exec vpr run -f --include-artifact dist/release/ pnpm release:package",
+		"release:package": "node scripts/release-package.mjs",
+		"release": "pnpm exec vpr run -c pnpm release:stage && git pull",
+		"release:stage": "node scripts/release-stage.mjs",
+		"release:major": "cross-env VERSION=major pnpm release:prepare && pnpm release",
+		"release:minor": "cross-env VERSION=minor pnpm release:prepare && pnpm release",
+		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"
 	},
 	"dependencies": {
 		"marked": "^17.0.3",
@@ -38,10 +46,12 @@
 		"@vitejs/plugin-vue": "^6.0.4",
 		"autoprefixer": "^10.4.27",
 		"concurrently": "^9.2.1",
+		"cross-env": "^7.0.3",
 		"postcss": "^8.5.8",
 		"tailwindcss": "^4.2.1",
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1",
+		"vpr": "^1.4.5",
 		"vue-tsc": "^3.2.5"
 	}
 }

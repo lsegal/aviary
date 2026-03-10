@@ -6,9 +6,13 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Go tests
-    runs-on: ubuntu-latest
+  go-test:
+    name: Go tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -17,7 +21,7 @@ jobs:
           cache: true
       - run: go test ./...
 
-  lint:
+  go-lint:
     name: Go lint
     runs-on: ubuntu-latest
     steps:
@@ -27,7 +31,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-      - run: golangci-lint run
+      - run: golangci-lint run ./...
 
   web-lint:
     name: Web lint
@@ -60,6 +64,6 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:web
-      - run: go build -o aviary ./cmd/aviary
+      - run: node scripts/build-go.mjs --output aviary
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

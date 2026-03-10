@@ -2,6 +2,7 @@
 .worktrees/
 
 # Go build artifacts
+.gocache
 /aviary
 *.exe
 *.test
@@ -12,6 +13,7 @@
 /node_modules/
 /internal/server/webdist/*
 !/internal/server/webdist/.gitkeep
+/dist/release/
 
 # Data directory
 ~/.config/aviary/
