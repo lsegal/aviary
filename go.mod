@@ -17,7 +17,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/slack-go/slack v0.18.0
+	github.com/slack-go/slack v0.19.0
 	github.com/spf13/cobra v1.10.2
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/net v0.51.0
