@@ -25,10 +25,6 @@ type signalStyleSpan struct {
 	Style  string
 }
 
-func formatSignalMarkup(text string) string {
-	return formatSignalMessage(text).Text
-}
-
 // formatSignalMessage converts common Markdown into plain text plus Signal's
 // native textStyle ranges. Signal does not support underline, so underline tags
 // are stripped while preserving their text content.

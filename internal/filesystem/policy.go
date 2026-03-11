@@ -1,3 +1,4 @@
+// Package filesystem resolves paths and enforces filesystem allowlists.
 package filesystem
 
 import (

@@ -1,3 +1,4 @@
+// Package models exposes the embedded catalog of supported model identifiers.
 package models
 
 import (

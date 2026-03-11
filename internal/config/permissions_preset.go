@@ -6,9 +6,12 @@ import "strings"
 type PermissionsPreset string
 
 const (
-	PermissionsPresetFull     PermissionsPreset = "full"
+	// PermissionsPresetFull allows every available tool group.
+	PermissionsPresetFull PermissionsPreset = "full"
+	// PermissionsPresetStandard blocks higher-risk local and server tools.
 	PermissionsPresetStandard PermissionsPreset = "standard"
-	PermissionsPresetMinimal  PermissionsPreset = "minimal"
+	// PermissionsPresetMinimal allows only the smallest safe subset of tools.
+	PermissionsPresetMinimal PermissionsPreset = "minimal"
 )
 
 // EffectivePermissionsPreset returns the runtime preset, defaulting to standard.

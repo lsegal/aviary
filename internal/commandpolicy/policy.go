@@ -1,3 +1,4 @@
+// Package commandpolicy evaluates allow/deny command rules for agents.
 package commandpolicy
 
 import (

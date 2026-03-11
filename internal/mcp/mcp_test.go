@@ -1301,7 +1301,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "file written")
 
-	out, err = d.CallTool(ctx, "file_append", map[string]any{
+	_, err = d.CallTool(ctx, "file_append", map[string]any{
 		"path":    "./sandbox/demo.txt",
 		"content": " world",
 	})
