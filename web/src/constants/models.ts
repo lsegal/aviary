@@ -1,55 +1,12 @@
-export const SUPPORTED_MODELS = [
-	"google/gemini-2.0-flash",
-	"google/gemini-2.5-flash",
-	"google/gemini-2.5-pro",
-	"google/gemini-3-flash-preview",
-	"google/gemini-3-pro-preview",
-	"anthropic/claude-3-5-haiku-20241022",
-	"anthropic/claude-3-5-haiku-latest",
-	"anthropic/claude-3-5-sonnet-20240620",
-	"anthropic/claude-3-5-sonnet-20241022",
-	"anthropic/claude-3-7-sonnet-20250219",
-	"anthropic/claude-3-7-sonnet-latest",
-	"anthropic/claude-3-haiku-20240307",
-	"anthropic/claude-3-opus-20240229",
-	"anthropic/claude-3-sonnet-20240229",
-	"anthropic/claude-haiku-4-5",
-	"anthropic/claude-haiku-4-5-20251001",
-	"anthropic/claude-opus-4-0",
-	"anthropic/claude-opus-4-1",
-	"anthropic/claude-opus-4-1-20250805",
-	"anthropic/claude-opus-4-20250514",
-	"anthropic/claude-opus-4-5",
-	"anthropic/claude-opus-4-5-20251101",
-	"anthropic/claude-opus-4-6",
-	"anthropic/claude-sonnet-4-0",
-	"anthropic/claude-sonnet-4-20250514",
-	"anthropic/claude-sonnet-4-5",
-	"anthropic/claude-sonnet-4-5-20250929",
-	"anthropic/claude-sonnet-4-6",
-	"openai/gpt-4",
-	"openai/gpt-4-turbo",
-	"openai/gpt-4.1",
-	"openai/gpt-4.1-mini",
-	"openai/gpt-4.1-nano",
-	"openai/gpt-4o",
-	"openai/gpt-4o-2024-05-13",
-	"openai/gpt-4o-2024-08-06",
-	"openai/gpt-4o-2024-11-20",
-	"openai/gpt-4o-mini",
-	"openai/o1",
-	"openai/o1-pro",
-	"openai/o3",
-	"openai/o3-deep-research",
-	"openai/o3-mini",
-	"openai/o3-pro",
-	"openai/o4-mini",
-	"openai/o4-mini-deep-research",
-	"openai-codex/gpt-5.1",
-	"openai-codex/gpt-5.1-codex-max",
-	"openai-codex/gpt-5.1-codex-mini",
-	"openai-codex/gpt-5.2",
-	"openai-codex/gpt-5.2-codex",
-	"openai-codex/gpt-5.3-codex",
-	"openai-codex/gpt-5.3-codex-spark",
-];
+import modelCatalog from "../../../internal/models/catalog.json";
+
+export const SUPPORTED_MODELS = modelCatalog as string[];
+
+export function providerOf(model: string): string {
+	const idx = model.indexOf("/");
+	return idx > 0 ? model.slice(0, idx) : "";
+}
+
+export const SUPPORTED_PROVIDERS = Array.from(
+	new Set(SUPPORTED_MODELS.map(providerOf).filter(Boolean)),
+);

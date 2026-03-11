@@ -190,6 +190,7 @@ const settingsChildren: NavChild[] = [
 const systemChildren: NavChild[] = [
 	{ key: "tools", label: "Tools", to: "/system/tools" },
 	{ key: "skills", label: "Skills", to: "/system/skills" },
+	{ key: "models", label: "Models", to: "/system/models" },
 	{ key: "logs", label: "Logs", to: "/logs" },
 	{ key: "usage", label: "Usage", to: "/usage" },
 	{ key: "jobs", label: "Jobs", to: "/jobs" },

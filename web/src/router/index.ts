@@ -70,6 +70,11 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
+			path: "/system/models",
+			component: () => import("../views/SystemModelsView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
 			path: "/usage",
 			component: () => import("../views/UsageView.vue"),
 			meta: { requiresAuth: true },
