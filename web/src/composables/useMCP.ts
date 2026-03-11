@@ -37,6 +37,8 @@ export interface MCPToolInfo {
 // Module-level session state — one session shared across all useMCP() calls.
 let sessionId: string | null = null;
 let initPromise: Promise<void> | null = null;
+const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
+const TRANSIENT_RETRY_DELAYS_MS = [250, 750];
 
 export function useMCP() {
 	const auth = useAuthStore();
@@ -60,11 +62,25 @@ export function useMCP() {
 		return error instanceof MCPHTTPError && error.status === 404;
 	}
 
+	function isTransientTransportError(error: unknown): boolean {
+		if (
+			error instanceof MCPHTTPError &&
+			RETRYABLE_HTTP_STATUSES.has(error.status)
+		) {
+			return true;
+		}
+		return error instanceof TypeError;
+	}
+
 	function httpError(prefix: string, res: Response): MCPHTTPError {
 		return new MCPHTTPError(
 			`${prefix}: ${res.status} ${res.statusText}`,
 			res.status,
 		);
+	}
+
+	async function delay(ms: number): Promise<void> {
+		await new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
 	async function post(body: unknown): Promise<Response> {
@@ -86,14 +102,27 @@ export function useMCP() {
 		return res;
 	}
 
-	async function withSessionRetry<T>(op: () => Promise<T>): Promise<T> {
-		try {
-			return await op();
-		} catch (error) {
-			if (!isRecoverableSessionError(error)) throw error;
-			resetSession();
-			await ensureInitialized();
-			return op();
+	async function withRetry<T>(op: () => Promise<T>): Promise<T> {
+		let sessionRetried = false;
+		for (let attempt = 0; ; attempt += 1) {
+			try {
+				return await op();
+			} catch (error) {
+				if (!sessionRetried && isRecoverableSessionError(error)) {
+					sessionRetried = true;
+					resetSession();
+					await ensureInitialized();
+					continue;
+				}
+				if (
+					attempt < TRANSIENT_RETRY_DELAYS_MS.length &&
+					isTransientTransportError(error)
+				) {
+					await delay(TRANSIENT_RETRY_DELAYS_MS[attempt]);
+					continue;
+				}
+				throw error;
+			}
 		}
 	}
 
@@ -208,7 +237,7 @@ export function useMCP() {
 		args?: Record<string, unknown>,
 		options?: CallToolOptions,
 	): Promise<string> {
-		return withSessionRetry(async () => {
+		return withRetry(async () => {
 			await ensureInitialized();
 			const progressToken =
 				options?.onProgress && typeof crypto?.randomUUID === "function"
@@ -250,7 +279,7 @@ export function useMCP() {
 	}
 
 	async function listTools(): Promise<MCPToolInfo[]> {
-		return withSessionRetry(async () => {
+		return withRetry(async () => {
 			await ensureInitialized();
 			const res = await post({
 				jsonrpc: "2.0",
@@ -265,13 +294,5 @@ export function useMCP() {
 		});
 	}
 
-	async function callToolWithRetry(
-		name: string,
-		args?: Record<string, unknown>,
-		options?: CallToolOptions,
-	): Promise<string> {
-		return withSessionRetry(() => callTool(name, args, options));
-	}
-
-	return { callTool: callToolWithRetry, listTools };
+	return { callTool, listTools };
 }
