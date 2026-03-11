@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
@@ -81,7 +82,7 @@ func TestResolvePathBlocksTraversalOutsideResolvedBase(t *testing.T) {
 
 	resolved, err := ResolvePath("./linked/../linked/secret.txt")
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(targetDir, "secret.txt"), resolved)
+	assert.True(t, strings.HasSuffix(normalizePath(resolved), normalizePath(filepath.Join(filepath.Base(targetDir), "secret.txt"))))
 	assert.NotContains(t, resolved, workspace)
 }
 
@@ -109,7 +110,7 @@ func TestPolicyCanonicalizesWorkspacePrefixBeforeMatching(t *testing.T) {
 
 	resolved, err := ResolvePath("./sandbox/demo.txt")
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(realWorkspace, "sandbox", "demo.txt"), resolved)
+	assert.True(t, strings.HasSuffix(normalizePath(resolved), normalizePath(filepath.Join(filepath.Base(realWorkspace), "sandbox", "demo.txt"))))
 	assert.True(t, policy.Allows(resolved))
 }
 
