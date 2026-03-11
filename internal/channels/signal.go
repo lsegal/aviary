@@ -334,19 +334,23 @@ func (c *SignalChannel) Send(channel, text string) error {
 		Recipient          []string `json:"recipient,omitempty"`
 		GroupID            string   `json:"groupId,omitempty"`
 		Message            string   `json:"message"`
+		TextStyle          []string `json:"textStyle,omitempty"`
 		Attachments        []string `json:"attachments,omitempty"`
 		PreviewURL         string   `json:"previewUrl,omitempty"`
 		PreviewTitle       string   `json:"previewTitle,omitempty"`
 		PreviewDescription string   `json:"previewDescription,omitempty"`
 		PreviewImage       string   `json:"previewImage,omitempty"`
 	}
-	text = formatSignalMarkup(text)
-	previews, cleanupPreview := fetchLinkPreviews(text)
+	formatted := formatSignalMessage(text)
+	previews, cleanupPreview := fetchLinkPreviews(formatted.Text)
 	if cleanupPreview != nil {
 		defer cleanupPreview()
 	}
 
-	params := sendParams{Message: text}
+	params := sendParams{
+		Message:   formatted.Text,
+		TextStyle: formatted.TextStyles,
+	}
 	if len(previews) > 0 {
 		p := previews[0]
 		params.PreviewURL = p.URL
@@ -532,11 +536,14 @@ func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
 		Recipient   []string `json:"recipient,omitempty"`
 		GroupID     string   `json:"groupId,omitempty"`
 		Message     string   `json:"message,omitempty"`
+		TextStyle   []string `json:"textStyle,omitempty"`
 		Attachments []string `json:"attachments"`
 	}
+	formatted := formatSignalMessage(caption)
 	params := sendParams{
 		Attachments: []string{filePath},
-		Message:     formatSignalMarkup(caption),
+		Message:     formatted.Text,
+		TextStyle:   formatted.TextStyles,
 	}
 	if strings.HasPrefix(channel, "+") {
 		params.Recipient = []string{channel}

@@ -257,11 +257,23 @@ func TestDispatch_NilDataMessageIgnored(t *testing.T) {
 }
 
 func TestFormatSignalMarkup(t *testing.T) {
-	in := "# Title\n**bold** and *italic* and ~~gone~~ and [link](https://example.com)\n```json\n{\"ok\":true}\n```"
-	got := formatSignalMarkup(in)
-	want := "Title\n*bold* and _italic_ and ~gone~ and link (https://example.com)\n`{\"ok\":true}`"
-	assert.Equal(t, want, got)
+	in := "# Title\n**bold** and *italic* and ~~gone~~ and ||secret|| and [link](https://example.com)\n```json\n{\"ok\":true}\n```"
+	got := formatSignalMessage(in)
+	assert.Equal(t, "Title\nbold and italic and gone and secret and link (https://example.com)\n{\"ok\":true}", got.Text)
+	assert.Equal(t, []string{
+		"6:4:BOLD",
+		"15:6:ITALIC",
+		"26:4:STRIKETHROUGH",
+		"35:6:SPOILER",
+		"73:11:MONOSPACE",
+	}, got.TextStyles)
 
+}
+
+func TestFormatSignalMarkup_StripsUnsupportedUnderline(t *testing.T) {
+	got := formatSignalMessage("<u>under</u> and __bold__")
+	assert.Equal(t, "under and bold", got.Text)
+	assert.Equal(t, []string{"10:4:BOLD"}, got.TextStyles)
 }
 
 func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
@@ -277,16 +289,19 @@ func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	got := ""
+	var styles []any
 	for time.Now().Before(deadline) {
 		reqs := fd.SentRequests()
 		if len(reqs) == 1 {
 			params, _ := reqs[0]["params"].(map[string]any)
 			got, _ = params["message"].(string)
+			styles, _ = params["textStyle"].([]any)
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.Equal(t, "*bold* and _italic_", got)
+	assert.Equal(t, "bold and italic", got)
+	assert.Equal(t, []any{"0:4:BOLD", "9:6:ITALIC"}, styles)
 }
 
 func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
@@ -302,16 +317,19 @@ func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	got := ""
+	var styles []any
 	for time.Now().Before(deadline) {
 		reqs := fd.SentRequests()
 		if len(reqs) == 1 {
 			params, _ := reqs[0]["params"].(map[string]any)
 			got, _ = params["message"].(string)
+			styles, _ = params["textStyle"].([]any)
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.Equal(t, "*bold* ~gone~", got)
+	assert.Equal(t, "bold gone", got)
+	assert.Equal(t, []any{"0:4:BOLD", "5:4:STRIKETHROUGH"}, styles)
 }
 
 func TestDispatch_MalformedJSON(t *testing.T) {
