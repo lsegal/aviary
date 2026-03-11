@@ -559,6 +559,52 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 
 }
 
+func TestManager_Reconcile_UpdatesOnPermissionsChange(t *testing.T) {
+	mgr := NewManager(nil)
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetFull,
+				Exec: &config.ExecPermissionsConfig{
+					AllowedCommands: []string{"go env *"},
+				},
+			},
+		}},
+	}
+	mgr.Reconcile(cfg)
+
+	r1, ok := mgr.Get("bot")
+	assert.True(t, ok)
+	if assert.NotNil(t, r1.Config()) && assert.NotNil(t, r1.Config().Permissions) {
+		assert.Equal(t, config.PermissionsPresetFull, config.EffectivePermissionsPreset(r1.Config().Permissions))
+		assert.NotNil(t, r1.Config().Permissions.Exec)
+	}
+
+	cfg = &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetStandard,
+			},
+		}},
+	}
+	mgr.Reconcile(cfg)
+
+	r2, ok := mgr.Get("bot")
+	assert.True(t, ok)
+	assert.NotEqual(t, r1, r2)
+	if assert.NotNil(t, r2.Config()) {
+		if assert.NotNil(t, r2.Config().Permissions) {
+			assert.Equal(t, config.PermissionsPresetStandard, config.EffectivePermissionsPreset(r2.Config().Permissions))
+			assert.Nil(t, r2.Config().Permissions.Exec)
+		}
+	}
+}
+
 func TestSessionManager_CreateAndGetOrCreate(t *testing.T) {
 	setTestDataDir(t)
 	err := store.EnsureDirs()

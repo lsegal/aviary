@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -59,7 +60,9 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 		effectiveModel := config.EffectiveAgentModel(*ac, cfg.Models)
 		effectiveFallbacks := config.EffectiveAgentFallbacks(*ac, cfg.Models)
 		if existing, ok := m.runners[name]; ok {
-			if existing.agent.Model == effectiveModel && slices.Equal(existing.agent.Fallbacks, effectiveFallbacks) && existing.cfg.Memory == ac.Memory {
+			if existing.agent.Model == effectiveModel &&
+				slices.Equal(existing.agent.Fallbacks, effectiveFallbacks) &&
+				reflect.DeepEqual(existing.cfg, ac) {
 				continue
 			}
 			slog.Info("agent updated", "name", name)
