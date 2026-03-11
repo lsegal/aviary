@@ -91,11 +91,11 @@ func ConfigureEmulation(raw string) error {
 		return nil
 	}
 	if !IsDevBuild() {
-		return fmt.Errorf("--emulate-versions is only supported for dev builds")
+		return fmt.Errorf("AVIARY_EMULATE_VERSIONS is only supported for dev builds")
 	}
 	parts := strings.SplitN(strings.TrimSpace(raw), ":", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid --emulate-versions value %q: expected <local>:<remote>", raw)
+		return fmt.Errorf("invalid AVIARY_EMULATE_VERSIONS value %q: expected <local>:<remote>", raw)
 	}
 	local := strings.TrimSpace(parts[0])
 	remote := strings.TrimSpace(parts[1])

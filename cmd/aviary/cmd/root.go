@@ -15,11 +15,10 @@ import (
 )
 
 var (
-	cfgFile         string
-	dataDir         string
-	serverURL       string
-	token           string
-	emulateVersions string
+	cfgFile   string
+	dataDir   string
+	serverURL string
+	token     string
 )
 
 var rootCmd = &cobra.Command{
@@ -57,9 +56,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory (default: ~/.config/aviary)")
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "authentication token (overrides stored token)")
-	rootCmd.PersistentFlags().StringVar(&emulateVersions, "emulate-versions", "", "Dev-only: emulate local and latest remote versions as <local>:<remote>")
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		return update.ConfigureEmulation(emulateVersions)
+		return update.ConfigureEmulation(os.Getenv("AVIARY_EMULATE_VERSIONS"))
 	}
 
 	// Initialize the dispatcher after flags are parsed.
