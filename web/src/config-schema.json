@@ -14,6 +14,14 @@
 					"maximum": 65535,
 					"default": 16677
 				},
+				"external_access": {
+					"type": "boolean",
+					"description": "Bind the Aviary server to 0.0.0.0 instead of localhost."
+				},
+				"no_tls": {
+					"type": "boolean",
+					"description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
+				},
 				"tls": {
 					"type": "object",
 					"additionalProperties": false,
@@ -34,6 +42,22 @@
 					"name": { "type": "string" },
 					"model": { "type": "string" },
 					"memory": { "type": "string" },
+					"rules": {
+						"type": "string",
+						"description": "Inline operating rules or a path to a markdown file whose contents are injected into the agent system prompt."
+					},
+					"memory_tokens": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 4000,
+						"description": "Maximum tokens of memory context to include in each prompt."
+					},
+					"compact_keep": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 200,
+						"description": "Number of recent memory entries to retain after compaction."
+					},
 					"fallbacks": {
 						"type": "array",
 						"items": { "type": "string" }
@@ -66,13 +90,52 @@
 								"token": { "type": "string" },
 								"channel": { "type": "string" },
 								"phone": { "type": "string" },
+								"url": {
+									"type": "string",
+									"description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
+								},
+								"showTyping": { "type": "boolean" },
+								"replyToReplies": { "type": "boolean" },
+								"reactToEmoji": { "type": "boolean" },
+								"sendReadReceipts": { "type": "boolean" },
+								"model": { "type": "string" },
+								"fallbacks": {
+									"type": "array",
+									"items": { "type": "string" }
+								},
 								"disabledTools": {
 									"type": "array",
 									"items": { "type": "string" }
 								},
 								"allowFrom": {
 									"type": "array",
-									"items": { "type": "string" }
+									"items": {
+										"oneOf": [
+											{ "type": "string" },
+											{
+												"type": "object",
+												"required": ["from"],
+												"properties": {
+													"from": { "type": "string" },
+													"allowedGroups": { "type": "string" },
+													"mentionPrefixes": {
+														"type": "array",
+														"items": { "type": "string" }
+													},
+													"respondToMentions": { "type": "boolean" },
+													"restrictTools": {
+														"type": "array",
+														"items": { "type": "string" }
+													},
+													"model": { "type": "string" },
+													"fallbacks": {
+														"type": "array",
+														"items": { "type": "string" }
+													}
+												}
+											}
+										]
+									}
 								}
 							}
 						}
@@ -135,6 +198,28 @@
 					"minimum": 1,
 					"maximum": 65535,
 					"default": 9222
+				},
+				"profile_directory": {
+					"type": "string",
+					"description": "Chrome profile folder name in the browser's default user data directory (e.g. 'Default', 'Profile 1', 'work'). Defaults to 'Aviary' if unset."
+				},
+				"headless": {
+					"type": "boolean",
+					"default": false,
+					"description": "Run the browser without a visible window. Defaults to false so the browser is visible."
+				}
+			}
+		},
+		"search": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"web": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"brave_api_key": { "type": "string" }
+					}
 				}
 			}
 		},
@@ -147,6 +232,26 @@
 						{ "type": "string", "enum": ["auto"] },
 						{ "type": "integer", "minimum": 1 }
 					]
+				}
+			}
+		},
+		"skills": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {
+					"enabled": { "type": "boolean" },
+					"binary": { "type": "string" },
+					"allowed_commands": {
+						"type": "array",
+						"items": { "type": "string" }
+					},
+					"env": {
+						"type": "object",
+						"additionalProperties": { "type": "string" }
+					},
+					"timeout": { "type": "string" }
 				}
 			}
 		}

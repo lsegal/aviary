@@ -14,6 +14,14 @@
           "maximum": 65535,
           "default": 16677
         },
+        "external_access": {
+          "type": "boolean",
+          "description": "Bind the Aviary server to 0.0.0.0 instead of localhost."
+        },
+        "no_tls": {
+          "type": "boolean",
+          "description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,
@@ -34,6 +42,10 @@
           "name": { "type": "string" },
           "model": { "type": "string" },
           "memory": { "type": "string" },
+          "rules": {
+            "type": "string",
+            "description": "Inline operating rules or a path to a markdown file whose contents are injected into the agent system prompt."
+          },
           "memory_tokens": {
             "type": "integer",
             "minimum": 1,
