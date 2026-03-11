@@ -93,6 +93,26 @@ func TestResolvePathRejectsDriveRelativePaths(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestPolicyCanonicalizesWorkspacePrefixBeforeMatching(t *testing.T) {
+	realWorkspace := t.TempDir()
+	linkRoot := t.TempDir()
+	linkWorkspace := filepath.Join(linkRoot, "workspace-link")
+	if err := os.Symlink(realWorkspace, linkWorkspace); err != nil {
+		t.Skipf("symlink setup unavailable: %v", err)
+	}
+
+	store.SetWorkspaceDir(linkWorkspace)
+	t.Cleanup(func() { store.SetWorkspaceDir("") })
+
+	policy, err := NewPolicy([]string{"./sandbox/**"})
+	require.NoError(t, err)
+
+	resolved, err := ResolvePath("./sandbox/demo.txt")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(realWorkspace, "sandbox", "demo.txt"), resolved)
+	assert.True(t, policy.Allows(resolved))
+}
+
 func TestPolicyFromAgentNilSafe(t *testing.T) {
 	policy, err := PolicyFromAgent(&config.AgentConfig{Name: "bot"})
 	require.NoError(t, err)

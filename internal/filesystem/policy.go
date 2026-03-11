@@ -90,7 +90,10 @@ func compileRule(raw string) (compiledRule, error) {
 	if err != nil {
 		return compiledRule{}, fmt.Errorf("invalid allowlist rule %q: %w", raw, err)
 	}
-	pattern := normalizePath(filepath.Clean(expanded))
+	pattern, err := canonicalizePattern(expanded)
+	if err != nil {
+		return compiledRule{}, fmt.Errorf("invalid allowlist rule %q: %w", raw, err)
+	}
 	re, err := regexp.Compile(globToRegex(pattern))
 	if err != nil {
 		return compiledRule{}, fmt.Errorf("compiling allowlist rule %q: %w", raw, err)
@@ -131,6 +134,80 @@ func expandPath(raw string, allowGlob bool) (string, error) {
 		return "", fmt.Errorf("glob characters are not allowed in file paths")
 	}
 	return expanded, nil
+}
+
+func canonicalizePattern(expanded string) (string, error) {
+	cleaned := filepath.Clean(expanded)
+	parts := splitPathParts(cleaned)
+	if len(parts) == 0 {
+		return normalizePath(cleaned), nil
+	}
+
+	globIndex := -1
+	for i, part := range parts {
+		if strings.ContainsAny(part, "*?[") {
+			globIndex = i
+			break
+		}
+	}
+
+	if globIndex == -1 {
+		resolved, err := resolveExistingAncestor(cleaned)
+		if err != nil {
+			return "", err
+		}
+		return normalizePath(resolved), nil
+	}
+
+	prefix := joinPathParts(parts[:globIndex])
+	resolvedPrefix, err := resolveExistingAncestor(prefix)
+	if err != nil {
+		return "", err
+	}
+	if globIndex == len(parts) {
+		return normalizePath(resolvedPrefix), nil
+	}
+	return normalizePath(filepath.Join(append([]string{resolvedPrefix}, parts[globIndex:]...)...)), nil
+}
+
+func splitPathParts(path string) []string {
+	volume := filepath.VolumeName(path)
+	remainder := strings.TrimPrefix(path, volume)
+	if len(remainder) == 0 {
+		if volume == "" {
+			return nil
+		}
+		return []string{volume}
+	}
+
+	rooted := os.IsPathSeparator(remainder[0])
+	remainder = strings.TrimLeft(remainder, `/\`)
+	segments := strings.FieldsFunc(remainder, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+
+	parts := make([]string, 0, len(segments)+1)
+	switch {
+	case volume != "" && rooted:
+		parts = append(parts, volume+string(filepath.Separator))
+	case volume != "":
+		parts = append(parts, volume)
+	case rooted:
+		parts = append(parts, string(filepath.Separator))
+	}
+	parts = append(parts, segments...)
+	return parts
+}
+
+func joinPathParts(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	path := parts[0]
+	for _, part := range parts[1:] {
+		path = filepath.Join(path, part)
+	}
+	return path
 }
 
 func joinBasePreservingGlob(base, rest string) string {
