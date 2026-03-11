@@ -15,7 +15,7 @@
 		"build:clean": "node scripts/clean.mjs",
 		"preview": "vite preview",
 		"lint": "pnpm lint:go && pnpm lint:web",
-		"lint:go": "golangci-lint run ./...",
+		"lint:go": "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.2 run ./...",
 		"lint:web": "biome check .",
 		"lint:fix": "biome check --write .",
 		"format": "biome format --write .",
