@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,6 +94,12 @@ func (m *Manager) Get(name string) (*AgentRunner, bool) {
 	defer m.mu.RUnlock()
 	r, ok := m.runners[name]
 	return r, ok
+}
+
+// GetByID returns the runner for a concrete agent ID such as "agent_assistant".
+func (m *Manager) GetByID(agentID string) (*AgentRunner, bool) {
+	name := strings.TrimPrefix(agentID, "agent_")
+	return m.Get(name)
 }
 
 // List returns a snapshot of all agents.

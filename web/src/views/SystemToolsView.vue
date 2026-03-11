@@ -106,6 +106,7 @@
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
+import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";
 
 interface InstalledSkill {
 	name: string;
@@ -128,47 +129,8 @@ const errorMessage = ref("");
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
 
-const CATEGORY_LABELS: Record<string, string> = {
-	agent: "Agent",
-	auth: "Auth",
-	browser: "Browser",
-	job: "Jobs",
-	memory: "Memory",
-	search: "Search",
-	server: "Server",
-	session: "Sessions",
-	task: "Tasks",
-	usage: "Usage",
-};
-
-function toolCategory(name: string): string {
-	if (
-		name === "ping" ||
-		name.startsWith("server_") ||
-		name.startsWith("config_")
-	) {
-		return "server";
-	}
-	if (name.startsWith("web_")) return "search";
-	return name.split("_")[0] ?? name;
-}
-
-function toolCategoryLabel(category: string): string {
-	return (
-		CATEGORY_LABELS[category] ??
-		category.charAt(0).toUpperCase() + category.slice(1)
-	);
-}
-
 const groupedTools = computed<ToolGroup[]>(() => {
-	const groups = new Map<string, MCPToolInfo[]>();
-	for (const tool of availableTools.value) {
-		const category = toolCategory(tool.name);
-		const bucket = groups.get(category) ?? [];
-		bucket.push(tool);
-		groups.set(category, bucket);
-	}
-	return [...groups.entries()]
+	return groupTools(availableTools.value)
 		.sort((a, b) =>
 			toolCategoryLabel(a[0]).localeCompare(toolCategoryLabel(b[0])),
 		)

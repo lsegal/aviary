@@ -111,6 +111,12 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 		} else {
 			v.checkModel(f+".model", effectiveModel)
 		}
+		if a.Permissions != nil && !IsValidPermissionsPreset(a.Permissions.Preset) {
+			v.errorf(f+".permissions.preset", "invalid permissions preset %q; must be full, standard, or minimal", a.Permissions.Preset)
+		}
+		if a.Permissions != nil && a.Permissions.Exec != nil && len(a.Permissions.Exec.AllowedCommands) == 0 {
+			v.errorf(f+".permissions.exec.allowedCommands", "permissions.exec requires at least one allowedCommands entry")
+		}
 
 		for j, ch := range a.Channels {
 			v.checkChannel(fmt.Sprintf("%s.channels[%d]", f, j), ch)

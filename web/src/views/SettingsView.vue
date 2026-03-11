@@ -201,8 +201,33 @@
 
             <!-- Permissions -->
             <div>
-              <div class="flex items-center gap-3">
-                <label class="flex cursor-pointer items-center gap-2">
+              <div class="grid gap-3 lg:max-w-xl">
+                <div>
+                  <label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
+                  <FancySelect
+                    :id="`tool-preset-${agent.name || i}`"
+                    :model-value="agentPermissionsPreset(agent)"
+                    :options="
+                      PERMISSION_PRESET_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                        caption: option.description,
+                      }))
+                    "
+                    @update:model-value="updateAgentPermissionsPreset(agent, $event)"
+                  />
+                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {{
+                      PERMISSION_PRESET_OPTIONS.find(
+                        (option) => option.value === agentPermissionsPreset(agent),
+                      )?.description
+                    }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-4 space-y-1.5">
+                <label class="inline-flex cursor-pointer items-center gap-2">
                   <input
                     type="checkbox"
                     :checked="hasToolRestriction(agent)"
@@ -211,9 +236,9 @@
                   />
                   <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
                 </label>
-                <span class="text-xs text-gray-400 dark:text-gray-500">
+                <p class="pl-6 text-xs leading-5 text-gray-400 dark:text-gray-500">
                   When checked, only the selected tools are visible to this agent.
-                </span>
+                </p>
               </div>
 
               <div v-if="hasToolRestriction(agent) && toolGroupEntries.length" class="mt-3 space-y-2">
@@ -221,12 +246,16 @@
                   v-for="[cat, catTools] in toolGroupEntries"
                   :key="cat"
                   class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                  :class="!isAgentCategoryAccessible(agent, cat) ? 'opacity-50' : ''"
+                  :data-testid="`agent-tool-group-${agent.name || i}-${cat}`"
                 >
                   <label class="mb-2 flex cursor-pointer items-center gap-2">
                     <input
                       type="checkbox"
                       :checked="isCategoryFullyEnabled(agent, cat)"
                       :indeterminate="isCategoryPartiallyEnabled(agent, cat)"
+                      :disabled="!isAgentCategoryAccessible(agent, cat)"
+                      :data-testid="`agent-tool-group-checkbox-${agent.name || i}-${cat}`"
                       class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                       @change="toggleCategory(agent, cat, ($event.target as HTMLInputElement).checked)"
                     />
@@ -239,10 +268,13 @@
                       v-for="tool in catTools"
                       :key="tool.name"
                       class="flex cursor-pointer items-center gap-1.5"
+                      :class="!isAgentToolAccessible(agent, tool.name) ? 'opacity-50' : ''"
                     >
                       <input
                         type="checkbox"
                         :checked="isToolEnabled(agent, tool.name)"
+                        :disabled="!isAgentToolAccessible(agent, tool.name)"
+                        :data-testid="`agent-tool-checkbox-${agent.name || i}-${tool.name}`"
                         class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                         @change="toggleTool(agent, tool.name, ($event.target as HTMLInputElement).checked)"
                       />
@@ -260,7 +292,7 @@
                 <label class="field-label">Disabled tools</label>
                 <ModelSelector
                   :model-value="agent.permissions?.disabledTools ?? []"
-                  :options="availableToolNames"
+                  :options="availableToolNamesForAgent(agent)"
                   multiple
                   placeholder="Exclude tools after restrict tools…"
                   empty-text="No matching tools found"
@@ -274,6 +306,68 @@
                 <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   Applied after the inclusive tool list. Disabled tools always win.
                 </p>
+              </div>
+
+              <div class="mt-4">
+                <button
+                  type="button"
+                  :data-testid="`agent-tool-permissions-inspect-${agent.name || i}`"
+                  class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  @click="openToolInspectionModal(agentInspectionTitle(agent, i), agentToolResolution(agent))"
+                >Inspect tool permissions</button>
+              </div>
+
+              <div class="mt-4">
+                <label class="field-label">Filesystem Allowed Paths</label>
+                <textarea
+                  :value="agentFilesystemAllowedPaths(agent)"
+                  class="field-input min-h-24 font-mono text-xs"
+                  placeholder="@/**&#10;!@/token&#10;./docs/**"
+                  @change="setAgentFilesystemAllowedPaths(agent, $event)"
+                />
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  One rule per line. Rules are ordered; prefix with <code>!</code> to deny. <code>~</code> means home, <code>@</code> means Aviary config dir.
+                </p>
+              </div>
+
+              <div class="mt-4 space-y-3">
+                <div>
+                  <label class="field-label">Allowed Exec Commands</label>
+                  <textarea
+                    :value="agentExecAllowedCommands(agent)"
+                    class="field-input min-h-24 font-mono text-xs"
+                    placeholder="git status&#10;npm test&#10;python *.py&#10;!rm *"
+                    @change="setAgentExecAllowedCommands(agent, $event)"
+                  />
+                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    One ordered glob rule per line. Prefix with <code>!</code> to deny. The exec tool is unavailable unless at least one allow rule is configured.
+                  </p>
+                </div>
+
+                <div class="space-y-3">
+                  <div>
+                    <label class="field-label">Exec Shell Override (optional)</label>
+                    <input
+                      :value="agent.permissions?.exec?.shell ?? ''"
+                      type="text"
+                      class="field-input font-mono text-xs"
+                      placeholder="powershell.exe -NoProfile -Command"
+                      @change="setAgentExecShell(agent, $event)"
+                    />
+                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                      Overrides the shell used by the exec tool when command execution is permitted.
+                    </p>
+                  </div>
+                  <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                    <input
+                      :checked="Boolean(agent.permissions?.exec?.shellInterpolate)"
+                      type="checkbox"
+                      class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                      @change="setAgentExecShellInterpolate(agent, ($event.target as HTMLInputElement).checked)"
+                    />
+                    Enable shell interpolation
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -360,32 +454,46 @@
                   </div>
                   <!-- Restrict Tools -->
                   <div>
-                    <div class="flex items-center gap-3">
-                      <label class="flex cursor-pointer items-center gap-2">
-                        <input
-                          type="checkbox"
-                          :checked="hasEntryToolRestriction(entry)"
-                          class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-                          @change="setEntryToolRestriction(entry, ($event.target as HTMLInputElement).checked)"
-                        />
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
-                      </label>
-                      <span class="text-xs text-gray-400 dark:text-gray-500">When checked, only the selected tools are available for this entry (overrides agent defaults).</span>
+                    <div class="mt-2 space-y-1.5">
+                      <div class="flex flex-wrap items-center gap-3">
+                        <label class="inline-flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            :checked="hasEntryToolRestriction(entry)"
+                            class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                            @change="setEntryToolRestriction(entry, ($event.target as HTMLInputElement).checked)"
+                          />
+                          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
+                        </label>
+                        <button
+                          type="button"
+                          :data-testid="`entry-tool-permissions-inspect-${agent.name || i}-${k}-${ei}`"
+                          class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                          @click="openToolInspectionModal(entryInspectionTitle(agent, i, ch, k, entry, ei), entryToolResolution(agent, ch, entry))"
+                        >Inspect tool permissions</button>
+                      </div>
+                      <p class="pl-6 text-xs leading-5 text-gray-400 dark:text-gray-500">When checked, only the selected tools are available for this entry (overrides agent defaults).</p>
                     </div>
                     <div v-if="hasEntryToolRestriction(entry) && toolGroupEntries.length" class="mt-3 space-y-2">
                       <div
-                        v-for="[cat, catTools] in toolGroupEntries"
-                        :key="cat"
-                        class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-                      >
-                        <label class="mb-2 flex cursor-pointer items-center gap-2">
-                          <input
-                            type="checkbox"
-                            :checked="isEntryCategoryFullyEnabled(entry, cat)"
-                            :indeterminate="isEntryCategoryPartiallyEnabled(entry, cat)"
-                            class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-                            @change="toggleEntryCategory(entry, cat, ($event.target as HTMLInputElement).checked)"
-                          />
+                      v-for="[cat, catTools] in toolGroupEntries"
+                      :key="cat"
+                      class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                      :class="
+                        draft.agents[i] && !isAgentCategoryAccessible(draft.agents[i], cat)
+                          ? 'opacity-50'
+                          : ''
+                      "
+                    >
+                      <label class="mb-2 flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          :checked="isEntryCategoryFullyEnabled(entry, cat)"
+                          :indeterminate="isEntryCategoryPartiallyEnabled(entry, cat)"
+                          :disabled="draft.agents[i] && !isAgentCategoryAccessible(draft.agents[i], cat)"
+                          class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                          @change="toggleEntryCategory(entry, cat, ($event.target as HTMLInputElement).checked)"
+                        />
                           <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             {{ toolCategoryLabel(cat) }}
                           </span>
@@ -395,10 +503,17 @@
                             v-for="tool in catTools"
                             :key="tool.name"
                             class="flex cursor-pointer items-center gap-1.5"
+                            :class="
+                              draft.agents[i] && !isAgentToolAccessible(draft.agents[i], tool.name)
+                                ? 'opacity-50'
+                                : ''
+                            "
                           >
                             <input
                               type="checkbox"
                               :checked="isEntryToolEnabled(entry, tool.name)"
+                              :disabled="draft.agents[i] && !isAgentToolAccessible(draft.agents[i], tool.name)"
+                              :data-testid="`entry-tool-checkbox-${agent.name || i}-${k}-${ei}-${tool.name}`"
                               class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                               @change="toggleEntryTool(entry, tool.name, ($event.target as HTMLInputElement).checked)"
                             />
@@ -438,7 +553,7 @@
                 <label class="field-label">Channel disabled tools (optional)</label>
                 <ModelSelector
                   :model-value="ch.disabledTools ?? []"
-                  :options="availableToolNames"
+                  :options="availableToolNamesForAgent(agent)"
                   multiple
                   placeholder="Exclude tools for this channel…"
                   empty-text="No matching tools found"
@@ -447,6 +562,14 @@
                 <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   Applied after any restrict-tools allow list for messages on this channel.
                 </p>
+                <div class="mt-3">
+                  <button
+                    type="button"
+                    :data-testid="`channel-tool-permissions-inspect-${agent.name || i}-${k}`"
+                    class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    @click="openToolInspectionModal(channelInspectionTitle(agent, i, ch, k), channelToolResolution(agent, ch))"
+                  >Inspect tool permissions</button>
+                </div>
               </div>
 
               <div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
@@ -825,6 +948,50 @@
 
       </div>
     </div>
+
+    <div
+      v-if="toolInspectionModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+      @click.self="closeToolInspectionModal"
+    >
+      <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+        <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Inspect Tool Permissions</h3>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ toolInspectionModal.title }}</p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            @click="closeToolInspectionModal"
+          >Close</button>
+        </div>
+        <div class="space-y-4 overflow-y-auto p-5">
+          <p class="text-xs leading-5 text-gray-500 dark:text-gray-400">
+            Resolution order: preset accessibility, then restrict-tools allow list, then disabled-tools exclusions.
+          </p>
+          <div class="grid gap-3 sm:grid-cols-4">
+            <div class="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
+              <div class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Preset</div>
+              <div class="mt-1 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ toolInspectionModal.resolution.preset }}</div>
+            </div>
+            <div class="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
+              <div class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Accessible</div>
+              <div class="mt-1 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ toolInspectionModal.resolution.presetAccessibleTools.length }}</div>
+            </div>
+            <div class="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
+              <div class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Disabled</div>
+              <div class="mt-1 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ toolInspectionModal.resolution.effectiveDisabledTools.length }}</div>
+            </div>
+            <div class="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
+              <div class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Final</div>
+              <div class="mt-1 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ toolInspectionModal.resolution.finalTools.length }}</div>
+            </div>
+          </div>
+          <pre data-testid="tool-permissions-inspector-output" class="max-h-[50vh] overflow-auto rounded-lg bg-gray-950 px-4 py-3 text-xs leading-5 text-gray-100">{{ toolInspectionOutput }}</pre>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -832,8 +999,21 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import FancySelect from "../components/FancySelect.vue";
 import ModelSelector from "../components/ModelSelector.vue";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
+import {
+	clampToolNamesForPreset,
+	groupTools,
+	isToolAccessibleForPreset,
+	isToolGroupAccessibleForPreset,
+	normalizePermissionsPreset,
+	type PermissionsPreset,
+	type ResolvedToolPermissions,
+	resolveToolPermissions,
+	toolCategory,
+	toolCategoryLabel,
+} from "../lib/toolPermissions";
 import { useAuthStore } from "../stores/auth";
 import {
 	type AgentChannel,
@@ -884,6 +1064,11 @@ interface TaskChannelOption {
 	value: string;
 	label: string;
 	type: string;
+}
+
+interface ToolInspectionModalState {
+	title: string;
+	resolution: ResolvedToolPermissions;
 }
 
 const route = useRoute();
@@ -1076,49 +1261,189 @@ const jobsLoading = ref(false);
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
 const skillsLoading = ref(false);
-
-function toolCategory(name: string): string {
-	if (
-		name === "ping" ||
-		name.startsWith("server_") ||
-		name.startsWith("config_")
-	)
-		return "server";
-	if (name.startsWith("web_")) return "search";
-	return name.split("_")[0] ?? name;
-}
-
-function toolCategoryLabel(cat: string): string {
-	const labels: Record<string, string> = {
-		agent: "Agent",
-		session: "Sessions",
-		task: "Tasks",
-		job: "Jobs",
-		browser: "Browser",
-		search: "Search",
-		memory: "Memory",
-		auth: "Auth",
-		server: "Server",
-		usage: "Usage",
-	};
-	return labels[cat] ?? cat.charAt(0).toUpperCase() + cat.slice(1);
-}
+const toolInspectionModal = ref<ToolInspectionModalState | null>(null);
 
 const toolGroupEntries = computed((): [string, MCPToolInfo[]][] => {
-	const groups = new Map<string, MCPToolInfo[]>();
-	for (const tool of availableTools.value) {
-		const cat = toolCategory(tool.name);
-		const list = groups.get(cat) ?? [];
-		list.push(tool);
-		groups.set(cat, list);
-	}
-	return [...groups.entries()];
+	return groupTools(availableTools.value);
 });
 
 const availableToolNames = computed(() =>
 	availableTools.value
 		.map((tool) => tool.name)
 		.sort((a, b) => a.localeCompare(b)),
+);
+
+const PERMISSION_PRESET_OPTIONS: Array<{
+	value: PermissionsPreset;
+	label: string;
+	description: string;
+}> = [
+	{
+		value: "full",
+		label: "Full",
+		description: "No preset cap. Any tool group may be enabled.",
+	},
+	{
+		value: "standard",
+		label: "Standard",
+		description: "Blocks agent, auth, exec, file, and server tool groups.",
+	},
+	{
+		value: "minimal",
+		label: "Minimal",
+		description: "Also blocks browser, skills, and usage on top of standard.",
+	},
+];
+
+function agentPermissionsPreset(agent: AgentEntry): PermissionsPreset {
+	return normalizePermissionsPreset(agent.permissions?.preset);
+}
+
+function sanitizeAgentToolSelections(agent: AgentEntry) {
+	const preset = agentPermissionsPreset(agent);
+	if (agent.permissions) {
+		agent.permissions.preset =
+			preset === "standard" ? undefined : agentPermissionsPreset(agent);
+		agent.permissions.tools = clampToolNamesForPreset(
+			preset,
+			agent.permissions.tools,
+		);
+		agent.permissions.disabledTools = clampToolNamesForPreset(
+			preset,
+			agent.permissions.disabledTools,
+		);
+	}
+	for (const channel of agent.channels ?? []) {
+		channel.disabledTools = clampToolNamesForPreset(
+			preset,
+			channel.disabledTools,
+		);
+		for (const entry of channel.allowFrom ?? []) {
+			entry.restrictTools = clampToolNamesForPreset(
+				preset,
+				entry.restrictTools,
+			);
+		}
+	}
+}
+
+function updateAgentPermissionsPreset(agent: AgentEntry, value: unknown) {
+	const preset = normalizePermissionsPreset(
+		typeof value === "string" ? value : undefined,
+	);
+	agent.permissions = {
+		...(agent.permissions ?? {}),
+		preset: preset === "standard" ? undefined : preset,
+	};
+	sanitizeAgentToolSelections(agent);
+}
+
+function isAgentToolAccessible(agent: AgentEntry, toolName: string): boolean {
+	return isToolAccessibleForPreset(agentPermissionsPreset(agent), toolName);
+}
+
+function isAgentCategoryAccessible(
+	agent: AgentEntry,
+	category: string,
+): boolean {
+	return isToolGroupAccessibleForPreset(
+		agentPermissionsPreset(agent),
+		category,
+	);
+}
+
+function availableToolsForAgent(agent: AgentEntry): MCPToolInfo[] {
+	return availableTools.value.filter((tool) =>
+		isAgentToolAccessible(agent, tool.name),
+	);
+}
+
+function availableToolNamesForAgent(agent: AgentEntry): string[] {
+	return availableToolNames.value.filter((name) =>
+		isAgentToolAccessible(agent, name),
+	);
+}
+
+function availableToolNamesForResolution(): string[] {
+	return availableTools.value.map((tool) => tool.name);
+}
+
+function agentToolResolution(agent: AgentEntry): ResolvedToolPermissions {
+	return resolveToolPermissions({
+		preset: agentPermissionsPreset(agent),
+		availableTools: availableToolNamesForResolution(),
+		agentTools: agent.permissions?.tools,
+		agentDisabledTools: agent.permissions?.disabledTools,
+	});
+}
+
+function channelToolResolution(
+	agent: AgentEntry,
+	channel: AgentChannel,
+): ResolvedToolPermissions {
+	return resolveToolPermissions({
+		preset: agentPermissionsPreset(agent),
+		availableTools: availableToolNamesForResolution(),
+		agentTools: agent.permissions?.tools,
+		agentDisabledTools: agent.permissions?.disabledTools,
+		overrideDisabledTools: channel.disabledTools,
+	});
+}
+
+function entryToolResolution(
+	agent: AgentEntry,
+	channel: AgentChannel,
+	entry: AllowFromEntry,
+): ResolvedToolPermissions {
+	return resolveToolPermissions({
+		preset: agentPermissionsPreset(agent),
+		availableTools: availableToolNamesForResolution(),
+		agentTools: agent.permissions?.tools,
+		agentDisabledTools: agent.permissions?.disabledTools,
+		overrideRestrictTools: entry.restrictTools,
+		overrideDisabledTools: channel.disabledTools,
+	});
+}
+
+function agentInspectionTitle(agent: AgentEntry, agentIndex: number): string {
+	return `Agent: ${agent.name || `Agent ${agentIndex + 1}`}`;
+}
+
+function channelInspectionTitle(
+	agent: AgentEntry,
+	agentIndex: number,
+	channel: AgentChannel,
+	channelIndex: number,
+): string {
+	return `${agentInspectionTitle(agent, agentIndex)} / ${channel.type} ${channelIndex + 1}`;
+}
+
+function entryInspectionTitle(
+	agent: AgentEntry,
+	agentIndex: number,
+	channel: AgentChannel,
+	channelIndex: number,
+	entry: AllowFromEntry,
+	entryIndex: number,
+): string {
+	return `${channelInspectionTitle(agent, agentIndex, channel, channelIndex)} / ${entry.from || `Entry ${entryIndex + 1}`}`;
+}
+
+function openToolInspectionModal(
+	title: string,
+	resolution: ResolvedToolPermissions,
+) {
+	toolInspectionModal.value = { title, resolution };
+}
+
+function closeToolInspectionModal() {
+	toolInspectionModal.value = null;
+}
+
+const toolInspectionOutput = computed(() =>
+	toolInspectionModal.value
+		? JSON.stringify(toolInspectionModal.value.resolution, null, 2)
+		: "",
 );
 watch(activeTab, (tab) => {
 	if (tab === "agents") {
@@ -1298,6 +1623,7 @@ async function loadConfig() {
 			: emptyConfig();
 		draft.value = cfg;
 		draft.value.agents.forEach((agent) => {
+			sanitizeAgentToolSelections(agent);
 			(agent.channels ?? []).forEach((ch) => {
 				if (ch.showTyping === undefined) ch.showTyping = true;
 				if (ch.replyToReplies === undefined) ch.replyToReplies = true;
@@ -1537,7 +1863,12 @@ function hasEntryToolRestriction(entry: AllowFromEntry): boolean {
 
 function setEntryToolRestriction(entry: AllowFromEntry, restricted: boolean) {
 	if (restricted) {
-		entry.restrictTools = availableTools.value.map((t) => t.name);
+		const agent = draft.value.agents.find((candidate) =>
+			candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		);
+		entry.restrictTools = agent
+			? availableToolsForAgent(agent).map((t) => t.name)
+			: availableTools.value.map((t) => t.name);
 	} else {
 		entry.restrictTools = undefined;
 	}
@@ -1545,6 +1876,10 @@ function setEntryToolRestriction(entry: AllowFromEntry, restricted: boolean) {
 
 function isEntryToolEnabled(entry: AllowFromEntry, toolName: string): boolean {
 	if (!hasEntryToolRestriction(entry)) return true;
+	const agent = draft.value.agents.find((candidate) =>
+		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+	);
+	if (agent && !isAgentToolAccessible(agent, toolName)) return false;
 	return entry.restrictTools?.includes(toolName) ?? false;
 }
 
@@ -1553,6 +1888,10 @@ function toggleEntryTool(
 	toolName: string,
 	enabled: boolean,
 ) {
+	const agent = draft.value.agents.find((candidate) =>
+		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+	);
+	if (agent && !isAgentToolAccessible(agent, toolName)) return;
 	if (!entry.restrictTools) entry.restrictTools = [];
 	const idx = entry.restrictTools.indexOf(toolName);
 	if (enabled && idx === -1) {
@@ -1569,7 +1908,14 @@ function isEntryCategoryFullyEnabled(
 	const catTools = availableTools.value.filter(
 		(t) => toolCategory(t.name) === cat,
 	);
-	return catTools.every((t) => isEntryToolEnabled(entry, t.name));
+	const agent = draft.value.agents.find((candidate) =>
+		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+	);
+	const accessibleTools = agent
+		? catTools.filter((tool) => isAgentToolAccessible(agent, tool.name))
+		: catTools;
+	if (!accessibleTools.length) return false;
+	return accessibleTools.every((t) => isEntryToolEnabled(entry, t.name));
 }
 
 function isEntryCategoryPartiallyEnabled(
@@ -1579,10 +1925,16 @@ function isEntryCategoryPartiallyEnabled(
 	const catTools = availableTools.value.filter(
 		(t) => toolCategory(t.name) === cat,
 	);
-	const enabledCount = catTools.filter((t) =>
+	const agent = draft.value.agents.find((candidate) =>
+		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+	);
+	const accessibleTools = agent
+		? catTools.filter((tool) => isAgentToolAccessible(agent, tool.name))
+		: catTools;
+	const enabledCount = accessibleTools.filter((t) =>
 		isEntryToolEnabled(entry, t.name),
 	).length;
-	return enabledCount > 0 && enabledCount < catTools.length;
+	return enabledCount > 0 && enabledCount < accessibleTools.length;
 }
 
 function toggleEntryCategory(
@@ -1593,7 +1945,11 @@ function toggleEntryCategory(
 	const catTools = availableTools.value.filter(
 		(t) => toolCategory(t.name) === cat,
 	);
+	const agent = draft.value.agents.find((candidate) =>
+		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+	);
 	for (const t of catTools) {
+		if (agent && !isAgentToolAccessible(agent, t.name)) continue;
 		toggleEntryTool(entry, t.name, enabled);
 	}
 }
@@ -1602,21 +1958,110 @@ function hasToolRestriction(agent: AgentEntry): boolean {
 	return (agent.permissions?.tools?.length ?? 0) > 0;
 }
 
+function agentFilesystemAllowedPaths(agent: AgentEntry): string {
+	return (agent.permissions?.filesystem?.allowedPaths ?? []).join("\n");
+}
+
+function setAgentFilesystemAllowedPaths(agent: AgentEntry, event: Event) {
+	const value = (event.target as HTMLTextAreaElement).value;
+	const allowedPaths = value
+		.split(/\r?\n/)
+		.map((v) => v.trim())
+		.filter(Boolean);
+	agent.permissions = {
+		...(agent.permissions ?? {}),
+		filesystem: allowedPaths.length ? { allowedPaths } : undefined,
+	};
+}
+
+function agentExecAllowedCommands(agent: AgentEntry): string {
+	return (agent.permissions?.exec?.allowedCommands ?? []).join("\n");
+}
+
+function setAgentExecAllowedCommands(agent: AgentEntry, event: Event) {
+	const value = (event.target as HTMLTextAreaElement).value;
+	const allowedCommands = value
+		.split(/\r?\n/)
+		.map((v) => v.trim())
+		.filter(Boolean);
+	const currentExec = agent.permissions?.exec;
+	const nextExec =
+		allowedCommands.length ||
+		currentExec?.shellInterpolate ||
+		(currentExec?.shell ?? "").trim()
+			? {
+					allowedCommands: allowedCommands.length ? allowedCommands : undefined,
+					shellInterpolate: currentExec?.shellInterpolate ? true : undefined,
+					shell: (currentExec?.shell ?? "").trim() || undefined,
+				}
+			: undefined;
+	agent.permissions = {
+		...(agent.permissions ?? {}),
+		exec: nextExec,
+	};
+}
+
+function setAgentExecShellInterpolate(agent: AgentEntry, enabled: boolean) {
+	const currentExec = agent.permissions?.exec;
+	const nextExec =
+		(currentExec?.allowedCommands?.length ?? 0) > 0 ||
+		enabled ||
+		(currentExec?.shell ?? "").trim()
+			? {
+					allowedCommands: currentExec?.allowedCommands,
+					shellInterpolate: enabled ? true : undefined,
+					shell: (currentExec?.shell ?? "").trim() || undefined,
+				}
+			: undefined;
+	agent.permissions = {
+		...(agent.permissions ?? {}),
+		exec: nextExec,
+	};
+}
+
+function setAgentExecShell(agent: AgentEntry, event: Event) {
+	const shell = (event.target as HTMLInputElement).value.trim();
+	const currentExec = agent.permissions?.exec;
+	const nextExec =
+		(currentExec?.allowedCommands?.length ?? 0) > 0 ||
+		currentExec?.shellInterpolate ||
+		shell
+			? {
+					allowedCommands: currentExec?.allowedCommands,
+					shellInterpolate: currentExec?.shellInterpolate ? true : undefined,
+					shell: shell || undefined,
+				}
+			: undefined;
+	agent.permissions = {
+		...(agent.permissions ?? {}),
+		exec: nextExec,
+	};
+}
+
 function setToolRestriction(agent: AgentEntry, restricted: boolean) {
 	if (restricted) {
 		// Start with all tools selected so nothing breaks immediately.
-		agent.permissions = { tools: availableTools.value.map((t) => t.name) };
+		agent.permissions = {
+			...(agent.permissions ?? {}),
+			tools: availableToolsForAgent(agent).map((t) => t.name),
+		};
 	} else {
-		agent.permissions = undefined;
+		if (!agent.permissions) return;
+		agent.permissions = {
+			...agent.permissions,
+			tools: undefined,
+		};
 	}
 }
 
 function isToolEnabled(agent: AgentEntry, toolName: string): boolean {
 	if (!hasToolRestriction(agent)) return true;
+	if (!isAgentToolAccessible(agent, toolName)) return false;
 	return agent.permissions?.tools?.includes(toolName) ?? false;
 }
 
 function toggleTool(agent: AgentEntry, toolName: string, enabled: boolean) {
+	if (!isAgentToolAccessible(agent, toolName)) return;
 	if (!agent.permissions) agent.permissions = { tools: [] };
 	if (!agent.permissions.tools) agent.permissions.tools = [];
 	const idx = agent.permissions.tools.indexOf(toolName);
@@ -1631,17 +2076,24 @@ function isCategoryFullyEnabled(agent: AgentEntry, cat: string): boolean {
 	const catTools = availableTools.value.filter(
 		(t) => toolCategory(t.name) === cat,
 	);
-	return catTools.every((t) => isToolEnabled(agent, t.name));
+	const accessibleTools = catTools.filter((tool) =>
+		isAgentToolAccessible(agent, tool.name),
+	);
+	if (!accessibleTools.length) return false;
+	return accessibleTools.every((t) => isToolEnabled(agent, t.name));
 }
 
 function isCategoryPartiallyEnabled(agent: AgentEntry, cat: string): boolean {
 	const catTools = availableTools.value.filter(
 		(t) => toolCategory(t.name) === cat,
 	);
-	const enabledCount = catTools.filter((t) =>
+	const accessibleTools = catTools.filter((tool) =>
+		isAgentToolAccessible(agent, tool.name),
+	);
+	const enabledCount = accessibleTools.filter((t) =>
 		isToolEnabled(agent, t.name),
 	).length;
-	return enabledCount > 0 && enabledCount < catTools.length;
+	return enabledCount > 0 && enabledCount < accessibleTools.length;
 }
 
 function toggleCategory(agent: AgentEntry, cat: string, enabled: boolean) {
@@ -1649,6 +2101,7 @@ function toggleCategory(agent: AgentEntry, cat: string, enabled: boolean) {
 		(t) => toolCategory(t.name) === cat,
 	);
 	for (const t of catTools) {
+		if (!isAgentToolAccessible(agent, t.name)) continue;
 		toggleTool(agent, t.name, enabled);
 	}
 }
@@ -1695,6 +2148,10 @@ async function saveAll() {
 					(normalized.search?.web?.brave_api_key ?? "").trim() || undefined,
 			},
 		};
+
+		for (const agent of draft.value.agents ?? []) {
+			sanitizeAgentToolSelections(agent);
+		}
 
 		// Normalize agent/task values.
 		normalized.agents = (normalized.agents ?? []).map((agent) => ({
@@ -1750,12 +2207,50 @@ async function saveAll() {
 			})),
 			permissions:
 				(agent.permissions?.tools?.length ?? 0) > 0 ||
-				(agent.permissions?.disabledTools?.length ?? 0) > 0
+				(agent.permissions?.disabledTools?.length ?? 0) > 0 ||
+				(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0 ||
+				(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
+				Boolean(agent.permissions?.exec?.shellInterpolate) ||
+				Boolean((agent.permissions?.exec?.shell ?? "").trim()) ||
+				agentPermissionsPreset(agent) !== "standard"
 					? {
+							preset:
+								agentPermissionsPreset(agent) === "standard"
+									? undefined
+									: agentPermissionsPreset(agent),
 							tools: (agent.permissions?.tools ?? []).filter(Boolean),
 							disabledTools: (agent.permissions?.disabledTools ?? [])
 								.map((v) => v.trim())
 								.filter(Boolean),
+							filesystem:
+								(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0
+									? {
+											allowedPaths: (
+												agent.permissions?.filesystem?.allowedPaths ?? []
+											)
+												.map((v) => v.trim())
+												.filter(Boolean),
+										}
+									: undefined,
+							exec:
+								(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
+								Boolean(agent.permissions?.exec?.shellInterpolate) ||
+								Boolean((agent.permissions?.exec?.shell ?? "").trim())
+									? {
+											allowedCommands: (
+												agent.permissions?.exec?.allowedCommands ?? []
+											)
+												.map((v) => v.trim())
+												.filter(Boolean),
+											shellInterpolate:
+												agent.permissions?.exec?.shellInterpolate === true
+													? true
+													: undefined,
+											shell:
+												(agent.permissions?.exec?.shell ?? "").trim() ||
+												undefined,
+										}
+									: undefined,
 						}
 					: undefined,
 		}));

@@ -14,6 +14,7 @@ require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/mattn/go-shellwords v1.0.12
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1

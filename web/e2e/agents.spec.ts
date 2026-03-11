@@ -9,7 +9,19 @@ const CONFIG = {
 			model: "anthropic/claude-sonnet-4-5",
 			memory: "",
 			fallbacks: [],
-			channels: [],
+			channels: [
+				{
+					type: "signal",
+					disabledTools: ["task_run"],
+					allowFrom: [
+						{
+							from: "*",
+							respondToMentions: true,
+							restrictTools: ["task_run", "browser_open", "usage_query"],
+						},
+					],
+				},
+			],
 			tasks: [
 				{
 					name: "daily-briefing",
@@ -18,6 +30,10 @@ const CONFIG = {
 					channel: "last",
 				},
 			],
+			permissions: {
+				preset: "minimal",
+				tools: ["task_run", "auth_set", "browser_open"],
+			},
 		},
 	],
 	models: {
@@ -46,6 +62,12 @@ test.beforeEach(async ({ page }) => {
 				fallbacks: [],
 				state: "idle",
 			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
 		],
 	});
 });
@@ -119,4 +141,69 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 	await expect(
 		page.getByRole("heading", { name: "Extra Secrets", exact: true }),
 	).toBeVisible();
+});
+
+test("permissions preset disables inaccessible tool groups and tools", async ({
+	page,
+}) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	const presetTrigger = page.locator("#tool-preset-assistant");
+	await expect(presetTrigger).toContainText("Minimal");
+	await presetTrigger.click();
+	await expect(page.getByRole("option", { name: /Minimal/ })).toBeVisible();
+	await expect(
+		page.getByTestId("agent-tool-group-checkbox-assistant-auth"),
+	).toBeDisabled();
+	await expect(
+		page.getByTestId("agent-tool-group-checkbox-assistant-auth"),
+	).not.toBeChecked();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-auth_set"),
+	).toBeDisabled();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-auth_set"),
+	).not.toBeChecked();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-browser_open"),
+	).toBeDisabled();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-browser_open"),
+	).not.toBeChecked();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-task_run"),
+	).toBeEnabled();
+	await expect(
+		page.getByTestId("agent-tool-checkbox-assistant-task_run"),
+	).toBeChecked();
+});
+
+test("tool permissions inspector shows resolved final tool set", async ({
+	page,
+}) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	await page.getByTestId("agent-tool-permissions-inspect-assistant").click();
+	await expect(
+		page.getByRole("heading", { name: "Inspect Tool Permissions" }),
+	).toBeVisible();
+	await expect(
+		page.getByTestId("tool-permissions-inspector-output"),
+	).toContainText('"finalTools": [\n    "task_run"\n  ]');
+	await page.getByRole("button", { name: "Close" }).click();
+
+	await page
+		.getByTestId("entry-tool-permissions-inspect-assistant-0-0")
+		.click();
+	await expect(
+		page.getByTestId("tool-permissions-inspector-output"),
+	).toContainText('"restrictionSource": "override"');
+	await expect(
+		page.getByTestId("tool-permissions-inspector-output"),
+	).toContainText('"effectiveDisabledTools": [\n    "task_run"\n  ]');
+	await expect(
+		page.getByTestId("tool-permissions-inspector-output"),
+	).toContainText('"finalTools": []');
 });

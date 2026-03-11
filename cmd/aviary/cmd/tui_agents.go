@@ -33,7 +33,12 @@ const (
 	agentFieldMemoryTokens
 	agentFieldCompactKeep
 	agentFieldRules
+	agentFieldPermissionsPreset
 	agentFieldPermissions
+	agentFieldDisabledTools
+	agentFieldFilesystemAllowedPaths
+	agentFieldExecAllowedCommands
+	agentFieldExecShell
 	chFieldType
 	chFieldToken
 	chFieldChannel
@@ -198,22 +203,59 @@ func (m agentMgrModel) activateEditMenuItem() (tea.Model, tea.Cmd) {
 	case 7:
 		current := ""
 		if m.draft.Permissions != nil {
+			current = string(config.EffectivePermissionsPreset(m.draft.Permissions))
+		}
+		return m.openTextEditor(agentFieldPermissionsPreset, current, "standard")
+	case 8:
+		current := ""
+		if m.draft.Permissions != nil {
 			current = strings.Join(m.draft.Permissions.Tools, ", ")
 		}
 		return m.openTextEditor(agentFieldPermissions, current, "tool_a, tool_b")
-	case 8:
+	case 9:
+		current := ""
+		if m.draft.Permissions != nil {
+			current = strings.Join(m.draft.Permissions.DisabledTools, ", ")
+		}
+		return m.openTextEditor(agentFieldDisabledTools, current, "tool_a, tool_b")
+	case 10:
+		current := ""
+		if m.draft.Permissions != nil && m.draft.Permissions.Filesystem != nil {
+			current = strings.Join(m.draft.Permissions.Filesystem.AllowedPaths, ", ")
+		}
+		return m.openTextEditor(agentFieldFilesystemAllowedPaths, current, "path-a, !path-b")
+	case 11:
+		current := ""
+		if m.draft.Permissions != nil && m.draft.Permissions.Exec != nil {
+			current = strings.Join(m.draft.Permissions.Exec.AllowedCommands, ", ")
+		}
+		return m.openTextEditor(agentFieldExecAllowedCommands, current, "cmd-a, !cmd-b")
+	case 12:
+		perms := m.ensureDraftPermissions()
+		if perms.Exec == nil {
+			perms.Exec = &config.ExecPermissionsConfig{}
+		}
+		perms.Exec.ShellInterpolate = !perms.Exec.ShellInterpolate
+		m.compactDraftPermissions()
+	case 13:
+		current := ""
+		if m.draft.Permissions != nil && m.draft.Permissions.Exec != nil {
+			current = m.draft.Permissions.Exec.Shell
+		}
+		return m.openTextEditor(agentFieldExecShell, current, "pwsh")
+	case 14:
 		m.mode = agentModeChannels
 		if m.channelIdx < 0 {
 			m.channelIdx = 0
 		}
-	case 9:
+	case 15:
 		m.mode = agentModeTasks
 		if m.taskIdx < 0 {
 			m.taskIdx = 0
 		}
-	case 10:
+	case 16:
 		return m.saveEditedAgent()
-	case 11:
+	case 17:
 		m.mode = agentModeList
 	}
 	return m, nil
@@ -272,13 +314,60 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.draft.CompactKeep = parseInt(value)
 	case agentFieldRules:
 		m.draft.Rules = value
-	case agentFieldPermissions:
-		tools := splitCSV(value)
-		if len(tools) == 0 {
-			m.draft.Permissions = nil
-		} else {
-			m.draft.Permissions = &config.PermissionsConfig{Tools: tools}
+	case agentFieldPermissionsPreset:
+		switch config.PermissionsPreset(value) {
+		case "", config.PermissionsPresetFull, config.PermissionsPresetStandard, config.PermissionsPresetMinimal:
+			if strings.TrimSpace(value) == "" || config.PermissionsPreset(value) == config.PermissionsPresetStandard {
+				if m.draft.Permissions != nil {
+					m.draft.Permissions.Preset = ""
+				}
+			} else {
+				m.ensureDraftPermissions().Preset = config.PermissionsPreset(value)
+			}
+			m.compactDraftPermissions()
 		}
+	case agentFieldPermissions:
+		m.ensureDraftPermissions().Tools = splitCSV(value)
+		m.compactDraftPermissions()
+	case agentFieldDisabledTools:
+		m.ensureDraftPermissions().DisabledTools = splitCSV(value)
+		m.compactDraftPermissions()
+	case agentFieldFilesystemAllowedPaths:
+		allowedPaths := splitCSV(value)
+		perms := m.ensureDraftPermissions()
+		if len(allowedPaths) == 0 {
+			perms.Filesystem = nil
+		} else {
+			perms.Filesystem = &config.FilesystemPermissionsConfig{AllowedPaths: allowedPaths}
+		}
+		m.compactDraftPermissions()
+	case agentFieldExecAllowedCommands:
+		allowedCommands := splitCSV(value)
+		perms := m.ensureDraftPermissions()
+		if len(allowedCommands) == 0 {
+			if perms.Exec != nil {
+				perms.Exec.AllowedCommands = nil
+			}
+		} else {
+			if perms.Exec == nil {
+				perms.Exec = &config.ExecPermissionsConfig{}
+			}
+			perms.Exec.AllowedCommands = allowedCommands
+		}
+		m.compactDraftPermissions()
+	case agentFieldExecShell:
+		perms := m.ensureDraftPermissions()
+		if strings.TrimSpace(value) == "" {
+			if perms.Exec != nil {
+				perms.Exec.Shell = ""
+			}
+		} else {
+			if perms.Exec == nil {
+				perms.Exec = &config.ExecPermissionsConfig{}
+			}
+			perms.Exec.Shell = value
+		}
+		m.compactDraftPermissions()
 	case chFieldType:
 		m.channel.Type = value
 	case chFieldToken:
@@ -710,9 +799,25 @@ func (m agentMgrModel) viewTaskEditor() string {
 }
 
 func (m agentMgrModel) editMenuItems() [][2]string {
+	preset := string(config.PermissionsPresetStandard)
 	perms := ""
+	disabledTools := ""
+	filesystemAllowedPaths := ""
+	execAllowedCommands := ""
+	execShellInterpolate := boolLabel(false)
+	execShell := ""
 	if m.draft.Permissions != nil {
+		preset = string(config.EffectivePermissionsPreset(m.draft.Permissions))
 		perms = strings.Join(m.draft.Permissions.Tools, ", ")
+		disabledTools = strings.Join(m.draft.Permissions.DisabledTools, ", ")
+		if m.draft.Permissions.Filesystem != nil {
+			filesystemAllowedPaths = strings.Join(m.draft.Permissions.Filesystem.AllowedPaths, ", ")
+		}
+		if m.draft.Permissions.Exec != nil {
+			execAllowedCommands = strings.Join(m.draft.Permissions.Exec.AllowedCommands, ", ")
+			execShellInterpolate = boolLabel(m.draft.Permissions.Exec.ShellInterpolate)
+			execShell = m.draft.Permissions.Exec.Shell
+		}
 	}
 	return [][2]string{
 		{"Name", m.draft.Name},
@@ -722,11 +827,58 @@ func (m agentMgrModel) editMenuItems() [][2]string {
 		{"Memory tokens", intString(m.draft.MemoryTokens)},
 		{"Compact keep", intString(m.draft.CompactKeep)},
 		{"Rules", m.draft.Rules},
-		{"Permissions", perms},
+		{"Permissions preset", preset},
+		{"Allowed tools", perms},
+		{"Disabled tools", disabledTools},
+		{"Filesystem paths", filesystemAllowedPaths},
+		{"Exec commands", execAllowedCommands},
+		{"Exec interpolate", execShellInterpolate},
+		{"Exec shell", execShell},
 		{"Channels", fmt.Sprintf("%d configured", len(m.draft.Channels))},
 		{"Tasks", fmt.Sprintf("%d configured", len(m.draft.Tasks))},
 		{"Save", "write config"},
 		{"Back", "discard editor"},
+	}
+}
+
+func (m *agentMgrModel) ensureDraftPermissions() *config.PermissionsConfig {
+	if m.draft.Permissions == nil {
+		m.draft.Permissions = &config.PermissionsConfig{}
+	}
+	return m.draft.Permissions
+}
+
+func (m *agentMgrModel) compactDraftPermissions() {
+	if m.draft.Permissions == nil {
+		return
+	}
+	perms := m.draft.Permissions
+	if len(perms.Tools) == 0 {
+		perms.Tools = nil
+	}
+	if len(perms.DisabledTools) == 0 {
+		perms.DisabledTools = nil
+	}
+	if perms.Filesystem != nil && len(perms.Filesystem.AllowedPaths) == 0 {
+		perms.Filesystem = nil
+	}
+	if perms.Exec != nil {
+		if len(perms.Exec.AllowedCommands) == 0 {
+			perms.Exec.AllowedCommands = nil
+		}
+		if len(perms.Exec.AllowedCommands) == 0 && !perms.Exec.ShellInterpolate && strings.TrimSpace(perms.Exec.Shell) == "" {
+			perms.Exec = nil
+		}
+	}
+	if config.EffectivePermissionsPreset(perms) == config.PermissionsPresetStandard {
+		perms.Preset = ""
+	}
+	if len(perms.Tools) == 0 &&
+		len(perms.DisabledTools) == 0 &&
+		perms.Filesystem == nil &&
+		perms.Exec == nil &&
+		perms.Preset == "" {
+		m.draft.Permissions = nil
 	}
 }
 

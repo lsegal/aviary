@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { useMCP } from "../composables/useMCP";
+import type { PermissionsPreset } from "../lib/toolPermissions";
 
 export interface TLSConfig {
 	cert: string;
@@ -41,8 +42,17 @@ export interface AgentChannel {
 }
 
 export interface AgentPermissions {
+	preset?: PermissionsPreset;
 	tools?: string[];
 	disabledTools?: string[];
+	filesystem?: {
+		allowedPaths?: string[];
+	};
+	exec?: {
+		allowedCommands?: string[];
+		shellInterpolate?: boolean;
+		shell?: string;
+	};
 }
 
 export interface AgentEntry {

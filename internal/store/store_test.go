@@ -105,6 +105,8 @@ func TestEnsureDirs_Error(t *testing.T) {
 func TestPathHelpers(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
+	SetWorkspaceDir(tmp)
+	t.Cleanup(func() { SetWorkspaceDir("") })
 
 	base := filepath.Join(tmp, "aviary")
 
@@ -174,6 +176,12 @@ func TestPathHelpers(t *testing.T) {
 		want := filepath.Join(base, DirAgents, "researcher", "RULES.md")
 		assert.Equal(t, want, got)
 
+	})
+
+	t.Run("WorkspaceNotePath", func(t *testing.T) {
+		got := WorkspaceNotePath("notes/project plan.md")
+		want := filepath.Join(tmp, "notes", "project plan.md")
+		assert.Equal(t, want, got)
 	})
 }
 
@@ -321,6 +329,15 @@ func TestUsagePath(t *testing.T) {
 	want := filepath.Join(SubDir(DirUsage), "usage.jsonl")
 	assert.Equal(t, want, got)
 
+}
+
+func TestWorkspaceDirAndNotesDir(t *testing.T) {
+	tmp := t.TempDir()
+	SetWorkspaceDir(tmp)
+	t.Cleanup(func() { SetWorkspaceDir("") })
+
+	assert.Equal(t, tmp, WorkspaceDir())
+	assert.Equal(t, filepath.Join(tmp, "notes"), NotesDir())
 }
 
 // TestIntegration_StoreSetup exercises DataDir + SubDir + EnsureDirs together,

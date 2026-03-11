@@ -116,6 +116,9 @@ func stub(name string) (*sdkmcp.CallToolResult, struct{}, error) {
 func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
 	registerRulesTools(s)
+	registerNoteTools(s)
+	registerFileTools(s)
+	registerExecTools(s)
 	registerSessionTools(s)
 	registerTaskTools(s)
 	registerJobTools(s)
@@ -421,6 +424,36 @@ func registerRulesTools(s *sdkmcp.Server) {
 
 type sessionAgentArgs struct {
 	Agent string `json:"agent"`
+}
+
+type noteWriteArgs struct {
+	File    string `json:"file"`
+	Content string `json:"content"`
+}
+
+func registerNoteTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "note_write",
+		Description: "Write a workspace note to notes/<descriptive_file>.md using markdown content. Arguments: file (string, required) - descriptive filename; content (string, required) - summarized markdown to write.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args noteWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.File) == "" {
+			return nil, struct{}{}, fmt.Errorf("file is required")
+		}
+		if strings.TrimSpace(args.Content) == "" {
+			return nil, struct{}{}, fmt.Errorf("content is required")
+		}
+
+		path := store.WorkspaceNotePath(args.File)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, struct{}{}, fmt.Errorf("creating notes dir: %w", err)
+		}
+
+		content := strings.TrimRight(args.Content, "\r\n") + "\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return nil, struct{}{}, fmt.Errorf("writing note: %w", err)
+		}
+		return text(fmt.Sprintf("note written: %s", path))
+	})
 }
 
 type sessionMessagesArgs struct {

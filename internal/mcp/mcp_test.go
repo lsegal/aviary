@@ -12,12 +12,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
@@ -1200,6 +1202,253 @@ func TestMemoryNotesTools(t *testing.T) {
 
 }
 
+func TestNoteWriteTool(t *testing.T) {
+	workspace := t.TempDir()
+	store.SetWorkspaceDir(workspace)
+	t.Cleanup(func() { store.SetWorkspaceDir("") })
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	out, err := d.CallTool(context.Background(), "note_write", map[string]any{
+		"file":    "project kickoff",
+		"content": "# Project Kickoff\n- Capture goals\n- Confirm owners",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "note written:")
+
+	data, err := os.ReadFile(store.WorkspaceNotePath("project kickoff"))
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "# Project Kickoff")
+	assert.Contains(t, string(data), "Confirm owners")
+}
+
+func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatcher, context.Context, string) {
+	t.Helper()
+	base := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+	store.SetWorkspaceDir(workspace)
+	t.Cleanup(func() { store.SetWorkspaceDir("") })
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Permissions: &config.PermissionsConfig{
+				Filesystem: &config.FilesystemPermissionsConfig{AllowedPaths: allowedPaths},
+			},
+		}},
+	})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	require.NoError(t, err)
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "agent_bot")
+	return NewDispatcher("https://localhost:16677", ""), ctx, workspace
+}
+
+func setupMCPWithExecAgent(t *testing.T, execPerms *config.ExecPermissionsConfig) (*Dispatcher, context.Context) {
+	t.Helper()
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+			Permissions: &config.PermissionsConfig{
+				Exec: execPerms,
+			},
+		}},
+	})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	require.NoError(t, err)
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "agent_bot")
+	return NewDispatcher("https://localhost:16677", ""), ctx
+}
+
+func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
+	d, ctx, workspace := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**", "!./sandbox/private/**", "./sandbox/private/keep.txt"})
+
+	out, err := d.CallTool(ctx, "file_write", map[string]any{
+		"path":    "./sandbox/demo.txt",
+		"content": "hello",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "file written")
+
+	out, err = d.CallTool(ctx, "file_append", map[string]any{
+		"path":    "./sandbox/demo.txt",
+		"content": " world",
+	})
+	require.NoError(t, err)
+
+	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/demo.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"content": "hello world"`)
+
+	out, err = d.CallTool(ctx, "file_copy", map[string]any{
+		"source":      "./sandbox/demo.txt",
+		"destination": "./sandbox/demo-copy.txt",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "file copied")
+
+	out, err = d.CallTool(ctx, "file_move", map[string]any{
+		"source":      "./sandbox/demo-copy.txt",
+		"destination": "./sandbox/moved.txt",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "file moved")
+
+	out, err = d.CallTool(ctx, "file_truncate", map[string]any{
+		"path": "./sandbox/moved.txt",
+		"size": 5,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "5 bytes")
+
+	data, err := os.ReadFile(filepath.Join(workspace, "sandbox", "moved.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(data))
+
+	out, err = d.CallTool(ctx, "file_delete", map[string]any{"path": "./sandbox/moved.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "file deleted")
+
+	_, err = os.Stat(filepath.Join(workspace, "sandbox", "moved.txt"))
+	assert.Error(t, err)
+
+	out, err = d.CallTool(ctx, "file_write", map[string]any{
+		"path":    "./sandbox/private/nope.txt",
+		"content": "blocked",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "outside the filesystem allowlist")
+
+	out, err = d.CallTool(ctx, "file_write", map[string]any{
+		"path":    "./sandbox/private/keep.txt",
+		"content": "allowed",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "file written")
+}
+
+func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
+	d, ctx, workspace := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**"})
+
+	out, err := d.CallTool(ctx, "file_write", map[string]any{
+		"path":    "./sandbox/../../escape.txt",
+		"content": "blocked",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "outside the filesystem allowlist")
+
+	outside := t.TempDir()
+	link := filepath.Join(workspace, "sandbox-link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink setup unavailable: %v", err)
+	}
+
+	out, err = d.CallTool(ctx, "file_write", map[string]any{
+		"path":    "./sandbox-link/evil.txt",
+		"content": "blocked",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "outside the filesystem allowlist")
+}
+
+func TestFileToolsRequireFilesystemAllowlistAndAgentContext(t *testing.T) {
+	d, _, _ := setupMCPWithFilesystemAgent(t, nil)
+
+	out, err := d.CallTool(context.Background(), "file_read", map[string]any{"path": "./x.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "agent session context")
+
+	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./x.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "allowedPaths")
+}
+
+func TestExecTool_RequiresAgentContextAndAllowlist(t *testing.T) {
+	d, _ := setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{AllowedCommands: []string{"go env *"}})
+
+	out, err := d.CallTool(context.Background(), "exec", map[string]any{"command": "go env GOOS"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "agent session context")
+
+	d2, ctx2 := setupMCPWithExecAgent(t, nil)
+	out, err = d2.CallTool(ctx2, "exec", map[string]any{"command": "go env GOOS"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "allowedCommands")
+}
+
+func TestExecTool_NonShellAndShellModes(t *testing.T) {
+	d, ctx := setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{
+		AllowedCommands: []string{"go env *"},
+	})
+
+	out, err := d.CallTool(ctx, "exec", map[string]any{"command": `go env "GOOS"`})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"shell_interpolate": false`)
+	assert.Contains(t, out, `"GOOS"`)
+
+	var shellCommand string
+	if runtime.GOOS == "windows" {
+		shellCommand = `go env GOOS | findstr .`
+	} else {
+		shellCommand = `go env GOOS | cat`
+	}
+
+	d, ctx = setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{
+		AllowedCommands:  []string{"go env GOOS*"},
+		ShellInterpolate: true,
+	})
+	out, err = d.CallTool(ctx, "exec", map[string]any{"command": shellCommand})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"shell_interpolate": true`)
+	assert.Contains(t, out, `"stdout"`)
+}
+
+func TestExecTool_OrderedAllowlist(t *testing.T) {
+	d, ctx := setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{
+		AllowedCommands: []string{"*", "!go env *", "go env GOOS"},
+	})
+
+	out, err := d.CallTool(ctx, "exec", map[string]any{"command": "go env GOARCH"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "outside the exec allowlist")
+
+	out, err = d.CallTool(ctx, "exec", map[string]any{"command": "go env GOOS"})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"exit_code": 0`)
+}
+
 func TestJobQueryTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -1628,6 +1877,16 @@ func TestMemoryTools_NilManager(t *testing.T) {
 	for _, tc := range toolCases {
 		toolCallContains(t, d, tc.tool, tc.args, "memory manager not initialized")
 	}
+}
+
+func TestNoteWriteTool_Validation(t *testing.T) {
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "note_write", map[string]any{"file": "", "content": "x"}, "file is required")
+	toolCallContains(t, d, "note_write", map[string]any{"file": "test", "content": ""}, "content is required")
 }
 
 func TestAgentRulesGetSet_WithTempDir(t *testing.T) {

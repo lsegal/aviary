@@ -371,3 +371,62 @@ func TestDispatcherResolve_ServerRunningWithToken(t *testing.T) {
 	assert.True(t, ok)
 
 }
+
+func TestAgentToolClient_ListToolsHidesExecWithoutPermissions(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	tc, err := NewAgentToolClient(ctx)
+	assert.NoError(t, err)
+	defer tc.Close() //nolint:errcheck
+
+	tools, err := tc.ListTools(ctx)
+	assert.NoError(t, err)
+	for _, tool := range tools {
+		assert.NotEqual(t, "exec", tool.Name)
+	}
+}
+
+func TestAgentToolClient_ListToolsHonorsPermissionsPreset(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{
+		Name:  "bot",
+		Model: "test/x",
+		Permissions: &config.PermissionsConfig{
+			Preset: config.PermissionsPresetMinimal,
+			Exec:   &config.ExecPermissionsConfig{AllowedCommands: []string{"echo *"}},
+		},
+	}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	tc, err := NewAgentToolClient(ctx)
+	assert.NoError(t, err)
+	defer tc.Close() //nolint:errcheck
+
+	tools, err := tc.ListTools(ctx)
+	assert.NoError(t, err)
+
+	names := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		names[tool.Name] = struct{}{}
+	}
+
+	_, hasTask := names["task_run"]
+	_, hasAuth := names["auth_set"]
+	_, hasBrowser := names["browser_open"]
+	_, hasExec := names["exec"]
+
+	assert.True(t, hasTask)
+	assert.False(t, hasAuth)
+	assert.False(t, hasBrowser)
+	assert.False(t, hasExec)
+}

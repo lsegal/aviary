@@ -66,6 +66,11 @@
 						"type": "object",
 						"additionalProperties": false,
 						"properties": {
+							"preset": {
+								"type": "string",
+								"enum": ["full", "standard", "minimal"],
+								"description": "Maximum tool groups this agent may use. Defaults to standard when omitted."
+							},
 							"tools": {
 								"type": "array",
 								"items": { "type": "string" }
@@ -73,6 +78,28 @@
 							"disabledTools": {
 								"type": "array",
 								"items": { "type": "string" }
+							},
+							"filesystem": {
+								"type": "object",
+								"additionalProperties": false,
+								"properties": {
+									"allowedPaths": {
+										"type": "array",
+										"items": { "type": "string" }
+									}
+								}
+							},
+							"exec": {
+								"type": "object",
+								"additionalProperties": false,
+								"properties": {
+									"allowedCommands": {
+										"type": "array",
+										"items": { "type": "string" }
+									},
+									"shellInterpolate": { "type": "boolean", "default": false },
+									"shell": { "type": "string" }
+								}
 							}
 						}
 					},

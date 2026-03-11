@@ -46,13 +46,31 @@ type TLSConfig struct {
 	Key  string `yaml:"key,omitempty"  json:"key,omitempty"`
 }
 
+// FilesystemPermissionsConfig restricts file tool access to ordered allow/deny
+// path rules. Rules use gitignore-style globbing and are processed in order.
+type FilesystemPermissionsConfig struct {
+	AllowedPaths []string `yaml:"allowedPaths,omitempty" json:"allowedPaths,omitempty"`
+}
+
+// ExecPermissionsConfig restricts host command execution for an agent.
+// Rules are ordered glob patterns matched against the raw command string.
+// A leading "!" negates a match. Rules are processed in order.
+type ExecPermissionsConfig struct {
+	AllowedCommands  []string `yaml:"allowedCommands,omitempty"  json:"allowedCommands,omitempty"`
+	ShellInterpolate bool     `yaml:"shellInterpolate,omitempty" json:"shellInterpolate,omitempty"`
+	Shell            string   `yaml:"shell,omitempty"            json:"shell,omitempty"`
+}
+
 // PermissionsConfig restricts which MCP tools an agent may use.
 // When Tools is non-empty it acts as an allow-list: only the named tools are
 // offered to the agent.  An empty or absent Permissions block means all tools
 // are available (no restriction).
 type PermissionsConfig struct {
-	Tools         []string `yaml:"tools,omitempty"         json:"tools,omitempty"`
-	DisabledTools []string `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
+	Preset        PermissionsPreset            `yaml:"preset,omitempty"        json:"preset,omitempty"`
+	Tools         []string                     `yaml:"tools,omitempty"         json:"tools,omitempty"`
+	DisabledTools []string                     `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
+	Filesystem    *FilesystemPermissionsConfig `yaml:"filesystem,omitempty"    json:"filesystem,omitempty"`
+	Exec          *ExecPermissionsConfig       `yaml:"exec,omitempty"          json:"exec,omitempty"`
 }
 
 // AgentConfig describes a single agent.
@@ -150,8 +168,9 @@ type ChannelConfig struct {
 	// ShowTyping controls whether a typing indicator is shown while the agent
 	// processes a message. Defaults to true for channels that support it.
 	ShowTyping *bool `yaml:"showTyping,omitempty"     json:"showTyping,omitempty"`
-	// ReactToEmoji controls whether the agent mirrors emoji reactions placed on
-	// its own messages. Defaults to true for channels that support it.
+	// ReactToEmoji controls whether the agent reacts to emoji reactions placed
+	// on its own messages. On Signal, this treats the emoji as a prompt and
+	// mirrors the same reaction back. Defaults to true for supported channels.
 	ReactToEmoji *bool `yaml:"reactToEmoji,omitempty"   json:"reactToEmoji,omitempty"`
 	// ReplyToReplies controls whether the agent responds when someone replies
 	// to one of its own messages (bypassing normal allowFrom filtering).
@@ -313,14 +332,24 @@ func normalize(cfg *Config) {
 		cfg.Skills = nil
 	}
 	for i := range cfg.Agents {
+		if cfg.Agents[i].Permissions != nil {
+			preset := EffectivePermissionsPreset(cfg.Agents[i].Permissions)
+			if preset == PermissionsPresetStandard {
+				cfg.Agents[i].Permissions.Preset = ""
+			}
+			cfg.Agents[i].Permissions.Tools = ClampToolNamesForPreset(preset, cfg.Agents[i].Permissions.Tools)
+			cfg.Agents[i].Permissions.DisabledTools = ClampToolNamesForPreset(preset, cfg.Agents[i].Permissions.DisabledTools)
+		}
 		if len(cfg.Agents[i].Channels) == 0 {
 			cfg.Agents[i].Channels = nil
 		}
 		for j := range cfg.Agents[i].Channels {
 			ch := &cfg.Agents[i].Channels[j]
+			preset := EffectivePermissionsPreset(cfg.Agents[i].Permissions)
 			if len(ch.Fallbacks) == 0 {
 				ch.Fallbacks = nil
 			}
+			ch.DisabledTools = ClampToolNamesForPreset(preset, ch.DisabledTools)
 			if len(ch.DisabledTools) == 0 {
 				ch.DisabledTools = nil
 			}
@@ -334,6 +363,7 @@ func normalize(cfg *Config) {
 				if len(ch.AllowFrom[k].MentionPrefixes) == 0 {
 					ch.AllowFrom[k].MentionPrefixes = nil
 				}
+				ch.AllowFrom[k].RestrictTools = ClampToolNamesForPreset(preset, ch.AllowFrom[k].RestrictTools)
 				if len(ch.AllowFrom[k].RestrictTools) == 0 {
 					ch.AllowFrom[k].RestrictTools = nil
 				}
@@ -352,8 +382,27 @@ func normalize(cfg *Config) {
 			cfg.Agents[i].Permissions.DisabledTools = nil
 		}
 		if cfg.Agents[i].Permissions != nil &&
+			cfg.Agents[i].Permissions.Filesystem != nil &&
+			len(cfg.Agents[i].Permissions.Filesystem.AllowedPaths) == 0 {
+			cfg.Agents[i].Permissions.Filesystem = nil
+		}
+		if cfg.Agents[i].Permissions != nil &&
+			cfg.Agents[i].Permissions.Exec != nil &&
+			len(cfg.Agents[i].Permissions.Exec.AllowedCommands) == 0 {
+			cfg.Agents[i].Permissions.Exec.AllowedCommands = nil
+		}
+		if cfg.Agents[i].Permissions != nil &&
+			cfg.Agents[i].Permissions.Exec != nil &&
+			len(cfg.Agents[i].Permissions.Exec.AllowedCommands) == 0 &&
+			!cfg.Agents[i].Permissions.Exec.ShellInterpolate &&
+			cfg.Agents[i].Permissions.Exec.Shell == "" {
+			cfg.Agents[i].Permissions.Exec = nil
+		}
+		if cfg.Agents[i].Permissions != nil &&
 			len(cfg.Agents[i].Permissions.Tools) == 0 &&
-			len(cfg.Agents[i].Permissions.DisabledTools) == 0 {
+			len(cfg.Agents[i].Permissions.DisabledTools) == 0 &&
+			cfg.Agents[i].Permissions.Filesystem == nil &&
+			cfg.Agents[i].Permissions.Exec == nil {
 			cfg.Agents[i].Permissions = nil
 		}
 	}

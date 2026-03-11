@@ -85,8 +85,8 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 		method, _ := req["method"].(string)
 		reqID := req["id"]
 
-		// Capture send requests.
-		if method == "send" {
+		// Capture outbound RPC requests used by tests.
+		if method == "send" || method == "sendReaction" {
 			fd.mu.Lock()
 			fd.sent = append(fd.sent, req)
 			fd.mu.Unlock()

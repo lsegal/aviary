@@ -22,11 +22,17 @@ const (
 )
 
 var customDataDir string
+var customWorkspaceDir string
 
 // SetDataDir overrides the directory returned by DataDir.
 // Pass an empty string to restore automatic resolution via XDG_CONFIG_HOME or ~/.config.
 // This is intended for the --data-dir CLI flag and for tests.
 func SetDataDir(dir string) { customDataDir = dir }
+
+// SetWorkspaceDir overrides the directory returned by WorkspaceDir.
+// Pass an empty string to restore automatic resolution via the process working directory.
+// This is intended for tests and tools that need repo-local artifacts.
+func SetWorkspaceDir(dir string) { customWorkspaceDir = dir }
 
 // DataDir returns the Aviary data directory.
 // Resolution order: SetDataDir value > XDG_CONFIG_HOME > ~/.config/aviary.
@@ -39,6 +45,19 @@ func DataDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "aviary")
+}
+
+// WorkspaceDir returns the current workspace root.
+// Resolution order: SetWorkspaceDir value > process working directory.
+func WorkspaceDir() string {
+	if customWorkspaceDir != "" {
+		return customWorkspaceDir
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
 }
 
 // SubDir returns the full path to a named subdirectory under DataDir.
@@ -229,6 +248,22 @@ func NotesPath(poolID string) string {
 // UsagePath returns the path to the global usage log file.
 func UsagePath() string {
 	return filepath.Join(SubDir(DirUsage), "usage.jsonl")
+}
+
+// NotesDir returns the workspace-local notes directory: <workspace>/notes.
+func NotesDir() string {
+	return filepath.Join(WorkspaceDir(), "notes")
+}
+
+// WorkspaceNotePath returns the workspace-local path for a markdown note file.
+// The provided name may include a ".md" suffix and/or a leading "notes/" segment.
+func WorkspaceNotePath(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "notes/")
+	name = strings.TrimPrefix(name, "notes\\")
+	name = strings.TrimSuffix(name, ".md")
+	name = sanitizeFileComponent(name)
+	return filepath.Join(NotesDir(), name+".md")
 }
 
 func sanitizeFileComponent(s string) string {

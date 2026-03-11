@@ -926,18 +926,23 @@ type signalDataMessage struct {
 	} `json:"groupInfo"`
 }
 
+type signalReactionMessage struct {
+	Emoji               string `json:"emoji"`
+	TargetAuthor        string `json:"targetAuthor"`
+	TargetSentTimestamp int64  `json:"targetSentTimestamp"`
+	IsRemove            bool   `json:"isRemove"`
+	GroupInfo           *struct {
+		GroupID string `json:"groupId"`
+	} `json:"groupInfo"`
+}
+
 // receiveParams is the params block of a "receive" notification.
 type receiveParams struct {
 	Envelope struct {
-		Source          string             `json:"source"`
-		Timestamp       int64              `json:"timestamp"`
-		DataMessage     *signalDataMessage `json:"dataMessage"`
-		ReactionMessage *struct {
-			Emoji               string `json:"emoji"`
-			TargetAuthor        string `json:"targetAuthor"`
-			TargetSentTimestamp int64  `json:"targetSentTimestamp"`
-			IsRemove            bool   `json:"isRemove"`
-		} `json:"reactionMessage"`
+		Source          string                 `json:"source"`
+		Timestamp       int64                  `json:"timestamp"`
+		DataMessage     *signalDataMessage     `json:"dataMessage"`
+		ReactionMessage *signalReactionMessage `json:"reactionMessage"`
 	} `json:"envelope"`
 }
 
@@ -959,12 +964,13 @@ func (c *SignalChannel) dispatch(line []byte) {
 
 	env := p.Envelope
 
-	// Mirror emoji reactions placed on the agent's own messages.
+	// Treat emoji reactions on the agent's own messages as direct prompts.
 	if r := env.ReactionMessage; r != nil && !r.IsRemove &&
 		c.reactToEmoji && c.phone != "" && r.TargetAuthor == c.phone {
 		if err := c.sendReaction(env.Source, r.Emoji, r.TargetAuthor, r.TargetSentTimestamp); err != nil {
 			slog.Warn("signal: failed to mirror reaction", "err", err)
 		}
+		c.dispatchReactionEnvelope(env.Source, env.Timestamp, r)
 		return
 	}
 
@@ -1039,6 +1045,56 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			From:          source,
 			Channel:       channelID,
 			Text:          dataMessage.Message,
+			RestrictTools: result.restrictTools,
+			DisabledTools: c.disabledTools,
+			Model:         result.model,
+			Fallbacks:     result.fallbacks,
+		}
+		if im.Model == "" {
+			im.Model = c.model
+		}
+		if len(im.Fallbacks) == 0 {
+			im.Fallbacks = c.fallbacks
+		}
+		fn(im)
+	} else {
+		slog.Debug("signal: no handler registered", "from", source)
+	}
+}
+
+func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int64, reactionMessage *signalReactionMessage) {
+	if reactionMessage == nil || strings.TrimSpace(reactionMessage.Emoji) == "" {
+		return
+	}
+
+	channelID := source
+	if reactionMessage.GroupInfo != nil && reactionMessage.GroupInfo.GroupID != "" {
+		channelID = reactionMessage.GroupInfo.GroupID
+	}
+
+	result := allowResult{allowed: true}
+	if r := checkAllowed(c.allowFrom, source, channelID, reactionMessage.Emoji, channelID != source, "", false); r.allowed {
+		result.restrictTools = r.restrictTools
+		result.model = r.model
+		result.fallbacks = r.fallbacks
+	}
+
+	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+			slog.Warn("signal: failed to send read receipt", "err", err)
+		}
+	}
+
+	c.handlerMu.RLock()
+	fn := c.handler
+	c.handlerMu.RUnlock()
+
+	if fn != nil {
+		im := IncomingMessage{
+			Type:          "signal",
+			From:          source,
+			Channel:       channelID,
+			Text:          reactionMessage.Emoji,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
 			Model:         result.model,

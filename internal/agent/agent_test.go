@@ -88,6 +88,29 @@ func (f *fakeToolClient) CallToolText(_ context.Context, _ string, _ map[string]
 }
 func (f *fakeToolClient) Close() error { return nil }
 
+type recordingToolClient struct {
+	tools   []ToolInfo
+	mu      sync.Mutex
+	calls   []toolCall
+	results map[string]string
+}
+
+func (r *recordingToolClient) ListTools(_ context.Context) ([]ToolInfo, error) { return r.tools, nil }
+
+func (r *recordingToolClient) CallToolText(_ context.Context, name string, args map[string]any) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, toolCall{Tool: name, Arguments: args})
+	if r.results != nil {
+		if result, ok := r.results[name]; ok {
+			return result, nil
+		}
+	}
+	return "", nil
+}
+
+func (r *recordingToolClient) Close() error { return nil }
+
 func (m *mockProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -148,6 +171,17 @@ func TestParseToolCall_Variants(t *testing.T) {
 	}
 }
 
+func TestParseInlineToolCalls(t *testing.T) {
+	input := `[tool] {"name":"browser_click","arguments":{"selector":"a[href=\"/chat\"]","tab_id":"tab123"}}[tool] {"name":"browser_screenshot","arguments":{"tab_id":"tab123"}} Sent the Chat section screenshot.`
+
+	calls, trailing, ok := parseInlineToolCalls(input)
+	assert.True(t, ok)
+	assert.Len(t, calls, 2)
+	assert.Equal(t, "browser_click", calls[0].Tool)
+	assert.Equal(t, "browser_screenshot", calls[1].Tool)
+	assert.Equal(t, "Sent the Chat section screenshot.", trailing)
+}
+
 func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
 		return &fakeToolClient{tools: []ToolInfo{{Name: "agent_update", Description: "Update an agent"}}}, nil
@@ -161,7 +195,13 @@ func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 
 	runner := NewAgentRunner(
 		&domain.Agent{ID: "agent_assistant", Name: "assistant", Model: "anthropic/claude"},
-		&config.AgentConfig{Name: "assistant", Model: "anthropic/claude"},
+		&config.AgentConfig{
+			Name:  "assistant",
+			Model: "anthropic/claude",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetFull,
+			},
+		},
 		provider,
 		nil,
 		nil,
@@ -186,6 +226,69 @@ func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 	assert.GreaterOrEqual(t, provider.callCount(), 2)
 	assert.False(t, strings.Contains(strings.ToLower(gotText.String()), "don't have direct access"))
 
+}
+
+func TestAgentRunner_ExecutesInlineToolBlocks(t *testing.T) {
+	toolClient := &recordingToolClient{
+		tools: []ToolInfo{
+			{Name: "browser_click", Description: "Click in the browser"},
+			{Name: "browser_screenshot", Description: "Take a screenshot"},
+			{Name: "channel_send_file", Description: "Send a file to the channel"},
+		},
+		results: map[string]string{
+			"browser_click":      "clicked",
+			"browser_screenshot": `{"file_path":"C:\\tmp\\chat.png"}`,
+			"channel_send_file":  "sent",
+		},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{
+			Type: llm.EventTypeText,
+			Text: `[tool] {"name":"browser_click","arguments":{"selector":"a[href=\"/chat\"]","tab_id":"tab123"}}[tool] {"name":"browser_screenshot","arguments":{"tab_id":"tab123"}}[tool] {"name":"channel_send_file","arguments":{"caption":"Chat Section","file_path":"C:\\Users\\Loren\\.config\\aviary\\screenshots\\chat.png"}}Sent the Chat section screenshot.`,
+		}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: "Which one next?"}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_inline_tools", Name: "inline-tools", Model: "test/model"},
+		&config.AgentConfig{Name: "inline-tools", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	var gotText strings.Builder
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "take the screenshot", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			gotText.WriteString(e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.GreaterOrEqual(t, provider.callCount(), 2)
+	assert.Len(t, toolClient.calls, 3)
+	assert.Equal(t, "browser_click", toolClient.calls[0].Tool)
+	assert.Equal(t, "browser_screenshot", toolClient.calls[1].Tool)
+	assert.Equal(t, "channel_send_file", toolClient.calls[2].Tool)
+	assert.NotContains(t, gotText.String(), `"[name":"browser_click"`)
+	assert.Contains(t, gotText.String(), "Which one next?")
 }
 
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
@@ -649,6 +752,34 @@ func TestFilterTools_NoRestrictions(t *testing.T) {
 	filtered := runner.filterTools(tools, nil, nil)
 	assert.Equal(t, 2, len(filtered))
 
+}
+
+func TestFilterTools_PermissionsPresetCapsAvailableTools(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{
+			Name: "bot",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetMinimal,
+				Tools:  []string{"task_run", "browser_open", "auth_set"},
+			},
+		},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	tools := []ToolInfo{
+		{Name: "task_run"},
+		{Name: "browser_open"},
+		{Name: "auth_set"},
+		{Name: "job_list"},
+	}
+
+	filtered := runner.filterTools(tools, nil, nil)
+	if assert.Len(t, filtered, 1) {
+		assert.Equal(t, "task_run", filtered[0].Name)
+	}
 }
 
 func TestLoadRules_InlineText(t *testing.T) {
@@ -1247,6 +1378,8 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	assert.True(t, strings.Contains(out, "tool_a"))
 	assert.True(t, strings.Contains(out, "does a"))
 	assert.True(t, strings.Contains(out, "tool_b"))
+	assert.True(t, strings.Contains(out, "note_write"))
+	assert.True(t, strings.Contains(out, "memory_store only"))
 
 	// Without agent name.
 	out2 := buildToolSystemPrompt("", tools)

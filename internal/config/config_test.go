@@ -386,6 +386,28 @@ func TestNormalize(t *testing.T) {
 
 	})
 
+	t.Run("empty filesystem permissions normalized", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{
+			Name: "bot",
+			Permissions: &PermissionsConfig{
+				Filesystem: &FilesystemPermissionsConfig{AllowedPaths: []string{}},
+			},
+		}}}
+		normalize(cfg)
+		assert.Nil(t, cfg.Agents[0].Permissions)
+	})
+
+	t.Run("empty exec allowed commands normalized", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{
+			Name: "bot",
+			Permissions: &PermissionsConfig{
+				Exec: &ExecPermissionsConfig{AllowedCommands: []string{}},
+			},
+		}}}
+		normalize(cfg)
+		assert.Nil(t, cfg.Agents[0].Permissions)
+	})
+
 	t.Run("auto concurrency removed", func(t *testing.T) {
 		cfg := &Config{Scheduler: SchedulerConfig{Concurrency: "auto"}}
 		normalize(cfg)
@@ -753,6 +775,34 @@ func TestValidate_ChannelAuthRef(t *testing.T) {
 		assert.True(t, hasIssue(issues, "E.164"))
 
 	})
+
+	t.Run("exec permissions require allowlist", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name:  "bot",
+				Model: "anthropic/claude-sonnet-4-5",
+				Permissions: &PermissionsConfig{
+					Exec: &ExecPermissionsConfig{},
+				},
+			}},
+		}
+		issues := Validate(cfg, nil)
+		assert.True(t, hasIssue(issues, "permissions.exec requires at least one allowedCommands entry"))
+	})
+
+	t.Run("invalid permissions preset", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name:  "bot",
+				Model: "anthropic/claude-sonnet-4-5",
+				Permissions: &PermissionsConfig{
+					Preset: PermissionsPreset("locked-down"),
+				},
+			}},
+		}
+		issues := Validate(cfg, nil)
+		assert.True(t, hasIssue(issues, "invalid permissions preset"))
+	})
 }
 
 func TestValidate_ModelsWithDefaults(t *testing.T) {
@@ -846,6 +896,37 @@ func TestNormalize_Skills(t *testing.T) {
 		assert.Nil(t, cfg.Skills["mygog"].Env)
 
 	})
+}
+
+func TestNormalize_PermissionsPresetClampsInaccessibleTools(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Permissions: &PermissionsConfig{
+				Preset:        PermissionsPresetMinimal,
+				Tools:         []string{"task_run", "auth_set", "browser_open", "usage_query"},
+				DisabledTools: []string{"job_list", "server_status"},
+			},
+			Channels: []ChannelConfig{{
+				DisabledTools: []string{"browser_open", "task_run"},
+				AllowFrom: []AllowFromEntry{{
+					From:          "*",
+					RestrictTools: []string{"task_run", "auth_set", "usage_query"},
+				}},
+			}},
+		}},
+	}
+
+	normalize(cfg)
+
+	perms := cfg.Agents[0].Permissions
+	if assert.NotNil(t, perms) {
+		assert.Equal(t, PermissionsPresetMinimal, perms.Preset)
+		assert.Equal(t, []string{"task_run"}, perms.Tools)
+		assert.Equal(t, []string{"job_list"}, perms.DisabledTools)
+	}
+	assert.Equal(t, []string{"task_run"}, cfg.Agents[0].Channels[0].DisabledTools)
+	assert.Equal(t, []string{"task_run"}, cfg.Agents[0].Channels[0].AllowFrom[0].RestrictTools)
 }
 
 func TestValidate_BrowserBinaryNotFound(t *testing.T) {

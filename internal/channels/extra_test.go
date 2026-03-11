@@ -504,7 +504,7 @@ func TestSendTyping_RPCError(t *testing.T) {
 // ── Signal.dispatchEnvelope: reaction-mirror path ────────────────────────────
 
 // TestDispatch_ReactionMirror verifies that an emoji reaction placed on the
-// bot's own message triggers the sendReaction RPC (reactToEmoji=true).
+// bot's own message triggers the sendReaction RPC and is forwarded as a prompt.
 func TestDispatch_ReactionMirror(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
@@ -515,6 +515,8 @@ func TestDispatch_ReactionMirror(t *testing.T) {
 		[]config.AllowFromEntry{{From: "*"}},
 		false, true, // reactToEmoji=true
 		false, false, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
 	cancel, _ := startChannel(ch)
 	defer cancel()
@@ -556,9 +558,35 @@ func TestDispatch_ReactionMirror(t *testing.T) {
 		}
 	}
 	// sendReaction is best-effort (uses a separate TCP connection from listen).
-	// We verify that no handler message was dispatched (reaction should be
-	// consumed, not forwarded as IncomingMessage).
-	_ = found
+	assert.True(t, found)
+
+	msg, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
+	assert.Equal(t, sender, msg.From)
+	assert.Equal(t, sender, msg.Channel)
+	assert.Equal(t, "👍", msg.Text)
+}
+
+// TestDispatch_ReactionBypassesReplySetting verifies that emoji reactions on
+// the bot's own messages are still treated as prompts when replyToReplies=false.
+func TestDispatch_ReactionBypassesReplySetting(t *testing.T) {
+	const botPhone = "+12130000000"
+	ch := NewSignalChannel(botPhone, "",
+		[]config.AllowFromEntry{{From: "+19999999999"}},
+		false, true,
+		false, // replyToReplies=false
+		false, "m", nil)
+
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+18005551234","timestamp":999,"reactionMessage":{"emoji":"👎","targetAuthor":"` + botPhone + `","targetSentTimestamp":12345,"isRemove":false}}}}`
+	ch.dispatch([]byte(line))
+
+	msg, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
+	assert.Equal(t, "👎", msg.Text)
+	assert.Equal(t, "+18005551234", msg.From)
 }
 
 // ── Signal.dispatchEnvelope: group message path ──────────────────────────────
