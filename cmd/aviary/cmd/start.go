@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -27,6 +29,36 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 }
 
+func resolveConfigPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving config path: %w", err)
+	}
+	return abs, nil
+}
+
+func chdirToConfigDir(path string) (string, error) {
+	resolved, err := resolveConfigPath(path)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(resolved)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("creating config dir: %w", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		return "", fmt.Errorf("changing to config dir: %w", err)
+	}
+	if err := os.Setenv("AVIARY_CONFIG_BASE_DIR", dir); err != nil {
+		return "", fmt.Errorf("setting config base dir: %w", err)
+	}
+	return resolved, nil
+}
+
 func runStart(_ *cobra.Command, _ []string) error {
 	// Check if already running.
 	running, pid, err := server.IsRunning()
@@ -42,8 +74,14 @@ func runStart(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("initializing data directory: %w", err)
 	}
 
+	resolvedCfgPath, err := chdirToConfigDir(cfgFile)
+	if err != nil {
+		return err
+	}
+	cfgFile = resolvedCfgPath
+
 	// Load config.
-	cfg, err := config.Load(cfgFile)
+	cfg, err := config.Load(resolvedCfgPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -107,7 +145,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 		}
 		if errors.Is(err, server.ErrRestartRequired) {
 			var loadErr error
-			cfg, loadErr = config.Load(cfgFile)
+			cfg, loadErr = config.Load(resolvedCfgPath)
 			if loadErr != nil {
 				return fmt.Errorf("reloading config: %w", loadErr)
 			}
