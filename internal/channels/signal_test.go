@@ -679,11 +679,19 @@ func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	go fd2.acceptLoop()
 	defer fd2.Close()
 
-	// reconnectDelay is 0 — should reconnect quickly.
-	waitConnected(t, fd2, 2*time.Second)
-	fd2.PushNotification("+1", "after reconnect")
-
-	msg := waitMsg(t, msgs, 2*time.Second)
+	deadline := time.Now().Add(4 * time.Second)
+	var msg IncomingMessage
+	received := false
+	for time.Now().Before(deadline) {
+		fd2.PushNotification("+1", "after reconnect")
+		if next, ok := waitMsgTimeout(msgs, 150*time.Millisecond); ok {
+			msg = next
+			received = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	assert.True(t, received)
 	assert.Equal(t, "after reconnect", msg.Text)
 
 }

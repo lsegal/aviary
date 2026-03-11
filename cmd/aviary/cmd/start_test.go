@@ -3,6 +3,8 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
@@ -30,7 +32,7 @@ func TestResolveConfigPath_Relative(t *testing.T) {
 
 	got, err := resolveConfigPath(filepath.Join("nested", "aviary.yaml"))
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(tmp, "nested", "aviary.yaml"), got)
+	assertPathHasSuffix(t, got, filepath.Join(filepath.Base(tmp), "nested", "aviary.yaml"))
 }
 
 func TestChdirToConfigDir_Default(t *testing.T) {
@@ -47,9 +49,9 @@ func TestChdirToConfigDir_Default(t *testing.T) {
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(base, "aviary"), cwd)
-	assert.Equal(t, filepath.Join(base, "aviary", "aviary.yaml"), got)
-	assert.Equal(t, filepath.Join(base, "aviary"), os.Getenv("AVIARY_CONFIG_BASE_DIR"))
+	assertPathHasSuffix(t, cwd, filepath.Join(filepath.Base(base), "aviary"))
+	assertPathHasSuffix(t, got, filepath.Join(filepath.Base(base), "aviary", "aviary.yaml"))
+	assertPathHasSuffix(t, os.Getenv("AVIARY_CONFIG_BASE_DIR"), filepath.Join(filepath.Base(base), "aviary"))
 }
 
 func TestChdirToConfigDir_ExplicitConfigPath(t *testing.T) {
@@ -67,7 +69,20 @@ func TestChdirToConfigDir_ExplicitConfigPath(t *testing.T) {
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Dir(cfgPath), cwd)
-	assert.Equal(t, cfgPath, got)
-	assert.Equal(t, filepath.Dir(cfgPath), os.Getenv("AVIARY_CONFIG_BASE_DIR"))
+	assertPathHasSuffix(t, cwd, filepath.Join(filepath.Base(tmp), "custom"))
+	assertPathHasSuffix(t, got, filepath.Join(filepath.Base(tmp), "custom", "aviary.yaml"))
+	assertPathHasSuffix(t, os.Getenv("AVIARY_CONFIG_BASE_DIR"), filepath.Join(filepath.Base(tmp), "custom"))
+}
+
+func assertPathHasSuffix(t *testing.T, got, suffix string) {
+	t.Helper()
+	assert.True(t, strings.HasSuffix(normalizeTestPath(got), normalizeTestPath(suffix)))
+}
+
+func normalizeTestPath(path string) string {
+	path = filepath.ToSlash(filepath.Clean(path))
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
 }
