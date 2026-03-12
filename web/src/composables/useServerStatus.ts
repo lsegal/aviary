@@ -27,6 +27,8 @@ export function useServerStatus() {
 	let versionTimer: ReturnType<typeof setInterval> | null = null;
 	let reconnectDelay = 1_000;
 	let destroyed = false;
+	let consecutiveFailures = 0;
+	const maxConnectingFailures = 3;
 
 	function connect() {
 		if (destroyed) return;
@@ -56,6 +58,7 @@ export function useServerStatus() {
 				};
 				if (data.version) version.value = data.version;
 				if (data.goos) goos.value = data.goos;
+				consecutiveFailures = 0;
 				status.value = "connected";
 			} catch {
 				// ignore malformed frames
@@ -65,7 +68,11 @@ export function useServerStatus() {
 		ws.onclose = () => {
 			ws = null;
 			if (destroyed) return;
-			status.value = "disconnected";
+			consecutiveFailures += 1;
+			status.value =
+				consecutiveFailures > maxConnectingFailures
+					? "disconnected"
+					: "connecting";
 			scheduleReconnect();
 		};
 

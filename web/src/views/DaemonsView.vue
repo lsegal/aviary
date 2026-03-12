@@ -65,6 +65,14 @@
                   </div>
                 </div>
               </div>
+              <button
+                class="inline-flex shrink-0 items-center rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-blue-700 dark:hover:text-blue-400"
+                :disabled="restarting.has(d.name) || !canRestart(d)"
+                :title="restartTitle(d)"
+                @click="restartDaemon(d)"
+              >
+                {{ restarting.has(d.name) ? "Restarting…" : "Restart" }}
+              </button>
             </div>
 
             <!-- Stats grid -->
@@ -163,11 +171,14 @@ const daemons = ref<Daemon[]>([]);
 const loading = ref(false);
 const error = ref("");
 const lastRefresh = ref<Date | null>(null);
+const restarting = ref<Set<string>>(new Set());
 
 // Log tail state: which daemons have logs open, their lines, and their SSE sources.
 const openLogs = ref<Set<string>>(new Set());
 const logLines = ref<Record<string, string[]>>({});
 const logSources: Record<string, EventSource> = {};
+const RETRYABLE_STATUSES = new Set([500, 502, 503, 504]);
+const FETCH_RETRY_DELAYS_MS = [250, 750, 1500];
 
 function toggleLogs(key: string) {
 	if (openLogs.value.has(key)) {
@@ -224,18 +235,75 @@ const maxMem = computed(() =>
 
 async function fetchDaemons() {
 	loading.value = true;
-	error.value = "";
 	try {
-		const res = await fetch("/api/daemons", {
-			headers: { Authorization: `Bearer ${auth.getToken()}` },
-		});
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		daemons.value = await res.json();
+		const data = await fetchDaemonsWithRetry();
+		error.value = "";
+		daemons.value = data;
 		lastRefresh.value = new Date();
 	} catch (e) {
 		error.value = String(e);
 	} finally {
 		loading.value = false;
+	}
+}
+
+async function fetchDaemonsWithRetry(): Promise<Daemon[]> {
+	for (let attempt = 0; ; attempt += 1) {
+		const res = await fetch("/api/daemons", {
+			headers: { Authorization: `Bearer ${auth.getToken()}` },
+		});
+		if (res.ok) {
+			return res.json();
+		}
+		if (
+			RETRYABLE_STATUSES.has(res.status) &&
+			attempt < FETCH_RETRY_DELAYS_MS.length
+		) {
+			await new Promise((resolve) =>
+				setTimeout(resolve, FETCH_RETRY_DELAYS_MS[attempt]),
+			);
+			continue;
+		}
+		throw new Error(`HTTP ${res.status}`);
+	}
+}
+
+function canRestart(d: Daemon): boolean {
+	return d.name === "aviary" || d.managed;
+}
+
+function restartTitle(d: Daemon): string {
+	if (d.name === "aviary") return "Restart Aviary";
+	if (d.managed) return `Restart ${displayName(d)}`;
+	return "Only Aviary-managed daemons can be restarted here";
+}
+
+async function restartDaemon(d: Daemon) {
+	if (!canRestart(d) || restarting.value.has(d.name)) return;
+
+	restarting.value.add(d.name);
+	restarting.value = new Set(restarting.value);
+	error.value = "";
+
+	try {
+		const res = await fetch("/api/daemons/restart", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${auth.getToken()}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ key: d.name }),
+		});
+		if (!res.ok) {
+			const message = await res.text();
+			throw new Error(message || `HTTP ${res.status}`);
+		}
+		await fetchDaemons();
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		restarting.value.delete(d.name);
+		restarting.value = new Set(restarting.value);
 	}
 }
 

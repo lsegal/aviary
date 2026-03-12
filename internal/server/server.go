@@ -38,6 +38,7 @@ type Server struct {
 	token     string
 	mux       *http.ServeMux
 	httpSrv   *http.Server
+	runCtx    context.Context
 	agents    *agent.Manager
 	sched     *scheduler.Scheduler
 	mem       *memory.Manager
@@ -47,6 +48,7 @@ type Server struct {
 	watcher   *config.Watcher
 	restartCh chan struct{}
 	upgradeCh chan struct{}
+	msgFn     func(agentName string, ch channels.Channel, msg channels.IncomingMessage)
 }
 
 // New creates a new Server with the given config and auth token.
@@ -170,6 +172,7 @@ func (s *Server) registerRoutes() {
 	// Daemons status + log-stream endpoints.
 	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, http.HandlerFunc(s.daemonsHandler)))
 	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, http.HandlerFunc(s.daemonLogsHandler)))
+	s.mux.Handle("/api/daemons/restart", BearerMiddleware(s.token, http.HandlerFunc(s.daemonRestartHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
@@ -179,6 +182,7 @@ func (s *Server) registerRoutes() {
 // It returns only when the context is cancelled or an error occurs.
 // Returns ErrRestartRequired if a config change requires a restart.
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	s.runCtx = ctx
 	port := s.cfg.Server.Port
 	if port == 0 {
 		port = 16677
@@ -252,7 +256,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 
 	// Start channel integrations and route messages to agents.
-	s.channels.Reconcile(ctx, s.cfg, func(agentName string, ch channels.Channel, msg channels.IncomingMessage) {
+	s.msgFn = func(agentName string, ch channels.Channel, msg channels.IncomingMessage) {
 		runner, ok := s.agents.Get(agentName)
 		if !ok {
 			return
@@ -319,7 +323,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 				}
 			}
 		})
-	})
+	}
+	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
 
 	errCh := make(chan error, 1)

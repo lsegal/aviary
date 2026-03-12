@@ -855,6 +855,48 @@ func TestDaemonLogsHandler_NotFound(t *testing.T) {
 
 }
 
+func TestDaemonRestartHandler_Server(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	cfg := &config.Config{}
+	srv := New(cfg, "tok")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/daemons/restart", strings.NewReader(`{"key":"aviary"}`))
+	rr := httptest.NewRecorder()
+	srv.daemonRestartHandler(rr, req)
+	assert.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case <-srv.restartCh:
+	default:
+		t.Fatal("expected restart signal")
+	}
+}
+
+func TestDaemonRestartHandler_MissingKey(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	cfg := &config.Config{}
+	srv := New(cfg, "tok")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/daemons/restart", strings.NewReader(`{}`))
+	rr := httptest.NewRecorder()
+	srv.daemonRestartHandler(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestDaemonRestartHandler_MethodNotAllowed(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	cfg := &config.Config{}
+	srv := New(cfg, "tok")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/daemons/restart", nil)
+	rr := httptest.NewRecorder()
+	srv.daemonRestartHandler(rr, req)
+	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+}
+
 func TestLogsHandler_SSE(t *testing.T) {
 	setupServerDataDir(t)
 

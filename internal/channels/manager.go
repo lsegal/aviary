@@ -31,6 +31,14 @@ type Manager struct {
 	startTimes map[string]time.Time
 	errors     map[string]string
 	sinks      map[string]*LogSink // per-channel stdout/stderr capture
+	specs      map[string]channelSpec
+}
+
+type channelSpec struct {
+	agentName      string
+	channelConfig  config.ChannelConfig
+	agentModel     string
+	agentFallbacks []string
 }
 
 // NewManager creates a channel Manager.
@@ -41,6 +49,7 @@ func NewManager() *Manager {
 		startTimes: make(map[string]time.Time),
 		errors:     make(map[string]string),
 		sinks:      make(map[string]*LogSink),
+		specs:      make(map[string]channelSpec),
 	}
 }
 
@@ -59,6 +68,12 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 		for i, cc := range ac.Channels {
 			key := channelKey(ac.Name, cc.Type, i)
 			desired[key] = struct{}{}
+			m.specs[key] = channelSpec{
+				agentName:      ac.Name,
+				channelConfig:  cc,
+				agentModel:     agentModel,
+				agentFallbacks: append([]string{}, agentFallbacks...),
+			}
 
 			if _, exists := m.channels[key]; exists {
 				continue // already running
@@ -109,6 +124,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 			delete(m.startTimes, key)
 			delete(m.errors, key)
 			delete(m.sinks, key)
+			delete(m.specs, key)
 			slog.Info("channel stopped", "key", key)
 		}
 	}
@@ -127,6 +143,7 @@ func (m *Manager) Stop() {
 	m.startTimes = make(map[string]time.Time)
 	m.errors = make(map[string]string)
 	m.sinks = make(map[string]*LogSink)
+	m.specs = make(map[string]channelSpec)
 }
 
 // SubscribeLogs returns a log subscription for the given daemon key.
@@ -141,6 +158,58 @@ func (m *Manager) SubscribeLogs(key string) (history []string, live <-chan strin
 	}
 	h, l, u := sink.Subscribe()
 	return h, l, u, true
+}
+
+// Restart recreates and restarts a configured channel instance in place.
+func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName string, ch Channel, msg IncomingMessage)) error {
+	m.mu.Lock()
+	spec, ok := m.specs[key]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("configured channel %q not found", key)
+	}
+	if ch, exists := m.channels[key]; exists {
+		ch.Stop()
+	}
+	if cancel, exists := m.cancels[key]; exists {
+		cancel()
+	}
+
+	ch := newChannel(spec.channelConfig, spec.agentModel, spec.agentFallbacks)
+	if ch == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("channel %q could not be created", key)
+	}
+
+	sink := newLogSink()
+	m.sinks[key] = sink
+	if ss, ok := ch.(LogSinkSetter); ok {
+		ss.SetLogSink(sink)
+	}
+
+	agentName := spec.agentName
+	ch.OnMessage(func(msg IncomingMessage) {
+		msgFn(agentName, ch, msg)
+	})
+
+	cctx, cancel := context.WithCancel(ctx)
+	m.channels[key] = ch
+	m.cancels[key] = cancel
+	m.startTimes[key] = time.Now()
+	delete(m.errors, key)
+	m.mu.Unlock()
+
+	go func(k string, c Channel) {
+		if err := c.Start(cctx); err != nil && cctx.Err() == nil {
+			slog.Warn("channel error", "key", k, "err", err)
+			m.mu.Lock()
+			m.errors[k] = err.Error()
+			m.mu.Unlock()
+		}
+	}(key, ch)
+
+	slog.Info("channel restarted", "key", key, "type", spec.channelConfig.Type)
+	return nil
 }
 
 // RouteDelivery sends text to channelID via any running channel of channelType.

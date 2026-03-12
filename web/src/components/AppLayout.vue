@@ -318,7 +318,7 @@ const versionTextClass = computed(() =>
 const healthLabel = computed(() => {
 	if (status.value === "connected") return "Connected";
 	if (status.value === "disconnected") return "Disconnected";
-	return "…";
+	return "Connecting";
 });
 
 const healthTextClass = computed(() => {

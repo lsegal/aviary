@@ -159,6 +159,63 @@ func (s *Server) daemonLogsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type daemonRestartRequest struct {
+	Key string `json:"key"`
+}
+
+// daemonRestartHandler handles POST /api/daemons/restart.
+func (s *Server) daemonRestartHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req daemonRestartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Key == "" {
+		http.Error(w, "missing key", http.StatusBadRequest)
+		return
+	}
+
+	if req.Key == "aviary" {
+		select {
+		case s.restartCh <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "restarting"})
+		return
+	}
+
+	if s.runCtx == nil || s.msgFn == nil {
+		http.Error(w, "server runtime not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	var restartable bool
+	for _, cs := range s.channels.List() {
+		if cs.Key == req.Key {
+			restartable = cs.Daemon != nil && !cs.Daemon.External
+			break
+		}
+	}
+	if !restartable {
+		http.Error(w, "daemon not restartable", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.channels.Restart(s.runCtx, req.Key, s.msgFn); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "restarting"})
+}
+
 // fmtUptime formats a duration as a short human-readable string.
 func fmtUptime(d time.Duration) string {
 	d = d.Truncate(time.Second)

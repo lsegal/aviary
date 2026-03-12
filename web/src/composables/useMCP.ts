@@ -32,13 +32,19 @@ interface CallToolOptions {
 export interface MCPToolInfo {
 	name: string;
 	description?: string;
+	inputSchema?: {
+		type?: string | string[];
+		required?: string[];
+		properties?: Record<string, Record<string, unknown>>;
+		[key: string]: unknown;
+	};
 }
 
 // Module-level session state — one session shared across all useMCP() calls.
 let sessionId: string | null = null;
 let initPromise: Promise<void> | null = null;
-const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
-const TRANSIENT_RETRY_DELAYS_MS = [250, 750];
+const RETRYABLE_HTTP_STATUSES = new Set([500, 502, 503, 504]);
+const TRANSIENT_RETRY_DELAYS_MS = [250, 750, 1_500, 3_000];
 
 export function useMCP() {
 	const auth = useAuthStore();
