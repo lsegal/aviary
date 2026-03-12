@@ -326,12 +326,6 @@ func (s *Scheduler) removeTriggersLocked(key string) {
 	}
 }
 
-func (s *Scheduler) markRunOnceComplete(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.markRunOnceCompleteLocked(key)
-}
-
 func (s *Scheduler) beginRunOnce(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
