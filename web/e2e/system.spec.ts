@@ -38,9 +38,31 @@ test.beforeEach(async ({ page }) => {
 		],
 		tool_list: [
 			{ name: "agent_list", description: "List configured agents." },
-			{ name: "task_run", description: "Run a scheduled task immediately." },
+			{
+				name: "task_run",
+				description: "Run a scheduled task immediately.",
+				inputSchema: {
+					type: "object",
+					required: ["name"],
+					properties: {
+						name: {
+							type: "string",
+							description: "Task name to run immediately.",
+						},
+						force: {
+							type: "boolean",
+							description:
+								"Force execution even if the task is already active.",
+						},
+					},
+				},
+			},
 			{ name: "config_get", description: "Read the active configuration." },
 		],
+		task_run: (args) => ({
+			ok: true,
+			args,
+		}),
 	});
 });
 
@@ -58,6 +80,34 @@ test("system tools shows grouped MCP tools and active skills", async ({
 		page.getByRole("heading", { name: "Activated Skills" }),
 	).toBeVisible();
 	await expect(page.getByText("gogcli", { exact: true })).toBeVisible();
+});
+
+test("system tools can run a tool from the menu and show output", async ({
+	page,
+}) => {
+	await page.goto("/system/tools");
+
+	await page.getByTestId("run-tool-task_run").click();
+
+	await expect(page.getByRole("heading", { name: "Run Tool" })).toBeVisible();
+	await expect(
+		page.getByRole("paragraph").filter({ hasText: "task_run" }),
+	).toBeVisible();
+	await expect(
+		page.getByPlaceholder("Task name to run immediately."),
+	).toBeVisible();
+
+	await page.getByPlaceholder("Task name to run immediately.").fill("nightly");
+	await page.getByRole("combobox").nth(0).selectOption("true");
+	await page.getByRole("button", { name: "Run Tool" }).click();
+
+	await expect(page.getByTestId("tool-run-output")).toContainText('"ok":true');
+	await expect(page.getByTestId("tool-run-output")).toContainText(
+		'"name":"nightly"',
+	);
+	await expect(page.getByTestId("tool-run-output")).toContainText(
+		'"force":true',
+	);
 });
 
 test("system skills can disable and enable installed skills", async ({
