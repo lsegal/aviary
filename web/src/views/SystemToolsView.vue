@@ -480,7 +480,7 @@ function openRunModal(tool: MCPToolInfo) {
 		output: typeof stored.output === "string" ? stored.output : "",
 		errorMessage: "",
 		running: false,
-		showingStaleOutput: false,
+		showingStaleOutput: Boolean(stored.output),
 	};
 	persistRunModalState();
 }
