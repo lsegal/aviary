@@ -114,7 +114,6 @@
       <div
         v-if="runModal"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
-        @click.self="closeRunModal"
       >
         <div class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
           <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
