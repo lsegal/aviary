@@ -211,6 +211,12 @@
             <div class="space-y-2">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Output</h4>
+                <span
+                  v-if="runModal.showingStaleOutput"
+                  class="rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/60 dark:text-amber-200"
+                >
+                  Showing stale output
+                </span>
                 <button
                   type="button"
                   class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
@@ -220,7 +226,15 @@
                   {{ runModal.running ? "Running…" : "Run Tool" }}
                 </button>
               </div>
-              <pre data-testid="tool-run-output" class="min-h-[220px] overflow-auto rounded-xl bg-gray-950 px-4 py-3 text-xs leading-5 text-gray-100">{{ runModal.output || "Run the tool to see its output." }}</pre>
+              <pre
+                data-testid="tool-run-output"
+                :class="[
+                  'min-h-[220px] overflow-auto rounded-xl px-4 py-3 text-xs leading-5 transition-colors',
+                  runModal.showingStaleOutput
+                    ? 'bg-gray-900 text-gray-400'
+                    : 'bg-gray-950 text-gray-100',
+                ]"
+              >{{ runModal.output || "Run the tool to see its output." }}</pre>
             </div>
           </div>
         </div>
@@ -230,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";
@@ -271,6 +285,12 @@ interface RunModalState {
 	output: string;
 	errorMessage: string;
 	running: boolean;
+	showingStaleOutput: boolean;
+}
+
+interface StoredToolRunState {
+	values?: Record<string, string>;
+	output?: string;
 }
 
 const { callTool, listTools } = useMCP();
@@ -280,6 +300,7 @@ const errorMessage = ref("");
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
 const runModal = ref<RunModalState | null>(null);
+const TOOL_RUN_STORAGE_PREFIX = "aviary:system-tools:runner:";
 
 const groupedTools = computed<ToolGroup[]>(() => {
 	return groupTools(availableTools.value)
@@ -409,23 +430,73 @@ function initialFieldValue(field: ToolField): string {
 	return formatSchemaValue(field.schema.default);
 }
 
+function toolRunStorageKey(toolName: string): string {
+	return `${TOOL_RUN_STORAGE_PREFIX}${toolName}`;
+}
+
+function readStoredToolRunState(toolName: string): StoredToolRunState {
+	if (typeof window === "undefined") return {};
+	try {
+		const raw = window.sessionStorage.getItem(toolRunStorageKey(toolName));
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as StoredToolRunState | null;
+		if (!parsed || typeof parsed !== "object") return {};
+		return parsed;
+	} catch {
+		return {};
+	}
+}
+
+function persistRunModalState() {
+	if (!runModal.value || typeof window === "undefined") return;
+	try {
+		window.sessionStorage.setItem(
+			toolRunStorageKey(runModal.value.tool.name),
+			JSON.stringify({
+				values: runModal.value.values,
+				output: runModal.value.output,
+			} satisfies StoredToolRunState),
+		);
+	} catch {
+		// Ignore storage failures and keep the modal functional.
+	}
+}
+
 function openRunModal(tool: MCPToolInfo) {
 	const fields = buildToolFields(tool);
+	const stored = readStoredToolRunState(tool.name);
+	const initialValues = Object.fromEntries(
+		fields.map((field) => [
+			field.name,
+			typeof stored.values?.[field.name] === "string"
+				? stored.values[field.name]
+				: initialFieldValue(field),
+		]),
+	);
 	runModal.value = {
 		tool,
 		fields,
-		values: Object.fromEntries(
-			fields.map((field) => [field.name, initialFieldValue(field)]),
-		),
-		output: "",
+		values: initialValues,
+		output: typeof stored.output === "string" ? stored.output : "",
 		errorMessage: "",
 		running: false,
+		showingStaleOutput: false,
 	};
+	persistRunModalState();
 }
 
 function closeRunModal() {
 	runModal.value = null;
 }
+
+watch(
+	runModal,
+	(modal) => {
+		if (!modal) return;
+		persistRunModalState();
+	},
+	{ deep: true },
+);
 
 function parseToolFieldValue(field: ToolField, value: string): unknown {
 	switch (field.kind) {
@@ -472,6 +543,7 @@ function parseToolFieldValue(field: ToolField, value: string): unknown {
 async function submitToolRun() {
 	if (!runModal.value) return;
 	runModal.value.running = true;
+	runModal.value.showingStaleOutput = Boolean(runModal.value.output);
 	runModal.value.errorMessage = "";
 	try {
 		const args: Record<string, unknown> = {};
@@ -485,8 +557,12 @@ async function submitToolRun() {
 			}
 			args[field.name] = parseToolFieldValue(field, rawValue);
 		}
+		persistRunModalState();
 		runModal.value.output = await callTool(runModal.value.tool.name, args);
+		runModal.value.showingStaleOutput = false;
+		persistRunModalState();
 	} catch (error) {
+		runModal.value.showingStaleOutput = false;
 		runModal.value.errorMessage =
 			error instanceof Error ? error.message : String(error);
 	} finally {

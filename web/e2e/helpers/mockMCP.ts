@@ -9,7 +9,9 @@ export interface ToolFixtures {
 	server_status?: object;
 	task_run?: object | null;
 	tool_list?: object[];
-	[key: string]: unknown | ((args?: Record<string, unknown>) => unknown);
+	[key: string]:
+		| unknown
+		| ((args?: Record<string, unknown>) => unknown | Promise<unknown>);
 }
 
 /**
@@ -61,7 +63,7 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 			const fixture = toolName in fixtures ? fixtures[toolName] : [];
 			const data =
 				typeof fixture === "function"
-					? fixture(body.params?.arguments)
+					? await fixture(body.params?.arguments)
 					: fixture;
 			return route.fulfill({
 				status: 200,

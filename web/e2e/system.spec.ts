@@ -59,10 +59,13 @@ test.beforeEach(async ({ page }) => {
 			},
 			{ name: "config_get", description: "Read the active configuration." },
 		],
-		task_run: (args) => ({
-			ok: true,
-			args,
-		}),
+		task_run: async (args) => {
+			await new Promise((resolve) => setTimeout(resolve, 150));
+			return {
+				ok: true,
+				args,
+			};
+		},
 	});
 });
 
@@ -107,6 +110,25 @@ test("system tools can run a tool from the menu and show output", async ({
 	);
 	await expect(page.getByTestId("tool-run-output")).toContainText(
 		'"force":true',
+	);
+
+	await page.getByRole("button", { name: "Close" }).click();
+	await page.getByTestId("run-tool-task_run").click();
+
+	await expect(
+		page.getByPlaceholder("Task name to run immediately."),
+	).toHaveValue("nightly");
+	await expect(page.getByRole("combobox").nth(0)).toHaveValue("true");
+	await expect(page.getByTestId("tool-run-output")).toContainText('"ok":true');
+
+	await page.getByPlaceholder("Task name to run immediately.").fill("weekly");
+	await page.getByRole("button", { name: "Run Tool" }).click();
+	await expect(page.getByTestId("tool-run-output")).toHaveClass(
+		/text-gray-400/,
+	);
+	await expect(page.getByTestId("tool-run-output")).toContainText('"ok":true');
+	await expect(page.getByTestId("tool-run-output")).toContainText(
+		'"name":"weekly"',
 	);
 });
 
