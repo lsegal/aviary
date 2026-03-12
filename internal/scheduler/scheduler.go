@@ -108,16 +108,20 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 					delay = 0
 				}
 				s.timers[key] = time.AfterFunc(delay, func() {
+					if !s.beginRunOnce(key) {
+						return
+					}
 					enqueue()
-					s.markRunOnceComplete(key)
 				})
 				slog.Info("scheduler: one-time task armed", "key", key, "start_at", startAt.Format(time.RFC3339))
 			} else if tc.Schedule != "" {
 				registerCron := func() {
 					if tc.RunOnce {
 						if err := s.cron.Add(key, tc.Schedule, func() {
+							if !s.beginRunOnce(key) {
+								return
+							}
 							enqueue()
-							s.markRunOnceComplete(key)
 						}); err != nil {
 							slog.Warn("scheduler: invalid cron expression", "task", key, "schedule", tc.Schedule, "err", err)
 						}
@@ -325,6 +329,20 @@ func (s *Scheduler) removeTriggersLocked(key string) {
 func (s *Scheduler) markRunOnceComplete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.markRunOnceCompleteLocked(key)
+}
+
+func (s *Scheduler) beginRunOnce(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.onceFired[key] {
+		return false
+	}
+	s.markRunOnceCompleteLocked(key)
+	return true
+}
+
+func (s *Scheduler) markRunOnceCompleteLocked(key string) {
 	s.onceFired[key] = true
 	s.removeTriggersLocked(key)
 	slog.Info("scheduler: one-time task completed", "key", key)
