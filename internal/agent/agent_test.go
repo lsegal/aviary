@@ -291,6 +291,69 @@ func TestAgentRunner_ExecutesInlineToolBlocks(t *testing.T) {
 	assert.Contains(t, gotText.String(), "Which one next?")
 }
 
+func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
+	setTestDataDir(t)
+
+	toolClient := &recordingToolClient{
+		tools:   []ToolInfo{{Name: "web_search", Description: "Search the web"}},
+		results: map[string]string{"web_search": "result payload"},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: `{"tool":"web_search","arguments":{"query":"golang"}}`}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: "final answer"}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_tool_history", Name: "tool-history", Model: "test/model"},
+		&config.AgentConfig{Name: "tool-history", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_tool_history", "main")
+	assert.NoError(t, err)
+
+	var gotText strings.Builder
+	toolEvents := 0
+	done := make(chan struct{}, 1)
+	runner.Prompt(WithSessionID(context.Background(), sess.ID), "search", func(e StreamEvent) {
+		switch e.Type {
+		case StreamEventText:
+			gotText.WriteString(e.Text)
+		case StreamEventTool:
+			toolEvents++
+		case StreamEventDone, StreamEventError, StreamEventStop:
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.Equal(t, 1, toolEvents)
+	assert.Equal(t, "final answer", gotText.String())
+
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_tool_history", sess.ID))
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(lines), 3)
+	assert.Equal(t, domain.MessageRoleTool, lines[len(lines)-2].Role)
+	assert.Contains(t, lines[len(lines)-2].Content, `"name":"web_search"`)
+	assert.Equal(t, domain.MessageRoleAssistant, lines[len(lines)-1].Role)
+	assert.Equal(t, "final answer", lines[len(lines)-1].Content)
+}
+
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	t.Helper()
 

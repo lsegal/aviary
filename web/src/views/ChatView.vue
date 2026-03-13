@@ -164,9 +164,7 @@
 					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
 						placeholder="Type a message or paste an image…"
 						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						@input="onChatInput"
-						@keydown="onChatInputKeydown"
-						@paste="onPaste" />
+						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" />
 					<button v-if="currentSessionProcessing" type="button" @click="stopSession" :disabled="!selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 						aria-label="Stop response" title="Stop">
@@ -241,7 +239,7 @@ type DisplayItem =
 interface PersistedMessage {
 	id?: string;
 	session_id?: string;
-	role: "user" | "assistant" | "system";
+	role: "user" | "assistant" | "system" | "tool";
 	content: string;
 	media_url?: string;
 	model?: string;
@@ -277,6 +275,21 @@ function parseToolMessage(
 		/* legacy: just a bare name */
 	}
 	return { id, role: "tool", text: raw, timestamp, model };
+}
+
+function parseToolChunk(
+	content: string,
+	timestamp?: string,
+	id?: string,
+): Message {
+	try {
+		const d = JSON.parse(content) as ToolData;
+		if (d.name)
+			return { id, role: "tool", text: d.name, toolData: d, timestamp };
+	} catch {
+		// Fall through to a raw tool message.
+	}
+	return { id, role: "tool", text: content, timestamp };
 }
 
 function extractCompleteToolPayload(
@@ -623,10 +636,18 @@ async function loadSessionMessages() {
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
 			.filter(
-				(m): m is PersistedMessage & { role: "user" | "assistant" } =>
-					m.role === "user" || m.role === "assistant",
+				(m): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
+					m.role === "user" || m.role === "assistant" || m.role === "tool",
 			)
 			.map((m) => {
+				if (m.role === "tool") {
+					return parseToolMessage(
+						`[tool] ${m.content}`,
+						m.timestamp,
+						m.model,
+						m.id,
+					);
+				}
 				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
 					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
 				}
@@ -676,12 +697,6 @@ async function scrollBottom(force = false) {
 	}
 	messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
 	updateScrollState();
-}
-
-// Map session ID → session name for agent_run.
-function selectedSessionName(): string {
-	const s = sessions.value.find((s) => s.id === selectedSessionId.value);
-	return s?.name || s?.id || "main";
 }
 
 function onPaste(e: ClipboardEvent) {
@@ -828,8 +843,8 @@ async function send() {
 		await streamAgent(
 			selectedAgent.value,
 			text,
-			(chunk, isMedia) => {
-				if (isMedia && chunk) {
+			(chunk, type) => {
+				if (type === "media" && chunk) {
 					messages.value.push({
 						role: "assistant",
 						text: "",
@@ -838,13 +853,16 @@ async function send() {
 						model: agentModel,
 					});
 					scrollBottom();
+				} else if (type === "tool" && chunk) {
+					messages.value.push(parseToolChunk(chunk, now));
+					scrollBottom();
 				} else if (chunk) {
 					pendingText += chunk;
 					flushPendingChunks();
 					scrollBottom();
 				}
 			},
-			selectedSessionName(),
+			selectedSessionId.value,
 			mediaURL || undefined,
 		);
 		flushPendingChunks();

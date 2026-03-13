@@ -135,11 +135,13 @@ func Register(s *sdkmcp.Server) {
 // ── Agent tools ──────────────────────────────────────────────────────────────
 
 type agentRunArgs struct {
-	Name     string `json:"name"`
-	Message  string `json:"message"`
-	Session  string `json:"session,omitempty"` // session name; defaults to "main"
-	File     string `json:"file,omitempty"`
-	MediaURL string `json:"media_url,omitempty"` // optional image (data URL or remote URL)
+	Name                string `json:"name"`
+	Message             string `json:"message"`
+	Session             string `json:"session,omitempty"` // session name; defaults to "main"
+	SessionID           string `json:"session_id,omitempty"`
+	File                string `json:"file,omitempty"`
+	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
+	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
 }
 
 type agentNameArgs struct {
@@ -171,11 +173,29 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
 		}
-		// Ensure the session exists (defaults to "main").
 		agentID := fmt.Sprintf("agent_%s", args.Name)
-		sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session)
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("initializing session: %w", err)
+		var sess *domain.Session
+		if strings.TrimSpace(args.SessionID) != "" {
+			sessions, err := agent.NewSessionManager().List(agentID)
+			if err != nil {
+				return nil, struct{}{}, fmt.Errorf("listing sessions: %w", err)
+			}
+			for _, candidate := range sessions {
+				if candidate != nil && candidate.ID == strings.TrimSpace(args.SessionID) {
+					sess = candidate
+					break
+				}
+			}
+			if sess == nil {
+				return nil, struct{}{}, fmt.Errorf("session %q not found", args.SessionID)
+			}
+		} else {
+			// Ensure the session exists (defaults to "main").
+			var err error
+			sess, err = agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session)
+			if err != nil {
+				return nil, struct{}{}, fmt.Errorf("initializing session: %w", err)
+			}
 		}
 		if isStopCommand(args.Message) {
 			stopped := agent.StopSession(sess.ID)
@@ -201,6 +221,21 @@ func registerAgentTools(s *sdkmcp.Server) {
 						Progress:      progressCount,
 						Message:       e.Text,
 					})
+				}
+			case agent.StreamEventTool:
+				if progressToken != nil && args.IncludeToolProgress && e.Tool != nil {
+					payload, err := json.Marshal(map[string]any{
+						"name": e.Tool.Name,
+						"args": e.Tool.Args,
+					})
+					if err == nil {
+						progressCount++
+						_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+							ProgressToken: progressToken,
+							Progress:      progressCount,
+							Message:       "[tool]" + string(payload),
+						})
+					}
 				}
 			case agent.StreamEventMedia:
 				if e.MediaURL != "" && progressToken != nil {

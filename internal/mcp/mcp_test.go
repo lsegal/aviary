@@ -331,6 +331,57 @@ func TestAgentRun_StopCommand_NoActiveSession(t *testing.T) {
 
 }
 
+func TestAgentRun_UsesExactSessionID(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	require.NoError(t, store.EnsureDirs())
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().CreateWithName("agent_assistant", "signal:+15551234567")
+	require.NoError(t, err)
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	require.NoError(t, err)
+	defer c.Close() //nolint:errcheck
+
+	res, err := c.CallTool(context.Background(), "agent_run", map[string]any{
+		"name":       "assistant",
+		"message":    "hi",
+		"session_id": sess.ID,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, extractText(res), "no LLM provider configured")
+
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_assistant", sess.ID))
+	require.NoError(t, err)
+	require.NotEmpty(t, lines)
+	var foundUser bool
+	for _, line := range lines {
+		if line.Role == domain.MessageRoleUser && line.Content == "hi" {
+			assert.Equal(t, sess.ID, line.SessionID)
+			foundUser = true
+			break
+		}
+	}
+	assert.True(t, foundUser)
+
+	sessions, err := agent.NewSessionManager().List("agent_assistant")
+	require.NoError(t, err)
+	found := 0
+	for _, candidate := range sessions {
+		if candidate != nil && candidate.Name == "signal:+15551234567" {
+			found++
+		}
+	}
+	assert.Equal(t, 1, found)
+}
+
 func TestSessionStop_NoActiveWork(t *testing.T) {
 	c, err := NewInProcessClient(context.Background(), NewServer())
 	assert.NoError(t, err)

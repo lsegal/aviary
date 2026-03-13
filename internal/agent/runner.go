@@ -362,7 +362,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 						inlineUnavailableTool = inlineCall.Tool
 						break
 					}
-					resultText, canceled := r.executeToolCall(promptCtx, emit, toolClient, sessionID, effectiveModel, usageRec, toolEventRecord{Name: inlineCall.Tool, Args: inlineCall.Arguments}, inlineCall)
+					resultText, canceled := r.executeToolCall(promptCtx, emit, toolClient, sessionID, usageRec, toolEventRecord{Name: inlineCall.Tool, Args: inlineCall.Arguments}, inlineCall)
 					if canceled {
 						return
 					}
@@ -427,7 +427,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				continue
 			}
 
-			resultText, canceled := r.executeToolCall(promptCtx, emit, toolClient, sessionID, effectiveModel, usageRec, toolEventRecord{Name: call.Tool, Args: call.Arguments}, call)
+			resultText, canceled := r.executeToolCall(promptCtx, emit, toolClient, sessionID, usageRec, toolEventRecord{Name: call.Tool, Args: call.Arguments}, call)
 			if canceled {
 				return
 			}
@@ -768,14 +768,12 @@ func (r *AgentRunner) executeToolCall(
 	promptCtx context.Context,
 	emit func(StreamEvent),
 	toolClient ToolClient,
-	sessionID, effectiveModel string,
+	sessionID string,
 	usageRec *domain.UsageRecord,
 	streamRec toolEventRecord,
 	call toolCall,
 ) (string, bool) {
-	// Emit immediately so the UI shows the pill with args before we block on the call.
-	streamPayload, _ := json.Marshal(streamRec)
-	emit(StreamEvent{Type: StreamEventText, Text: "[tool] " + string(streamPayload)})
+	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args}})
 	if usageRec != nil {
 		usageRec.ToolCalls++
 	}
@@ -787,13 +785,13 @@ func (r *AgentRunner) executeToolCall(
 		}
 		errRec := toolEventRecord{Name: call.Tool, Args: call.Arguments, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
-		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(errPayload), "", effectiveModel)
+		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), "", "")
 		return "error: " + callErr.Error(), false
 	}
 
 	histRec := toolEventRecord{Name: call.Tool, Args: call.Arguments, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
-	r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "[tool] "+string(histPayload), "", effectiveModel)
+	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), "", "")
 	return resultText, false
 }
 

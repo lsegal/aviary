@@ -6,11 +6,13 @@ export function useStream() {
 	const streaming = ref(false);
 	const error = ref<string | null>(null);
 
+	type StreamChunkType = "text" | "media" | "tool";
+
 	async function streamAgent(
 		agentName: string,
 		message: string,
-		onChunk: (chunk: string, isMedia?: boolean) => void,
-		session = "main",
+		onChunk: (chunk: string, type?: StreamChunkType) => void,
+		sessionID = "",
 		mediaURL?: string,
 	): Promise<void> {
 		streaming.value = true;
@@ -18,10 +20,12 @@ export function useStream() {
 
 		try {
 			let sawProgress = false;
-			const toolArgs: Record<string, string> = {
+			const toolArgs: Record<string, unknown> = {
 				name: agentName,
 				message,
-				session,
+				session_id: sessionID || undefined,
+				session: "main",
+				include_tool_progress: true,
 			};
 			if (mediaURL) toolArgs.media_url = mediaURL;
 
@@ -29,14 +33,16 @@ export function useStream() {
 				onProgress: (chunk) => {
 					sawProgress = true;
 					if (chunk.startsWith("[media]")) {
-						onChunk(chunk.slice("[media]".length), true);
+						onChunk(chunk.slice("[media]".length), "media");
+					} else if (chunk.startsWith("[tool]")) {
+						onChunk(chunk.slice("[tool]".length), "tool");
 					} else {
-						onChunk(chunk, false);
+						onChunk(chunk, "text");
 					}
 				},
 			});
 			if (!sawProgress && text) {
-				onChunk(text, false);
+				onChunk(text, "text");
 			}
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
