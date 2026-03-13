@@ -6,6 +6,7 @@ import "context"
 type ToolInfo struct {
 	Name        string
 	Description string
+	InputSchema any
 }
 
 // ToolClient executes tool calls and enumerates available tools.

@@ -1336,15 +1336,15 @@ func TestSessionContextHelpers(t *testing.T) {
 	assert.False(t, ok)
 
 	// WithChannelSession
-	ctx6 := WithChannelSession(ctx, "slack", 2, "C123")
-	chType, chIndex, chID, ok := ChannelSessionFromContext(ctx6)
+	ctx6 := WithChannelSession(ctx, "slack", "alerts", "C123")
+	chType, configuredID, chID, ok := ChannelSessionFromContext(ctx6)
 	assert.True(t, ok)
 	assert.Equal(t, "slack", chType)
-	assert.Equal(t, 2, chIndex)
+	assert.Equal(t, "alerts", configuredID)
 	assert.Equal(t, "C123", chID)
 
 	// WithChannelSession empty type is no-op
-	ctx7 := WithChannelSession(ctx, "", 0, "C123")
+	ctx7 := WithChannelSession(ctx, "", "", "C123")
 	_, _, _, ok = ChannelSessionFromContext(ctx7)
 	assert.False(t, ok)
 
@@ -1381,7 +1381,7 @@ func TestResolveSessionID_ChannelContext(t *testing.T) {
 		&config.AgentConfig{Name: "rch"},
 		&mockProvider{}, nil, nil,
 	)
-	ctx := WithChannelSession(context.Background(), "slack", 0, "C999")
+	ctx := WithChannelSession(context.Background(), "slack", "alerts", "C999")
 	sid := runner.resolveSessionID(ctx)
 	assert.
 		// Should be non-empty (either a created session ID or fallback)
@@ -1422,7 +1422,7 @@ func TestLoadMemoryContext_NilMemory(t *testing.T) {
 		&config.AgentConfig{Name: "lmc"},
 		&mockProvider{}, nil, nil,
 	)
-	got := runner.loadMemoryContext("sess1", 1000)
+	got := runner.loadMemoryContext("hello", "sess1", 1000)
 	assert.Equal(t, "", got)
 
 }
@@ -1436,12 +1436,11 @@ func TestLoadMemoryContext_WithMemory(t *testing.T) {
 		&mockProvider{}, nil, mem,
 	)
 
-	// Append a memory entry then call loadMemoryContext.
 	poolID := runner.memoryPoolID()
-	err := mem.Append(poolID, "sess1", "user", "test memory content")
+	err := mem.SetNotes(poolID, "- test memory content\n- another note")
 	assert.NoError(t, err)
 
-	got := runner.loadMemoryContext("sess1", 10000)
+	got := runner.loadMemoryContext("test memory", "sess1", 10000)
 	assert.True(t, strings.Contains(got, "test memory content"))
 
 }
@@ -1456,14 +1455,12 @@ func TestLoadMemoryContext_ExcludesOtherSessions(t *testing.T) {
 	)
 
 	poolID := runner.memoryPoolID()
-	err := mem.Append(poolID, "sess1", "user", "keep this session")
-	assert.NoError(t, err)
-	err = mem.Append(poolID, "signal:abc", "user", "do not leak this signal session")
+	err := mem.SetNotes(poolID, "- keep this session\n- unrelated grocery list")
 	assert.NoError(t, err)
 
-	got := runner.loadMemoryContext("sess1", 10000)
+	got := runner.loadMemoryContext("keep session", "sess1", 10000)
 	assert.True(t, strings.Contains(got, "keep this session"))
-	assert.False(t, strings.Contains(got, "do not leak this signal session"))
+	assert.False(t, strings.Contains(got, "unrelated grocery list"))
 }
 
 func TestLoadMemoryContext_ExcludesSessionlessSummaries(t *testing.T) {
@@ -1484,10 +1481,10 @@ func TestLoadMemoryContext_ExcludesSessionlessSummaries(t *testing.T) {
 		Tokens:  8,
 	})
 	assert.NoError(t, err)
-	err = mem.Append(poolID, "sess1", "user", "current session memory")
+	err = mem.SetNotes(poolID, "- current session memory")
 	assert.NoError(t, err)
 
-	got := runner.loadMemoryContext("sess1", 10000)
+	got := runner.loadMemoryContext("current session", "sess1", 10000)
 	assert.True(t, strings.Contains(got, "current session memory"))
 	assert.False(t, strings.Contains(got, "summary from another session should not be shared"))
 }
@@ -1585,7 +1582,7 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 		{Name: "tool_a", Description: "does a"},
 		{Name: "tool_b"},
 	}
-	out := buildToolSystemPrompt("myagent", tools)
+	out := buildToolSystemPrompt("myagent", tools, "use tool a")
 	assert.True(t, strings.Contains(out, "myagent"))
 	assert.True(t, strings.Contains(out, "tool_a"))
 	assert.True(t, strings.Contains(out, "does a"))
@@ -1594,7 +1591,7 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	assert.True(t, strings.Contains(out, "memory_store only"))
 
 	// Without agent name.
-	out2 := buildToolSystemPrompt("", tools)
+	out2 := buildToolSystemPrompt("", tools, "")
 	assert.False(t, strings.Contains(out2, "agent name is"))
 
 }
@@ -1723,8 +1720,8 @@ func TestLoadMemoryContext_WithNotes(t *testing.T) {
 	err := mem.SetNotes(poolID, "important note")
 	assert.NoError(t, err)
 
-	got := runner.loadMemoryContext("sess1", 10000)
+	got := runner.loadMemoryContext("important", "sess1", 10000)
 	assert.True(t, strings.Contains(got, "important note"))
-	assert.True(t, strings.Contains(got, "Persistent notes"))
+	assert.True(t, strings.Contains(got, "Relevant durable memory"))
 
 }

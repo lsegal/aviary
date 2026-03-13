@@ -34,7 +34,7 @@ func (c *agentToolClient) ListTools(ctx context.Context) ([]agent.ToolInfo, erro
 		if t.Name == "exec" && !agentHasExecConfig(ctx) {
 			continue
 		}
-		out = append(out, agent.ToolInfo{Name: t.Name, Description: t.Description})
+		out = append(out, agent.ToolInfo{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 	}
 	return out, nil
 }

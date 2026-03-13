@@ -14,6 +14,7 @@ import (
 type ToolInfo struct {
 	Name        string
 	Description string
+	InputSchema any
 }
 
 // Client is the interface for calling Aviary MCP tools.
@@ -90,7 +91,7 @@ func (c *InProcessClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 		if t == nil {
 			continue
 		}
-		out = append(out, ToolInfo{Name: t.Name, Description: t.Description})
+		out = append(out, ToolInfo{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 	}
 	return out, nil
 }

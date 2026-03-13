@@ -80,7 +80,7 @@ func (c *RemoteClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 		if t == nil {
 			continue
 		}
-		out = append(out, ToolInfo{Name: t.Name, Description: t.Description})
+		out = append(out, ToolInfo{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 	}
 	return out, nil
 }
