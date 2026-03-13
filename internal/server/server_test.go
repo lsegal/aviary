@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
@@ -279,6 +280,50 @@ func TestVersionUpgradeHandler_Emulated(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.True(t, strings.Contains(rr.Body.String(), "Emulated upgrade completed"))
 
+}
+
+func TestApplyConfigReload_ReconcilesChannels(t *testing.T) {
+	srv := New(&config.Config{}, "tok")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv.runCtx = ctx
+	srv.msgFn = func(string, channels.Channel, channels.IncomingMessage) {}
+
+	cfgWithChannel := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Channels: []config.ChannelConfig{{
+				Type: "signal",
+			}},
+		}},
+	}
+
+	srv.applyConfigReload(cfgWithChannel)
+	assert.Len(t, srv.channels.List(), 1)
+
+	srv.applyConfigReload(&config.Config{})
+	assert.Empty(t, srv.channels.List())
+}
+
+func TestApplyConfigReload_ServerChangeTriggersListenerRestartOnly(t *testing.T) {
+	srv := New(&config.Config{}, "tok")
+
+	srv.applyConfigReload(&config.Config{
+		Server: config.ServerConfig{Port: 17777},
+	})
+
+	select {
+	case <-srv.listenerRestartCh:
+	default:
+		t.Fatal("expected listener restart signal")
+	}
+
+	select {
+	case <-srv.hardRestartCh:
+		t.Fatal("unexpected hard restart signal")
+	default:
+	}
 }
 
 func TestProcSampler(t *testing.T) {
@@ -867,7 +912,7 @@ func TestDaemonRestartHandler_Server(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, rr.Code)
 
 	select {
-	case <-srv.restartCh:
+	case <-srv.hardRestartCh:
 	default:
 		t.Fatal("expected restart signal")
 	}

@@ -1603,10 +1603,15 @@ func registerServerTools(s *sdkmcp.Server) {
 		Description: "Save an updated server configuration (full JSON-encoded config object)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configSaveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_save")
+		prevCfg, err := config.Load("")
+		if err != nil {
+			prevCfg = &config.Config{}
+		}
 		var cfg config.Config
 		if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid config JSON: %w", err)
 		}
+		stampChannelMetadata(prevCfg, &cfg, time.Now().UTC())
 		// Structural validation only (no auth store check from MCP context).
 		issues := config.Validate(&cfg, nil)
 		for _, issue := range issues {
@@ -1617,11 +1622,32 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := config.Save("", &cfg); err != nil {
 			return nil, struct{}{}, err
 		}
+		SyncLiveServer(&cfg)
 		d := GetDeps()
 		if d.Agents != nil {
 			d.Agents.Reconcile(&cfg)
 		}
 		return text("config saved")
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "config_restore_latest_backup",
+		Description: "Restore aviary.yaml from the most recent rotating backup file",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_restore_latest_backup")
+		if err := config.RestoreLatestBackup(""); err != nil {
+			return nil, struct{}{}, err
+		}
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("loading restored config: %w", err)
+		}
+		SyncLiveServer(cfg)
+		d := GetDeps()
+		if d.Agents != nil {
+			d.Agents.Reconcile(cfg)
+		}
+		return text("latest config backup restored")
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -1679,6 +1705,49 @@ func registerServerTools(s *sdkmcp.Server) {
 
 		return jsonResult(out)
 	})
+}
+
+func stampChannelMetadata(prevCfg, nextCfg *config.Config, now time.Time) {
+	if nextCfg == nil {
+		return
+	}
+
+	prevAgents := make(map[string]config.AgentConfig, len(prevCfg.Agents))
+	for _, agentCfg := range prevCfg.Agents {
+		prevAgents[agentCfg.Name] = agentCfg
+	}
+
+	for ai := range nextCfg.Agents {
+		agentCfg := &nextCfg.Agents[ai]
+		prevAgent, ok := prevAgents[agentCfg.Name]
+		for ci := range agentCfg.Channels {
+			ch := &agentCfg.Channels[ci]
+			enabled := config.BoolOr(ch.Enabled, true)
+			if ok && ci < len(prevAgent.Channels) {
+				prevCh := prevAgent.Channels[ci]
+				if ch.EnabledAt.IsZero() && !prevCh.EnabledAt.IsZero() {
+					ch.EnabledAt = prevCh.EnabledAt
+				}
+				if ch.DisabledAt.IsZero() && !prevCh.DisabledAt.IsZero() {
+					ch.DisabledAt = prevCh.DisabledAt
+				}
+				if config.BoolOr(prevCh.Enabled, true) != enabled {
+					if enabled {
+						ch.EnabledAt = now
+					} else {
+						ch.DisabledAt = now
+					}
+				}
+				continue
+			}
+
+			if enabled {
+				ch.EnabledAt = now
+			} else {
+				ch.DisabledAt = now
+			}
+		}
+	}
 }
 
 // ── Usage tools ──────────────────────────────────────────────────────────────

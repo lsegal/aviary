@@ -29,26 +29,28 @@ import (
 	"github.com/lsegal/aviary/internal/update"
 )
 
-// ErrRestartRequired is returned by ListenAndServe when a config change requires a server restart.
+// ErrRestartRequired is returned by ListenAndServe when an explicit process
+// restart was requested (for example via the daemons API).
 var ErrRestartRequired = errors.New("server restart required")
 
 // Server wraps an HTTPS server with token auth, MCP routing, and agent management.
 type Server struct {
-	cfg       *config.Config
-	token     string
-	mux       *http.ServeMux
-	httpSrv   *http.Server
-	runCtx    context.Context
-	agents    *agent.Manager
-	sched     *scheduler.Scheduler
-	mem       *memory.Manager
-	channels  *channels.Manager
-	brw       *browser.Manager
-	sampler   *ProcSampler
-	watcher   *config.Watcher
-	restartCh chan struct{}
-	upgradeCh chan struct{}
-	msgFn     func(agentName string, ch channels.Channel, msg channels.IncomingMessage)
+	cfg               *config.Config
+	token             string
+	mux               *http.ServeMux
+	httpSrv           *http.Server
+	runCtx            context.Context
+	agents            *agent.Manager
+	sched             *scheduler.Scheduler
+	mem               *memory.Manager
+	channels          *channels.Manager
+	brw               *browser.Manager
+	sampler           *ProcSampler
+	watcher           *config.Watcher
+	listenerRestartCh chan struct{}
+	hardRestartCh     chan struct{}
+	upgradeCh         chan struct{}
+	msgFn             func(agentName string, ch channels.Channel, msg channels.IncomingMessage)
 }
 
 // New creates a new Server with the given config and auth token.
@@ -63,12 +65,13 @@ func New(cfg *config.Config, token string) *Server {
 		factory.WithTokenSetter(authStore.Set)
 	}
 	s := &Server{
-		cfg:       cfg,
-		token:     token,
-		mux:       http.NewServeMux(),
-		agents:    agent.NewManager(factory),
-		restartCh: make(chan struct{}, 1),
-		upgradeCh: make(chan struct{}, 1),
+		cfg:               cfg,
+		token:             token,
+		mux:               http.NewServeMux(),
+		agents:            agent.NewManager(factory),
+		listenerRestartCh: make(chan struct{}, 1),
+		hardRestartCh:     make(chan struct{}, 1),
+		upgradeCh:         make(chan struct{}, 1),
 	}
 
 	// Initial reconcile from loaded config.
@@ -129,27 +132,36 @@ func New(cfg *config.Config, token string) *Server {
 	// Set up config watcher.
 	s.watcher = config.NewWatcher("")
 	s.watcher.OnChange(func(newCfg *config.Config) {
-		s.agents.Reconcile(newCfg)
-		if s.sched != nil {
-			s.sched.Reconcile(newCfg)
-		}
-		// If server-level settings changed, signal ListenAndServe to restart.
-		if serverSettingsChanged(s.cfg, newCfg) {
-			slog.Info("server: settings changed, restarting")
-			s.cfg = newCfg
-			select {
-			case s.restartCh <- struct{}{}:
-			default:
-			}
-		}
+		s.applyConfigReload(newCfg)
 	})
 
 	s.registerRoutes()
 	return s
 }
 
+func (s *Server) applyConfigReload(newCfg *config.Config) {
+	oldCfg := s.cfg
+	mcp.SyncLiveServer(newCfg)
+	s.agents.Reconcile(newCfg)
+	if s.sched != nil {
+		s.sched.Reconcile(newCfg)
+	}
+	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
+		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)
+	}
+	s.cfg = newCfg
+	if serverSettingsChanged(oldCfg, newCfg) {
+		slog.Info("server: settings changed, rotating listener")
+		select {
+		case s.listenerRestartCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (s *Server) registerRoutes() {
 	mcpSrv := mcp.NewServer()
+	mcp.SetLiveServer(mcpSrv)
 	mcpHandler := mcp.HTTPHandler(mcpSrv)
 
 	// Login does not require auth.
@@ -179,49 +191,10 @@ func (s *Server) registerRoutes() {
 }
 
 // ListenAndServe starts the server on the configured port.
-// It returns only when the context is cancelled or an error occurs.
-// Returns ErrRestartRequired if a config change requires a restart.
+// It returns only when the context is cancelled, an error occurs, or an
+// explicit process restart is requested.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.runCtx = ctx
-	port := s.cfg.Server.Port
-	if port == 0 {
-		port = 16677
-	}
-
-	host := "127.0.0.1"
-	if s.cfg.Server.ExternalAccess {
-		host = "0.0.0.0"
-	}
-	addr := fmt.Sprintf("%s:%d", host, port)
-
-	var ln net.Listener
-	if s.cfg.Server.NoTLS {
-		var err error
-		ln, err = net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("listening on %s: %w", addr, err)
-		}
-	} else {
-		var tlsCert, tlsKey string
-		if s.cfg.Server.TLS != nil {
-			tlsCert = s.cfg.Server.TLS.Cert
-			tlsKey = s.cfg.Server.TLS.Key
-		}
-		cert, err := LoadOrGenerateTLS(tlsCert, tlsKey)
-		if err != nil {
-			return fmt.Errorf("loading TLS: %w", err)
-		}
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		}
-		ln, err = tls.Listen("tcp", addr, tlsCfg)
-		if err != nil {
-			return fmt.Errorf("listening on %s: %w", addr, err)
-		}
-	}
-
-	s.httpSrv = &http.Server{Handler: s.mux}
 
 	// Start config watcher in background.
 	go func() {
@@ -327,35 +300,96 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- s.httpSrv.Serve(ln)
-	}()
+	for {
+		ln, err := s.listen()
+		if err != nil {
+			return err
+		}
+		s.httpSrv = &http.Server{Handler: s.mux}
 
-	restart := false
-	select {
-	case <-ctx.Done():
-	case <-s.restartCh:
-		restart = true
-	case <-s.upgradeCh:
-		restart = false
-	case err := <-errCh:
-		return err
+		errCh := make(chan error, 1)
+		go func(httpSrv *http.Server, ln net.Listener) {
+			errCh <- httpSrv.Serve(ln)
+		}(s.httpSrv, ln)
+
+		var (
+			listenerRestart bool
+			hardRestart     bool
+		)
+		select {
+		case <-ctx.Done():
+		case <-s.listenerRestartCh:
+			listenerRestart = true
+		case <-s.hardRestartCh:
+			hardRestart = true
+		case <-s.upgradeCh:
+		case err := <-errCh:
+			if errors.Is(err, http.ErrServerClosed) {
+				continue
+			}
+			return err
+		}
+
+		_ = s.httpSrv.Shutdown(context.Background())
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		if listenerRestart {
+			continue
+		}
+
+		s.watcher.Stop()
+		s.channels.Stop()
+		if s.sched != nil {
+			s.sched.Stop()
+		}
+		s.agents.Stop()
+
+		if hardRestart {
+			return ErrRestartRequired
+		}
+		return nil
+	}
+}
+
+func (s *Server) listen() (net.Listener, error) {
+	port := s.cfg.Server.Port
+	if port == 0 {
+		port = 16677
 	}
 
-	// Graceful shutdown (covers both normal stop and restart).
-	s.watcher.Stop()
-	s.channels.Stop()
-	if s.sched != nil {
-		s.sched.Stop()
+	host := "127.0.0.1"
+	if s.cfg.Server.ExternalAccess {
+		host = "0.0.0.0"
 	}
-	s.agents.Stop()
-	_ = s.httpSrv.Shutdown(context.Background())
+	addr := fmt.Sprintf("%s:%d", host, port)
 
-	if restart {
-		return ErrRestartRequired
+	if s.cfg.Server.NoTLS {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("listening on %s: %w", addr, err)
+		}
+		return ln, nil
 	}
-	return nil
+
+	var tlsCert, tlsKey string
+	if s.cfg.Server.TLS != nil {
+		tlsCert = s.cfg.Server.TLS.Cert
+		tlsKey = s.cfg.Server.TLS.Key
+	}
+	cert, err := LoadOrGenerateTLS(tlsCert, tlsKey)
+	if err != nil {
+		return nil, fmt.Errorf("loading TLS: %w", err)
+	}
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	ln, err := tls.Listen("tcp", addr, tlsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("listening on %s: %w", addr, err)
+	}
+	return ln, nil
 }
 
 func (s *Server) triggerUpgrade(_ context.Context, version string) error {

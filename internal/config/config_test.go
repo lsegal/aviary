@@ -545,7 +545,23 @@ func TestValidate_ChannelEmptyAllowFrom(t *testing.T) {
 		}},
 	}
 	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "empty allowFrom list"))
+	assert.True(t, hasIssue(issues, "no enabled allowFrom entries"))
+
+}
+
+func TestValidate_DisabledChannelSkipsAllowFromWarning(t *testing.T) {
+	disabled := false
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Channels: []ChannelConfig{{
+				Type:    "signal",
+				Enabled: &disabled,
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "allowFrom"))
 
 }
 

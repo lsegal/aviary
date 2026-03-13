@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
+	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"github.com/stretchr/testify/assert"
 
@@ -267,6 +270,88 @@ func TestManager_Reconcile_RemovesChannel(t *testing.T) {
 
 }
 
+func TestManager_Reconcile_DisabledChannelNotStarted(t *testing.T) {
+	disabled := false
+	mgr := NewManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Channels: []config.ChannelConfig{{
+				Type:    "signal",
+				Phone:   "+1",
+				Enabled: &disabled,
+			}},
+		}},
+	}
+
+	mgr.Reconcile(ctx, cfg, func(_ string, _ Channel, _ IncomingMessage) {})
+	assert.Empty(t, mgr.List())
+}
+
+func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
+	mgr := NewManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg1 := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Channels: []config.ChannelConfig{{
+				Type: "signal",
+			}},
+		}},
+	}
+	showTyping := false
+	cfg2 := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Channels: []config.ChannelConfig{{
+				Type:       "signal",
+				ShowTyping: &showTyping,
+			}},
+		}},
+	}
+
+	mgr.Reconcile(ctx, cfg1, func(_ string, _ Channel, _ IncomingMessage) {})
+	key := channelKey("bot", "signal", 0)
+
+	mgr.mu.Lock()
+	first := mgr.channels[key]
+	firstStarted := mgr.startTimes[key]
+	mgr.mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+	mgr.Reconcile(ctx, cfg2, func(_ string, _ Channel, _ IncomingMessage) {})
+
+	mgr.mu.Lock()
+	second := mgr.channels[key]
+	secondStarted := mgr.startTimes[key]
+	mgr.mu.Unlock()
+
+	assert.NotNil(t, first)
+	assert.NotNil(t, second)
+	assert.NotSame(t, first, second)
+	assert.True(t, secondStarted.After(firstStarted))
+}
+
+func TestShouldProcessIncomingMessage_EnabledAtGate(t *testing.T) {
+	enabledAt := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
+	cc := config.ChannelConfig{EnabledAt: enabledAt}
+
+	assert.False(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+		ReceivedAt: enabledAt.Add(-time.Second),
+	}))
+	assert.True(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+		ReceivedAt: enabledAt,
+	}))
+	assert.True(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+		ReceivedAt: enabledAt.Add(time.Second),
+	}))
+}
+
 // mockMediaSender implements both Channel and MediaSender.
 type mockMediaSender struct {
 	mockChannel
@@ -376,6 +461,30 @@ func TestDiscordChannel_Stop_Idempotent(_ *testing.T) {
 	ch.Stop() // should not panic
 }
 
+func TestDiscordChannel_HandleEditedMention(t *testing.T) {
+	ch := NewDiscordChannel("t", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ok := ch.handleMessage(&discordgo.Message{
+		Author:    &discordgo.User{ID: "U123"},
+		ChannelID: "C123",
+		GuildID:   "G123",
+		Content:   "hi <@BOT123>",
+	}, "BOT123")
+	assert.True(t, ok)
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "discord", msg.Type)
+	assert.Equal(t, "U123", msg.From)
+	assert.Equal(t, "C123", msg.Channel)
+	assert.Equal(t, "hi <@BOT123>", msg.Text)
+}
+
 func TestNewChannel_Discord(t *testing.T) {
 	ch := newChannel(config.ChannelConfig{
 		Type:  "discord",
@@ -413,6 +522,35 @@ func TestSlackChannel_Dispatch_WrongType(_ *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
 	// Non-eventsAPI event type causes early return before Ack — no panic.
 	ch.dispatch(socketmode.Event{Type: socketmode.EventTypeHello})
+}
+
+func TestSlackChannel_HandleEditedMention(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		Type:    "message",
+		User:    "U123",
+		Channel: "C123",
+		SubType: "message_changed",
+		Message: &slack.Msg{
+			User:    "U123",
+			Channel: "C123",
+			Text:    "hi <@UBOT>",
+		},
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "slack", msg.Type)
+	assert.Equal(t, "U123", msg.From)
+	assert.Equal(t, "C123", msg.Channel)
+	assert.Equal(t, "hi <@UBOT>", msg.Text)
 }
 
 func TestNewChannel_Slack(t *testing.T) {

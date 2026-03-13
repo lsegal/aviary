@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -62,43 +64,32 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	c.session = s
 
 	s.AddHandler(func(_ *discordgo.Session, m *discordgo.MessageCreate) {
-		if m.Author.Bot {
+		botUserID := c.discordBotUserID()
+		if !c.handleMessage(m.Message, botUserID) {
 			return
 		}
-		// Messages sent in a guild channel have a non-empty GuildID.
-		isGroup := m.GuildID != ""
-		botUserID := ""
-		if s.State != nil && s.State.User != nil {
-			botUserID = s.State.User.ID
-		}
-		result := checkAllowed(c.allowFrom, m.Author.ID, m.ChannelID, m.Content, isGroup, botUserID, false)
-		if !result.allowed {
+	})
+
+	s.AddHandler(func(_ *discordgo.Session, m *discordgo.MessageUpdate) {
+		if m == nil {
 			return
 		}
-		c.handlerMu.RLock()
-		fn := c.handler
-		c.handlerMu.RUnlock()
-		if fn != nil {
-			im := IncomingMessage{
-				Type:          "discord",
-				From:          m.Author.ID,
-				Channel:       m.ChannelID,
-				Text:          m.Content,
-				RestrictTools: result.restrictTools,
-				DisabledTools: c.disabledTools,
-				Model:         result.model,
-				Fallbacks:     result.fallbacks,
-			}
-			if im.Model == "" {
-				im.Model = c.model
-			}
-			if len(im.Fallbacks) == 0 {
-				im.Fallbacks = c.fallbacks
-			}
-			fn(im)
-		} else {
-			slog.Debug("discord: no handler registered", "from", m.Author.ID)
+		msg := m.Message
+		if msg == nil {
+			msg = &discordgo.Message{}
 		}
+		if m.BeforeUpdate != nil {
+			if msg.Author == nil {
+				msg.Author = m.BeforeUpdate.Author
+			}
+			if msg.ChannelID == "" {
+				msg.ChannelID = m.BeforeUpdate.ChannelID
+			}
+			if msg.GuildID == "" {
+				msg.GuildID = m.BeforeUpdate.GuildID
+			}
+		}
+		c.handleMessage(msg, c.discordBotUserID())
 	})
 
 	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
@@ -117,4 +108,55 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 // Stop disconnects from Discord.
 func (c *DiscordChannel) Stop() {
 	c.stopOnce.Do(func() { close(c.done) })
+}
+
+func (c *DiscordChannel) discordBotUserID() string {
+	if c.session == nil || c.session.State == nil || c.session.State.User == nil {
+		return ""
+	}
+	return c.session.State.User.ID
+}
+
+func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string) bool {
+	if msg == nil || msg.Author == nil || msg.Author.Bot || strings.TrimSpace(msg.Content) == "" {
+		return false
+	}
+
+	// Messages sent in a guild channel have a non-empty GuildID.
+	isGroup := msg.GuildID != ""
+	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, false)
+	if !result.allowed {
+		return false
+	}
+
+	c.handlerMu.RLock()
+	fn := c.handler
+	c.handlerMu.RUnlock()
+	if fn != nil {
+		receivedAt := time.Now().UTC()
+		if !msg.Timestamp.IsZero() {
+			receivedAt = msg.Timestamp.UTC()
+		}
+		im := IncomingMessage{
+			Type:          "discord",
+			From:          msg.Author.ID,
+			Channel:       msg.ChannelID,
+			Text:          msg.Content,
+			ReceivedAt:    receivedAt,
+			RestrictTools: result.restrictTools,
+			DisabledTools: c.disabledTools,
+			Model:         result.model,
+			Fallbacks:     result.fallbacks,
+		}
+		if im.Model == "" {
+			im.Model = c.model
+		}
+		if len(im.Fallbacks) == 0 {
+			im.Fallbacks = c.fallbacks
+		}
+		fn(im)
+	} else {
+		slog.Debug("discord: no handler registered", "from", msg.Author.ID)
+	}
+	return true
 }

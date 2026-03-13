@@ -9,12 +9,16 @@ import (
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 var (
 	gogLookPath = exec.LookPath
 	gogCommand  = exec.CommandContext
 )
+
+const gogcliToolName = "skill_gogcli"
 
 type gogcliRunArgs struct {
 	Command []string `json:"command"`
@@ -42,8 +46,27 @@ var gogAllowedCommands = map[string]struct{}{
 }
 
 func registerPluginTools(s *sdkmcp.Server) {
+	cfg, err := config.Load("")
+	if err != nil || !isSkillEnabled(cfg, "gogcli") {
+		return
+	}
+	registerGogcliTool(s)
+}
+
+func syncPluginTools(s *sdkmcp.Server, cfg *config.Config) {
+	if s == nil {
+		return
+	}
+	if isSkillEnabled(cfg, "gogcli") {
+		registerGogcliTool(s)
+		return
+	}
+	s.RemoveTools(gogcliToolName)
+}
+
+func registerGogcliTool(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name: "skill_gogcli",
+		Name: gogcliToolName,
 		Description: "Run a gog CLI command for Google Workspace services. " +
 			"Arguments: command (array of strings, required) and account (optional). " +
 			"Only service commands such as gmail/calendar/drive/contacts/tasks/sheets/docs/slides/forms/chat/classroom/appscript/people/groups/admin/keep/time are allowed. " +
@@ -55,6 +78,14 @@ func registerPluginTools(s *sdkmcp.Server) {
 		}
 		return text(out)
 	})
+}
+
+func isSkillEnabled(cfg *config.Config, name string) bool {
+	if cfg == nil || cfg.Skills == nil {
+		return false
+	}
+	skill, ok := cfg.Skills[name]
+	return ok && skill.Enabled
 }
 
 func runGogCLI(ctx context.Context, args gogcliRunArgs) (string, error) {

@@ -375,6 +375,27 @@ func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {
 
 }
 
+func TestDispatch_EditedGroupMention_RespondToMentions(t *testing.T) {
+	const botPhone = "+12130000000"
+	const groupID = "Z2lkPQ=="
+	allowFrom := []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}
+	ch := NewSignalChannel(botPhone, "", allowFrom, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","editMessage":{"targetSentTimestamp":123,"dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"},"mentions":[{"number":"` + botPhone + `","uuid":"","start":0,"length":3}]}}}}}`
+	ch.dispatch([]byte(line))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "+1", msg.From)
+	assert.Equal(t, groupID, msg.Channel)
+	assert.Equal(t, "hey", msg.Text)
+}
+
 // ── checkAllowed tests ────────────────────────────────────────────────────────
 
 func TestCheckAllowed_DirectMessages(t *testing.T) {

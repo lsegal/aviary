@@ -916,6 +916,17 @@ func TestUsageQueryTool_DateFilter(t *testing.T) {
 }
 
 func TestListToolsAndCallToolText(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+	err = config.Save("", &config.Config{
+		Skills: map[string]config.SkillConfig{
+			"gogcli": {Enabled: true},
+		},
+	})
+	assert.NoError(t, err)
+
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
 	SetDeps(&Deps{Agents: agent.NewManager(nil)})
@@ -954,6 +965,63 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "pong", out)
 
+}
+
+func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+	require.NoError(t, config.Save("", &config.Config{}))
+
+	oldDeps := GetDeps()
+	t.Cleanup(func() { SetDeps(oldDeps) })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	srv := NewServer()
+	SetLiveServer(srv)
+	t.Cleanup(func() { SetLiveServer(nil) })
+
+	client, err := NewInProcessClient(context.Background(), srv)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+
+	listTools := func() []ToolInfo {
+		tools, err := client.ListTools(context.Background())
+		require.NoError(t, err)
+		return tools
+	}
+	hasTool := func(name string) bool {
+		for _, tool := range listTools() {
+			if tool.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	assert.False(t, hasTool(gogcliToolName))
+
+	enabledCfg := config.Config{
+		Skills: map[string]config.SkillConfig{
+			"gogcli": {Enabled: true},
+		},
+	}
+	rawEnabledCfg, err := json.Marshal(enabledCfg)
+	require.NoError(t, err)
+	_, err = client.CallTool(context.Background(), "config_save", map[string]any{
+		"config": string(rawEnabledCfg),
+	})
+	require.NoError(t, err)
+	assert.True(t, hasTool(gogcliToolName))
+
+	rawDisabledCfg, err := json.Marshal(config.Config{})
+	require.NoError(t, err)
+	_, err = client.CallTool(context.Background(), "config_save", map[string]any{
+		"config": string(rawDisabledCfg),
+	})
+	require.NoError(t, err)
+	assert.False(t, hasTool(gogcliToolName))
 }
 
 func TestServerVersionTools_Emulated(t *testing.T) {

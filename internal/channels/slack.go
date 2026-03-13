@@ -3,8 +3,10 @@ package channels
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -110,13 +112,43 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 		return
 	}
 	inner, ok := eventsAPI.InnerEvent.Data.(*slackevents.MessageEvent)
-	if !ok || inner.BotID != "" {
-		return // ignore bot messages
+	if !ok {
+		return
+	}
+	c.handleMessageEvent(inner)
+}
+
+func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
+	if event == nil {
+		return
+	}
+
+	channelID := event.Channel
+	from := event.User
+	text := event.Text
+	botID := event.BotID
+	isEdited := event.IsEdited() || (event.SubType == "message_changed" && event.Message != nil)
+	if isEdited && event.Message != nil {
+		if event.Message.Channel != "" {
+			channelID = event.Message.Channel
+		}
+		if event.Message.User != "" {
+			from = event.Message.User
+		}
+		if event.Message.Text != "" {
+			text = event.Message.Text
+		}
+		if event.Message.BotID != "" {
+			botID = event.Message.BotID
+		}
+	}
+	if botID != "" || strings.TrimSpace(text) == "" || from == "" || channelID == "" {
+		return
 	}
 
 	// Slack DM channels start with 'D'; everything else is a group/channel.
-	isGroup := !strings.HasPrefix(inner.Channel, "D")
-	result := checkAllowed(c.allowFrom, inner.User, inner.Channel, inner.Text, isGroup, c.botUserID, false)
+	isGroup := !strings.HasPrefix(channelID, "D")
+	result := checkAllowed(c.allowFrom, from, channelID, text, isGroup, c.botUserID, false)
 	if !result.allowed {
 		return
 	}
@@ -126,11 +158,20 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
+		receivedAt := time.Now().UTC()
+		rawTimestamp := event.TimeStamp
+		if isEdited && event.Message != nil && event.Message.Timestamp != "" {
+			rawTimestamp = event.Message.Timestamp
+		}
+		if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
+			receivedAt = ts
+		}
 		im := IncomingMessage{
 			Type:          "slack",
-			From:          inner.User,
-			Channel:       inner.Channel,
-			Text:          inner.Text,
+			From:          from,
+			Channel:       channelID,
+			Text:          text,
+			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
 			Model:         result.model,
@@ -145,6 +186,32 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 		}
 		fn(im)
 	} else {
-		slog.Debug("slack: no handler registered", "from", inner.User)
+		slog.Debug("slack: no handler registered", "from", from)
 	}
+}
+
+func parseSlackTimestamp(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	secs, frac, _ := strings.Cut(raw, ".")
+	secVal, err := strconv.ParseInt(secs, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	nsec := int64(0)
+	if frac != "" {
+		if len(frac) > 9 {
+			frac = frac[:9]
+		}
+		for len(frac) < 9 {
+			frac += "0"
+		}
+		nsec, err = strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return time.Unix(secVal, nsec).UTC(), true
 }

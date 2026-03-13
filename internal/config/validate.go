@@ -254,14 +254,23 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 		v.errorf(field+".type", "unknown channel type %q; must be \"slack\", \"discord\", or \"signal\"", ch.Type)
 	}
 
-	if len(ch.AllowFrom) == 0 {
-		v.warnf(field+".allowFrom", "empty allowFrom list will silently reject all incoming messages; add allowFrom entries or use [{from: \"*\"}] to allow everyone")
+	if !BoolOr(ch.Enabled, true) {
+		return
 	}
+
+	enabledEntries := 0
 	for i, entry := range ch.AllowFrom {
+		if !BoolOr(entry.Enabled, true) {
+			continue
+		}
+		enabledEntries++
 		ef := fmt.Sprintf("%s.allowFrom[%d]", field, i)
 		if strings.TrimSpace(entry.From) == "" {
 			v.errorf(ef+".from", "allowFrom entry must have a non-empty \"from\" field")
 		}
+	}
+	if enabledEntries == 0 {
+		v.warnf(field+".allowFrom", "no enabled allowFrom entries; all incoming messages will be rejected until at least one entry is enabled")
 	}
 
 	if ch.Token != "" && strings.HasPrefix(ch.Token, "auth:") {

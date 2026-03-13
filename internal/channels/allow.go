@@ -37,6 +37,9 @@ func checkAllowed(
 		return allowResult{}
 	}
 	for _, entry := range entries {
+		if !config.BoolOr(entry.Enabled, true) {
+			continue
+		}
 		for _, id := range splitFrom(entry.From) {
 			if isGroup {
 				// Step 1: the sender must match this entry's From list.

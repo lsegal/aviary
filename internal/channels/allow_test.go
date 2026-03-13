@@ -111,6 +111,13 @@ func TestCheckAllowed_Wildcard(t *testing.T) {
 
 }
 
+func TestCheckAllowed_DisabledEntryIgnored(t *testing.T) {
+	disabled := false
+	entries := []config.AllowFromEntry{{Enabled: &disabled, From: "*"}}
+	result := checkAllowed(entries, "anyone", "", "hello", false, "", false)
+	assert.False(t, result.allowed)
+}
+
 // TestCheckAllowed_GroupMessage tests group-chat allow logic.
 func TestCheckAllowed_GroupMessage(t *testing.T) {
 	entries := []config.AllowFromEntry{

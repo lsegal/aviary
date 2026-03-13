@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -108,6 +109,8 @@ type AgentConfig struct {
 // For YAML backward compatibility a plain string entry is equivalent to
 // AllowFromEntry{From: "<string>"}.
 type AllowFromEntry struct {
+	// Enabled controls whether this allowFrom entry is active. Defaults to true.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// From is a comma-separated list of sender IDs.
 	From string `yaml:"from" json:"from"`
 	// AllowedGroups is a comma-separated list of group/channel IDs that this
@@ -158,11 +161,14 @@ func (e *AllowFromEntry) UnmarshalJSON(b []byte) error {
 
 // ChannelConfig describes a communication channel for an agent.
 type ChannelConfig struct {
+	Enabled       *bool            `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
 	Type          string           `yaml:"type"                    json:"type"`
 	Token         string           `yaml:"token,omitempty"         json:"token,omitempty"`
 	Channel       string           `yaml:"channel,omitempty"       json:"channel,omitempty"`
 	Phone         string           `yaml:"phone,omitempty"         json:"phone,omitempty"`
 	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
+	EnabledAt     time.Time        `yaml:"enabledAt,omitempty"      json:"enabledAt,omitempty"`
+	DisabledAt    time.Time        `yaml:"disabledAt,omitempty"     json:"disabledAt,omitempty"`
 	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
 	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
 	// ShowTyping controls whether a typing indicator is shown while the agent
@@ -485,6 +491,29 @@ func backupConfigFile(path string) error {
 	}
 	if err := os.WriteFile(filepath.Join(backupDir, "aviary.yml.bak.1"), data, 0o640); err != nil {
 		return fmt.Errorf("writing config backup: %w", err)
+	}
+	return nil
+}
+
+// RestoreLatestBackup copies the newest rotating backup (aviary.yml.bak.1)
+// back to the live config path.
+func RestoreLatestBackup(path string) error {
+	if path == "" {
+		path = DefaultPath()
+	}
+	backupPath := filepath.Join(filepath.Dir(path), "backups", "aviary.yml.bak.1")
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("latest config backup not found")
+		}
+		return fmt.Errorf("reading latest config backup: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o640); err != nil {
+		return fmt.Errorf("restoring config from backup: %w", err)
 	}
 	return nil
 }

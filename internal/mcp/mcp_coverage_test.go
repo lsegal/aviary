@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
@@ -536,13 +537,42 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 		!strings.HasPrefix(strings.TrimSpace(out), "[") && strings.TrimSpace(out) != "null")
 
 	// config_save with valid JSON config
-	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku"}]}`
+	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","channel":"C123"}]}]}`
 	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "saved"))
 
+	savedCfg, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, savedCfg.Agents, 1)
+	require.Len(t, savedCfg.Agents[0].Channels, 1)
+	assert.False(t, savedCfg.Agents[0].Channels[0].EnabledAt.IsZero())
+	assert.True(t, savedCfg.Agents[0].Channels[0].DisabledAt.IsZero())
+
+	disableJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","channel":"C123","enabled":false}]}]}`
+	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": disableJSON})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
+
+	savedCfg, err = config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, savedCfg.Agents, 1)
+	require.Len(t, savedCfg.Agents[0].Channels, 1)
+	assert.False(t, savedCfg.Agents[0].Channels[0].EnabledAt.IsZero())
+	assert.False(t, savedCfg.Agents[0].Channels[0].DisabledAt.IsZero())
+
 	// config_save with invalid JSON
 	toolCallContains(t, d, "config_save", map[string]any{"config": "not-json"}, "invalid config")
+
+	out, err = d.CallTool(context.Background(), "config_restore_latest_backup", map[string]any{})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "restored"))
+
+	restoredCfg, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, restoredCfg.Agents, 1)
+	assert.Equal(t, "slack", restoredCfg.Agents[0].Channels[0].Type)
+	assert.True(t, config.BoolOr(restoredCfg.Agents[0].Channels[0].Enabled, true))
 }
 
 // ── session_create tool ───────────────────────────────────────────────────────

@@ -936,12 +936,18 @@ type signalReactionMessage struct {
 	} `json:"groupInfo"`
 }
 
+type signalEditMessage struct {
+	TargetSentTimestamp int64              `json:"targetSentTimestamp"`
+	DataMessage         *signalDataMessage `json:"dataMessage"`
+}
+
 // receiveParams is the params block of a "receive" notification.
 type receiveParams struct {
 	Envelope struct {
 		Source          string                 `json:"source"`
 		Timestamp       int64                  `json:"timestamp"`
 		DataMessage     *signalDataMessage     `json:"dataMessage"`
+		EditMessage     *signalEditMessage     `json:"editMessage"`
 		ReactionMessage *signalReactionMessage `json:"reactionMessage"`
 	} `json:"envelope"`
 }
@@ -974,13 +980,18 @@ func (c *SignalChannel) dispatch(line []byte) {
 		return
 	}
 
+	dataMessage := env.DataMessage
+	if env.EditMessage != nil && env.EditMessage.DataMessage != nil {
+		dataMessage = env.EditMessage.DataMessage
+	}
+
 	// Determine whether this is a reply to one of the agent's own messages.
 	isReplyToSelf := c.replyToReplies && c.phone != "" &&
-		env.DataMessage != nil &&
-		env.DataMessage.Quote != nil &&
-		env.DataMessage.Quote.Author == c.phone
+		dataMessage != nil &&
+		dataMessage.Quote != nil &&
+		dataMessage.Quote.Author == c.phone
 
-	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(env.DataMessage), isReplyToSelf, env.DataMessage)
+	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(dataMessage), isReplyToSelf, dataMessage)
 }
 
 // isMentioned checks the dataMessage.mentions array for the bot's own phone
@@ -1040,11 +1051,16 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
+		receivedAt := time.Now().UTC()
+		if msgTimestamp > 0 {
+			receivedAt = time.UnixMilli(msgTimestamp).UTC()
+		}
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
 			Channel:       channelID,
 			Text:          dataMessage.Message,
+			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
 			Model:         result.model,
@@ -1090,11 +1106,16 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
+		receivedAt := time.Now().UTC()
+		if msgTimestamp > 0 {
+			receivedAt = time.UnixMilli(msgTimestamp).UTC()
+		}
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
 			Channel:       channelID,
 			Text:          reactionMessage.Emoji,
+			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
 			Model:         result.model,

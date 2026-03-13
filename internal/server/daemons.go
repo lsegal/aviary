@@ -182,7 +182,7 @@ func (s *Server) daemonRestartHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Key == "aviary" {
 		select {
-		case s.restartCh <- struct{}{}:
+		case s.hardRestartCh <- struct{}{}:
 		default:
 		}
 		w.WriteHeader(http.StatusAccepted)

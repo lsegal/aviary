@@ -12,6 +12,7 @@ type IncomingMessage struct {
 	From          string // user ID or name
 	Channel       string // channel ID or name
 	Text          string
+	ReceivedAt    time.Time
 	RestrictTools []string // per-entry tool allow-list override; nil means use agent defaults
 	DisabledTools []string // per-channel tool deny-list override; applied after the allow-list
 	Model         string   // per-entry model override; "" means use agent default

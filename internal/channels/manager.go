@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,63 +68,46 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 		agentFallbacks := config.EffectiveAgentFallbacks(ac, cfg.Models)
 		for i, cc := range ac.Channels {
 			key := channelKey(ac.Name, cc.Type, i)
-			desired[key] = struct{}{}
-			m.specs[key] = channelSpec{
+			if config.BoolOr(cc.Enabled, true) {
+				desired[key] = struct{}{}
+				spec := channelSpec{
+					agentName:      ac.Name,
+					channelConfig:  cc,
+					agentModel:     agentModel,
+					agentFallbacks: append([]string{}, agentFallbacks...),
+				}
+				existingSpec, exists := m.specs[key]
+				m.specs[key] = spec
+				if exists && reflect.DeepEqual(existingSpec, spec) && m.channels[key] != nil {
+					continue // already running with the desired config
+				}
+			} else {
+				delete(m.specs, key)
+			}
+
+			if !config.BoolOr(cc.Enabled, true) {
+				continue
+			}
+
+			if _, exists := m.channels[key]; exists {
+				m.stopChannelLocked(key)
+			}
+
+			if err := m.startChannelLocked(ctx, key, channelSpec{
 				agentName:      ac.Name,
 				channelConfig:  cc,
 				agentModel:     agentModel,
 				agentFallbacks: append([]string{}, agentFallbacks...),
+			}, msgFn); err != nil {
+				slog.Warn("channel start failed", "key", key, "err", err)
 			}
-
-			if _, exists := m.channels[key]; exists {
-				continue // already running
-			}
-
-			ch := newChannel(cc, agentModel, agentFallbacks)
-			if ch == nil {
-				continue
-			}
-
-			// Attach a log sink so managed subprocess output is capturable.
-			sink := newLogSink()
-			m.sinks[key] = sink
-			if ss, ok := ch.(LogSinkSetter); ok {
-				ss.SetLogSink(sink)
-			}
-
-			agentName := ac.Name
-			ch.OnMessage(func(msg IncomingMessage) {
-				msgFn(agentName, ch, msg)
-			})
-
-			cctx, cancel := context.WithCancel(ctx)
-			m.channels[key] = ch
-			m.cancels[key] = cancel
-			m.startTimes[key] = time.Now()
-
-			go func(k string, c Channel) {
-				if err := c.Start(cctx); err != nil && cctx.Err() == nil {
-					slog.Warn("channel error", "key", k, "err", err)
-					m.mu.Lock()
-					m.errors[k] = err.Error()
-					m.mu.Unlock()
-				}
-			}(key, ch)
-
-			slog.Info("channel started", "key", key, "type", cc.Type)
 		}
 	}
 
 	// Stop channels no longer in config.
 	for key := range m.channels {
 		if _, ok := desired[key]; !ok {
-			m.channels[key].Stop()
-			m.cancels[key]()
-			delete(m.channels, key)
-			delete(m.cancels, key)
-			delete(m.startTimes, key)
-			delete(m.errors, key)
-			delete(m.sinks, key)
+			m.stopChannelLocked(key)
 			delete(m.specs, key)
 			slog.Info("channel stopped", "key", key)
 		}
@@ -168,16 +152,20 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName 
 		m.mu.Unlock()
 		return fmt.Errorf("configured channel %q not found", key)
 	}
-	if ch, exists := m.channels[key]; exists {
-		ch.Stop()
-	}
-	if cancel, exists := m.cancels[key]; exists {
-		cancel()
+	m.stopChannelLocked(key)
+	err := m.startChannelLocked(ctx, key, spec, msgFn)
+	m.mu.Unlock()
+	if err != nil {
+		return err
 	}
 
+	slog.Info("channel restarted", "key", key, "type", spec.channelConfig.Type)
+	return nil
+}
+
+func (m *Manager) startChannelLocked(ctx context.Context, key string, spec channelSpec, msgFn func(agentName string, ch Channel, msg IncomingMessage)) error {
 	ch := newChannel(spec.channelConfig, spec.agentModel, spec.agentFallbacks)
 	if ch == nil {
-		m.mu.Unlock()
 		return fmt.Errorf("channel %q could not be created", key)
 	}
 
@@ -188,7 +176,11 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName 
 	}
 
 	agentName := spec.agentName
+	channelCfg := spec.channelConfig
 	ch.OnMessage(func(msg IncomingMessage) {
+		if !shouldProcessIncomingMessage(channelCfg, msg) {
+			return
+		}
 		msgFn(agentName, ch, msg)
 	})
 
@@ -197,7 +189,6 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName 
 	m.cancels[key] = cancel
 	m.startTimes[key] = time.Now()
 	delete(m.errors, key)
-	m.mu.Unlock()
 
 	go func(k string, c Channel) {
 		if err := c.Start(cctx); err != nil && cctx.Err() == nil {
@@ -208,8 +199,22 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName 
 		}
 	}(key, ch)
 
-	slog.Info("channel restarted", "key", key, "type", spec.channelConfig.Type)
+	slog.Info("channel started", "key", key, "type", spec.channelConfig.Type)
 	return nil
+}
+
+func (m *Manager) stopChannelLocked(key string) {
+	if ch, exists := m.channels[key]; exists {
+		ch.Stop()
+	}
+	if cancel, exists := m.cancels[key]; exists {
+		cancel()
+	}
+	delete(m.channels, key)
+	delete(m.cancels, key)
+	delete(m.startTimes, key)
+	delete(m.errors, key)
+	delete(m.sinks, key)
 }
 
 // RouteDelivery sends text to channelID via any running channel of channelType.
@@ -335,6 +340,17 @@ func newChannel(cc config.ChannelConfig, agentModel string, agentFallbacks []str
 		slog.Warn("unknown channel type", "type", cc.Type)
 		return nil
 	}
+}
+
+func shouldProcessIncomingMessage(cc config.ChannelConfig, msg IncomingMessage) bool {
+	if cc.EnabledAt.IsZero() {
+		return true
+	}
+	receivedAt := msg.ReceivedAt
+	if receivedAt.IsZero() {
+		receivedAt = time.Now().UTC()
+	}
+	return !receivedAt.Before(cc.EnabledAt)
 }
 
 func channelKey(agentName, channelType string, idx int) string {
