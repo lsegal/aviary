@@ -1549,6 +1549,29 @@ func TestAppendSessionMessage_WithMediaURL(t *testing.T) {
 
 }
 
+func TestLoadSessionConversation_ReplacesHistoricalMediaWithMarker(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_hist_media", Name: "hist-media"},
+		&config.AgentConfig{Name: "hist-media"},
+		&mockProvider{}, nil, nil,
+	)
+	sess, err := NewSessionManager().Create(runner.agent.ID)
+	assert.NoError(t, err)
+
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "read this", "data:image/png;base64,cG5n", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "", "data:image/png;base64,bW9yZQ==", "")
+
+	history := runner.loadSessionConversation(sess.ID, 10)
+	assert.Len(t, history, 2)
+	assert.Equal(t, llm.RoleUser, history[0].Role)
+	assert.Equal(t, "read this\n[prior image attached]", history[0].Content)
+	assert.Equal(t, "", history[0].MediaURL)
+	assert.Equal(t, llm.RoleAssistant, history[1].Role)
+	assert.Equal(t, "[prior media attached]", history[1].Content)
+	assert.Equal(t, "", history[1].MediaURL)
+}
+
 func TestSessionList(t *testing.T) {
 	setTestDataDir(t)
 	sm := NewSessionManager()

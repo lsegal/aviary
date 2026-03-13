@@ -594,9 +594,11 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 
 		switch domain.MessageRole(role) {
 		case domain.MessageRoleUser:
-			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: content, MediaURL: mediaURLVal})
+			content = annotateHistoricalMedia(content, mediaURLVal, "prior image attached")
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: content})
 		case domain.MessageRoleAssistant:
-			messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: content, MediaURL: mediaURLVal})
+			content = annotateHistoricalMedia(content, mediaURLVal, "prior media attached")
+			messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: content})
 		case domain.MessageRoleSystem:
 			messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: content})
 		}
@@ -606,6 +608,17 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 		messages = messages[len(messages)-maxMessages:]
 	}
 	return messages
+}
+
+func annotateHistoricalMedia(content, mediaURL, marker string) string {
+	if strings.TrimSpace(mediaURL) == "" {
+		return content
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "[" + marker + "]"
+	}
+	return trimmed + "\n[" + marker + "]"
 }
 
 func (r *AgentRunner) memoryPoolID() string {
