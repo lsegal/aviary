@@ -161,9 +161,11 @@
 					</div>
 				</div>
 				<form class="flex gap-3 px-6 py-4" @submit.prevent="send">
-					<input v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
+					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
 						placeholder="Type a message or paste an image…"
 						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+						@input="onChatInput"
+						@keydown="onChatInputKeydown"
 						@paste="onPaste" />
 					<button v-if="currentSessionProcessing" type="button" @click="stopSession" :disabled="!selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
@@ -277,6 +279,64 @@ function parseToolMessage(
 	return { id, role: "tool", text: raw, timestamp, model };
 }
 
+function extractCompleteToolPayload(
+	buffer: string,
+): { payload: string; rest: string } | null {
+	if (!buffer.startsWith("[tool] ")) return null;
+	const raw = buffer.slice("[tool] ".length);
+	if (!raw) return null;
+
+	const first = raw[0];
+	if (first !== "{") {
+		const newline = raw.indexOf("\n");
+		if (newline === -1) return null;
+		return {
+			payload: raw.slice(0, newline),
+			rest: raw.slice(newline + 1),
+		};
+	}
+
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (ch === "\\") {
+				escaped = true;
+				continue;
+			}
+			if (ch === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
+		if (ch === "{") {
+			depth++;
+			continue;
+		}
+		if (ch === "}") {
+			depth--;
+			if (depth === 0) {
+				return {
+					payload: raw.slice(0, i + 1),
+					rest: raw.slice(i + 1),
+				};
+			}
+		}
+	}
+
+	return null;
+}
+
 /** Condensed one-line summary shown in the pill. */
 function toolSummary(msg: Message): string {
 	const d = msg.toolData;
@@ -356,9 +416,12 @@ const sessionProcessing = ref<Record<string, boolean>>({});
 const isStreaming = ref(false);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
+const chatInputEl = ref<HTMLInputElement | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
+const historyIndex = ref(-1);
+const historyDraft = ref("");
 let ws: WebSocket | null = null;
 
 const showBelowScroller = computed(
@@ -395,6 +458,13 @@ const currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
 });
+const userMessageHistory = computed(() =>
+	messages.value
+		.filter(
+			(message) => message.role === "user" && message.text.trim().length > 0,
+		)
+		.map((message) => message.text),
+);
 
 const onVisible = async () => {
 	if (document.visibilityState === "visible" && !hasInlineError.value) {
@@ -514,10 +584,12 @@ async function loadSessions() {
 async function onAgentChange() {
 	selectedSessionId.value = "";
 	sessions.value = [];
+	resetHistoryNavigation();
 	await loadSessions();
 }
 
 async function onSessionChange() {
+	resetHistoryNavigation();
 	await loadSessionMessages();
 }
 
@@ -531,6 +603,7 @@ async function createSession() {
 		sessions.value.push(sess);
 		selectedSessionId.value = sess.id;
 		messages.value = [];
+		resetHistoryNavigation();
 	} catch (e) {
 		console.error("Failed to create session", e);
 	}
@@ -539,6 +612,7 @@ async function createSession() {
 async function loadSessionMessages() {
 	if (!selectedSessionId.value) {
 		messages.value = [];
+		resetHistoryNavigation();
 		updateScrollState();
 		return;
 	}
@@ -566,6 +640,7 @@ async function loadSessionMessages() {
 					isError: m.role === "assistant" && isErrorMessage(m.content),
 				};
 			});
+		resetHistoryNavigation();
 		await scrollBottom(true);
 	} catch (e) {
 		console.error("Failed to load session messages", e);
@@ -627,6 +702,60 @@ function onPaste(e: ClipboardEvent) {
 	}
 }
 
+function resetHistoryNavigation() {
+	historyIndex.value = -1;
+	historyDraft.value = "";
+}
+
+function onChatInput(e: Event) {
+	if (historyIndex.value === -1) return;
+	input.value = (e.target as HTMLInputElement).value;
+	historyDraft.value = input.value;
+	historyIndex.value = -1;
+}
+
+function setChatInputValue(value: string) {
+	input.value = value;
+	void nextTick(() => {
+		const el = chatInputEl.value;
+		if (!el) return;
+		const end = value.length;
+		el.setSelectionRange(end, end);
+	});
+}
+
+function onChatInputKeydown(e: KeyboardEvent) {
+	if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+	if (e.altKey || e.ctrlKey || e.metaKey) return;
+	if (!selectedAgent.value || !selectedSessionId.value) return;
+
+	const history = userMessageHistory.value;
+	if (history.length === 0) return;
+
+	if (e.key === "ArrowUp") {
+		e.preventDefault();
+		if (historyIndex.value === -1) {
+			historyDraft.value = input.value;
+		}
+		const nextIndex = Math.min(historyIndex.value + 1, history.length - 1);
+		historyIndex.value = nextIndex;
+		setChatInputValue(history[history.length - 1 - nextIndex]);
+		return;
+	}
+
+	if (historyIndex.value === -1) return;
+	e.preventDefault();
+	const nextIndex = historyIndex.value - 1;
+	if (nextIndex < 0) {
+		const draft = historyDraft.value;
+		resetHistoryNavigation();
+		setChatInputValue(draft);
+		return;
+	}
+	historyIndex.value = nextIndex;
+	setChatInputValue(history[history.length - 1 - nextIndex]);
+}
+
 async function send() {
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
@@ -640,6 +769,7 @@ async function send() {
 
 	input.value = "";
 	pastedMedia.value = "";
+	resetHistoryNavigation();
 	sessionProcessing.value = {
 		...sessionProcessing.value,
 		[selectedSessionId.value]: true,
@@ -657,6 +787,44 @@ async function send() {
 	hasInlineError.value = false;
 	try {
 		let assistantIndex = -1;
+		let pendingText = "";
+		const appendAssistantText = (chunk: string) => {
+			if (!chunk) return;
+			if (assistantIndex === -1) {
+				messages.value.push({
+					role: "assistant",
+					text: "",
+					timestamp: now,
+					model: agentModel,
+				});
+				assistantIndex = messages.value.length - 1;
+			}
+			messages.value[assistantIndex].text += chunk;
+		};
+		const appendToolMessage = (payload: string) => {
+			messages.value.push(
+				parseToolMessage(`[tool] ${payload}`, now, agentModel),
+			);
+			assistantIndex = -1;
+		};
+		const flushPendingChunks = () => {
+			while (pendingText) {
+				const toolIndex = pendingText.indexOf("[tool] ");
+				if (toolIndex === -1) {
+					appendAssistantText(pendingText);
+					pendingText = "";
+					return;
+				}
+				if (toolIndex > 0) {
+					appendAssistantText(pendingText.slice(0, toolIndex));
+					pendingText = pendingText.slice(toolIndex);
+				}
+				const parsed = extractCompleteToolPayload(pendingText);
+				if (!parsed) return;
+				appendToolMessage(parsed.payload);
+				pendingText = parsed.rest;
+			}
+		};
 		await streamAgent(
 			selectedAgent.value,
 			text,
@@ -671,22 +839,15 @@ async function send() {
 					});
 					scrollBottom();
 				} else if (chunk) {
-					if (assistantIndex === -1) {
-						messages.value.push({
-							role: "assistant",
-							text: "",
-							timestamp: now,
-							model: agentModel,
-						});
-						assistantIndex = messages.value.length - 1;
-					}
-					messages.value[assistantIndex].text += chunk;
+					pendingText += chunk;
+					flushPendingChunks();
 					scrollBottom();
 				}
 			},
 			selectedSessionName(),
 			mediaURL || undefined,
 		);
+		flushPendingChunks();
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		const normalized = msg.toLowerCase();

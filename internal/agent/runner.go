@@ -238,7 +238,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		retriedToollessRefusal := false
 		retriedInvalidJSON := false
 
-		const maxToolRounds = 8
+		const maxToolRounds = 20
 	toolRounds:
 		for round := 0; round < maxToolRounds; round++ {
 			if promptCtx.Err() != nil {
@@ -270,12 +270,39 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			}
 
 			var modelOut strings.Builder
+			var streamedText strings.Builder
+			var pendingText strings.Builder
 			var mediaURLs []string
 			var fallbackTriggered bool
+			streamingSuppressed := false
+			streamingDecided := false
 			for event := range ch {
 				switch event.Type {
 				case llm.EventTypeText:
 					modelOut.WriteString(event.Text)
+					if !streamingDecided {
+						pendingText.WriteString(event.Text)
+						trimmed := strings.TrimSpace(pendingText.String())
+						if trimmed == "" {
+							continue
+						}
+						streamingSuppressed = shouldSuppressStreamingPrefix(trimmed, len(tools))
+						streamingDecided = true
+						if streamingSuppressed {
+							continue
+						}
+						chunk := pendingText.String()
+						streamedText.WriteString(chunk)
+						emit(StreamEvent{Type: StreamEventText, Text: chunk})
+						pendingText.Reset()
+						continue
+					}
+					if streamingSuppressed {
+						pendingText.WriteString(event.Text)
+						continue
+					}
+					streamedText.WriteString(event.Text)
+					emit(StreamEvent{Type: StreamEventText, Text: event.Text})
 				case llm.EventTypeMedia:
 					if event.MediaURL != "" {
 						mediaURLs = append(mediaURLs, event.MediaURL)
@@ -317,6 +344,14 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			}
 
 			answer := strings.TrimSpace(modelOut.String())
+			if !streamingSuppressed && streamedText.Len() == 0 && pendingText.Len() > 0 {
+				chunk := pendingText.String()
+				streamedText.WriteString(chunk)
+				emit(StreamEvent{Type: StreamEventText, Text: chunk})
+			}
+			if streamingSuppressed && answer != "" {
+				pendingText.Reset()
+			}
 			inlineCalls, trailingText, hasInlineCalls := parseInlineToolCalls(answer)
 			call, ok := parseToolCall(answer)
 			if hasInlineCalls && toolClient != nil {
@@ -366,7 +401,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 					continue
 				}
 
-				if answer != "" {
+				if answer != "" && streamedText.Len() == 0 {
 					emit(StreamEvent{Type: StreamEventText, Text: answer})
 				}
 				// Persist each returned image as a separate assistant message.
@@ -409,6 +444,30 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		usageRec.HasError = true
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
 	}()
+}
+
+func shouldSuppressStreamingPrefix(text string, toolCount int) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "[tool]") || strings.HasPrefix(trimmed, "{") {
+		return true
+	}
+	return toolCount > 0 && looksLikeToollessRefusalPrefix(trimmed)
+}
+
+func looksLikeToollessRefusalPrefix(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "don't have direct access") ||
+		strings.Contains(lower, "do not have direct access") ||
+		strings.Contains(lower, "can't") ||
+		strings.Contains(lower, "cannot") ||
+		strings.Contains(lower, "unable") ||
+		strings.Contains(lower, "no access")
 }
 
 func (r *AgentRunner) resolveSessionID(ctx context.Context) string {

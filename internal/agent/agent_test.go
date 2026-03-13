@@ -371,10 +371,12 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 	runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, provider, nil, nil)
 
 	var text string
+	var chunks []string
 	done := make(chan struct{}, 1)
 	runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
 		if e.Type == StreamEventText {
 			text += e.Text
+			chunks = append(chunks, e.Text)
 		}
 		if e.Type == StreamEventDone {
 			done <- struct{}{}
@@ -387,6 +389,7 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 		assert.FailNow(t, "timeout")
 	}
 	assert.Equal(t, "hello world", text)
+	assert.Equal(t, []string{"hello ", "world"}, chunks)
 
 }
 

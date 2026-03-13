@@ -16,6 +16,7 @@ export interface ServerConfig {
 }
 
 export interface AllowFromEntry {
+	enabled?: boolean;
 	from: string;
 	allowedGroups?: string;
 	mentionPrefixes?: string[];
@@ -26,11 +27,14 @@ export interface AllowFromEntry {
 }
 
 export interface AgentChannel {
+	enabled?: boolean;
 	type: string;
 	token?: string;
 	channel?: string;
 	phone?: string;
 	url?: string;
+	enabledAt?: string;
+	disabledAt?: string;
 	disabledTools?: string[];
 	allowFrom?: AllowFromEntry[];
 	showTyping?: boolean;
@@ -167,12 +171,14 @@ export const useSettingsStore = defineStore("settings", () => {
 					...agent,
 					channels: (agent.channels ?? []).map((ch) => ({
 						...ch,
+						enabled: ch.enabled !== false,
 						// Default these to true when absent.
 						showTyping: ch.showTyping !== false,
 						replyToReplies: ch.replyToReplies !== false,
 						reactToEmoji: ch.reactToEmoji !== false,
 						allowFrom: (ch.allowFrom ?? []).map((entry) => ({
 							...entry,
+							enabled: entry.enabled !== false,
 							// Default respondToMentions to true when absent (omitempty hides false).
 							respondToMentions: entry.respondToMentions !== false,
 						})),

@@ -6,16 +6,23 @@
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
           <div class="flex items-center gap-2">
             <button
+              v-if="revertAvailable"
+              type="button"
+              class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+              :disabled="loading || saving || reverting"
+              @click="revertToLatestBackup"
+            >{{ reverting ? "Reverting…" : "Revert" }}</button>
+            <button
               type="button"
               class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-              :disabled="loading"
+              :disabled="loading || saving || reverting"
               @click="loadConfig"
             >{{ loading ? "Loading…" : "Reload" }}</button>
             <button
               type="button"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-              :disabled="saving"
-              @click="saveAll"
+              :disabled="saving || reverting || !hasDraftChanges"
+              @click="saveAll(false)"
             >{{ saving ? "Saving…" : "Save Changes" }}</button>
           </div>
         </div>
@@ -380,8 +387,30 @@
               No channels configured for this agent.
             </div>
 
-            <div v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <div class="grid gap-3 lg:grid-cols-[160px_1fr_auto]">
+            <div
+              v-for="(ch, k) in agent.channels"
+              :key="`ch-${i}-${k}`"
+              class="space-y-3 rounded-lg border p-4 transition"
+              :class="channelCardClass(ch)"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ k + 1 }}</h5>
+                  <span :class="statusBadgeClass(isChannelEnabled(ch))">
+                    {{ isChannelEnabled(ch) ? "Enabled" : "Disabled" }}
+                  </span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" :class="enabledToggleClass(isChannelEnabled(ch))" @click="toggleChannelEnabled(ch)">
+                    {{ isChannelEnabled(ch) ? "Disable" : "Enable" }}
+                  </button>
+                  <button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
+                </div>
+              </div>
+              <p v-if="!isChannelEnabled(ch)" class="text-xs text-gray-500 dark:text-gray-400">
+                Disabled channels are not started and will not receive or send messages until re-enabled.
+              </p>
+              <div class="grid gap-3 lg:grid-cols-[160px_1fr]">
                 <div>
                   <label class="field-label">Type</label>
                   <select v-model="ch.type" class="field-input">
@@ -389,9 +418,6 @@
                     <option value="discord">discord</option>
                     <option value="signal">signal</option>
                   </select>
-                </div>
-                <div class="flex items-end">
-                  <button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
                 </div>
               </div>
 
@@ -404,14 +430,33 @@
                 <div v-if="!ch.allowFrom?.length" class="rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
                   No entries — all messages will be rejected.
                 </div>
-                <div v-for="(entry, ei) in ch.allowFrom" :key="`af-${i}-${k}-${ei}`" class="space-y-2 rounded border border-gray-100 p-3 dark:border-gray-800">
+                <div
+                  v-for="(entry, ei) in ch.allowFrom"
+                  :key="`af-${i}-${k}-${ei}`"
+                  class="space-y-2 rounded border p-3 transition"
+                  :class="allowFromCardClass(entry)"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Entry {{ ei + 1 }}</span>
+                      <span :class="statusBadgeClass(isAllowFromEnabled(entry))">
+                        {{ isAllowFromEnabled(entry) ? "Enabled" : "Disabled" }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button type="button" :class="enabledToggleClass(isAllowFromEnabled(entry))" @click="toggleAllowFromEnabled(entry)">
+                        {{ isAllowFromEnabled(entry) ? "Disable" : "Enable" }}
+                      </button>
+                      <button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
+                    </div>
+                  </div>
+                  <p v-if="!isAllowFromEnabled(entry)" class="text-xs text-gray-500 dark:text-gray-400">
+                    Disabled entries are ignored when Aviary checks who can message this agent.
+                  </p>
                   <div class="grid gap-2 lg:grid-cols-[1fr_auto]">
                     <div>
                       <label class="field-label">From (*, user ID, phone number — comma-separated)</label>
                       <input v-model="entry.from" type="text" class="field-input" placeholder="*, +15551234567" />
-                    </div>
-                    <div class="flex items-end">
-                      <button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
                     </div>
                   </div>
                   <div class="grid gap-2 lg:grid-cols-2">
@@ -949,6 +994,15 @@
       </div>
     </div>
 
+    <transition name="settings-toast">
+      <div
+        v-if="toastMessage"
+        class="pointer-events-none fixed bottom-5 right-5 z-50 max-w-sm rounded-xl border border-emerald-200 bg-white/95 px-4 py-3 text-sm text-gray-800 shadow-xl backdrop-blur dark:border-emerald-900 dark:bg-gray-900/95 dark:text-gray-100"
+      >
+        {{ toastMessage }}
+      </div>
+    </transition>
+
     <div
       v-if="toolInspectionModal"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
@@ -1130,12 +1184,21 @@ function connectWs() {
 
 const loading = ref(false);
 const saving = ref(false);
+const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
+const autoSavePending = ref(false);
+const toastMessage = ref("");
+const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
 const concurrencyInput = ref("");
+const AUTOSAVE_DELAY_MS = 1000;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+let autosaveSuspended = 0;
+let lastSavedSnapshot = "";
 
 const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
@@ -1272,6 +1335,10 @@ const availableToolNames = computed(() =>
 		.map((tool) => tool.name)
 		.sort((a, b) => a.localeCompare(b)),
 );
+const hasDraftChanges = computed(() => {
+	if (loading.value || autosaveSuspended > 0) return false;
+	return normalizedDraftSnapshot() !== lastSavedSnapshot;
+});
 
 const PERMISSION_PRESET_OPTIONS: Array<{
 	value: PermissionsPreset;
@@ -1585,6 +1652,7 @@ function fmtJobDate(s: string | undefined): string {
 
 onMounted(async () => {
 	connectWs();
+	window.addEventListener("keydown", onWindowKeydown);
 	await loadConfig();
 	await refreshCredentials();
 	void loadAllJobs();
@@ -1593,7 +1661,32 @@ onMounted(async () => {
 onUnmounted(() => {
 	settingsWs?.close();
 	settingsWs = null;
+	window.removeEventListener("keydown", onWindowKeydown);
+	if (autosaveTimer) {
+		clearTimeout(autosaveTimer);
+		autosaveTimer = null;
+	}
+	if (toastTimer) {
+		clearTimeout(toastTimer);
+		toastTimer = null;
+	}
 });
+
+function onWindowKeydown(event: KeyboardEvent) {
+	if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
+		return;
+	}
+	event.preventDefault();
+	if (
+		loading.value ||
+		saving.value ||
+		reverting.value ||
+		!hasDraftChanges.value
+	) {
+		return;
+	}
+	void saveAll(false);
+}
 
 function emptyConfig(): AppConfig {
 	return {
@@ -1616,6 +1709,7 @@ async function loadConfig() {
 	loading.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
+	autosaveSuspended++;
 	try {
 		await store.fetchConfig();
 		const cfg = store.config
@@ -1625,10 +1719,17 @@ async function loadConfig() {
 		draft.value.agents.forEach((agent) => {
 			sanitizeAgentToolSelections(agent);
 			(agent.channels ?? []).forEach((ch) => {
+				if (ch.enabled === undefined) ch.enabled = true;
 				if (ch.showTyping === undefined) ch.showTyping = true;
 				if (ch.replyToReplies === undefined) ch.replyToReplies = true;
 				if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
 				if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
+				(ch.allowFrom ?? []).forEach((entry) => {
+					if (entry.enabled === undefined) entry.enabled = true;
+					if (entry.respondToMentions === undefined) {
+						entry.respondToMentions = true;
+					}
+				});
 			});
 			(agent.tasks ?? []).forEach((task) => {
 				if (!task.channel) task.channel = "last";
@@ -1650,9 +1751,11 @@ async function loadConfig() {
 			availableTools.value = await listTools().catch(() => []);
 		}
 		await loadInstalledSkills();
+		lastSavedSnapshot = normalizedDraftSnapshot();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
+		autosaveSuspended = Math.max(0, autosaveSuspended - 1);
 		loading.value = false;
 	}
 }
@@ -1788,6 +1891,46 @@ function taskChannelTargetPlaceholder(task: AgentTask): string {
 	return "Destination ID";
 }
 
+function isChannelEnabled(channel: AgentChannel): boolean {
+	return channel.enabled !== false;
+}
+
+function toggleChannelEnabled(channel: AgentChannel) {
+	channel.enabled = !isChannelEnabled(channel);
+}
+
+function isAllowFromEnabled(entry: AllowFromEntry): boolean {
+	return entry.enabled !== false;
+}
+
+function toggleAllowFromEnabled(entry: AllowFromEntry) {
+	entry.enabled = !isAllowFromEnabled(entry);
+}
+
+function statusBadgeClass(enabled: boolean): string {
+	return enabled
+		? "rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+		: "rounded-full bg-gray-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300";
+}
+
+function enabledToggleClass(enabled: boolean): string {
+	return enabled
+		? "rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300 dark:hover:bg-amber-950"
+		: "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950";
+}
+
+function channelCardClass(channel: AgentChannel): string {
+	return isChannelEnabled(channel)
+		? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+		: "border-gray-300 bg-gray-50 opacity-75 dark:border-gray-700 dark:bg-gray-950";
+}
+
+function allowFromCardClass(entry: AllowFromEntry): string {
+	return isAllowFromEnabled(entry)
+		? "border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"
+		: "border-gray-200 bg-gray-50 opacity-75 dark:border-gray-800 dark:bg-gray-950";
+}
+
 function setTaskChannelSelection(task: AgentTask, event: Event) {
 	const selection = (event.target as HTMLSelectElement).value;
 	const parsed = parseTaskChannelValue(task.channel);
@@ -1811,6 +1954,7 @@ function setTaskChannelTarget(task: AgentTask, event: Event) {
 
 function addChannel(agentIndex: number) {
 	const ch: AgentChannel = {
+		enabled: true,
 		type: "signal",
 		showTyping: true,
 		replyToReplies: true,
@@ -1832,7 +1976,7 @@ function addAllowFrom(agentIndex: number, chIndex: number) {
 	if (!Array.isArray(ch.allowFrom)) {
 		ch.allowFrom = [];
 	}
-	ch.allowFrom.push({ from: "", respondToMentions: true });
+	ch.allowFrom.push({ enabled: true, from: "", respondToMentions: true });
 }
 
 function removeAllowFrom(
@@ -2127,165 +2271,256 @@ async function importAgents() {
 	}
 }
 
-async function saveAll() {
+function normalizedDraftConfig(): AppConfig {
+	const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+
+	const conc = concurrencyInput.value.trim();
+	if (!conc || conc.toLowerCase() === "auto") {
+		normalized.scheduler.concurrency = "";
+	} else {
+		const n = Number.parseInt(conc, 10);
+		normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "" : n;
+	}
+
+	normalized.search = {
+		web: {
+			brave_api_key:
+				(normalized.search?.web?.brave_api_key ?? "").trim() || undefined,
+		},
+	};
+
+	for (const agent of normalized.agents ?? []) {
+		sanitizeAgentToolSelections(agent);
+	}
+
+	normalized.agents = (normalized.agents ?? []).map((agent) => ({
+		...agent,
+		name: (agent.name ?? "").trim(),
+		model: (agent.model ?? "").trim(),
+		memory: (agent.memory ?? "").trim(),
+		rules: (agent.rules ?? "").trim() || undefined,
+		fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+		channels: (agent.channels ?? []).map((ch) => ({
+			...ch,
+			enabled: ch.enabled === false ? false : undefined,
+			type: (ch.type ?? "").trim(),
+			token: (ch.token ?? "").trim() || undefined,
+			channel: (ch.channel ?? "").trim() || undefined,
+			phone: (ch.phone ?? "").trim() || undefined,
+			url: (ch.url ?? "").trim() || undefined,
+			model: (ch.model ?? "").trim() || undefined,
+			fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
+			disabledTools: (ch.disabledTools ?? [])
+				.map((v) => v.trim())
+				.filter(Boolean),
+			showTyping: ch.showTyping === false ? false : undefined,
+			replyToReplies: ch.replyToReplies === false ? false : undefined,
+			reactToEmoji: ch.reactToEmoji === false ? false : undefined,
+			sendReadReceipts: ch.sendReadReceipts === false ? false : undefined,
+			allowFrom: (ch.allowFrom ?? [])
+				.map((entry) => ({
+					...entry,
+					enabled: entry.enabled === false ? false : undefined,
+					from: (entry.from ?? "").trim(),
+					allowedGroups: (entry.allowedGroups ?? "").trim() || undefined,
+					model: (entry.model ?? "").trim() || undefined,
+					fallbacks: (entry.fallbacks ?? [])
+						.map((v) => v.trim())
+						.filter(Boolean),
+					mentionPrefixes: (entry.mentionPrefixes ?? [])
+						.map((v) => v.trim())
+						.filter(Boolean),
+					restrictTools: (entry.restrictTools ?? [])
+						.map((v) => v.trim())
+						.filter(Boolean),
+				}))
+				.filter((entry) => entry.from),
+		})),
+		tasks: (agent.tasks ?? []).map((task) => ({
+			...task,
+			name: (task.name ?? "").trim(),
+			prompt: (task.prompt ?? "").trim(),
+			schedule: (task.schedule ?? "").trim(),
+			watch: (task.watch ?? "").trim(),
+			start_at: (task.start_at ?? "").trim(),
+			channel: (task.channel ?? "").trim(),
+			run_once: Boolean(task.run_once),
+		})),
+		permissions:
+			(agent.permissions?.tools?.length ?? 0) > 0 ||
+			(agent.permissions?.disabledTools?.length ?? 0) > 0 ||
+			(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0 ||
+			(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
+			Boolean(agent.permissions?.exec?.shellInterpolate) ||
+			Boolean((agent.permissions?.exec?.shell ?? "").trim()) ||
+			agentPermissionsPreset(agent) !== "standard"
+				? {
+						preset:
+							agentPermissionsPreset(agent) === "standard"
+								? undefined
+								: agentPermissionsPreset(agent),
+						tools: (agent.permissions?.tools ?? []).filter(Boolean),
+						disabledTools: (agent.permissions?.disabledTools ?? [])
+							.map((v) => v.trim())
+							.filter(Boolean),
+						filesystem:
+							(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0
+								? {
+										allowedPaths: (
+											agent.permissions?.filesystem?.allowedPaths ?? []
+										)
+											.map((v) => v.trim())
+											.filter(Boolean),
+									}
+								: undefined,
+						exec:
+							(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
+							Boolean(agent.permissions?.exec?.shellInterpolate) ||
+							Boolean((agent.permissions?.exec?.shell ?? "").trim())
+								? {
+										allowedCommands: (
+											agent.permissions?.exec?.allowedCommands ?? []
+										)
+											.map((v) => v.trim())
+											.filter(Boolean),
+										shellInterpolate:
+											agent.permissions?.exec?.shellInterpolate === true
+												? true
+												: undefined,
+										shell:
+											(agent.permissions?.exec?.shell ?? "").trim() ||
+											undefined,
+									}
+								: undefined,
+					}
+				: undefined,
+	}));
+	const normalizedSkills: Record<string, SkillConfig> = {};
+	for (const [name, skill] of Object.entries(normalized.skills ?? {}) as Array<
+		[string, SkillConfig]
+	>) {
+		const nextSkill: SkillConfig = {
+			enabled: Boolean(skill?.enabled),
+			binary: (skill?.binary ?? "").trim() || undefined,
+			allowed_commands: (skill?.allowed_commands ?? [])
+				.map((value) => value.trim())
+				.filter(Boolean),
+			timeout: (skill?.timeout ?? "").trim() || undefined,
+			env: skill?.env,
+		};
+		if (
+			nextSkill.enabled ||
+			nextSkill.binary ||
+			(nextSkill.allowed_commands?.length ?? 0) > 0 ||
+			nextSkill.timeout ||
+			(nextSkill.env && Object.keys(nextSkill.env).length > 0)
+		) {
+			normalizedSkills[name] = nextSkill;
+		}
+	}
+	normalized.skills = normalizedSkills;
+	return normalized;
+}
+
+function normalizedDraftSnapshot(): string {
+	return JSON.stringify(normalizedDraftConfig());
+}
+
+function scheduleAutosave() {
+	if (autosaveSuspended > 0 || loading.value) return;
+	if (autosaveTimer) {
+		clearTimeout(autosaveTimer);
+	}
+	autoSavePending.value = true;
+	autosaveTimer = setTimeout(() => {
+		autosaveTimer = null;
+		void saveAll(true);
+	}, AUTOSAVE_DELAY_MS);
+}
+
+function showToast(message: string) {
+	toastMessage.value = message;
+	if (toastTimer) {
+		clearTimeout(toastTimer);
+	}
+	toastTimer = setTimeout(() => {
+		toastMessage.value = "";
+		toastTimer = null;
+	}, 5000);
+}
+
+watch(
+	[draft, concurrencyInput],
+	() => {
+		if (autosaveSuspended > 0 || loading.value) return;
+		const snapshot = normalizedDraftSnapshot();
+		if (snapshot === lastSavedSnapshot) {
+			autoSavePending.value = false;
+			return;
+		}
+		scheduleAutosave();
+	},
+	{ deep: true },
+);
+
+async function saveAll(isAutosave = false) {
+	if (autosaveTimer) {
+		clearTimeout(autosaveTimer);
+		autosaveTimer = null;
+	}
+	autoSavePending.value = false;
 	saving.value = true;
 	errorMessage.value = "";
-	okMessage.value = "";
+	if (!isAutosave) {
+		okMessage.value = "";
+	}
 	try {
-		const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
-
-		const conc = concurrencyInput.value.trim();
-		if (!conc || conc.toLowerCase() === "auto") {
-			normalized.scheduler.concurrency = ""; // backend normalize() strips empty/"auto"
-		} else {
-			const n = Number.parseInt(conc, 10);
-			normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "" : n;
-		}
-
-		normalized.search = {
-			web: {
-				brave_api_key:
-					(normalized.search?.web?.brave_api_key ?? "").trim() || undefined,
-			},
-		};
-
-		for (const agent of draft.value.agents ?? []) {
-			sanitizeAgentToolSelections(agent);
-		}
-
-		// Normalize agent/task values.
-		normalized.agents = (normalized.agents ?? []).map((agent) => ({
-			...agent,
-			name: (agent.name ?? "").trim(),
-			model: (agent.model ?? "").trim(),
-			memory: (agent.memory ?? "").trim(),
-			rules: (agent.rules ?? "").trim() || undefined,
-			fallbacks: (agent.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
-			channels: (agent.channels ?? []).map((ch) => ({
-				...ch,
-				type: (ch.type ?? "").trim(),
-				token: (ch.token ?? "").trim() || undefined,
-				channel: (ch.channel ?? "").trim() || undefined,
-				phone: (ch.phone ?? "").trim() || undefined,
-				url: (ch.url ?? "").trim() || undefined,
-				model: (ch.model ?? "").trim() || undefined,
-				fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
-				disabledTools: (ch.disabledTools ?? [])
-					.map((v) => v.trim())
-					.filter(Boolean),
-				showTyping: ch.showTyping === false ? false : undefined,
-				replyToReplies: ch.replyToReplies === false ? false : undefined,
-				reactToEmoji: ch.reactToEmoji === false ? false : undefined,
-				sendReadReceipts: ch.sendReadReceipts === false ? false : undefined,
-				allowFrom: (ch.allowFrom ?? [])
-					.map((entry) => ({
-						...entry,
-						from: (entry.from ?? "").trim(),
-						allowedGroups: (entry.allowedGroups ?? "").trim() || undefined,
-						model: (entry.model ?? "").trim() || undefined,
-						fallbacks: (entry.fallbacks ?? [])
-							.map((v) => v.trim())
-							.filter(Boolean),
-						mentionPrefixes: (entry.mentionPrefixes ?? [])
-							.map((v) => v.trim())
-							.filter(Boolean),
-						restrictTools: (entry.restrictTools ?? [])
-							.map((v) => v.trim())
-							.filter(Boolean),
-					}))
-					.filter((entry) => entry.from),
-			})),
-			tasks: (agent.tasks ?? []).map((task) => ({
-				...task,
-				name: (task.name ?? "").trim(),
-				prompt: (task.prompt ?? "").trim(),
-				schedule: (task.schedule ?? "").trim(),
-				watch: (task.watch ?? "").trim(),
-				start_at: (task.start_at ?? "").trim(),
-				channel: (task.channel ?? "").trim(),
-				run_once: Boolean(task.run_once),
-			})),
-			permissions:
-				(agent.permissions?.tools?.length ?? 0) > 0 ||
-				(agent.permissions?.disabledTools?.length ?? 0) > 0 ||
-				(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0 ||
-				(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
-				Boolean(agent.permissions?.exec?.shellInterpolate) ||
-				Boolean((agent.permissions?.exec?.shell ?? "").trim()) ||
-				agentPermissionsPreset(agent) !== "standard"
-					? {
-							preset:
-								agentPermissionsPreset(agent) === "standard"
-									? undefined
-									: agentPermissionsPreset(agent),
-							tools: (agent.permissions?.tools ?? []).filter(Boolean),
-							disabledTools: (agent.permissions?.disabledTools ?? [])
-								.map((v) => v.trim())
-								.filter(Boolean),
-							filesystem:
-								(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0
-									? {
-											allowedPaths: (
-												agent.permissions?.filesystem?.allowedPaths ?? []
-											)
-												.map((v) => v.trim())
-												.filter(Boolean),
-										}
-									: undefined,
-							exec:
-								(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
-								Boolean(agent.permissions?.exec?.shellInterpolate) ||
-								Boolean((agent.permissions?.exec?.shell ?? "").trim())
-									? {
-											allowedCommands: (
-												agent.permissions?.exec?.allowedCommands ?? []
-											)
-												.map((v) => v.trim())
-												.filter(Boolean),
-											shellInterpolate:
-												agent.permissions?.exec?.shellInterpolate === true
-													? true
-													: undefined,
-											shell:
-												(agent.permissions?.exec?.shell ?? "").trim() ||
-												undefined,
-										}
-									: undefined,
-						}
-					: undefined,
-		}));
-		const normalizedSkills: Record<string, SkillConfig> = {};
-		for (const [name, skill] of Object.entries(
-			normalized.skills ?? {},
-		) as Array<[string, SkillConfig]>) {
-			const nextSkill: SkillConfig = {
-				enabled: Boolean(skill?.enabled),
-				binary: (skill?.binary ?? "").trim() || undefined,
-				allowed_commands: (skill?.allowed_commands ?? [])
-					.map((value) => value.trim())
-					.filter(Boolean),
-				timeout: (skill?.timeout ?? "").trim() || undefined,
-				env: skill?.env,
-			};
-			if (
-				nextSkill.enabled ||
-				nextSkill.binary ||
-				(nextSkill.allowed_commands?.length ?? 0) > 0 ||
-				nextSkill.timeout ||
-				(nextSkill.env && Object.keys(nextSkill.env).length > 0)
-			) {
-				normalizedSkills[name] = nextSkill;
+		const normalized = normalizedDraftConfig();
+		const snapshot = JSON.stringify(normalized);
+		if (snapshot === lastSavedSnapshot) {
+			if (!isAutosave) {
+				okMessage.value = "Settings already up to date.";
 			}
+			return;
 		}
-		normalized.skills = normalizedSkills;
 
 		await store.saveConfig(normalized);
+		lastSavedSnapshot = snapshot;
+		autosaveSuspended++;
 		draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
-		okMessage.value = "Settings saved.";
+		revertAvailable.value = true;
+		if (isAutosave) {
+			showToast("Autosaved successfully.");
+		} else {
+			showToast("Settings saved successfully.");
+		}
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
+		autosaveSuspended = Math.max(0, autosaveSuspended - 1);
 		saving.value = false;
+	}
+}
+
+async function revertToLatestBackup() {
+	if (loading.value || saving.value || reverting.value) return;
+	if (autosaveTimer) {
+		clearTimeout(autosaveTimer);
+		autosaveTimer = null;
+	}
+	autoSavePending.value = false;
+	reverting.value = true;
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		await callTool("config_restore_latest_backup");
+		revertAvailable.value = false;
+		await loadConfig();
+		showToast("Settings reverted from latest backup.");
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		reverting.value = false;
 	}
 }
 
@@ -2532,5 +2767,18 @@ async function saveNotes(agentName: string) {
 
 .danger-btn {
   @apply rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
+}
+
+.settings-toast-enter-active,
+.settings-toast-leave-active {
+	transition:
+		opacity 180ms ease,
+		transform 180ms ease;
+}
+
+.settings-toast-enter-from,
+.settings-toast-leave-to {
+	opacity: 0;
+	transform: translateY(8px);
 }
 </style>
