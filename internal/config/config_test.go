@@ -648,7 +648,7 @@ func TestValidate_ModelsProviderBadAuth(t *testing.T) {
 
 }
 
-func TestValidate_InvalidTaskChannel(t *testing.T) {
+func TestValidate_InvalidTaskTarget(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{
 			Name: "bot",
@@ -656,7 +656,7 @@ func TestValidate_InvalidTaskChannel(t *testing.T) {
 				Name:     "t1",
 				Schedule: "* * * * * *",
 				Prompt:   "do it",
-				Channel:  "telegram",
+				Target:   "telegram",
 			}},
 		}},
 	}
@@ -776,13 +776,13 @@ func TestValidate_ChannelAuthRef(t *testing.T) {
 
 	})
 
-	t.Run("signal phone without + prefix", func(t *testing.T) {
+	t.Run("signal id without + prefix", func(t *testing.T) {
 		cfg := &Config{
 			Agents: []AgentConfig{{
 				Name: "bot",
 				Channels: []ChannelConfig{{
 					Type:      "signal",
-					Phone:     "15551234567", // missing +
+					ID:        "15551234567", // missing +
 					AllowFrom: []AllowFromEntry{{From: "*"}},
 				}},
 			}},

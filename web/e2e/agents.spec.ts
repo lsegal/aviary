@@ -27,7 +27,7 @@ const CONFIG = {
 					name: "daily-briefing",
 					schedule: "0 * * * * *",
 					prompt: "Summarize updates",
-					channel: "route:signal:0:+15551234567",
+					target: "route:signal:+15551234567:+15551234567",
 				},
 			],
 			permissions: {

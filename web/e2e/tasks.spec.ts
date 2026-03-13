@@ -17,7 +17,7 @@ test("task config can trigger a run-now job", async ({ page }) => {
 				trigger_type: "cron",
 				schedule: "0 9 * * *",
 				prompt: "write the report",
-				channel: "route:slack:0:C123",
+				target: "route:slack:alerts:C123",
 			},
 		],
 		task_run: {

@@ -23,7 +23,7 @@ export interface ScheduledTask {
 	run_once?: boolean;
 	watch?: string;
 	prompt: string;
-	channel?: string;
+	target?: string;
 }
 
 export const useTasksStore = defineStore("tasks", () => {

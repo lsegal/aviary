@@ -297,7 +297,7 @@ func TestApplyConfigReload_ReconcilesChannels(t *testing.T) {
 	defer cancel()
 
 	srv.runCtx = ctx
-	srv.msgFn = func(string, int, channels.Channel, channels.IncomingMessage) {}
+	srv.msgFn = func(string, string, string, channels.Channel, channels.IncomingMessage) {}
 
 	cfgWithChannel := &config.Config{
 		Agents: []config.AgentConfig{{
@@ -1399,7 +1399,7 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	srv := New(cfg, "tok")
 	srv.agents.Reconcile(cfg)
 
-	srv.handleIncomingChannelMessage(context.Background(), "bot", 0, stubChannel{}, channels.IncomingMessage{
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", stubChannel{}, channels.IncomingMessage{
 		Type:     "slack",
 		Channel:  "D123",
 		From:     "U123",
@@ -1852,7 +1852,7 @@ func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
 	setupServerDataDir(t)
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
-	err := srv.deliverTaskOutput("bot", "route:slack:0:   ", "text")
+	err := srv.deliverTaskOutput("bot", "route:slack:alerts:   ", "text")
 	assert.Error(t, err)
 
 }

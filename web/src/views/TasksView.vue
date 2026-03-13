@@ -28,7 +28,7 @@
                 <th class="px-4 py-2">Task</th>
                 <th class="px-4 py-2">Type</th>
                 <th class="px-4 py-2">Trigger</th>
-                <th class="px-4 py-2">Channel</th>
+                <th class="px-4 py-2">Target</th>
                 <th class="px-4 py-2">Prompt</th>
                 <th class="px-4 py-2 text-right">Action</th>
               </tr>
@@ -40,7 +40,7 @@
                 <td class="px-4 py-2">{{ task.name }}</td>
                 <td class="px-4 py-2 uppercase text-xs font-semibold text-gray-500 dark:text-gray-400">{{ task.trigger_type }}</td>
                 <td class="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ describeTrigger(task) }}</td>
-                <td class="px-4 py-2">{{ task.channel || "—" }}</td>
+                <td class="px-4 py-2">{{ task.target || "—" }}</td>
                 <td class="max-w-lg truncate px-4 py-2" :title="task.prompt">{{ task.prompt || "—" }}</td>
                 <td class="px-4 py-2 text-right">
                   <button

@@ -372,7 +372,7 @@ func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
 					StartAt:  startAt,
 					RunOnce:  true,
 					Prompt:   "send report",
-					Channel:  "route:slack:0:C999",
+					Target:   "route:slack:alerts:C999",
 				},
 				{
 					Name:   "watch-docs",
@@ -392,7 +392,7 @@ func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
 	assert.Equal(t, domain.TriggerTypeCron, tasks[0].TriggerType)
 	assert.Equal(t, "0 0 10 * * *", tasks[0].Schedule)
 	assert.NotNil(t, tasks[0].StartAt)
-	assert.Equal(t, "route:slack:0:C999", tasks[0].Channel)
+	assert.Equal(t, "route:slack:alerts:C999", tasks[0].Target)
 	assert.True(t, tasks[0].RunOnce)
 	assert.Equal(t, "alpha/watch-docs", tasks[1].ID)
 	assert.Equal(t, domain.TriggerTypeWatch, tasks[1].TriggerType)

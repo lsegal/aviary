@@ -30,8 +30,7 @@ export interface AgentChannel {
 	enabled?: boolean;
 	type: string;
 	token?: string;
-	channel?: string;
-	phone?: string;
+	id?: string;
 	url?: string;
 	disabledTools?: string[];
 	allowFrom?: AllowFromEntry[];
@@ -75,7 +74,7 @@ export interface AgentTask {
 	start_at?: string;
 	run_once?: boolean;
 	watch?: string;
-	channel?: string;
+	target?: string;
 }
 
 export interface ProviderConfig {

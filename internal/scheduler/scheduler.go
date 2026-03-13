@@ -94,7 +94,7 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			prompt := tc.Prompt
 
 			enqueue := func() {
-				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, tc.Channel, 0, "", ""); err != nil {
+				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, tc.Target, 0, "", ""); err != nil {
 					slog.Warn("scheduler: enqueue failed", "task", taskID, "err", err)
 				}
 			}
@@ -191,7 +191,7 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			AgentID:   fmt.Sprintf("agent_%s", agentName),
 			Name:      taskName,
 			Prompt:    tc.Prompt,
-			Channel:   tc.Channel,
+			Target:    tc.Target,
 			RunOnce:   tc.RunOnce,
 			Schedule:  tc.Schedule,
 			Watch:     tc.Watch,
@@ -229,7 +229,7 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 		parts := strings.SplitN(key, "/", 2)
 		agentName := parts[0]
 		agentID := fmt.Sprintf("agent_%s", agentName)
-		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, tc.Channel, "", "")
+		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, tc.Target, "", "")
 		if err != nil {
 			return nil, err
 		}

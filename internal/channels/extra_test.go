@@ -32,7 +32,7 @@ func socketmodeEventNonAPI() socketmode.Event {
 
 func TestSendOnConfiguredChannel_NotFound(t *testing.T) {
 	mgr := NewManager()
-	err := mgr.SendOnConfiguredChannel("bot", "signal", 0, "+1", "hi")
+	err := mgr.SendOnConfiguredChannel("bot", "signal", "+1", "+1", "hi")
 	assert.Error(t, err)
 
 }
@@ -40,7 +40,7 @@ func TestSendOnConfiguredChannel_NotFound(t *testing.T) {
 func TestSendOnConfiguredChannel_Success(t *testing.T) {
 	mgr := NewManager()
 	mock := &mockChannel{}
-	key := channelKey("bot", "signal", 0)
+	key := channelKey("bot", "signal", "+1")
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
 	mgr.cancels[key] = func() {}
@@ -48,7 +48,7 @@ func TestSendOnConfiguredChannel_Success(t *testing.T) {
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()
 
-	err := mgr.SendOnConfiguredChannel("bot", "signal", 0, "+15550001111", "hello")
+	err := mgr.SendOnConfiguredChannel("bot", "signal", "+1", "+15550001111", "hello")
 	assert.NoError(t, err)
 
 	mock.mu.Lock()
@@ -674,7 +674,7 @@ func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
 
 	// Add a plain channel (not MediaSender) with type "slack".
 	mock := &mockChannel{}
-	key := channelKey("bot", "slack", 0)
+	key := channelKey("bot", "slack", "slack-main")
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
 	mgr.startTimes[key] = time.Now()
@@ -876,7 +876,7 @@ func (e *errChannel) Send(_, _ string) error {
 func TestRouteDelivery_AllFail(t *testing.T) {
 	mgr := NewManager()
 	ec := &errChannel{}
-	key := channelKey("bot", "signal", 0)
+	key := channelKey("bot", "signal", "+1")
 	mgr.mu.Lock()
 	mgr.channels[key] = ec
 	mgr.cancels[key] = func() {}

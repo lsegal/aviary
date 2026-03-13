@@ -116,8 +116,7 @@
                   "enum": ["slack", "discord", "signal"]
                 },
                 "token": { "type": "string" },
-                "channel": { "type": "string" },
-                "phone": { "type": "string" },
+                "id": { "type": "string" },
                 "url": {
                   "type": "string",
                   "description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
@@ -182,7 +181,7 @@
                 "run_once": { "type": "boolean", "default": false },
                 "watch": { "type": "string" },
                 "prompt": { "type": "string" },
-                "channel": { "type": "string" }
+                "target": { "type": "string" }
               },
               "oneOf": [
                 { "required": ["schedule"] },

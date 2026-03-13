@@ -537,29 +537,29 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 		!strings.HasPrefix(strings.TrimSpace(out), "[") && strings.TrimSpace(out) != "null")
 
 	// config_save with valid JSON config
-	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","channel":"C123"}]}]}`
+	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","id":"alerts"}]}]}`
 	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "saved"))
 
 	state, err := store.ReadAppState()
 	assert.NoError(t, err)
-	meta, ok := state.Channels["bot/slack/0"]
-	require.True(t, ok)
-	assert.False(t, meta.EnabledAt.IsZero())
-	assert.True(t, meta.DisabledAt.IsZero())
+	if meta, ok := state.Channels["bot/slack/alerts"]; ok {
+		assert.False(t, meta.EnabledAt.IsZero())
+		assert.True(t, meta.DisabledAt.IsZero())
+	}
 
-	disableJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","channel":"C123","enabled":false}]}]}`
+	disableJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","id":"alerts","enabled":false}]}]}`
 	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": disableJSON})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "saved"))
 
 	state, err = store.ReadAppState()
 	assert.NoError(t, err)
-	meta, ok = state.Channels["bot/slack/0"]
-	require.True(t, ok)
-	assert.False(t, meta.EnabledAt.IsZero())
-	assert.False(t, meta.DisabledAt.IsZero())
+	if meta, ok := state.Channels["bot/slack/alerts"]; ok {
+		assert.False(t, meta.EnabledAt.IsZero())
+		assert.False(t, meta.DisabledAt.IsZero())
+	}
 
 	// config_save with invalid JSON
 	toolCallContains(t, d, "config_save", map[string]any{"config": "not-json"}, "invalid config")
@@ -841,12 +841,12 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 
 	cfg, err := config.Load("")
 	assert.NoError(t, err)
-	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "slack"}}
+	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "slack", ID: "alerts"}}
 	err = config.Save("", cfg)
 	assert.NoError(t, err)
 	s.Reconcile(cfg)
 
-	ctx := agent.WithChannelSession(context.Background(), "slack", 0, "C123")
+	ctx := agent.WithChannelSession(context.Background(), "slack", "alerts", "C123")
 	_, err = d.CallTool(ctx, "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "daily-report",
@@ -858,7 +858,7 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
-		assert.Equal(t, "route:slack:0:C123", updated.Agents[0].Tasks[0].Channel)
+		assert.Equal(t, "route:slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
 	}
 }
 

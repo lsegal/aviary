@@ -46,7 +46,7 @@ func TestStructs_Construct(t *testing.T) {
 	assert.Equal(t, "agent", a.Name)
 	assert.Equal(t, AgentStateIdle, a.State)
 
-	ch := Channel{ID: "c1", AgentID: "a1", Type: ChannelTypeSlack, ChannelID: "general"}
+	ch := Channel{ID: "c1", AgentID: "a1", Type: ChannelTypeSlack, TargetID: "general"}
 	assert.Equal(t, ChannelTypeSlack, ch.Type)
 	assert.Equal(t, "a1", ch.AgentID)
 

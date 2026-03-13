@@ -89,19 +89,19 @@ agents:
     channels:
       - type: slack
         token: auth:slack:workspace     # References a stored credential (see Auth below)
-        channel: "#general"
+        id: "workspace-bot"
         allowFrom:
           - "@lsegal"                   # Only respond to messages from this user
           - "@ops-team"                 # Or this user group
 
       - type: discord
         token: auth:discord:bot-token
-        channel: "team-chat"
+        id: "team-bot"
         allowFrom:
           - "*"                         # Allow messages from anyone in the channel
 
       - type: signal
-        phone: auth:signal:myphone     # The Signal-registered phone number for this agent
+        id: auth:signal:myphone        # Stable channel id; for Signal use the registered phone number
         allowFrom:
           - "+15551234567"              # Allowlist by phone number; omit to allow all
 
@@ -109,14 +109,14 @@ agents:
       - name: daily-briefing
         schedule: "0 9 * * *"           # Standard cron syntax
         prompt: "Give me a morning briefing based on recent activity."
-        channel: slack                  # Post results to this agent's Slack channel;
-                                        # route:<type>:<index>:<target> to pin delivery
-                                        # channel, or omit for silent
+        target: route:slack:workspace-bot:C123
+                                        # route:<type>:<id>:<target> pins delivery to
+                                        # a configured channel; omit for silent
 
       - name: organize-downloads
         watch: ~/Downloads/**           # Trigger on any file change, recursively
         prompt: "A file was added or changed in ~/Downloads. Rename it using a clear, descriptive name based on its contents."
-        channel: slack
+        target: route:slack:workspace-bot:C123
 
 models:
   providers:

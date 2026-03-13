@@ -163,8 +163,7 @@ type ChannelConfig struct {
 	Enabled       *bool            `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
 	Type          string           `yaml:"type"                    json:"type"`
 	Token         string           `yaml:"token,omitempty"         json:"token,omitempty"`
-	Channel       string           `yaml:"channel,omitempty"       json:"channel,omitempty"`
-	Phone         string           `yaml:"phone,omitempty"         json:"phone,omitempty"`
+	ID            string           `yaml:"id,omitempty"            json:"id,omitempty"`
 	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
 	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
 	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
@@ -208,7 +207,7 @@ type TaskConfig struct {
 	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
 	Watch    string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt   string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
-	Channel  string `yaml:"channel,omitempty"  json:"channel,omitempty"`
+	Target   string `yaml:"target,omitempty"   json:"target,omitempty"`
 }
 
 // ModelsConfig holds model provider configuration and defaults.

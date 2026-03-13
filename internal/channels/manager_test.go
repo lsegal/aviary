@@ -126,7 +126,7 @@ func TestManager_List(t *testing.T) {
 	s := list[0]
 	assert.Equal(t, "myagent", s.Agent)
 	assert.Equal(t, "slack", s.Type)
-	assert.Equal(t, 2, s.Index)
+	assert.Equal(t, "2", s.ID)
 
 }
 
@@ -227,14 +227,14 @@ func TestManager_Reconcile_Idempotent(t *testing.T) {
 				Name: "bot",
 				Channels: []config.ChannelConfig{
 					// Use empty signal URL which won't actually connect.
-					{Type: "signal", Phone: "+1", URL: ""},
+					{Type: "signal", ID: "+1", URL: ""},
 				},
 			},
 		},
 	}
 
 	var msgCount int
-	msgFn := func(_ string, _ int, _ Channel, _ IncomingMessage) { msgCount++ }
+	msgFn := func(_ string, _, _ string, _ Channel, _ IncomingMessage) { msgCount++ }
 
 	mgr.Reconcile(ctx, cfg, msgFn)
 	mgr.Reconcile(ctx, cfg, msgFn) // second call should be idempotent
@@ -256,17 +256,17 @@ func TestManager_Reconcile_RemovesChannel(t *testing.T) {
 			{
 				Name: "bot",
 				Channels: []config.ChannelConfig{
-					{Type: "signal", Phone: "+1", URL: ""},
+					{Type: "signal", ID: "+1", URL: ""},
 				},
 			},
 		},
 	}
 	cfg2 := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}} // no channels
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg1, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
 	assert.Equal(t, 1, len(mgr.List()))
 
-	mgr.Reconcile(ctx, cfg2, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
 	assert.Equal(t, 0, len(mgr.List()))
 
 }
@@ -282,13 +282,13 @@ func TestManager_Reconcile_DisabledChannelNotStarted(t *testing.T) {
 			Name: "bot",
 			Channels: []config.ChannelConfig{{
 				Type:    "signal",
-				Phone:   "+1",
+				ID:      "+1",
 				Enabled: &disabled,
 			}},
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
 	assert.Empty(t, mgr.List())
 }
 
@@ -316,8 +316,8 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
-	key := channelKey("bot", "signal", 0)
+	mgr.Reconcile(ctx, cfg1, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	key := channelKey("bot", "signal", "")
 
 	mgr.mu.Lock()
 	first := mgr.channels[key]
@@ -325,7 +325,7 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 	mgr.mu.Unlock()
 
 	time.Sleep(10 * time.Millisecond)
-	mgr.Reconcile(ctx, cfg2, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
 
 	mgr.mu.Lock()
 	second := mgr.channels[key]
@@ -384,7 +384,7 @@ func TestRouteMediaDelivery_WithMediaSender(t *testing.T) {
 
 	ms := &mockMediaSender{}
 	mgr.mu.Lock()
-	key := channelKey("bot", "slack", 0)
+	key := channelKey("bot", "slack", "0")
 	mgr.channels[key] = ms
 	mgr.startTimes[key] = time.Now()
 	mgr.mu.Unlock()
@@ -403,7 +403,7 @@ func TestRouteMediaDelivery_WrongType(t *testing.T) {
 
 	ms := &mockMediaSender{}
 	mgr.mu.Lock()
-	key := channelKey("bot", "discord", 0)
+	key := channelKey("bot", "discord", "0")
 	mgr.channels[key] = ms
 	mgr.startTimes[key] = time.Now()
 	mgr.mu.Unlock()
@@ -423,9 +423,9 @@ func TestNewChannel_UnknownType(t *testing.T) {
 func TestNewChannel_Signal(t *testing.T) {
 	// Signal channel should be created without error (even with dummy config).
 	ch := newChannel(config.ChannelConfig{
-		Type:  "signal",
-		Phone: "+15551234567",
-		URL:   "http://localhost:8080",
+		Type: "signal",
+		ID:   "+15551234567",
+		URL:  "http://localhost:8080",
 	}, "model", nil)
 	assert.NotNil(t, ch)
 

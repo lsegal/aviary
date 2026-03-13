@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +49,7 @@ type Server struct {
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
 	upgradeCh         chan struct{}
-	msgFn             func(agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage)
+	msgFn             func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage)
 }
 
 // New creates a new Server with the given config and auth token.
@@ -232,8 +231,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 
 	// Start channel integrations and route messages to agents.
-	s.msgFn = func(agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage) {
-		s.handleIncomingChannelMessage(ctx, agentName, channelIndex, ch, msg)
+	s.msgFn = func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage) {
+		s.handleIncomingChannelMessage(ctx, agentName, channelType, configuredID, ch, msg)
 	}
 	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
@@ -290,12 +289,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
-func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage) {
+func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage) {
 	runner, ok := s.agents.Get(agentName)
 	if !ok {
 		return
 	}
-	msgCtx := agent.WithChannelSession(ctx, msg.Type, channelIndex, msg.Channel)
+	msgCtx := agent.WithChannelSession(ctx, channelType, configuredID, msg.Channel)
 
 	agentID := "agent_" + agentName
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
@@ -466,17 +465,17 @@ func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 	}
 	parts := strings.SplitN(route, ":", 4)
 	if len(parts) != 4 || parts[0] != "route" {
-		return fmt.Errorf("invalid task channel route %q", route)
+		return fmt.Errorf("invalid task target route %q", route)
 	}
-	index, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return fmt.Errorf("invalid task channel index %q: %w", parts[2], err)
-	}
+	configuredID := strings.TrimSpace(parts[2])
 	targetID := strings.TrimSpace(parts[3])
-	if targetID == "" {
-		return fmt.Errorf("task channel target id is required")
+	if configuredID == "" {
+		return fmt.Errorf("task target configured channel id is required")
 	}
-	return s.channels.SendOnConfiguredChannel(agentName, parts[1], index, targetID, text)
+	if targetID == "" {
+		return fmt.Errorf("task target delivery id is required")
+	}
+	return s.channels.SendOnConfiguredChannel(agentName, parts[1], configuredID, targetID, text)
 }
 
 func stageOutgoingMedia(channelType, sourcePath string) (string, error) {

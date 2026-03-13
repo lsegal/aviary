@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -122,6 +121,19 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 		for j, ch := range a.Channels {
 			v.checkChannel(fmt.Sprintf("%s.channels[%d]", f, j), ch)
 		}
+		channelKeys := map[string]int{}
+		for j, ch := range a.Channels {
+			id := strings.TrimSpace(ch.ID)
+			if id == "" || strings.TrimSpace(ch.Type) == "" {
+				continue
+			}
+			key := ch.Type + ":" + id
+			if prev, seen := channelKeys[key]; seen {
+				v.errorf(fmt.Sprintf("%s.channels[%d].id", f, j), "duplicate channel id %q for type %q within agent %q (also at channels[%d])", id, ch.Type, a.Name, prev)
+			} else {
+				channelKeys[key] = j
+			}
+		}
 
 		taskNames := map[string]int{}
 		for j, t := range a.Tasks {
@@ -171,12 +183,12 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			}
 
 			switch {
-			case t.Channel == "":
+			case t.Target == "":
 				// silent delivery
-			case validTaskRoute(t.Channel):
+			case validTaskRoute(t.Target):
 				// explicit configured delivery route
 			default:
-				v.errorf(tf+".channel", "invalid value %q; must be empty (silent) or route:<type>:<index>:<target>", t.Channel)
+				v.errorf(tf+".target", "invalid value %q; must be empty (silent) or route:<type>:<id>:<target>", t.Target)
 			}
 		}
 	}
@@ -187,8 +199,7 @@ func validTaskRoute(route string) bool {
 	if len(parts) != 4 || parts[0] != "route" || parts[1] == "" || parts[2] == "" || strings.TrimSpace(parts[3]) == "" {
 		return false
 	}
-	index, err := strconv.Atoi(parts[2])
-	return err == nil && index >= 0
+	return true
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.
@@ -297,8 +308,12 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 		}
 	}
 
-	if ch.Type == "signal" && ch.Phone != "" && !strings.HasPrefix(ch.Phone, "+") {
-		v.warnf(field+".phone", "phone %q does not look like E.164 format; expected a leading '+' (e.g. +15551234567)", ch.Phone)
+	if strings.TrimSpace(ch.ID) == "" {
+		v.errorf(field+".id", "channel id is required; use a stable unique identifier per agent and channel type")
+	}
+
+	if ch.Type == "signal" && ch.ID != "" && !strings.HasPrefix(ch.ID, "+") {
+		v.warnf(field+".id", "signal id %q does not look like E.164 format; expected a leading '+' (e.g. +15551234567)", ch.ID)
 	}
 }
 

@@ -8,7 +8,7 @@ type channelSessionKey struct{}
 
 type channelSession struct {
 	channelType  string
-	channelIndex int
+	configuredID string
 	channelID    string
 }
 
@@ -49,22 +49,22 @@ func SessionAgentIDFromContext(ctx context.Context) (string, bool) {
 // WithChannelSession stores the originating configured channel and target ID in
 // context so that prompt execution and scheduled tasks can route replies back
 // to the exact source channel by default.
-func WithChannelSession(ctx context.Context, channelType string, channelIndex int, channelID string) context.Context {
+func WithChannelSession(ctx context.Context, channelType, configuredID, channelID string) context.Context {
 	if channelType == "" || channelID == "" {
 		return ctx
 	}
 	return context.WithValue(ctx, channelSessionKey{}, channelSession{
 		channelType:  channelType,
-		channelIndex: channelIndex,
+		configuredID: configuredID,
 		channelID:    channelID,
 	})
 }
 
 // ChannelSessionFromContext extracts the channel session info if present.
-func ChannelSessionFromContext(ctx context.Context) (channelType string, channelIndex int, channelID string, ok bool) {
+func ChannelSessionFromContext(ctx context.Context) (channelType, configuredID, channelID string, ok bool) {
 	v, ok := ctx.Value(channelSessionKey{}).(channelSession)
 	if !ok || v.channelType == "" {
-		return "", 0, "", false
+		return "", "", "", false
 	}
-	return v.channelType, v.channelIndex, v.channelID, true
+	return v.channelType, v.configuredID, v.channelID, true
 }

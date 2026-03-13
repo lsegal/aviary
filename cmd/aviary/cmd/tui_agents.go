@@ -41,8 +41,7 @@ const (
 	agentFieldExecShell
 	chFieldType
 	chFieldToken
-	chFieldChannel
-	chFieldPhone
+	chFieldID
 	chFieldURL
 	chFieldAllowFrom
 	chFieldModel
@@ -52,7 +51,7 @@ const (
 	taskFieldStartAt
 	taskFieldWatch
 	taskFieldPrompt
-	taskFieldChannel
+	taskFieldTarget
 )
 
 type agentMgrModel struct {
@@ -288,9 +287,9 @@ func (m agentMgrModel) updateTextEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m agentMgrModel) parentModeForTextTarget() agentMgrMode {
 	switch m.textTarget {
-	case chFieldType, chFieldToken, chFieldChannel, chFieldPhone, chFieldURL, chFieldAllowFrom, chFieldModel, chFieldFallbacks:
+	case chFieldType, chFieldToken, chFieldID, chFieldURL, chFieldAllowFrom, chFieldModel, chFieldFallbacks:
 		return agentModeChannelEdit
-	case taskFieldName, taskFieldSchedule, taskFieldStartAt, taskFieldWatch, taskFieldPrompt, taskFieldChannel:
+	case taskFieldName, taskFieldSchedule, taskFieldStartAt, taskFieldWatch, taskFieldPrompt, taskFieldTarget:
 		return agentModeTaskEdit
 	default:
 		return agentModeEditMenu
@@ -372,10 +371,8 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.channel.Type = value
 	case chFieldToken:
 		m.channel.Token = value
-	case chFieldChannel:
-		m.channel.Channel = value
-	case chFieldPhone:
-		m.channel.Phone = value
+	case chFieldID:
+		m.channel.ID = value
 	case chFieldURL:
 		m.channel.URL = value
 	case chFieldAllowFrom:
@@ -394,8 +391,8 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.task.Watch = value
 	case taskFieldPrompt:
 		m.task.Prompt = value
-	case taskFieldChannel:
-		m.task.Channel = value
+	case taskFieldTarget:
+		m.task.Target = value
 	}
 	m.textInput.Blur()
 	m.mode = m.parentModeForTextTarget()
@@ -495,26 +492,24 @@ func (m agentMgrModel) activateChannelField() (tea.Model, tea.Cmd) {
 	case 1:
 		return m.openTextEditor(chFieldToken, m.channel.Token, "auth ref or token")
 	case 2:
-		return m.openTextEditor(chFieldChannel, m.channel.Channel, "channel id")
+		return m.openTextEditor(chFieldID, m.channel.ID, "workspace-bot or +15551234567")
 	case 3:
-		return m.openTextEditor(chFieldPhone, m.channel.Phone, "+15551234567")
-	case 4:
 		return m.openTextEditor(chFieldURL, m.channel.URL, "127.0.0.1:7583")
-	case 5:
+	case 4:
 		return m.openTextEditor(chFieldAllowFrom, joinAllowFrom(m.channel.AllowFrom), "*, U123, +1555")
-	case 6:
+	case 5:
 		return m.openTextEditor(chFieldModel, m.channel.Model, "provider/model")
-	case 7:
+	case 6:
 		return m.openTextEditor(chFieldFallbacks, strings.Join(m.channel.Fallbacks, ", "), "model-a, model-b")
-	case 8:
+	case 7:
 		m.channel.ShowTyping = toggleBoolPtr(m.channel.ShowTyping, true)
-	case 9:
+	case 8:
 		m.channel.ReactToEmoji = toggleBoolPtr(m.channel.ReactToEmoji, true)
-	case 10:
+	case 9:
 		m.channel.ReplyToReplies = toggleBoolPtr(m.channel.ReplyToReplies, true)
-	case 11:
+	case 10:
 		m.channel.SendReadReceipts = toggleBoolPtr(m.channel.SendReadReceipts, true)
-	case 12:
+	case 11:
 		if m.channelIdx >= 0 && m.channelIdx < len(m.draft.Channels) {
 			m.draft.Channels[m.channelIdx] = m.channel
 		} else {
@@ -522,7 +517,7 @@ func (m agentMgrModel) activateChannelField() (tea.Model, tea.Cmd) {
 			m.channelIdx = len(m.draft.Channels) - 1
 		}
 		m.mode = agentModeChannels
-	case 13:
+	case 12:
 		m.mode = agentModeChannels
 	}
 	return m, nil
@@ -601,7 +596,7 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 	case 5:
 		return m.openTextEditor(taskFieldPrompt, m.task.Prompt, "task prompt")
 	case 6:
-		return m.openTextEditor(taskFieldChannel, m.task.Channel, "channel name")
+		return m.openTextEditor(taskFieldTarget, m.task.Target, "route:signal:+15551234567:+15557654321")
 	case 7:
 		if m.taskIdx >= 0 && m.taskIdx < len(m.draft.Tasks) {
 			m.draft.Tasks[m.taskIdx] = m.task
@@ -705,7 +700,7 @@ func (m agentMgrModel) viewChannels() string {
 	} else {
 		for i, ch := range m.draft.Channels {
 			label := fmtPadRight(ch.Type, 12)
-			desc := firstNonEmpty(ch.Channel, ch.Phone, ch.URL, "(no target)")
+			desc := firstNonEmpty(ch.ID, ch.URL, "(no target)")
 			if i == m.channelIdx {
 				label = tuiSelectedStyle.Render(label)
 				desc = tuiSelectedStyle.Render(desc)
@@ -721,8 +716,7 @@ func (m agentMgrModel) viewChannelEditor() string {
 	values := []string{
 		fallback(m.channel.Type, "signal"),
 		m.channel.Token,
-		m.channel.Channel,
-		m.channel.Phone,
+		m.channel.ID,
 		m.channel.URL,
 		joinAllowFrom(m.channel.AllowFrom),
 		m.channel.Model,
@@ -778,7 +772,7 @@ func (m agentMgrModel) viewTaskEditor() string {
 		boolLabel(m.task.RunOnce),
 		m.task.Watch,
 		m.task.Prompt,
-		m.task.Channel,
+		m.task.Target,
 		"save",
 		"back",
 	}
@@ -884,13 +878,13 @@ func (m *agentMgrModel) compactDraftPermissions() {
 
 func (m agentMgrModel) channelFieldLabels() []string {
 	return []string{
-		"Type", "Token", "Channel", "Phone", "URL", "AllowFrom", "Model", "Fallbacks",
+		"Type", "Token", "ID", "URL", "AllowFrom", "Model", "Fallbacks",
 		"Show typing", "React emoji", "Reply replies", "Read receipts", "Save", "Back",
 	}
 }
 
 func (m agentMgrModel) taskFieldLabels() []string {
-	return []string{"Name", "Schedule", "Start at", "Run once", "Watch", "Prompt", "Channel", "Save", "Back"}
+	return []string{"Name", "Schedule", "Start at", "Run once", "Watch", "Prompt", "Target", "Save", "Back"}
 }
 
 func splitCSV(value string) []string {

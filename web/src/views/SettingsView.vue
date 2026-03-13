@@ -623,6 +623,10 @@
 
               <div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
                 <div>
+                  <label class="field-label">Channel ID</label>
+                  <input v-model="ch.id" type="text" class="field-input" placeholder="workspace-bot" />
+                </div>
+                <div>
                   <label class="field-label">App-Level Token (xapp-…)</label>
                   <input v-model="ch.url" type="text" class="field-input" placeholder="xapp-..." />
                 </div>
@@ -632,7 +636,11 @@
                 </div>
               </div>
 
-              <div v-if="ch.type === 'discord'" class="grid gap-3 lg:grid-cols-1">
+              <div v-if="ch.type === 'discord'" class="grid gap-3 lg:grid-cols-2">
+                <div>
+                  <label class="field-label">Channel ID</label>
+                  <input v-model="ch.id" type="text" class="field-input" placeholder="server-bot" />
+                </div>
                 <div>
                   <label class="field-label">Bot Token</label>
                   <input v-model="ch.token" type="text" class="field-input" placeholder="Discord bot token" />
@@ -641,8 +649,8 @@
 
               <div v-if="ch.type === 'signal'" class="grid gap-3 lg:grid-cols-2">
                 <div>
-                  <label class="field-label">Account Phone (E.164)</label>
-                  <input v-model="ch.phone" type="text" class="field-input" placeholder="+15551234567" />
+                  <label class="field-label">Channel ID (E.164)</label>
+                  <input v-model="ch.id" type="text" class="field-input" placeholder="+15551234567" />
                 </div>
                 <div>
                   <label class="field-label">signal-cli Daemon Address</label>
@@ -1733,7 +1741,7 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 			});
 		});
 		(agent.tasks ?? []).forEach((task) => {
-			if (!task.channel) task.channel = "";
+			if (!task.target) task.target = "";
 		});
 	});
 	return hydrated;
@@ -1824,7 +1832,7 @@ function addTask(agentIndex: number) {
 		prompt: "",
 		schedule: "",
 		watch: "",
-		channel: "",
+		target: "",
 		run_once: false,
 	};
 	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
@@ -1838,28 +1846,26 @@ function removeTask(agentIndex: number, taskIndex: number) {
 }
 
 function configuredChannelLabel(ch: AgentChannel, index: number): string {
-	if (ch.type === "signal" && ch.phone) return `signal via ${ch.phone}`;
-	if (ch.type === "slack" && ch.channel) return `slack via ${ch.channel}`;
-	if (ch.type === "discord" && ch.channel) return `discord via ${ch.channel}`;
+	if (ch.id) return `${ch.type} via ${ch.id}`;
 	return `${ch.type} via #${index + 1}`;
 }
 
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
 	return (agent.channels ?? [])
-		.filter((ch) => !!ch.type)
+		.filter((ch) => !!ch.type && !!ch.id)
 		.map((ch, index) => ({
-			value: `route:${ch.type}:${index}`,
+			value: `route:${ch.type}:${ch.id}`,
 			label: configuredChannelLabel(ch, index),
 			type: ch.type,
 		}));
 }
 
-function parseTaskChannelValue(channel?: string): {
+function parseTaskChannelValue(target?: string): {
 	selection: string;
 	target: string;
 	type: string;
 } {
-	const raw = (channel ?? "").trim();
+	const raw = (target ?? "").trim();
 	if (!raw) return { selection: "", target: "", type: "" };
 	if (raw.startsWith("route:")) {
 		const parts = raw.split(":", 4);
@@ -1875,11 +1881,11 @@ function parseTaskChannelValue(channel?: string): {
 }
 
 function taskChannelSelection(task: AgentTask): string {
-	return parseTaskChannelValue(task.channel).selection;
+	return parseTaskChannelValue(task.target).selection;
 }
 
 function taskChannelTarget(task: AgentTask): string {
-	return parseTaskChannelValue(task.channel).target;
+	return parseTaskChannelValue(task.target).target;
 }
 
 function taskChannelNeedsTarget(task: AgentTask): boolean {
@@ -1888,7 +1894,7 @@ function taskChannelNeedsTarget(task: AgentTask): boolean {
 
 function taskChannelTargetPlaceholder(task: AgentTask): string {
 	if (!taskChannelNeedsTarget(task)) return "Choose a delivery channel first";
-	const type = parseTaskChannelValue(task.channel).type;
+	const type = parseTaskChannelValue(task.target).type;
 	if (type === "signal") return "Phone number or group ID";
 	if (type === "slack") return "Slack channel or DM conversation ID";
 	if (type === "discord") return "Discord channel ID";
@@ -1937,19 +1943,19 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 
 function setTaskChannelSelection(task: AgentTask, event: Event) {
 	const selection = (event.target as HTMLSelectElement).value;
-	const parsed = parseTaskChannelValue(task.channel);
+	const parsed = parseTaskChannelValue(task.target);
 	if (!selection) {
-		task.channel = "";
+		task.target = "";
 		return;
 	}
-	task.channel = `${selection}:${parsed.target}`;
+	task.target = `${selection}:${parsed.target}`;
 }
 
 function setTaskChannelTarget(task: AgentTask, event: Event) {
 	const target = (event.target as HTMLInputElement).value.trim();
 	const selection = taskChannelSelection(task);
 	if (!selection.startsWith("route:")) return;
-	task.channel = `${selection}:${target}`;
+	task.target = `${selection}:${target}`;
 }
 
 function addChannel(agentIndex: number) {
@@ -2305,8 +2311,7 @@ function normalizedDraftConfig(): AppConfig {
 			enabled: ch.enabled === false ? false : undefined,
 			type: (ch.type ?? "").trim(),
 			token: (ch.token ?? "").trim() || undefined,
-			channel: (ch.channel ?? "").trim() || undefined,
-			phone: (ch.phone ?? "").trim() || undefined,
+			id: (ch.id ?? "").trim() || undefined,
 			url: (ch.url ?? "").trim() || undefined,
 			model: (ch.model ?? "").trim() || undefined,
 			fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
@@ -2343,7 +2348,7 @@ function normalizedDraftConfig(): AppConfig {
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
 			start_at: (task.start_at ?? "").trim(),
-			channel: (task.channel ?? "").trim(),
+			target: (task.target ?? "").trim(),
 			run_once: Boolean(task.run_once),
 		})),
 		permissions:

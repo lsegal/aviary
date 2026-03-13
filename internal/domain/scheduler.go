@@ -23,7 +23,7 @@ type ScheduledTask struct {
 	RunOnce     bool        `json:"run_once,omitempty"`
 	Watch       string      `json:"watch,omitempty"` // glob pattern
 	Prompt      string      `json:"prompt"`
-	Channel     string      `json:"channel,omitempty"`
+	Target      string      `json:"target,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
 }
 

@@ -795,7 +795,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Name:     taskName,
 				Prompt:   args.Prompt,
 				Schedule: strings.TrimSpace(args.Schedule),
-				Channel:  defaultScheduledTaskRoute(ctx, cfg, args.Agent),
+				Target:   defaultScheduledTaskRoute(ctx, cfg, args.Agent),
 			}
 			updated := false
 			for i := range cfg.Agents[agentIdx].Tasks {
@@ -902,7 +902,7 @@ func validateTaskSchedule(schedule string) error {
 }
 
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {
-	channelType, channelIndex, channelID, ok := agent.ChannelSessionFromContext(ctx)
+	channelType, configuredID, channelID, ok := agent.ChannelSessionFromContext(ctx)
 	if !ok {
 		return ""
 	}
@@ -910,12 +910,9 @@ func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentNam
 		if ac.Name != agentName {
 			continue
 		}
-		if channelIndex >= 0 && channelIndex < len(ac.Channels) && ac.Channels[channelIndex].Type == channelType {
-			return fmt.Sprintf("route:%s:%d:%s", channelType, channelIndex, channelID)
-		}
-		for i, ch := range ac.Channels {
-			if ch.Type == channelType {
-				return fmt.Sprintf("route:%s:%d:%s", channelType, i, channelID)
+		for _, ch := range ac.Channels {
+			if ch.Type == channelType && ch.ID == configuredID {
+				return fmt.Sprintf("route:%s:%s:%s", channelType, configuredID, channelID)
 			}
 		}
 		return ""
