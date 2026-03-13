@@ -110,7 +110,7 @@ agents:
         schedule: "0 9 * * *"           # Standard cron syntax
         prompt: "Give me a morning briefing based on recent activity."
         channel: slack                  # Post results to this agent's Slack channel;
-                                        # use "last" to reply to the most recently active
+                                        # route:<type>:<index>:<target> to pin delivery
                                         # channel, or omit for silent
 
       - name: organize-downloads

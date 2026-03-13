@@ -836,6 +836,32 @@ func TestTaskSchedule_CapturesReplySessionContext(t *testing.T) {
 
 }
 
+func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+
+	cfg, err := config.Load("")
+	assert.NoError(t, err)
+	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "slack"}}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+	s.Reconcile(cfg)
+
+	ctx := agent.WithChannelSession(context.Background(), "slack", 0, "C123")
+	_, err = d.CallTool(ctx, "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "daily-report",
+		"prompt":   "write report",
+		"schedule": "0 0 10 * * *",
+	})
+	assert.NoError(t, err)
+
+	updated, err := config.Load("")
+	assert.NoError(t, err)
+	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
+		assert.Equal(t, "route:slack:0:C123", updated.Agents[0].Tasks[0].Channel)
+	}
+}
+
 func TestTaskSchedule_WithDelay(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 

@@ -1336,15 +1336,16 @@ func TestSessionContextHelpers(t *testing.T) {
 	assert.False(t, ok)
 
 	// WithChannelSession
-	ctx6 := WithChannelSession(ctx, "slack", "C123")
-	chType, chID, ok := ChannelSessionFromContext(ctx6)
+	ctx6 := WithChannelSession(ctx, "slack", 2, "C123")
+	chType, chIndex, chID, ok := ChannelSessionFromContext(ctx6)
 	assert.True(t, ok)
 	assert.Equal(t, "slack", chType)
+	assert.Equal(t, 2, chIndex)
 	assert.Equal(t, "C123", chID)
 
 	// WithChannelSession empty type is no-op
-	ctx7 := WithChannelSession(ctx, "", "C123")
-	_, _, ok = ChannelSessionFromContext(ctx7)
+	ctx7 := WithChannelSession(ctx, "", 0, "C123")
+	_, _, _, ok = ChannelSessionFromContext(ctx7)
 	assert.False(t, ok)
 
 }
@@ -1380,7 +1381,7 @@ func TestResolveSessionID_ChannelContext(t *testing.T) {
 		&config.AgentConfig{Name: "rch"},
 		&mockProvider{}, nil, nil,
 	)
-	ctx := WithChannelSession(context.Background(), "slack", "C999")
+	ctx := WithChannelSession(context.Background(), "slack", 0, "C999")
 	sid := runner.resolveSessionID(ctx)
 	assert.
 		// Should be non-empty (either a created session ID or fallback)

@@ -589,6 +589,129 @@ func TestDispatch_EditedGroupMention_RespondToMentions(t *testing.T) {
 	assert.Equal(t, "hey", msg.Text)
 }
 
+func TestDispatch_ReplyToSelfStillRequiresAllowFrom_DirectMessage(t *testing.T) {
+	const botPhone = "+12130000000"
+	ch := NewSignalChannel(botPhone, "", []config.AllowFromEntry{{From: "+15550001111"}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	blocked := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15559999999","dataMessage":{"message":"reply from blocked sender","quote":{"author":"` + botPhone + `","id":1,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(blocked))
+
+	_, ok := waitMsgTimeout(msgs, 100*time.Millisecond)
+	assert.False(t, ok)
+
+	allowed := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply from allowed sender","quote":{"author":"` + botPhone + `","id":2,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(allowed))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "+15550001111", msg.From)
+	assert.Equal(t, "reply from allowed sender", msg.Text)
+}
+
+func TestDispatch_ReplyToSelfStillRequiresAllowFrom_GroupSenderAndChannel(t *testing.T) {
+	const botPhone = "+12130000000"
+	const allowedGroupID = "allowed-group"
+	ch := NewSignalChannel(botPhone, "", []config.AllowFromEntry{{
+		From:          "+15550001111",
+		AllowedGroups: allowedGroupID,
+	}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 2)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	blockedSender := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15559999999","dataMessage":{"message":"reply from blocked sender","groupInfo":{"groupId":"` + allowedGroupID + `"},"quote":{"author":"` + botPhone + `","id":3,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(blockedSender))
+	_, ok := waitMsgTimeout(msgs, 100*time.Millisecond)
+	assert.False(t, ok)
+
+	blockedGroup := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply in blocked group","groupInfo":{"groupId":"other-group"},"quote":{"author":"` + botPhone + `","id":4,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(blockedGroup))
+	_, ok = waitMsgTimeout(msgs, 100*time.Millisecond)
+	assert.False(t, ok)
+
+	allowed := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply in allowed group","groupInfo":{"groupId":"` + allowedGroupID + `"},"quote":{"author":"` + botPhone + `","id":5,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(allowed))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "+15550001111", msg.From)
+	assert.Equal(t, allowedGroupID, msg.Channel)
+	assert.Equal(t, "reply in allowed group", msg.Text)
+}
+
+func TestDispatch_ReplyToSelfBypassesMentionRuleButStillRequiresSenderAndGroup(t *testing.T) {
+	const botPhone = "+12130000000"
+	const groupID = "Z2lkPQ=="
+	ch := NewSignalChannel(botPhone, "", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	withoutMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply without mention","groupInfo":{"groupId":"` + groupID + `"},"quote":{"author":"` + botPhone + `","id":6,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(withoutMention))
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "reply without mention", msg.Text)
+}
+
+func TestDispatch_ReplyToSelfWithoutReplySettingStillRequiresMentionRule(t *testing.T) {
+	const botPhone = "+12130000000"
+	const groupID = "Z2lkPQ=="
+	ch := NewSignalChannel(botPhone, "", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, true, true, false, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	withoutMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply without mention","groupInfo":{"groupId":"` + groupID + `"},"quote":{"author":"` + botPhone + `","id":7,"text":"previous reply"}}}}}`
+	ch.dispatch([]byte(withoutMention))
+
+	_, ok := waitMsgTimeout(msgs, 100*time.Millisecond)
+	assert.False(t, ok)
+
+	withMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"reply with mention","groupInfo":{"groupId":"` + groupID + `"},"quote":{"author":"` + botPhone + `","id":8,"text":"previous reply"},"mentions":[{"number":"` + botPhone + `","uuid":"","start":0,"length":5}]}}}}`
+	ch.dispatch([]byte(withMention))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "reply with mention", msg.Text)
+}
+
+func TestDispatch_ReplyToReplyStillRequiresAllowFrom(t *testing.T) {
+	const botPhone = "+12130000000"
+	ch := NewSignalChannel(botPhone, "", []config.AllowFromEntry{{From: "+15550001111"}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15559999999","dataMessage":{"message":"nested reply from blocked sender","quote":{"author":"` + botPhone + `","id":8,"text":"assistant reply to previous user reply"}}}}}`
+	ch.dispatch([]byte(line))
+
+	_, ok := waitMsgTimeout(msgs, 100*time.Millisecond)
+	assert.False(t, ok)
+}
+
+func TestCheckAllowedReplyToSelf_GroupIgnoresMentionFilters(t *testing.T) {
+	result := checkAllowedReplyToSelf([]config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "group-1",
+		RespondToMentions: true,
+		MentionPrefixes:   []string{"aviary"},
+	}}, "+15550001111", "group-1", true)
+	assert.True(t, result.allowed)
+}
+
+func TestCheckAllowedReplyToSelf_GroupStillRequiresSenderAndChannel(t *testing.T) {
+	entries := []config.AllowFromEntry{{
+		From:              "+15550001111",
+		AllowedGroups:     "group-1",
+		RespondToMentions: true,
+	}}
+	assert.False(t, checkAllowedReplyToSelf(entries, "+15559999999", "group-1", true).allowed)
+	assert.False(t, checkAllowedReplyToSelf(entries, "+15550001111", "group-2", true).allowed)
+}
+
 // ── checkAllowed tests ────────────────────────────────────────────────────────
 
 func TestCheckAllowed_DirectMessages(t *testing.T) {

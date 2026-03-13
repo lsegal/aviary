@@ -4,7 +4,6 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -51,7 +50,7 @@ type Server struct {
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
 	upgradeCh         chan struct{}
-	msgFn             func(agentName string, ch channels.Channel, msg channels.IncomingMessage)
+	msgFn             func(agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage)
 }
 
 // New creates a new Server with the given config and auth token.
@@ -233,8 +232,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 
 	// Start channel integrations and route messages to agents.
-	s.msgFn = func(agentName string, ch channels.Channel, msg channels.IncomingMessage) {
-		s.handleIncomingChannelMessage(ctx, agentName, ch, msg)
+	s.msgFn = func(agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage) {
+		s.handleIncomingChannelMessage(ctx, agentName, channelIndex, ch, msg)
 	}
 	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
@@ -291,12 +290,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
-func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName string, ch channels.Channel, msg channels.IncomingMessage) {
+func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName string, channelIndex int, ch channels.Channel, msg channels.IncomingMessage) {
 	runner, ok := s.agents.Get(agentName)
 	if !ok {
 		return
 	}
-	msgCtx := agent.WithChannelSession(ctx, msg.Type, msg.Channel)
+	msgCtx := agent.WithChannelSession(ctx, msg.Type, channelIndex, msg.Channel)
 
 	agentID := "agent_" + agentName
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
@@ -465,19 +464,6 @@ func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 	if route == "" {
 		return nil
 	}
-	if route == "last" {
-		agentID := "agent_" + agentName
-		targets, err := latestAgentSessionChannels(agentID)
-		if err != nil {
-			return err
-		}
-		for _, ch := range targets {
-			if err := s.channels.RouteDelivery(ch.Type, ch.ID, text); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	parts := strings.SplitN(route, ":", 4)
 	if len(parts) != 4 || parts[0] != "route" {
 		return fmt.Errorf("invalid task channel route %q", route)
@@ -491,44 +477,6 @@ func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 		return fmt.Errorf("task channel target id is required")
 	}
 	return s.channels.SendOnConfiguredChannel(agentName, parts[1], index, targetID, text)
-}
-
-func latestAgentSessionChannels(agentID string) ([]store.SessionChannel, error) {
-	sessionsDir := filepath.Join(store.AgentDir(agentID), "sessions")
-	entries, err := os.ReadDir(sessionsDir)
-	if err != nil {
-		return nil, fmt.Errorf("listing session channels: %w", err)
-	}
-	var newestPath string
-	var newestTime time.Time
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".channels.json") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		if newestPath == "" || info.ModTime().After(newestTime) {
-			newestPath = filepath.Join(sessionsDir, entry.Name())
-			newestTime = info.ModTime()
-		}
-	}
-	if newestPath == "" {
-		return nil, fmt.Errorf("no recent channel session found")
-	}
-	data, err := os.ReadFile(newestPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading latest session channel config: %w", err)
-	}
-	var cfg store.SessionChannelsConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing latest session channel config: %w", err)
-	}
-	if len(cfg.Channels) == 0 {
-		return nil, fmt.Errorf("latest channel session has no delivery targets")
-	}
-	return cfg.Channels, nil
 }
 
 func stageOutgoingMedia(channelType, sourcePath string) (string, error) {

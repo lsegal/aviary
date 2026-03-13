@@ -68,7 +68,7 @@ The architecture of the orchestrator is made up of 11 major components:
   - tldr: Task has many Jobs (through scheduling). Job has many Runs (through queue executions / retries).
   - We can start with a single Queue, but architecture should support multiple queues with different priorities.
 - Since schedule is attached to an agent (in config), when a task is triggered, it should send the task details to the corresponding agent via MCP and the agent can execute the task and stream results back to the scheduler and any relevant channels.
-- Task defines which channel to send results to, whether to run in silent mode (no message), or whether to send to "last" channel.
+- Task defines which exact channel route to send results to, including the specific delivery target, or whether to run in silent mode (no message).
 
 ### Browser Control
 

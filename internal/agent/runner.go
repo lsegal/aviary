@@ -496,7 +496,7 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 		return sid
 	}
 	// channel messages get their own per-channel session: "<channelType>:<channelID>"
-	if chType, chID, ok := ChannelSessionFromContext(ctx); ok {
+	if chType, _, chID, ok := ChannelSessionFromContext(ctx); ok {
 		name := chType + ":" + chID
 		sess, err := NewSessionManager().GetOrCreateNamed(r.agent.ID, name)
 		if err == nil && sess != nil && sess.ID != "" {

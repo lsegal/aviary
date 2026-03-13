@@ -234,7 +234,7 @@ func TestManager_Reconcile_Idempotent(t *testing.T) {
 	}
 
 	var msgCount int
-	msgFn := func(_ string, _ Channel, _ IncomingMessage) { msgCount++ }
+	msgFn := func(_ string, _ int, _ Channel, _ IncomingMessage) { msgCount++ }
 
 	mgr.Reconcile(ctx, cfg, msgFn)
 	mgr.Reconcile(ctx, cfg, msgFn) // second call should be idempotent
@@ -263,10 +263,10 @@ func TestManager_Reconcile_RemovesChannel(t *testing.T) {
 	}
 	cfg2 := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}} // no channels
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg1, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
 	assert.Equal(t, 1, len(mgr.List()))
 
-	mgr.Reconcile(ctx, cfg2, func(_ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
 	assert.Equal(t, 0, len(mgr.List()))
 
 }
@@ -288,7 +288,7 @@ func TestManager_Reconcile_DisabledChannelNotStarted(t *testing.T) {
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg, func(_ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
 	assert.Empty(t, mgr.List())
 }
 
@@ -316,7 +316,7 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg1, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
 	key := channelKey("bot", "signal", 0)
 
 	mgr.mu.Lock()
@@ -325,7 +325,7 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 	mgr.mu.Unlock()
 
 	time.Sleep(10 * time.Millisecond)
-	mgr.Reconcile(ctx, cfg2, func(_ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, func(_ string, _ int, _ Channel, _ IncomingMessage) {})
 
 	mgr.mu.Lock()
 	second := mgr.channels[key]

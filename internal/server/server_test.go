@@ -297,7 +297,7 @@ func TestApplyConfigReload_ReconcilesChannels(t *testing.T) {
 	defer cancel()
 
 	srv.runCtx = ctx
-	srv.msgFn = func(string, channels.Channel, channels.IncomingMessage) {}
+	srv.msgFn = func(string, int, channels.Channel, channels.IncomingMessage) {}
 
 	cfgWithChannel := &config.Config{
 		Agents: []config.AgentConfig{{
@@ -1399,7 +1399,7 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	srv := New(cfg, "tok")
 	srv.agents.Reconcile(cfg)
 
-	srv.handleIncomingChannelMessage(context.Background(), "bot", stubChannel{}, channels.IncomingMessage{
+	srv.handleIncomingChannelMessage(context.Background(), "bot", 0, stubChannel{}, channels.IncomingMessage{
 		Type:     "slack",
 		Channel:  "D123",
 		From:     "U123",
@@ -1854,38 +1854,5 @@ func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
 	srv := New(&config.Config{}, "tok")
 	err := srv.deliverTaskOutput("bot", "route:slack:0:   ", "text")
 	assert.Error(t, err)
-
-}
-
-func TestDeliverTaskOutput_LastRouteNoSessions(t *testing.T) {
-	setupServerDataDir(t)
-	resetSlogForTest()
-	srv := New(&config.Config{}, "tok")
-	// No session channel files → latestAgentSessionChannels returns error.
-	err := srv.deliverTaskOutput("bot", "last", "text")
-	assert.Error(t, err)
-
-}
-
-// ── latestAgentSessionChannels ───────────────────────────────────────────────
-
-func TestLatestAgentSessionChannels_NoSessions(t *testing.T) {
-	setupServerDataDir(t)
-	_, err := latestAgentSessionChannels("agent_nonexistent")
-	assert.Error(t, err)
-
-}
-
-func TestLatestAgentSessionChannels_WithSession(t *testing.T) {
-	setupServerDataDir(t)
-
-	// Create a real session channel config via store.
-	err := store.EnsureSessionChannel("agent_mybot", "sess1", "slack", "C999")
-	assert.NoError(t, err)
-
-	channels, err := latestAgentSessionChannels("agent_mybot")
-	assert.NoError(t, err)
-	assert.NotEqual(t, 0, len(channels))
-	assert.Equal(t, "slack", channels[0].Type)
 
 }

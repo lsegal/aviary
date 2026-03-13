@@ -401,11 +401,11 @@ func TestDispatchEnvelope_SendReadReceipt(t *testing.T) {
 // ── Signal.dispatchEnvelope: reply-to-self path ──────────────────────────────
 
 // TestDispatch_ReplyToSelf verifies that a quoted reply targeting the agent's
-// own message bypasses the allowFrom filter and is dispatched.
+// own message still obeys the allowFrom filter.
 func TestDispatch_ReplyToSelf(t *testing.T) {
 	const botPhone = "+12130000000"
 	ch := NewSignalChannel(botPhone, "",
-		[]config.AllowFromEntry{{From: "+19999999999"}}, // only this sender normally allowed
+		[]config.AllowFromEntry{{From: "+19999999999"}}, // only this sender allowed
 		false, false,
 		true, // replyToReplies=true
 		false, "m", nil)
@@ -413,11 +413,18 @@ func TestDispatch_ReplyToSelf(t *testing.T) {
 	msgs := make(chan IncomingMessage, 1)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
-	// A message from "+18005551234" (not in allowFrom) that quotes the bot.
-	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+18005551234","dataMessage":{"message":"thanks for the reply","quote":{"id":1,"author":"` + botPhone + `","text":"original"}}}}}`
-	ch.dispatch([]byte(line))
-	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	// A message from a blocked sender that quotes the bot must still be rejected.
+	blocked := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+18005551234","dataMessage":{"message":"thanks for the reply","quote":{"id":1,"author":"` + botPhone + `","text":"original"}}}}}`
+	ch.dispatch([]byte(blocked))
+	_, ok := waitMsgTimeout(msgs, 50*time.Millisecond)
+	assert.False(t, ok)
+
+	// An allowed sender quoting the bot should still pass through.
+	allowed := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+19999999999","dataMessage":{"message":"allowed reply","quote":{"id":2,"author":"` + botPhone + `","text":"original"}}}}}`
+	ch.dispatch([]byte(allowed))
+	msg, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
 	assert.True(t, ok)
+	assert.Equal(t, "allowed reply", msg.Text)
 
 }
 

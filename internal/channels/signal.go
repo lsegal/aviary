@@ -1039,7 +1039,6 @@ func (c *SignalChannel) dispatch(line []byte) {
 		dataMessage = env.EditMessage.DataMessage
 	}
 
-	// Determine whether this is a reply to one of the agent's own messages.
 	isReplyToSelf := c.replyToReplies && c.phone != "" &&
 		dataMessage != nil &&
 		dataMessage.Quote != nil &&
@@ -1074,22 +1073,15 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		channelID = dataMessage.GroupInfo.GroupID
 	}
 
-	// Use the envelope's wasMentioned field for respondToMentions support.
-	// Replies to the agent's own messages bypass the allowFrom filter but still
-	// carry any per-entry tool restrictions from a matching entry if one exists.
-	var result allowResult
+	// Replies to the agent's own messages must still match an allowFrom entry's
+	// sender and group scope; replyToReplies only relaxes mention gating so the
+	// user can continue the same allowed conversation without re-mentioning.
+	result := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
 	if isReplyToSelf {
-		result.allowed = true
-		if r := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned); r.allowed {
-			result.restrictTools = r.restrictTools
-			result.model = r.model
-			result.fallbacks = r.fallbacks
-		}
-	} else {
-		result = checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
-		if !result.allowed {
-			return
-		}
+		result = checkAllowedReplyToSelf(c.allowFrom, source, channelID, isGroup)
+	}
+	if !result.allowed {
+		return
 	}
 
 	c.handlerMu.RLock()

@@ -60,7 +60,7 @@ func NewManager() *Manager {
 // msgFn receives messages and should route them to the appropriate agent runner.
 // The ch argument passed to msgFn is the channel the message arrived on; it may
 // implement optional interfaces such as TypingSender.
-func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(agentName string, ch Channel, msg IncomingMessage)) {
+func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(agentName string, channelIndex int, ch Channel, msg IncomingMessage)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -155,7 +155,7 @@ func (m *Manager) SubscribeLogs(key string) (history []string, live <-chan strin
 }
 
 // Restart recreates and restarts a configured channel instance in place.
-func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName string, ch Channel, msg IncomingMessage)) error {
+func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName string, channelIndex int, ch Channel, msg IncomingMessage)) error {
 	m.mu.Lock()
 	spec, ok := m.specs[key]
 	if !ok {
@@ -173,7 +173,7 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName 
 	return nil
 }
 
-func (m *Manager) startChannelLocked(ctx context.Context, key string, spec channelSpec, msgFn func(agentName string, ch Channel, msg IncomingMessage)) error {
+func (m *Manager) startChannelLocked(ctx context.Context, key string, spec channelSpec, msgFn func(agentName string, channelIndex int, ch Channel, msg IncomingMessage)) error {
 	ch := newChannel(spec.channelConfig, spec.agentModel, spec.agentFallbacks)
 	if ch == nil {
 		return fmt.Errorf("channel %q could not be created", key)
@@ -187,11 +187,12 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 
 	agentName := spec.agentName
 	channelMeta := spec.metadata
+	channelIndex := configuredChannelIndex(key)
 	ch.OnMessage(func(msg IncomingMessage) {
 		if !shouldProcessIncomingMessage(channelMeta, msg) {
 			return
 		}
-		msgFn(agentName, ch, msg)
+		msgFn(agentName, channelIndex, ch, msg)
 	})
 
 	cctx, cancel := context.WithCancel(ctx)
@@ -365,6 +366,18 @@ func shouldProcessIncomingMessage(meta store.ChannelMetadata, msg IncomingMessag
 
 func channelKey(agentName, channelType string, idx int) string {
 	return fmt.Sprintf("%s/%s/%d", agentName, channelType, idx)
+}
+
+func configuredChannelIndex(key string) int {
+	parts := strings.SplitN(key, "/", 3)
+	if len(parts) != 3 {
+		return 0
+	}
+	index, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0
+	}
+	return index
 }
 
 func channelMetadata(state *store.AppState, key string) store.ChannelMetadata {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -169,14 +170,25 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				v.warnf(tf+".prompt", "prompt is empty; a blank message will be sent to the agent")
 			}
 
-			switch t.Channel {
-			case "", "slack", "discord", "last":
-				// valid
+			switch {
+			case t.Channel == "":
+				// silent delivery
+			case validTaskRoute(t.Channel):
+				// explicit configured delivery route
 			default:
-				v.errorf(tf+".channel", "invalid value %q; must be \"slack\", \"discord\", \"last\", or empty (silent)", t.Channel)
+				v.errorf(tf+".channel", "invalid value %q; must be empty (silent) or route:<type>:<index>:<target>", t.Channel)
 			}
 		}
 	}
+}
+
+func validTaskRoute(route string) bool {
+	parts := strings.SplitN(strings.TrimSpace(route), ":", 4)
+	if len(parts) != 4 || parts[0] != "route" || parts[1] == "" || parts[2] == "" || strings.TrimSpace(parts[3]) == "" {
+		return false
+	}
+	index, err := strconv.Atoi(parts[2])
+	return err == nil && index >= 0
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.

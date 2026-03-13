@@ -33,6 +33,30 @@ func checkAllowed(
 	botUserID string,
 	wasMentioned bool,
 ) allowResult {
+	return checkAllowedWithOptions(entries, from, channelID, text, isGroup, botUserID, wasMentioned, false)
+}
+
+// checkAllowedReplyToSelf applies allowFrom rules for replies to the agent's
+// own messages. Sender and group/channel checks remain mandatory, but
+// mention-prefix and respondToMentions gates are skipped so a direct reply in
+// an already-allowed conversation continues the thread without requiring a
+// fresh mention.
+func checkAllowedReplyToSelf(
+	entries []config.AllowFromEntry,
+	from, channelID string,
+	isGroup bool,
+) allowResult {
+	return checkAllowedWithOptions(entries, from, channelID, "", isGroup, "", false, true)
+}
+
+func checkAllowedWithOptions(
+	entries []config.AllowFromEntry,
+	from, channelID, text string,
+	isGroup bool,
+	botUserID string,
+	wasMentioned bool,
+	ignoreMentionRules bool,
+) allowResult {
 	if len(entries) == 0 {
 		return allowResult{}
 	}
@@ -49,6 +73,14 @@ func checkAllowed(
 				// Step 2: the group/channel must be explicitly allowed.
 				if !matchesAllowedGroup(entry.AllowedGroups, channelID) {
 					continue
+				}
+				if ignoreMentionRules {
+					return allowResult{
+						allowed:       true,
+						restrictTools: entry.RestrictTools,
+						model:         entry.Model,
+						fallbacks:     entry.Fallbacks,
+					}
 				}
 				// Step 3: optional mention filtering.
 				// If no mention filter is configured, all messages pass through.

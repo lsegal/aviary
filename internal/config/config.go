@@ -176,7 +176,9 @@ type ChannelConfig struct {
 	// mirrors the same reaction back. Defaults to true for supported channels.
 	ReactToEmoji *bool `yaml:"reactToEmoji,omitempty"   json:"reactToEmoji,omitempty"`
 	// ReplyToReplies controls whether the agent responds when someone replies
-	// to one of its own messages (bypassing normal allowFrom filtering).
+	// to one of its own messages. Replies still have to match the entry's
+	// sender/group allowFrom scope, but can continue the conversation without
+	// re-satisfying mention-based group gating.
 	// Defaults to true for channels that support it.
 	ReplyToReplies *bool `yaml:"replyToReplies,omitempty" json:"replyToReplies,omitempty"`
 	// SendReadReceipts controls whether the agent sends read receipts for
