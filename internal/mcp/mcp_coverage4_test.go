@@ -81,13 +81,13 @@ func TestJobQuery_DateFilterExclusion(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 
 	// Query with a start date in the future — should exclude the job
-	futureStart := time.Now().Add(24 * time.Hour).Format("2006-01-02")
+	futureStart := time.Now().UTC().Add(48 * time.Hour).Format("2006-01-02")
 	out, err := d.CallTool(context.Background(), "job_query", map[string]any{"start": futureStart})
 	assert.NoError(t, err)
 	assert.False(t, strings.Contains(out, job.ID))
 
 	// Query with an end date in the past — should exclude the job
-	pastEnd := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	pastEnd := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
 	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"end": pastEnd})
 	assert.NoError(t, err)
 	assert.False(t, strings.Contains(out, job.ID))

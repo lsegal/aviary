@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -167,8 +166,6 @@ type ChannelConfig struct {
 	Channel       string           `yaml:"channel,omitempty"       json:"channel,omitempty"`
 	Phone         string           `yaml:"phone,omitempty"         json:"phone,omitempty"`
 	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
-	EnabledAt     time.Time        `yaml:"enabledAt,omitempty"      json:"enabledAt,omitempty"`
-	DisabledAt    time.Time        `yaml:"disabledAt,omitempty"     json:"disabledAt,omitempty"`
 	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
 	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
 	// ShowTyping controls whether a typing indicator is shown while the agent

@@ -542,24 +542,24 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "saved"))
 
-	savedCfg, err := config.Load("")
+	state, err := store.ReadAppState()
 	assert.NoError(t, err)
-	require.Len(t, savedCfg.Agents, 1)
-	require.Len(t, savedCfg.Agents[0].Channels, 1)
-	assert.False(t, savedCfg.Agents[0].Channels[0].EnabledAt.IsZero())
-	assert.True(t, savedCfg.Agents[0].Channels[0].DisabledAt.IsZero())
+	meta, ok := state.Channels["bot/slack/0"]
+	require.True(t, ok)
+	assert.False(t, meta.EnabledAt.IsZero())
+	assert.True(t, meta.DisabledAt.IsZero())
 
 	disableJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-3-haiku","channels":[{"type":"slack","channel":"C123","enabled":false}]}]}`
 	out, err = d.CallTool(context.Background(), "config_save", map[string]any{"config": disableJSON})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "saved"))
 
-	savedCfg, err = config.Load("")
+	state, err = store.ReadAppState()
 	assert.NoError(t, err)
-	require.Len(t, savedCfg.Agents, 1)
-	require.Len(t, savedCfg.Agents[0].Channels, 1)
-	assert.False(t, savedCfg.Agents[0].Channels[0].EnabledAt.IsZero())
-	assert.False(t, savedCfg.Agents[0].Channels[0].DisabledAt.IsZero())
+	meta, ok = state.Channels["bot/slack/0"]
+	require.True(t, ok)
+	assert.False(t, meta.EnabledAt.IsZero())
+	assert.False(t, meta.DisabledAt.IsZero())
 
 	// config_save with invalid JSON
 	toolCallContains(t, d, "config_save", map[string]any{"config": "not-json"}, "invalid config")

@@ -33,8 +33,6 @@ export interface AgentChannel {
 	channel?: string;
 	phone?: string;
 	url?: string;
-	enabledAt?: string;
-	disabledAt?: string;
 	disabledTools?: string[];
 	allowFrom?: AllowFromEntry[];
 	showTyping?: boolean;

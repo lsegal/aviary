@@ -141,6 +141,9 @@ func New(cfg *config.Config, token string) *Server {
 
 func (s *Server) applyConfigReload(newCfg *config.Config) {
 	oldCfg := s.cfg
+	if err := store.UpdateChannelMetadataState(oldCfg, newCfg, time.Now().UTC()); err != nil {
+		slog.Warn("server: failed to update channel metadata state", "err", err)
+	}
 	mcp.SyncLiveServer(newCfg)
 	s.agents.Reconcile(newCfg)
 	if s.sched != nil {

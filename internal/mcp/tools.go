@@ -1611,7 +1611,6 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid config JSON: %w", err)
 		}
-		stampChannelMetadata(prevCfg, &cfg, time.Now().UTC())
 		// Structural validation only (no auth store check from MCP context).
 		issues := config.Validate(&cfg, nil)
 		for _, issue := range issues {
@@ -1620,6 +1619,9 @@ func registerServerTools(s *sdkmcp.Server) {
 			}
 		}
 		if err := config.Save("", &cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {
 			return nil, struct{}{}, err
 		}
 		SyncLiveServer(&cfg)
@@ -1705,49 +1707,6 @@ func registerServerTools(s *sdkmcp.Server) {
 
 		return jsonResult(out)
 	})
-}
-
-func stampChannelMetadata(prevCfg, nextCfg *config.Config, now time.Time) {
-	if nextCfg == nil {
-		return
-	}
-
-	prevAgents := make(map[string]config.AgentConfig, len(prevCfg.Agents))
-	for _, agentCfg := range prevCfg.Agents {
-		prevAgents[agentCfg.Name] = agentCfg
-	}
-
-	for ai := range nextCfg.Agents {
-		agentCfg := &nextCfg.Agents[ai]
-		prevAgent, ok := prevAgents[agentCfg.Name]
-		for ci := range agentCfg.Channels {
-			ch := &agentCfg.Channels[ci]
-			enabled := config.BoolOr(ch.Enabled, true)
-			if ok && ci < len(prevAgent.Channels) {
-				prevCh := prevAgent.Channels[ci]
-				if ch.EnabledAt.IsZero() && !prevCh.EnabledAt.IsZero() {
-					ch.EnabledAt = prevCh.EnabledAt
-				}
-				if ch.DisabledAt.IsZero() && !prevCh.DisabledAt.IsZero() {
-					ch.DisabledAt = prevCh.DisabledAt
-				}
-				if config.BoolOr(prevCh.Enabled, true) != enabled {
-					if enabled {
-						ch.EnabledAt = now
-					} else {
-						ch.DisabledAt = now
-					}
-				}
-				continue
-			}
-
-			if enabled {
-				ch.EnabledAt = now
-			} else {
-				ch.DisabledAt = now
-			}
-		}
-	}
 }
 
 // ── Usage tools ──────────────────────────────────────────────────────────────

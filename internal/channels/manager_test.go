@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // mockChannel is a test implementation of Channel.
@@ -339,15 +340,15 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 
 func TestShouldProcessIncomingMessage_EnabledAtGate(t *testing.T) {
 	enabledAt := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
-	cc := config.ChannelConfig{EnabledAt: enabledAt}
+	meta := store.ChannelMetadata{EnabledAt: enabledAt}
 
-	assert.False(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+	assert.False(t, shouldProcessIncomingMessage(meta, IncomingMessage{
 		ReceivedAt: enabledAt.Add(-time.Second),
 	}))
-	assert.True(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+	assert.True(t, shouldProcessIncomingMessage(meta, IncomingMessage{
 		ReceivedAt: enabledAt,
 	}))
-	assert.True(t, shouldProcessIncomingMessage(cc, IncomingMessage{
+	assert.True(t, shouldProcessIncomingMessage(meta, IncomingMessage{
 		ReceivedAt: enabledAt.Add(time.Second),
 	}))
 }

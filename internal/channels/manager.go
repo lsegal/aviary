@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // ChannelStatus describes a running channel and its daemon, if any.
@@ -38,6 +39,7 @@ type Manager struct {
 type channelSpec struct {
 	agentName      string
 	channelConfig  config.ChannelConfig
+	metadata       store.ChannelMetadata
 	agentModel     string
 	agentFallbacks []string
 }
@@ -62,6 +64,12 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	state, err := store.ReadAppState()
+	if err != nil {
+		slog.Warn("channel state read failed", "err", err)
+		state = &store.AppState{}
+	}
+
 	desired := make(map[string]struct{})
 	for _, ac := range cfg.Agents {
 		agentModel := config.EffectiveAgentModel(ac, cfg.Models)
@@ -73,6 +81,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 				spec := channelSpec{
 					agentName:      ac.Name,
 					channelConfig:  cc,
+					metadata:       channelMetadata(state, key),
 					agentModel:     agentModel,
 					agentFallbacks: append([]string{}, agentFallbacks...),
 				}
@@ -96,6 +105,7 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 			if err := m.startChannelLocked(ctx, key, channelSpec{
 				agentName:      ac.Name,
 				channelConfig:  cc,
+				metadata:       channelMetadata(state, key),
 				agentModel:     agentModel,
 				agentFallbacks: append([]string{}, agentFallbacks...),
 			}, msgFn); err != nil {
@@ -176,9 +186,9 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 	}
 
 	agentName := spec.agentName
-	channelCfg := spec.channelConfig
+	channelMeta := spec.metadata
 	ch.OnMessage(func(msg IncomingMessage) {
-		if !shouldProcessIncomingMessage(channelCfg, msg) {
+		if !shouldProcessIncomingMessage(channelMeta, msg) {
 			return
 		}
 		msgFn(agentName, ch, msg)
@@ -342,17 +352,24 @@ func newChannel(cc config.ChannelConfig, agentModel string, agentFallbacks []str
 	}
 }
 
-func shouldProcessIncomingMessage(cc config.ChannelConfig, msg IncomingMessage) bool {
-	if cc.EnabledAt.IsZero() {
+func shouldProcessIncomingMessage(meta store.ChannelMetadata, msg IncomingMessage) bool {
+	if meta.EnabledAt.IsZero() {
 		return true
 	}
 	receivedAt := msg.ReceivedAt
 	if receivedAt.IsZero() {
 		receivedAt = time.Now().UTC()
 	}
-	return !receivedAt.Before(cc.EnabledAt)
+	return !receivedAt.Before(meta.EnabledAt)
 }
 
 func channelKey(agentName, channelType string, idx int) string {
 	return fmt.Sprintf("%s/%s/%d", agentName, channelType, idx)
+}
+
+func channelMetadata(state *store.AppState, key string) store.ChannelMetadata {
+	if state == nil || state.Channels == nil {
+		return store.ChannelMetadata{}
+	}
+	return state.Channels[key]
 }
