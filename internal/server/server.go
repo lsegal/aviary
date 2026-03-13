@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -233,72 +234,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	// Start channel integrations and route messages to agents.
 	s.msgFn = func(agentName string, ch channels.Channel, msg channels.IncomingMessage) {
-		runner, ok := s.agents.Get(agentName)
-		if !ok {
-			return
-		}
-		// Route the message into a per-channel session: "<channelType>:<channelID>".
-		msgCtx := agent.WithChannelSession(ctx, msg.Type, msg.Channel)
-
-		// Resolve the deterministic session ID and register a delivery function
-		// so any prompt to this session (including from the web UI) routes the
-		// completed response back to this channel conversation.
-		agentID := "agent_" + agentName
-		if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
-			chDest, chRef := msg.Channel, ch // capture loop vars for the closure
-			agent.RegisterSessionDelivery(sess.ID, msg.Type, msg.Channel, func(text string) {
-				if err := chRef.Send(chDest, text); err != nil {
-					slog.Warn("server: failed to send response to channel", "type", msg.Type, "channel", chDest, "err", err)
-				}
-			})
-			if ms, ok := ch.(channels.MediaSender); ok {
-				agent.RegisterSessionMediaDelivery(sess.ID, msg.Type, msg.Channel, func(caption, path string) {
-					if err := ms.SendMedia(chDest, caption, path); err != nil {
-						slog.Warn("server: failed to send media to channel", "type", msg.Type, "channel", chDest, "err", err)
-					}
-				})
-			}
-			if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, msg.Channel); err != nil {
-				slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
-			}
-		}
-
-		// Start a typing indicator if the channel supports it; refresh every
-		// 10 s so it stays visible while the agent is still processing.
-		var stopTyping context.CancelFunc
-		if ts, ok := ch.(channels.TypingSender); ok && ts.ShowTyping() {
-			_ = ts.SendTyping(msg.Channel, false)
-			typingCtx, cancel := context.WithCancel(ctx)
-			stopTyping = cancel
-			go func() {
-				ticker := time.NewTicker(10 * time.Second)
-				defer ticker.Stop()
-				defer ts.SendTyping(msg.Channel, true) //nolint:errcheck
-				for {
-					select {
-					case <-typingCtx.Done():
-						return
-					case <-ticker.C:
-						_ = ts.SendTyping(msg.Channel, false)
-					}
-				}
-			}()
-		}
-
-		rOpts := agent.RunOverrides{
-			Model:         msg.Model,
-			Fallbacks:     msg.Fallbacks,
-			RestrictTools: msg.RestrictTools,
-			DisabledTools: msg.DisabledTools,
-		}
-		runner.PromptWithOverrides(msgCtx, msg.Text, rOpts, func(e agent.StreamEvent) {
-			switch e.Type {
-			case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
-				if stopTyping != nil {
-					stopTyping()
-				}
-			}
-		})
+		s.handleIncomingChannelMessage(ctx, agentName, ch, msg)
 	}
 	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
@@ -353,6 +289,75 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName string, ch channels.Channel, msg channels.IncomingMessage) {
+	runner, ok := s.agents.Get(agentName)
+	if !ok {
+		return
+	}
+	msgCtx := agent.WithChannelSession(ctx, msg.Type, msg.Channel)
+
+	agentID := "agent_" + agentName
+	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
+		chDest, chRef := msg.Channel, ch
+		agent.RegisterSessionDelivery(sess.ID, msg.Type, msg.Channel, func(text string) {
+			if err := chRef.Send(chDest, text); err != nil {
+				slog.Warn("server: failed to send response to channel", "type", msg.Type, "channel", chDest, "err", err)
+			}
+		})
+		if ms, ok := ch.(channels.MediaSender); ok {
+			agent.RegisterSessionMediaDelivery(sess.ID, msg.Type, msg.Channel, func(caption, path string) {
+				deliverPath := path
+				if staged, err := stageOutgoingMedia(msg.Type, path); err == nil {
+					deliverPath = staged
+				} else {
+					slog.Warn("server: failed to stage outgoing media", "type", msg.Type, "path", path, "err", err)
+				}
+				if err := ms.SendMedia(chDest, caption, deliverPath); err != nil {
+					slog.Warn("server: failed to send media to channel", "type", msg.Type, "channel", chDest, "err", err)
+				}
+			})
+		}
+		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, msg.Channel); err != nil {
+			slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
+		}
+	}
+
+	var stopTyping context.CancelFunc
+	if ts, ok := ch.(channels.TypingSender); ok && ts.ShowTyping() {
+		_ = ts.SendTyping(msg.Channel, false)
+		typingCtx, cancel := context.WithCancel(ctx)
+		stopTyping = cancel
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			defer ts.SendTyping(msg.Channel, true) //nolint:errcheck
+			for {
+				select {
+				case <-typingCtx.Done():
+					return
+				case <-ticker.C:
+					_ = ts.SendTyping(msg.Channel, false)
+				}
+			}
+		}()
+	}
+
+	rOpts := agent.RunOverrides{
+		Model:         msg.Model,
+		Fallbacks:     msg.Fallbacks,
+		RestrictTools: msg.RestrictTools,
+		DisabledTools: msg.DisabledTools,
+	}
+	runner.PromptMediaWithOverrides(msgCtx, msg.Text, msg.MediaURL, rOpts, func(e agent.StreamEvent) {
+		switch e.Type {
+		case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
+			if stopTyping != nil {
+				stopTyping()
+			}
+		}
+	})
 }
 
 func (s *Server) listen() (net.Listener, error) {
@@ -526,6 +531,38 @@ func latestAgentSessionChannels(agentID string) ([]store.SessionChannel, error) 
 	return cfg.Channels, nil
 }
 
+func stageOutgoingMedia(channelType, sourcePath string) (string, error) {
+	if strings.TrimSpace(sourcePath) == "" {
+		return "", fmt.Errorf("source path is required")
+	}
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("source path is a directory")
+	}
+	dir := store.OutgoingMediaDir(channelType)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	target := filepath.Join(dir, fmt.Sprintf("%d_%s", time.Now().UnixMilli(), filepath.Base(sourcePath)))
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close() //nolint:errcheck
+	dst, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer dst.Close() //nolint:errcheck
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
 // loadSessionDeliveries reads all persisted session channel configs and
 // registers delivery functions so that sessions started from channels continue
 // to route responses back to those channels after a server restart.
@@ -546,7 +583,13 @@ func (s *Server) loadSessionDeliveries() {
 				}
 			})
 			agent.RegisterSessionMediaDelivery(sessionID, chType, chID, func(caption, path string) {
-				if err := s.channels.RouteMediaDelivery(chType, chID, caption, path); err != nil {
+				deliverPath := path
+				if staged, err := stageOutgoingMedia(chType, path); err == nil {
+					deliverPath = staged
+				} else {
+					slog.Warn("server: failed to stage outgoing media", "type", chType, "path", path, "err", err)
+				}
+				if err := s.channels.RouteMediaDelivery(chType, chID, caption, deliverPath); err != nil {
 					slog.Warn("server: failed to deliver media to channel", "type", chType, "id", chID, "err", err)
 				}
 			})

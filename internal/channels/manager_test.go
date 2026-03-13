@@ -486,6 +486,40 @@ func TestDiscordChannel_HandleEditedMention(t *testing.T) {
 	assert.Equal(t, "hi <@BOT123>", msg.Text)
 }
 
+func TestDiscordChannel_IngestsImageAttachment(t *testing.T) {
+	base := t.TempDir()
+	store.SetDataDir(base)
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	imageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("png-bytes"))
+	}))
+	defer imageSrv.Close()
+
+	ch := NewDiscordChannel("token123", []config.AllowFromEntry{{From: "*"}}, "gpt-4", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ok := ch.handleMessage(&discordgo.Message{
+		Author:    &discordgo.User{ID: "U123"},
+		ChannelID: "C123",
+		Content:   "",
+		Attachments: []*discordgo.MessageAttachment{{
+			Filename:    "photo.png",
+			ContentType: "image/png",
+			URL:         imageSrv.URL + "/photo.png",
+		}},
+	}, "BOT123")
+	assert.True(t, ok)
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+	entries, err := os.ReadDir(store.IncomingMediaDir("discord"))
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+}
+
 func TestNewChannel_Discord(t *testing.T) {
 	ch := newChannel(config.ChannelConfig{
 		Type:  "discord",
@@ -552,6 +586,43 @@ func TestSlackChannel_HandleEditedMention(t *testing.T) {
 	assert.Equal(t, "U123", msg.From)
 	assert.Equal(t, "C123", msg.Channel)
 	assert.Equal(t, "hi <@UBOT>", msg.Text)
+}
+
+func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
+	base := t.TempDir()
+	store.SetDataDir(base)
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	imageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer xoxb-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("png-bytes"))
+	}))
+	defer imageSrv.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{From: "*"}}, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User:    "U123",
+		Channel: "D123",
+		Message: &slack.Msg{
+			User:    "U123",
+			Channel: "D123",
+			Files: []slack.File{{
+				Name:               "photo.png",
+				Mimetype:           "image/png",
+				URLPrivateDownload: imageSrv.URL + "/photo.png",
+			}},
+		},
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+	entries, err := os.ReadDir(store.IncomingMediaDir("slack"))
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
 }
 
 func TestNewChannel_Slack(t *testing.T) {

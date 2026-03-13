@@ -378,6 +378,38 @@ func TestOpenAIExchange_HTTPError(t *testing.T) {
 
 }
 
+func TestOpenAIRefresh_MockServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		assert.Equal(t, "refresh_token", r.Form.Get("grant_type"))
+		assert.Equal(t, OpenAIClientID, r.Form.Get("client_id"))
+		assert.Equal(t, "old-openai-refresh", r.Form.Get("refresh_token"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "openai-refreshed-access",
+			"expires_in":   3600,
+		})
+	}))
+	defer srv.Close()
+	patchDefaultClient(t, srv)
+
+	tok, err := OpenAIRefresh(context.Background(), "old-openai-refresh")
+	assert.NoError(t, err)
+	assert.Equal(t, "openai-refreshed-access", tok.AccessToken)
+	assert.Equal(t, "old-openai-refresh", tok.RefreshToken)
+}
+
+func TestOpenAIRefresh_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expired", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	patchDefaultClient(t, srv)
+
+	_, err := OpenAIRefresh(context.Background(), "bad-refresh")
+	assert.Error(t, err)
+}
+
 func TestKeychainStore_CRUD(t *testing.T) {
 	s := NewKeychainStore()
 

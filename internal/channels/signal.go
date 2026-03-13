@@ -3,6 +3,7 @@ package channels
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +25,8 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 )
+
+var signalAttachmentFetcher = fetchSignalAttachmentData
 
 var (
 	urlRegex = regexp.MustCompile(`https?://[^\s<>"{}|\\^\x60\[\]]+`)
@@ -637,6 +641,36 @@ func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) er
 	return nil
 }
 
+func (c *SignalChannel) rpcCallContext(ctx context.Context, body []byte, resp *jsonrpcResponse) error {
+	c.addrMu.RLock()
+	addr := c.addr
+	c.addrMu.RUnlock()
+
+	if addr == "" {
+		return fmt.Errorf("signal: daemon not ready")
+	}
+
+	body = append(body, '\n')
+
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("signal: dial: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	if _, err := conn.Write(body); err != nil {
+		return fmt.Errorf("signal: write: %w", err)
+	}
+	if err := json.NewDecoder(conn).Decode(resp); err != nil {
+		return fmt.Errorf("signal: read response: %w", err)
+	}
+	return nil
+}
+
 // Start connects to signal-cli and listens for incoming messages.
 // If no daemon address was configured, signal-cli is launched automatically.
 // Reconnects on connection loss until ctx is done or Stop is called.
@@ -860,6 +894,7 @@ func (c *SignalChannel) listen(ctx context.Context, addr string) error {
 
 	// Read newline-delimited JSON-RPC messages.
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -909,10 +944,29 @@ type jsonrpcNotification struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+type signalAttachment struct {
+	ContentType    string `json:"contentType"`
+	ContentTypeAlt string `json:"content_type"`
+	ID             string `json:"id"`
+	AttachmentID   string `json:"attachmentId"`
+	Filename       string `json:"filename"`
+	FileName       string `json:"fileName"`
+	StoredFilename string `json:"storedFilename"`
+	StoredFileName string `json:"storedFileName"`
+	Path           string `json:"path"`
+	File           string `json:"file"`
+	LocalPath      string `json:"localPath"`
+	URL            string `json:"url"`
+	RemoteURL      string `json:"remoteUrl"`
+	RemoteURLAlt   string `json:"remoteURL"`
+	DownloadURL    string `json:"downloadUrl"`
+}
+
 // signalDataMessage is the dataMessage block inside a signal-cli receive envelope.
 type signalDataMessage struct {
-	Message  string `json:"message"`
-	Mentions []struct {
+	Message     string             `json:"message"`
+	Attachments []signalAttachment `json:"attachments"`
+	Mentions    []struct {
 		Number string `json:"number"`
 		UUID   string `json:"uuid"`
 	} `json:"mentions"`
@@ -1009,7 +1063,7 @@ func (c *SignalChannel) isMentioned(dataMessage *signalDataMessage) bool {
 }
 
 func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasMentioned bool, isReplyToSelf bool, dataMessage *signalDataMessage) {
-	if dataMessage == nil || dataMessage.Message == "" {
+	if dataMessage == nil || (dataMessage.Message == "" && len(dataMessage.Attachments) == 0) {
 		return
 	}
 
@@ -1038,14 +1092,6 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		}
 	}
 
-	// Send a read receipt so the sender knows the agent saw their message.
-	// Receipts always go to the sender's phone number (source), even in groups.
-	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-			slog.Warn("signal: failed to send read receipt", "err", err)
-		}
-	}
-
 	c.handlerMu.RLock()
 	fn := c.handler
 	c.handlerMu.RUnlock()
@@ -1060,6 +1106,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			From:          source,
 			Channel:       channelID,
 			Text:          dataMessage.Message,
+			MediaURL:      c.firstSignalImageDataURL(dataMessage.Attachments, source, channelID, isGroup),
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -1073,9 +1120,181 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			im.Fallbacks = c.fallbacks
 		}
 		fn(im)
+		// Send a read receipt only after the message has been handed off.
+		// Receipts always go to the sender's phone number (source), even in groups.
+		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+				slog.Warn("signal: failed to send read receipt", "err", err)
+			}
+		}
 	} else {
 		slog.Debug("signal: no handler registered", "from", source)
 	}
+}
+
+func (c *SignalChannel) firstSignalImageDataURL(attachments []signalAttachment, source, channelID string, isGroup bool) string {
+	for _, attachment := range attachments {
+		name := signalAttachmentName(attachment.fileName(), attachment.storedPath(), attachment.localPath(), attachment.remoteURL())
+		contentType := attachment.mimeType()
+		if !looksLikeImage(contentType, name) {
+			continue
+		}
+		for _, localPath := range []string{attachment.localPath(), attachment.storedPath()} {
+			localPath = strings.TrimSpace(localPath)
+			if localPath == "" {
+				continue
+			}
+			if mediaURL, err := ingestLocalMedia("signal", localPath, name, contentType); err == nil {
+				return mediaURL
+			}
+		}
+		if sourceURL := strings.TrimSpace(attachment.remoteURL()); sourceURL != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			mediaURL, err := ingestRemoteMedia(ctx, "signal", sourceURL, name, nil)
+			cancel()
+			if err == nil {
+				return mediaURL
+			}
+			slog.Warn("signal: failed to ingest remote attachment", "url", sourceURL, "err", err)
+		}
+		if attachmentID := attachment.id(); attachmentID != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			mediaURL, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType)
+			cancel()
+			if err == nil {
+				return mediaURL
+			}
+			slog.Warn("signal: failed to ingest attachment by id", "id", attachmentID, "err", err)
+		}
+	}
+	return ""
+}
+
+func (a signalAttachment) mimeType() string {
+	return firstMeaningfulString(a.ContentType, a.ContentTypeAlt)
+}
+
+func (a signalAttachment) id() string {
+	return firstMeaningfulString(a.ID, a.AttachmentID)
+}
+
+func (a signalAttachment) fileName() string {
+	return firstMeaningfulString(a.Filename, a.FileName)
+}
+
+func (a signalAttachment) storedPath() string {
+	return firstMeaningfulString(a.StoredFilename, a.StoredFileName)
+}
+
+func (a signalAttachment) localPath() string {
+	return firstMeaningfulString(a.Path, a.File, a.LocalPath)
+}
+
+func (a signalAttachment) remoteURL() string {
+	return firstMeaningfulString(a.URL, a.RemoteURL, a.RemoteURLAlt, a.DownloadURL)
+}
+
+func signalAttachmentName(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
+			value = parsed.Path
+		}
+		base := filepath.Base(value)
+		if strings.TrimSpace(base) != "" && base != "." && base != string(filepath.Separator) {
+			return base
+		}
+	}
+	return "image"
+}
+
+func firstMeaningfulString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string) (string, error) {
+	if strings.TrimSpace(c.phone) == "" {
+		return "", fmt.Errorf("signal account phone is required")
+	}
+	data, err := signalAttachmentFetcher(ctx, c, c.phone, attachmentID, source, channelID, isGroup)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = http.DetectContentType(data)
+	}
+	return persistIncomingMedia("signal", fileName, contentType, data)
+}
+
+func fetchSignalAttachmentData(ctx context.Context, c *SignalChannel, phone, attachmentID, source, channelID string, isGroup bool) ([]byte, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+	}
+	_ = phone
+	type attachmentParams struct {
+		ID        string `json:"id"`
+		Recipient string `json:"recipient,omitempty"`
+		GroupID   string `json:"groupId,omitempty"`
+	}
+	req := jsonrpcRequest[attachmentParams]{
+		JSONRPC: "2.0",
+		Method:  "getAttachment",
+		Params:  attachmentParams{ID: attachmentID},
+		ID:      c.idSeq.Add(1),
+	}
+	if isGroup {
+		req.Params.GroupID = channelID
+	} else {
+		req.Params.Recipient = source
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("signal: marshal getAttachment request: %w", err)
+	}
+	var resp jsonrpcResponse
+	if err := c.rpcCallContext(ctx, body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
+	}
+	encoded, err := decodeSignalAttachmentResult(resp.Result)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("decoding attachment %s: %w", attachmentID, err)
+	}
+	return decoded, nil
+}
+
+func decodeSignalAttachmentResult(raw json.RawMessage) (string, error) {
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil && strings.TrimSpace(encoded) != "" {
+		return encoded, nil
+	}
+
+	var payload struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", fmt.Errorf("signal: decode getAttachment result: %w", err)
+	}
+	if strings.TrimSpace(payload.Data) == "" {
+		return "", fmt.Errorf("signal: decode getAttachment result: empty attachment data")
+	}
+	return payload.Data, nil
 }
 
 func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int64, reactionMessage *signalReactionMessage) {
@@ -1093,12 +1312,6 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 		result.restrictTools = r.restrictTools
 		result.model = r.model
 		result.fallbacks = r.fallbacks
-	}
-
-	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-			slog.Warn("signal: failed to send read receipt", "err", err)
-		}
 	}
 
 	c.handlerMu.RLock()
@@ -1128,6 +1341,11 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 			im.Fallbacks = c.fallbacks
 		}
 		fn(im)
+		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+				slog.Warn("signal: failed to send read receipt", "err", err)
+			}
+		}
 	} else {
 		slog.Debug("signal: no handler registered", "from", source)
 	}

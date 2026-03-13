@@ -118,7 +118,7 @@ func (c *DiscordChannel) discordBotUserID() string {
 }
 
 func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string) bool {
-	if msg == nil || msg.Author == nil || msg.Author.Bot || strings.TrimSpace(msg.Content) == "" {
+	if msg == nil || msg.Author == nil || msg.Author.Bot || (strings.TrimSpace(msg.Content) == "" && len(msg.Attachments) == 0) {
 		return false
 	}
 
@@ -137,11 +137,13 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		if !msg.Timestamp.IsZero() {
 			receivedAt = msg.Timestamp.UTC()
 		}
+		mediaURL := firstDiscordImageDataURL(msg.Attachments)
 		im := IncomingMessage{
 			Type:          "discord",
 			From:          msg.Author.ID,
 			Channel:       msg.ChannelID,
 			Text:          msg.Content,
+			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -159,4 +161,25 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		slog.Debug("discord: no handler registered", "from", msg.Author.ID)
 	}
 	return true
+}
+
+func firstDiscordImageDataURL(attachments []*discordgo.MessageAttachment) string {
+	for _, attachment := range attachments {
+		if attachment == nil || !looksLikeImage(attachment.ContentType, attachment.Filename) {
+			continue
+		}
+		sourceURL := strings.TrimSpace(attachment.URL)
+		if sourceURL == "" {
+			sourceURL = strings.TrimSpace(attachment.ProxyURL)
+		}
+		if sourceURL == "" {
+			continue
+		}
+		mediaURL, err := ingestRemoteMedia(context.Background(), "discord", sourceURL, attachment.Filename, nil)
+		if err == nil {
+			return mediaURL
+		}
+		slog.Warn("discord: failed to ingest image attachment", "file", attachment.Filename, "err", err)
+	}
+	return ""
 }

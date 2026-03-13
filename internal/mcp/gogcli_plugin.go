@@ -47,10 +47,15 @@ var gogAllowedCommands = map[string]struct{}{
 
 func registerPluginTools(s *sdkmcp.Server) {
 	cfg, err := config.Load("")
-	if err != nil || !isSkillEnabled(cfg, "gogcli") {
+	if err != nil {
 		return
 	}
-	registerGogcliTool(s)
+	if isSkillEnabled(cfg, "gogcli") {
+		registerGogcliTool(s)
+	}
+	if isSkillEnabled(cfg, "himalaya") {
+		registerHimalayaTool(s)
+	}
 }
 
 func syncPluginTools(s *sdkmcp.Server, cfg *config.Config) {
@@ -59,9 +64,14 @@ func syncPluginTools(s *sdkmcp.Server, cfg *config.Config) {
 	}
 	if isSkillEnabled(cfg, "gogcli") {
 		registerGogcliTool(s)
-		return
+	} else {
+		s.RemoveTools(gogcliToolName)
 	}
-	s.RemoveTools(gogcliToolName)
+	if isSkillEnabled(cfg, "himalaya") {
+		registerHimalayaTool(s)
+	} else {
+		s.RemoveTools(himalayaToolName)
+	}
 }
 
 func registerGogcliTool(s *sdkmcp.Server) {

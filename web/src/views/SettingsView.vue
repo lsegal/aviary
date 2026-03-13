@@ -786,8 +786,8 @@
           </div>
 
           <div v-for="skill in installedSkills" :key="skill.name" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div>
+            <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+              <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ skill.name }}</h4>
                   <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ skill.source }}</span>
@@ -799,7 +799,7 @@
                 <p class="mt-1 font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ skill.path }}</p>
               </div>
 
-              <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <label class="inline-flex cursor-pointer items-center gap-2 self-start pt-0.5 text-sm text-gray-700 md:justify-self-end dark:text-gray-300">
                 <input v-model="skillConfig(skill.name).enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
                 Enabled
               </label>

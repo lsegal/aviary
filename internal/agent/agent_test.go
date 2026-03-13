@@ -249,7 +249,7 @@ func TestAgentRunner_ExecutesInlineToolBlocks(t *testing.T) {
 	provider := &sequenceProvider{responses: [][]llm.Event{
 		{{
 			Type: llm.EventTypeText,
-			Text: `[tool] {"name":"browser_click","arguments":{"selector":"a[href=\"/chat\"]","tab_id":"tab123"}}[tool] {"name":"browser_screenshot","arguments":{"tab_id":"tab123"}}[tool] {"name":"channel_send_file","arguments":{"caption":"Chat Section","file_path":"C:\\Users\\Loren\\.config\\aviary\\screenshots\\chat.png"}}Sent the Chat section screenshot.`,
+			Text: `[tool] {"name":"browser_click","arguments":{"selector":"a[href=\"/chat\"]","tab_id":"tab123"}}[tool] {"name":"browser_screenshot","arguments":{"tab_id":"tab123"}}[tool] {"name":"channel_send_file","arguments":{"caption":"Chat Section","file_path":"C:\\Users\\Loren\\.config\\aviary\\media\\browser\\chat.png"}}Sent the Chat section screenshot.`,
 		}, {Type: llm.EventTypeDone}},
 		{{Type: llm.EventTypeText, Text: "Which one next?"}, {Type: llm.EventTypeDone}},
 	}}
@@ -473,6 +473,32 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		}
 	})
 
+	t.Run("stream setup error delivers to session channel", func(t *testing.T) {
+		var delivered string
+		RegisterSessionDelivery("sess-stream-setup-error", "signal", "+1", func(text string) { delivered = text })
+
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "a1", Model: "anthropic/test"},
+			&config.AgentConfig{Name: "bot"},
+			&mockProvider{err: errors.New("boom")},
+			nil,
+			nil,
+		)
+
+		done := make(chan struct{}, 1)
+		runner.Prompt(WithSessionID(context.Background(), "sess-stream-setup-error"), "hi", func(e StreamEvent) {
+			if e.Type == StreamEventError {
+				done <- struct{}{}
+			}
+		})
+		select {
+		case <-done:
+			assert.Equal(t, "Error: boom", delivered)
+		case <-time.After(2 * time.Second):
+			assert.FailNow(t, "timeout")
+		}
+	})
+
 	t.Run("stream event error", func(t *testing.T) {
 		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("event boom")}}}, nil, nil)
 		errCh := make(chan error, 1)
@@ -484,6 +510,32 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		select {
 		case err := <-errCh:
 			assert.Error(t, err)
+		case <-time.After(2 * time.Second):
+			assert.FailNow(t, "timeout")
+		}
+	})
+
+	t.Run("stream event error delivers to session channel", func(t *testing.T) {
+		var delivered string
+		RegisterSessionDelivery("sess-stream-event-error", "signal", "+1", func(text string) { delivered = text })
+
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "a1", Model: "anthropic/test"},
+			&config.AgentConfig{Name: "bot"},
+			&mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("event boom")}}},
+			nil,
+			nil,
+		)
+
+		done := make(chan struct{}, 1)
+		runner.Prompt(WithSessionID(context.Background(), "sess-stream-event-error"), "hi", func(e StreamEvent) {
+			if e.Type == StreamEventError {
+				done <- struct{}{}
+			}
+		})
+		select {
+		case <-done:
+			assert.Equal(t, "Error: event boom", delivered)
 		case <-time.After(2 * time.Second):
 			assert.FailNow(t, "timeout")
 		}
@@ -1393,6 +1445,52 @@ func TestLoadMemoryContext_WithMemory(t *testing.T) {
 
 }
 
+func TestLoadMemoryContext_ExcludesOtherSessions(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lmc3", Name: "lmc3"},
+		&config.AgentConfig{Name: "lmc3"},
+		&mockProvider{}, nil, mem,
+	)
+
+	poolID := runner.memoryPoolID()
+	err := mem.Append(poolID, "sess1", "user", "keep this session")
+	assert.NoError(t, err)
+	err = mem.Append(poolID, "signal:abc", "user", "do not leak this signal session")
+	assert.NoError(t, err)
+
+	got := runner.loadMemoryContext("sess1", 10000)
+	assert.True(t, strings.Contains(got, "keep this session"))
+	assert.False(t, strings.Contains(got, "do not leak this signal session"))
+}
+
+func TestLoadMemoryContext_ExcludesSessionlessSummaries(t *testing.T) {
+	setTestDataDir(t)
+	mem := memory.New()
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lmc4", Name: "lmc4"},
+		&config.AgentConfig{Name: "lmc4"},
+		&mockProvider{}, nil, mem,
+	)
+
+	poolID := runner.memoryPoolID()
+	err := store.AppendJSONL(store.MemoryPath(poolID), domain.MemoryEntry{
+		ID:      "summary_1",
+		PoolID:  poolID,
+		Role:    "summary",
+		Content: "summary from another session should not be shared",
+		Tokens:  8,
+	})
+	assert.NoError(t, err)
+	err = mem.Append(poolID, "sess1", "user", "current session memory")
+	assert.NoError(t, err)
+
+	got := runner.loadMemoryContext("sess1", 10000)
+	assert.True(t, strings.Contains(got, "current session memory"))
+	assert.False(t, strings.Contains(got, "summary from another session should not be shared"))
+}
+
 func TestAppendMemoryMessage_NilMemory(t *testing.T) {
 	setTestDataDir(t)
 	runner := NewAgentRunner(
@@ -1464,9 +1562,10 @@ func TestParseToolCall(t *testing.T) {
 		{"markdown fence", "```json\n{\"tool\":\"foo\",\"arguments\":{}}\n```", true, "foo"},
 		{"nil arguments", `{"tool":"bar"}`, true, "bar"},
 		{"array first element", `[{"tool":"arr","arguments":{}}]`, true, "arr"},
-		{"embedded in text", `some text {"tool":"embed","arguments":{}} more`, true, "embed"},
+		{"embedded in text", `some text {"tool":"embed","arguments":{}} more`, false, ""},
 		{"invalid JSON", `not json`, false, ""},
 		{"tool_call wrapper", `{"tool_call":{"tool":"nested","arguments":{"k":"v"}}}`, true, "nested"},
+		{"broken JSON with repair prompt appended", "{\"tool\":\"skill_gogcli\",\"arguments\":{\"command\":[\"calendar\",\"list\",\"foo\"bar\"]}}\nYour response could not be parsed as valid JSON. Ensure all double quotes inside string values are escaped as \\\". Respond with only the corrected JSON.", false, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1497,6 +1596,22 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	out2 := buildToolSystemPrompt("", tools)
 	assert.False(t, strings.Contains(out2, "agent name is"))
 
+}
+
+func TestBuildRulesPreamble(t *testing.T) {
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bot", Name: "bot"},
+		&config.AgentConfig{Name: "bot", Rules: "Be concise."},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	got := runner.buildRulesPreamble()
+	assert.Contains(t, got, "<rules>")
+	assert.Contains(t, got, agentFileLookupRule)
+	assert.Contains(t, got, "Be concise.")
+	assert.Contains(t, got, "</rules>")
 }
 
 func TestIsRetryableError(t *testing.T) {

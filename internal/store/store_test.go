@@ -49,6 +49,7 @@ func TestSubDir(t *testing.T) {
 		{DirAgents},
 		{DirCerts},
 		{DirAuth},
+		{DirMedia},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +73,7 @@ func TestEnsureDirs_Success(t *testing.T) {
 		SubDir(DirAgents),
 		SubDir(DirCerts),
 		SubDir(DirAuth),
+		SubDir(DirMedia),
 	}
 	for _, d := range expected {
 		info, err := os.Stat(d)
@@ -294,14 +296,14 @@ func TestAllJobDirs_Legacy(t *testing.T) {
 }
 
 // TestScreenshotDir verifies path format.
-func TestScreenshotDir(t *testing.T) {
+func TestMediaDirs(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	got := ScreenshotDir()
-	want := filepath.Join(DataDir(), "screenshots")
-	assert.Equal(t, want, got)
-
+	assert.Equal(t, filepath.Join(DataDir(), "media", "browser"), ScreenshotDir())
+	assert.Equal(t, filepath.Join(DataDir(), "media", "browser"), BrowserMediaDir())
+	assert.Equal(t, filepath.Join(DataDir(), "media", "incoming", "slack"), IncomingMediaDir("slack"))
+	assert.Equal(t, filepath.Join(DataDir(), "media", "outgoing", "signal"), OutgoingMediaDir("signal"))
 }
 
 // TestNotesPath verifies notes path format.
@@ -318,6 +320,35 @@ func TestNotesPath(t *testing.T) {
 	want2 := filepath.Join(DataDir(), DirAgents, "default", "MEMORY.md")
 	assert.Equal(t, want2, got2)
 
+}
+
+func TestAgentMarkdownFiles(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	agentDir := AgentDir("agent_assistant")
+	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("id"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("mem"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
+
+	files, err := ListAgentMarkdownFiles("agent_assistant")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "notes/USER.md"}, files)
+
+	content, err := ReadAgentMarkdownFile("agent_assistant", "notes/USER.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "user", content)
+
+	_, err = ReadAgentMarkdownFile("agent_assistant", "RULES.md")
+	assert.ErrorContains(t, err, "loaded automatically")
+	_, err = ReadAgentMarkdownFile("agent_assistant", "../outside.md")
+	assert.ErrorContains(t, err, "stay within")
+	_, err = ReadAgentMarkdownFile("agent_assistant", "plain.txt")
+	assert.ErrorContains(t, err, "markdown")
 }
 
 // TestUsagePath verifies usage path format.

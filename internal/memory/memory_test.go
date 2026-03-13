@@ -115,8 +115,10 @@ func TestCompact_NilProviderAndNoop(t *testing.T) {
 	assert.NoError(t, err)
 
 	all, _ := m.All("cp")
-	assert.Equal(t, 21, len(all))
+	assert.Equal(t, 1, len(all))
 	assert.Equal(t, "summary", all[0].Role)
+	assert.Contains(t, all[0].Content, "Compacted 25 messages.")
+	assert.Contains(t, all[0].Content, "some content")
 	err = m.Compact(context.Background(), "cp", nil, 50)
 	assert.NoError(t, err)
 
@@ -134,6 +136,7 @@ func TestCompact_WithProviderAndFallback(t *testing.T) {
 	assert.NoError(t, err)
 
 	all, _ := m.All("cp2")
+	assert.Equal(t, 1, len(all))
 	assert.Equal(t, "summary text", all[0].Content)
 
 	for i := 0; i < 25; i++ {
@@ -144,7 +147,10 @@ func TestCompact_WithProviderAndFallback(t *testing.T) {
 	assert.NoError(t, err)
 
 	all, _ = m.All("cp3")
+	assert.Equal(t, 1, len(all))
 	assert.Equal(t, "summary", all[0].Role)
+	assert.Contains(t, all[0].Content, "Compacted 25 messages.")
+	assert.Contains(t, all[0].Content, "line")
 
 }
 
@@ -157,7 +163,8 @@ func TestSummarize(t *testing.T) {
 	t.Run("nil provider", func(t *testing.T) {
 		text, err := summarize(context.Background(), nil, entries)
 		assert.NoError(t, err)
-		assert.NotEqual(t, "", text)
+		assert.Contains(t, text, "Compacted 2 messages.")
+		assert.Contains(t, text, "user: hello")
 
 	})
 
@@ -218,18 +225,20 @@ func TestAppendNote(t *testing.T) {
 func TestCompact_NilProvider(t *testing.T) {
 	setupMemoryDir(t)
 	m := New()
-	// Add enough entries to exceed keepRecent.
+	// Add enough entries to exceed the compaction threshold.
 	for i := 0; i < 5; i++ {
 		_ = m.Append("pool_cp", "sess1", "user", "some content")
 	}
-	// Compact with nil provider falls back to dropping old entries without LLM; should not error.
+	// Compact with nil provider should rewrite the full pool to a single summary.
 	err := m.Compact(context.Background(), "pool_cp", nil, 2)
 	assert.NoError(t, err)
 
-	// After compaction, pool should have <= keepRecent+1 entries (summary + recent).
+	// After compaction, the pool should contain only the summary entry.
 	entries, err2 := m.All("pool_cp")
 	assert.Nil(t, err2)
-	assert.LessOrEqual(t, len(entries), 3)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "summary", entries[0].Role)
+	assert.Contains(t, entries[0].Content, "Compacted 5 messages.")
 
 }
 

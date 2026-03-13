@@ -351,6 +351,47 @@ func openAIExchange(ctx context.Context, code, verifier, redirectURI string) (*O
 	}, nil
 }
 
+// OpenAIRefresh refreshes an expired OpenAI/Codex OAuth access token.
+func OpenAIRefresh(ctx context.Context, refreshToken string) (*OAuthToken, error) {
+	body := url.Values{}
+	body.Set("grant_type", "refresh_token")
+	body.Set("client_id", OpenAIClientID)
+	body.Set("refresh_token", refreshToken)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, OpenAITokenURL, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("openai token refresh: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openai token refresh failed: %s", resp.Status)
+	}
+
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding openai refresh response: %w", err)
+	}
+	if result.RefreshToken == "" {
+		result.RefreshToken = refreshToken
+	}
+
+	return &OAuthToken{
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
+	}, nil
+}
+
 // Gemini OAuth constants for the gemini-cli OAuth flow.
 // Client ID, secret, and redirect port sourced from the official google-gemini/gemini-cli
 // (packages/core/src/code_assist/oauth2.ts).

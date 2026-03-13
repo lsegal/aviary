@@ -12,6 +12,7 @@ type IncomingMessage struct {
 	From          string // user ID or name
 	Channel       string // channel ID or name
 	Text          string
+	MediaURL      string // optional inline media for the LLM (typically a data URL)
 	ReceivedAt    time.Time
 	RestrictTools []string // per-entry tool allow-list override; nil means use agent defaults
 	DisabledTools []string // per-channel tool deny-list override; applied after the allow-list

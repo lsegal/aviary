@@ -17,6 +17,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/lsegal/aviary/internal/auth"
 )
 
 func TestConstants(t *testing.T) {
@@ -1359,6 +1361,63 @@ func TestGeminiCodeAssistProvider_Stream_AllRoles(t *testing.T) {
 	collectEvents(t, ch)
 }
 
+func TestGeminiCodeAssistProvider_Stream_IncludesInlineImageData(t *testing.T) {
+	var requestCount int
+	var streamBody []byte
+	mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+			return
+		}
+		var err error
+		streamBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		data := `{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1}}}`
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	})
+
+	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
+	req := Request{
+		Messages: []Message{{
+			Role:     RoleUser,
+			Content:  "what does this say",
+			MediaURL: "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+		}},
+	}
+	ch, err := p.Stream(context.Background(), req)
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var envelope struct {
+		Request struct {
+			Contents []struct {
+				Role  string `json:"role"`
+				Parts []struct {
+					Text       string `json:"text"`
+					InlineData *struct {
+						MimeType string `json:"mimeType"`
+						Data     string `json:"data"`
+					} `json:"inlineData"`
+				} `json:"parts"`
+			} `json:"contents"`
+		} `json:"request"`
+	}
+	err = json.Unmarshal(streamBody, &envelope)
+	assert.NoError(t, err)
+	assert.Len(t, envelope.Request.Contents, 1)
+	assert.Equal(t, "user", envelope.Request.Contents[0].Role)
+	assert.Len(t, envelope.Request.Contents[0].Parts, 2)
+	assert.Equal(t, "what does this say", envelope.Request.Contents[0].Parts[0].Text)
+	assert.NotNil(t, envelope.Request.Contents[0].Parts[1].InlineData)
+	assert.Equal(t, "image/png", envelope.Request.Contents[0].Parts[1].InlineData.MimeType)
+	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte("png-bytes")), envelope.Request.Contents[0].Parts[1].InlineData.Data)
+}
+
 func TestGeminiCodeAssistProvider_Stream_ProjectError(t *testing.T) {
 	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -1574,4 +1633,40 @@ func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
 	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
 	assert.False(t, ok)
 
+}
+
+func TestResolveOAuthToken_OpenAIRefreshesExpiredToken(t *testing.T) {
+	srv := mockDefaultClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		assert.Equal(t, "refresh_token", r.Form.Get("grant_type"))
+		assert.Equal(t, auth.OpenAIClientID, r.Form.Get("client_id"))
+		assert.Equal(t, "rt-old", r.Form.Get("refresh_token"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "at-refreshed",
+			"refresh_token": "rt-new",
+			"expires_in":    3600,
+		})
+	})
+	defer srv.Close()
+
+	expiresAt := time.Now().Add(-1 * time.Hour).UnixMilli()
+	tokenJSON := fmt.Sprintf(`{"access":"at-old","refresh":"rt-old","expires_at":%d}`, expiresAt)
+
+	var persistedKey string
+	var persistedValue string
+	f := NewFactory(func(_ string) (string, error) {
+		return tokenJSON, nil
+	}).WithTokenSetter(func(key, value string) error {
+		persistedKey = key
+		persistedValue = value
+		return nil
+	})
+
+	tok, ok := f.resolveOAuthToken("auth:openai:oauth")
+	assert.True(t, ok)
+	assert.Equal(t, "at-refreshed", tok)
+	assert.Equal(t, "openai:oauth", persistedKey)
+	assert.Contains(t, persistedValue, "at-refreshed")
+	assert.Contains(t, persistedValue, "rt-new")
 }

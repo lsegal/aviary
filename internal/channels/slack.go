@@ -127,6 +127,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	from := event.User
 	text := event.Text
 	botID := event.BotID
+	var files []slack.File
 	isEdited := event.IsEdited() || (event.SubType == "message_changed" && event.Message != nil)
 	if isEdited && event.Message != nil {
 		if event.Message.Channel != "" {
@@ -141,8 +142,11 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		if event.Message.BotID != "" {
 			botID = event.Message.BotID
 		}
+		files = event.Message.Files
+	} else if event.Message != nil {
+		files = event.Message.Files
 	}
-	if botID != "" || strings.TrimSpace(text) == "" || from == "" || channelID == "" {
+	if botID != "" || (strings.TrimSpace(text) == "" && len(files) == 0) || from == "" || channelID == "" {
 		return
 	}
 
@@ -166,11 +170,13 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
 			receivedAt = ts
 		}
+		mediaURL := c.firstImageDataURL(files)
 		im := IncomingMessage{
 			Type:          "slack",
 			From:          from,
 			Channel:       channelID,
 			Text:          text,
+			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -188,6 +194,33 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	} else {
 		slog.Debug("slack: no handler registered", "from", from)
 	}
+}
+
+func (c *SlackChannel) firstImageDataURL(files []slack.File) string {
+	for _, file := range files {
+		if !looksLikeImage(file.Mimetype, file.Name) {
+			continue
+		}
+		sourceURL := strings.TrimSpace(file.URLPrivateDownload)
+		if sourceURL == "" {
+			sourceURL = strings.TrimSpace(file.URLPrivate)
+		}
+		if sourceURL == "" {
+			continue
+		}
+		mediaURL, err := ingestRemoteMedia(
+			context.Background(),
+			"slack",
+			sourceURL,
+			firstNonEmpty(file.Name, file.Title),
+			map[string]string{"Authorization": "Bearer " + c.botToken},
+		)
+		if err == nil {
+			return mediaURL
+		}
+		slog.Warn("slack: failed to ingest image attachment", "file", file.Name, "err", err)
+	}
+	return ""
 }
 
 func parseSlackTimestamp(raw string) (time.Time, bool) {

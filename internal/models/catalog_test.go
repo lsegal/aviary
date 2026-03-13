@@ -24,3 +24,17 @@ func TestListReturnsCopy(t *testing.T) {
 	list[0] = "mutated"
 	assert.NotEqual(t, "mutated", List()[0])
 }
+
+func TestEntriesExposeMetadata(t *testing.T) {
+	entry, ok := Lookup("openai/gpt-4o")
+	assert.True(t, ok)
+	assert.Equal(t, 128000, entry.InputTokens)
+	assert.Equal(t, 16384, entry.OutputTokens)
+	assert.True(t, entry.SupportsImageInput)
+}
+
+func TestEntriesReturnsCopy(t *testing.T) {
+	entries := Entries()
+	entries[0].ID = "mutated"
+	assert.NotEqual(t, "mutated", Entries()[0].ID)
+}

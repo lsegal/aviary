@@ -181,6 +181,20 @@ func TestSkillGogcliTool_ViaDispatcher(t *testing.T) {
 	toolCallContains(t, d, "skill_gogcli", map[string]any{"command": []any{"gmail", "list"}}, "")
 }
 
+func TestSkillHimalayaTool_ViaDispatcher(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	// skill_himalaya should fail gracefully when himalaya is unavailable or not enabled.
+	toolCallContains(t, d, himalayaToolName, map[string]any{"command": []any{"envelope", "list"}}, "")
+}
+
 // ── ensureInProcessDeps path ──────────────────────────────────────────────────
 
 func TestEnsureInProcessDeps_WhenDepsNotSet(t *testing.T) {

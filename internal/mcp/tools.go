@@ -116,6 +116,7 @@ func stub(name string) (*sdkmcp.CallToolResult, struct{}, error) {
 func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
 	registerRulesTools(s)
+	registerAgentContextTools(s)
 	registerNoteTools(s)
 	registerFileTools(s)
 	registerExecTools(s)
@@ -461,6 +462,11 @@ type sessionAgentArgs struct {
 	Agent string `json:"agent"`
 }
 
+type agentFileReadArgs struct {
+	Agent string `json:"agent"`
+	File  string `json:"file"`
+}
+
 type noteWriteArgs struct {
 	File    string `json:"file"`
 	Content string `json:"content"`
@@ -488,6 +494,36 @@ func registerNoteTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("writing note: %w", err)
 		}
 		return text(fmt.Sprintf("note written: %s", path))
+	})
+}
+
+func registerAgentContextTools(s *sdkmcp.Server) {
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_file_list",
+		Description: "List markdown context files available under an agent directory, excluding RULES.md which is already loaded into the prompt preamble.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		files, err := store.ListAgentMarkdownFiles(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("listing agent files: %w", err)
+		}
+		return jsonResult(files)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_file_read",
+		Description: "Read a markdown context file from an agent directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		content, err := store.ReadAgentMarkdownFile(args.Agent, args.File)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("reading agent file: %w", err)
+		}
+		return text(content)
 	})
 }
 
@@ -1130,7 +1166,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 
-		screenshotDir := store.ScreenshotDir()
+		screenshotDir := store.BrowserMediaDir()
 		if err := os.MkdirAll(screenshotDir, 0o700); err != nil {
 			return nil, struct{}{}, fmt.Errorf("creating screenshot directory: %w", err)
 		}

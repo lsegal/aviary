@@ -133,6 +133,8 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 	switch {
 	case strings.Contains(providerKey, "anthropic"):
 		newTok, err = auth.AnthropicRefresh(ctx, tok.RefreshToken)
+	case strings.Contains(providerKey, "openai"):
+		newTok, err = auth.OpenAIRefresh(ctx, tok.RefreshToken)
 	case strings.Contains(providerKey, "google"), strings.Contains(providerKey, "gemini"):
 		newTok, err = auth.GeminiRefresh(ctx, tok.RefreshToken)
 	default:

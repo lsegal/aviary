@@ -15,14 +15,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
 
 	"github.com/stretchr/testify/assert"
 )
+
+type stubChannel struct{}
+
+func (stubChannel) Start(context.Context) error              { return nil }
+func (stubChannel) Stop()                                    {}
+func (stubChannel) Send(string, string) error                { return nil }
+func (stubChannel) OnMessage(func(channels.IncomingMessage)) {}
 
 func setupServerDataDir(t *testing.T) {
 	t.Helper()
@@ -1380,6 +1389,72 @@ func TestServerLoadSessionDeliveries_WithData(t *testing.T) {
 	srv := New(cfg, "tok")
 	// Should not panic and should log the loaded sessions.
 	srv.loadSessionDeliveries()
+}
+
+func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "stub"}}}
+	srv := New(cfg, "tok")
+	srv.agents.Reconcile(cfg)
+
+	srv.handleIncomingChannelMessage(context.Background(), "bot", stubChannel{}, channels.IncomingMessage{
+		Type:     "slack",
+		Channel:  "D123",
+		From:     "U123",
+		Text:     "describe this",
+		MediaURL: "data:image/png;base64,cG5n",
+	})
+
+	sessions, err := agent.NewSessionManager().List("agent_bot")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, sessions)
+
+	var sessionID string
+	for _, sess := range sessions {
+		if sess != nil && sess.Name == "slack:D123" {
+			sessionID = sess.ID
+			break
+		}
+	}
+	assert.NotEqual(t, "", sessionID)
+
+	var userMsg domain.Message
+	found := false
+	assert.Eventually(t, func() bool {
+		lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_bot", sessionID))
+		if err != nil {
+			return false
+		}
+		for _, line := range lines {
+			if line.Role == domain.MessageRoleUser {
+				userMsg = line
+				found = true
+				return true
+			}
+		}
+		return false
+	}, time.Second, 25*time.Millisecond)
+	assert.True(t, found)
+	assert.Equal(t, "describe this", userMsg.Content)
+	assert.Equal(t, "data:image/png;base64,cG5n", userMsg.MediaURL)
+}
+
+func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {
+	setupServerDataDir(t)
+
+	source := filepath.Join(t.TempDir(), "image.png")
+	err := os.WriteFile(source, []byte("png-bytes"), 0o600)
+	assert.NoError(t, err)
+
+	staged, err := stageOutgoingMedia("signal", source)
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(staged, store.OutgoingMediaDir("signal")))
+
+	data, err := os.ReadFile(staged)
+	assert.NoError(t, err)
+	assert.Equal(t, "png-bytes", string(data))
 }
 
 func TestLoadOrGenerateTLS_WithCustomCertError(t *testing.T) {

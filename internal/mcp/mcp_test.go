@@ -973,7 +973,8 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	assert.NoError(t, err)
 	err = config.Save("", &config.Config{
 		Skills: map[string]config.SkillConfig{
-			"gogcli": {Enabled: true},
+			"gogcli":   {Enabled: true},
+			"himalaya": {Enabled: true},
 		},
 	})
 	assert.NoError(t, err)
@@ -995,6 +996,7 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	// Verify core, runtime skill, and skill-management tools are present.
 	foundPing := false
 	foundSkillGogCLI := false
+	foundSkillHimalaya := false
 	foundSkillsList := false
 	for _, tool := range tools {
 		if tool.Name == "ping" {
@@ -1003,12 +1005,16 @@ func TestListToolsAndCallToolText(t *testing.T) {
 		if tool.Name == "skill_gogcli" {
 			foundSkillGogCLI = true
 		}
+		if tool.Name == himalayaToolName {
+			foundSkillHimalaya = true
+		}
 		if tool.Name == "skills_list" {
 			foundSkillsList = true
 		}
 	}
 	assert.True(t, foundPing)
 	assert.True(t, foundSkillGogCLI)
+	assert.True(t, foundSkillHimalaya)
 	assert.True(t, foundSkillsList)
 
 	// CallToolText returns concatenated text.
@@ -1052,10 +1058,12 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 	}
 
 	assert.False(t, hasTool(gogcliToolName))
+	assert.False(t, hasTool(himalayaToolName))
 
 	enabledCfg := config.Config{
 		Skills: map[string]config.SkillConfig{
-			"gogcli": {Enabled: true},
+			"gogcli":   {Enabled: true},
+			"himalaya": {Enabled: true},
 		},
 	}
 	rawEnabledCfg, err := json.Marshal(enabledCfg)
@@ -1065,6 +1073,7 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, hasTool(gogcliToolName))
+	assert.True(t, hasTool(himalayaToolName))
 
 	rawDisabledCfg, err := json.Marshal(config.Config{})
 	require.NoError(t, err)
@@ -1073,6 +1082,7 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, hasTool(gogcliToolName))
+	assert.False(t, hasTool(himalayaToolName))
 }
 
 func TestServerVersionTools_Emulated(t *testing.T) {
@@ -1912,6 +1922,63 @@ func TestRunGogCLI_WithAccount(t *testing.T) {
 
 }
 
+func TestRunHimalayaCLI_CommandRequired(t *testing.T) {
+	_, err := runHimalayaCLI(context.Background(), himalayaRunArgs{Command: []string{}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "command is required"))
+}
+
+func TestRunHimalayaCLI_DisallowedCommand(t *testing.T) {
+	_, err := runHimalayaCLI(context.Background(), himalayaRunArgs{Command: []string{"manual"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not allowed"))
+}
+
+func TestRunHimalayaCLI_OnlyFlags(t *testing.T) {
+	_, err := runHimalayaCLI(context.Background(), himalayaRunArgs{Command: []string{"--debug", "--trace"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "himalaya command"))
+}
+
+func TestRunHimalayaCLI_BinaryNotFound(t *testing.T) {
+	origLookPath := himalayaLookPath
+	t.Cleanup(func() { himalayaLookPath = origLookPath })
+	himalayaLookPath = func(_ string) (string, error) {
+		return "", fmt.Errorf("not found in PATH")
+	}
+	origBin := os.Getenv("AVIARY_HIMALAYA_BIN")
+	t.Cleanup(func() { os.Setenv("AVIARY_HIMALAYA_BIN", origBin) }) //nolint:errcheck
+	os.Unsetenv("AVIARY_HIMALAYA_BIN")                              //nolint:errcheck
+
+	_, err := runHimalayaCLI(context.Background(), himalayaRunArgs{Command: []string{"envelope", "list"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not found"))
+}
+
+func TestRunHimalayaCLI_MockBinary(t *testing.T) {
+	origCmd := himalayaCommand
+	t.Cleanup(func() { himalayaCommand = origCmd })
+	origLookPath := himalayaLookPath
+	t.Cleanup(func() { himalayaLookPath = origLookPath })
+
+	var capturedArgs []string
+	himalayaLookPath = func(_ string) (string, error) { return "/fake/himalaya", nil }
+	himalayaCommand = func(_ context.Context, _ string, args ...string) *exec.Cmd {
+		capturedArgs = args
+		return exec.Command("go", "env", "GOMOD")
+	}
+
+	out, err := runHimalayaCLI(context.Background(), himalayaRunArgs{
+		Command: []string{"--output", "plain", "--config", "mail.toml", "envelope", "list"},
+	})
+	if err != nil {
+		t.Skipf("skipping himalaya mock binary test: %v", err)
+	}
+	assert.NotEqual(t, "", out)
+	require.GreaterOrEqual(t, len(capturedArgs), 5)
+	assert.Equal(t, []string{"--output", "json", "--config", "mail.toml", "envelope", "list"}, capturedArgs)
+}
+
 func TestSessionCreateAndMessages(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -2035,4 +2102,36 @@ func TestAgentRulesGetSet_WithTempDir(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "be helpful"))
 
+}
+
+func TestAgentFileListRead_WithTempDir(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	agentDir := store.AgentDir("bot")
+	err = os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("identity"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
+
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	out, err := d.CallTool(context.Background(), "agent_file_list", map[string]any{"agent": "bot"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "IDENTITY.md")
+	assert.Contains(t, out, "notes/USER.md")
+	assert.NotContains(t, out, "RULES.md")
+
+	out, err = d.CallTool(context.Background(), "agent_file_read", map[string]any{"agent": "bot", "file": "IDENTITY.md"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "identity")
+
+	toolCallContains(t, d, "agent_file_read", map[string]any{"agent": "bot", "file": "RULES.md"}, "loaded automatically")
 }

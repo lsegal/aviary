@@ -3,6 +3,7 @@ package store
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ const (
 	DirAgents = "agents" // per-agent subdirectories
 	DirCerts  = "certs"
 	DirAuth   = "auth"
+	DirMedia  = "media"
 	DirUsage  = "usage"
 
 	// Deprecated: legacy flat directories kept for backward-compat migration.
@@ -83,6 +85,84 @@ func AgentRulesPath(agentID string) string {
 	return filepath.Join(AgentDir(agentID), "RULES.md")
 }
 
+// ListAgentMarkdownFiles returns markdown files under an agent directory,
+// excluding RULES.md which is handled as prompt preamble instead of ad hoc
+// context. Returned paths are slash-delimited and relative to the agent dir.
+func ListAgentMarkdownFiles(agentID string) ([]string, error) {
+	root := AgentDir(agentID)
+	entries := []string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.EqualFold(filepath.Ext(name), ".md") {
+			return nil
+		}
+		if strings.EqualFold(name, "RULES.md") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return entries, nil
+}
+
+// ReadAgentMarkdownFile reads a markdown file from an agent directory, excluding
+// RULES.md. file must be a relative path beneath the agent directory.
+func ReadAgentMarkdownFile(agentID, file string) (string, error) {
+	file = strings.TrimSpace(file)
+	if file == "" {
+		return "", fmt.Errorf("file is required")
+	}
+	if !strings.EqualFold(filepath.Ext(file), ".md") {
+		return "", fmt.Errorf("file must be a markdown file")
+	}
+	if strings.EqualFold(filepath.Base(file), "RULES.md") {
+		return "", fmt.Errorf("RULES.md is loaded automatically and cannot be read via agent_file_read")
+	}
+	if filepath.IsAbs(file) {
+		return "", fmt.Errorf("file must be relative to the agent directory")
+	}
+
+	root := AgentDir(agentID)
+	clean := filepath.Clean(file)
+	if clean == "." || clean == "" {
+		return "", fmt.Errorf("file is required")
+	}
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("file must stay within the agent directory")
+	}
+
+	path := filepath.Join(root, clean)
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("file must stay within the agent directory")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // EnsureDirs creates all required data subdirectories.
 func EnsureDirs() error {
 	dirs := []string{
@@ -90,6 +170,7 @@ func EnsureDirs() error {
 		SubDir(DirAgents),
 		SubDir(DirCerts),
 		SubDir(DirAuth),
+		SubDir(DirMedia),
 		SubDir(DirUsage),
 	}
 	for _, d := range dirs {
@@ -155,10 +236,31 @@ func AllJobDirs() []string {
 	return dirs
 }
 
+// MediaDir returns the root directory for persisted media artifacts.
+func MediaDir() string {
+	return SubDir(DirMedia)
+}
+
+// BrowserMediaDir returns the directory where browser screenshots are saved.
+// Browser artifacts are global resources (browser is not per-agent).
+func BrowserMediaDir() string {
+	return filepath.Join(MediaDir(), "browser")
+}
+
+// IncomingMediaDir returns the directory where inbound channel media is saved.
+func IncomingMediaDir(channelType string) string {
+	return filepath.Join(MediaDir(), "incoming", sanitizeFileComponent(channelType))
+}
+
+// OutgoingMediaDir returns the directory where outbound channel media is saved.
+func OutgoingMediaDir(channelType string) string {
+	return filepath.Join(MediaDir(), "outgoing", sanitizeFileComponent(channelType))
+}
+
 // ScreenshotDir returns the directory where browser screenshots are saved.
-// Screenshots are a global resource (browser is not per-agent).
+// Deprecated: use BrowserMediaDir.
 func ScreenshotDir() string {
-	return filepath.Join(DataDir(), "screenshots")
+	return BrowserMediaDir()
 }
 
 // SessionChannelsPath returns the path for the session's channel delivery

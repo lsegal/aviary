@@ -225,8 +225,13 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 		return nil, err
 	}
 
+	type inlineData struct {
+		MimeType string `json:"mimeType"`
+		Data     string `json:"data"`
+	}
 	type part struct {
-		Text string `json:"text"`
+		Text       string      `json:"text,omitempty"`
+		InlineData *inlineData `json:"inlineData,omitempty"`
 	}
 	type content struct {
 		Role  string `json:"role"`
@@ -248,7 +253,22 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 	for _, msg := range req.Messages {
 		switch msg.Role {
 		case RoleUser:
-			c := content{Role: "user", Parts: []part{{Text: msg.Content}}}
+			parts := make([]part, 0, 2)
+			if strings.TrimSpace(msg.Content) != "" {
+				parts = append(parts, part{Text: msg.Content})
+			}
+			if mimeType, data, ok := ParseImageDataURL(msg.MediaURL); ok {
+				parts = append(parts, part{
+					InlineData: &inlineData{
+						MimeType: mimeType,
+						Data:     data,
+					},
+				})
+			}
+			if len(parts) == 0 {
+				continue
+			}
+			c := content{Role: "user", Parts: parts}
 			contents = append(contents, c)
 		case RoleAssistant:
 			c := content{Role: "model", Parts: []part{{Text: msg.Content}}}

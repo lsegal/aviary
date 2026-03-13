@@ -23,9 +23,9 @@
       </template>
 
       <!-- Single selection chip -->
-      <template v-else-if="!multiple && modelValue">
+      <template v-else-if="singleValue">
         <div class="flex shrink-0 items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 text-gray-800 text-xs font-medium border border-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600">
-          <span class="truncate max-w-[200px]">{{ modelValue }}</span>
+          <span class="truncate max-w-[200px]">{{ singleValue }}</span>
           <button type="button" @click.stop="emit('update:modelValue', '')" class="hover:text-gray-900 dark:hover:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -54,19 +54,37 @@
 
     <!-- Dropdown -->
     <div v-if="isOpen"
-      class="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      class="absolute z-50 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900"
     >
       <div v-if="filteredOptions.length">
         <div
           v-for="(opt, idx) in filteredOptions"
           :key="opt"
           :class="[
-            'cursor-pointer px-4 py-2 text-sm transition-colors',
+            'cursor-pointer px-4 py-2.5 text-sm transition-colors',
             activeIndex === idx ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'
           ]"
           @mousedown.prevent="select(opt)"
         >
-          {{ opt }}
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="truncate font-medium">{{ opt }}</div>
+              <div v-if="optionDetail(opt)" class="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                {{ optionDetail(opt) }}
+              </div>
+            </div>
+            <span
+              v-if="isKnownModel(opt)"
+              class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]"
+              :class="
+                lookupModel(opt)?.supports_image_input
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+              "
+            >
+              {{ modelSupportLabel(opt) }}
+            </span>
+          </div>
         </div>
       </div>
       <div v-else class="px-4 py-2 text-sm text-gray-400 italic">
@@ -78,7 +96,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { SUPPORTED_MODELS } from "../constants/models";
+import {
+	lookupModel,
+	modelDetailLabel,
+	modelSupportLabel,
+	SUPPORTED_MODELS,
+} from "../constants/models";
 
 const props = defineProps<{
 	modelValue: string | string[];
@@ -94,6 +117,9 @@ const input = ref<HTMLInputElement | null>(null);
 const query = ref("");
 const isOpen = ref(false);
 const activeIndex = ref(0);
+const singleValue = computed(() =>
+	typeof props.modelValue === "string" ? props.modelValue : "",
+);
 
 const filteredOptions = computed(() => {
 	const q = query.value.toLowerCase().trim();
@@ -102,9 +128,23 @@ const filteredOptions = computed(() => {
 		if (props.multiple && Array.isArray(props.modelValue)) {
 			if (props.modelValue.includes(m)) return false;
 		}
-		return m.toLowerCase().includes(q);
+		if (!q) return true;
+		return (
+			m.toLowerCase().includes(q) ||
+			optionDetail(m).toLowerCase().includes(q) ||
+			modelSupportLabel(m).toLowerCase().includes(q)
+		);
 	});
 });
+
+function isKnownModel(opt: string): boolean {
+	return lookupModel(opt) !== undefined;
+}
+
+function optionDetail(opt: string): string {
+	if (!isKnownModel(opt)) return "";
+	return modelDetailLabel(opt);
+}
 
 watch(query, () => {
 	activeIndex.value = 0;

@@ -56,7 +56,7 @@
             "type": "integer",
             "minimum": 1,
             "default": 200,
-            "description": "Number of recent memory entries to retain after compaction."
+            "description": "Number of memory entries allowed before the pool is compacted into a single summary."
           },
           "fallbacks": {
             "type": "array",

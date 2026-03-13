@@ -3,9 +3,13 @@ package channels
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 func init() {
@@ -29,6 +34,8 @@ type fakeDaemon struct {
 	mu       sync.Mutex
 	conns    []net.Conn
 	sent     []map[string]interface{} // captured send requests
+	rpc      []map[string]interface{} // captured all rpc requests
+	results  map[string]any
 	stopCh   chan struct{}
 }
 
@@ -39,6 +46,7 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 
 	fd := &fakeDaemon{
 		listener: ln,
+		results:  map[string]any{},
 		stopCh:   make(chan struct{}),
 	}
 	go fd.acceptLoop()
@@ -84,9 +92,12 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 
 		method, _ := req["method"].(string)
 		reqID := req["id"]
+		fd.mu.Lock()
+		fd.rpc = append(fd.rpc, req)
+		fd.mu.Unlock()
 
 		// Capture outbound RPC requests used by tests.
-		if method == "send" || method == "sendReaction" {
+		if method == "send" || method == "sendReaction" || method == "sendReceipt" {
 			fd.mu.Lock()
 			fd.sent = append(fd.sent, req)
 			fd.mu.Unlock()
@@ -98,6 +109,11 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 			"id":      reqID,
 			"result":  map[string]interface{}{},
 		}
+		fd.mu.Lock()
+		if result, ok := fd.results[method]; ok {
+			resp["result"] = result
+		}
+		fd.mu.Unlock()
 		b, _ := json.Marshal(resp)
 		b = append(b, '\n')
 		_, _ = conn.Write(b)
@@ -143,6 +159,18 @@ func (fd *fakeDaemon) SentRequests() []map[string]interface{} {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	return append([]map[string]interface{}(nil), fd.sent...)
+}
+
+func (fd *fakeDaemon) Requests() []map[string]interface{} {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	return append([]map[string]interface{}(nil), fd.rpc...)
+}
+
+func (fd *fakeDaemon) SetResult(method string, result any) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	fd.results[method] = result
 }
 
 // Close closes all connections and the listener.
@@ -222,6 +250,121 @@ func TestDispatch_ValidReceive(t *testing.T) {
 	assert.Equal(t, "hello", msg.Text)
 	assert.Equal(t, "+15550001111", msg.Channel)
 
+}
+
+func TestDispatch_IngestsImageAttachmentFromStoredFilename(t *testing.T) {
+	base := t.TempDir()
+	store.SetDataDir(base)
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	source := filepath.Join(t.TempDir(), "photo.png")
+	err := os.WriteFile(source, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600)
+	assert.NoError(t, err)
+
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := fmt.Sprintf(`{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"see image","attachments":[{"storedFilename":%q}]}}}}`, source)
+	ch.dispatch([]byte(line))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "see image", msg.Text)
+	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/"))
+
+	entries, err := os.ReadDir(store.IncomingMediaDir("signal"))
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+}
+
+func TestDispatch_AllowsImageOnlyMessageWithAlternateAttachmentFields(t *testing.T) {
+	base := t.TempDir()
+	store.SetDataDir(base)
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	source := filepath.Join(t.TempDir(), "photo.png")
+	err := os.WriteFile(source, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600)
+	assert.NoError(t, err)
+
+	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := fmt.Sprintf(`{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"","attachments":[{"content_type":"image/png","storedFileName":%q}]}}}}`, source)
+	ch.dispatch([]byte(line))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "", msg.Text)
+	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+}
+
+func TestDispatch_TextMessageStillProcessesWhenAttachmentFetchTimesOut(t *testing.T) {
+	origFetcher := signalAttachmentFetcher
+	signalAttachmentFetcher = func(ctx context.Context, _ *SignalChannel, _ string, _ string, _ string, _ string, _ bool) ([]byte, error) {
+		select {
+		case <-time.After(3 * time.Second):
+			return nil, context.DeadlineExceeded
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	t.Cleanup(func() { signalAttachmentFetcher = origFetcher })
+
+	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	start := time.Now()
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"see this","attachments":[{"contentType":"image/png","id":"attachment-1"}]}}}}`
+	ch.dispatch([]byte(line))
+
+	msg := waitMsg(t, msgs, 3*time.Second)
+	assert.Equal(t, "see this", msg.Text)
+	assert.Empty(t, msg.MediaURL)
+	assert.Less(t, time.Since(start), 2500*time.Millisecond)
+}
+
+func TestFetchSignalAttachmentData_UsesDaemonRPC(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+	fd.SetResult("getAttachment", map[string]any{
+		"data": base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+	})
+
+	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	data, err := fetchSignalAttachmentData(context.Background(), ch, ch.phone, "SCQAxyYZxx3Bt8EqQMFx.png", "+15550001111", "", false)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("png-bytes"), data)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		reqs := fd.Requests()
+		for _, req := range reqs {
+			method, _ := req["method"].(string)
+			if method != "getAttachment" {
+				continue
+			}
+			params, _ := req["params"].(map[string]any)
+			assert.Equal(t, "SCQAxyYZxx3Bt8EqQMFx.png", params["id"])
+			assert.Equal(t, "+15550001111", params["recipient"])
+			_, hasGroup := params["groupId"]
+			assert.False(t, hasGroup)
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Fail(t, "expected getAttachment rpc request")
+}
+
+func TestDecodeSignalAttachmentResult_AcceptsObjectPayload(t *testing.T) {
+	raw := json.RawMessage(`{"data":"` + base64.StdEncoding.EncodeToString([]byte("png-bytes")) + `"}`)
+	encoded, err := decodeSignalAttachmentResult(raw)
+	assert.NoError(t, err)
+	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte("png-bytes")), encoded)
 }
 
 func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
@@ -347,6 +490,56 @@ func TestDispatch_NoHandlerRegistered(_ *testing.T) {
 	// No handler — should not panic.
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hi"}}}}`
 	ch.dispatch([]byte(line))
+}
+
+func TestDispatch_DoesNotSendReadReceiptWithoutHandler(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","timestamp":1773380083969,"dataMessage":{"message":"hi?"}}}}`
+	ch.dispatch([]byte(line))
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Empty(t, fd.SentRequests())
+}
+
+func TestDispatch_SendsReadReceiptAfterHandler(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","timestamp":1773380083969,"dataMessage":{"message":"hi?"}}}}`
+	ch.dispatch([]byte(line))
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "hi?", msg.Text)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		reqs := fd.SentRequests()
+		if len(reqs) > 0 {
+			method, _ := reqs[0]["method"].(string)
+			assert.Equal(t, "sendReceipt", method)
+			params, _ := reqs[0]["params"].(map[string]any)
+			assert.Equal(t, "+15550001111", params["recipient"])
+			assert.Equal(t, "read", params["type"])
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Fail(t, "expected read receipt")
 }
 
 func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {

@@ -1,55 +1,320 @@
 [
-  "google/gemini-2.0-flash",
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "google/gemini-3-flash-preview",
-  "google/gemini-3-pro-preview",
-  "anthropic/claude-3-5-haiku-20241022",
-  "anthropic/claude-3-5-haiku-latest",
-  "anthropic/claude-3-5-sonnet-20240620",
-  "anthropic/claude-3-5-sonnet-20241022",
-  "anthropic/claude-3-7-sonnet-20250219",
-  "anthropic/claude-3-7-sonnet-latest",
-  "anthropic/claude-3-haiku-20240307",
-  "anthropic/claude-3-opus-20240229",
-  "anthropic/claude-3-sonnet-20240229",
-  "anthropic/claude-haiku-4-5",
-  "anthropic/claude-haiku-4-5-20251001",
-  "anthropic/claude-opus-4-0",
-  "anthropic/claude-opus-4-1",
-  "anthropic/claude-opus-4-1-20250805",
-  "anthropic/claude-opus-4-20250514",
-  "anthropic/claude-opus-4-5",
-  "anthropic/claude-opus-4-5-20251101",
-  "anthropic/claude-opus-4-6",
-  "anthropic/claude-sonnet-4-0",
-  "anthropic/claude-sonnet-4-20250514",
-  "anthropic/claude-sonnet-4-5",
-  "anthropic/claude-sonnet-4-5-20250929",
-  "anthropic/claude-sonnet-4-6",
-  "openai/gpt-4",
-  "openai/gpt-4-turbo",
-  "openai/gpt-4.1",
-  "openai/gpt-4.1-mini",
-  "openai/gpt-4.1-nano",
-  "openai/gpt-4o",
-  "openai/gpt-4o-2024-05-13",
-  "openai/gpt-4o-2024-08-06",
-  "openai/gpt-4o-2024-11-20",
-  "openai/gpt-4o-mini",
-  "openai/o1",
-  "openai/o1-pro",
-  "openai/o3",
-  "openai/o3-deep-research",
-  "openai/o3-mini",
-  "openai/o3-pro",
-  "openai/o4-mini",
-  "openai/o4-mini-deep-research",
-  "openai-codex/gpt-5.1",
-  "openai-codex/gpt-5.1-codex-max",
-  "openai-codex/gpt-5.1-codex-mini",
-  "openai-codex/gpt-5.2",
-  "openai-codex/gpt-5.2-codex",
-  "openai-codex/gpt-5.3-codex",
-  "openai-codex/gpt-5.3-codex-spark"
+  {
+    "id": "google/gemini-2.0-flash",
+    "input_tokens": 1048576,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "google/gemini-2.5-flash",
+    "input_tokens": 1048576,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  },
+  {
+    "id": "google/gemini-2.5-pro",
+    "input_tokens": 1048576,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  },
+  {
+    "id": "google/gemini-3-flash-preview",
+    "input_tokens": 1000000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "google/gemini-3-pro-preview",
+    "input_tokens": 1000000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-5-haiku-20241022",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-5-haiku-latest",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-5-sonnet-20240620",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-5-sonnet-20241022",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-7-sonnet-20250219",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-7-sonnet-latest",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-haiku-20240307",
+    "input_tokens": 200000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-opus-20240229",
+    "input_tokens": 200000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-3-sonnet-20240229",
+    "input_tokens": 200000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-haiku-4-5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-haiku-4-5-20251001",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-0",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-1",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-1-20250805",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-20250514",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-5-20251101",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-6",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-sonnet-4-0",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-sonnet-4-20250514",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-sonnet-4-5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-sonnet-4-5-20250929",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-sonnet-4-6",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4",
+    "input_tokens": 8192,
+    "output_tokens": 8192,
+    "supports_image_input": false
+  },
+  {
+    "id": "openai/gpt-4-turbo",
+    "input_tokens": 128000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4.1",
+    "input_tokens": 1047576,
+    "output_tokens": 32768,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4.1-mini",
+    "input_tokens": 1047576,
+    "output_tokens": 32768,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4.1-nano",
+    "input_tokens": 1047576,
+    "output_tokens": 32768,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4o",
+    "input_tokens": 128000,
+    "output_tokens": 16384,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4o-2024-05-13",
+    "input_tokens": 128000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4o-2024-08-06",
+    "input_tokens": 128000,
+    "output_tokens": 16384,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4o-2024-11-20",
+    "input_tokens": 128000,
+    "output_tokens": 16384,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-4o-mini",
+    "input_tokens": 128000,
+    "output_tokens": 16384,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o1",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o1-pro",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o3",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o3-deep-research",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o3-mini",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o3-pro",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o4-mini",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/o4-mini-deep-research",
+    "input_tokens": 200000,
+    "output_tokens": 100000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.1",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.1-codex-max",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.1-codex-mini",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.2",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.2-codex",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.3-codex",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.3-codex-spark",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  }
 ]

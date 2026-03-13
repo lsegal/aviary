@@ -21,30 +21,43 @@ export const useOverviewStore = defineStore("overview", () => {
 	const error = ref<string | null>(null);
 	const lastChecked = ref<Date | null>(null);
 
+	async function loadSection<T>(
+		loader: () => Promise<string>,
+		assign: (value: T) => void,
+	): Promise<void> {
+		try {
+			assign((JSON.parse(await loader()) as T) ?? ([] as T));
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+		}
+	}
+
 	async function fetchAll() {
 		loading.value = true;
 		error.value = null;
 		try {
-			const [agentsRes, jobsRes, issuesRes] = await Promise.allSettled([
-				callTool("agent_list"),
-				callTool("job_list"),
-				callTool("config_validate"),
-			]);
-			if (agentsRes.status === "fulfilled") {
-				agents.value = (JSON.parse(agentsRes.value) as Agent[]) ?? [];
-			} else {
-				error.value =
-					agentsRes.reason instanceof Error
-						? agentsRes.reason.message
-						: String(agentsRes.reason);
-			}
-			if (jobsRes.status === "fulfilled") {
-				jobs.value = (JSON.parse(jobsRes.value) as Job[] | null) ?? [];
-			}
-			if (issuesRes.status === "fulfilled") {
-				issues.value = (JSON.parse(issuesRes.value) as DoctorIssue[]) ?? [];
-				lastChecked.value = new Date();
-			}
+			// MCP streamable HTTP sessions are reliable here when tool calls are
+			// issued in sequence; concurrent overview requests can leave the page
+			// stuck on the initial spinner against the live server.
+			await loadSection<Agent[]>(
+				() => callTool("agent_list"),
+				(value) => {
+					agents.value = value;
+				},
+			);
+			await loadSection<Job[] | null>(
+				() => callTool("job_list"),
+				(value) => {
+					jobs.value = value ?? [];
+				},
+			);
+			await loadSection<DoctorIssue[]>(
+				() => callTool("config_validate"),
+				(value) => {
+					issues.value = value;
+					lastChecked.value = new Date();
+				},
+			);
 		} finally {
 			loading.value = false;
 			fetched.value = true;
