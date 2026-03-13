@@ -88,11 +88,11 @@
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
-              <ModelSelector v-model="modal.model" placeholder="Select a model…" />
+              <ModelSelector v-model="modal.model" :options="availableModelOptions" placeholder="Select a model…" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Fallbacks</label>
-              <ModelSelector v-model="modal.fallbacks" multiple placeholder="Add fallbacks…" />
+              <ModelSelector v-model="modal.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
             </div>
           </div>
           <p v-if="modalError" class="mt-3 text-xs text-red-500 dark:text-red-400">{{ modalError }}</p>
@@ -114,11 +114,13 @@
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
+import { useAvailableModels } from "../composables/useAvailableModels";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";
 
 const store = useAgentsStore();
 const settingsStore = useSettingsStore();
+const { availableModelOptions, refreshCredentials } = useAvailableModels();
 const confirmDelete = ref<string | null>(null);
 const saving = ref(false);
 const modalError = ref("");
@@ -143,6 +145,7 @@ const tasksByAgent = computed(() =>
 onMounted(() => {
 	store.fetchAgents();
 	settingsStore.fetchConfig();
+	void refreshCredentials();
 });
 
 function taskSummary(agentName: string): string {

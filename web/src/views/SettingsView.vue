@@ -22,7 +22,7 @@
               type="button"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
               :disabled="saving || reverting || !hasDraftChanges"
-              @click="saveAll(false)"
+              @click="saveAll()"
             >{{ saving ? "Saving…" : "Save Changes" }}</button>
           </div>
         </div>
@@ -77,11 +77,11 @@
             <div class="grid gap-4 lg:grid-cols-2">
               <div>
                 <label class="field-label">Default model</label>
-                <ModelSelector v-model="draft.models.defaults.model" placeholder="Select a model…" />
+                <ModelSelector v-model="draft.models.defaults.model" :options="availableModelOptions" placeholder="Select a model…" />
               </div>
               <div>
                 <label class="field-label">Default fallbacks</label>
-                <ModelSelector v-model="draft.models.defaults.fallbacks" multiple placeholder="Add fallbacks…" />
+                <ModelSelector v-model="draft.models.defaults.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
               </div>
             </div>
           </div>
@@ -141,11 +141,11 @@
               </div>
               <div>
                 <label class="field-label">Model</label>
-                <ModelSelector v-model="agent.model" placeholder="Select a model…" />
+                <ModelSelector v-model="agent.model" :options="availableModelOptions" placeholder="Select a model…" />
               </div>
               <div>
                 <label class="field-label">Fallbacks</label>
-                <ModelSelector v-model="agent.fallbacks" multiple placeholder="Add fallbacks…" />
+                <ModelSelector v-model="agent.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
               </div>
               <div class="flex items-end pb-1.5">
                 <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
@@ -358,7 +358,7 @@
                       :value="agent.permissions?.exec?.shell ?? ''"
                       type="text"
                       class="field-input font-mono text-xs"
-                      placeholder="powershell.exe -NoProfile -Command"
+                      :placeholder="execShellPlaceholder"
                       @change="setAgentExecShell(agent, $event)"
                     />
                     <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -483,6 +483,7 @@
                       <label class="field-label">Model override (optional)</label>
                       <ModelSelector
                         :model-value="entry.model ?? ''"
+                        :options="availableModelOptions"
                         placeholder="Default agent model"
                         @update:model-value="entry.model = typeof $event === 'string' ? ($event || undefined) : undefined"
                       />
@@ -491,6 +492,7 @@
                       <label class="field-label">Fallback overrides (optional)</label>
                       <ModelSelector
                         :model-value="entry.fallbacks ?? []"
+                        :options="availableModelOptions"
                         multiple
                         placeholder="Default agent fallbacks"
                         @update:model-value="entry.fallbacks = Array.isArray($event) ? $event : []"
@@ -579,6 +581,7 @@
                   <label class="field-label">Channel model override (optional)</label>
                   <ModelSelector
                     :model-value="ch.model ?? ''"
+                    :options="availableModelOptions"
                     placeholder="Default agent model"
                     @update:model-value="ch.model = typeof $event === 'string' ? ($event || undefined) : undefined"
                   />
@@ -587,6 +590,7 @@
                   <label class="field-label">Channel fallback overrides (optional)</label>
                   <ModelSelector
                     :model-value="ch.fallbacks ?? []"
+                    :options="availableModelOptions"
                     multiple
                     placeholder="Default agent fallbacks"
                     @update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []"
@@ -676,7 +680,7 @@
             </div>
 
             <div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+              <div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
                 <div>
                   <label class="field-label">Task name</label>
                   <input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" />
@@ -690,14 +694,13 @@
                   <input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
                 </div>
                 <div>
-                  <label class="field-label">Channel</label>
+                  <label class="field-label">Send Via</label>
                   <select
                     :value="taskChannelSelection(task)"
                     class="field-input"
                     @change="setTaskChannelSelection(task, $event)"
                   >
                     <option value="">silent</option>
-                    <option value="last">last</option>
                     <option
                       v-for="option in configuredTaskChannelOptions(agent)"
                       :key="option.value"
@@ -705,24 +708,19 @@
                     >{{ option.label }}</option>
                   </select>
                 </div>
-                <div class="flex items-end">
-                  <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
-                </div>
-              </div>
-
-              <div
-                v-if="taskChannelNeedsTarget(task)"
-                class="grid gap-3 lg:grid-cols-[1fr_auto]"
-              >
                 <div>
-                  <label class="field-label">Destination ID</label>
+                  <label class="field-label">Target</label>
                   <input
                     :value="taskChannelTarget(task)"
                     type="text"
                     class="field-input"
+                    :disabled="!taskChannelNeedsTarget(task)"
                     :placeholder="taskChannelTargetPlaceholder(task)"
                     @input="setTaskChannelTarget(task, $event)"
                   />
+                </div>
+                <div class="flex items-end">
+                  <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
                 </div>
               </div>
 
@@ -1055,6 +1053,7 @@ import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import FancySelect from "../components/FancySelect.vue";
 import ModelSelector from "../components/ModelSelector.vue";
+import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
 	clampToolNamesForPreset,
@@ -1147,6 +1146,8 @@ watch(
 
 const store = useSettingsStore();
 const { callTool, listTools } = useMCP();
+const { availableModelOptions, credentials, refreshCredentials } =
+	useAvailableModels();
 const authStore = useAuthStore();
 
 let settingsWs: WebSocket | null = null;
@@ -1161,7 +1162,11 @@ function connectWs() {
 			const data = JSON.parse(e.data as string) as {
 				type?: string;
 				session_id?: string;
+				goos?: string;
 			};
+			if (data.goos) {
+				hostGoos.value = data.goos;
+			}
 			if (
 				data.type === "session_message" ||
 				data.type === "session_processing"
@@ -1187,24 +1192,33 @@ const saving = ref(false);
 const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
-const autoSavePending = ref(false);
+const hostGoos = ref("");
 const toastMessage = ref("");
 const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
 const concurrencyInput = ref("");
-const AUTOSAVE_DELAY_MS = 1000;
-let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
-let autosaveSuspended = 0;
 let lastSavedSnapshot = "";
+
+const execShellPlaceholder = computed(() => {
+	switch (hostGoos.value) {
+		case "windows":
+			return "powershell.exe -NoProfile -Command";
+		case "darwin":
+			return "/bin/zsh -lc";
+		case "linux":
+			return "/bin/bash -lc";
+		default:
+			return "/bin/sh -lc";
+	}
+});
 
 const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
 const sessionLoading = ref(false);
 
-const credentials = ref<string[]>([]);
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
 const anthropicCode = ref("");
@@ -1336,7 +1350,7 @@ const availableToolNames = computed(() =>
 		.sort((a, b) => a.localeCompare(b)),
 );
 const hasDraftChanges = computed(() => {
-	if (loading.value || autosaveSuspended > 0) return false;
+	if (loading.value) return false;
 	return normalizedDraftSnapshot() !== lastSavedSnapshot;
 });
 
@@ -1662,10 +1676,6 @@ onUnmounted(() => {
 	settingsWs?.close();
 	settingsWs = null;
 	window.removeEventListener("keydown", onWindowKeydown);
-	if (autosaveTimer) {
-		clearTimeout(autosaveTimer);
-		autosaveTimer = null;
-	}
 	if (toastTimer) {
 		clearTimeout(toastTimer);
 		toastTimer = null;
@@ -1685,7 +1695,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 	) {
 		return;
 	}
-	void saveAll(false);
+	void saveAll();
 }
 
 function emptyConfig(): AppConfig {
@@ -1705,36 +1715,38 @@ function emptyConfig(): AppConfig {
 	};
 }
 
+function hydrateDraftConfig(config: AppConfig): AppConfig {
+	const hydrated = JSON.parse(JSON.stringify(config)) as AppConfig;
+	hydrated.agents.forEach((agent) => {
+		sanitizeAgentToolSelections(agent);
+		(agent.channels ?? []).forEach((ch) => {
+			if (ch.enabled === undefined) ch.enabled = true;
+			if (ch.showTyping === undefined) ch.showTyping = true;
+			if (ch.replyToReplies === undefined) ch.replyToReplies = true;
+			if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
+			if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
+			(ch.allowFrom ?? []).forEach((entry) => {
+				if (entry.enabled === undefined) entry.enabled = true;
+				if (entry.respondToMentions === undefined) {
+					entry.respondToMentions = true;
+				}
+			});
+		});
+		(agent.tasks ?? []).forEach((task) => {
+			if (!task.channel) task.channel = "";
+		});
+	});
+	return hydrated;
+}
+
 async function loadConfig() {
 	loading.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
-	autosaveSuspended++;
 	try {
 		await store.fetchConfig();
-		const cfg = store.config
-			? (JSON.parse(JSON.stringify(store.config)) as AppConfig)
-			: emptyConfig();
+		const cfg = hydrateDraftConfig(store.config ?? emptyConfig());
 		draft.value = cfg;
-		draft.value.agents.forEach((agent) => {
-			sanitizeAgentToolSelections(agent);
-			(agent.channels ?? []).forEach((ch) => {
-				if (ch.enabled === undefined) ch.enabled = true;
-				if (ch.showTyping === undefined) ch.showTyping = true;
-				if (ch.replyToReplies === undefined) ch.replyToReplies = true;
-				if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
-				if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
-				(ch.allowFrom ?? []).forEach((entry) => {
-					if (entry.enabled === undefined) entry.enabled = true;
-					if (entry.respondToMentions === undefined) {
-						entry.respondToMentions = true;
-					}
-				});
-			});
-			(agent.tasks ?? []).forEach((task) => {
-				if (!task.channel) task.channel = "last";
-			});
-		});
 		concurrencyInput.value = cfg.scheduler.concurrency
 			? String(cfg.scheduler.concurrency)
 			: "";
@@ -1755,7 +1767,6 @@ async function loadConfig() {
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
-		autosaveSuspended = Math.max(0, autosaveSuspended - 1);
 		loading.value = false;
 	}
 }
@@ -1813,7 +1824,7 @@ function addTask(agentIndex: number) {
 		prompt: "",
 		schedule: "",
 		watch: "",
-		channel: "last",
+		channel: "",
 		run_once: false,
 	};
 	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
@@ -1827,10 +1838,10 @@ function removeTask(agentIndex: number, taskIndex: number) {
 }
 
 function configuredChannelLabel(ch: AgentChannel, index: number): string {
-	if (ch.type === "signal" && ch.phone) return `signal (${ch.phone})`;
-	if (ch.type === "slack" && ch.channel) return `slack (${ch.channel})`;
-	if (ch.type === "discord" && ch.channel) return `discord (${ch.channel})`;
-	return `${ch.type} #${index + 1}`;
+	if (ch.type === "signal" && ch.phone) return `signal via ${ch.phone}`;
+	if (ch.type === "slack" && ch.channel) return `slack via ${ch.channel}`;
+	if (ch.type === "discord" && ch.channel) return `discord via ${ch.channel}`;
+	return `${ch.type} via #${index + 1}`;
 }
 
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
@@ -1850,7 +1861,6 @@ function parseTaskChannelValue(channel?: string): {
 } {
 	const raw = (channel ?? "").trim();
 	if (!raw) return { selection: "", target: "", type: "" };
-	if (raw === "last") return { selection: "last", target: "", type: "" };
 	if (raw.startsWith("route:")) {
 		const parts = raw.split(":", 4);
 		if (parts.length >= 3) {
@@ -1860,13 +1870,6 @@ function parseTaskChannelValue(channel?: string): {
 				type: parts[1] ?? "",
 			};
 		}
-	}
-	if (raw === "slack" || raw === "discord" || raw === "signal") {
-		return {
-			selection: `route:${raw}:0`,
-			target: "",
-			type: raw,
-		};
 	}
 	return { selection: "", target: "", type: "" };
 }
@@ -1884,6 +1887,7 @@ function taskChannelNeedsTarget(task: AgentTask): boolean {
 }
 
 function taskChannelTargetPlaceholder(task: AgentTask): string {
+	if (!taskChannelNeedsTarget(task)) return "Choose a delivery channel first";
 	const type = parseTaskChannelValue(task.channel).type;
 	if (type === "signal") return "Phone number or group ID";
 	if (type === "slack") return "Slack channel or DM conversation ID";
@@ -1936,10 +1940,6 @@ function setTaskChannelSelection(task: AgentTask, event: Event) {
 	const parsed = parseTaskChannelValue(task.channel);
 	if (!selection) {
 		task.channel = "";
-		return;
-	}
-	if (selection === "last") {
-		task.channel = "last";
 		return;
 	}
 	task.channel = `${selection}:${parsed.target}`;
@@ -2426,18 +2426,6 @@ function normalizedDraftSnapshot(): string {
 	return JSON.stringify(normalizedDraftConfig());
 }
 
-function scheduleAutosave() {
-	if (autosaveSuspended > 0 || loading.value) return;
-	if (autosaveTimer) {
-		clearTimeout(autosaveTimer);
-	}
-	autoSavePending.value = true;
-	autosaveTimer = setTimeout(() => {
-		autosaveTimer = null;
-		void saveAll(true);
-	}, AUTOSAVE_DELAY_MS);
-}
-
 function showToast(message: string) {
 	toastMessage.value = message;
 	if (toastTimer) {
@@ -2448,67 +2436,32 @@ function showToast(message: string) {
 		toastTimer = null;
 	}, 5000);
 }
-
-watch(
-	[draft, concurrencyInput],
-	() => {
-		if (autosaveSuspended > 0 || loading.value) return;
-		const snapshot = normalizedDraftSnapshot();
-		if (snapshot === lastSavedSnapshot) {
-			autoSavePending.value = false;
-			return;
-		}
-		scheduleAutosave();
-	},
-	{ deep: true },
-);
-
-async function saveAll(isAutosave = false) {
-	if (autosaveTimer) {
-		clearTimeout(autosaveTimer);
-		autosaveTimer = null;
-	}
-	autoSavePending.value = false;
+async function saveAll() {
 	saving.value = true;
 	errorMessage.value = "";
-	if (!isAutosave) {
-		okMessage.value = "";
-	}
+	okMessage.value = "";
 	try {
 		const normalized = normalizedDraftConfig();
 		const snapshot = JSON.stringify(normalized);
 		if (snapshot === lastSavedSnapshot) {
-			if (!isAutosave) {
-				okMessage.value = "Settings already up to date.";
-			}
+			okMessage.value = "Settings already up to date.";
 			return;
 		}
 
 		await store.saveConfig(normalized);
 		lastSavedSnapshot = snapshot;
-		autosaveSuspended++;
-		draft.value = JSON.parse(JSON.stringify(normalized)) as AppConfig;
+		draft.value = hydrateDraftConfig(normalized);
 		revertAvailable.value = true;
-		if (isAutosave) {
-			showToast("Autosaved successfully.");
-		} else {
-			showToast("Settings saved successfully.");
-		}
+		showToast("Settings saved successfully.");
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
-		autosaveSuspended = Math.max(0, autosaveSuspended - 1);
 		saving.value = false;
 	}
 }
 
 async function revertToLatestBackup() {
 	if (loading.value || saving.value || reverting.value) return;
-	if (autosaveTimer) {
-		clearTimeout(autosaveTimer);
-		autosaveTimer = null;
-	}
-	autoSavePending.value = false;
 	reverting.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
@@ -2563,15 +2516,6 @@ function formatDate(value: string): string {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
 	return date.toLocaleString();
-}
-
-async function refreshCredentials() {
-	try {
-		const raw = await callTool("auth_list");
-		credentials.value = (JSON.parse(raw) as string[] | null) ?? [];
-	} catch {
-		credentials.value = [];
-	}
 }
 
 async function addProviderApiKey() {

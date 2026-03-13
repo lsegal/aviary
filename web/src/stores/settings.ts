@@ -174,6 +174,7 @@ export const useSettingsStore = defineStore("settings", () => {
 						showTyping: ch.showTyping !== false,
 						replyToReplies: ch.replyToReplies !== false,
 						reactToEmoji: ch.reactToEmoji !== false,
+						sendReadReceipts: ch.sendReadReceipts !== false,
 						allowFrom: (ch.allowFrom ?? []).map((entry) => ({
 							...entry,
 							enabled: entry.enabled !== false,

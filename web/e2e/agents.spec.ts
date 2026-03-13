@@ -27,7 +27,7 @@ const CONFIG = {
 					name: "daily-briefing",
 					schedule: "0 * * * * *",
 					prompt: "Summarize updates",
-					channel: "last",
+					channel: "route:signal:0:+15551234567",
 				},
 			],
 			permissions: {
@@ -52,7 +52,7 @@ test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		config_get: CONFIG,
-		auth_list: ["anthropic:default", "openai:default", "brave_api_key"],
+		auth_list: ["anthropic:default", "brave_api_key"],
 		session_list: [],
 		agent_list: [
 			{
@@ -83,6 +83,9 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
+	await expect(
+		page.locator('input[placeholder="Phone number or group ID"]').first(),
+	).toHaveValue("+15551234567");
 	await expect(
 		page.getByRole("heading", { name: "Tasks", exact: true }),
 	).toBeVisible();
@@ -127,6 +130,22 @@ test("general tab shows web search settings", async ({ page }) => {
 	await expect(
 		page.getByText("auth:brave_api_key", { exact: true }),
 	).toBeVisible();
+});
+
+test("model dropdown hides models from unauthenticated providers", async ({
+	page,
+}) => {
+	await page.goto("/settings");
+
+	await page.locator('input[placeholder="Select a model…"]').first().click();
+
+	await expect(
+		page.getByText("anthropic/claude-3-5-haiku-latest", { exact: true }),
+	).toBeVisible();
+	await expect(page.getByText("openai/gpt-4o", { exact: true })).toHaveCount(0);
+	await expect(
+		page.getByText("google/gemini-2.5-flash", { exact: true }),
+	).toHaveCount(0);
 });
 
 test("providers auth tab shows credential controls", async ({ page }) => {
@@ -206,4 +225,27 @@ test("tool permissions inspector shows resolved final tool set", async ({
 	await expect(
 		page.getByTestId("tool-permissions-inspector-output"),
 	).toContainText('"finalTools": []');
+});
+
+test("saving settings preserves default-on signal channel checkboxes", async ({
+	page,
+}) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	const phoneInput = page.locator('input[placeholder="+15551234567"]').first();
+
+	await expect(page.getByLabel("Show typing indicator")).toBeChecked();
+	await expect(page.getByLabel("Reply to replies")).toBeChecked();
+	await expect(page.getByLabel("React to emojis")).toBeChecked();
+	await expect(page.getByLabel("Send read receipts")).toBeChecked();
+
+	await phoneInput.fill("+12132957731");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect(page.getByText("Settings saved successfully.")).toBeVisible();
+	await expect(page.getByLabel("Show typing indicator")).toBeChecked();
+	await expect(page.getByLabel("Reply to replies")).toBeChecked();
+	await expect(page.getByLabel("React to emojis")).toBeChecked();
+	await expect(page.getByLabel("Send read receipts")).toBeChecked();
 });
