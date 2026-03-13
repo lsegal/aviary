@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 type agentMgrMode int
@@ -73,6 +74,7 @@ type agentMgrModel struct {
 	width       int
 	message     string
 	err         string
+	pendingInit string
 }
 
 func newAgentMgrModel(cfg *config.Config, cfgPath string) agentMgrModel {
@@ -419,9 +421,11 @@ func (m agentMgrModel) saveEditedAgent() (tea.Model, tea.Cmd) {
 	if m.isNew {
 		m.cfg.Agents = append(m.cfg.Agents, m.draft)
 		m.cursor = len(m.cfg.Agents) - 1
+		m.pendingInit = name
 	} else {
 		m.cfg.Agents[m.editIdx] = m.draft
 		m.cursor = m.editIdx
+		m.pendingInit = ""
 	}
 	m.mode = agentModeList
 	return m, m.saveConfig("Saved " + name)
@@ -614,9 +618,15 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 func (m agentMgrModel) saveConfig(_ string) tea.Cmd {
 	cfg := m.cfg
 	cfgPath := m.cfgPath
+	pendingInit := m.pendingInit
 	return func() tea.Msg {
 		if err := config.Save(cfgPath, cfg); err != nil {
 			return errMsg(err.Error())
+		}
+		if pendingInit != "" {
+			if err := store.SyncAgentTemplate(pendingInit); err != nil {
+				return errMsg(err.Error())
+			}
 		}
 		return savedMsg{}
 	}

@@ -65,13 +65,14 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 				typeof fixture === "function"
 					? await fixture(body.params?.arguments)
 					: fixture;
+			const text = typeof data === "string" ? data : JSON.stringify(data);
 			return route.fulfill({
 				status: 200,
 				contentType: "application/json",
 				body: JSON.stringify({
 					jsonrpc: "2.0",
 					id: body.id,
-					result: { content: [{ type: "text", text: JSON.stringify(data) }] },
+					result: { content: [{ type: "text", text }] },
 				}),
 			});
 		}

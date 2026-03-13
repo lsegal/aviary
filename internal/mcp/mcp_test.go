@@ -280,9 +280,13 @@ func TestBrowserTools_NilDeps(t *testing.T) {
 		args map[string]any
 	}{
 		{"browser_open", map[string]any{"url": "https://example.com"}},
+		{"browser_navigate", map[string]any{"tab_id": "x", "url": "https://example.com"}},
+		{"browser_wait", map[string]any{"tab_id": "x", "selector": "#btn"}},
 		{"browser_click", map[string]any{"tab_id": "x", "selector": "#btn"}},
 		{"browser_keystroke", map[string]any{"tab_id": "x", "selector": "#inp", "text": "hi"}},
 		{"browser_fill", map[string]any{"tab_id": "x", "selector": "#inp", "text": "hi"}},
+		{"browser_text", map[string]any{"tab_id": "x"}},
+		{"browser_query", map[string]any{"tab_id": "x", "selector": "a"}},
 		{"browser_screenshot", map[string]any{"tab_id": "x"}},
 		{"browser_close", nil},
 	}
@@ -438,8 +442,13 @@ func TestBrowserTools_WithManager(t *testing.T) {
 
 	// Click without tab_id is rejected by the SDK schema validator before reaching
 	// the handler; the error contains "tab_id" (the missing property name).
+	toolCallContains(t, d, "browser_navigate", map[string]any{"url": "https://example.com"}, "tab_id")
+	toolCallContains(t, d, "browser_wait", map[string]any{"selector": "#x"}, "tab_id")
+	toolCallContains(t, d, "browser_wait", map[string]any{"tab_id": "x"}, "selector")
 	toolCallContains(t, d, "browser_click", map[string]any{"selector": "#x"}, "tab_id")
 	toolCallContains(t, d, "browser_fill", map[string]any{"selector": "#x", "text": "abc"}, "tab_id")
+	toolCallContains(t, d, "browser_text", map[string]any{}, "tab_id")
+	toolCallContains(t, d, "browser_query", map[string]any{"tab_id": "x"}, "selector")
 
 	// Close should succeed (no-op on a manager with no Chrome running).
 	out, err := d.CallTool(context.Background(), "browser_close", nil)
@@ -2134,4 +2143,106 @@ func TestAgentFileListRead_WithTempDir(t *testing.T) {
 	assert.Contains(t, out, "identity")
 
 	toolCallContains(t, d, "agent_file_read", map[string]any{"agent": "bot", "file": "RULES.md"}, "loaded automatically")
+}
+
+func TestAgentRootFileCRUD_WithTempDir(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	agentDir := store.AgentDir("bot")
+	err = os.MkdirAll(agentDir, 0o700)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
+
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	out, err := d.CallTool(context.Background(), "agent_root_file_list", map[string]any{"agent": "bot"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "RULES.md")
+	assert.Contains(t, out, "MEMORY.md")
+	assert.Contains(t, out, "SYSTEM.md")
+
+	out, err = d.CallTool(context.Background(), "agent_root_file_read", map[string]any{"agent": "bot", "file": "RULES.md"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "rules")
+
+	out, err = d.CallTool(context.Background(), "agent_root_file_write", map[string]any{"agent": "bot", "file": "PROFILE.md", "content": "profile"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "PROFILE.md written")
+
+	out, err = d.CallTool(context.Background(), "agent_root_file_delete", map[string]any{"agent": "bot", "file": "PROFILE.md"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "PROFILE.md deleted")
+
+	toolCallContains(t, d, "agent_root_file_delete", map[string]any{"agent": "bot", "file": "RULES.md"}, "protected")
+}
+
+func TestAgentAdd_CopiesTemplate(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "agent_add", map[string]any{"name": "bot", "model": "test/x"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "added")
+
+	agentDir := store.AgentDir("bot")
+	assert.DirExists(t, filepath.Join(agentDir, "jobs"))
+	assert.DirExists(t, filepath.Join(agentDir, "memory"))
+	assert.DirExists(t, filepath.Join(agentDir, "sessions"))
+	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
+	assert.NoFileExists(t, filepath.Join(agentDir, "jobs", ".gitkeep"))
+}
+
+func TestConfigSave_AddAgentCopiesTemplate(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	SetDeps(&Deps{Agents: mgr})
+
+	assert.NoError(t, config.Save("", &config.Config{}))
+
+	d := NewDispatcher("https://localhost:16677", "")
+	cfgJSON := `{"agents":[{"name":"bot","model":"anthropic/claude-sonnet-4-5"}]}`
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "saved")
+
+	agentDir := store.AgentDir("bot")
+	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
+	assert.DirExists(t, filepath.Join(agentDir, "jobs"))
 }

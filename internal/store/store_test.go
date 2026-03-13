@@ -351,6 +351,188 @@ func TestAgentMarkdownFiles(t *testing.T) {
 	assert.ErrorContains(t, err, "markdown")
 }
 
+func TestAgentRootMarkdownFiles(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	agentDir := AgentDir("agent_assistant")
+	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("identity"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
+
+	files, err := ListAgentRootMarkdownFiles("agent_assistant")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "RULES.md", "SYSTEM.md"}, files)
+
+	content, err := ReadAgentRootMarkdownFile("agent_assistant", "SYSTEM.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "system", content)
+
+	assert.NoError(t, WriteAgentRootMarkdownFile("agent_assistant", "PROFILE.md", "profile"))
+	content, err = ReadAgentRootMarkdownFile("agent_assistant", "PROFILE.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "profile", content)
+
+	assert.NoError(t, DeleteAgentRootMarkdownFile("agent_assistant", "PROFILE.md"))
+	_, err = ReadAgentRootMarkdownFile("agent_assistant", "PROFILE.md")
+	assert.Error(t, err)
+
+	err = DeleteAgentRootMarkdownFile("agent_assistant", "RULES.md")
+	assert.ErrorContains(t, err, "protected")
+	_, err = ReadAgentRootMarkdownFile("agent_assistant", "notes/USER.md")
+	assert.ErrorContains(t, err, "root")
+	err = WriteAgentRootMarkdownFile("agent_assistant", "../outside.md", "x")
+	assert.ErrorContains(t, err, "stay within")
+}
+
+func TestSyncAgentTemplate(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	err := SyncAgentTemplate("agent_assistant")
+	assert.NoError(t, err)
+
+	agentDir := AgentDir("agent_assistant")
+	assert.DirExists(t, filepath.Join(agentDir, "jobs"))
+	assert.DirExists(t, filepath.Join(agentDir, "memory"))
+	assert.DirExists(t, filepath.Join(agentDir, "sessions"))
+	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
+	assert.NoFileExists(t, filepath.Join(agentDir, "jobs", ".gitkeep"))
+
+	memoryContent, err := os.ReadFile(filepath.Join(agentDir, "MEMORY.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, "# Persisent memory for this agent\n", string(memoryContent))
+
+	rulesContent, err := os.ReadFile(filepath.Join(agentDir, "RULES.md"))
+	assert.NoError(t, err)
+	assert.Contains(t, string(rulesContent), "## Synced by Aviary")
+
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("custom"), 0o600))
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+
+	memoryContent, err = os.ReadFile(filepath.Join(agentDir, "MEMORY.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, "custom", string(memoryContent))
+}
+
+func TestSyncAgentTemplate_DoesNotDeleteExtraFiles(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("agent_assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+	customPath := filepath.Join(agentDir, "CUSTOM.md")
+	assert.NoError(t, os.WriteFile(customPath, []byte("keep me"), 0o600))
+
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.FileExists(t, customPath)
+}
+
+func TestSyncAgentTemplate_AddsMissingFiles(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("agent_assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
+}
+
+func TestSyncAgentTemplate_ReplacesEmptyExistingFile(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("agent_assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+	rulesPath := filepath.Join(agentDir, "RULES.md")
+	assert.NoError(t, os.WriteFile(rulesPath, nil, 0o600))
+
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+
+	rulesContent, err := os.ReadFile(rulesPath)
+	assert.NoError(t, err)
+	assert.Contains(t, string(rulesContent), "## Synced by Aviary")
+}
+
+func TestSyncAgentTemplate_ReplacesOnlySyncedMarkdownSection(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("agent_assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+	dest := strings.Join([]string{
+		"# Rules the agent must follow",
+		"",
+		"Custom intro",
+		"",
+		"## Synced by Aviary",
+		"",
+		"- old synced line",
+		"",
+		"## Local Notes",
+		"",
+		"- keep this local change",
+		"",
+	}, "\n")
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte(dest), 0o600))
+
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+
+	rulesContent, err := os.ReadFile(filepath.Join(agentDir, "RULES.md"))
+	assert.NoError(t, err)
+	content := string(rulesContent)
+	assert.Contains(t, content, "Custom intro")
+	assert.Contains(t, content, "## Local Notes")
+	assert.Contains(t, content, "- keep this local change")
+	assert.Contains(t, content, "Never share sensitive information")
+	assert.NotContains(t, content, "- old synced line")
+}
+
+func TestStripMarkdownCommentLines(t *testing.T) {
+	got := StripMarkdownCommentLines(strings.Join([]string{
+		"# Title",
+		"<!-- hidden -->",
+		"Visible",
+		"  <!--",
+		"still hidden",
+		"-->",
+		"Done",
+	}, "\n"))
+
+	assert.Equal(t, strings.Join([]string{
+		"# Title",
+		"Visible",
+		"Done",
+	}, "\n"), got)
+}
+
+func TestReadAgentMarkdownFile_StripsCommentLines(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	agentDir := AgentDir("agent_assistant")
+	err := os.MkdirAll(agentDir, 0o700)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("visible\n<!-- hidden -->\nstill here\n"), 0o600))
+
+	content, err := ReadAgentMarkdownFile("agent_assistant", "IDENTITY.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "visible\nstill here\n", content)
+}
+
 // TestUsagePath verifies usage path format.
 func TestUsagePath(t *testing.T) {
 	tmp := t.TempDir()

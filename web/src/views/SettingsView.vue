@@ -2,9 +2,23 @@
   <AppLayout>
     <div class="h-full overflow-y-auto">
       <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div class="mb-6 flex items-center justify-between gap-3">
+        <div class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
+          <div class="flex items-center justify-between gap-3">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
           <div class="flex items-center gap-2">
+            <transition name="save-indicator">
+              <div
+                v-if="saveSuccessVisible"
+                class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
+                :aria-label="headerNoticeText"
+                :title="headerNoticeText"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-xs font-medium">{{ headerNoticeText }}</span>
+              </div>
+            </transition>
             <button
               v-if="revertAvailable"
               type="button"
@@ -26,6 +40,7 @@
             >{{ saving ? "Saving…" : "Save Changes" }}</button>
           </div>
         </div>
+        </div>
 
         <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {{ errorMessage }}
@@ -40,7 +55,7 @@
             <div class="grid gap-4 lg:grid-cols-3">
               <div>
                 <label class="field-label">Port</label>
-                <input v-model.number="draft.server.port" type="number" min="1" max="65535" class="field-input" placeholder="16677" />
+                <input :value="serverPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input" placeholder="16677" @input="updateServerPortInput" />
               </div>
               <div>
                 <label class="field-label">TLS Cert</label>
@@ -95,7 +110,7 @@
               </div>
               <div>
                 <label class="field-label">CDP port</label>
-                <input v-model.number="draft.browser.cdp_port" type="number" min="1" max="65535" class="field-input" placeholder="9222" />
+                <input :value="cdpPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input" placeholder="9222" @input="updateCDPPortInput" />
               </div>
               <div>
                 <label class="field-label">Concurrency</label>
@@ -152,58 +167,60 @@
               </div>
             </div>
 
-            <div class="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Agent Files</h4>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">Edit this agent's rules and long-term memory in one place.</p>
-                </div>
-                <div class="flex gap-2">
-                  <button type="button" :class="agentEditorTabClass(agent.name, 'rules')" @click="setAgentEditorTab(agent.name, 'rules')">Edit Rules</button>
-                  <button type="button" :class="agentEditorTabClass(agent.name, 'memory')" @click="setAgentEditorTab(agent.name, 'memory')">Edit Memory</button>
+            <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files</div>
+                <div class="flex flex-wrap gap-1.5">
+                  <button type="button" class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).loading" @click="loadAgentFiles(agent.name)">
+                    {{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
+                  </button>
+                  <button type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving" @click="saveAgentFile(agent.name)">
+                    {{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
+                  </button>
+                  <button type="button" class="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" :disabled="!agent.name || !canDeleteAgentFile(getAgentFileState(agent.name).selectedFile) || getAgentFileState(agent.name).deleting" @click="deleteAgentFile(agent.name)">
+                    {{ getAgentFileState(agent.name).deleting ? 'Deleting…' : 'Delete' }}
+                  </button>
                 </div>
               </div>
-
-              <template v-if="getAgentEditorTab(agent.name) === 'rules'">
-                <div class="flex items-center justify-between">
-                  <label class="field-label mb-0">Rules File
-                    <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/RULES.md)</span>
-                  </label>
-                  <div class="flex gap-1.5">
-                    <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).loading" @click="loadRulesFile(agent.name)">
-                      {{ getRulesState(agent.name).loading ? 'Loading…' : 'Load' }}
+              <div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                <div class="space-y-2 self-start">
+                  <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+                    <div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
+                      <button
+                        v-for="file in getAgentFileState(agent.name).files"
+                        :key="file"
+                        type="button"
+                        class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
+                        :class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+                        @click="selectAgentFile(agent.name, file)"
+                      >
+                        <span class="truncate">{{ file }}</span>
+                        <span v-if="isProtectedAgentFile(file)" class="ml-2 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
+                      </button>
+                    </div>
+                    <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
+                      {{ agent.name ? 'No root markdown files yet. Refresh or add one.' : 'Name the agent first to manage files.' }}
+                    </p>
+                  </div>
+                  <div class="space-y-1">
+                    <div class="flex gap-1.5">
+                      <input v-model="getAgentFileState(agent.name).draftFileName" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name || getAgentFileState(agent.name).creating" placeholder="IDENTITY.md" />
+                      <button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).creating" @click="createAgentFile(agent.name)">
+                        {{ getAgentFileState(agent.name).creating ? '…' : '+' }}
+                      </button>
+                    </div>
+                    <button type="button" class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).syncing" @click="syncAgentTemplates(agent.name)">
+                      {{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
                     </button>
-                    <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getRulesState(agent.name).saving" @click="saveRulesFile(agent.name)">
-                      {{ getRulesState(agent.name).saving ? 'Saving…' : 'Save' }}
-                    </button>
+                    <p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span class="font-mono">.md</span> only. <span class="font-mono">SYSTEM.md</span>, <span class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.</p>
                   </div>
                 </div>
-                <textarea :value="getRulesState(agent.name).content" @input="getRulesState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="8" class="field-input font-mono text-xs" :disabled="!agent.name" placeholder="# Agent Rules&#10;- Always respond in English&#10;- Never reveal internal tool names&#10;- ..."></textarea>
-                <p v-if="getRulesState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getRulesState(agent.name).error }}</p>
-                <div>
-                  <label class="field-label">Inline override (inline text or explicit file path; leave blank to use the rules file above)</label>
-                  <input v-model="agent.rules" type="text" class="field-input" placeholder="Leave blank to use RULES.md, or enter a path like ~/RULES.md" />
-                </div>
-              </template>
 
-              <template v-else>
-                <div class="flex items-center justify-between">
-                  <label class="field-label mb-0">Memory File
-                    <span v-if="agent.name" class="font-normal opacity-60">(agents/{{ agent.name }}/MEMORY.md)</span>
-                  </label>
-                  <div class="flex gap-1.5">
-                    <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getMemoryState(agent.name).loading" @click="loadNotes(agent.name)">
-                      {{ getMemoryState(agent.name).loading ? 'Loading…' : 'Load' }}
-                    </button>
-                    <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || getMemoryState(agent.name).saving" @click="saveNotes(agent.name)">
-                      {{ getMemoryState(agent.name).saving ? 'Saving…' : 'Save' }}
-                    </button>
-                  </div>
+                <div class="relative self-start">
+                  <textarea :value="getAgentFileState(agent.name).content" @input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="12" class="field-input resize-y py-2 font-mono text-xs" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile" :placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
+                  <p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getAgentFileState(agent.name).error }}</p>
                 </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">Notes the agent has remembered. Edit freely and save back to the memory file.</p>
-                <textarea :value="getMemoryState(agent.name).content" @input="getMemoryState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="10" class="field-input resize-y font-mono text-xs" :disabled="!agent.name" :placeholder="agent.name ? 'No notes yet. The agent writes here via memory_store, or you can type directly.' : 'Name the agent first to view and edit its notes.'" />
-                <p v-if="getMemoryState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getMemoryState(agent.name).error }}</p>
-              </template>
+              </div>
             </div>
 
             <!-- Permissions -->
@@ -1000,15 +1017,6 @@
       </div>
     </div>
 
-    <transition name="settings-toast">
-      <div
-        v-if="toastMessage"
-        class="pointer-events-none fixed bottom-5 right-5 z-50 max-w-sm rounded-xl border border-emerald-200 bg-white/95 px-4 py-3 text-sm text-gray-800 shadow-xl backdrop-blur dark:border-emerald-900 dark:bg-gray-900/95 dark:text-gray-100"
-      >
-        {{ toastMessage }}
-      </div>
-    </transition>
-
     <div
       v-if="toolInspectionModal"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
@@ -1087,7 +1095,6 @@ import {
 } from "../stores/settings";
 
 type Tab = "general" | "agents" | "skills" | "sessions" | "providers";
-type AgentEditorTab = "rules" | "memory";
 
 interface SessionRow {
 	id: string;
@@ -1201,13 +1208,16 @@ const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
 const hostGoos = ref("");
-const toastMessage = ref("");
+const saveSuccessVisible = ref(false);
+const headerNoticeText = ref("Settings saved");
 const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
 const concurrencyInput = ref("");
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
+const serverPortInput = ref("");
+const cdpPortInput = ref("");
+let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedSnapshot = "";
 
 const execShellPlaceholder = computed(() => {
@@ -1537,6 +1547,7 @@ const toolInspectionOutput = computed(() =>
 watch(activeTab, (tab) => {
 	if (tab === "agents") {
 		void loadAllJobs();
+		void preloadAgentFiles();
 	}
 	if (tab === "skills" && !installedSkills.value.length) {
 		void loadInstalledSkills();
@@ -1546,76 +1557,91 @@ watch(activeTab, (tab) => {
 	}
 });
 
-interface RulesEditorState {
-	content: string;
-	loading: boolean;
-	saving: boolean;
-	error: string;
-}
-const rulesEditorState = ref<Record<string, RulesEditorState>>({});
-interface MemoryEditorState {
-	content: string;
-	loading: boolean;
-	saving: boolean;
-	clearing: boolean;
-	error: string;
-}
-const memoryEditorState = ref<Record<string, MemoryEditorState>>({});
-const agentEditorTabs = ref<Record<string, AgentEditorTab>>({});
+const PROTECTED_AGENT_FILES = ["SYSTEM.md", "MEMORY.md", "RULES.md"] as const;
+const protectedAgentFiles = new Set(
+	PROTECTED_AGENT_FILES.map((file) => file.toUpperCase()),
+);
 
-function getRulesState(agentName: string): RulesEditorState {
-	if (!rulesEditorState.value[agentName]) {
-		rulesEditorState.value[agentName] = {
+interface AgentFileEditorState {
+	files: string[];
+	selectedFile: string;
+	content: string;
+	draftFileName: string;
+	loading: boolean;
+	saving: boolean;
+	deleting: boolean;
+	creating: boolean;
+	syncing: boolean;
+	autoSynced: boolean;
+	error: string;
+}
+const agentFileEditorState = ref<Record<string, AgentFileEditorState>>({});
+
+function getAgentFileState(agentName: string): AgentFileEditorState {
+	if (!agentFileEditorState.value[agentName]) {
+		agentFileEditorState.value[agentName] = {
+			files: [],
+			selectedFile: "",
 			content: "",
+			draftFileName: "",
 			loading: false,
 			saving: false,
+			deleting: false,
+			creating: false,
+			syncing: false,
+			autoSynced: false,
 			error: "",
 		};
 	}
-	return rulesEditorState.value[agentName];
+	return agentFileEditorState.value[agentName];
 }
 
-function getMemoryState(agentName: string): MemoryEditorState {
-	if (!memoryEditorState.value[agentName]) {
-		memoryEditorState.value[agentName] = {
-			content: "",
-			loading: false,
-			saving: false,
-			clearing: false,
-			error: "",
-		};
-	}
-	return memoryEditorState.value[agentName];
+function isProtectedAgentFile(file: string): boolean {
+	return protectedAgentFiles.has(file.toUpperCase());
 }
 
-function getAgentEditorTab(agentName: string): AgentEditorTab {
-	return agentEditorTabs.value[agentName] ?? "rules";
+function canDeleteAgentFile(file: string): boolean {
+	return file !== "" && !isProtectedAgentFile(file);
 }
 
-function setAgentEditorTab(agentName: string, tab: AgentEditorTab) {
+function normalizeNewAgentFileName(file: string): string {
+	const trimmed = file.trim();
+	if (!trimmed) return "";
+	return trimmed.toLowerCase().endsWith(".md") ? trimmed : `${trimmed}.md`;
+}
+
+async function readAgentFile(agentName: string, file: string) {
+	const state = getAgentFileState(agentName);
+	state.error = "";
+	state.content = await callTool("agent_root_file_read", {
+		agent: agentName,
+		file,
+	});
+	state.selectedFile = file;
+}
+
+async function loadAgentFiles(agentName: string) {
 	if (!agentName) return;
-	agentEditorTabs.value[agentName] = tab;
-	if (tab === "memory") {
-		const state = getMemoryState(agentName);
-		if (!state.loading && !state.content) {
-			void loadNotes(agentName);
-		}
-	}
-}
-
-function agentEditorTabClass(agentName: string, tab: AgentEditorTab): string {
-	return getAgentEditorTab(agentName) === tab
-		? "rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-gray-900"
-		: "rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
-}
-
-async function loadRulesFile(agentName: string) {
-	if (!agentName) return;
-	const state = getRulesState(agentName);
+	const state = getAgentFileState(agentName);
 	state.loading = true;
 	state.error = "";
 	try {
-		state.content = await callTool("agent_rules_get", { name: agentName });
+		let raw = await callTool("agent_root_file_list", { agent: agentName });
+		state.files = (JSON.parse(raw) as string[] | null) ?? [];
+		if (state.files.length === 0 && !state.autoSynced) {
+			state.autoSynced = true;
+			await callTool("agent_template_sync", { agent: agentName });
+			raw = await callTool("agent_root_file_list", { agent: agentName });
+			state.files = (JSON.parse(raw) as string[] | null) ?? [];
+		}
+		if (state.selectedFile && state.files.includes(state.selectedFile)) {
+			await readAgentFile(agentName, state.selectedFile);
+		} else if (state.files.length > 0) {
+			await readAgentFile(agentName, state.files[0]);
+		} else {
+			state.selectedFile = "";
+			state.content = "";
+		}
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -1623,14 +1649,30 @@ async function loadRulesFile(agentName: string) {
 	}
 }
 
-async function saveRulesFile(agentName: string) {
+async function selectAgentFile(agentName: string, file: string) {
 	if (!agentName) return;
-	const state = getRulesState(agentName);
+	const state = getAgentFileState(agentName);
+	state.loading = true;
+	state.error = "";
+	try {
+		await readAgentFile(agentName, file);
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.loading = false;
+	}
+}
+
+async function saveAgentFile(agentName: string) {
+	if (!agentName) return;
+	const state = getAgentFileState(agentName);
+	if (!state.selectedFile) return;
 	state.saving = true;
 	state.error = "";
 	try {
-		await callTool("agent_rules_set", {
+		await callTool("agent_root_file_write", {
 			agent: agentName,
+			file: state.selectedFile,
 			content: state.content,
 		});
 	} catch (e) {
@@ -1638,6 +1680,84 @@ async function saveRulesFile(agentName: string) {
 	} finally {
 		state.saving = false;
 	}
+}
+
+async function syncAgentTemplates(agentName: string) {
+	if (!agentName) return;
+	const state = getAgentFileState(agentName);
+	state.syncing = true;
+	state.error = "";
+	try {
+		state.autoSynced = true;
+		await callTool("agent_template_sync", { agent: agentName });
+		await loadAgentFiles(agentName);
+		flashHeaderNotice(`Templates synced for ${agentName}`);
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.syncing = false;
+	}
+}
+
+async function createAgentFile(agentName: string) {
+	if (!agentName) return;
+	const state = getAgentFileState(agentName);
+	const file = normalizeNewAgentFileName(state.draftFileName);
+	if (!file) {
+		state.error = "file name is required";
+		return;
+	}
+	state.creating = true;
+	state.error = "";
+	try {
+		await callTool("agent_root_file_write", {
+			agent: agentName,
+			file,
+			content: "",
+		});
+		state.draftFileName = "";
+		await loadAgentFiles(agentName);
+		state.selectedFile = file;
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.creating = false;
+	}
+}
+
+async function deleteAgentFile(agentName: string) {
+	if (!agentName) return;
+	const state = getAgentFileState(agentName);
+	if (!canDeleteAgentFile(state.selectedFile)) return;
+	state.deleting = true;
+	state.error = "";
+	try {
+		const deletedFile = state.selectedFile;
+		await callTool("agent_root_file_delete", {
+			agent: agentName,
+			file: deletedFile,
+		});
+		await loadAgentFiles(agentName);
+		if (
+			state.selectedFile === deletedFile &&
+			!state.files.includes(deletedFile)
+		) {
+			state.selectedFile = state.files[0] ?? "";
+		}
+	} catch (e) {
+		state.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		state.deleting = false;
+	}
+}
+
+async function preloadAgentFiles() {
+	await Promise.all(
+		(draft.value.agents ?? [])
+			.map((agent) => agent.name.trim())
+			.filter(Boolean)
+			.map((agentName) => loadAgentFiles(agentName)),
+	);
 }
 
 function agentJobsList(agentName: string): JobEntry[] {
@@ -1684,9 +1804,9 @@ onUnmounted(() => {
 	settingsWs?.close();
 	settingsWs = null;
 	window.removeEventListener("keydown", onWindowKeydown);
-	if (toastTimer) {
-		clearTimeout(toastTimer);
-		toastTimer = null;
+	if (saveSuccessTimer) {
+		clearTimeout(saveSuccessTimer);
+		saveSuccessTimer = null;
 	}
 });
 
@@ -1747,6 +1867,37 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	return hydrated;
 }
 
+function digitsOnly(value: string): string {
+	return value.replace(/\D+/g, "");
+}
+
+function normalizePortValue(value: string): number {
+	if (!value) return 0;
+	const parsed = Number.parseInt(value, 10);
+	if (Number.isNaN(parsed) || parsed < 1 || parsed > 65535) return 0;
+	return parsed;
+}
+
+function updateServerPortInput(event: Event) {
+	const input = event.target as HTMLInputElement;
+	const nextValue = digitsOnly(input.value);
+	serverPortInput.value = nextValue;
+	draft.value.server.port = normalizePortValue(nextValue);
+	if (input.value !== nextValue) {
+		input.value = nextValue;
+	}
+}
+
+function updateCDPPortInput(event: Event) {
+	const input = event.target as HTMLInputElement;
+	const nextValue = digitsOnly(input.value);
+	cdpPortInput.value = nextValue;
+	draft.value.browser.cdp_port = normalizePortValue(nextValue);
+	if (input.value !== nextValue) {
+		input.value = nextValue;
+	}
+}
+
 async function loadConfig() {
 	loading.value = true;
 	errorMessage.value = "";
@@ -1755,6 +1906,9 @@ async function loadConfig() {
 		await store.fetchConfig();
 		const cfg = hydrateDraftConfig(store.config ?? emptyConfig());
 		draft.value = cfg;
+		serverPortInput.value = cfg.server.port > 0 ? String(cfg.server.port) : "";
+		cdpPortInput.value =
+			cfg.browser.cdp_port > 0 ? String(cfg.browser.cdp_port) : "";
 		concurrencyInput.value = cfg.scheduler.concurrency
 			? String(cfg.scheduler.concurrency)
 			: "";
@@ -1765,6 +1919,9 @@ async function loadConfig() {
 
 		if (!sessionAgent.value && draft.value.agents.length) {
 			sessionAgent.value = draft.value.agents[0].name;
+		}
+		if (activeTab.value === "agents") {
+			await preloadAgentFiles();
 		}
 		// Fetch the available tool list once so the permissions UI can render.
 		if (!availableTools.value.length) {
@@ -2431,15 +2588,20 @@ function normalizedDraftSnapshot(): string {
 	return JSON.stringify(normalizedDraftConfig());
 }
 
-function showToast(message: string) {
-	toastMessage.value = message;
-	if (toastTimer) {
-		clearTimeout(toastTimer);
+function flashSaveSuccess() {
+	flashHeaderNotice("Settings saved");
+}
+
+function flashHeaderNotice(message: string) {
+	headerNoticeText.value = message;
+	saveSuccessVisible.value = true;
+	if (saveSuccessTimer) {
+		clearTimeout(saveSuccessTimer);
 	}
-	toastTimer = setTimeout(() => {
-		toastMessage.value = "";
-		toastTimer = null;
-	}, 5000);
+	saveSuccessTimer = setTimeout(() => {
+		saveSuccessVisible.value = false;
+		saveSuccessTimer = null;
+	}, 3200);
 }
 async function saveAll() {
 	saving.value = true;
@@ -2456,8 +2618,14 @@ async function saveAll() {
 		await store.saveConfig(normalized);
 		lastSavedSnapshot = snapshot;
 		draft.value = hydrateDraftConfig(normalized);
+		serverPortInput.value =
+			draft.value.server.port > 0 ? String(draft.value.server.port) : "";
+		cdpPortInput.value =
+			draft.value.browser.cdp_port > 0
+				? String(draft.value.browser.cdp_port)
+				: "";
 		revertAvailable.value = true;
-		showToast("Settings saved successfully.");
+		flashSaveSuccess();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -2474,7 +2642,7 @@ async function revertToLatestBackup() {
 		await callTool("config_restore_latest_backup");
 		revertAvailable.value = false;
 		await loadConfig();
-		showToast("Settings reverted from latest backup.");
+		okMessage.value = "Settings reverted from latest backup.";
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -2668,39 +2836,6 @@ async function completeAnthropic() {
 		oauthBusy.value = false;
 	}
 }
-
-async function loadNotes(agentName: string) {
-	if (!agentName) return;
-	const state = getMemoryState(agentName);
-	state.loading = true;
-	state.error = "";
-	try {
-		state.content = await callTool("memory_show", {
-			agent: agentName,
-		});
-	} catch (e) {
-		state.error = e instanceof Error ? e.message : String(e);
-	} finally {
-		state.loading = false;
-	}
-}
-
-async function saveNotes(agentName: string) {
-	if (!agentName) return;
-	const state = getMemoryState(agentName);
-	state.saving = true;
-	state.error = "";
-	try {
-		await callTool("memory_notes_set", {
-			agent: agentName,
-			content: state.content,
-		});
-	} catch (e) {
-		state.error = e instanceof Error ? e.message : String(e);
-	} finally {
-		state.saving = false;
-	}
-}
 </script>
 
 <style scoped>
@@ -2718,16 +2853,16 @@ async function saveNotes(agentName: string) {
   @apply rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
 }
 
-.settings-toast-enter-active,
-.settings-toast-leave-active {
+.save-indicator-enter-active,
+.save-indicator-leave-active {
 	transition:
 		opacity 180ms ease,
 		transform 180ms ease;
 }
 
-.settings-toast-enter-from,
-.settings-toast-leave-to {
+.save-indicator-enter-from,
+.save-indicator-leave-to {
 	opacity: 0;
-	transform: translateY(8px);
+	transform: translateY(-4px);
 }
 </style>

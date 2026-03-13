@@ -405,6 +405,13 @@ func TestManager_FillWithoutChrome(t *testing.T) {
 
 }
 
+func TestManager_WaitVisibleWithoutChrome(t *testing.T) {
+	m := NewManager("", 19876, "", false)
+	err := m.WaitVisible(cancelledCtx(), "tab-id", "#input", time.Second)
+	assert.Error(t, err)
+
+}
+
 // --- Session direct tests ---
 
 // makeTestSession builds a Session that has already-cancelled contexts.
@@ -498,6 +505,13 @@ func TestSession_EvalJS_Error(t *testing.T) {
 func TestSession_Click_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Click("#btn")
+	assert.Error(t, err)
+
+}
+
+func TestSession_WaitVisible_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.WaitVisible("#btn", time.Second)
 	assert.Error(t, err)
 
 }

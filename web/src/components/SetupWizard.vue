@@ -540,14 +540,14 @@ async function createAgent() {
 function emptyConfig(): AppConfig {
 	return {
 		server: {
-			port: 16677,
+			port: 0,
 			tls: { cert: "", key: "" },
 			external_access: false,
 			no_tls: false,
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 9222 },
+		browser: { binary: "", cdp_port: 0 },
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "auto" },
 		skills: {},

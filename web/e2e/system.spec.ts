@@ -158,3 +158,64 @@ test("system skills can disable and enable installed skills", async ({
 		page.locator("article").filter({ hasText: "deploy" }),
 	).toBeVisible();
 });
+
+test("settings leaves server and cdp ports unset until the user enters them", async ({
+	page,
+}) => {
+	let savedConfig: Record<string, unknown> | null = null;
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: {
+				tls: { cert: "", key: "" },
+				external_access: false,
+				no_tls: false,
+			},
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "" },
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
+				string,
+				unknown
+			>;
+			return {};
+		},
+		skills_list: [],
+		tool_list: [],
+	});
+
+	await page.goto("/settings");
+
+	const portInput = page.getByPlaceholder("16677");
+	const cdpPortInput = page.getByPlaceholder("9222");
+
+	await expect(portInput).toHaveValue("");
+	await expect(cdpPortInput).toHaveValue("");
+
+	await portInput.fill("12a3");
+	await cdpPortInput.fill("9b2c2d");
+	await expect(portInput).toHaveValue("123");
+	await expect(cdpPortInput).toHaveValue("922");
+
+	await portInput.clear();
+	await cdpPortInput.clear();
+	await page
+		.getByRole("checkbox", { name: /Expose service externally/i })
+		.check();
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	expect(savedConfig).not.toBeNull();
+	expect(savedConfig).toMatchObject({
+		server: {
+			port: 0,
+			external_access: true,
+		},
+		browser: {
+			cdp_port: 0,
+		},
+	});
+});

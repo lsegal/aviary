@@ -203,6 +203,17 @@ func TestSetNotesAndGetNotes(t *testing.T) {
 
 }
 
+func TestGetNotes_StripsCommentLines(t *testing.T) {
+	setupMemoryDir(t)
+	m := New()
+	err := m.SetNotes("pool1", "visible\n<!-- hidden -->\nstill here")
+	assert.NoError(t, err)
+
+	got, err := m.GetNotes("pool1")
+	assert.NoError(t, err)
+	assert.Equal(t, "visible\nstill here", got)
+}
+
 func TestAppendNote(t *testing.T) {
 	setupMemoryDir(t)
 	m := New()

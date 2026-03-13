@@ -1385,15 +1385,15 @@ func (r *AgentRunner) loadRules() string {
 		// Treat as file path when it looks like one.
 		if strings.HasPrefix(rules, "/") || strings.HasPrefix(rules, "./") || strings.HasPrefix(rules, ".\\") || strings.HasSuffix(rules, ".md") {
 			if data, err := os.ReadFile(rules); err == nil {
-				return strings.TrimSpace(string(data))
+				return strings.TrimSpace(store.StripMarkdownCommentLines(string(data)))
 			}
 			slog.Warn("agent: rules file not found; treating as inline", "agent", r.agent.Name, "file", rules)
 		}
-		return strings.TrimSpace(rules)
+		return strings.TrimSpace(store.StripMarkdownCommentLines(rules))
 	}
 	// Fall back to the per-agent RULES.md in the data directory.
 	if data, err := os.ReadFile(store.AgentRulesPath(r.agent.ID)); err == nil {
-		if content := strings.TrimSpace(string(data)); content != "" {
+		if content := strings.TrimSpace(store.StripMarkdownCommentLines(string(data))); content != "" {
 			return content
 		}
 	}

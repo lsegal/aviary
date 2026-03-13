@@ -105,6 +105,15 @@ func (m *Manager) Fill(ctx context.Context, tabID, selector, text string) error 
 	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Fill(selector, text) })
 }
 
+// WaitVisible waits until the element matching selector is visible in the given tab.
+func (m *Manager) WaitVisible(ctx context.Context, tabID, selector string, timeout time.Duration) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	slog.Info("browser: wait_visible", "tab", tabID, "selector", selector, "timeout", timeout)
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.WaitVisible(selector, timeout) })
+}
+
 // Screenshot captures the current page in the given tab as PNG bytes.
 func (m *Manager) Screenshot(ctx context.Context, tabID string) ([]byte, error) {
 	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)

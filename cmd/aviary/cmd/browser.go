@@ -57,6 +57,11 @@ var browserTabsCmd = &cobra.Command{
 var (
 	browserSelector string
 	browserText     string
+	browserCount    int
+	browserMaxLen   int
+	browserMaxText  int
+	browserTimeout  int
+	browserHTML     bool
 )
 
 var browserClickCmd = &cobra.Command{
@@ -72,6 +77,26 @@ var browserClickCmd = &cobra.Command{
 		out, err := dispatcher.CallTool(cmd.Context(), "browser_click", map[string]any{
 			"tab_id":   browserTabID,
 			"selector": browserSelector,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
+var browserNavigateCmd = &cobra.Command{
+	Use:   "navigate <url>",
+	Short: "Navigate an existing tab to a new URL",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if browserTabID == "" {
+			return fmt.Errorf("--tab is required")
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "browser_navigate", map[string]any{
+			"tab_id": browserTabID,
+			"url":    args[0],
 		})
 		if err != nil {
 			return err
@@ -161,6 +186,74 @@ var browserScreenshotCmd = &cobra.Command{
 	},
 }
 
+var browserWaitCmd = &cobra.Command{
+	Use:   "wait",
+	Short: "Wait for an element to become visible",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		if browserTabID == "" {
+			return fmt.Errorf("--tab is required")
+		}
+		if browserSelector == "" {
+			return fmt.Errorf("--selector is required")
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "browser_wait", map[string]any{
+			"tab_id":     browserTabID,
+			"selector":   browserSelector,
+			"timeout_ms": browserTimeout,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
+var browserTextCmd = &cobra.Command{
+	Use:   "text",
+	Short: "Extract normalized page text",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		if browserTabID == "" {
+			return fmt.Errorf("--tab is required")
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "browser_text", map[string]any{
+			"tab_id":     browserTabID,
+			"selector":   browserSelector,
+			"max_length": browserMaxLen,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
+var browserQueryCmd = &cobra.Command{
+	Use:   "query",
+	Short: "Extract structured element data by selector",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		if browserTabID == "" {
+			return fmt.Errorf("--tab is required")
+		}
+		if browserSelector == "" {
+			return fmt.Errorf("--selector is required")
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "browser_query", map[string]any{
+			"tab_id":          browserTabID,
+			"selector":        browserSelector,
+			"count":           browserCount,
+			"max_text_length": browserMaxText,
+			"include_html":    browserHTML,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
 var browserEvalCmd = &cobra.Command{
 	Use:   "eval <expr>",
 	Short: "Evaluate JavaScript in a tab",
@@ -170,8 +263,8 @@ var browserEvalCmd = &cobra.Command{
 			return fmt.Errorf("--tab is required")
 		}
 		out, err := dispatcher.CallTool(cmd.Context(), "browser_eval", map[string]any{
-			"tab_id": browserTabID,
-			"expr":   args[0],
+			"tab_id":     browserTabID,
+			"javascript": args[0],
 		})
 		if err != nil {
 			return err
@@ -192,7 +285,15 @@ func init() {
 	browserTypeCmd.Flags().StringVar(&browserText, "text", "", "text for keystrokes")
 	browserFillCmd.Flags().StringVar(&browserSelector, "selector", "", "CSS selector")
 	browserFillCmd.Flags().StringVar(&browserText, "text", "", "text to fill/type")
+	browserWaitCmd.Flags().StringVar(&browserSelector, "selector", "", "CSS selector")
+	browserWaitCmd.Flags().IntVar(&browserTimeout, "timeout-ms", 10000, "wait timeout in milliseconds")
+	browserTextCmd.Flags().StringVar(&browserSelector, "selector", "", "optional CSS selector")
+	browserTextCmd.Flags().IntVar(&browserMaxLen, "max-length", 4000, "maximum text length to return")
+	browserQueryCmd.Flags().StringVar(&browserSelector, "selector", "", "CSS selector")
+	browserQueryCmd.Flags().IntVar(&browserCount, "count", 20, "maximum number of elements to return")
+	browserQueryCmd.Flags().IntVar(&browserMaxText, "max-length", 500, "maximum text length per element")
+	browserQueryCmd.Flags().BoolVar(&browserHTML, "include-html", false, "include outer HTML for each element")
 
-	browserCmd.AddCommand(browserOpenCmd, browserTabsCmd, browserClickCmd, browserTypeCmd, browserFillCmd, browserScreenshotCmd, browserEvalCmd)
+	browserCmd.AddCommand(browserOpenCmd, browserTabsCmd, browserNavigateCmd, browserWaitCmd, browserTextCmd, browserQueryCmd, browserClickCmd, browserTypeCmd, browserFillCmd, browserScreenshotCmd, browserEvalCmd)
 	rootCmd.AddCommand(browserCmd)
 }

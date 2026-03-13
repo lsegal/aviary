@@ -1,8 +1,10 @@
 package browser
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -60,6 +62,19 @@ func (s *Session) Type(selector, text string) error {
 // Fill sets the value of the element matching selector.
 func (s *Session) Fill(selector, text string) error {
 	return s.Run(chromedp.SetValue(selector, text, chromedp.ByQuery))
+}
+
+// WaitVisible waits until an element matching the CSS selector is visible.
+func (s *Session) WaitVisible(selector string, timeout time.Duration) error {
+	ctx := s.taskCtx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(s.taskCtx, timeout)
+		defer cancel()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery))
 }
 
 // Screenshot captures the full page as PNG bytes.

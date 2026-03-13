@@ -76,8 +76,24 @@ var agentStopCmd = &cobra.Command{
 	},
 }
 
+var agentTemplateSyncCmd = &cobra.Command{
+	Use:   "template-sync <name>",
+	Short: "Sync embedded template files into an agent directory",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		out, err := dispatcher.CallTool(cmd.Context(), "agent_template_sync", map[string]any{
+			"agent": args[0],
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
 func init() {
 	agentRunCmd.Flags().StringVar(&agentRunFile, "file", "", "read prompt from file")
-	agentCmd.AddCommand(agentListCmd, agentRunCmd, agentStopCmd)
+	agentCmd.AddCommand(agentListCmd, agentRunCmd, agentStopCmd, agentTemplateSyncCmd)
 	rootCmd.AddCommand(agentCmd)
 }

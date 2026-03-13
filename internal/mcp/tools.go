@@ -149,6 +149,10 @@ type agentNameArgs struct {
 	Name string `json:"name"`
 }
 
+type agentTemplateSyncArgs struct {
+	Agent string `json:"agent"`
+}
+
 func registerAgentTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_list",
@@ -337,10 +341,26 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if err := config.Save("", cfg); err != nil {
 			return nil, struct{}{}, err
 		}
+		if err := store.SyncAgentTemplate(args.Name); err != nil {
+			return nil, struct{}{}, err
+		}
 		if d.Agents != nil {
 			d.Agents.Reconcile(cfg)
 		}
 		return text(fmt.Sprintf("agent %q added", args.Name))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_template_sync",
+		Description: "Sync the embedded agent template into an agent directory. Missing files are added, existing files are preserved, and markdown files only update the 'Synced by Aviary' section.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentTemplateSyncArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if err := store.SyncAgentTemplate(args.Agent); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("templates synced for agent %q", args.Agent))
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -467,6 +487,12 @@ type agentFileReadArgs struct {
 	File  string `json:"file"`
 }
 
+type agentFileWriteArgs struct {
+	Agent   string `json:"agent"`
+	File    string `json:"file"`
+	Content string `json:"content"`
+}
+
 type noteWriteArgs struct {
 	File    string `json:"file"`
 	Content string `json:"content"`
@@ -524,6 +550,60 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("reading agent file: %w", err)
 		}
 		return text(content)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_root_file_list",
+		Description: "List root-level markdown files available under an agent directory, including built-in files such as RULES.md and MEMORY.md.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		files, err := store.ListAgentRootMarkdownFiles(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("listing root agent files: %w", err)
+		}
+		return jsonResult(files)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_root_file_read",
+		Description: "Read a root-level markdown file from an agent directory, including built-in files such as RULES.md and MEMORY.md.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		content, err := store.ReadAgentRootMarkdownFile(args.Agent, args.File)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("reading root agent file: %w", err)
+		}
+		return text(content)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_root_file_write",
+		Description: "Create or replace a root-level markdown file in an agent directory.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if err := store.WriteAgentRootMarkdownFile(args.Agent, args.File, args.Content); err != nil {
+			return nil, struct{}{}, fmt.Errorf("writing root agent file: %w", err)
+		}
+		return text(fmt.Sprintf("%s written for agent %q", strings.TrimSpace(args.File), args.Agent))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_root_file_delete",
+		Description: "Delete a root-level markdown file from an agent directory. Protected built-in files such as SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if err := store.DeleteAgentRootMarkdownFile(args.Agent, args.File); err != nil {
+			return nil, struct{}{}, fmt.Errorf("deleting root agent file: %w", err)
+		}
+		return text(fmt.Sprintf("%s deleted for agent %q", strings.TrimSpace(args.File), args.Agent))
 	})
 }
 
@@ -1073,6 +1153,31 @@ type browserTypeArgs struct {
 	Text     string `json:"text"`
 }
 
+type browserNavigateArgs struct {
+	TabID string `json:"tab_id"`
+	URL   string `json:"url"`
+}
+
+type browserWaitArgs struct {
+	TabID     string `json:"tab_id"`
+	Selector  string `json:"selector"`
+	TimeoutMS int    `json:"timeout_ms,omitempty"`
+}
+
+type browserTextArgs struct {
+	TabID     string `json:"tab_id"`
+	Selector  string `json:"selector,omitempty"`
+	MaxLength int    `json:"max_length,omitempty"`
+}
+
+type browserQueryArgs struct {
+	TabID         string `json:"tab_id"`
+	Selector      string `json:"selector"`
+	Count         int    `json:"count,omitempty"`
+	MaxTextLength int    `json:"max_text_length,omitempty"`
+	IncludeHTML   bool   `json:"include_html,omitempty"`
+}
+
 func registerBrowserTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "browser_open",
@@ -1106,6 +1211,59 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		}
 		slog.Info("browser tabs listed", "component", "browser", "count", len(tabs))
 		return jsonResult(tabs)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_navigate",
+		Description: "Navigate an existing browser tab to a new URL.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserNavigateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_navigate", "tab_id", args.TabID, "url", args.URL)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if args.URL == "" {
+			return nil, struct{}{}, fmt.Errorf("url is required")
+		}
+		if err := d.Browser.Navigate(ctx, args.TabID, args.URL); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_navigate", "tab_id", args.TabID, "url", args.URL, "err", err)
+			return nil, struct{}{}, err
+		}
+		return jsonResult(map[string]any{"tab_id": args.TabID, "url": args.URL})
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_wait",
+		Description: "Wait for a CSS selector to become visible in the specified tab.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserWaitArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_wait", "tab_id", args.TabID, "selector", args.Selector)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if args.Selector == "" {
+			return nil, struct{}{}, fmt.Errorf("selector is required")
+		}
+		timeoutMS := args.TimeoutMS
+		if timeoutMS <= 0 {
+			timeoutMS = 10000
+		}
+		if timeoutMS > 60000 {
+			timeoutMS = 60000
+		}
+		waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
+		defer cancel()
+		if err := d.Browser.WaitVisible(waitCtx, args.TabID, args.Selector, time.Duration(timeoutMS)*time.Millisecond); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_wait", "tab_id", args.TabID, "selector", args.Selector, "err", err)
+			return nil, struct{}{}, err
+		}
+		return jsonResult(map[string]any{"tab_id": args.TabID, "selector": args.Selector, "timeout_ms": timeoutMS, "status": "visible"})
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -1166,6 +1324,127 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		}
 		slog.Info("filled element", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
 		return text(fmt.Sprintf("filled %q in tab %s", args.Selector, args.TabID))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_text",
+		Description: "Extract normalized visible text from the whole page or from elements matching a CSS selector.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTextArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_text", "tab_id", args.TabID, "selector", args.Selector)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		selectorJSON, err := json.Marshal(args.Selector)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("encoding selector: %w", err)
+		}
+		maxLength := args.MaxLength
+		if maxLength <= 0 {
+			maxLength = 4000
+		}
+		if maxLength > 20000 {
+			maxLength = 20000
+		}
+		expr := fmt.Sprintf(`(() => {
+			const selector = %s;
+			const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
+			let nodes = [];
+			if (selector) {
+				nodes = Array.from(document.querySelectorAll(selector));
+			} else if (document.body) {
+				nodes = [document.body];
+			}
+			const text = normalize(nodes.map((node) => node.innerText || node.textContent || "").join("\n\n")).slice(0, %d);
+			return JSON.stringify({
+				tab_id: %q,
+				url: window.location.href,
+				title: document.title || "",
+				selector: selector || "",
+				match_count: nodes.length,
+				text
+			});
+		})()`, string(selectorJSON), maxLength, args.TabID)
+		raw, err := d.Browser.EvalJS(ctx, args.TabID, expr)
+		if err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_text", "tab_id", args.TabID, "selector", args.Selector, "err", err)
+			return nil, struct{}{}, err
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			return nil, struct{}{}, fmt.Errorf("parsing browser_text result: %w", err)
+		}
+		return jsonResult(payload)
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "browser_query",
+		Description: "Extract structured data from elements matching a CSS selector, including text and common attributes.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_query", "tab_id", args.TabID, "selector", args.Selector)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if args.Selector == "" {
+			return nil, struct{}{}, fmt.Errorf("selector is required")
+		}
+		selectorJSON, err := json.Marshal(args.Selector)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("encoding selector: %w", err)
+		}
+		count := args.Count
+		if count <= 0 {
+			count = 20
+		}
+		if count > 100 {
+			count = 100
+		}
+		maxTextLength := args.MaxTextLength
+		if maxTextLength <= 0 {
+			maxTextLength = 500
+		}
+		if maxTextLength > 5000 {
+			maxTextLength = 5000
+		}
+		expr := fmt.Sprintf(`(() => {
+			const selector = %s;
+			const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
+			const items = Array.from(document.querySelectorAll(selector)).slice(0, %d).map((node, index) => ({
+				index,
+				tag_name: (node.tagName || "").toLowerCase(),
+				text: normalize(node.innerText || node.textContent || "").slice(0, %d),
+				href: node.href || node.getAttribute("href") || "",
+				src: node.src || node.getAttribute("src") || "",
+				value: node.value || "",
+				aria_label: node.getAttribute("aria-label") || "",
+				html: %t ? (node.outerHTML || "") : ""
+			}));
+			return JSON.stringify({
+				tab_id: %q,
+				url: window.location.href,
+				title: document.title || "",
+				selector,
+				count: items.length,
+				items
+			});
+		})()`, string(selectorJSON), count, maxTextLength, args.IncludeHTML, args.TabID)
+		raw, err := d.Browser.EvalJS(ctx, args.TabID, expr)
+		if err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_query", "tab_id", args.TabID, "selector", args.Selector, "err", err)
+			return nil, struct{}{}, err
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			return nil, struct{}{}, fmt.Errorf("parsing browser_query result: %w", err)
+		}
+		return jsonResult(payload)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -1710,6 +1989,9 @@ func registerServerTools(s *sdkmcp.Server) {
 			}
 		}
 		if err := config.Save("", &cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := store.EnsureNewAgentTemplates(prevCfg, &cfg); err != nil {
 			return nil, struct{}{}, err
 		}
 		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {

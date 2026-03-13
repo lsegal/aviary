@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -85,6 +86,108 @@ func AgentRulesPath(agentID string) string {
 	return filepath.Join(AgentDir(agentID), "RULES.md")
 }
 
+var protectedAgentRootMarkdownFiles = map[string]struct{}{
+	"MEMORY.MD": {},
+	"RULES.MD":  {},
+	"SYSTEM.MD": {},
+}
+
+func isProtectedAgentRootMarkdownFile(file string) bool {
+	_, ok := protectedAgentRootMarkdownFiles[strings.ToUpper(file)]
+	return ok
+}
+
+func normalizeAgentRootMarkdownFile(file string) (string, error) {
+	file = strings.TrimSpace(file)
+	if file == "" {
+		return "", fmt.Errorf("file is required")
+	}
+	if filepath.IsAbs(file) {
+		return "", fmt.Errorf("file must be relative to the agent directory")
+	}
+	clean := filepath.Clean(file)
+	if clean == "." || clean == "" {
+		return "", fmt.Errorf("file is required")
+	}
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("file must stay within the agent directory")
+	}
+	if filepath.Base(clean) != clean {
+		return "", fmt.Errorf("file must be in the root of the agent directory")
+	}
+	if !strings.EqualFold(filepath.Ext(clean), ".md") {
+		return "", fmt.Errorf("file must be a markdown file")
+	}
+	return clean, nil
+}
+
+// ListAgentRootMarkdownFiles returns root-level markdown files under an agent
+// directory, including built-in files like RULES.md and MEMORY.md.
+func ListAgentRootMarkdownFiles(agentID string) ([]string, error) {
+	root := AgentDir(agentID)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.EqualFold(filepath.Ext(name), ".md") {
+			continue
+		}
+		files = append(files, name)
+	}
+	slices.Sort(files)
+	return files, nil
+}
+
+// ReadAgentRootMarkdownFile reads a root-level markdown file from an agent
+// directory without stripping comment lines.
+func ReadAgentRootMarkdownFile(agentID, file string) (string, error) {
+	clean, err := normalizeAgentRootMarkdownFile(file)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(AgentDir(agentID), clean))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// WriteAgentRootMarkdownFile creates or replaces a root-level markdown file
+// under an agent directory.
+func WriteAgentRootMarkdownFile(agentID, file, content string) error {
+	clean, err := normalizeAgentRootMarkdownFile(file)
+	if err != nil {
+		return err
+	}
+	root := AgentDir(agentID)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(root, clean), []byte(content), 0o600)
+}
+
+// DeleteAgentRootMarkdownFile deletes a root-level markdown file from an agent
+// directory, except for protected built-in files.
+func DeleteAgentRootMarkdownFile(agentID, file string) error {
+	clean, err := normalizeAgentRootMarkdownFile(file)
+	if err != nil {
+		return err
+	}
+	if isProtectedAgentRootMarkdownFile(clean) {
+		return fmt.Errorf("%s is protected and cannot be deleted", clean)
+	}
+	return os.Remove(filepath.Join(AgentDir(agentID), clean))
+}
+
 // ListAgentMarkdownFiles returns markdown files under an agent directory,
 // excluding RULES.md which is handled as prompt preamble instead of ad hoc
 // context. Returned paths are slash-delimited and relative to the agent dir.
@@ -160,7 +263,38 @@ func ReadAgentMarkdownFile(agentID, file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return StripMarkdownCommentLines(string(data)), nil
+}
+
+// StripMarkdownCommentLines removes HTML comment blocks from markdown when the
+// content is being fed back into prompts or prompt-adjacent tools.
+func StripMarkdownCommentLines(content string) string {
+	if content == "" {
+		return ""
+	}
+
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	inComment := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if inComment {
+			if strings.Contains(trimmed, "-->") {
+				inComment = false
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "<!--") {
+			if !strings.Contains(trimmed, "-->") {
+				inComment = true
+			}
+			continue
+		}
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
 }
 
 // EnsureDirs creates all required data subdirectories.

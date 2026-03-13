@@ -90,7 +90,7 @@ func (m *Manager) GetNotes(poolID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading notes for pool %s: %w", poolID, err)
 	}
-	return string(data), nil
+	return store.StripMarkdownCommentLines(string(data)), nil
 }
 
 // SetNotes replaces the entire notes file content for a pool.

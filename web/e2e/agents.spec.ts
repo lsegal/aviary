@@ -50,6 +50,11 @@ const CONFIG = {
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
+	const agentFiles = new Map<string, string>([
+		["RULES.md", "# Rules"],
+		["MEMORY.md", "Remembered note"],
+		["IDENTITY.md", "# Identity"],
+	]);
 	await mockMCP(page, {
 		config_get: CONFIG,
 		auth_list: ["anthropic:default", "brave_api_key"],
@@ -69,6 +74,17 @@ test.beforeEach(async ({ page }) => {
 			{ name: "browser_open", description: "Open a browser tab" },
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
+		agent_root_file_list: () => Array.from(agentFiles.keys()).sort(),
+		agent_root_file_read: (args) =>
+			agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_root_file_write: (args) => {
+			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
+			return "ok";
+		},
+		agent_root_file_delete: (args) => {
+			agentFiles.delete(String(args?.file ?? ""));
+			return "ok";
+		},
 	});
 });
 
@@ -243,9 +259,79 @@ test("saving settings preserves default-on signal channel checkboxes", async ({
 	await phoneInput.fill("+12132957731");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 
-	await expect(page.getByText("Settings saved successfully.")).toBeVisible();
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
 	await expect(page.getByLabel("Show typing indicator")).toBeChecked();
 	await expect(page.getByLabel("Reply to replies")).toBeChecked();
 	await expect(page.getByLabel("React to emojis")).toBeChecked();
 	await expect(page.getByLabel("Send read receipts")).toBeChecked();
+});
+
+test("agent files editor lists root markdown files and protects built-ins", async ({
+	page,
+}) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	await expect(page.getByRole("button", { name: "IDENTITY.md" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
+	await page.getByRole("button", { name: "RULES.md" }).click();
+	await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
+
+	await page.getByRole("button", { name: "IDENTITY.md" }).click();
+	await expect(page.getByRole("button", { name: "Delete" })).toBeEnabled();
+
+	await page.getByPlaceholder("IDENTITY.md").fill("PROFILE");
+	await page.getByRole("button", { name: "+", exact: true }).click();
+	await expect(page.getByRole("button", { name: "PROFILE.md" })).toBeVisible();
+});
+
+test("agent files editor auto-syncs templates when an older agent has no root files", async ({
+	page,
+}) => {
+	const syncedFiles = new Map<string, string>([
+		["RULES.md", "# Rules"],
+		["MEMORY.md", "Remembered note"],
+	]);
+	let synced = false;
+
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: CONFIG,
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+		agent_root_file_list: () =>
+			synced ? Array.from(syncedFiles.keys()).sort() : [],
+		agent_root_file_read: (args) =>
+			syncedFiles.get(String(args?.file ?? "")) ?? "",
+		agent_template_sync: () => {
+			synced = true;
+			return "ok";
+		},
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page.getByRole("button", { name: "Refresh" }).first().click();
+
+	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
+	await expect(
+		page.getByText("No root markdown files yet. Refresh or add one."),
+	).toHaveCount(0);
 });

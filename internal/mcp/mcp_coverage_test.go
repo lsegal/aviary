@@ -171,9 +171,16 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "added"))
+	assert.FileExists(t, filepath.Join(store.AgentDir("newbot"), "RULES.md"))
 
 	// agent_add duplicate
 	toolCallContains(t, d, "agent_add", map[string]any{"name": "newbot", "model": "x"}, "already exists")
+
+	out, err = d.CallTool(context.Background(), "agent_template_sync", map[string]any{"agent": "newbot"})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "templates synced"))
+
+	toolCallContains(t, d, "agent_template_sync", map[string]any{"agent": ""}, "required")
 
 	// agent_update with empty name
 	toolCallContains(t, d, "agent_update", map[string]any{"name": ""}, "required")

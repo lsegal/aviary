@@ -200,7 +200,7 @@ function cloneConfig(config: AppConfig): AppConfig {
 function emptyConfig(): AppConfig {
 	return {
 		server: {
-			port: 16677,
+			port: 0,
 			tls: { cert: "", key: "" },
 			external_access: false,
 			no_tls: false,
