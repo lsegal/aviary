@@ -185,7 +185,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("gemini oauth token satisfies credential check", func(t *testing.T) {
-		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "gemini/gemini-2.0-flash"}}}
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "google-gemini/gemini-2.0-flash"}}}
 		issues := Validate(cfg, func(key string) (string, error) {
 			if key == "gemini:oauth" {
 				return `{"access_token":"tok"}`, nil
@@ -196,10 +196,10 @@ func TestValidate(t *testing.T) {
 
 	})
 
-	t.Run("gemini warns when neither api key nor oauth is set", func(t *testing.T) {
-		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "gemini/gemini-2.0-flash"}}}
+	t.Run("google-gemini warns when oauth is not set", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Model: "google-gemini/gemini-2.0-flash"}}}
 		issues := Validate(cfg, func(string) (string, error) { return "", os.ErrNotExist })
-		assert.True(t, hasIssue(issues, `credential "gemini:default" not found`))
+		assert.True(t, hasIssue(issues, `credential "gemini:oauth" not found`))
 
 	})
 
@@ -811,7 +811,7 @@ func TestUniqueProviderModels_WithDefaults(t *testing.T) {
 	cfg := &Config{
 		Models: ModelsConfig{
 			Defaults: &ModelDefaults{
-				Model:     "gemini/gemini-2.0-flash",
+				Model:     "google-gemini/gemini-2.0-flash",
 				Fallbacks: []string{"openai/gpt-4"},
 			},
 		},
