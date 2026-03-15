@@ -47,9 +47,9 @@ func runModelsList(w io.Writer, provider string) error {
 		return err
 	}
 	for _, model := range models.EntriesByProvider(provider) {
-		modelType := "text"
+		modelType := "text only"
 		if model.SupportsImageInput {
-			modelType = "text+image"
+			modelType = ""
 		}
 		if _, err := fmt.Fprintf(
 			tw,

@@ -72,14 +72,10 @@
                 {{ entry.provider }}
               </span>
               <span
-                class="rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide"
-                :class="
-                  entry.supportsImageInput
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                "
+                v-if="!entry.supportsImageInput"
+                class="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
               >
-                {{ entry.supportsImageInput ? "text+image" : "text" }}
+                text only
               </span>
             </div>
             <h3 class="mt-3 break-all font-mono text-sm font-semibold text-gray-900 dark:text-white">
@@ -164,7 +160,7 @@ const filteredModels = computed(() => {
 			entry.model.toLowerCase().includes(term) ||
 			entry.inputTokensLabel.toLowerCase().includes(term) ||
 			entry.outputTokensLabel.toLowerCase().includes(term) ||
-			(entry.supportsImageInput ? "text+image" : "text").includes(term)
+			(!entry.supportsImageInput && "text only".includes(term))
 		);
 	});
 });

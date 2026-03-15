@@ -46,11 +46,13 @@ export function formatTokenCount(tokens: number): string {
 export function modelSupportLabel(model: string): string {
 	const entry = lookupModel(model);
 	if (!entry) return "";
-	return entry.supports_image_input ? "Text+image" : "Text";
+	return entry.supports_image_input ? "" : "Text only";
 }
 
 export function modelDetailLabel(model: string): string {
 	const entry = lookupModel(model);
 	if (!entry) return "";
-	return `In ${formatTokenCount(entry.input_tokens)} • Out ${formatTokenCount(entry.output_tokens)} • ${modelSupportLabel(model)}`;
+	const support = modelSupportLabel(model);
+	const base = `In ${formatTokenCount(entry.input_tokens)} • Out ${formatTokenCount(entry.output_tokens)}`;
+	return support ? `${base} • ${support}` : base;
 }

@@ -73,13 +73,8 @@
                 {{ optionDetail(opt) }}
               </div>
               <span
-                v-if="isKnownModel(opt)"
-                class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                :class="
-                  lookupModel(opt)?.supports_image_input
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                "
+                v-if="modelSupportLabel(opt)"
+                class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
               >
                 {{ modelSupportLabel(opt) }}
               </span>
