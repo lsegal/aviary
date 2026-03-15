@@ -25,11 +25,12 @@ type Policy struct {
 	rules []compiledRule
 }
 
-// NewPolicy compiles the provided ordered rules.
-func NewPolicy(patterns []string) (*Policy, error) {
+// NewPolicy compiles the provided ordered rules. Relative paths are resolved
+// relative to baseDir.
+func NewPolicy(patterns []string, baseDir string) (*Policy, error) {
 	rules := make([]compiledRule, 0, len(patterns))
 	for _, pattern := range patterns {
-		rule, err := compileRule(pattern)
+		rule, err := compileRule(pattern, baseDir)
 		if err != nil {
 			return nil, err
 		}
@@ -56,10 +57,10 @@ func (p *Policy) Allows(resolvedPath string) bool {
 	return allowed
 }
 
-// ResolvePath resolves a user-supplied path against the workspace, expands
-// special prefixes, and resolves any existing symlink ancestors.
-func ResolvePath(raw string) (string, error) {
-	expanded, err := expandPath(raw, false)
+// ResolvePath resolves a user-supplied path against baseDir (for relative
+// paths), expands special prefixes, and resolves any existing symlink ancestors.
+func ResolvePath(raw, baseDir string) (string, error) {
+	expanded, err := expandPath(raw, false, baseDir)
 	if err != nil {
 		return "", err
 	}
@@ -70,15 +71,16 @@ func ResolvePath(raw string) (string, error) {
 	return resolveExistingAncestor(filepath.Clean(abs))
 }
 
-// PolicyFromAgent creates a path policy from an agent config.
-func PolicyFromAgent(cfg *config.AgentConfig) (*Policy, error) {
+// PolicyFromAgent creates a path policy from an agent config. Relative paths
+// in the allowlist are resolved relative to agentDir.
+func PolicyFromAgent(cfg *config.AgentConfig, agentDir string) (*Policy, error) {
 	if cfg == nil || cfg.Permissions == nil || cfg.Permissions.Filesystem == nil {
-		return NewPolicy(nil)
+		return NewPolicy(nil, agentDir)
 	}
-	return NewPolicy(cfg.Permissions.Filesystem.AllowedPaths)
+	return NewPolicy(cfg.Permissions.Filesystem.AllowedPaths, agentDir)
 }
 
-func compileRule(raw string) (compiledRule, error) {
+func compileRule(raw, baseDir string) (compiledRule, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return compiledRule{}, nil
@@ -87,7 +89,7 @@ func compileRule(raw string) (compiledRule, error) {
 	if negated {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))
 	}
-	expanded, err := expandPath(trimmed, true)
+	expanded, err := expandPath(trimmed, true, baseDir)
 	if err != nil {
 		return compiledRule{}, fmt.Errorf("invalid allowlist rule %q: %w", raw, err)
 	}
@@ -107,7 +109,7 @@ func compileRule(raw string) (compiledRule, error) {
 	}, nil
 }
 
-func expandPath(raw string, allowGlob bool) (string, error) {
+func expandPath(raw string, allowGlob bool, baseDir string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", fmt.Errorf("path is required")
@@ -129,7 +131,11 @@ func expandPath(raw string, allowGlob bool) (string, error) {
 	case filepath.IsAbs(raw):
 		expanded = raw
 	default:
-		expanded = joinBasePreservingGlob(store.WorkspaceDir(), raw)
+		base := baseDir
+		if base == "" {
+			base = store.WorkspaceDir()
+		}
+		expanded = joinBasePreservingGlob(base, raw)
 	}
 	if !allowGlob && strings.ContainsAny(expanded, "*?[") {
 		return "", fmt.Errorf("glob characters are not allowed in file paths")

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/commandpolicy"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 type execArgs struct {
@@ -41,11 +43,11 @@ func registerExecTools(s *sdkmcp.Server) {
 		Name:        "exec",
 		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it. Arguments: command (required), cwd (optional).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args execArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		perms, _, err := resolveAllowedAgentExec(ctx, args.Command)
+		perms, agentDir, err := resolveAllowedAgentExec(ctx, args.Command)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		res, runErr := runExecCommand(ctx, perms, args)
+		res, runErr := runExecCommand(ctx, perms, args, agentDir)
 		if runErr == nil {
 			return jsonResult(res)
 		}
@@ -58,40 +60,46 @@ func registerExecTools(s *sdkmcp.Server) {
 	})
 }
 
-func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecPermissionsConfig, *agent.AgentRunner, error) {
+func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecPermissionsConfig, string, error) {
 	if strings.TrimSpace(command) == "" {
-		return nil, nil, fmt.Errorf("command is required")
+		return nil, "", fmt.Errorf("command is required")
 	}
 	deps := GetDeps()
 	if deps == nil || deps.Agents == nil {
-		return nil, nil, fmt.Errorf("agent manager not initialized; is the server running?")
+		return nil, "", fmt.Errorf("agent manager not initialized; is the server running?")
 	}
 	agentID, ok := agent.SessionAgentIDFromContext(ctx)
 	if !ok {
-		return nil, nil, fmt.Errorf("exec requires an agent session context")
+		return nil, "", fmt.Errorf("exec requires an agent session context")
 	}
 	runner, ok := deps.Agents.GetByID(agentID)
 	if !ok || runner == nil {
-		return nil, nil, fmt.Errorf("agent %q not found", agentID)
+		return nil, "", fmt.Errorf("agent %q not found", agentID)
 	}
 	cfg := runner.Config()
 	if cfg == nil || cfg.Permissions == nil || cfg.Permissions.Exec == nil || len(cfg.Permissions.Exec.AllowedCommands) == 0 {
-		return nil, nil, fmt.Errorf("agent %q has no exec allowedCommands configured", runner.Agent().Name)
+		return nil, "", fmt.Errorf("agent %q has no exec allowedCommands configured", runner.Agent().Name)
 	}
 	policy, err := commandpolicy.New(cfg.Permissions.Exec.AllowedCommands)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", err
 	}
 	if !policy.Allows(command) {
-		return nil, nil, fmt.Errorf("command is outside the exec allowlist: %s", strings.TrimSpace(command))
+		return nil, "", fmt.Errorf("command is outside the exec allowlist: %s", strings.TrimSpace(command))
 	}
-	return cfg.Permissions.Exec, runner, nil
+	return cfg.Permissions.Exec, store.AgentDir(agentID), nil
 }
 
-func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, args execArgs) (execResult, error) {
+func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, args execArgs, agentDir string) (execResult, error) {
+	cwd := strings.TrimSpace(args.Cwd)
+	if cwd == "" {
+		cwd = agentDir
+	} else if !filepath.IsAbs(cwd) {
+		cwd = filepath.Join(agentDir, cwd)
+	}
 	result := execResult{
 		Command:      strings.TrimSpace(args.Command),
-		Cwd:          strings.TrimSpace(args.Cwd),
+		Cwd:          cwd,
 		Interpolated: perms != nil && perms.ShellInterpolate,
 		ExitCode:     0,
 	}
@@ -113,9 +121,7 @@ func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, ar
 		cmd = execCommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec
 	}
 
-	if result.Cwd != "" {
-		cmd.Dir = result.Cwd
-	}
+	cmd.Dir = result.Cwd
 	cmd.Env = commandEnv(ctx, nil)
 
 	var stdout, stderr bytes.Buffer

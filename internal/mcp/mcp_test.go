@@ -1642,7 +1642,7 @@ func TestRunExecCommand_LoadsAgentDotEnv(t *testing.T) {
 	}
 
 	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
-	result, err := runExecCommand(ctx, &config.ExecPermissionsConfig{}, execArgs{Command: "helper"})
+	result, err := runExecCommand(ctx, &config.ExecPermissionsConfig{}, execArgs{Command: "helper"}, "")
 	require.NoError(t, err)
 	assert.Contains(t, result.Stdout, "AVIARY_TEST_ENV=from-dotenv")
 }

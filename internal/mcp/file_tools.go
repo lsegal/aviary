@@ -13,6 +13,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/filesystem"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 type filePathArgs struct {
@@ -224,11 +225,12 @@ func resolveAllowedAgentPath(ctx context.Context, rawPath, operation string) (st
 	if !ok || runner == nil {
 		return "", nil, fmt.Errorf("agent %q not found", agentID)
 	}
-	policy, err := filesystem.PolicyFromAgent(runner.Config())
+	agentDir := store.AgentDir(agentID)
+	policy, err := filesystem.PolicyFromAgent(runner.Config(), agentDir)
 	if err != nil {
 		return "", nil, err
 	}
-	resolved, err := filesystem.ResolvePath(rawPath)
+	resolved, err := filesystem.ResolvePath(rawPath, agentDir)
 	if err != nil {
 		return "", nil, err
 	}
