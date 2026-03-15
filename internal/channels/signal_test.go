@@ -1059,3 +1059,44 @@ func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
 
 	}
 }
+
+func TestDispatch_MentionPrefixGroupOnly_False_DMRequiresPrefix(t *testing.T) {
+	f := false
+	allowFrom := []config.AllowFromEntry{{
+		From:                   "*",
+		MentionPrefixes:        []string{"aviary"},
+		MentionPrefixGroupOnly: &f,
+	}}
+	ch := NewSignalChannel("", "", allowFrom, false, false, false, false, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	// DM without prefix → blocked.
+	noPrefix := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"hello"}}}}`
+	ch.dispatch([]byte(noPrefix))
+	_, ok := waitMsgTimeout(msgs, 50*time.Millisecond)
+	assert.False(t, ok)
+
+	// DM with prefix → allowed.
+	withPrefix := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"aviary do this"}}}}`
+	ch.dispatch([]byte(withPrefix))
+	msg, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
+	assert.Equal(t, "aviary do this", msg.Text)
+}
+
+func TestDispatch_MentionPrefixGroupOnly_Default_DMPassesWithoutPrefix(t *testing.T) {
+	// Default (nil): DMs should pass without any prefix.
+	allowFrom := []config.AllowFromEntry{{
+		From:            "*",
+		MentionPrefixes: []string{"aviary"},
+	}}
+	ch := NewSignalChannel("", "", allowFrom, false, false, false, false, "test", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	noPrefix := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","dataMessage":{"message":"hello"}}}}`
+	ch.dispatch([]byte(noPrefix))
+	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok)
+}

@@ -62,8 +62,8 @@ func (h *daemonHub) release(phone string) {
 type sharedDaemon struct {
 	phone string
 
-	addrMu  sync.RWMutex
-	addr    string
+	addrMu sync.RWMutex
+	addr   string
 
 	procMu      sync.RWMutex
 	procPID     int
