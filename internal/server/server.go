@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -24,6 +23,7 @@ import (
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
+	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
 )
@@ -101,6 +101,7 @@ func New(cfg *config.Config, token string) *Server {
 		Agents:    s.agents,
 		Scheduler: s.sched,
 		Memory:    s.mem,
+		Channels:  s.channels,
 		Browser:   s.brw,
 		Auth:      authStore,
 		Upgrade:   s.triggerUpgrade,
@@ -298,26 +299,9 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 
 	agentID := "agent_" + agentName
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
-		chDest, chRef := msg.Channel, ch
-		agent.RegisterSessionDelivery(sess.ID, msg.Type, msg.Channel, func(text string) {
-			if err := chRef.Send(chDest, text); err != nil {
-				slog.Warn("server: failed to send response to channel", "type", msg.Type, "channel", chDest, "err", err)
-			}
-		})
-		if ms, ok := ch.(channels.MediaSender); ok {
-			agent.RegisterSessionMediaDelivery(sess.ID, msg.Type, msg.Channel, func(caption, path string) {
-				deliverPath := path
-				if staged, err := stageOutgoingMedia(msg.Type, path); err == nil {
-					deliverPath = staged
-				} else {
-					slog.Warn("server: failed to stage outgoing media", "type", msg.Type, "path", path, "err", err)
-				}
-				if err := ms.SendMedia(chDest, caption, deliverPath); err != nil {
-					slog.Warn("server: failed to send media to channel", "type", msg.Type, "channel", chDest, "err", err)
-				}
-			})
-		}
-		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, msg.Channel); err != nil {
+		target := store.SessionChannel{Type: msg.Type, ConfiguredID: configuredID, ID: msg.Channel}
+		sessiontarget.Register(agentName, sess.ID, target, s.channels)
+		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, configuredID, msg.Channel); err != nil {
 			slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
 		}
 	}
@@ -479,35 +463,7 @@ func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 }
 
 func stageOutgoingMedia(channelType, sourcePath string) (string, error) {
-	if strings.TrimSpace(sourcePath) == "" {
-		return "", fmt.Errorf("source path is required")
-	}
-	info, err := os.Stat(sourcePath)
-	if err != nil {
-		return "", err
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("source path is a directory")
-	}
-	dir := store.OutgoingMediaDir(channelType)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	target := filepath.Join(dir, fmt.Sprintf("%d_%s", time.Now().UnixMilli(), filepath.Base(sourcePath)))
-	src, err := os.Open(sourcePath)
-	if err != nil {
-		return "", err
-	}
-	defer src.Close() //nolint:errcheck
-	dst, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", err
-	}
-	defer dst.Close() //nolint:errcheck
-	if _, err := io.Copy(dst, src); err != nil {
-		return "", err
-	}
-	return target, nil
+	return channels.StageOutgoingMedia(channelType, sourcePath)
 }
 
 // loadSessionDeliveries reads all persisted session channel configs and
@@ -523,23 +479,7 @@ func (s *Server) loadSessionDeliveries() {
 	}
 	for _, cfg := range cfgs {
 		for _, ch := range cfg.Channels {
-			chType, chID, sessionID := ch.Type, ch.ID, cfg.SessionID
-			agent.RegisterSessionDelivery(sessionID, chType, chID, func(text string) {
-				if err := s.channels.RouteDelivery(chType, chID, text); err != nil {
-					slog.Warn("server: failed to deliver to channel", "type", chType, "id", chID, "err", err)
-				}
-			})
-			agent.RegisterSessionMediaDelivery(sessionID, chType, chID, func(caption, path string) {
-				deliverPath := path
-				if staged, err := stageOutgoingMedia(chType, path); err == nil {
-					deliverPath = staged
-				} else {
-					slog.Warn("server: failed to stage outgoing media", "type", chType, "path", path, "err", err)
-				}
-				if err := s.channels.RouteMediaDelivery(chType, chID, caption, deliverPath); err != nil {
-					slog.Warn("server: failed to deliver media to channel", "type", chType, "id", chID, "err", err)
-				}
-			})
+			sessiontarget.Register(strings.TrimPrefix(cfg.AgentID, "agent_"), cfg.SessionID, ch, s.channels)
 		}
 	}
 	if len(cfgs) > 0 {

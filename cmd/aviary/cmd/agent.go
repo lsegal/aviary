@@ -27,6 +27,8 @@ var agentListCmd = &cobra.Command{
 }
 
 var agentRunFile string
+var agentRunBare bool
+var agentRunHistory bool
 
 var agentRunCmd = &cobra.Command{
 	Use:   "run <name> [message]",
@@ -48,10 +50,15 @@ var agentRunCmd = &cobra.Command{
 		if msg == "" {
 			return fmt.Errorf("message required: pass as argument or use --file")
 		}
-		out, err := dispatcher.CallTool(cmd.Context(), "agent_run", map[string]any{
+		toolArgs := map[string]any{
 			"name":    name,
 			"message": msg,
-		})
+			"bare":    agentRunBare,
+		}
+		if cmd.Flags().Changed("history") {
+			toolArgs["history"] = agentRunHistory
+		}
+		out, err := dispatcher.CallTool(cmd.Context(), "agent_run", toolArgs)
 		if err != nil {
 			return err
 		}
@@ -94,6 +101,8 @@ var agentTemplateSyncCmd = &cobra.Command{
 
 func init() {
 	agentRunCmd.Flags().StringVar(&agentRunFile, "file", "", "read prompt from file")
+	agentRunCmd.Flags().BoolVar(&agentRunBare, "bare", false, "run without any system prompt, rules, memory, or tool preamble")
+	agentRunCmd.Flags().BoolVar(&agentRunHistory, "history", true, "include prior session history in the prompt")
 	agentCmd.AddCommand(agentListCmd, agentRunCmd, agentStopCmd, agentTemplateSyncCmd)
 	rootCmd.AddCommand(agentCmd)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -16,6 +17,7 @@ type Deps struct {
 	Agents    *agent.Manager
 	Scheduler *scheduler.Scheduler
 	Memory    *memory.Manager
+	Channels  *channels.Manager
 	Browser   *browser.Manager
 	Auth      *auth.FileStore // credential store; nil until server starts
 	Upgrade   func(context.Context, string) error

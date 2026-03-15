@@ -19,9 +19,11 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
 	"github.com/lsegal/aviary/skills"
@@ -128,7 +130,6 @@ func Register(s *sdkmcp.Server) {
 	registerMemoryTools(s)
 	registerAuthTools(s)
 	registerServerTools(s)
-	registerPluginTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)
 }
@@ -136,13 +137,15 @@ func Register(s *sdkmcp.Server) {
 // ── Agent tools ──────────────────────────────────────────────────────────────
 
 type agentRunArgs struct {
-	Name                string `json:"name"`
+	Name                string `json:"name,omitempty"`
 	Message             string `json:"message"`
 	Session             string `json:"session,omitempty"` // session name; defaults to "main"
 	SessionID           string `json:"session_id,omitempty"`
 	File                string `json:"file,omitempty"`
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
+	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
 
 type agentNameArgs struct {
@@ -151,6 +154,30 @@ type agentNameArgs struct {
 
 type agentTemplateSyncArgs struct {
 	Agent string `json:"agent"`
+}
+
+func loadSessionByID(sessionID string) (*domain.Session, error) {
+	path := store.FindSessionPath(strings.TrimSpace(sessionID))
+	if path == "" {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	lines, err := store.ReadJSONL[domain.Session](path)
+	if err != nil {
+		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
+	}
+	for _, sess := range lines {
+		if strings.TrimSpace(sess.AgentID) != "" {
+			return &sess, nil
+		}
+	}
+	return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
+}
+
+func resolveAgentRunHistory(args agentRunArgs) bool {
+	if args.History != nil {
+		return *args.History
+	}
+	return !args.Bare
 }
 
 func registerAgentTools(s *sdkmcp.Server) {
@@ -174,33 +201,40 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if d.Agents == nil {
 			return nil, struct{}{}, fmt.Errorf("agent manager not initialized; is the server running?")
 		}
-		runner, ok := d.Agents.Get(args.Name)
-		if !ok {
-			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
-		}
-		agentID := fmt.Sprintf("agent_%s", args.Name)
+
+		agentName := strings.TrimSpace(args.Name)
+		agentID := ""
 		var sess *domain.Session
 		if strings.TrimSpace(args.SessionID) != "" {
-			sessions, err := agent.NewSessionManager().List(agentID)
+			loaded, err := loadSessionByID(args.SessionID)
 			if err != nil {
-				return nil, struct{}{}, fmt.Errorf("listing sessions: %w", err)
+				return nil, struct{}{}, err
 			}
-			for _, candidate := range sessions {
-				if candidate != nil && candidate.ID == strings.TrimSpace(args.SessionID) {
-					sess = candidate
-					break
-				}
+			sess = loaded
+			agentID = strings.TrimSpace(sess.AgentID)
+			if agentID == "" {
+				return nil, struct{}{}, fmt.Errorf("session %q is missing agent metadata", args.SessionID)
 			}
-			if sess == nil {
-				return nil, struct{}{}, fmt.Errorf("session %q not found", args.SessionID)
+			if agentName != "" && agentID != fmt.Sprintf("agent_%s", agentName) {
+				return nil, struct{}{}, fmt.Errorf("session %q does not belong to agent %q", args.SessionID, agentName)
 			}
+			agentName = strings.TrimPrefix(agentID, "agent_")
 		} else {
+			if agentName == "" {
+				return nil, struct{}{}, fmt.Errorf("name is required when session_id is not provided")
+			}
+			agentID = fmt.Sprintf("agent_%s", agentName)
 			// Ensure the session exists (defaults to "main").
 			var err error
 			sess, err = agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session)
 			if err != nil {
 				return nil, struct{}{}, fmt.Errorf("initializing session: %w", err)
 			}
+		}
+
+		runner, ok := d.Agents.Get(agentName)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", agentName)
 		}
 		if isStopCommand(args.Message) {
 			stopped := agent.StopSession(sess.ID)
@@ -215,7 +249,12 @@ func registerAgentTools(s *sdkmcp.Server) {
 		progressToken := req.Params.GetProgressToken()
 		progressCount := 0.0
 		done := make(chan error, 1)
-		runner.PromptMedia(ctx, args.Message, args.MediaURL, func(e agent.StreamEvent) {
+		history := resolveAgentRunHistory(args)
+
+		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
+			Bare:    args.Bare,
+			History: &history,
+		}, func(e agent.StreamEvent) {
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)
@@ -617,6 +656,31 @@ type sessionStopArgs struct {
 	Session   string `json:"session,omitempty"`
 }
 
+type sessionSetTargetArgs struct {
+	SessionID   string `json:"session_id"`
+	ChannelType string `json:"channel_type"`
+	ChannelID   string `json:"channel_id"`
+	Target      string `json:"target"`
+}
+
+func resolveSessionTargetIdentity(sessionID string) (agentID, agentName string, err error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return "", "", fmt.Errorf("session_id is required")
+	}
+
+	sessionPath := store.FindSessionPath(sessionID)
+	if sessionPath == "" {
+		return "", "", fmt.Errorf("session %q not found", sessionID)
+	}
+	agentName = filepath.Base(filepath.Dir(filepath.Dir(sessionPath)))
+	if agentName == "" {
+		return "", "", fmt.Errorf("could not resolve agent for session %q", sessionID)
+	}
+	agentID = fmt.Sprintf("agent_%s", agentName)
+	return agentID, agentName, nil
+}
+
 func registerSessionTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "session_list",
@@ -764,6 +828,53 @@ func registerSessionTools(s *sdkmcp.Server) {
 			return text(fmt.Sprintf("session %q has no active work", sid))
 		}
 		return text(fmt.Sprintf("stopped %d active run(s) in session %q", stopped, sid))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_set_target",
+		Description: "Set the configured channel target for a session and persist it in the session sidecar",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionSetTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		sessionID := strings.TrimSpace(args.SessionID)
+		channelType := strings.TrimSpace(args.ChannelType)
+		configuredID := strings.TrimSpace(args.ChannelID)
+		targetID := strings.TrimSpace(args.Target)
+		if sessionID == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		if channelType == "" {
+			return nil, struct{}{}, fmt.Errorf("channel_type is required")
+		}
+		if configuredID == "" {
+			return nil, struct{}{}, fmt.Errorf("channel_id is required")
+		}
+		if targetID == "" {
+			return nil, struct{}{}, fmt.Errorf("target is required")
+		}
+
+		agentID, agentName, err := resolveSessionTargetIdentity(sessionID)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+
+		d := GetDeps()
+		var channelMgr *channels.Manager
+		if d != nil {
+			channelMgr = d.Channels
+		}
+		target := store.SessionChannel{
+			Type:         channelType,
+			ConfiguredID: configuredID,
+			ID:           targetID,
+		}
+		if err := sessiontarget.Set(agentID, agentName, sessionID, target, channelMgr); err != nil {
+			return nil, struct{}{}, fmt.Errorf("setting session target: %w", err)
+		}
+
+		msg := fmt.Sprintf("session %q will deliver output via %s/%s to %s", sessionID, channelType, configuredID, targetID)
+		if channelMgr == nil {
+			msg += " after the channel manager loads the sidecar"
+		}
+		return text(msg)
 	})
 }
 
@@ -1033,6 +1144,7 @@ type jobIDArgs struct {
 }
 
 type jobQueryArgs struct {
+	ID     string `json:"id,omitempty"`
 	Start  string `json:"start,omitempty"`  // YYYY-MM-DD inclusive
 	End    string `json:"end,omitempty"`    // YYYY-MM-DD inclusive
 	Status string `json:"status,omitempty"` // pending|in_progress|completed|failed
@@ -1058,7 +1170,7 @@ func registerJobTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "job_query",
-		Description: "Return job records filtered by date range and/or status",
+		Description: "Return job records filtered by id, date range, status, and/or agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_query")
 		d := GetDeps()
@@ -1079,6 +1191,9 @@ func registerJobTools(s *sdkmcp.Server) {
 		}
 		out := all[:0]
 		for _, j := range all {
+			if args.ID != "" && j.ID != args.ID {
+				continue
+			}
 			if !start.IsZero() && j.CreatedAt.Before(start) {
 				continue
 			}
@@ -1991,6 +2106,9 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := config.Save("", &cfg); err != nil {
 			return nil, struct{}{}, err
 		}
+		if err := store.RenameMatchingAgentDirs(prevCfg, &cfg); err != nil {
+			return nil, struct{}{}, err
+		}
 		if err := store.EnsureNewAgentTemplates(prevCfg, &cfg); err != nil {
 			return nil, struct{}{}, err
 		}
@@ -2136,6 +2254,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 // ── Skill tools ──────────────────────────────────────────────────────────────
 
 func registerSkillTools(s *sdkmcp.Server) {
+	registerConfiguredSkillTools(s)
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",

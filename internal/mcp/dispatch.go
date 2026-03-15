@@ -112,6 +112,22 @@ func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (strin
 	return extractText(result), nil
 }
 
+// ListTools is a convenience wrapper: resolves client, lists tools, closes client.
+func (d *Dispatcher) ListTools(ctx context.Context) ([]ToolInfo, error) {
+	c, err := d.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	tools, err := c.ListTools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing tools: %w", err)
+	}
+
+	return tools, nil
+}
+
 // isServerRunning returns true if the Aviary server PID file exists and the process is alive.
 // It imports the check from the server package without creating a circular dependency via interface.
 func (d *Dispatcher) isServerRunning() bool {

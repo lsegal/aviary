@@ -1,6 +1,9 @@
 package agent
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // deliveryRegistry maps sessionID → (channelKey → send fn) for per-session
 // outbound channel delivery. It is keyed by both session ID and channel
@@ -48,12 +51,20 @@ func HasSessionMediaDelivery(sessionID string) bool {
 	return len(deliveryRegistry.mfns[sessionID]) > 0
 }
 
+// ShouldDeliverReply reports whether text should be forwarded to any external
+// delivery target. Empty replies and the explicit NO_REPLY sentinel are
+// suppressed.
+func ShouldDeliverReply(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed != "" && trimmed != "NO_REPLY"
+}
+
 // deliverToSession calls all registered delivery functions for the session,
 // forwarding text to each associated channel. It is called by the runner
 // before emitting StreamEventDone so every code path (web UI, MCP, scheduled
 // tasks) routes completed responses back to any configured channels.
 func deliverToSession(sessionID, text string) {
-	if text == "" {
+	if !ShouldDeliverReply(text) {
 		return
 	}
 	deliveryRegistry.mu.RLock()

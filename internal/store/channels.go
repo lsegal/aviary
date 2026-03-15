@@ -9,8 +9,9 @@ import (
 
 // SessionChannel represents a delivery target for a session's responses.
 type SessionChannel struct {
-	Type string `json:"type"` // e.g. "signal", "slack"
-	ID   string `json:"id"`   // channel/conversation ID (phone number, Slack channel ID, etc.)
+	Type         string `json:"type"`                    // e.g. "signal", "slack"
+	ConfiguredID string `json:"configured_id,omitempty"` // configured channel instance ID from agent config
+	ID           string `json:"id"`                      // channel/conversation target ID (phone number, Slack channel ID, etc.)
 }
 
 // SessionChannelsConfig is the content of a session's .channels.json sidecar file.
@@ -52,20 +53,37 @@ func WriteSessionChannels(cfg *SessionChannelsConfig) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// EnsureSessionChannel adds channelType/channelID to the session's channel config
-// if it is not already present, then writes the file. It is a no-op when the
-// channel is already listed.
-func EnsureSessionChannel(agentID, sessionID, channelType, channelID string) error {
+// SetSessionChannel replaces the session's delivery config with a single target.
+func SetSessionChannel(agentID, sessionID, channelType, configuredID, channelID string) error {
+	return WriteSessionChannels(&SessionChannelsConfig{
+		SessionID: sessionID,
+		AgentID:   agentID,
+		Channels: []SessionChannel{{
+			Type:         channelType,
+			ConfiguredID: configuredID,
+			ID:           channelID,
+		}},
+	})
+}
+
+// EnsureSessionChannel adds channelType/configuredID/channelID to the session's
+// channel config if it is not already present, then writes the file. It is a
+// no-op when the channel target is already listed.
+func EnsureSessionChannel(agentID, sessionID, channelType, configuredID, channelID string) error {
 	cfg, err := ReadSessionChannels(agentID, sessionID)
 	if err != nil {
 		return err
 	}
 	for _, ch := range cfg.Channels {
-		if ch.Type == channelType && ch.ID == channelID {
+		if ch.Type == channelType && ch.ConfiguredID == configuredID && ch.ID == channelID {
 			return nil // already present
 		}
 	}
-	cfg.Channels = append(cfg.Channels, SessionChannel{Type: channelType, ID: channelID})
+	cfg.Channels = append(cfg.Channels, SessionChannel{
+		Type:         channelType,
+		ConfiguredID: configuredID,
+		ID:           channelID,
+	})
 	return WriteSessionChannels(cfg)
 }
 

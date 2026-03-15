@@ -263,6 +263,24 @@ func (m *Manager) SendOnConfiguredChannel(agentName, channelType, configuredID, 
 	return ch.Send(channelID, text)
 }
 
+// SendMediaOnConfiguredChannel sends a media file using a specific configured
+// channel instance identified by agentName/channelType/configuredID.
+func (m *Manager) SendMediaOnConfiguredChannel(agentName, channelType, configuredID, channelID, caption, filePath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := channelKey(agentName, channelType, configuredID)
+	ch, ok := m.channels[key]
+	if !ok {
+		return fmt.Errorf("configured channel %q not active", key)
+	}
+	ms, ok := ch.(MediaSender)
+	if !ok {
+		return fmt.Errorf("configured channel %q does not support media delivery", key)
+	}
+	return ms.SendMedia(channelID, caption, filePath)
+}
+
 // RouteMediaDelivery sends a media file to channelID via any running channel
 // of channelType that implements MediaSender. Returns an error if no matching
 // channel supports media or all attempts fail.
