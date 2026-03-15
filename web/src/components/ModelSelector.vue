@@ -61,29 +61,29 @@
           v-for="(opt, idx) in filteredOptions"
           :key="opt"
           :class="[
-            'cursor-pointer px-4 py-2.5 text-sm transition-colors',
+            'cursor-pointer px-4 py-2 text-sm transition-colors',
             activeIndex === idx ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'
           ]"
           @mousedown.prevent="select(opt)"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="truncate font-medium">{{ opt }}</div>
-              <div v-if="optionDetail(opt)" class="truncate text-[11px] text-gray-500 dark:text-gray-400">
+          <div class="min-w-0">
+            <div class="truncate font-medium">{{ opt }}</div>
+            <div class="mt-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+              <div v-if="optionDetail(opt)" class="min-w-0 flex-1 truncate">
                 {{ optionDetail(opt) }}
               </div>
+              <span
+                v-if="isKnownModel(opt)"
+                class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                :class="
+                  lookupModel(opt)?.supports_image_input
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                "
+              >
+                {{ modelSupportLabel(opt) }}
+              </span>
             </div>
-            <span
-              v-if="isKnownModel(opt)"
-              class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]"
-              :class="
-                lookupModel(opt)?.supports_image_input
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-              "
-            >
-              {{ modelSupportLabel(opt) }}
-            </span>
           </div>
         </div>
       </div>

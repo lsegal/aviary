@@ -68,6 +68,7 @@ export interface AgentEntry {
 }
 
 export interface AgentTask {
+	enabled?: boolean;
 	name: string;
 	prompt: string;
 	schedule?: string;
@@ -110,10 +111,7 @@ export interface SchedulerConfig {
 
 export interface SkillConfig {
 	enabled?: boolean;
-	binary?: string;
-	allowed_commands?: string[];
-	env?: Record<string, string>;
-	timeout?: string;
+	settings?: Record<string, unknown>;
 }
 
 export interface AppConfig {
@@ -180,6 +178,10 @@ export const useSettingsStore = defineStore("settings", () => {
 							// Default respondToMentions to true when absent (omitempty hides false).
 							respondToMentions: entry.respondToMentions !== false,
 						})),
+					})),
+					tasks: (agent.tasks ?? []).map((task) => ({
+						...task,
+						enabled: task.enabled !== false,
 					})),
 				})),
 				models: {

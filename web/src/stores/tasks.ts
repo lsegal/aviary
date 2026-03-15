@@ -26,6 +26,25 @@ export interface ScheduledTask {
 	target?: string;
 }
 
+function isScheduledTask(value: unknown): value is ScheduledTask {
+	if (!value || typeof value !== "object") return false;
+	const task = value as Record<string, unknown>;
+	return (
+		typeof task.id === "string" &&
+		typeof task.agent_id === "string" &&
+		typeof task.agent_name === "string" &&
+		typeof task.name === "string" &&
+		typeof task.prompt === "string" &&
+		(task.trigger_type === "cron" || task.trigger_type === "watch")
+	);
+}
+
+function parseScheduledTasks(raw: string): ScheduledTask[] {
+	const parsed = JSON.parse(raw) as unknown;
+	if (!Array.isArray(parsed)) return [];
+	return parsed.filter(isScheduledTask);
+}
+
 export const useTasksStore = defineStore("tasks", () => {
 	const tasks = ref<ScheduledTask[]>([]);
 	const jobs = ref<Job[]>([]);
@@ -40,7 +59,7 @@ export const useTasksStore = defineStore("tasks", () => {
 		tasksLoading.value = true;
 		try {
 			const raw = await callTool("task_list", {});
-			tasks.value = (JSON.parse(raw) as ScheduledTask[] | null) ?? [];
+			tasks.value = parseScheduledTasks(raw);
 		} catch {
 			tasks.value = [];
 		} finally {

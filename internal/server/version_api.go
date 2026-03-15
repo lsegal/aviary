@@ -10,14 +10,13 @@ import (
 	"github.com/lsegal/aviary/internal/update"
 )
 
+var versionCheck = update.Check
+
 func (s *Server) versionHandler(w http.ResponseWriter, _ *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	check, err := update.Check(ctx, nil)
+	check, _ := versionCheck(ctx, nil)
 	w.Header().Set("Content-Type", "application/json")
-	if err != nil && check.LatestVersion == "" {
-		w.WriteHeader(http.StatusBadGateway)
-	}
 	_ = json.NewEncoder(w).Encode(check)
 }
 

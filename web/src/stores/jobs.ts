@@ -33,6 +33,25 @@ export interface ScheduledTask {
 	target?: string;
 }
 
+function isScheduledTask(value: unknown): value is ScheduledTask {
+	if (!value || typeof value !== "object") return false;
+	const task = value as Record<string, unknown>;
+	return (
+		typeof task.id === "string" &&
+		typeof task.agent_id === "string" &&
+		typeof task.agent_name === "string" &&
+		typeof task.name === "string" &&
+		typeof task.prompt === "string" &&
+		(task.trigger_type === "cron" || task.trigger_type === "watch")
+	);
+}
+
+function parseScheduledTasks(raw: string): ScheduledTask[] {
+	const parsed = JSON.parse(raw) as unknown;
+	if (!Array.isArray(parsed)) return [];
+	return parsed.filter(isScheduledTask);
+}
+
 function fmtDate(daysAgo: number): string {
 	const d = new Date();
 	d.setDate(d.getDate() - daysAgo);
@@ -73,12 +92,19 @@ export const useJobsStore = defineStore("jobs", () => {
 		error.value = null;
 		try {
 			const raw = await callTool("task_list", {});
-			scheduledTasks.value = (JSON.parse(raw) as ScheduledTask[] | null) ?? [];
+			scheduledTasks.value = parseScheduledTasks(raw);
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
 			tasksLoading.value = false;
 		}
+	}
+
+	async function refreshAll() {
+		// Streamable HTTP MCP requests on the live server are more reliable when
+		// this page initializes sequentially instead of issuing both calls at once.
+		await fetch();
+		await fetchScheduledTasks();
 	}
 
 	async function fetchLogs(jobID: string): Promise<string> {
@@ -91,13 +117,13 @@ export const useJobsStore = defineStore("jobs", () => {
 
 	async function runTaskNow(taskID: string): Promise<Job | null> {
 		const raw = await callTool("task_run", { name: taskID });
-		await Promise.all([fetch(), fetchScheduledTasks()]);
+		await refreshAll();
 		return (JSON.parse(raw) as Job | null) ?? null;
 	}
 
 	async function runJobNow(jobID: string): Promise<Job | null> {
 		const raw = await callTool("job_run_now", { id: jobID });
-		await Promise.all([fetch(), fetchScheduledTasks()]);
+		await refreshAll();
 		return (JSON.parse(raw) as Job | null) ?? null;
 	}
 
@@ -185,6 +211,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		endDate,
 		fetch,
 		fetchScheduledTasks,
+		refreshAll,
 		fetchLogs,
 		runTaskNow,
 		runJobNow,

@@ -38,7 +38,7 @@
         <span class="text-sm text-gray-500 dark:text-gray-400">{{ filteredJobs.length }} jobs</span>
         <button
           class="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          :disabled="store.loading" @click="store.fetch()">
+          :disabled="store.loading || store.tasksLoading" @click="store.refreshAll()">
           {{ store.loading ? "Loading…" : "Refresh" }}
         </button>
       </div>
@@ -543,8 +543,7 @@ function showLabel(i: number, len: number): boolean {
 	return i === 0 || i === len - 1 || i % step === 0;
 }
 
-onMounted(() => {
-	store.fetch();
-	store.fetchScheduledTasks();
+onMounted(async () => {
+	await store.refreshAll();
 });
 </script>
