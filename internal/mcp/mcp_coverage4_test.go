@@ -102,6 +102,11 @@ func TestJobQuery_DateFilterExclusion(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, strings.Contains(out, job.ID))
 
+	// Query with id filter that doesn't match
+	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"id": "job_missing"})
+	assert.NoError(t, err)
+	assert.False(t, strings.Contains(out, job.ID))
+
 }
 
 // ── task_schedule: agent in agents but not in config ─────────────────────────
@@ -236,6 +241,11 @@ func TestJobQuery_MatchingJobs(t *testing.T) {
 
 	// Query with matching agent
 	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"agent": "bot"})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, job.ID))
+
+	// Query with matching id
+	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"id": job.ID})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, job.ID))
 

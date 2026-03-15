@@ -24,6 +24,7 @@ const CONFIG = {
 			],
 			tasks: [
 				{
+					enabled: false,
 					name: "daily-briefing",
 					schedule: "0 * * * * *",
 					prompt: "Summarize updates",
@@ -100,6 +101,12 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
 	await expect(
+		page.getByText("Disabled", { exact: true }).first(),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Enable" }).first(),
+	).toBeVisible();
+	await expect(
 		page.locator('input[placeholder="Phone number or group ID"]').first(),
 	).toHaveValue("+15551234567");
 	await expect(
@@ -162,6 +169,39 @@ test("model dropdown hides models from unauthenticated providers", async ({
 	await expect(
 		page.getByText("google/gemini-2.5-flash", { exact: true }),
 	).toHaveCount(0);
+});
+
+test("model dropdown shows Gemini models when gemini auth is present", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: CONFIG,
+		auth_list: ["anthropic:default", "gemini:oauth"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+	});
+
+	await page.goto("/settings");
+	await page.locator('input[placeholder="Select a model…"]').first().click();
+
+	await expect(
+		page.getByText("google/gemini-2.5-flash", { exact: true }),
+	).toBeVisible();
 });
 
 test("providers auth tab shows credential controls", async ({ page }) => {
@@ -264,6 +304,109 @@ test("saving settings preserves default-on signal channel checkboxes", async ({
 	await expect(page.getByLabel("Reply to replies")).toBeChecked();
 	await expect(page.getByLabel("React to emojis")).toBeChecked();
 	await expect(page.getByLabel("Send read receipts")).toBeChecked();
+});
+
+test("saving settings preserves task prompt newlines", async ({ page }) => {
+	let savedConfig: unknown = null;
+
+	await setAuthToken(page);
+	const agentFiles = new Map<string, string>([
+		["RULES.md", "# Rules"],
+		["MEMORY.md", "Remembered note"],
+		["IDENTITY.md", "# Identity"],
+	]);
+	await mockMCP(page, {
+		config_get: CONFIG,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+		agent_root_file_list: () => Array.from(agentFiles.keys()).sort(),
+		agent_root_file_read: (args) =>
+			agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_root_file_write: (args) => {
+			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
+			return "ok";
+		},
+		agent_root_file_delete: (args) => {
+			agentFiles.delete(String(args?.file ?? ""));
+			return "ok";
+		},
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	const prompt = page.getByPlaceholder("Task prompt...").first();
+	await prompt.fill("line 1\n\nline 3\n");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [
+			{
+				tasks: [
+					{
+						prompt: "line 1\n\nline 3\n",
+					},
+				],
+			},
+		],
+	});
+});
+
+test("tasks can be enabled from the settings UI", async ({ page }) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	await expect(
+		page.getByText(
+			"Disabled tasks are ignored by the scheduler until re-enabled.",
+		),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Enable" }).first().click();
+
+	await expect(
+		page.getByText("Enabled", { exact: true }).first(),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Disable" }).first(),
+	).toBeVisible();
+});
+
+test("run once renders below the task prompt in settings", async ({ page }) => {
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+
+	const prompt = page.getByPlaceholder("Task prompt...").first();
+	const runOnce = page.getByText("Run once", { exact: true }).first();
+
+	const promptBox = await prompt.boundingBox();
+	const runOnceBox = await runOnce.boundingBox();
+
+	expect(promptBox).not.toBeNull();
+	expect(runOnceBox).not.toBeNull();
+	if (!promptBox || !runOnceBox) {
+		throw new Error("Expected prompt and Run once controls to be visible");
+	}
+	expect(runOnceBox.y).toBeGreaterThan(promptBox.y + promptBox.height - 1);
 });
 
 test("agent files editor lists root markdown files and protects built-ins", async ({

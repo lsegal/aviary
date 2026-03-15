@@ -271,6 +271,34 @@ func TestVersionHandler_Emulated(t *testing.T) {
 
 }
 
+func TestVersionHandler_CheckFailureStillReturnsStatusOK(t *testing.T) {
+	orig := versionCheck
+	versionCheck = func(_ context.Context, _ *http.Client) (update.CheckResult, error) {
+		return update.CheckResult{
+			CurrentVersion: "dev",
+			Message:        "release lookup failed",
+		}, assert.AnError
+	}
+	t.Cleanup(func() {
+		versionCheck = orig
+	})
+
+	srv := New(&config.Config{}, "tok")
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	rr := httptest.NewRecorder()
+	srv.versionHandler(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var payload struct {
+		CurrentVersion string `json:"currentVersion"`
+		Message        string `json:"message"`
+	}
+	err := json.NewDecoder(rr.Body).Decode(&payload)
+	assert.NoError(t, err)
+	assert.Equal(t, "dev", payload.CurrentVersion)
+	assert.Equal(t, "release lookup failed", payload.Message)
+}
+
 func TestVersionUpgradeHandler_Emulated(t *testing.T) {
 	resetSlogForTest()
 	orig := buildinfo.Version
@@ -1382,7 +1410,7 @@ func TestServerLoadSessionDeliveries_WithData(t *testing.T) {
 	resetSlogForTest()
 
 	// Write a session channels config file so loadSessionDeliveries has something to read.
-	err := store.EnsureSessionChannel("agent_test", "sess1", "slack", "C123")
+	err := store.EnsureSessionChannel("agent_test", "sess1", "slack", "alerts", "C123")
 	assert.NoError(t, err)
 
 	cfg := &config.Config{}

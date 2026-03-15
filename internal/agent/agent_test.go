@@ -182,6 +182,47 @@ func TestParseInlineToolCalls(t *testing.T) {
 	assert.Equal(t, "Sent the Chat section screenshot.", trailing)
 }
 
+func TestParseTaggedToolCalls(t *testing.T) {
+	input := `<tool_call>{"tool":"browser_open","arguments":{"url":"https://www.timeout.com/los-angeles/things-to-do"}}</tool_call>Continuing after tool.`
+
+	calls, trailing, ok := parseTaggedToolCalls(input)
+	assert.True(t, ok)
+	assert.Len(t, calls, 1)
+	assert.Equal(t, "browser_open", calls[0].Tool)
+	assert.Equal(t, "https://www.timeout.com/los-angeles/things-to-do", calls[0].Arguments["url"])
+	assert.Equal(t, "Continuing after tool.", trailing)
+}
+
+func TestParseRecoveredToolCalls_FromMixedText(t *testing.T) {
+	input := `I'll search systematically across sources. First, let me get Time Out LA's current events.
+{"tool":"browser_open","arguments":{"url":"https://www.timeout.com/los-angeles/things-to-do"}}
+Then I'll continue.`
+
+	calls, trailing, ok := parseRecoveredToolCalls(input)
+	assert.True(t, ok)
+	assert.Len(t, calls, 1)
+	assert.Equal(t, "browser_open", calls[0].Tool)
+	assert.Equal(t, "https://www.timeout.com/los-angeles/things-to-do", calls[0].Arguments["url"])
+	assert.Contains(t, trailing, "I'll search systematically across sources.")
+	assert.Contains(t, trailing, "Then I'll continue.")
+	assert.NotContains(t, trailing, `"tool":"browser_open"`)
+}
+
+func TestParseRecoveredToolCalls_MultipleEmbeddedCalls(t *testing.T) {
+	input := `Checking memory first.
+{"tool":"memory_search","arguments":{"agent":"assistant","query":"things-to-do-seen"}}
+Now searching the web.
+{"tool":"web_search","arguments":{"query":"Time Out LA events this week next 7 days","count":10}}`
+
+	calls, trailing, ok := parseRecoveredToolCalls(input)
+	assert.True(t, ok)
+	assert.Len(t, calls, 2)
+	assert.Equal(t, "memory_search", calls[0].Tool)
+	assert.Equal(t, "web_search", calls[1].Tool)
+	assert.Contains(t, trailing, "Checking memory first.")
+	assert.Contains(t, trailing, "Now searching the web.")
+}
+
 func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
 		return &fakeToolClient{tools: []ToolInfo{{Name: "agent_update", Description: "Update an agent"}}}, nil
@@ -226,6 +267,51 @@ func TestAgentRunner_RetryToollessRefusalOnce(t *testing.T) {
 	assert.GreaterOrEqual(t, provider.callCount(), 2)
 	assert.False(t, strings.Contains(strings.ToLower(gotText.String()), "don't have direct access"))
 
+}
+
+func TestAgentRunner_RetryToollessSendRefusalOnce(t *testing.T) {
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return &fakeToolClient{tools: []ToolInfo{{Name: "task_schedule", Description: "Schedule a task"}}}, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "I can't send messages to external apps/channels from here. I can draft the exact message text for you to copy/paste: hi"}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: "hi"}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_assistant", Name: "assistant", Model: "anthropic/claude"},
+		&config.AgentConfig{
+			Name:  "assistant",
+			Model: "anthropic/claude",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetFull,
+			},
+		},
+		provider,
+		nil,
+		nil,
+	)
+
+	var gotText strings.Builder
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "say hi in this chat", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			gotText.WriteString(e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError {
+			done <- struct{}{}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+	assert.GreaterOrEqual(t, provider.callCount(), 2)
+	assert.Equal(t, "hi", gotText.String())
 }
 
 func TestAgentRunner_ExecutesInlineToolBlocks(t *testing.T) {
@@ -291,6 +377,179 @@ func TestAgentRunner_ExecutesInlineToolBlocks(t *testing.T) {
 	assert.Contains(t, gotText.String(), "Which one next?")
 }
 
+func TestAgentRunner_RecoversEmbeddedToolCallsFromMixedText(t *testing.T) {
+	toolClient := &recordingToolClient{
+		tools: []ToolInfo{
+			{Name: "memory_search", Description: "Search memory"},
+			{Name: "web_search", Description: "Search the web"},
+			{Name: "browser_open", Description: "Open a browser tab"},
+		},
+		results: map[string]string{
+			"memory_search": "[]",
+			"web_search":    `[{"title":"Time Out Los Angeles"}]`,
+			"browser_open":  `{"tab_id":"tab123"}`,
+		},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{
+			Type: llm.EventTypeText,
+			Text: `I'll run a comprehensive LA things-to-do discovery check for the next 7 days.
+{"tool":"memory_search","arguments":{"agent":"assistant","query":"things-to-do-seen"}}
+Now let me begin the discovery process by searching for events across multiple sources.
+{"tool":"web_search","arguments":{"query":"Time Out LA events this week next 7 days","count":10}}
+Let me start searching systematically across sources. First, let me get Time Out LA's current events.
+{"tool":"browser_open","arguments":{"url":"https://www.timeout.com/los-angeles/things-to-do"}}`,
+		}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: "I found the current listings and can continue from here."}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_mixed_tools", Name: "assistant", Model: "test/model"},
+		&config.AgentConfig{Name: "assistant", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	var gotText strings.Builder
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "find things to do in LA", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			gotText.WriteString(e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.GreaterOrEqual(t, provider.callCount(), 2)
+	assert.Len(t, toolClient.calls, 3)
+	assert.Equal(t, "memory_search", toolClient.calls[0].Tool)
+	assert.Equal(t, "web_search", toolClient.calls[1].Tool)
+	assert.Equal(t, "browser_open", toolClient.calls[2].Tool)
+	assert.Equal(t, "I found the current listings and can continue from here.", gotText.String())
+}
+
+func TestAgentRunner_DoesNotLeakChunkedMixedToolText(t *testing.T) {
+	toolClient := &recordingToolClient{
+		tools: []ToolInfo{{Name: "note_write", Description: "Write a note"}},
+		results: map[string]string{
+			"note_write": "saved",
+		},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{
+			{Type: llm.EventTypeText, Text: "<tool_call>"},
+			{Type: llm.EventTypeText, Text: `{"tool":"note_write","arguments":{"path":"notes/things-to-do-seen.md","content":"x"}}`},
+			{Type: llm.EventTypeText, Text: "</tool_call>"},
+			{Type: llm.EventTypeDone},
+		},
+		{{Type: llm.EventTypeText, Text: "Done."}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_chunked_mixed_tools", Name: "assistant", Model: "test/model"},
+		&config.AgentConfig{Name: "assistant", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	var gotText strings.Builder
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "update the notes", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			gotText.WriteString(e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.Len(t, toolClient.calls, 1)
+	assert.Equal(t, "note_write", toolClient.calls[0].Tool)
+	assert.Equal(t, "Done.", gotText.String())
+	assert.NotContains(t, gotText.String(), `"tool":"note_write"`)
+}
+
+func TestAgentRunner_StreamsPlainTextWhenNoToolTagAppears(t *testing.T) {
+	toolClient := &recordingToolClient{
+		tools: []ToolInfo{{Name: "note_write", Description: "Write a note"}},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{
+			{Type: llm.EventTypeText, Text: "First chunk. "},
+			{Type: llm.EventTypeText, Text: "Second chunk."},
+			{Type: llm.EventTypeDone},
+		},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_plain_stream_tools", Name: "assistant", Model: "test/model"},
+		&config.AgentConfig{Name: "assistant", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	var chunks []string
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "say hello", func(e StreamEvent) {
+		if e.Type == StreamEventText {
+			chunks = append(chunks, e.Text)
+		}
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.Empty(t, toolClient.calls)
+	assert.Equal(t, "First chunk. Second chunk.", strings.Join(chunks, ""))
+	assert.NotEmpty(t, chunks)
+}
+
 func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	setTestDataDir(t)
 
@@ -352,6 +611,196 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	assert.Contains(t, lines[len(lines)-2].Content, `"name":"web_search"`)
 	assert.Equal(t, domain.MessageRoleAssistant, lines[len(lines)-1].Role)
 	assert.Equal(t, "final answer", lines[len(lines)-1].Content)
+}
+
+func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+	toolClientCalls := 0
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		toolClientCalls++
+		return &fakeToolClient{tools: []ToolInfo{{Name: "agent_update", Description: "Update an agent"}}}, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	rulesPath := store.AgentRulesPath("agent_bare")
+	err := os.MkdirAll(filepath.Dir(rulesPath), 0o700)
+	assert.NoError(t, err)
+	err = os.WriteFile(rulesPath, []byte("Follow local rules."), 0o600)
+	assert.NoError(t, err)
+
+	mem := memory.New()
+	err = mem.Append("agent_bare", "sess-bare", "assistant", "Remember this later.")
+	assert.NoError(t, err)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_bare", Name: "bare", Model: "test/model"},
+		&config.AgentConfig{Name: "bare", Model: "test/model"},
+		provider,
+		nil,
+		mem,
+	)
+
+	done := make(chan struct{}, 1)
+	runner.PromptWithOverrides(context.Background(), "hello", RunOverrides{Bare: true}, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		assert.Equal(t, "", provider.requests[0].System)
+	}
+	assert.Equal(t, 0, toolClientCalls)
+}
+
+func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_history_off", Name: "history-off", Model: "test/model"},
+		&config.AgentConfig{Name: "history-off", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_off", "main")
+	assert.NoError(t, err)
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", "", "")
+
+	done := make(chan struct{}, 1)
+	history := false
+	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "new question", RunOverrides{History: &history}, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		assert.Len(t, provider.requests[0].Messages, 1)
+		assert.Equal(t, "new question", provider.requests[0].Messages[0].Content)
+	}
+}
+
+func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_history_on", Name: "history-on", Model: "test/model"},
+		&config.AgentConfig{Name: "history-on", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_on", "main")
+	assert.NoError(t, err)
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", "", "")
+
+	done := make(chan struct{}, 1)
+	history := true
+	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "new question", RunOverrides{History: &history}, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		assert.Len(t, provider.requests[0].Messages, 3)
+		assert.Equal(t, "earlier question", provider.requests[0].Messages[0].Content)
+		assert.Equal(t, "earlier answer", provider.requests[0].Messages[1].Content)
+		assert.Equal(t, "new question", provider.requests[0].Messages[2].Content)
+	}
+}
+
+func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return &fakeToolClient{tools: []ToolInfo{{Name: "agent_update", Description: "Update an agent"}}}, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	rulesPath := store.AgentRulesPath("agent_default")
+	err := os.MkdirAll(filepath.Dir(rulesPath), 0o700)
+	assert.NoError(t, err)
+	err = os.WriteFile(rulesPath, []byte("Follow local rules."), 0o600)
+	assert.NoError(t, err)
+
+	mem := memory.New()
+	err = mem.Append("agent_default", "sess-default", "assistant", "Remember this later.")
+	assert.NoError(t, err)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_default", Name: "default", Model: "test/model"},
+		&config.AgentConfig{Name: "default", Model: "test/model"},
+		provider,
+		nil,
+		mem,
+	)
+
+	done := make(chan struct{}, 1)
+	runner.Prompt(context.Background(), "hello", func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		assert.Contains(t, provider.requests[0].System, "<rules>")
+		assert.Contains(t, provider.requests[0].System, "<available_tools>")
+	}
 }
 
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
@@ -1104,8 +1553,21 @@ func TestRegisterSessionDelivery(t *testing.T) {
 	deliverToSession("test-sess", "")
 	assert.Equal(t, "", received)
 
+	// Sentinel NO_REPLY should not call delivery function.
+	received = ""
+	deliverToSession("test-sess", "NO_REPLY")
+	assert.Equal(t, "", received)
+
 	// Unknown session should not panic.
 	deliverToSession("unknown-sess", "no delivery")
+}
+
+func TestShouldDeliverReply(t *testing.T) {
+	assert.False(t, ShouldDeliverReply(""))
+	assert.False(t, ShouldDeliverReply(" \n\t "))
+	assert.False(t, ShouldDeliverReply("NO_REPLY"))
+	assert.True(t, ShouldDeliverReply("no_reply"))
+	assert.True(t, ShouldDeliverReply("hello"))
 }
 
 func TestRegisterSessionDelivery_Idempotent(t *testing.T) {
@@ -1589,6 +2051,11 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	assert.True(t, strings.Contains(out, "tool_b"))
 	assert.True(t, strings.Contains(out, "note_write"))
 	assert.True(t, strings.Contains(out, "memory_store only"))
+	assert.True(t, strings.Contains(out, "your final answer is already delivered to that chat/channel"))
+	assert.True(t, strings.Contains(out, "<tool_call>"))
+	assert.True(t, strings.Contains(out, "Do not use <function_calls>"))
+	assert.True(t, strings.Contains(out, "Valid example: <tool_call>"))
+	assert.False(t, strings.Contains(out, "ONLY valid JSON"))
 
 	// Without agent name.
 	out2 := buildToolSystemPrompt("", tools, "")

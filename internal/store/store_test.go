@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // TestDataDir_XDG verifies that when XDG_CONFIG_HOME is set, DataDir returns
@@ -447,6 +449,58 @@ func TestSyncAgentTemplate_AddsMissingFiles(t *testing.T) {
 	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
+}
+
+func TestRenameMatchingAgentDirs(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	oldDir := AgentDir("agent_old-name")
+	assert.NoError(t, os.MkdirAll(filepath.Join(oldDir, "sessions"), 0o700))
+	assert.NoError(t, os.WriteFile(filepath.Join(oldDir, "MEMORY.md"), []byte("custom memory"), 0o600))
+
+	prev := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:   "old-name",
+			Model:  "anthropic/claude-sonnet-4-5",
+			Memory: "private",
+		}},
+	}
+	next := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:   "new-name",
+			Model:  "anthropic/claude-sonnet-4-5",
+			Memory: "private",
+		}},
+	}
+
+	assert.NoError(t, RenameMatchingAgentDirs(prev, next))
+
+	newDir := AgentDir("agent_new-name")
+	assert.NoDirExists(t, oldDir)
+	assert.FileExists(t, filepath.Join(newDir, "MEMORY.md"))
+	content, err := os.ReadFile(filepath.Join(newDir, "MEMORY.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, "custom memory", string(content))
+}
+
+func TestRenameMatchingAgentDirs_SkipsWhenTargetExists(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	oldDir := AgentDir("agent_old-name")
+	newDir := AgentDir("agent_new-name")
+	assert.NoError(t, os.MkdirAll(oldDir, 0o700))
+	assert.NoError(t, os.MkdirAll(newDir, 0o700))
+
+	prev := &config.Config{Agents: []config.AgentConfig{{Name: "old-name", Model: "m"}}}
+	next := &config.Config{Agents: []config.AgentConfig{{Name: "new-name", Model: "m"}}}
+
+	assert.NoError(t, RenameMatchingAgentDirs(prev, next))
+	assert.DirExists(t, oldDir)
+	assert.DirExists(t, newDir)
 }
 
 func TestSyncAgentTemplate_ReplacesEmptyExistingFile(t *testing.T) {

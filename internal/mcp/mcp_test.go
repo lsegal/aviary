@@ -355,7 +355,6 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 	defer c.Close() //nolint:errcheck
 
 	res, err := c.CallTool(context.Background(), "agent_run", map[string]any{
-		"name":       "assistant",
 		"message":    "hi",
 		"session_id": sess.ID,
 	})
@@ -384,6 +383,57 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, found)
+}
+
+func TestAgentRun_RejectsSessionIDAgentMismatch(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	require.NoError(t, store.EnsureDirs())
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "assistant", Model: "stub"},
+			{Name: "other", Model: "stub"},
+		},
+	})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().CreateWithName("agent_assistant", "signal:+15551234567")
+	require.NoError(t, err)
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "agent_run", map[string]any{
+		"name":       "other",
+		"message":    "hi",
+		"session_id": sess.ID,
+	}, "does not belong to agent")
+}
+
+func TestResolveAgentRunHistory(t *testing.T) {
+	t.Run("default true", func(t *testing.T) {
+		assert.True(t, resolveAgentRunHistory(agentRunArgs{}))
+	})
+
+	t.Run("bare disables history by default", func(t *testing.T) {
+		assert.False(t, resolveAgentRunHistory(agentRunArgs{Bare: true}))
+	})
+
+	t.Run("explicit history false wins", func(t *testing.T) {
+		history := false
+		assert.False(t, resolveAgentRunHistory(agentRunArgs{History: &history}))
+	})
+
+	t.Run("explicit history true overrides bare", func(t *testing.T) {
+		history := true
+		assert.True(t, resolveAgentRunHistory(agentRunArgs{Bare: true, History: &history}))
+	})
 }
 
 func TestSessionStop_NoActiveWork(t *testing.T) {
@@ -1068,11 +1118,13 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 
 	assert.False(t, hasTool(gogcliToolName))
 	assert.False(t, hasTool(himalayaToolName))
+	assert.False(t, hasTool(notionToolName))
 
 	enabledCfg := config.Config{
 		Skills: map[string]config.SkillConfig{
 			"gogcli":   {Enabled: true},
 			"himalaya": {Enabled: true},
+			"notion":   {Enabled: true},
 		},
 	}
 	rawEnabledCfg, err := json.Marshal(enabledCfg)
@@ -1083,6 +1135,7 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, hasTool(gogcliToolName))
 	assert.True(t, hasTool(himalayaToolName))
+	assert.True(t, hasTool(notionToolName))
 
 	rawDisabledCfg, err := json.Marshal(config.Config{})
 	require.NoError(t, err)
@@ -1092,6 +1145,7 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, hasTool(gogcliToolName))
 	assert.False(t, hasTool(himalayaToolName))
+	assert.False(t, hasTool(notionToolName))
 }
 
 func TestServerVersionTools_Emulated(t *testing.T) {
@@ -1573,6 +1627,66 @@ func TestExecTool_NonShellAndShellModes(t *testing.T) {
 	assert.Contains(t, out, `"stdout"`)
 }
 
+func TestRunExecCommand_LoadsAgentDotEnv(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	require.NoError(t, store.EnsureDirs())
+	require.NoError(t, os.MkdirAll(store.AgentDir("agent_bot"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("agent_bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\n"), 0o600))
+
+	origExecCommandContext := execCommandContext
+	t.Cleanup(func() { execCommandContext = origExecCommandContext })
+	execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, os.Args[0], "-test.run=TestCommandEnvHelperProcess", "--", "AVIARY_TEST_ENV")
+	}
+
+	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	result, err := runExecCommand(ctx, &config.ExecPermissionsConfig{}, execArgs{Command: "helper"})
+	require.NoError(t, err)
+	assert.Contains(t, result.Stdout, "AVIARY_TEST_ENV=from-dotenv")
+}
+
+func TestRunGogCLI_LoadsAgentDotEnvAndRuntimeEnv(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	require.NoError(t, store.EnsureDirs())
+	require.NoError(t, os.MkdirAll(store.AgentDir("agent_bot"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("agent_bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\nAVIARY_TEST_SKILL=from-dotenv\n"), 0o600))
+	require.NoError(t, config.Save("", &config.Config{
+		Skills: map[string]config.SkillConfig{
+			"gogcli": {Enabled: true},
+		},
+	}))
+
+	origLookPath := gogLookPath
+	origCommand := gogCommand
+	t.Cleanup(func() {
+		gogLookPath = origLookPath
+		gogCommand = origCommand
+	})
+	gogLookPath = func(_ string) (string, error) { return "/fake/gog", nil }
+	gogCommand = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(
+			ctx,
+			os.Args[0],
+			"-test.run=TestCommandEnvHelperProcess",
+			"--",
+			"AVIARY_TEST_ENV",
+			"AVIARY_TEST_SKILL",
+			"GOG_ENABLE_COMMANDS",
+		)
+	}
+
+	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	out, err := runGogCLI(ctx, gogcliRunArgs{Command: []string{"gmail", "list"}})
+	require.NoError(t, err)
+	assert.Contains(t, out, "AVIARY_TEST_ENV=from-dotenv")
+	assert.Contains(t, out, "AVIARY_TEST_SKILL=from-dotenv")
+	assert.Contains(t, out, "GOG_ENABLE_COMMANDS=gmail")
+}
+
 func TestExecTool_OrderedAllowlist(t *testing.T) {
 	d, ctx := setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{
 		AllowedCommands: []string{"*", "!go env *", "go env GOOS"},
@@ -1585,6 +1699,24 @@ func TestExecTool_OrderedAllowlist(t *testing.T) {
 	out, err = d.CallTool(ctx, "exec", map[string]any{"command": "go env GOOS"})
 	require.NoError(t, err)
 	assert.Contains(t, out, `"exit_code": 0`)
+}
+
+func TestCommandEnvHelperProcess(_ *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	for _, name := range os.Args {
+		if name == "--" {
+			continue
+		}
+		if strings.HasPrefix(name, "-test.") {
+			continue
+		}
+		if value, ok := os.LookupEnv(name); ok {
+			_, _ = fmt.Fprintf(os.Stdout, "%s=%s\n", name, value)
+		}
+	}
+	os.Exit(0)
 }
 
 func TestJobQueryTool(t *testing.T) {
@@ -1638,6 +1770,15 @@ func TestJobQueryTool(t *testing.T) {
 
 	// job_query with agent filter.
 	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"agent": "bot"})
+	assert.NoError(t, err)
+
+	outTrimmed = strings.TrimSpace(out)
+	if outTrimmed != "null" {
+		assert.True(t, strings.HasPrefix(outTrimmed, "["))
+	}
+
+	// job_query with id filter.
+	out, err = d.CallTool(context.Background(), "job_query", map[string]any{"id": "job-test"})
 	assert.NoError(t, err)
 
 	outTrimmed = strings.TrimSpace(out)
@@ -1988,6 +2129,62 @@ func TestRunHimalayaCLI_MockBinary(t *testing.T) {
 	assert.Equal(t, []string{"--output", "json", "--config", "mail.toml", "envelope", "list"}, capturedArgs)
 }
 
+func TestRunNotionCLI_CommandRequired(t *testing.T) {
+	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "command is required"))
+}
+
+func TestRunNotionCLI_DisallowedCommand(t *testing.T) {
+	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"workspace"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not allowed"))
+}
+
+func TestRunNotionCLI_OnlyFlags(t *testing.T) {
+	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"--json"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "command is required"))
+}
+
+func TestRunNotionCLI_BinaryNotFound(t *testing.T) {
+	origLookPath := notionLookPath
+	t.Cleanup(func() { notionLookPath = origLookPath })
+	notionLookPath = func(_ string) (string, error) {
+		return "", fmt.Errorf("not found in PATH")
+	}
+	origBin := os.Getenv("AVIARY_NOTION_BIN")
+	t.Cleanup(func() { os.Setenv("AVIARY_NOTION_BIN", origBin) }) //nolint:errcheck
+	os.Unsetenv("AVIARY_NOTION_BIN")                              //nolint:errcheck
+
+	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"search", "docs"}})
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not found"))
+}
+
+func TestRunNotionCLI_MockBinary(t *testing.T) {
+	origCmd := notionCommand
+	t.Cleanup(func() { notionCommand = origCmd })
+	origLookPath := notionLookPath
+	t.Cleanup(func() { notionLookPath = origLookPath })
+
+	var capturedArgs []string
+	notionLookPath = func(_ string) (string, error) { return "/fake/notion-cli", nil }
+	notionCommand = func(_ context.Context, _ string, args ...string) *exec.Cmd {
+		capturedArgs = args
+		return exec.Command("go", "env", "GOMOD")
+	}
+
+	out, err := runNotionCLI(context.Background(), notionRunArgs{
+		Command: []string{"--json", "page", "list"},
+	})
+	if err != nil {
+		t.Skipf("skipping notion mock binary test: %v", err)
+	}
+	assert.NotEqual(t, "", out)
+	assert.Equal(t, []string{"--json", "page", "list"}, capturedArgs)
+}
+
 func TestSessionCreateAndMessages(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -2017,6 +2214,44 @@ func TestSessionCreateAndMessages(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(listOut, "agent_bot"))
 
+}
+
+func TestSessionSetTargetPersistsSidecar(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	require.NoError(t, err)
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "session_set_target", map[string]any{
+		"session_id":   sess.ID,
+		"channel_type": "slack",
+		"channel_id":   "alerts",
+		"target":       "C123",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, sess.ID)
+	assert.Contains(t, out, "slack/alerts")
+
+	cfg, err := store.ReadSessionChannels("agent_bot", sess.ID)
+	require.NoError(t, err)
+	require.Len(t, cfg.Channels, 1)
+	assert.Equal(t, "slack", cfg.Channels[0].Type)
+	assert.Equal(t, "alerts", cfg.Channels[0].ConfiguredID)
+	assert.Equal(t, "C123", cfg.Channels[0].ID)
 }
 
 func TestAgentStop_NotFound(t *testing.T) {
@@ -2245,4 +2480,45 @@ func TestConfigSave_AddAgentCopiesTemplate(t *testing.T) {
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
 	assert.DirExists(t, filepath.Join(agentDir, "jobs"))
+}
+
+func TestConfigSave_RenamesAgentDirWhenNameChanges(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	SetDeps(&Deps{Agents: mgr})
+
+	oldDir := store.AgentDir("bot")
+	assert.NoError(t, os.MkdirAll(oldDir, 0o700))
+	assert.NoError(t, os.WriteFile(filepath.Join(oldDir, "MEMORY.md"), []byte("custom memory"), 0o600))
+	assert.NoError(t, config.Save("", &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-sonnet-4-5",
+		}},
+	}))
+
+	d := NewDispatcher("https://localhost:16677", "")
+	cfgJSON := `{"agents":[{"name":"renamed-bot","model":"anthropic/claude-sonnet-4-5"}]}`
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": cfgJSON})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "saved")
+
+	newDir := store.AgentDir("renamed-bot")
+	assert.NoDirExists(t, oldDir)
+	assert.FileExists(t, filepath.Join(newDir, "MEMORY.md"))
+	content, err := os.ReadFile(filepath.Join(newDir, "MEMORY.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, "custom memory", string(content))
 }

@@ -46,6 +46,12 @@ func TestManager_UserDataDirDefault(t *testing.T) {
 
 }
 
+func TestIsIgnorableChromeDPError(t *testing.T) {
+	assert.True(t, isIgnorableChromeDPError(`could not unmarshal event: json: cannot unmarshal JSON string into Go network.InitiatorType within "/initiator/type": unknown InitiatorType value: FedCM`))
+	assert.False(t, isIgnorableChromeDPError(`could not unmarshal event: unknown ResourceType value: NewThing`))
+	assert.False(t, isIgnorableChromeDPError(`context deadline exceeded`))
+}
+
 // cancelledCtx returns a context that is already cancelled, suitable for
 // tests that need to trigger context-propagation paths without real Chrome.
 func cancelledCtx() context.Context {

@@ -14,6 +14,7 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ── RemoteClient (proxy.go) ──────────────────────────────────────────────────
@@ -164,9 +165,16 @@ func TestLogToolCall_WithArgs(_ *testing.T) {
 	logToolCall("remote", "agent_run", map[string]any{"name": "bot", "token": "secret"})
 }
 
-// ── registerPluginTools coverage ─────────────────────────────────────────────
+// ── dynamic skill runtime coverage ───────────────────────────────────────────
 
 func TestSkillGogcliTool_ViaDispatcher(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+	require.NoError(t, config.Save("", &config.Config{
+		Skills: map[string]config.SkillConfig{"gogcli": {Enabled: true}},
+	}))
+
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
 	prevChecker := checkServerRunning
@@ -176,12 +184,17 @@ func TestSkillGogcliTool_ViaDispatcher(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	// skill_gogcli should fail gracefully when gog binary is not available
-	// This exercises registerPluginTools -> runGogCLI path
 	toolCallContains(t, d, "skill_gogcli", map[string]any{"command": []any{"gmail", "list"}}, "")
 }
 
 func TestSkillHimalayaTool_ViaDispatcher(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+	require.NoError(t, config.Save("", &config.Config{
+		Skills: map[string]config.SkillConfig{"himalaya": {Enabled: true}},
+	}))
+
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
 	prevChecker := checkServerRunning
@@ -191,8 +204,27 @@ func TestSkillHimalayaTool_ViaDispatcher(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	// skill_himalaya should fail gracefully when himalaya is unavailable or not enabled.
-	toolCallContains(t, d, himalayaToolName, map[string]any{"command": []any{"envelope", "list"}}, "")
+	toolCallContains(t, d, "skill_himalaya", map[string]any{"command": []any{"envelope", "list"}}, "")
+}
+
+func TestSkillNotionTool_ViaDispatcher(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+	require.NoError(t, config.Save("", &config.Config{
+		Skills: map[string]config.SkillConfig{"notion": {Enabled: true}},
+	}))
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	toolCallContains(t, d, "skill_notion", map[string]any{"command": []any{"search", "docs"}}, "")
 }
 
 // ── ensureInProcessDeps path ──────────────────────────────────────────────────
@@ -302,6 +334,26 @@ func TestSessionStop_NeitherSessionNorAgent(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 	// No session_id and no agent → error
 	toolCallContains(t, d, "session_stop", map[string]any{}, "required")
+}
+
+func TestAgentRun_NoNameWithoutSessionID(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "agent_run", map[string]any{"message": "hi"}, "name is required")
 }
 
 // ── isSensitiveKey additional cases ──────────────────────────────────────────

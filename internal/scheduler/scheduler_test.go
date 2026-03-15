@@ -144,6 +144,64 @@ func TestJobQueue_RecoverStuck(t *testing.T) {
 
 }
 
+func TestJobQueue_RecoverStuck_RecoversRecentInProgress(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	now := time.Now()
+	job := domain.Job{
+		ID:         newID("job"),
+		TaskID:     "taskRecent",
+		AgentID:    "agent_recent",
+		AgentName:  "recent",
+		Prompt:     "run",
+		Status:     domain.JobStatusInProgress,
+		Attempts:   1,
+		MaxRetries: 3,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LockedAt:   &now,
+	}
+	err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job)
+	assert.NoError(t, err)
+
+	q.RecoverStuck()
+
+	recovered, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusPending, recovered.Status)
+	assert.Nil(t, recovered.LockedAt)
+}
+
+func TestJobQueue_RecoverStuck_ExhaustedJobFailsInsteadOfRequeueing(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	now := time.Now()
+	job := domain.Job{
+		ID:         newID("job"),
+		TaskID:     "taskExhausted",
+		AgentID:    "agent_exhausted",
+		AgentName:  "exhausted",
+		Prompt:     "run",
+		Status:     domain.JobStatusInProgress,
+		Attempts:   1,
+		MaxRetries: 1,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LockedAt:   &now,
+	}
+	err := store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job)
+	assert.NoError(t, err)
+
+	q.RecoverStuck()
+
+	recovered, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	assert.NoError(t, err)
+	assert.Equal(t, domain.JobStatusFailed, recovered.Status)
+	assert.Nil(t, recovered.LockedAt)
+}
+
 func TestCronRunner_AddRemove(t *testing.T) {
 	r := NewCronRunner()
 	called := make(chan struct{}, 1)
@@ -249,6 +307,33 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 	assert.Len(t, s.cron.ids, 0)
 	assert.Len(t, s.watch.handlers, 0)
 
+}
+
+func TestScheduler_Reconcile_ResolvesRelativeWatchAgainstAgentDir(t *testing.T) {
+	setupSchedulerDataDir(t)
+	mgr := agent.NewManager(nil)
+
+	s, err := New(mgr, 1)
+	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{
+			{
+				Name: "alpha",
+				Tasks: []config.TaskConfig{
+					{Name: "watchTask", Watch: filepath.Join("docs", "*.md"), Prompt: "watch"},
+				},
+			},
+		},
+	}
+
+	s.Reconcile(cfg)
+
+	entry, ok := s.watch.handlers["alpha/watchTask"]
+	assert.True(t, ok)
+	assert.Equal(t, filepath.Join(store.AgentDir("agent_alpha"), "docs", "*.md"), entry.glob)
+	assert.Equal(t, filepath.Join("docs", "*.md"), s.tasks["alpha/watchTask"].Watch)
 }
 
 func TestScheduler_RunOnceStartAt_EnqueuesSingleJob(t *testing.T) {
@@ -400,6 +485,46 @@ func TestScheduler_ListTasksReturnsConfiguredDefinitions(t *testing.T) {
 
 }
 
+func TestScheduler_ReconcileIgnoresDisabledTasks(t *testing.T) {
+	setupSchedulerDataDir(t)
+	mgr := agent.NewManager(nil)
+
+	s, err := New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+
+	disabled := false
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "alpha",
+			Tasks: []config.TaskConfig{
+				{
+					Name:     "enabled",
+					Schedule: "*/1 * * * * *",
+					Prompt:   "run",
+				},
+				{
+					Name:     "disabled",
+					Schedule: "*/1 * * * * *",
+					Prompt:   "skip",
+					Enabled:  &disabled,
+				},
+			},
+		}},
+	}
+	s.Reconcile(cfg)
+
+	assert.Contains(t, s.tasks, "alpha/enabled")
+	assert.NotContains(t, s.tasks, "alpha/disabled")
+	assert.Contains(t, s.cron.ids, "alpha/enabled")
+	assert.NotContains(t, s.cron.ids, "alpha/disabled")
+
+	tasks := s.ListTasks()
+	assert.Len(t, tasks, 1)
+	assert.Equal(t, "alpha/enabled", tasks[0].ID)
+}
+
 func TestWorkerPool_ExecuteJob(t *testing.T) {
 	setupSchedulerDataDir(t)
 	mgr := agent.NewManager(nil)
@@ -452,6 +577,86 @@ func TestWorkerPool_ExecuteJob_RepliesToSessionDelivery(t *testing.T) {
 	assert.Contains(t, string(data), "\"role\":\"assistant\"")
 	assert.Contains(t, string(data), "no LLM provider configured")
 
+}
+
+func TestWorkerPool_TaskDeliveryGuardSuppressesNoReply(t *testing.T) {
+	assert.False(t, agent.ShouldDeliverReply("NO_REPLY"))
+	assert.False(t, agent.ShouldDeliverReply("   "))
+	assert.True(t, agent.ShouldDeliverReply("hello"))
+}
+
+func TestWorkerPool_ExecuteJob_ReusesPersistedSession(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	p := NewWorkerPool(NewJobQueue(), mgr, 1)
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_alpha", "resume")
+	assert.NoError(t, err)
+
+	job := &domain.Job{
+		ID:        "job_resume",
+		TaskID:    "alpha/daily",
+		AgentID:   "agent_alpha",
+		AgentName: "alpha",
+		SessionID: sess.ID,
+		Prompt:    "finish report",
+		Attempts:  2,
+	}
+	err = p.executeJob(context.Background(), job)
+	assert.NoError(t, err)
+
+	sessions, err := agent.NewSessionManager().List("agent_alpha")
+	assert.NoError(t, err)
+	assert.Len(t, sessions, 1)
+	assert.Equal(t, sess.ID, sessions[0].ID)
+
+	data, err := os.ReadFile(store.SessionPath("agent_alpha", sess.ID))
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "Continue the unfinished scheduled task")
+	assert.Contains(t, string(data), "no LLM provider configured")
+}
+
+func TestJobSessionName_UsesStableTaskName(t *testing.T) {
+	assert.Equal(t, "daily-report", jobSessionName(&domain.Job{TaskID: "alpha/daily-report"}))
+	assert.Equal(t, "follow-up", jobSessionName(&domain.Job{TaskID: "oneshot/follow-up"}))
+	assert.Equal(t, "adhoc", jobSessionName(&domain.Job{TaskID: "adhoc"}))
+}
+
+func TestWorkerPool_ExecuteJob_UsesStableNamedSession(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	p := NewWorkerPool(NewJobQueue(), mgr, 1)
+
+	first := &domain.Job{
+		ID:        "job_first",
+		TaskID:    "alpha/daily-report",
+		AgentID:   "agent_alpha",
+		AgentName: "alpha",
+		Prompt:    "first run",
+	}
+	err := p.executeJob(context.Background(), first)
+	assert.NoError(t, err)
+	assert.Equal(t, "agent_alpha-daily-report", first.SessionID)
+
+	second := &domain.Job{
+		ID:        "job_second",
+		TaskID:    "alpha/daily-report",
+		AgentID:   "agent_alpha",
+		AgentName: "alpha",
+		Prompt:    "second run",
+	}
+	err = p.executeJob(context.Background(), second)
+	assert.NoError(t, err)
+	assert.Equal(t, first.SessionID, second.SessionID)
+
+	sessions, err := agent.NewSessionManager().List("agent_alpha")
+	assert.NoError(t, err)
+	assert.Len(t, sessions, 1)
+	assert.Equal(t, "daily-report", sessions[0].Name)
 }
 
 func TestEnqueueAt(t *testing.T) {
@@ -559,6 +764,34 @@ func TestRunJobNow_ForceStartsPendingJob(t *testing.T) {
 	assert.Equal(t, domain.JobStatusInProgress, started.Status)
 	assert.Nil(t, started.ScheduledFor)
 
+}
+
+func TestRunJobNow_RejectsExhaustedPendingJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	s, err := New(mgr, 1)
+	assert.NoError(t, err)
+
+	job := domain.Job{
+		ID:         newID("job"),
+		TaskID:     "alpha/daily",
+		AgentID:    "agent_alpha",
+		AgentName:  "alpha",
+		Prompt:     "run",
+		Status:     domain.JobStatusPending,
+		Attempts:   1,
+		MaxRetries: 1,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	err = store.WriteJSON(store.JobPath(job.AgentID, job.ID), &job)
+	assert.NoError(t, err)
+
+	started, err := s.RunJobNow(job.ID)
+	assert.Nil(t, started)
+	assert.ErrorContains(t, err, "has exhausted its 1 allowed attempt")
 }
 
 func TestTrigger_NotFound(t *testing.T) {
