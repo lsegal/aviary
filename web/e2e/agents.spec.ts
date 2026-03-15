@@ -93,7 +93,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await page.goto("/settings");
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 
-	await expect(page.getByRole("button", { name: "+ Add Agent" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Add Agent" })).toBeVisible();
 	await expect(
 		page.locator('input[placeholder="assistant"]').first(),
 	).toHaveValue("assistant");
@@ -127,7 +127,7 @@ test("tab switching does not blank content", async ({ page }) => {
 			.getByRole("link", { name: "Agents & Tasks", exact: true })
 			.click();
 		await expect(
-			page.getByRole("button", { name: "+ Add Agent" }),
+			page.getByRole("button", { name: "Add Agent" }),
 		).toBeVisible();
 
 		await page.getByRole("link", { name: "Sessions", exact: true }).click();

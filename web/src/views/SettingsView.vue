@@ -136,11 +136,28 @@
         </section>
 
         <section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Agents & Tasks</h3>
-            <div class="flex items-center gap-2">
-              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="importAgents">Import runtime agents</button>
-              <button type="button" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500" @click="addAgent">+ Add Agent</button>
+          <div class="flex items-center border-b border-gray-200 dark:border-gray-800">
+            <div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
+              <button
+                v-for="(a, idx) in draft.agents"
+                :key="`tab-${idx}`"
+                type="button"
+                class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
+                :class="selectedAgentIdx === idx
+                  ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+                  : 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+                @click="selectedAgentIdx = idx">
+                {{ a.name || `Agent ${idx + 1}` }}
+              </button>
+              <button
+                type="button"
+                aria-label="Add Agent"
+                title="Add agent"
+                class="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2.5 text-lg leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+                @click="addAgent">+</button>
+            </div>
+            <div class="flex shrink-0 items-center pb-1 pl-3">
+              <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="importAgents">Import</button>
             </div>
           </div>
 
@@ -148,11 +165,12 @@
             No agents configured.
           </div>
 
-          <div v-for="(agent, i) in draft.agents" :key="`agent-${i}`" class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-            <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
+          <div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`" class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <!-- Agent header -->
+            <div class="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
               <div>
                 <label class="field-label">Name</label>
-                <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" />
+                <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" @change="onAgentNameChange(agent)" />
               </div>
               <div>
                 <label class="field-label">Model</label>
@@ -167,6 +185,30 @@
               </div>
             </div>
 
+            <!-- Subtab nav -->
+            <div class="border-b border-gray-200 px-5 dark:border-gray-700">
+              <nav class="flex">
+                <button
+                  v-for="subtab in ([
+                    { key: 'general', label: 'General' },
+                    { key: 'permissions', label: 'Permissions' },
+                    { key: 'channels', label: 'Channels' },
+                    { key: 'tasks', label: 'Tasks' },
+                  ] as const)"
+                  :key="subtab.key"
+                  type="button"
+                  class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
+                  :class="selectedAgentSubtab === subtab.key
+                    ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+                    : 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+                  @click="selectedAgentSubtab = subtab.key">
+                  {{ subtab.label }}
+                </button>
+              </nav>
+            </div>
+
+            <!-- General subtab -->
+            <div v-show="selectedAgentSubtab === 'general'" class="space-y-4 p-5">
             <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files</div>
@@ -488,6 +530,13 @@
                       <label class="field-label">Mention Prefixes (comma-separated, case-insensitive)</label>
                       <input :value="entryMentionPrefixes(entry)" type="text" class="field-input" placeholder="@bot, !help" @change="setEntryMentionPrefixes(entry, $event)" />
                     </div>
+                    <div>
+                      <label class="field-label">Exclude Prefixes (comma-separated, case-insensitive)</label>
+                      <input :value="entryExcludePrefixes(entry)" type="text" class="field-input" placeholder="!, /" @change="setEntryExcludePrefixes(entry, $event)" />
+                    </div>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-2">
+                    <div></div>
                     <div class="flex flex-col justify-end gap-1.5 pb-1">
                       <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                         <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
@@ -1268,6 +1317,25 @@ const headerNoticeText = ref("Settings saved");
 const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
+
+const selectedAgentIdx = ref(0);
+const selectedAgentSubtab = ref<"general" | "permissions" | "channels" | "tasks">("general");
+watch(selectedAgentIdx, () => {
+	selectedAgentSubtab.value = "general";
+});
+const selectedAgent = computed(
+	() => draft.value.agents[selectedAgentIdx.value] ?? null,
+);
+const selectedAgentAsSingletonList = computed(() =>
+	selectedAgentIdx.value < draft.value.agents.length
+		? [
+				{
+					agent: draft.value.agents[selectedAgentIdx.value],
+					i: selectedAgentIdx.value,
+				},
+			]
+		: [],
+);
 
 const concurrencyInput = ref("");
 const serverPortInput = ref("");
@@ -2082,10 +2150,21 @@ function addAgent() {
 		tasks: [],
 	};
 	draft.value.agents.push(agent);
+	selectedAgentIdx.value = draft.value.agents.length - 1;
 }
 
 function removeAgent(index: number) {
 	draft.value.agents.splice(index, 1);
+	if (selectedAgentIdx.value >= draft.value.agents.length) {
+		selectedAgentIdx.value = Math.max(0, draft.value.agents.length - 1);
+	}
+}
+
+function onAgentNameChange(agentEntry: AgentEntry) {
+	if (agentEntry.name) {
+		void loadAgentFiles(agentEntry.name);
+		void loadAllJobs();
+	}
 }
 
 function addTask(agentIndex: number) {
@@ -2279,6 +2358,17 @@ function entryMentionPrefixes(entry: AllowFromEntry): string {
 
 function setEntryMentionPrefixes(entry: AllowFromEntry, event: Event) {
 	entry.mentionPrefixes = (event.target as HTMLInputElement).value
+		.split(",")
+		.map((v) => v.trim())
+		.filter(Boolean);
+}
+
+function entryExcludePrefixes(entry: AllowFromEntry): string {
+	return (entry.excludePrefixes ?? []).join(", ");
+}
+
+function setEntryExcludePrefixes(entry: AllowFromEntry, event: Event) {
+	entry.excludePrefixes = (event.target as HTMLInputElement).value
 		.split(",")
 		.map((v) => v.trim())
 		.filter(Boolean);
@@ -2610,6 +2700,9 @@ function normalizedDraftConfig(): AppConfig {
 						.map((v) => v.trim())
 						.filter(Boolean),
 					mentionPrefixes: (entry.mentionPrefixes ?? [])
+						.map((v) => v.trim())
+						.filter(Boolean),
+					excludePrefixes: (entry.excludePrefixes ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
 					restrictTools: (entry.restrictTools ?? [])
