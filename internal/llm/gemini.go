@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,11 +177,11 @@ func (p *GeminiCodeAssistProvider) resolveProject(ctx context.Context) (string, 
 	return proj, nil
 }
 
-// doStreamRequest posts body to url and returns the response. It retries once
-// after a short delay on HTTP 5xx errors, which are often transient on the
-// Code Assist free tier.
+// doStreamRequest posts body to url and returns the response. It retries on
+// 429 (quota exhausted) by waiting the duration indicated in the error body,
+// and retries once on 5xx transient errors.
 func (p *GeminiCodeAssistProvider) doStreamRequest(ctx context.Context, url string, body []byte) (*http.Response, error) {
-	const maxAttempts = 2
+	const maxAttempts = 4
 	for attempt := range maxAttempts {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
@@ -201,21 +202,52 @@ func (p *GeminiCodeAssistProvider) doStreamRequest(ctx context.Context, url stri
 		_ = resp.Body.Close()
 		errText := strings.TrimSpace(string(errBody))
 
-		// Retry once on 5xx (transient backend errors); give up immediately on
-		// 4xx since those are not going to be fixed by retrying.
-		if resp.StatusCode >= 500 && attempt < maxAttempts-1 {
-			slog.Warn("code assist: transient error, retrying", "status", resp.StatusCode, "attempt", attempt+1)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(2 * time.Second):
-			}
-			continue
+		if attempt >= maxAttempts-1 {
+			return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, errText)
 		}
 
-		return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, errText)
+		var delay time.Duration
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			delay = parseRetryDelay(resp.Header.Get("Retry-After"), errText)
+			slog.Warn("code assist: quota exhausted, retrying", "wait", delay, "attempt", attempt+1)
+		case resp.StatusCode >= 500:
+			delay = 2 * time.Second
+			slog.Warn("code assist: transient error, retrying", "status", resp.StatusCode, "attempt", attempt+1)
+		default:
+			return nil, fmt.Errorf("code assist stream: %s %s", resp.Status, errText)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
 	}
 	return nil, fmt.Errorf("code assist stream: all attempts failed")
+}
+
+// parseRetryDelay extracts a wait duration from a Retry-After header or an
+// error body containing "reset after Xs". Falls back to 60 seconds.
+func parseRetryDelay(retryAfter, body string) time.Duration {
+	if retryAfter != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	// Parse "quota will reset after 53s" from the error body.
+	const marker = "reset after "
+	if idx := strings.Index(body, marker); idx >= 0 {
+		rest := body[idx+len(marker):]
+		end := strings.IndexAny(rest, " \t\n\r\",}")
+		if end < 0 {
+			end = len(rest)
+		}
+		if d, err := time.ParseDuration(rest[:end]); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 60 * time.Second
 }
 
 // Stream calls the Code Assist streaming endpoint using native Gemini format.

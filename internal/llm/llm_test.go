@@ -1532,6 +1532,67 @@ func TestGeminiCodeAssistProvider_Stream_InvalidJSONLine(t *testing.T) {
 
 }
 
+func TestGeminiCodeAssistProvider_Stream_429Retry(t *testing.T) {
+	var requestCount int
+	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		requestCount++
+		switch requestCount {
+		case 1:
+			// loadCodeAssist.
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"cloudaicompanionProject":"test-project"}`)
+		case 2:
+			// First stream attempt: 429 with reset-after hint.
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = fmt.Fprint(w, `{"error":{"message":"quota will reset after 1ms"}}`)
+		default:
+			// Second stream attempt: success.
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			data := `{"response":{"candidates":[{"content":{"parts":[{"text":"ok after retry"}],"role":"model"}}],"usageMetadata":{}}}`
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		}
+	})
+
+	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ch, err := p.Stream(ctx, Request{
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+	})
+	assert.NoError(t, err)
+
+	events := collectEvents(t, ch)
+	var texts []string
+	for _, ev := range events {
+		if ev.Type == EventTypeText {
+			texts = append(texts, ev.Text)
+		}
+	}
+	assert.Equal(t, "ok after retry", strings.Join(texts, ""))
+	assert.Equal(t, 3, requestCount)
+}
+
+func TestParseRetryDelay(t *testing.T) {
+	cases := []struct {
+		retryAfter string
+		body       string
+		want       time.Duration
+	}{
+		{"30", "", 30 * time.Second},
+		{"", `{"error":{"message":"quota will reset after 53s"}}`, 53 * time.Second},
+		{"", `quota will reset after 2m0s`, 2 * time.Minute},
+		{"", "no hint here", 60 * time.Second},
+		{"", "", 60 * time.Second},
+	}
+	for _, tc := range cases {
+		got := parseRetryDelay(tc.retryAfter, tc.body)
+		assert.Equal(t, tc.want, got, "retryAfter=%q body=%q", tc.retryAfter, tc.body)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Factory.PingModel tests
 // ---------------------------------------------------------------------------
