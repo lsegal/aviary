@@ -36,8 +36,8 @@ func TestReadWriteSessionChannels(t *testing.T) {
 		SessionID: "sess42",
 		AgentID:   "agent_bot",
 		Channels: []SessionChannel{
-			{Type: "signal", ID: "+15551234567"},
-			{Type: "slack", ID: "C123456"},
+			{Type: "signal", ConfiguredID: "primary", ID: "+15551234567"},
+			{Type: "slack", ConfiguredID: "alerts", ID: "C123456"},
 		},
 	}
 	err := WriteSessionChannels(orig)
@@ -49,6 +49,7 @@ func TestReadWriteSessionChannels(t *testing.T) {
 	assert.Equal(t, orig.AgentID, got.AgentID)
 	assert.Equal(t, 2, len(got.Channels))
 	assert.Equal(t, "signal", got.Channels[0].Type)
+	assert.Equal(t, "primary", got.Channels[0].ConfiguredID)
 	assert.Equal(t, "+15551234567", got.Channels[0].ID)
 
 }
@@ -61,7 +62,7 @@ func TestWriteSessionChannels_CreatesDirs(t *testing.T) {
 	cfg := &SessionChannelsConfig{
 		SessionID: "newsess",
 		AgentID:   "agent_newbot",
-		Channels:  []SessionChannel{{Type: "discord", ID: "987654321"}},
+		Channels:  []SessionChannel{{Type: "discord", ConfiguredID: "ops", ID: "987654321"}},
 	}
 	err := WriteSessionChannels(cfg)
 	assert.NoError(t, err)
@@ -81,22 +82,24 @@ func TestEnsureSessionChannel_IdempotentAdd(t *testing.T) {
 		agentID   = "agent_testbot"
 		sessionID = "sess-idem"
 		chanType  = "signal"
+		configID  = "primary"
 		chanID    = "+15550000001"
 	)
 
 	// First call should add.
-	err := EnsureSessionChannel(agentID, sessionID, chanType, chanID)
+	err := EnsureSessionChannel(agentID, sessionID, chanType, configID, chanID)
 	assert.NoError(t, err)
 
 	cfg, _ := ReadSessionChannels(agentID, sessionID)
 	assert.Equal(t, 1, len(cfg.Channels))
 
 	// Second call should be a no-op.
-	err = EnsureSessionChannel(agentID, sessionID, chanType, chanID)
+	err = EnsureSessionChannel(agentID, sessionID, chanType, configID, chanID)
 	assert.NoError(t, err)
 
 	cfg, _ = ReadSessionChannels(agentID, sessionID)
 	assert.Equal(t, 1, len(cfg.Channels))
+	assert.Equal(t, configID, cfg.Channels[0].ConfiguredID)
 
 }
 
@@ -106,10 +109,10 @@ func TestEnsureSessionChannel_PreservesExisting(t *testing.T) {
 	setupStoreDir(t)
 
 	const agentID, sessionID = "agent_multi", "sess-multi"
-	err := EnsureSessionChannel(agentID, sessionID, "signal", "+1111")
+	err := EnsureSessionChannel(agentID, sessionID, "signal", "primary", "+1111")
 	assert.NoError(t, err)
 
-	err = EnsureSessionChannel(agentID, sessionID, "slack", "CSLACK1")
+	err = EnsureSessionChannel(agentID, sessionID, "slack", "alerts", "CSLACK1")
 	assert.NoError(t, err)
 
 	cfg, err := ReadSessionChannels(agentID, sessionID)
@@ -124,8 +127,8 @@ func TestFindAllSessionChannelsConfigs(t *testing.T) {
 
 	// Create channel configs for two different agents.
 	cfgs := []*SessionChannelsConfig{
-		{SessionID: "s1", AgentID: "agent_alpha", Channels: []SessionChannel{{Type: "signal", ID: "+1"}}},
-		{SessionID: "s2", AgentID: "agent_beta", Channels: []SessionChannel{{Type: "slack", ID: "C1"}}},
+		{SessionID: "s1", AgentID: "agent_alpha", Channels: []SessionChannel{{Type: "signal", ConfiguredID: "primary", ID: "+1"}}},
+		{SessionID: "s2", AgentID: "agent_beta", Channels: []SessionChannel{{Type: "slack", ConfiguredID: "alerts", ID: "C1"}}},
 	}
 	for _, c := range cfgs {
 		err := WriteSessionChannels(c)
@@ -148,7 +151,7 @@ func TestFindAllSessionChannelsConfigs_SkipsInvalid(t *testing.T) {
 	valid := &SessionChannelsConfig{
 		SessionID: "good",
 		AgentID:   "agent_valid",
-		Channels:  []SessionChannel{{Type: "signal", ID: "+2"}},
+		Channels:  []SessionChannel{{Type: "signal", ConfiguredID: "primary", ID: "+2"}},
 	}
 	err := WriteSessionChannels(valid)
 	assert.NoError(t, err)

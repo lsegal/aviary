@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -151,4 +152,107 @@ func EnsureNewAgentTemplates(prev, next *config.Config) error {
 		}
 	}
 	return nil
+}
+
+// RenameMatchingAgentDirs renames on-disk agent directories for agents whose
+// config changed only by name between prev and next. Ambiguous matches are
+// ignored, and genuinely new agents are left for template sync.
+func RenameMatchingAgentDirs(prev, next *config.Config) error {
+	if prev == nil || next == nil {
+		return nil
+	}
+
+	prevByName := make(map[string]config.AgentConfig, len(prev.Agents))
+	nextByName := make(map[string]config.AgentConfig, len(next.Agents))
+	for _, agent := range prev.Agents {
+		prevByName[agent.Name] = agent
+	}
+	for _, agent := range next.Agents {
+		nextByName[agent.Name] = agent
+	}
+
+	removed := make([]config.AgentConfig, 0)
+	added := make([]config.AgentConfig, 0)
+	for _, agent := range prev.Agents {
+		if _, ok := nextByName[agent.Name]; !ok {
+			removed = append(removed, agent)
+		}
+	}
+	for _, agent := range next.Agents {
+		if _, ok := prevByName[agent.Name]; !ok {
+			added = append(added, agent)
+		}
+	}
+
+	type pair struct {
+		from string
+		to   string
+	}
+	pairs := make([]pair, 0)
+	usedAdded := make(map[int]struct{})
+	for _, oldAgent := range removed {
+		matchIdx := -1
+		oldKey, err := agentConfigRenameKey(oldAgent)
+		if err != nil {
+			return err
+		}
+		for idx, newAgent := range added {
+			if _, used := usedAdded[idx]; used {
+				continue
+			}
+			newKey, err := agentConfigRenameKey(newAgent)
+			if err != nil {
+				return err
+			}
+			if oldKey != newKey {
+				continue
+			}
+			if matchIdx >= 0 {
+				matchIdx = -1
+				break
+			}
+			matchIdx = idx
+		}
+		if matchIdx < 0 {
+			continue
+		}
+		usedAdded[matchIdx] = struct{}{}
+		pairs = append(pairs, pair{from: oldAgent.Name, to: added[matchIdx].Name})
+	}
+
+	for _, rename := range pairs {
+		oldDir := AgentDir(rename.from)
+		newDir := AgentDir(rename.to)
+		if oldDir == newDir {
+			continue
+		}
+		if _, err := os.Stat(oldDir); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("stat old agent dir for %q: %w", rename.from, err)
+		}
+		if _, err := os.Stat(newDir); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat new agent dir for %q: %w", rename.to, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(newDir), 0o700); err != nil {
+			return fmt.Errorf("create agents dir for %q: %w", rename.to, err)
+		}
+		if err := os.Rename(oldDir, newDir); err != nil {
+			return fmt.Errorf("rename agent dir %q -> %q: %w", rename.from, rename.to, err)
+		}
+	}
+
+	return nil
+}
+
+func agentConfigRenameKey(agent config.AgentConfig) (string, error) {
+	agent.Name = ""
+	data, err := json.Marshal(agent)
+	if err != nil {
+		return "", fmt.Errorf("marshal agent config: %w", err)
+	}
+	return string(data), nil
 }

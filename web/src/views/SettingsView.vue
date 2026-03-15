@@ -35,7 +35,7 @@
             <button
               type="button"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-              :disabled="saving || reverting || !hasDraftChanges"
+              :disabled="saving || reverting"
               @click="saveAll()"
             >{{ saving ? "Saving…" : "Save Changes" }}</button>
           </div>
@@ -704,8 +704,29 @@
               No tasks configured for this agent.
             </div>
 
-            <div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" :class="taskCardClass(task)" class="space-y-3 rounded-lg border p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Task</div>
+                  <div class="mt-1 flex items-center gap-2">
+                    <span :class="statusBadgeClass(isTaskEnabled(task))">
+                      {{ isTaskEnabled(task) ? "Enabled" : "Disabled" }}
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" :class="enabledToggleClass(isTaskEnabled(task))" @click="toggleTaskEnabled(task)">
+                    {{ isTaskEnabled(task) ? "Disable" : "Enable" }}
+                  </button>
+                  <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
+                </div>
+              </div>
+
+              <p v-if="!isTaskEnabled(task)" class="text-xs text-gray-500 dark:text-gray-400">
+                Disabled tasks are ignored by the scheduler until re-enabled.
+              </p>
+
+              <div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr]">
                 <div>
                   <label class="field-label">Task name</label>
                   <input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" />
@@ -744,20 +765,17 @@
                     @input="setTaskChannelTarget(task, $event)"
                   />
                 </div>
-                <div class="flex items-end">
-                  <button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
-                </div>
               </div>
 
-              <div class="grid gap-3 lg:grid-cols-[1fr_auto]">
+              <div>
                 <div>
                   <label class="field-label">Prompt</label>
                   <textarea v-model="task.prompt" rows="3" class="field-input" placeholder="Task prompt..."></textarea>
+                  <label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                    <input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
+                    Run once
+                  </label>
                 </div>
-                <label class="mt-6 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                  <input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
-                  Run once
-                </label>
               </div>
             </div>
 
@@ -828,14 +846,28 @@
               </label>
             </div>
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <div>
-                <label class="field-label">Binary override</label>
-                <input v-model="skillConfig(skill.name).binary" type="text" class="field-input" :placeholder="skill.name" />
-              </div>
-              <div>
-                <label class="field-label">Allowed commands</label>
-                <input :value="skillAllowedInput(skill.name)" type="text" class="field-input" placeholder="gmail, calendar, drive" @input="setSkillAllowedInput(skill.name, $event)" />
+            <div v-if="skillSettingEntries(skill).length" class="grid gap-4 lg:grid-cols-2">
+              <div v-for="[key, schema] in skillSettingEntries(skill)" :key="`${skill.name}-${key}`">
+                <label class="field-label">{{ skillSettingLabel(key, schema) }}</label>
+                <input
+                  v-if="skillSettingInputKind(schema) === 'string'"
+                  :value="skillStringSetting(skill.name, key)"
+                  type="text"
+                  class="field-input"
+                  :placeholder="skillSettingPlaceholder(schema)"
+                  @input="setSkillStringSetting(skill.name, key, $event)"
+                />
+                <input
+                  v-else
+                  :value="skillArraySetting(skill.name, key)"
+                  type="text"
+                  class="field-input"
+                  :placeholder="skillSettingPlaceholder(schema)"
+                  @input="setSkillArraySetting(skill.name, key, $event)"
+                />
+                <p v-if="typeof schema.description === 'string' && schema.description" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  {{ schema.description }}
+                </p>
               </div>
             </div>
           </div>
@@ -1116,6 +1148,20 @@ interface InstalledSkill {
 	installed: boolean;
 	enabled: boolean;
 	source: string;
+	settings_schema?: SkillSettingsSchema;
+}
+
+interface SkillSettingSchema {
+	type?: string;
+	title?: string;
+	description?: string;
+	placeholder?: string;
+	items?: SkillSettingSchema;
+}
+
+interface SkillSettingsSchema {
+	type?: string;
+	properties?: Record<string, SkillSettingSchema>;
 }
 
 interface JobEntry {
@@ -1861,6 +1907,7 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 			});
 		});
 		(agent.tasks ?? []).forEach((task) => {
+			if (task.enabled === undefined) task.enabled = true;
 			if (!task.target) task.target = "";
 		});
 	});
@@ -1950,20 +1997,69 @@ async function loadInstalledSkills() {
 
 function skillConfig(name: string): SkillConfig {
 	if (!draft.value.skills[name]) {
-		draft.value.skills[name] = {};
+		draft.value.skills[name] = { settings: {} };
+	}
+	if (!draft.value.skills[name].settings) {
+		draft.value.skills[name].settings = {};
 	}
 	return draft.value.skills[name];
 }
 
-function skillAllowedInput(name: string): string {
-	return (skillConfig(name).allowed_commands ?? []).join(", ");
+function skillSettingEntries(
+	skill: InstalledSkill,
+): Array<[string, SkillSettingSchema]> {
+	return Object.entries(skill.settings_schema?.properties ?? {});
 }
 
-function setSkillAllowedInput(name: string, event: Event) {
-	skillConfig(name).allowed_commands = (event.target as HTMLInputElement).value
+function skillSettingInputKind(schema: SkillSettingSchema): "string" | "array" {
+	return schema.type === "array" ? "array" : "string";
+}
+
+function skillSettingLabel(key: string, schema: SkillSettingSchema): string {
+	return schema.title || key.replaceAll("_", " ");
+}
+
+function skillSettingPlaceholder(schema: SkillSettingSchema): string {
+	return schema.placeholder || "";
+}
+
+function skillStringSetting(name: string, key: string): string {
+	const value = skillConfig(name).settings?.[key];
+	return typeof value === "string" ? value : "";
+}
+
+function setSkillStringSetting(name: string, key: string, event: Event) {
+	const value = (event.target as HTMLInputElement).value.trim();
+	const settings = { ...(skillConfig(name).settings ?? {}) };
+	if (value) {
+		settings[key] = value;
+	} else {
+		delete settings[key];
+	}
+	skillConfig(name).settings = settings;
+}
+
+function skillArraySetting(name: string, key: string): string {
+	const value = skillConfig(name).settings?.[key];
+	return Array.isArray(value)
+		? value
+				.filter((item): item is string => typeof item === "string")
+				.join(", ")
+		: "";
+}
+
+function setSkillArraySetting(name: string, key: string, event: Event) {
+	const values = (event.target as HTMLInputElement).value
 		.split(",")
 		.map((value) => value.trim())
 		.filter(Boolean);
+	const settings = { ...(skillConfig(name).settings ?? {}) };
+	if (values.length) {
+		settings[key] = values;
+	} else {
+		delete settings[key];
+	}
+	skillConfig(name).settings = settings;
 }
 
 function addAgent() {
@@ -1985,6 +2081,7 @@ function removeAgent(index: number) {
 
 function addTask(agentIndex: number) {
 	const task: AgentTask = {
+		enabled: true,
 		name: "",
 		prompt: "",
 		schedule: "",
@@ -2074,6 +2171,14 @@ function toggleAllowFromEnabled(entry: AllowFromEntry) {
 	entry.enabled = !isAllowFromEnabled(entry);
 }
 
+function isTaskEnabled(task: AgentTask): boolean {
+	return task.enabled !== false;
+}
+
+function toggleTaskEnabled(task: AgentTask) {
+	task.enabled = !isTaskEnabled(task);
+}
+
 function statusBadgeClass(enabled: boolean): string {
 	return enabled
 		? "rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
@@ -2096,6 +2201,12 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 	return isAllowFromEnabled(entry)
 		? "border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"
 		: "border-gray-200 bg-gray-50 opacity-75 dark:border-gray-800 dark:bg-gray-950";
+}
+
+function taskCardClass(task: AgentTask): string {
+	return isTaskEnabled(task)
+		? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+		: "border-gray-300 bg-gray-50 opacity-75 dark:border-gray-700 dark:bg-gray-950";
 }
 
 function setTaskChannelSelection(task: AgentTask, event: Event) {
@@ -2500,8 +2611,9 @@ function normalizedDraftConfig(): AppConfig {
 		})),
 		tasks: (agent.tasks ?? []).map((task) => ({
 			...task,
+			enabled: task.enabled === false ? false : undefined,
 			name: (task.name ?? "").trim(),
-			prompt: (task.prompt ?? "").trim(),
+			prompt: task.prompt ?? "",
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
 			start_at: (task.start_at ?? "").trim(),
@@ -2563,20 +2675,24 @@ function normalizedDraftConfig(): AppConfig {
 	>) {
 		const nextSkill: SkillConfig = {
 			enabled: Boolean(skill?.enabled),
-			binary: (skill?.binary ?? "").trim() || undefined,
-			allowed_commands: (skill?.allowed_commands ?? [])
-				.map((value) => value.trim())
-				.filter(Boolean),
-			timeout: (skill?.timeout ?? "").trim() || undefined,
-			env: skill?.env,
+			settings: Object.fromEntries(
+				Object.entries(skill?.settings ?? {}).flatMap(([key, value]) => {
+					if (typeof value === "string") {
+						const trimmed = value.trim();
+						return trimmed ? [[key, trimmed]] : [];
+					}
+					if (Array.isArray(value)) {
+						const normalizedValues = value
+							.filter((item): item is string => typeof item === "string")
+							.map((item) => item.trim())
+							.filter(Boolean);
+						return normalizedValues.length ? [[key, normalizedValues]] : [];
+					}
+					return value == null ? [] : [[key, value]];
+				}),
+			),
 		};
-		if (
-			nextSkill.enabled ||
-			nextSkill.binary ||
-			(nextSkill.allowed_commands?.length ?? 0) > 0 ||
-			nextSkill.timeout ||
-			(nextSkill.env && Object.keys(nextSkill.env).length > 0)
-		) {
+		if (nextSkill.enabled || Object.keys(nextSkill.settings ?? {}).length > 0) {
 			normalizedSkills[name] = nextSkill;
 		}
 	}
