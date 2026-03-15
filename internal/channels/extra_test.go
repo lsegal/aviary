@@ -72,44 +72,54 @@ func TestStart_NoPhoneNoAddr(t *testing.T) {
 
 }
 
-// ── Signal.managedLoop: binary-not-found error path ──────────────────────────
+// ── sharedDaemon.run: binary-not-found error paths ───────────────────────────
 
-// TestManagedLoop_ContextCancelsDuringLaunch verifies that when launchDaemon
-// fails (either binary not found or ctx times out before daemon becomes ready),
-// managedLoop propagates the error correctly or returns nil on ctx cancel.
-func TestManagedLoop_ContextCancelsDuringLaunch(t *testing.T) {
-	ch := NewSignalChannel("+15550001111", "", nil, false, false, false, false, "m", nil)
-	// Use a very short timeout so launchDaemon's poll loop times out quickly.
+// TestSharedDaemon_ContextCancelsDuringRun verifies that when signal-cli is not
+// present (or ctx times out before the daemon becomes ready), run exits cleanly.
+func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
+	d := &sharedDaemon{phone: "+15550001111"}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	// managedLoop should return nil because ctx is cancelled.
-	err := ch.managedLoop(ctx)
-	if err != nil {
-		// If signal-cli is not installed, managedLoop returns an error; that is also acceptable.
-		t.Logf("managedLoop returned error (expected if signal-cli absent): %v", err)
+	// run should return when ctx is cancelled (signal-cli absent → error, then ctx done).
+	done := make(chan struct{})
+	go func() {
+		d.run(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sharedDaemon.run did not return after context cancellation")
 	}
 }
 
-// TestManagedLoop_CancelBeforeLaunch verifies that cancelling ctx before
-// managedLoop starts causes it to return nil.
-func TestManagedLoop_CancelBeforeLaunch(t *testing.T) {
-	ch := NewSignalChannel("+15550001111", "", nil, false, false, false, false, "m", nil)
+// TestSharedDaemon_CancelBeforeRun verifies that a pre-cancelled ctx causes
+// run to return immediately without launching signal-cli.
+func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
+	d := &sharedDaemon{phone: "+15550001111"}
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel before calling
-	err := ch.managedLoop(ctx)
-	assert.NoError(t, err)
-
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		d.run(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sharedDaemon.run did not return after pre-cancelled context")
+	}
 }
 
-// TestManagedLoop_StopBeforeLaunch verifies that calling Stop() before
-// managedLoop starts causes it to return nil.
-func TestManagedLoop_StopBeforeLaunch(t *testing.T) {
-	ch := NewSignalChannel("+15550001111", "", nil, false, false, false, false, "m", nil)
-	ch.Stop() // close done channel before calling
+// TestStart_StopBeforeDaemonReady verifies that Stop() unblocks Start() even
+// when the shared daemon has not yet become ready.
+func TestStart_StopBeforeDaemonReady(t *testing.T) {
+	// Use a unique phone to avoid sharing with other tests.
+	ch := NewSignalChannel("+15559990000", "", nil, false, false, false, false, "m", nil)
+	ch.Stop() // pre-close done so Start returns immediately
 	ctx := context.Background()
-	err := ch.managedLoop(ctx)
+	err := ch.Start(ctx)
 	assert.NoError(t, err)
-
 }
 
 // ── fetchLinkPreviews: additional branch coverage ────────────────────────────
@@ -297,21 +307,15 @@ func TestFetchLinkPreviews_FetchError(t *testing.T) {
 
 }
 
-// ── Signal.launchDaemon: stop-channel path ───────────────────────────────────
+// ── sharedDaemon.launchDaemon: binary-not-found path ─────────────────────────
 
-// TestLaunchDaemon_StopDuringPoll starts a real TCP listener to simulate an
-// existing daemon address so that launchDaemon can start the (nonexistent)
-// binary and immediately returns when done is closed.
-// Since signal-cli binary is not present, this test exercises the
-// cmd.Start error path.
-func TestLaunchDaemon_StopDuringPoll(t *testing.T) {
-	ch := NewSignalChannel("+15550001111", "", nil, false, false, false, false, "m", nil)
+// TestSharedDaemon_LaunchDaemonBinaryNotFound calls launchDaemon when signal-cli
+// is absent, exercising the cmd.Start error path.
+func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
+	d := &sharedDaemon{phone: "+15550001111"}
 	ctx := context.Background()
-	// Calling launchDaemon directly when signal-cli isn't present exercises the
-	// "start signal-cli" error path.
-	addr, cmd, err := ch.launchDaemon(ctx)
+	addr, cmd, err := d.launchDaemon(ctx)
 	if err == nil {
-		// signal-cli happened to be present; clean up.
 		if cmd != nil {
 			cmd.Process.Kill() //nolint:errcheck
 			cmd.Wait()         //nolint:errcheck
@@ -320,7 +324,6 @@ func TestLaunchDaemon_StopDuringPoll(t *testing.T) {
 	}
 	assert.Empty(t, addr)
 	assert.Nil(t, cmd)
-
 }
 
 // ── Signal.dispatchEnvelope: read receipt path ───────────────────────────────

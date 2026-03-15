@@ -61,6 +61,7 @@ func (s *Server) daemonsHandler(w http.ResponseWriter, _ *http.Request) {
 		},
 	}
 
+	seenPIDs := map[int]bool{}
 	for _, cs := range s.channels.List() {
 		d := DaemonStatus{
 			Name:       cs.Key,
@@ -79,6 +80,11 @@ func (s *Server) daemonsHandler(w http.ResponseWriter, _ *http.Request) {
 			d.Addr = cs.Daemon.Addr
 			d.Managed = !cs.Daemon.External
 			if cs.Daemon.PID > 0 {
+				// Shared daemon: skip duplicate entries for the same subprocess.
+				if seenPIDs[cs.Daemon.PID] {
+					continue
+				}
+				seenPIDs[cs.Daemon.PID] = true
 				d.PID = cs.Daemon.PID
 				if !cs.Daemon.Started.IsZero() {
 					d.Started = cs.Daemon.Started.UTC().Format(time.RFC3339)

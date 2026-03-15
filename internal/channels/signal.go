@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -215,6 +214,9 @@ func downloadTempImage(ctx context.Context, imageURL string) (string, error) {
 // If url is set, it connects to an existing external daemon. Otherwise it
 // launches signal-cli automatically as a managed subprocess.
 //
+// When multiple channels share the same phone number in managed mode, they
+// share a single signal-cli subprocess via the package-level daemonHub.
+//
 // External daemon (signal-cli must already be running):
 //
 //	channels:
@@ -245,12 +247,13 @@ type SignalChannel struct {
 	replyToReplies   bool // respond to quoted replies targeting agent's messages
 	sendReadReceipts bool // send read receipts for messages the agent will respond to
 
-	addrMu sync.RWMutex
-	addr   string // current effective daemon address (set dynamically in managed mode)
+	// daemon is set in managed mode; nil in external mode.
+	// It is the shared subprocess for this phone number.
+	daemon *sharedDaemon
 
-	procMu      sync.RWMutex
-	procPID     int       // PID of the managed daemon (0 when not running)
-	procStarted time.Time // time the managed daemon was started
+	// addr and addrMu are used in external mode only.
+	addrMu sync.RWMutex
+	addr   string
 
 	handler   func(IncomingMessage)
 	handlerMu sync.RWMutex
@@ -296,6 +299,17 @@ func (c *SignalChannel) SetLogSink(s *LogSink) {
 	c.logSinkMu.Unlock()
 }
 
+// getAddr returns the current daemon TCP address. In managed mode it reads
+// from the shared daemon; in external mode it reads from the channel's own addr.
+func (c *SignalChannel) getAddr() string {
+	if c.daemon != nil {
+		return c.daemon.getAddr()
+	}
+	c.addrMu.RLock()
+	defer c.addrMu.RUnlock()
+	return c.addr
+}
+
 // ShowTyping reports whether the typing-indicator feature is enabled for this channel.
 func (c *SignalChannel) ShowTyping() bool { return c.showTyping }
 
@@ -326,10 +340,7 @@ func (c *SignalChannel) OnMessage(fn func(IncomingMessage)) {
 // channel must be a phone number in E.164 format (starts with "+") for direct
 // messages, or a base64-encoded group ID for group conversations.
 func (c *SignalChannel) Send(channel, text string) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -410,10 +421,7 @@ func (c *SignalChannel) Send(channel, text string) error {
 // messages, or a base64-encoded group ID for group conversations.
 // Pass stop=true to cancel the indicator.
 func (c *SignalChannel) SendTyping(channel string, stop bool) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -466,10 +474,7 @@ func (c *SignalChannel) SendTyping(channel string, stop bool) error {
 // sendReaction sends a sendReaction JSON-RPC request to signal-cli.
 // channel is a phone number (E.164) for 1-to-1 chats or a base64 group ID.
 func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, targetSentTimestamp int64) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -528,10 +533,7 @@ func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, target
 // SendMedia sends a file attachment with an optional caption via signal-cli.
 // channel must be a phone number in E.164 format or a base64 group ID.
 func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -589,10 +591,7 @@ func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
 // sendReadReceipt sends a read receipt for msgTimestamp to recipient via signal-cli.
 // recipient must be a phone number in E.164 format.
 func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -642,10 +641,7 @@ func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) er
 }
 
 func (c *SignalChannel) rpcCallContext(ctx context.Context, body []byte, resp *jsonrpcResponse) error {
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-
+	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
 	}
@@ -672,8 +668,9 @@ func (c *SignalChannel) rpcCallContext(ctx context.Context, body []byte, resp *j
 }
 
 // Start connects to signal-cli and listens for incoming messages.
-// If no daemon address was configured, signal-cli is launched automatically.
-// Reconnects on connection loss until ctx is done or Stop is called.
+// In external mode (url configured) it connects directly and reconnects on loss.
+// In managed mode it registers with the package-level daemonHub so that all
+// channels sharing the same phone number share a single signal-cli subprocess.
 func (c *SignalChannel) Start(ctx context.Context) error {
 	if c.initAddr != "" {
 		c.runLoop(ctx, c.initAddr)
@@ -686,7 +683,24 @@ func (c *SignalChannel) Start(ctx context.Context) error {
 		return nil
 	}
 
-	return c.managedLoop(ctx)
+	// Managed mode: share one signal-cli daemon per phone number.
+	d := globalDaemonHub.acquire(c.phone)
+	c.daemon = d
+	d.addSub(c)
+	d.once.Do(func() {
+		dCtx, cancel := context.WithCancel(ctx)
+		d.cancel = cancel
+		go d.run(dCtx)
+	})
+
+	select {
+	case <-ctx.Done():
+	case <-c.done:
+	}
+
+	d.removeSub(c)
+	globalDaemonHub.release(c.phone)
+	return nil
 }
 
 // Stop disconnects and prevents reconnection.
@@ -695,136 +709,24 @@ func (c *SignalChannel) Stop() {
 }
 
 // DaemonInfo returns info about the signal-cli daemon.
-// For managed mode it includes the subprocess PID and start time.
-// For external mode (url configured) it returns the configured address with PID=0.
+// For managed mode it reads from the shared daemon (subprocess PID and start time).
+// For external mode it returns the configured address with PID=0.
 // Returns nil only when in managed mode and the daemon is not currently running.
 func (c *SignalChannel) DaemonInfo() *DaemonInfo {
 	if c.initAddr != "" {
-		// External daemon: show the configured address even though we don't own it.
 		return &DaemonInfo{Addr: c.initAddr, External: true}
 	}
-	c.procMu.RLock()
-	pid := c.procPID
-	started := c.procStarted
-	c.procMu.RUnlock()
+	if c.daemon == nil {
+		return nil
+	}
+	c.daemon.procMu.RLock()
+	pid := c.daemon.procPID
+	started := c.daemon.procStarted
+	c.daemon.procMu.RUnlock()
 	if pid == 0 {
 		return nil
 	}
-	c.addrMu.RLock()
-	addr := c.addr
-	c.addrMu.RUnlock()
-	return &DaemonInfo{PID: pid, Addr: addr, Started: started}
-}
-
-// managedLoop launches signal-cli as a subprocess, runs the connect loop,
-// and restarts the daemon if it exits unexpectedly.
-func (c *SignalChannel) managedLoop(ctx context.Context) error {
-	for {
-		addr, cmd, err := c.launchDaemon(ctx)
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-c.done:
-				return nil
-			default:
-			}
-			return fmt.Errorf("signal: launch daemon: %w", err)
-		}
-
-		c.addrMu.Lock()
-		c.addr = addr
-		c.addrMu.Unlock()
-
-		c.procMu.Lock()
-		c.procPID = cmd.Process.Pid
-		c.procStarted = time.Now()
-		c.procMu.Unlock()
-
-		slog.Info("signal: managed daemon ready", "addr", addr, "phone", c.phone)
-		c.runLoop(ctx, addr)
-
-		// Ensure the process is stopped before waiting.
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
-
-		c.addrMu.Lock()
-		c.addr = ""
-		c.addrMu.Unlock()
-
-		c.procMu.Lock()
-		c.procPID = 0
-		c.procMu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-c.done:
-			return nil
-		default:
-			slog.Warn("signal: managed daemon exited, restarting", "phone", c.phone)
-		}
-	}
-}
-
-// launchDaemon starts signal-cli daemon --tcp on a free local port and polls
-// until it accepts TCP connections, then returns the address and the running Cmd.
-func (c *SignalChannel) launchDaemon(ctx context.Context) (string, *exec.Cmd, error) {
-	// Ask the OS for a free port, then release it for signal-cli to bind.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", nil, fmt.Errorf("find free port: %w", err)
-	}
-	addr := ln.Addr().String()
-	ln.Close() //nolint:errcheck
-
-	// exec.CommandContext kills the process when ctx is cancelled.
-	cmd := exec.CommandContext(ctx, "signal-cli", "--account", c.phone, "daemon", "--tcp", addr)
-
-	// Capture stdout+stderr so the output is visible in the daemon log view.
-	pr, pw, pipeErr := os.Pipe()
-	if pipeErr == nil {
-		cmd.Stdout = pw
-		cmd.Stderr = pw
-	}
-
-	if err := cmd.Start(); err != nil {
-		if pipeErr == nil {
-			pr.Close() //nolint:errcheck
-			pw.Close() //nolint:errcheck
-		}
-		return "", nil, fmt.Errorf("start signal-cli: %w", err)
-	}
-	if pipeErr == nil {
-		_ = pw.Close()        // parent only needs the read end
-		go c.streamToSink(pr) // goroutine exits when process closes its write end
-	}
-	slog.Info("signal: started managed daemon", "addr", addr, "phone", c.phone, "pid", cmd.Process.Pid)
-
-	// Poll until the TCP server accepts connections (up to 30 s).
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			cmd.Process.Kill() //nolint:errcheck
-			cmd.Wait()         //nolint:errcheck
-			return "", nil, ctx.Err()
-		case <-c.done:
-			cmd.Process.Kill() //nolint:errcheck
-			cmd.Wait()         //nolint:errcheck
-			return "", nil, fmt.Errorf("stopped")
-		default:
-		}
-		if conn, dialErr := net.DialTimeout("tcp", addr, 200*time.Millisecond); dialErr == nil {
-			conn.Close() //nolint:errcheck
-			return addr, cmd, nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	cmd.Process.Kill() //nolint:errcheck
-	cmd.Wait()         //nolint:errcheck
-	return "", nil, fmt.Errorf("daemon did not become ready within 30s")
+	return &DaemonInfo{PID: pid, Addr: c.daemon.getAddr(), Started: started}
 }
 
 // runLoop runs the reconnect loop against a known daemon address.

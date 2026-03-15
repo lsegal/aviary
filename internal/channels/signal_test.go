@@ -836,13 +836,15 @@ func TestDaemonInfo_ManagedMode_NotRunning(t *testing.T) {
 
 func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, true, true, true, true, "test", nil)
-	ch.procMu.Lock()
-	ch.procPID = 1234
-	ch.procStarted = time.Now()
-	ch.procMu.Unlock()
-	ch.addrMu.Lock()
-	ch.addr = "127.0.0.1:9999"
-	ch.addrMu.Unlock()
+	d := &sharedDaemon{phone: "+1"}
+	d.procMu.Lock()
+	d.procPID = 1234
+	d.procStarted = time.Now()
+	d.procMu.Unlock()
+	d.addrMu.Lock()
+	d.addr = "127.0.0.1:9999"
+	d.addrMu.Unlock()
+	ch.daemon = d
 
 	info := ch.DaemonInfo()
 	assert.NotNil(t, info)
