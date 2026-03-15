@@ -2,12 +2,16 @@ import { computed, ref } from "vue";
 import { providerOf, SUPPORTED_MODELS } from "../constants/models";
 import { useMCP } from "./useMCP";
 
-function canonicalProvider(provider: string): string {
-	switch (provider) {
-		case "gemini":
+function credentialToProvider(credKey: string): string {
+	switch (credKey) {
+		case "gemini:oauth":
+			return "google-gemini";
+		case "gemini:default":
 			return "google";
+		case "openai:oauth":
+			return "openai-codex";
 		default:
-			return provider;
+			return credKey.split(":", 1)[0]?.trim() ?? "";
 	}
 }
 
@@ -18,7 +22,7 @@ export function useAvailableModels() {
 	const authenticatedProviders = computed(() => {
 		const providers = new Set<string>();
 		for (const cred of credentials.value) {
-			const provider = canonicalProvider(cred.split(":", 1)[0]?.trim() ?? "");
+			const provider = credentialToProvider(cred);
 			if (provider) {
 				providers.add(provider);
 			}
@@ -28,7 +32,7 @@ export function useAvailableModels() {
 
 	const availableModelOptions = computed(() =>
 		SUPPORTED_MODELS.filter((model) => {
-			const provider = canonicalProvider(providerOf(model));
+			const provider = providerOf(model);
 			return !provider || authenticatedProviders.value.has(provider);
 		}),
 	);

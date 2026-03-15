@@ -30,6 +30,36 @@
     "supports_image_input": true
   },
   {
+    "id": "google-gemini/gemini-2.0-flash",
+    "input_tokens": 1048576,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "google-gemini/gemini-2.5-flash",
+    "input_tokens": 1048576,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  },
+  {
+    "id": "google-gemini/gemini-2.5-pro",
+    "input_tokens": 1048576,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  },
+  {
+    "id": "google-gemini/gemini-3-flash-preview",
+    "input_tokens": 1000000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "google-gemini/gemini-3-pro-preview",
+    "input_tokens": 1000000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
     "id": "anthropic/claude-3-5-haiku-20241022",
     "input_tokens": 200000,
     "output_tokens": 8192,

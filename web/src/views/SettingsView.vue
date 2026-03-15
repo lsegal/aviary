@@ -2826,13 +2826,15 @@ async function addProviderApiKey() {
 
 async function addProviderOAuth() {
 	if (!providerAddSelection.value) return;
-	const provider = providerAddSelection.value.replace(/:oauth$/, "");
-	if (provider === "anthropic") {
+	const authId = providerAddSelection.value.replace(/:oauth$/, "");
+	const p = KNOWN_PROVIDERS.find((p) => p.authId === authId && p.hasOAuth);
+	if (!p) return;
+	if (p.id === "anthropic") {
 		await startAnthropic();
-	} else if (provider === "openai") {
+	} else if (p.id === "openai-codex") {
 		await loginOpenAI();
 		providerAddSelection.value = "";
-	} else if (provider === "google") {
+	} else if (p.id === "google") {
 		await loginGemini();
 		providerAddSelection.value = "";
 	}

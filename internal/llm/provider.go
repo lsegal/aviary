@@ -157,8 +157,8 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 }
 
 // ForModel returns a Provider for the given model string.
-// model format: "anthropic/claude-sonnet-4.5", "openai/gpt-4o", "gemini/gemini-pro",
-// "stdio/claude" (subprocess), etc.
+// model format: "anthropic/claude-sonnet-4.5", "openai/gpt-4o", "google-gemini/gemini-2.5-pro",
+// "google/gemini-2.5-pro" (API key), "stdio/claude" (subprocess), etc.
 func (f *Factory) ForModel(model string) (Provider, error) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 {
@@ -192,17 +192,29 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		}
 		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
-	case "google", "gemini", "google-gemini-cli":
-		// Prefer OAuth token (Google account) if available.
-		// OAuth tokens are from the gemini-cli Code Assist flow.
+	case "google-gemini":
+		// OAuth only — uses cloudcode-pa.googleapis.com (Code Assist) with gemini:oauth token.
 		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
+		return nil, fmt.Errorf("google-gemini auth: missing Google OAuth token; run 'aviary auth login gemini'")
+
+	case "google":
+		// API key only — uses generativelanguage.googleapis.com with gemini:default.
 		apiKey, err := f.resolveAuth("auth:gemini:default")
 		if err != nil {
-			return nil, fmt.Errorf("%s auth: %w", provider, err)
+			return nil, fmt.Errorf("google auth: %w", err)
 		}
 		return NewGeminiProvider(apiKey, name), nil
+
+	case "gemini-code-assist":
+		// Explicit Code Assist path via cloudcode-pa.googleapis.com.
+		// Uses the gemini-cli onboarded free tier; suitable for single-turn workloads
+		// but subject to tighter per-minute quota than the direct API.
+		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
+			return NewGeminiCodeAssistProvider(accessToken, name), nil
+		}
+		return nil, fmt.Errorf("gemini-code-assist: missing Google OAuth token; run 'aviary auth login gemini'")
 
 	case "stdio":
 		return NewStdioProvider(name), nil
