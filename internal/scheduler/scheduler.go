@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Scheduler orchestrates cron triggers, file-watch triggers, and job execution.
@@ -78,6 +80,9 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 	desired := make(map[string]struct{})
 	for _, ac := range cfg.Agents {
 		for _, tc := range ac.Tasks {
+			if !config.BoolOr(tc.Enabled, true) {
+				continue
+			}
 			key := taskKey(ac.Name, tc.Name)
 			desired[key] = struct{}{}
 
@@ -150,8 +155,9 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 				}
 			}
 			if tc.Watch != "" {
-				if err := s.watch.Add(key, tc.Watch, func(_ string) { enqueue() }); err != nil {
-					slog.Warn("scheduler: watch failed", "task", key, "glob", tc.Watch, "err", err)
+				watchGlob := resolveWatchGlob(agentID, tc.Watch)
+				if err := s.watch.Add(key, watchGlob, func(_ string) { enqueue() }); err != nil {
+					slog.Warn("scheduler: watch failed", "task", key, "glob", watchGlob, "err", err)
 				}
 			}
 			slog.Info("scheduler: task registered", "key", key)
@@ -237,6 +243,13 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 		return job, nil
 	}
 	return nil, fmt.Errorf("task %q not found", name)
+}
+
+func resolveWatchGlob(agentID, glob string) string {
+	if glob == "" || filepath.IsAbs(glob) {
+		return glob
+	}
+	return filepath.Join(store.AgentDir(agentID), glob)
 }
 
 // SetTaskOutputDelivery registers an optional function used to deliver

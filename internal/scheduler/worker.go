@@ -121,6 +121,10 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	p.registerActiveJob(job.ID, job.TaskID, cancel)
 	defer p.unregisterActiveJob(job.ID)
 
+	stopHeartbeat := make(chan struct{})
+	defer close(stopHeartbeat)
+	go p.heartbeatJob(jobCtx, job.ID, stopHeartbeat)
+
 	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
 	if err := p.executeJob(jobCtx, job); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -140,19 +144,33 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	}
 }
 
-// jobSessionName returns a human-readable session name derived from the job.
-// e.g. "daily-report · Mar 6 05:14" for a configured task, "oneshot · Mar 6 05:14" for a one-time job.
+func (p *WorkerPool) heartbeatJob(ctx context.Context, jobID string, stop <-chan struct{}) {
+	ticker := time.NewTicker(lockHeartbeat)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := p.queue.Heartbeat(jobID); err != nil {
+				slog.Warn("job: heartbeat failed", "id", jobID, "err", err)
+			}
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// jobSessionName returns the stable named session used for a job.
+// Task runs should reuse the same named session so retries and future runs can resume context.
 func jobSessionName(job *domain.Job) string {
 	parts := strings.SplitN(job.TaskID, "/", 2)
 	name := job.TaskID
-	if len(parts) == 2 {
-		if parts[0] == "oneshot" {
-			name = "oneshot"
-		} else {
-			name = parts[1]
-		}
+	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+		name = parts[1]
 	}
-	return name + " · " + time.Now().Format("Jan 2 15:04")
+	return name
 }
 
 func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
@@ -161,22 +179,36 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		return fmt.Errorf("agent %q not found", job.AgentName)
 	}
 
-	// Give each job its own session so output doesn't pollute the main session.
-	if sess, err := agent.NewSessionManager().CreateWithName(job.AgentID, jobSessionName(job)); err != nil {
-		slog.Warn("job: failed to create session, falling back to main", "id", job.ID, "err", err)
-	} else {
-		p.setActiveJobSession(job.ID, sess.ID)
-		ctx = agent.WithSessionID(ctx, sess.ID)
+	sessionID := job.SessionID
+	if sessionID == "" {
+		// Use a stable named session so scheduled work is resumable across retries and future runs.
+		if sess, err := agent.NewSessionManager().GetOrCreateNamed(job.AgentID, jobSessionName(job)); err != nil {
+			slog.Warn("job: failed to create session, falling back to main", "id", job.ID, "err", err)
+		} else {
+			sessionID = sess.ID
+			job.SessionID = sess.ID
+			if err := p.queue.SetSession(job.ID, sess.ID); err != nil {
+				slog.Warn("job: failed to persist session", "id", job.ID, "session", sess.ID, "err", err)
+			}
+		}
+	}
+	if sessionID != "" {
+		p.setActiveJobSession(job.ID, sessionID)
+		ctx = agent.WithSessionID(ctx, sessionID)
+	}
+
+	prompt := job.Prompt
+	if job.SessionID != "" && job.Attempts > 1 {
+		prompt = "Continue the unfinished scheduled task from this existing session. Complete any remaining work for the original request:\n\n" + job.Prompt
 	}
 
 	var lastErr error
 	var buf strings.Builder
 	done := make(chan struct{}, 1)
-	runner.Prompt(ctx, job.Prompt, func(e agent.StreamEvent) {
+	runner.Prompt(ctx, prompt, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
 			buf.WriteString(e.Text)
-			slog.Info("job output", "job_id", job.ID, "agent", job.AgentName, "chunk", e.Text)
 		case agent.StreamEventDone, agent.StreamEventStop:
 			select {
 			case done <- struct{}{}:
@@ -206,7 +238,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 				slog.Warn("job: failed to send reply to session", "id", job.ID, "session", job.ReplySessionID, "err", err)
 			}
 		}
-		if job.OutputChannel != "" && p.deliver != nil {
+		if agent.ShouldDeliverReply(output) && job.OutputChannel != "" && p.deliver != nil {
 			if err := p.deliver(job.AgentName, job.OutputChannel, output); err != nil {
 				slog.Warn("job: failed to deliver output to task channel", "id", job.ID, "route", job.OutputChannel, "err", err)
 			}

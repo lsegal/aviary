@@ -45,6 +45,7 @@ type Job struct {
 	TaskID         string     `json:"task_id"`
 	AgentID        string     `json:"agent_id"`
 	AgentName      string     `json:"agent_name"`
+	SessionID      string     `json:"session_id,omitempty"`
 	Prompt         string     `json:"prompt"`
 	OutputChannel  string     `json:"output_channel,omitempty"`
 	Status         JobStatus  `json:"status"`

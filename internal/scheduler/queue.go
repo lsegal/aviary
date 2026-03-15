@@ -14,6 +14,7 @@ import (
 
 const (
 	lockTimeout    = 5 * time.Minute
+	lockHeartbeat  = 30 * time.Second
 	retryBase      = 30 * time.Second
 	retryMax       = 1 * time.Hour
 	defaultRetries = 3
@@ -107,6 +108,9 @@ func (q *JobQueue) ForceStart(id string) (*domain.Job, error) {
 	if job.Status != domain.JobStatusPending {
 		return nil, fmt.Errorf("job %s is not pending", id)
 	}
+	if job.Attempts >= job.MaxRetries {
+		return nil, fmt.Errorf("job %s has exhausted its %d allowed attempt(s)", id, job.MaxRetries)
+	}
 	now := time.Now()
 	job.Status = domain.JobStatusInProgress
 	job.Attempts++
@@ -152,6 +156,17 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 			continue
 		}
 		if j.ScheduledFor != nil && now.Before(*j.ScheduledFor) {
+			continue
+		}
+		if j.Attempts >= j.MaxRetries {
+			j.Status = domain.JobStatusFailed
+			j.LockedAt = nil
+			j.NextRetryAt = nil
+			j.UpdatedAt = now
+			if err := store.WriteJSON(store.JobPath(j.AgentID, j.ID), j); err != nil {
+				return nil, fmt.Errorf("failing exhausted job %s: %w", j.ID, err)
+			}
+			slog.Warn("job exhausted before claim", "id", j.ID, "attempts", j.Attempts, "max_retries", j.MaxRetries)
 			continue
 		}
 		j.Status = domain.JobStatusInProgress
@@ -248,8 +263,8 @@ func (q *JobQueue) List(taskID string) ([]domain.Job, error) {
 	return out, nil
 }
 
-// RecoverStuck resets any jobs stuck in in_progress beyond lockTimeout.
-// Called on startup to handle jobs that were interrupted by a crash.
+// RecoverStuck resets any jobs left in progress when the server last exited.
+// Called on startup to requeue interrupted work immediately.
 func (q *JobQueue) RecoverStuck() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -266,8 +281,13 @@ func (q *JobQueue) RecoverStuck() {
 	now := time.Now()
 	for i := range jobs {
 		j := &jobs[i]
-		if j.Status == domain.JobStatusInProgress && j.LockedAt != nil && now.Sub(*j.LockedAt) > lockTimeout {
-			j.Status = domain.JobStatusPending
+		if j.Status == domain.JobStatusInProgress {
+			if j.Attempts >= j.MaxRetries {
+				j.Status = domain.JobStatusFailed
+				j.NextRetryAt = nil
+			} else {
+				j.Status = domain.JobStatusPending
+			}
 			j.LockedAt = nil
 			j.UpdatedAt = now
 			if err := store.WriteJSON(store.JobPath(j.AgentID, j.ID), j); err != nil {
@@ -277,6 +297,46 @@ func (q *JobQueue) RecoverStuck() {
 			}
 		}
 	}
+}
+
+// Heartbeat refreshes the lease for an in-progress job.
+func (q *JobQueue) Heartbeat(id string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	if job.Status != domain.JobStatusInProgress {
+		return nil
+	}
+	now := time.Now()
+	job.LockedAt = &now
+	job.UpdatedAt = now
+	return store.WriteJSON(path, &job)
+}
+
+// SetSession associates a durable execution session with a job.
+func (q *JobQueue) SetSession(id, sessionID string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.SessionID = sessionID
+	job.UpdatedAt = time.Now()
+	return store.WriteJSON(path, &job)
 }
 
 // UpdateOutput persists the text output captured during a job's execution.
