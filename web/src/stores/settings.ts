@@ -21,6 +21,7 @@ export interface AllowFromEntry {
 	allowedGroups?: string;
 	mentionPrefixes?: string[];
 	respondToMentions?: boolean;
+	mentionPrefixGroupOnly?: boolean;
 	restrictTools?: string[];
 	model?: string;
 	fallbacks?: string[];

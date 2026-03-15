@@ -200,3 +200,68 @@ func TestMatchesAllowedGroup(t *testing.T) {
 
 	}
 }
+
+// TestCheckAllowed_MentionPrefixGroupOnly tests that when mentionPrefixGroupOnly=false,
+// mention filters also gate direct messages.
+func TestCheckAllowed_MentionPrefixGroupOnly_DefaultTrueAllowsDMs(t *testing.T) {
+	// Default (nil / true): DMs pass without a prefix.
+	entries := []config.AllowFromEntry{
+		{From: "*", MentionPrefixes: []string{"aviary"}},
+	}
+	result := checkAllowed(entries, "+1", "+1", "hello", false, "", false)
+	assert.True(t, result.allowed)
+}
+
+func TestCheckAllowed_MentionPrefixGroupOnly_FalseRequiresPrefixInDMs(t *testing.T) {
+	f := false
+	entries := []config.AllowFromEntry{
+		{From: "*", MentionPrefixes: []string{"aviary"}, MentionPrefixGroupOnly: &f},
+	}
+
+	// No prefix → blocked.
+	result := checkAllowed(entries, "+1", "+1", "hello", false, "", false)
+	assert.False(t, result.allowed)
+
+	// Matching prefix → allowed.
+	result = checkAllowed(entries, "+1", "+1", "aviary do this", false, "", false)
+	assert.True(t, result.allowed)
+}
+
+func TestCheckAllowed_MentionPrefixGroupOnly_FalseRespondToMentionsInDMs(t *testing.T) {
+	f := false
+	entries := []config.AllowFromEntry{
+		{From: "*", RespondToMentions: true, MentionPrefixGroupOnly: &f},
+	}
+
+	// Not mentioned → blocked.
+	result := checkAllowed(entries, "+1", "+1", "hello", false, "BOTID", false)
+	assert.False(t, result.allowed)
+
+	// wasMentioned=true → allowed.
+	result = checkAllowed(entries, "+1", "+1", "hello", false, "BOTID", true)
+	assert.True(t, result.allowed)
+
+	// Platform @mention syntax → allowed.
+	result = checkAllowed(entries, "+1", "+1", "<@BOTID> help", false, "BOTID", false)
+	assert.True(t, result.allowed)
+}
+
+func TestCheckAllowed_MentionPrefixGroupOnly_FalseReplyToSelfBypasses(t *testing.T) {
+	// ignoreMentionRules=true (reply-to-self path) must bypass the DM filter.
+	f := false
+	entries := []config.AllowFromEntry{
+		{From: "*", MentionPrefixes: []string{"aviary"}, MentionPrefixGroupOnly: &f},
+	}
+	result := checkAllowedReplyToSelf(entries, "+1", "+1", false)
+	assert.True(t, result.allowed)
+}
+
+func TestCheckAllowed_MentionPrefixGroupOnly_FalseNoFiltersStillAllowsDMs(t *testing.T) {
+	// mentionPrefixGroupOnly=false but no filters configured → still allow.
+	f := false
+	entries := []config.AllowFromEntry{
+		{From: "*", MentionPrefixGroupOnly: &f},
+	}
+	result := checkAllowed(entries, "+1", "+1", "hello", false, "", false)
+	assert.True(t, result.allowed)
+}

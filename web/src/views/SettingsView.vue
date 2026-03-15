@@ -485,13 +485,22 @@
                   </div>
                   <div class="grid gap-2 lg:grid-cols-2">
                     <div>
-                      <label class="field-label">Mention Prefixes — group chats only (comma-separated, case-insensitive)</label>
+                      <label class="field-label">Mention Prefixes (comma-separated, case-insensitive)</label>
                       <input :value="entryMentionPrefixes(entry)" type="text" class="field-input" placeholder="@bot, !help" @change="setEntryMentionPrefixes(entry, $event)" />
                     </div>
-                    <div class="flex items-end pb-1">
+                    <div class="flex flex-col justify-end gap-1.5 pb-1">
                       <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                         <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-                        Respond to @mentions (group chats only)
+                        Respond to @mentions
+                      </label>
+                      <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <input
+                          type="checkbox"
+                          :checked="entry.mentionPrefixGroupOnly !== false"
+                          class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                          @change="entry.mentionPrefixGroupOnly = ($event.target as HTMLInputElement).checked ? undefined : false"
+                        />
+                        Group chats only (uncheck to also require prefix in DMs)
                       </label>
                     </div>
                   </div>
@@ -2606,6 +2615,8 @@ function normalizedDraftConfig(): AppConfig {
 					restrictTools: (entry.restrictTools ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
+					mentionPrefixGroupOnly:
+						entry.mentionPrefixGroupOnly === false ? false : undefined,
 				}))
 				.filter((entry) => entry.from),
 		})),

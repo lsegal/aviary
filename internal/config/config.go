@@ -98,9 +98,12 @@ type AgentConfig struct {
 // To allow group/channel messages, AllowedGroups must be set.  When AllowedGroups
 // is empty the entry only applies to direct messages.
 //
-// MentionPrefixes and RespondToMentions only apply to group messages.
+// MentionPrefixes and RespondToMentions apply to group messages by default.
+// Set MentionPrefixGroupOnly to false to also require a matching prefix in
+// direct messages; when false, DMs from allowed senders must still match a
+// MentionPrefixes pattern or trigger RespondToMentions to be forwarded.
 // For direct-message IDs all messages from the matched sender are forwarded
-// without further filtering.
+// without further filtering when MentionPrefixGroupOnly is true (the default).
 //
 // For YAML backward compatibility a plain string entry is equivalent to
 // AllowFromEntry{From: "<string>"}.
@@ -122,6 +125,12 @@ type AllowFromEntry struct {
 	// syntax (e.g. <@BOTID>).  On Signal this uses the envelope's wasMentioned
 	// field provided by signal-cli.
 	RespondToMentions bool `yaml:"respondToMentions,omitempty" json:"respondToMentions,omitempty"`
+	// MentionPrefixGroupOnly controls whether MentionPrefixes and
+	// RespondToMentions filtering is restricted to group chats only.
+	// Defaults to true (current behaviour). Set to false to also require a
+	// mention prefix in direct messages; DMs without a matching prefix are
+	// then silently dropped even when the sender is in the allow-list.
+	MentionPrefixGroupOnly *bool `yaml:"mentionPrefixGroupOnly,omitempty" json:"mentionPrefixGroupOnly,omitempty"`
 	// RestrictTools overrides the agent's tool allow-list for messages that
 	// match this entry.  When non-empty only the listed tools are available;
 	// an absent or empty slice falls back to the agent-level permissions.

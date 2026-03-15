@@ -104,6 +104,15 @@ func checkAllowedWithOptions(
 			} else {
 				// Direct message: match sender ID only.
 				if id == "*" || id == from {
+					// When mentionPrefixGroupOnly=false, mention filters also gate DMs.
+					if !config.BoolOr(entry.MentionPrefixGroupOnly, true) && !ignoreMentionRules {
+						if len(entry.MentionPrefixes) > 0 || entry.RespondToMentions {
+							if !matchesMentionPrefixes(text, entry.MentionPrefixes) &&
+								(!entry.RespondToMentions || (!wasMentioned && !isDirectMention(text, botUserID))) {
+								continue
+							}
+						}
+					}
 					return allowResult{
 						allowed:       true,
 						restrictTools: entry.RestrictTools,
