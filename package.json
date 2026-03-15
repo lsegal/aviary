@@ -5,6 +5,8 @@
 	"packageManager": "pnpm@8.6.0",
 	"type": "module",
 	"scripts": {
+		"claude": "claude --dangerously-skip-permissions",
+		"codex": "codex --dangerously-bypass-approvals-and-sandbox",
 		"dev": "concurrently -n vite,go -c cyan,green \"vite\" \"wgo run ./cmd/aviary start\"",
 		"build": "pnpm run build:web && pnpm run build:go",
 		"build:web": "vue-tsc --noEmit && vite build && pnpm run build:copy",

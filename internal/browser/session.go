@@ -4,6 +4,8 @@ package browser
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/chromedp/cdproto/target"
@@ -24,7 +26,11 @@ type Session struct {
 // Go from the tab — the tab itself remains open in Chrome.
 func newRemoteSessionForTab(ctx context.Context, wsURL, tabID string) (*Session, error) {
 	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, wsURL)
-	taskCtx, cancelTask := chromedp.NewContext(allocCtx, chromedp.WithTargetID(target.ID(tabID)))
+	taskCtx, cancelTask := chromedp.NewContext(
+		allocCtx,
+		chromedp.WithTargetID(target.ID(tabID)),
+		chromedp.WithErrorf(filteredChromeDPErrorf),
+	)
 
 	if err := chromedp.Run(taskCtx); err != nil {
 		cancelTask()
@@ -67,4 +73,18 @@ func (s *Session) Close() {
 // must avoid closing the target on cleanup.
 func (s *Session) Detach() {
 	s.cancelAlloc()
+}
+
+func filteredChromeDPErrorf(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if isIgnorableChromeDPError(msg) {
+		slog.Debug("browser: ignored chromedp error", "msg", msg)
+		return
+	}
+	slog.Error(msg)
+}
+
+func isIgnorableChromeDPError(msg string) bool {
+	return strings.Contains(msg, "could not unmarshal event:") &&
+		strings.Contains(msg, `unknown InitiatorType value: FedCM`)
 }
