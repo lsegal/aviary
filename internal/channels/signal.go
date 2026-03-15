@@ -711,7 +711,10 @@ func (c *SignalChannel) Stop() {
 // DaemonInfo returns info about the signal-cli daemon.
 // For managed mode it reads from the shared daemon (subprocess PID and start time).
 // For external mode it returns the configured address with PID=0.
-// Returns nil only when in managed mode and the daemon is not currently running.
+// DaemonInfo returns info about the signal-cli daemon.
+// For managed mode it reads from the shared daemon (subprocess PID and start time).
+// For external mode it returns the configured address with PID=0.
+// Returns nil only when no daemon is configured at all (phone and addr both empty).
 func (c *SignalChannel) DaemonInfo() *DaemonInfo {
 	if c.initAddr != "" {
 		return &DaemonInfo{Addr: c.initAddr, External: true}
@@ -723,9 +726,8 @@ func (c *SignalChannel) DaemonInfo() *DaemonInfo {
 	pid := c.daemon.procPID
 	started := c.daemon.procStarted
 	c.daemon.procMu.RUnlock()
-	if pid == 0 {
-		return nil
-	}
+	// Return a non-nil DaemonInfo even when PID==0 so the daemons handler can
+	// deduplicate entries for channels sharing the same managed daemon.
 	return &DaemonInfo{PID: pid, Addr: c.daemon.getAddr(), Started: started}
 }
 

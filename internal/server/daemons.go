@@ -62,6 +62,7 @@ func (s *Server) daemonsHandler(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	seenPIDs := map[int]bool{}
+	seenManaged := map[string]bool{} // dedup managed channels with PID==0 by type+id
 	for _, cs := range s.channels.List() {
 		d := DaemonStatus{
 			Name:       cs.Key,
@@ -95,7 +96,16 @@ func (s *Server) daemonsHandler(w http.ResponseWriter, _ *http.Request) {
 					d.RSSBytes = stats.RSSBytes
 					d.Status = stats.Status
 				}
-			} else if cs.Daemon.External && cs.Daemon.Addr != "" {
+			} else if !cs.Daemon.External {
+				// Managed daemon not yet running: dedup by type+id so that multiple
+				// channels sharing the same phone number appear as one entry.
+				mkey := cs.Type + ":" + cs.ID
+				if seenManaged[mkey] {
+					continue
+				}
+				seenManaged[mkey] = true
+				d.Status = "starting"
+			} else if cs.Daemon.Addr != "" {
 				// External daemon: probe reachability with a short-timeout dial.
 				conn, err := net.DialTimeout("tcp", cs.Daemon.Addr, 300*time.Millisecond)
 				if err != nil {
