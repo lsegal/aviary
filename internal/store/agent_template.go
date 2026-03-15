@@ -44,6 +44,7 @@ func SyncAgentTemplate(agentID string) error {
 		if err != nil {
 			return err
 		}
+		srcData = bytes.ReplaceAll(srcData, []byte("\r\n"), []byte("\n"))
 		destData, err := os.ReadFile(target)
 		if err != nil {
 			if os.IsNotExist(err) {
