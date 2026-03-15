@@ -7,7 +7,7 @@ import (
 )
 
 func TestProviders(t *testing.T) {
-	assert.Equal(t, []string{"google", "anthropic", "openai", "openai-codex"}, Providers())
+	assert.Equal(t, []string{"google", "google-gemini", "anthropic", "openai", "openai-codex"}, Providers())
 }
 
 func TestFilterByProvider(t *testing.T) {

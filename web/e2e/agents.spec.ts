@@ -200,7 +200,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async ({
 	await page.locator('input[placeholder="Select a model…"]').first().click();
 
 	await expect(
-		page.getByText("google/gemini-2.5-flash", { exact: true }),
+		page.getByText("google-gemini/gemini-2.5-flash", { exact: true }),
 	).toBeVisible();
 });
 
