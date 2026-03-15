@@ -1,0 +1,43 @@
+{
+  "runtime": {
+    "type": "command",
+    "binary": "himalaya",
+    "binary_setting": "binary",
+    "args": ["--output", "json"],
+    "strip_value_flags": ["-o", "--output"],
+    "strip_arg_prefixes": ["-o=", "--output="],
+    "top_level_skip_value_flags": ["-c", "--config", "-o", "--output"],
+    "top_level_skip_arg_prefixes": ["-c=", "--config=", "-o=", "--output="],
+    "allowed_commands_setting": "allowed_commands",
+    "allowed_commands": [
+      "account",
+      "folder",
+      "envelope",
+      "flag",
+      "message",
+      "attachment",
+      "template"
+    ]
+  },
+  "settings": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "binary": {
+        "type": "string",
+        "title": "Binary override",
+        "description": "Optional path or command name for the Himalaya binary.",
+        "placeholder": "himalaya"
+      },
+      "allowed_commands": {
+        "type": "array",
+        "title": "Allowed commands",
+        "description": "Top-level Himalaya commands that Aviary may invoke.",
+        "items": {
+          "type": "string"
+        },
+        "placeholder": "account, folder, envelope"
+      }
+    }
+  }
+}

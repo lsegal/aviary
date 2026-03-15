@@ -32,17 +32,12 @@ func TestSkillMgrSaveCurrentPersistsConfig(t *testing.T) {
 	m.refreshInstalled()
 	assert.NotEqual(t, 0, len(m.installed))
 
-	m.binary.SetValue("gog")
-	m.allowed.SetValue("gmail, calendar")
 	gotModel, _ := m.toggleEnabled()
 	m = gotModel.(skillMgrModel)
 
 	sk := m.cfg.Skills["gogcli"]
 	assert.True(t, sk.Enabled)
-	assert.Equal(t, "gog", sk.Binary)
-	assert.Len(t, sk.AllowedCommands, 2)
-	assert.Equal(t, "gmail", sk.AllowedCommands[0])
-	assert.Equal(t, "calendar", sk.AllowedCommands[1])
+	assert.Nil(t, sk.Settings)
 
 	loaded, err := config.Load(cfgPath)
 	assert.NoError(t, err)

@@ -175,6 +175,7 @@
               "required": ["name", "prompt"],
               "additionalProperties": false,
               "properties": {
+                "enabled": { "type": "boolean" },
                 "name": { "type": "string" },
                 "schedule": { "type": "string" },
                 "start_at": { "type": "string", "format": "date-time" },
@@ -273,16 +274,10 @@
         "additionalProperties": false,
         "properties": {
           "enabled": { "type": "boolean" },
-          "binary": { "type": "string" },
-          "allowed_commands": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "env": {
+          "settings": {
             "type": "object",
-            "additionalProperties": { "type": "string" }
-          },
-          "timeout": { "type": "string" }
+            "additionalProperties": true
+          }
         }
       }
     }

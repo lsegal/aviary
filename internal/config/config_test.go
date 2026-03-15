@@ -119,6 +119,17 @@ func TestValidate(t *testing.T) {
 
 	})
 
+	t.Run("empty task target warns that output is silent", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{
+			Name:     "t1",
+			Schedule: "*/1 * * * * *",
+			Prompt:   "p",
+		}}}}}
+		issues := Validate(cfg, nil)
+		assert.True(t, hasIssue(issues, "completed task output will only appear in job logs"))
+
+	})
+
 	t.Run("task names may contain slash", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "folder/subtask", Prompt: "p", Schedule: "*/1 * * * * *"}}}}}
 		issues := Validate(cfg, nil)
@@ -291,6 +302,58 @@ func TestSave(t *testing.T) {
 
 	})
 
+	t.Run("writes long strings using folded style", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		cfg := Default()
+		cfg.Agents = []AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-sonnet-4-5",
+			Rules: "This is a deliberately long rules string that should be emitted with folded YAML style once it exceeds eighty characters.",
+		}}
+		err := Save(path, &cfg)
+		assert.NoError(t, err)
+
+		data, err := os.ReadFile(path)
+		assert.NoError(t, err)
+
+		text := string(data)
+		assert.Contains(t, text, "rules: >")
+
+		loaded, err := Load(path)
+		assert.NoError(t, err)
+		assert.Equal(t, cfg.Agents[0].Rules, loaded.Agents[0].Rules)
+	})
+
+	t.Run("writes multiline task prompts using literal style", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+
+		cfg := Default()
+		cfg.Agents = []AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-sonnet-4-5",
+			Tasks: []TaskConfig{{
+				Name:     "daily-briefing",
+				Schedule: "0 9 * * *",
+				Prompt:   "line 1\nline 2\n\nline 4\n",
+			}},
+		}}
+		err := Save(path, &cfg)
+		assert.NoError(t, err)
+
+		data, err := os.ReadFile(path)
+		assert.NoError(t, err)
+
+		text := string(data)
+		assert.Contains(t, text, "prompt: |")
+
+		loaded, err := Load(path)
+		assert.NoError(t, err)
+		assert.Equal(t, cfg.Agents[0].Tasks[0].Prompt, loaded.Agents[0].Tasks[0].Prompt)
+	})
+
 	t.Run("normalize empty agents", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "aviary.yaml")
@@ -420,6 +483,21 @@ func TestNormalize(t *testing.T) {
 		normalize(cfg)
 		assert.Equal(t, 4, cfg.Scheduler.Concurrency)
 
+	})
+
+	t.Run("enabled task omitted when true and preserved when false", func(t *testing.T) {
+		disabled := false
+		cfg := &Config{Agents: []AgentConfig{{
+			Name: "bot",
+			Tasks: []TaskConfig{
+				{Name: "enabled-task", Prompt: "p"},
+				{Name: "disabled-task", Prompt: "p", Enabled: &disabled},
+			},
+		}}}
+		normalize(cfg)
+		assert.Nil(t, cfg.Agents[0].Tasks[0].Enabled)
+		assert.NotNil(t, cfg.Agents[0].Tasks[1].Enabled)
+		assert.False(t, *cfg.Agents[0].Tasks[1].Enabled)
 	})
 }
 
@@ -885,31 +963,22 @@ func TestNormalize_Skills(t *testing.T) {
 
 	})
 
-	t.Run("skill with binary preserved", func(t *testing.T) {
+	t.Run("skill with settings preserved", func(t *testing.T) {
 		cfg := &Config{Skills: map[string]SkillConfig{
-			"mygog": {Binary: "/usr/local/bin/gog"},
+			"mygog": {Settings: map[string]any{"binary": "/usr/local/bin/gog"}},
 		}}
 		normalize(cfg)
 		assert.NotNil(t, cfg.Skills)
-		assert.NotEqual(t, "", cfg.Skills["mygog"].Binary)
+		assert.NotEmpty(t, cfg.Skills["mygog"].Settings)
 
 	})
 
-	t.Run("skill allowed commands normalized", func(t *testing.T) {
+	t.Run("skill empty settings normalized", func(t *testing.T) {
 		cfg := &Config{Skills: map[string]SkillConfig{
-			"mygog": {Enabled: true, AllowedCommands: []string{}},
+			"mygog": {Enabled: true, Settings: map[string]any{}},
 		}}
 		normalize(cfg)
-		assert.Nil(t, cfg.Skills["mygog"].AllowedCommands)
-
-	})
-
-	t.Run("skill env normalized", func(t *testing.T) {
-		cfg := &Config{Skills: map[string]SkillConfig{
-			"mygog": {Enabled: true, Env: map[string]string{}},
-		}}
-		normalize(cfg)
-		assert.Nil(t, cfg.Skills["mygog"].Env)
+		assert.Nil(t, cfg.Skills["mygog"].Settings)
 
 	})
 }

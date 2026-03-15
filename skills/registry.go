@@ -3,8 +3,10 @@ package skills
 
 import (
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,18 +16,42 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 )
 
-//go:embed */SKILL.md
+//go:embed */*
 var builtinFS embed.FS
 
 // Definition describes a skill that can be listed or installed.
 type Definition struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
-	Path        string `json:"path"`
-	Installed   bool   `json:"installed"`
-	Enabled     bool   `json:"enabled"`
-	Source      string `json:"source"` // "builtin" or "disk"
+	Name           string                `json:"name"`
+	Description    string                `json:"description"`
+	Content        string                `json:"content"`
+	Path           string                `json:"path"`
+	Installed      bool                  `json:"installed"`
+	Enabled        bool                  `json:"enabled"`
+	Source         string                `json:"source"` // "builtin" or "disk"
+	SettingsSchema map[string]any        `json:"settings_schema,omitempty"`
+	Runtime        *RuntimeConfiguration `json:"-"`
+}
+
+type manifest struct {
+	Runtime  *RuntimeConfiguration `json:"runtime,omitempty"`
+	Settings map[string]any        `json:"settings,omitempty"`
+}
+
+// RuntimeConfiguration describes how a skill directory registers an executable MCP tool.
+type RuntimeConfiguration struct {
+	Type                    string            `json:"type,omitempty"`
+	Binary                  string            `json:"binary,omitempty"`
+	BinarySetting           string            `json:"binary_setting,omitempty"`
+	Args                    []string          `json:"args,omitempty"`
+	StripArgs               []string          `json:"strip_args,omitempty"`
+	StripValueFlags         []string          `json:"strip_value_flags,omitempty"`
+	StripArgPrefixes        []string          `json:"strip_arg_prefixes,omitempty"`
+	TopLevelSkipValueFlags  []string          `json:"top_level_skip_value_flags,omitempty"`
+	TopLevelSkipArgPrefixes []string          `json:"top_level_skip_arg_prefixes,omitempty"`
+	AllowedCommands         []string          `json:"allowed_commands,omitempty"`
+	AllowedCommandsSetting  string            `json:"allowed_commands_setting,omitempty"`
+	Env                     map[string]string `json:"env,omitempty"`
+	EnvFromTopLevel         string            `json:"env_from_top_level,omitempty"`
 }
 
 type frontmatter struct {
@@ -88,7 +114,14 @@ func loadEmbedded() ([]Definition, error) {
 			return nil, err
 		}
 		name := filepath.Base(filepath.Dir(match))
-		sk, err := parseSkill(name, string(data))
+		var mf manifest
+		manifestPath := path.Join(path.Dir(match), "aviary-skill.json")
+		if manifestData, err := builtinFS.ReadFile(manifestPath); err == nil {
+			if err := json.Unmarshal(manifestData, &mf); err != nil {
+				return nil, err
+			}
+		}
+		sk, err := parseSkill(name, string(data), mf)
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +161,14 @@ func loadDisk(root string) ([]Definition, error) {
 			return nil
 		}
 		name := filepath.Base(filepath.Dir(path))
-		sk, err := parseSkill(name, string(data))
+		var mf manifest
+		manifestPath := filepath.Join(filepath.Dir(path), "aviary-skill.json")
+		if manifestData, err := os.ReadFile(manifestPath); err == nil {
+			if err := json.Unmarshal(manifestData, &mf); err != nil {
+				return err
+			}
+		}
+		sk, err := parseSkill(name, string(data), mf)
 		if err != nil {
 			return nil
 		}
@@ -141,8 +181,13 @@ func loadDisk(root string) ([]Definition, error) {
 	return out, err
 }
 
-func parseSkill(defaultName, raw string) (Definition, error) {
-	sk := Definition{Name: defaultName, Content: strings.TrimSpace(raw)}
+func parseSkill(defaultName, raw string, mf manifest) (Definition, error) {
+	sk := Definition{
+		Name:           defaultName,
+		Content:        strings.TrimSpace(raw),
+		SettingsSchema: mf.Settings,
+		Runtime:        mf.Runtime,
+	}
 	if !strings.HasPrefix(raw, "---\n") {
 		return sk, nil
 	}

@@ -25,11 +25,8 @@ type Config struct {
 
 // SkillConfig configures an installed skill runtime.
 type SkillConfig struct {
-	Enabled         bool              `yaml:"enabled,omitempty"          json:"enabled,omitempty"`
-	Binary          string            `yaml:"binary,omitempty"           json:"binary,omitempty"`
-	AllowedCommands []string          `yaml:"allowed_commands,omitempty" json:"allowed_commands,omitempty"`
-	Env             map[string]string `yaml:"env,omitempty"              json:"env,omitempty"`
-	Timeout         string            `yaml:"timeout,omitempty"          json:"timeout,omitempty"`
+	Enabled  bool           `yaml:"enabled,omitempty"  json:"enabled,omitempty"`
+	Settings map[string]any `yaml:"settings,omitempty" json:"settings,omitempty"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -201,7 +198,8 @@ func BoolOr(b *bool, def bool) bool {
 
 // TaskConfig describes a scheduled or file-watch task.
 type TaskConfig struct {
-	Name     string `yaml:"name"              json:"name"`
+	Enabled  *bool  `yaml:"enabled,omitempty"  json:"enabled,omitempty"`
+	Name     string `yaml:"name"               json:"name"`
 	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"`
 	StartAt  string `yaml:"start_at,omitempty" json:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
@@ -320,13 +318,10 @@ func normalize(cfg *Config) {
 		cfg.Models.Defaults = nil
 	}
 	for name, sk := range cfg.Skills {
-		if len(sk.AllowedCommands) == 0 {
-			sk.AllowedCommands = nil
+		if len(sk.Settings) == 0 {
+			sk.Settings = nil
 		}
-		if len(sk.Env) == 0 {
-			sk.Env = nil
-		}
-		if !sk.Enabled && sk.Binary == "" && len(sk.AllowedCommands) == 0 && len(sk.Env) == 0 && sk.Timeout == "" {
+		if !sk.Enabled && len(sk.Settings) == 0 {
 			delete(cfg.Skills, name)
 			continue
 		}
@@ -448,10 +443,15 @@ func Save(path string, cfg *Config) error {
 	if err := backupConfigFile(path); err != nil {
 		return err
 	}
+	var node yaml.Node
+	if err := node.Encode(cfg); err != nil {
+		return fmt.Errorf("building config yaml node: %w", err)
+	}
+	applyFoldedStyleToLongStrings(&node)
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
-	if err := enc.Encode(cfg); err != nil {
+	if err := enc.Encode(&node); err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 	if err := enc.Close(); err != nil {
@@ -462,6 +462,32 @@ func Save(path string, cfg *Config) error {
 		return fmt.Errorf("writing config %s: %w", path, err)
 	}
 	return nil
+}
+
+func applyFoldedStyleToLongStrings(node *yaml.Node) {
+	applyFoldedStyle(node, false)
+}
+
+func applyFoldedStyle(node *yaml.Node, mappingKey bool) {
+	if node == nil {
+		return
+	}
+	if !mappingKey && node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+		if strings.Contains(node.Value, "\n") {
+			node.Style = yaml.LiteralStyle
+		} else if len(node.Value) > 80 {
+			node.Style = yaml.FoldedStyle
+		}
+	}
+	if node.Kind == yaml.MappingNode {
+		for i, child := range node.Content {
+			applyFoldedStyle(child, i%2 == 0)
+		}
+		return
+	}
+	for _, child := range node.Content {
+		applyFoldedStyle(child, false)
+	}
 }
 
 func backupConfigFile(path string) error {

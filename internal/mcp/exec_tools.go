@@ -116,6 +116,7 @@ func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, ar
 	if result.Cwd != "" {
 		cmd.Dir = result.Cwd
 	}
+	cmd.Env = commandEnv(ctx, nil)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

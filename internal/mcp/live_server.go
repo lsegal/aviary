@@ -29,5 +29,5 @@ func SyncLiveServer(cfg *config.Config) {
 	if s == nil {
 		return
 	}
-	syncPluginTools(s, cfg)
+	syncSkillTools(s, cfg)
 }

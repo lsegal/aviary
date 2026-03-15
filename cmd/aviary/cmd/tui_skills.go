@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/lsegal/aviary/internal/config"
@@ -24,22 +23,15 @@ type skillMgrModel struct {
 	mode       skillMgrMode
 	cursor     int
 	editCursor int
-	width      int
 	installed  []skills.Definition
-	binary     textinput.Model
-	allowed    textinput.Model
 	message    string
 	err        string
 }
 
 func newSkillMgrModel(cfg *config.Config, cfgPath string) skillMgrModel {
-	binary := newInput("gog", "")
-	allowed := newInput("gmail, calendar, drive", "")
 	return skillMgrModel{
 		cfg:     cfg,
 		cfgPath: cfgPath,
-		binary:  binary,
-		allowed: allowed,
 	}
 }
 
@@ -62,10 +54,6 @@ func (m skillMgrModel) Init() tea.Cmd {
 
 func (m skillMgrModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.binary.Width = clampInputWidth(m.width)
-		m.allowed.Width = clampInputWidth(m.width)
 	case tea.KeyMsg:
 		switch m.mode {
 		case skillModeList:
@@ -93,15 +81,6 @@ func (m skillMgrModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.installed) == 0 {
 			return m, nil
 		}
-		name := m.installed[m.cursor].Name
-		var current config.SkillConfig
-		if m.cfg.Skills != nil {
-			current = m.cfg.Skills[name]
-		}
-		m.binary.SetValue(current.Binary)
-		m.allowed.SetValue(strings.Join(current.AllowedCommands, ", "))
-		m.binary.Blur()
-		m.allowed.Blur()
 		m.editCursor = 0
 		m.mode = skillModeEdit
 	}
@@ -114,8 +93,6 @@ func (m skillMgrModel) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		m.mode = skillModeList
-		m.binary.Blur()
-		m.allowed.Blur()
 		return m, nil
 	case "up", "k", "shift+tab":
 		if m.editCursor > 0 {
@@ -123,7 +100,7 @@ func (m skillMgrModel) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.syncFocus()
 	case "down", "j", "tab":
-		if m.editCursor < 3 {
+		if m.editCursor < 1 {
 			m.editCursor++
 		}
 		return m.syncFocus()
@@ -131,36 +108,15 @@ func (m skillMgrModel) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.editCursor {
 		case 0:
 			return m.toggleEnabled()
-		case 3:
+		case 1:
 			return m.saveCurrent()
 		}
-	}
-
-	var cmd tea.Cmd
-	switch m.editCursor {
-	case 1:
-		m.binary, cmd = m.binary.Update(msg)
-		return m, cmd
-	case 2:
-		m.allowed, cmd = m.allowed.Update(msg)
-		return m, cmd
 	}
 	return m, nil
 }
 
 func (m skillMgrModel) syncFocus() (tea.Model, tea.Cmd) {
-	m.binary.Blur()
-	m.allowed.Blur()
-	switch m.editCursor {
-	case 1:
-		m.binary.Focus()
-		return m, textinput.Blink
-	case 2:
-		m.allowed.Focus()
-		return m, textinput.Blink
-	default:
-		return m, nil
-	}
+	return m, nil
 }
 
 func (m skillMgrModel) currentSkillName() string {
@@ -193,8 +149,6 @@ func (m skillMgrModel) saveCurrent() (tea.Model, tea.Cmd) {
 		m.cfg.Skills = map[string]config.SkillConfig{}
 	}
 	sk := m.cfg.Skills[name]
-	sk.Binary = strings.TrimSpace(m.binary.Value())
-	sk.AllowedCommands = splitCSV(m.allowed.Value())
 	m.cfg.Skills[name] = sk
 	if err := config.Save(m.cfgPath, m.cfg); err != nil {
 		m.err = err.Error()
@@ -210,7 +164,7 @@ func (m skillMgrModel) View() string {
 	var b strings.Builder
 	b.WriteString(tuiTitleStyle.Render("Skills"))
 	b.WriteString("\n")
-	b.WriteString(tuiDimStyle.Render("Enable installed skills and edit skill-specific runtime settings."))
+	b.WriteString(tuiDimStyle.Render("Enable installed skills. Use the web settings page for schema-driven skill settings."))
 	b.WriteString("\n\n")
 	switch m.mode {
 	case skillModeList:
@@ -262,8 +216,6 @@ func (m skillMgrModel) viewEdit() string {
 	sk := m.cfg.Skills[name]
 	rows := []string{
 		fmt.Sprintf("Enabled          %s", skillBoolLabel(sk.Enabled)),
-		fmt.Sprintf("Binary           %s", m.binary.View()),
-		fmt.Sprintf("Allowed Commands %s", m.allowed.View()),
 		"Save",
 	}
 	var b strings.Builder

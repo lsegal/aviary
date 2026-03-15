@@ -1,0 +1,52 @@
+{
+  "runtime": {
+    "type": "command",
+    "binary": "gog",
+    "binary_setting": "binary",
+    "args": ["--json"],
+    "strip_args": ["--json"],
+    "top_level_skip_value_flags": ["--account"],
+    "allowed_commands_setting": "allowed_commands",
+    "allowed_commands": [
+      "gmail",
+      "calendar",
+      "drive",
+      "contacts",
+      "tasks",
+      "sheets",
+      "docs",
+      "slides",
+      "forms",
+      "chat",
+      "classroom",
+      "appscript",
+      "people",
+      "groups",
+      "admin",
+      "keep",
+      "time"
+    ],
+    "env_from_top_level": "GOG_ENABLE_COMMANDS"
+  },
+  "settings": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "binary": {
+        "type": "string",
+        "title": "Binary override",
+        "description": "Optional path or command name for the gog binary.",
+        "placeholder": "gog"
+      },
+      "allowed_commands": {
+        "type": "array",
+        "title": "Allowed commands",
+        "description": "Top-level gog services that Aviary may invoke.",
+        "items": {
+          "type": "string"
+        },
+        "placeholder": "gmail, calendar, drive"
+      }
+    }
+  }
+}

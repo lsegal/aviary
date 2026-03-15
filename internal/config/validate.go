@@ -184,7 +184,7 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 
 			switch {
 			case t.Target == "":
-				// silent delivery
+				v.warnf(tf+".target", "target is empty; completed task output will only appear in job logs")
 			case validTaskRoute(t.Target):
 				// explicit configured delivery route
 			default:

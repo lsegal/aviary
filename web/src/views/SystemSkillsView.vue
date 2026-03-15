@@ -226,13 +226,7 @@ function skillConfig(name: string): SkillConfig {
 
 function isEmptySkillConfig(skill: SkillConfig | undefined): boolean {
 	if (!skill) return true;
-	return (
-		!skill.enabled &&
-		!(skill.binary ?? "").trim() &&
-		(skill.allowed_commands?.length ?? 0) === 0 &&
-		!(skill.timeout ?? "").trim() &&
-		Object.keys(skill.env ?? {}).length === 0
-	);
+	return !skill.enabled && Object.keys(skill.settings ?? {}).length === 0;
 }
 
 function isEnabled(name: string): boolean {
