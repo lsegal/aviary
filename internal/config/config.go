@@ -120,6 +120,10 @@ type AllowFromEntry struct {
 	// text in group chats.  At least one must match for the message to be
 	// forwarded (unless RespondToMentions is true and the bot is mentioned).
 	MentionPrefixes []string `yaml:"mentionPrefixes,omitempty" json:"mentionPrefixes,omitempty"`
+	// ExcludePrefixes is a list of glob patterns matched against the message
+	// text.  If any pattern matches, the message is silently dropped regardless
+	// of other rules.  Applies to both direct messages and group messages.
+	ExcludePrefixes []string `yaml:"excludePrefixes,omitempty" json:"excludePrefixes,omitempty"`
 	// RespondToMentions, when true, also forwards group messages that directly
 	// mention the bot.  On Slack and Discord this checks for platform @mention
 	// syntax (e.g. <@BOTID>).  On Signal this uses the envelope's wasMentioned

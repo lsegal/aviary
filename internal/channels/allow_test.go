@@ -265,3 +265,28 @@ func TestCheckAllowed_MentionPrefixGroupOnly_FalseNoFiltersStillAllowsDMs(t *tes
 	result := checkAllowed(entries, "+1", "+1", "hello", false, "", false)
 	assert.True(t, result.allowed)
 }
+
+func TestCheckAllowed_ExcludePrefixes_BlocksDM(t *testing.T) {
+	entries := []config.AllowFromEntry{
+		{From: "*", ExcludePrefixes: []string{"!", "/"}},
+	}
+	assert.False(t, checkAllowed(entries, "+1", "+1", "!ignore this", false, "", false).allowed)
+	assert.False(t, checkAllowed(entries, "+1", "+1", "/command", false, "", false).allowed)
+	assert.True(t, checkAllowed(entries, "+1", "+1", "hello", false, "", false).allowed)
+}
+
+func TestCheckAllowed_ExcludePrefixes_BlocksGroup(t *testing.T) {
+	entries := []config.AllowFromEntry{
+		{From: "*", AllowedGroups: "*", ExcludePrefixes: []string{"!"}},
+	}
+	assert.False(t, checkAllowed(entries, "+1", "grp1", "!ignore", true, "", false).allowed)
+	assert.True(t, checkAllowed(entries, "+1", "grp1", "aviary help", true, "", false).allowed)
+}
+
+func TestCheckAllowed_ExcludePrefixes_GlobPattern(t *testing.T) {
+	entries := []config.AllowFromEntry{
+		{From: "*", ExcludePrefixes: []string{"bot:*"}},
+	}
+	assert.False(t, checkAllowed(entries, "+1", "+1", "bot: do something", false, "", false).allowed)
+	assert.True(t, checkAllowed(entries, "+1", "+1", "human: do something", false, "", false).allowed)
+}

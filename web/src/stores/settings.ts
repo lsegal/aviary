@@ -20,6 +20,7 @@ export interface AllowFromEntry {
 	from: string;
 	allowedGroups?: string;
 	mentionPrefixes?: string[];
+	excludePrefixes?: string[];
 	respondToMentions?: boolean;
 	mentionPrefixGroupOnly?: boolean;
 	restrictTools?: string[];

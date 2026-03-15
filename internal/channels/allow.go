@@ -64,6 +64,11 @@ func checkAllowedWithOptions(
 		if !config.BoolOr(entry.Enabled, true) {
 			continue
 		}
+		// ExcludePrefixes is a global denylist: drop the message if any pattern
+		// matches, regardless of whether it is a DM or group message.
+		if matchesMentionPrefixes(text, entry.ExcludePrefixes) {
+			return allowResult{}
+		}
 		for _, id := range splitFrom(entry.From) {
 			if isGroup {
 				// Step 1: the sender must match this entry's From list.
