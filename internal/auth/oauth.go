@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -8,11 +9,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,6 +45,14 @@ const (
 	OpenAICallbackPort = 1455
 	// openAIOriginator is the originator header value used by the official CLI.
 	openAIOriginator = "codex_cli_rs"
+)
+
+// GitHub OAuth endpoints used for PKCE login. The client ID must be supplied
+// by setting the GITHUB_OAUTH_CLIENT_ID environment variable.
+const (
+	GitHubAuthorizeURL = "https://github.com/login/oauth/authorize"
+	GitHubTokenURL     = "https://github.com/login/oauth/access_token"
+	GitHubCallbackPort = 1466
 )
 
 // PKCEParams holds the PKCE code verifier and its SHA-256 challenge.
@@ -392,6 +405,191 @@ func OpenAIRefresh(ctx context.Context, refreshToken string) (*OAuthToken, error
 	}, nil
 }
 
+// GitHubLogin performs a GitHub OAuth PKCE login. Requires GITHUB_OAUTH_CLIENT_ID
+// to be set; falls back to reading the gh CLI token from hosts.yml if not set.
+func GitHubLogin(ctx context.Context) (*OAuthToken, error) {
+	clientID := os.Getenv("GITHUB_OAUTH_CLIENT_ID")
+	if clientID == "" {
+		// Fall back to reading the GitHub CLI/gh token from hosts.yml so users
+		// who authenticated with the official `gh` tool (or extensions) don't
+		// need to provide a client id. This mirrors typical Copilot/CLI
+		// behavior which reuses existing gh credentials when available.
+		if t, err := readGHHostsToken(); err == nil {
+			return t, nil
+		}
+		return nil, fmt.Errorf("GITHUB_OAUTH_CLIENT_ID not set; cannot perform GitHub OAuth PKCE login")
+	}
+
+	pkce, err := GeneratePKCE()
+	if err != nil {
+		return nil, err
+	}
+
+	// Listen on loopback only.
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GitHubCallbackPort))
+	if err != nil {
+		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", GitHubCallbackPort, err)
+	}
+
+	type cb struct{ code string }
+	codeCh := make(chan cb, 1)
+	errCh := make(chan error, 1)
+
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
+		if errParam := r.URL.Query().Get("error"); errParam != "" {
+			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("oauth error: %s", errParam):
+			default:
+			}
+			return
+		}
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "missing code", http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("no code in callback"):
+			default:
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
+		select {
+		case codeCh <- cb{code: code}:
+		default:
+		}
+	})
+
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+	}()
+	defer srv.Shutdown(context.Background()) //nolint:errcheck
+
+	// Build authorize URL
+	u, _ := url.Parse(GitHubAuthorizeURL)
+	q := u.Query()
+	q.Set("client_id", clientID)
+	q.Set("response_type", "code")
+	q.Set("redirect_uri", fmt.Sprintf("http://localhost:%d/auth/callback", GitHubCallbackPort))
+	q.Set("scope", "read:user user:email")
+	q.Set("code_challenge", pkce.Challenge)
+	q.Set("code_challenge_method", "S256")
+	u.RawQuery = q.Encode()
+
+	if err := OpenBrowser(u.String()); err != nil {
+		return nil, fmt.Errorf("opening browser for GitHub OAuth: %w", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case e := <-errCh:
+		return nil, e
+	case cbres := <-codeCh:
+		// Exchange code for token
+		return GitHubExchange(ctx, cbres.code, pkce.Verifier, fmt.Sprintf("http://localhost:%d/auth/callback", GitHubCallbackPort), clientID)
+	}
+}
+
+// readGHHostsToken attempts to parse the GitHub CLI hosts.yml file for a
+// `github.com` entry with an `oauth_token` value and returns it as an
+// OAuthToken with a long expiry. This implements a minimal, robust parser
+// that avoids adding a YAML dependency.
+func readGHHostsToken() (*OAuthToken, error) {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE")
+	}
+	if home == "" {
+		return nil, fmt.Errorf("cannot determine home directory")
+	}
+	path := filepath.Join(home, ".config", "gh", "hosts.yml")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close() //nolint:errcheck
+
+	scanner := bufio.NewScanner(f)
+	inGitHubSection := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "github.com:" {
+			inGitHubSection = true
+			continue
+		}
+		if inGitHubSection {
+			if line == "" {
+				// blank line ends section
+				inGitHubSection = false
+				continue
+			}
+			// look for `oauth_token: <token>`
+			if strings.HasPrefix(line, "oauth_token:") {
+				tok := strings.TrimSpace(strings.TrimPrefix(line, "oauth_token:"))
+				tok = strings.Trim(tok, "'\"")
+				if tok != "" {
+					return &OAuthToken{AccessToken: tok, RefreshToken: "", ExpiresAt: time.Now().Add(10 * 365 * 24 * time.Hour).UnixMilli()}, nil
+				}
+			}
+			// If we encounter a non-indented line it's probably a new top-level key.
+			if !strings.HasPrefix(scanner.Text(), " ") && !strings.HasPrefix(scanner.Text(), "\t") {
+				inGitHubSection = false
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("no github.com oauth_token found in %s", path)
+}
+
+// GitHubExchange exchanges an authorization code for a GitHub OAuth token.
+func GitHubExchange(ctx context.Context, code, verifier, redirectURI, clientID string) (*OAuthToken, error) {
+	// GitHub expects form-encoded POST
+	body := url.Values{}
+	body.Set("client_id", clientID)
+	body.Set("code", code)
+	body.Set("code_verifier", verifier)
+	body.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, GitHubTokenURL, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github token exchange: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github token exchange failed: %s", resp.Status)
+	}
+
+	var result struct {
+		AccessToken string `json:"access_token"`
+		Scope       string `json:"scope"`
+		TokenType   string `json:"token_type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding github token response: %w", err)
+	}
+
+	// GitHub tokens do not have a refresh token in this flow; set a long expiry.
+	return &OAuthToken{AccessToken: result.AccessToken, RefreshToken: "", ExpiresAt: time.Now().Add(10 * 365 * 24 * time.Hour).UnixMilli()}, nil
+}
+
 // Gemini OAuth constants for the gemini-cli OAuth flow.
 // Client ID, secret, and redirect port sourced from the official google-gemini/gemini-cli
 // (packages/core/src/code_assist/oauth2.ts).
@@ -578,6 +776,216 @@ func GeminiRefresh(ctx context.Context, refreshToken string) (*OAuthToken, error
 		RefreshToken: result.RefreshToken,
 		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
 	}, nil
+}
+
+// GitHub Copilot OAuth constants. The client ID is the public GitHub Copilot
+// VS Code extension OAuth app, widely used by third-party Copilot integrations.
+const (
+	CopilotClientID       = "Iv1.b507a08c87ecfe98"
+	CopilotDeviceCodeURL  = "https://github.com/login/device/code"
+	CopilotDeviceTokenURL = "https://github.com/login/oauth/access_token"
+	CopilotDeviceScope    = "read:user"
+)
+
+// CopilotDeviceState holds the in-flight state for a GitHub Copilot device flow.
+type CopilotDeviceState struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURI string
+	Interval        int
+	ExpiresIn       int
+}
+
+var (
+	copilotDeviceMu      sync.Mutex
+	copilotDevicePending *CopilotDeviceState
+)
+
+// StoreCopilotDeviceState saves in-flight device state for a two-step flow.
+func StoreCopilotDeviceState(s *CopilotDeviceState) {
+	copilotDeviceMu.Lock()
+	defer copilotDeviceMu.Unlock()
+	copilotDevicePending = s
+}
+
+// LoadCopilotDeviceState retrieves and clears the stored device state.
+// Returns false if none is stored.
+func LoadCopilotDeviceState() (*CopilotDeviceState, bool) {
+	copilotDeviceMu.Lock()
+	defer copilotDeviceMu.Unlock()
+	s := copilotDevicePending
+	copilotDevicePending = nil
+	return s, s != nil
+}
+
+// CopilotDeviceCode requests a device code from GitHub and returns the state
+// that should be displayed to the user (user_code + verification_uri).
+func CopilotDeviceCode(ctx context.Context) (*CopilotDeviceState, error) {
+	body := url.Values{}
+	body.Set("client_id", CopilotClientID)
+	body.Set("scope", CopilotDeviceScope)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, CopilotDeviceCodeURL, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("copilot device code: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var dc struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&dc); err != nil {
+		return nil, fmt.Errorf("copilot device code: decoding response: %w", err)
+	}
+	if dc.DeviceCode == "" {
+		return nil, fmt.Errorf("copilot device code: empty device_code in response")
+	}
+	if dc.Interval <= 0 {
+		dc.Interval = 5
+	}
+	return &CopilotDeviceState{
+		DeviceCode:      dc.DeviceCode,
+		UserCode:        dc.UserCode,
+		VerificationURI: dc.VerificationURI,
+		Interval:        dc.Interval,
+		ExpiresIn:       dc.ExpiresIn,
+	}, nil
+}
+
+// CopilotPollDevice polls GitHub until the user authorizes the device flow.
+func CopilotPollDevice(ctx context.Context, state *CopilotDeviceState) (*OAuthToken, error) {
+	pollBody := url.Values{}
+	pollBody.Set("client_id", CopilotClientID)
+	pollBody.Set("device_code", state.DeviceCode)
+	pollBody.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+
+	interval := state.Interval
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(time.Duration(state.ExpiresIn) * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("copilot device flow: timed out waiting for authorization")
+			}
+			preq, err := http.NewRequestWithContext(ctx, http.MethodPost, CopilotDeviceTokenURL, bytes.NewBufferString(pollBody.Encode()))
+			if err != nil {
+				return nil, err
+			}
+			preq.Header.Set("Accept", "application/json")
+			preq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			presp, err := http.DefaultClient.Do(preq)
+			if err != nil {
+				return nil, fmt.Errorf("copilot device poll: %w", err)
+			}
+			var result struct {
+				AccessToken string `json:"access_token"`
+				Error       string `json:"error"`
+			}
+			decodeErr := json.NewDecoder(presp.Body).Decode(&result)
+			_ = presp.Body.Close()
+			if decodeErr != nil {
+				return nil, fmt.Errorf("copilot device poll: decoding response: %w", decodeErr)
+			}
+			switch result.Error {
+			case "":
+				if result.AccessToken == "" {
+					return nil, fmt.Errorf("copilot device poll: empty access_token")
+				}
+				return &OAuthToken{
+					AccessToken: result.AccessToken,
+					ExpiresAt:   time.Now().Add(10 * 365 * 24 * time.Hour).UnixMilli(),
+				}, nil
+			case "authorization_pending":
+				continue
+			case "slow_down":
+				interval += 5
+				ticker.Reset(time.Duration(interval) * time.Second)
+				continue
+			case "expired_token":
+				return nil, fmt.Errorf("copilot device flow: device code expired; try again")
+			default:
+				return nil, fmt.Errorf("copilot device flow: %s", result.Error)
+			}
+		}
+	}
+}
+
+// CopilotLogin is the CLI convenience wrapper: runs the full device flow in one
+// call, printing the user code and verification URL to stdout.
+func CopilotLogin(ctx context.Context) (*OAuthToken, error) {
+	state, err := CopilotDeviceCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("\nTo authorize GitHub Copilot, visit: %s\n", state.VerificationURI)
+	fmt.Printf("Enter code: %s\n\n", state.UserCode)
+	return CopilotPollDevice(ctx, state)
+}
+
+// CopilotTokenExchange exchanges a GitHub user token (PAT or OAuth) for a
+// short-lived GitHub Copilot API token. The Copilot token is valid for ~30 min.
+// Returns (copilotToken, expiresAt, error).
+func CopilotTokenExchange(ctx context.Context, ghToken string) (string, time.Time, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/copilot_internal/v2/token", nil)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+ghToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Editor-Version", "aviary/1.0")
+	req.Header.Set("Copilot-Integration-Id", "aviary")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("copilot token exchange: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", time.Time{}, fmt.Errorf("copilot token exchange: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var result struct {
+		Token     string          `json:"token"`
+		ExpiresAt json.RawMessage `json:"expires_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", time.Time{}, fmt.Errorf("copilot token exchange: decoding response: %w", err)
+	}
+	var expiry time.Time
+	if len(result.ExpiresAt) > 0 {
+		// API may return a Unix timestamp (number) or an RFC3339 string.
+		var ts int64
+		if err := json.Unmarshal(result.ExpiresAt, &ts); err == nil {
+			expiry = time.Unix(ts, 0)
+		} else {
+			var s string
+			if err := json.Unmarshal(result.ExpiresAt, &s); err == nil {
+				expiry, _ = time.Parse(time.RFC3339, s)
+			}
+		}
+	}
+	if expiry.IsZero() {
+		expiry = time.Now().Add(30 * time.Minute)
+	}
+	return result.Token, expiry, nil
 }
 
 // OpenBrowser opens rawURL in the system default browser.

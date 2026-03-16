@@ -22,10 +22,11 @@ var authCmd = &cobra.Command{
 }
 
 var authLoginCode string
+var authLoginPat string
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
-	Short: "Authorize via OAuth PKCE (opens browser). Providers: anthropic, openai, gemini",
+	Short: "Authorize with a provider. Providers: anthropic, openai, gemini, github-copilot",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		provider := strings.ToLower(args[0])
@@ -38,8 +39,10 @@ var authLoginCmd = &cobra.Command{
 			return loginOpenAI(st)
 		case "gemini":
 			return loginGemini(st)
+		case "github-copilot":
+			return loginGitHubCopilot(st, authLoginPat)
 		default:
-			return fmt.Errorf("unknown provider %q; supported providers: anthropic, openai, gemini", provider)
+			return fmt.Errorf("unknown provider %q; supported providers: anthropic, openai, gemini, github-copilot", provider)
 		}
 	},
 }
@@ -198,8 +201,42 @@ var authDeleteCmd = &cobra.Command{
 
 func init() {
 	authLoginCmd.Flags().StringVar(&authLoginCode, "code", "", "Authorization code (skips interactive prompt)")
+	authLoginCmd.Flags().StringVar(&authLoginPat, "pat", "", "GitHub PAT for github-copilot (skips device flow)")
 	authCmd.AddCommand(authLoginCmd, authSetCmd, authGetCmd, authListCmd, authDeleteCmd)
 	rootCmd.AddCommand(authCmd)
+}
+
+// loginGitHubCopilot authenticates with GitHub Copilot.
+// Default: GitHub device flow using the official Copilot OAuth app.
+// --pat: store a raw PAT/token directly (skips device flow).
+func loginGitHubCopilot(st authpkg.Store, patFlag string) error {
+	if patFlag != "" {
+		pat := strings.TrimSpace(patFlag)
+		if pat == "" {
+			return fmt.Errorf("no PAT provided; login cancelled")
+		}
+		if err := st.Set("github-copilot:default", pat); err != nil {
+			return fmt.Errorf("saving PAT: %w", err)
+		}
+		fmt.Println("github-copilot PAT stored as github-copilot:default")
+		return nil
+	}
+
+	// Device flow: no browser needed, just display the user code.
+	fmt.Println("Authorizing GitHub Copilot via device flow...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	token, err := authpkg.CopilotLogin(ctx)
+	if err != nil {
+		return fmt.Errorf("github copilot login: %w", err)
+	}
+	tokenJSON, _ := marshalOAuthToken(token)
+	if err := st.Set("github-copilot:oauth", tokenJSON); err != nil {
+		return fmt.Errorf("saving token: %w", err)
+	}
+	fmt.Println("GitHub Copilot login successful. Credentials stored as github-copilot:oauth.")
+	return nil
 }
 
 // readConsoleLine reads a line directly from the console device, bypassing

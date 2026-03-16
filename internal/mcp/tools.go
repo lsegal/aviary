@@ -118,6 +118,8 @@ func stub(name string) (*sdkmcp.CallToolResult, struct{}, error) {
 func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
 	registerRulesTools(s)
+	registerSessionTools(s)
+	registerTaskTools(s)
 	registerAgentContextTools(s)
 	registerNoteTools(s)
 	registerFileTools(s)
@@ -156,21 +158,52 @@ type agentTemplateSyncArgs struct {
 	Agent string `json:"agent"`
 }
 
-func loadSessionByID(sessionID string) (*domain.Session, error) {
-	path := store.FindSessionPath(strings.TrimSpace(sessionID))
+func loadSessionByID(sessionID, agentNameHint string) (*domain.Session, error) {
+	path := store.FindSessionPath(strings.TrimSpace(sessionID), agentNameHint)
 	if path == "" {
 		return nil, fmt.Errorf("session %q not found", sessionID)
 	}
-	lines, err := store.ReadJSONL[domain.Session](path)
+	// Reconstruct session metadata from the filename and any stored timestamps.
+	lines, err := store.ReadJSONL[map[string]any](path)
 	if err != nil {
 		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
 	}
-	for _, sess := range lines {
-		if strings.TrimSpace(sess.AgentID) != "" {
-			return &sess, nil
+	var created, updated time.Time
+	for _, m := range lines {
+		if v, ok := m["created_at"]; ok {
+			if s, ok := v.(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					created = t
+				}
+			}
+		}
+		if v, ok := m["updated_at"]; ok {
+			if s, ok := v.(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					updated = t
+				}
+			}
+		}
+		if !created.IsZero() {
+			break
 		}
 	}
-	return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
+	if created.IsZero() {
+		return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
+	}
+	// derive agent ID from the path: <datadir>/agents/<agentName>/sessions/<file>.jsonl
+	agentDir := filepath.Base(filepath.Dir(filepath.Dir(path)))
+	sessName := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if updated.IsZero() {
+		updated = created
+	}
+	return &domain.Session{
+		ID:        sessName,
+		AgentID:   "agent_" + agentDir,
+		Name:      sessName,
+		CreatedAt: created,
+		UpdatedAt: updated,
+	}, nil
 }
 
 func resolveAgentRunHistory(args agentRunArgs) bool {
@@ -206,7 +239,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		agentID := ""
 		var sess *domain.Session
 		if strings.TrimSpace(args.SessionID) != "" {
-			loaded, err := loadSessionByID(args.SessionID)
+			loaded, err := loadSessionByID(args.SessionID, agentName)
 			if err != nil {
 				return nil, struct{}{}, err
 			}
@@ -648,6 +681,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 type sessionMessagesArgs struct {
 	SessionID string `json:"session_id"`
+	Agent     string `json:"agent,omitempty"`
 }
 
 type sessionStopArgs struct {
@@ -690,15 +724,67 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
 		}
-		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		// Resolve the actual agent directory name using a case-insensitive
+		// comparison. This avoids missing existing agent dirs when the
+		// provided agent name differs only by case (common on Windows).
+		agentsDir := filepath.Join(store.DataDir(), store.DirAgents)
+		agentNameDir := strings.TrimSpace(args.Agent)
+		if entries, err := os.ReadDir(agentsDir); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() {
+					continue
+				}
+				if strings.EqualFold(e.Name(), args.Agent) {
+					agentNameDir = e.Name()
+					break
+				}
+			}
+		}
+		agentID := fmt.Sprintf("agent_%s", agentNameDir)
 		sm := agent.NewSessionManager()
 		// Ensure the main session exists.
+		slog.Info("mcp: session_list resolving", "agent", args.Agent, "resolved_agent_dir", agentNameDir, "agent_id", agentID)
 		if _, err := sm.GetOrCreateNamed(agentID, "main"); err != nil {
+			slog.Error("mcp: session_list get/create main failed", "agent", agentID, "err", err)
 			return nil, struct{}{}, err
 		}
 		sessions, err := sm.List(agentID)
 		if err != nil {
 			return nil, struct{}{}, err
+		}
+		// Debug: log discovered sessions for easier remote diagnosis.
+		if len(sessions) == 0 {
+			slog.Info("mcp: session_list found no sessions", "agent", agentID)
+		} else {
+			ids := make([]string, 0, len(sessions))
+			for _, ss := range sessions {
+				if ss == nil {
+					ids = append(ids, "<nil>")
+					continue
+				}
+				ids = append(ids, fmt.Sprintf("%s(%s)", ss.ID, ss.Name))
+			}
+			slog.Info("mcp: session_list found sessions", "agent", agentID, "sessions", strings.Join(ids, ", "))
+		}
+		// Ensure main session (by name or deterministic id suffix) is first
+		mainIndex := -1
+		for i, sess := range sessions {
+			if sess == nil {
+				continue
+			}
+			if sess.Name == "main" || strings.HasSuffix(strings.ToLower(sess.ID), "-main") {
+				mainIndex = i
+				break
+			}
+		}
+		if mainIndex > 0 {
+			m := sessions[mainIndex]
+			// Move main to front
+			sessions = append([]*domain.Session{m}, append(sessions[:mainIndex], sessions[mainIndex+1:]...)...)
+		}
+		if mainIndex >= 0 && sessions[0] != nil && sessions[0].Name == "" {
+			// Normalize: set the display name for the main session so callers see it.
+			sessions[0].Name = "main"
 		}
 		type sessionDTO struct {
 			ID           string `json:"id"`
@@ -751,7 +837,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if args.SessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
-		lines, err := store.ReadJSONL[map[string]any](store.FindSessionPath(args.SessionID))
+		lines, err := store.ReadJSONL[map[string]any](store.FindSessionPath(args.SessionID, args.Agent))
 		if err != nil {
 			return nil, struct{}{}, err
 		}
@@ -2028,6 +2114,52 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).",
 			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+	})
+
+	// ── OAuth login: GitHub Copilot (device flow) ────────────────────────────
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name: "auth_login_github_copilot",
+		Description: "Start GitHub Copilot device-flow login. Returns a user_code and verification_uri " +
+			"to display to the user; call auth_login_github_copilot_complete to finish.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		state, err := auth.CopilotDeviceCode(ctx)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("copilot device code: %w", err)
+		}
+		auth.StoreCopilotDeviceState(state)
+		return jsonResult(map[string]any{
+			"user_code":        state.UserCode,
+			"verification_uri": state.VerificationURI,
+		})
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "auth_login_github_copilot_complete",
+		Description: "Complete GitHub Copilot login after the user has authorized the device code. Polls GitHub until authorization succeeds and stores the token.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		state, ok := auth.LoadCopilotDeviceState()
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("no pending Copilot login; call auth_login_github_copilot first")
+		}
+
+		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+
+		token, err := auth.CopilotPollDevice(pollCtx, state)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("copilot device poll: %w", err)
+		}
+
+		tokenJSON, _ := json.Marshal(token)
+		st, err := authStore()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := st.Set("github-copilot:oauth", string(tokenJSON)); err != nil {
+			return nil, struct{}{}, err
+		}
+		reconcileAgents()
+		return text("GitHub Copilot login successful. Token stored as github-copilot:oauth.")
 	})
 }
 

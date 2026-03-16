@@ -347,4 +347,145 @@
     "output_tokens": 128000,
     "supports_image_input": true
   }
+  ,
+  {
+    "id": "openai/gpt-5.4",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.4",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/claude-sonnet-4.5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/claude-sonnet-4",
+    "input_tokens": 200000,
+    "output_tokens": 4096,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  }
+  ,
+  {
+    "id": "github-copilot/gpt-5.2-codex",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.3-codex",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-4.1",
+    "input_tokens": 1047576,
+    "output_tokens": 32768,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/grok-code-fast-1",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": false
+  },
+  {
+    "id": "github-copilot/raptor-mini",
+    "input_tokens": 65536,
+    "output_tokens": 2048,
+    "supports_image_input": false
+  },
+  {
+    "id": "github-copilot/claude-haiku-4.5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  }
+  ,
+  {
+    "id": "github-copilot/gpt-5-mini",
+    "input_tokens": 200000,
+    "output_tokens": 8192,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.1",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.1-codex",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.1-codex-mini",
+    "input_tokens": 200000,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.1-codex-max",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.2",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gpt-5.4",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/goldeneye",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/claude-opus-4.5",
+    "input_tokens": 200000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/claude-opus-4.6",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/claude-sonnet-4.6",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "github-copilot/gemini-2.5-pro",
+    "input_tokens": 1048576,
+    "output_tokens": 65536,
+    "supports_image_input": true
+  }
 ]

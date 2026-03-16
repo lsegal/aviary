@@ -168,7 +168,6 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 
 	switch provider {
 	case "anthropic":
-		// Prefer OAuth token (Claude Pro/Max) if available.
 		if accessToken, ok := f.resolveOAuthToken("auth:anthropic:oauth"); ok {
 			return NewAnthropicOAuthProvider(accessToken, name), nil
 		}
@@ -186,21 +185,31 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewOpenAIProvider(apiKey, name, ""), nil
 
 	case "openai-codex":
-		// Explicit Codex provider: require OAuth token from `aviary auth login openai`.
 		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth"); ok {
 			return NewOpenAICodexProvider(accessToken, name), nil
 		}
 		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
 	case "google-gemini":
-		// OAuth only — uses cloudcode-pa.googleapis.com (Code Assist) with gemini:oauth token.
 		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
-		return nil, fmt.Errorf("google-gemini auth: missing Google OAuth token; run 'aviary auth login gemini'")
+		return nil, fmt.Errorf("google-gemini auth: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
+
+	case "github-copilot":
+		if accessToken, ok := f.resolveOAuthToken("auth:github-copilot:oauth"); ok {
+			return NewCopilotProvider(accessToken, name), nil
+		}
+		apiKey, err := f.resolveAuth("auth:github-copilot:default")
+		if err != nil {
+			return nil, fmt.Errorf("github-copilot auth: %w", err)
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("github-copilot auth: missing credentials; set GH_TOKEN/GITHUB_TOKEN or run 'aviary auth login github-copilot'")
+		}
+		return NewCopilotProvider(apiKey, name), nil
 
 	case "google":
-		// API key only — uses generativelanguage.googleapis.com with gemini:default.
 		apiKey, err := f.resolveAuth("auth:gemini:default")
 		if err != nil {
 			return nil, fmt.Errorf("google auth: %w", err)
@@ -208,13 +217,10 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewGeminiProvider(apiKey, name), nil
 
 	case "gemini-code-assist":
-		// Explicit Code Assist path via cloudcode-pa.googleapis.com.
-		// Uses the gemini-cli onboarded free tier; suitable for single-turn workloads
-		// but subject to tighter per-minute quota than the direct API.
 		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
-		return nil, fmt.Errorf("gemini-code-assist: missing Google OAuth token; run 'aviary auth login gemini'")
+		return nil, fmt.Errorf("gemini-code-assist: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
 
 	case "stdio":
 		return NewStdioProvider(name), nil
