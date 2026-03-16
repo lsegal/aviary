@@ -1336,9 +1336,7 @@ const selectedAgentSubtab = ref<
 watch(selectedAgentIdx, () => {
 	selectedAgentSubtab.value = "general";
 });
-const selectedAgent = computed(
-	() => draft.value.agents[selectedAgentIdx.value] ?? null,
-);
+
 const selectedAgentAsSingletonList = computed(() =>
 	selectedAgentIdx.value < draft.value.agents.length
 		? [
