@@ -12,22 +12,42 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "default": 16677
+          "default": 16677,
+          "x-label": "Port",
+          "x-placeholder": "16677",
+          "x-order": 1,
+          "description": "HTTP(S) listen port. Defaults to 16677."
         },
         "external_access": {
           "type": "boolean",
+          "x-label": "External access",
+          "x-order": 2,
           "description": "Bind the Aviary server to 0.0.0.0 instead of localhost."
         },
         "no_tls": {
           "type": "boolean",
+          "x-label": "Disable TLS",
+          "x-order": 3,
           "description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
         },
         "tls": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "cert": { "type": "string" },
-            "key": { "type": "string" }
+            "cert": {
+              "type": "string",
+              "x-label": "TLS cert path",
+              "x-placeholder": "/path/to/cert.pem",
+              "x-order": 4,
+              "description": "Path to TLS certificate file (PEM). Leave empty to use an auto-generated self-signed cert."
+            },
+            "key": {
+              "type": "string",
+              "x-label": "TLS key path",
+              "x-placeholder": "/path/to/key.pem",
+              "x-order": 5,
+              "description": "Path to TLS private key file (PEM). Leave empty to use an auto-generated self-signed key."
+            }
           }
         }
       }
@@ -75,10 +95,10 @@
                 "type": "array",
                 "items": { "type": "string" }
               },
-            "disabledTools": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
+              "disabledTools": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
               "filesystem": {
                 "type": "object",
                 "additionalProperties": false,
@@ -145,10 +165,14 @@
                         "properties": {
                           "enabled": { "type": "boolean" },
                           "from": { "type": "string" },
-                          "allowedGroups": { "type": "string" },
+                          "allowedGroups": {
+                            "type": "string",
+                            "description": "Comma-separated group/channel IDs. Use '*' to allow any group. When empty, only matches direct messages."
+                          },
                           "mentionPrefixes": {
                             "type": "array",
-                            "items": { "type": "string" }
+                            "items": { "type": "string" },
+                            "description": "Glob patterns matched against group message text. At least one must match to forward the message."
                           },
                           "respondToMentions": { "type": "boolean" },
                           "restrictTools": {
@@ -211,7 +235,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "model": { "type": "string" },
+            "model": {
+              "type": "string",
+              "x-label": "Default model",
+              "x-placeholder": "claude-opus-4-6",
+              "x-order": 1,
+              "description": "Fallback model used when an agent does not specify one."
+            },
             "fallbacks": {
               "type": "array",
               "items": { "type": "string" }
@@ -224,20 +254,35 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "binary": { "type": "string" },
+        "binary": {
+          "type": "string",
+          "x-label": "Browser binary",
+          "x-placeholder": "auto-detected",
+          "x-order": 1,
+          "description": "Path to Chrome/Chromium binary. Leave empty to auto-detect."
+        },
         "cdp_port": {
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "default": 9222
+          "default": 9222,
+          "x-label": "CDP port",
+          "x-placeholder": "9222",
+          "x-order": 2,
+          "description": "Chrome DevTools Protocol port used to attach to an existing browser instance."
         },
         "profile_directory": {
           "type": "string",
+          "x-label": "Profile directory",
+          "x-placeholder": "Aviary",
+          "x-order": 3,
           "description": "Chrome profile folder name in the browser's default user data directory (e.g. 'Default', 'Profile 1', 'work'). Defaults to 'Aviary' if unset."
         },
         "headless": {
           "type": "boolean",
           "default": false,
+          "x-label": "Headless mode",
+          "x-order": 4,
           "description": "Run the browser without a visible window. Defaults to false so the browser is visible."
         }
       }
@@ -250,7 +295,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "brave_api_key": { "type": "string" }
+            "brave_api_key": {
+              "type": "string",
+              "x-label": "Brave API key ref",
+              "x-placeholder": "auth:brave_api_key",
+              "x-order": 1,
+              "description": "Brave Search API key or auth store reference (e.g. 'auth:brave_api_key'). Leave empty to disable web search."
+            }
           }
         }
       }
@@ -263,7 +314,11 @@
           "oneOf": [
             { "type": "string", "enum": ["auto"] },
             { "type": "integer", "minimum": 1 }
-          ]
+          ],
+          "x-label": "Concurrency",
+          "x-placeholder": "auto",
+          "x-order": 1,
+          "description": "Number of parallel task workers. Use 'auto' (or leave empty) to match the CPU count."
         }
       }
     },
