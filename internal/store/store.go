@@ -419,7 +419,7 @@ func SessionPath(agentID, sessionID string) string {
 			break
 		}
 	}
-	return filepath.Join(AgentDir(agentID), "sessions", sanitizeFileComponent(name)+".jsonl")
+	return filepath.Join(AgentDir(agentID), "sessions", encodeSessionName(name)+".jsonl")
 }
 
 // FindSessionPath scans all known agent directories and returns the full path
@@ -440,13 +440,13 @@ func FindSessionPath(sessionID string, agentNameHint ...string) string {
 		for _, p := range prefixes {
 			if strings.HasPrefix(sessionID, p) {
 				stripped := strings.TrimPrefix(sessionID, p)
-				p2 := filepath.Join(agentsDir, agentName, "sessions", sanitizeFileComponent(stripped)+".jsonl")
+				p2 := filepath.Join(agentsDir, agentName, "sessions", encodeSessionName(stripped)+".jsonl")
 				if _, err := os.Stat(p2); err == nil {
 					return p2
 				}
 			}
 		}
-		p := filepath.Join(agentsDir, agentName, "sessions", sanitizeFileComponent(sessionID)+".jsonl")
+		p := filepath.Join(agentsDir, agentName, "sessions", encodeSessionName(sessionID)+".jsonl")
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -548,4 +548,72 @@ func sanitizeFileComponent(s string) string {
 		return "default"
 	}
 	return out
+}
+
+// encodeSessionName encodes a session name for use as a filename component.
+// Unlike sanitizeFileComponent, this encoding is reversible: use
+// decodeSessionName to recover the original name.
+func encodeSessionName(name string) string {
+	if name == "" {
+		return "default"
+	}
+	var b strings.Builder
+	for _, c := range name {
+		switch c {
+		case '%':
+			b.WriteString("%25")
+		case '<':
+			b.WriteString("%3C")
+		case '>':
+			b.WriteString("%3E")
+		case ':':
+			b.WriteString("%3A")
+		case '"':
+			b.WriteString("%22")
+		case '/':
+			b.WriteString("%2F")
+		case '\\':
+			b.WriteString("%5C")
+		case '|':
+			b.WriteString("%7C")
+		case '?':
+			b.WriteString("%3F")
+		case '*':
+			b.WriteString("%2A")
+		default:
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
+}
+
+// DecodeSessionName reverses encodeSessionName to recover the original session name.
+func DecodeSessionName(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '%' && i+2 < len(s) {
+			hi := unhex(s[i+1])
+			lo := unhex(s[i+2])
+			if hi >= 0 && lo >= 0 {
+				b.WriteByte(byte(hi<<4 | lo))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+func unhex(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	}
+	return -1
 }
