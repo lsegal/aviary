@@ -94,6 +94,9 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 
 	await expect(page.getByRole("button", { name: "Add Agent" })).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Remove Agent", exact: true }).first(),
+	).toBeVisible();
 	// General subtab (default): agent name field is always visible in the header
 	await expect(
 		page.locator('input[placeholder="assistant"]').first(),
@@ -450,10 +453,6 @@ test("agent files editor lists root markdown files and protects built-ins", asyn
 }) => {
 	await page.goto("/settings");
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Files", exact: true })
-		.first()
-		.click();
 
 	await expect(page.getByRole("button", { name: "IDENTITY.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
@@ -510,10 +509,6 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 
 	await page.goto("/settings");
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Files", exact: true })
-		.first()
-		.click();
 	await page.getByRole("button", { name: "Refresh" }).first().click();
 
 	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
