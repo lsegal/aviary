@@ -166,25 +166,6 @@
           </div>
 
           <div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`" class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            <!-- Agent header -->
-            <div class="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
-              <div>
-                <label class="field-label">Name</label>
-                <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" @change="onAgentNameChange(agent)" />
-              </div>
-              <div>
-                <label class="field-label">Model</label>
-                <ModelSelector v-model="agent.model" :options="availableModelOptions" placeholder="Select a model…" />
-              </div>
-              <div>
-                <label class="field-label">Fallbacks</label>
-                <ModelSelector v-model="agent.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
-              </div>
-              <div class="flex items-end pb-1.5">
-                <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
-              </div>
-            </div>
-
             <!-- Subtab nav -->
             <div class="border-b border-gray-200 px-5 dark:border-gray-700">
               <nav class="flex">
@@ -193,6 +174,7 @@
                     { key: 'general', label: 'General' },
                     { key: 'permissions', label: 'Permissions' },
                     { key: 'channels', label: 'Channels' },
+                    { key: 'files', label: 'Files' },
                     { key: 'tasks', label: 'Tasks' },
                   ] as const)"
                   :key="subtab.key"
@@ -208,7 +190,28 @@
             </div>
 
             <!-- General subtab -->
-            <div v-show="selectedAgentSubtab === 'general'" class="space-y-4 p-5">
+            <div v-show="selectedAgentSubtab === 'general'" class="min-h-[60vh] space-y-4 p-5">
+              <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
+                <div>
+                  <label class="field-label">Name</label>
+                  <input v-model="agent.name" type="text" class="field-input" placeholder="assistant" @change="onAgentNameChange(agent)" />
+                </div>
+                <div>
+                  <label class="field-label">Model</label>
+                  <ModelSelector v-model="agent.model" :options="availableModelOptions" placeholder="Select a model…" />
+                </div>
+                <div>
+                  <label class="field-label">Fallbacks</label>
+                  <ModelSelector v-model="agent.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
+                </div>
+              </div>
+              <div class="pt-2">
+                <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
+              </div>
+            </div>
+
+            <!-- Files subtab placeholder (content moved below after channels) -->
+            <div v-show="selectedAgentSubtab === 'files'" class="flex min-h-[60vh] flex-col p-5">
             <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files</div>
@@ -258,15 +261,16 @@
                   </div>
                 </div>
 
-                <div class="relative self-start">
-                  <textarea :value="getAgentFileState(agent.name).content" @input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value" rows="12" class="field-input resize-y py-2 font-mono text-xs" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile" :placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
+                <div class="relative flex flex-col">
+                  <textarea :value="getAgentFileState(agent.name).content" @input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value" class="field-input min-h-[50vh] resize-y py-2 font-mono text-xs" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile" :placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
                   <p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getAgentFileState(agent.name).error }}</p>
                 </div>
               </div>
             </div>
+            </div>
 
-            <!-- Permissions -->
-            <div>
+            <!-- Permissions subtab -->
+            <div v-show="selectedAgentSubtab === 'permissions'" class="min-h-[60vh] space-y-4 p-5">
               <div class="grid gap-3 lg:max-w-xl">
                 <div>
                   <label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
@@ -437,6 +441,8 @@
               </div>
             </div>
 
+            <!-- Channels subtab -->
+            <div v-show="selectedAgentSubtab === 'channels'" class="min-h-[60vh] space-y-4 p-5">
             <div class="flex items-center justify-between">
               <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h4>
               <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addChannel(i)">+ Add Channel</button>
@@ -752,7 +758,10 @@
                 </label>
               </div>
             </div>
+            </div>
 
+            <!-- Tasks subtab -->
+            <div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
             <div class="flex items-center justify-between">
               <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
               <button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" @click="addTask(i)">+ Add Task</button>
@@ -865,6 +874,7 @@
                   </tbody>
                 </table>
               </div>
+            </div>
             </div>
           </div>
         </section>
@@ -1319,7 +1329,9 @@ const revertAvailable = ref(false);
 const draft = ref<AppConfig>(emptyConfig());
 
 const selectedAgentIdx = ref(0);
-const selectedAgentSubtab = ref<"general" | "permissions" | "channels" | "tasks">("general");
+const selectedAgentSubtab = ref<
+	"general" | "permissions" | "channels" | "files" | "tasks"
+>("general");
 watch(selectedAgentIdx, () => {
 	selectedAgentSubtab.value = "general";
 });
