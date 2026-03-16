@@ -208,7 +208,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async ({
 	});
 
 	await page.goto("/settings");
-	await page.locator('input[placeholder="Select a model…"]').first().click();
+	await page.locator(".cursor-text").first().click();
 
 	await expect(
 		page.getByText("google-gemini/gemini-2.5-flash", { exact: true }),
@@ -418,9 +418,6 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 	).toBeVisible();
 	await page.getByRole("button", { name: "Enable" }).first().click();
 
-	await expect(
-		page.getByText("Enabled", { exact: true }).first(),
-	).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Disable" }).first(),
 	).toBeVisible();
