@@ -1,35 +1,46 @@
 <template>
 	<AppLayout>
 		<div class="flex h-full flex-col">
-			<!-- Agent + Session picker -->
-			<div class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-6 py-3 dark:border-gray-800">
-				<!-- Agent selector -->
-				<div class="flex items-center gap-2">
-					<label class="text-xs font-medium text-gray-500 dark:text-gray-400">Agent</label>
-					<select v-model="selectedAgent"
-						class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-						@change="onAgentChange">
-						<option value="">Select agent…</option>
-						<option v-for="a in agentsStore.agents" :key="a.id" :value="a.name">{{ a.name }}</option>
-					</select>
-				</div>
-
-				<!-- Session selector -->
-				<div v-if="selectedAgent" class="flex items-center gap-2">
-					<label class="text-xs font-medium text-gray-500 dark:text-gray-400">Session</label>
-					<select v-model="selectedSessionId"
-						class="max-w-[200px] truncate rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-						@change="onSessionChange">
-						<option v-for="s in sessions" :key="s.id" :value="s.id">
-							{{ s.name || s.id }}
-						</option>
-					</select>
+			<!-- Agent tabs -->
+			<div class="flex items-end border-b border-gray-200 dark:border-gray-800">
+				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
 					<button
-						class="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-						title="Start a new session" @click="createSession">+ New</button>
+						v-for="a in agentsStore.agents"
+						:key="a.id"
+						type="button"
+						class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
+						:class="selectedAgent === a.name
+							? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+							: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+						@click="selectAgent(a.name)">
+						{{ a.name }}
+					</button>
+					<div v-if="!agentsStore.agents.length" class="px-4 py-2.5 text-sm text-gray-400 dark:text-gray-500">No agents configured.</div>
 				</div>
+			</div>
 
-				<span v-if="sessionsLoading" class="text-xs text-gray-400">Loading sessions…</span>
+			<!-- Session subtabs -->
+			<div v-if="selectedAgent" class="flex items-end border-b border-gray-200 bg-gray-50 px-4 dark:border-gray-800 dark:bg-gray-900/50">
+				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
+					<button
+						v-for="s in sessions"
+						:key="s.id"
+						type="button"
+						class="-mb-px shrink-0 border-b-2 px-3 py-2 text-xs transition-colors"
+						:class="selectedSessionId === s.id
+							? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+							: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+						@click="selectSession(s.id)">
+						{{ s.name || s.id }}
+					</button>
+					<button
+						type="button"
+						title="New session"
+						class="-mb-px shrink-0 border-b-2 border-transparent px-2.5 py-2 text-base leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+						:disabled="sessionsLoading"
+						@click="createSession">+</button>
+				</div>
+				<span v-if="sessionsLoading" class="shrink-0 pb-2 text-xs text-gray-400">Loading…</span>
 			</div>
 
 			<!-- Messages -->
@@ -194,6 +205,7 @@
 			</button>
 			<img :src="expandedImageURL" class="max-h-full max-w-full rounded-xl shadow-2xl" @click.stop />
 		</div>
+
 	</AppLayout>
 </template>
 
@@ -594,14 +606,18 @@ async function loadSessions() {
 	}
 }
 
-async function onAgentChange() {
+async function selectAgent(name: string) {
+	if (selectedAgent.value === name) return;
+	selectedAgent.value = name;
 	selectedSessionId.value = "";
 	sessions.value = [];
 	resetHistoryNavigation();
 	await loadSessions();
 }
 
-async function onSessionChange() {
+async function selectSession(id: string) {
+	if (selectedSessionId.value === id) return;
+	selectedSessionId.value = id;
 	resetHistoryNavigation();
 	await loadSessionMessages();
 }
