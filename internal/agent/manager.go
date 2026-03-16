@@ -19,6 +19,7 @@ import (
 type Manager struct {
 	mu      sync.RWMutex
 	runners map[string]*AgentRunner // keyed by agent name
+	order   []string                // agent names in config entry order
 	session *SessionManager
 	factory *llm.Factory
 	memory  *memory.Manager
@@ -54,6 +55,13 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 			delete(m.runners, name)
 		}
 	}
+
+	// Rebuild order to match config entry order, dropping removed agents.
+	newOrder := make([]string, 0, len(cfg.Agents))
+	for i := range cfg.Agents {
+		newOrder = append(newOrder, cfg.Agents[i].Name)
+	}
+	m.order = newOrder
 
 	// Add or update agents.
 	for name, ac := range desired {
@@ -105,13 +113,15 @@ func (m *Manager) GetByID(agentID string) (*AgentRunner, bool) {
 	return m.Get(name)
 }
 
-// List returns a snapshot of all agents.
+// List returns a snapshot of all agents in config entry order.
 func (m *Manager) List() []*domain.Agent {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]*domain.Agent, 0, len(m.runners))
-	for _, r := range m.runners {
-		out = append(out, r.Agent())
+	for _, name := range m.order {
+		if r, ok := m.runners[name]; ok {
+			out = append(out, r.Agent())
+		}
 	}
 	return out
 }
