@@ -174,6 +174,50 @@
 								class="text-xs">Complete the flow in the browser tab that opened.</span></p>
 					</div>
 				</template>
+
+			<!-- GitHub Copilot: device flow -->
+			<template v-else-if="currentProvider?.id === 'github-copilot'">
+				<div v-if="!copilotUserCode && !credSaving">
+					<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+						Sign in with your GitHub account that has Copilot access.
+						No browser redirect needed — we'll show you a short code to enter on GitHub.
+					</p>
+					<button type="button"
+						class="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+						@click="startCopilotOAuth">
+						Sign in with GitHub →
+					</button>
+				</div>
+				<div v-else-if="copilotUserCode" class="space-y-4">
+					<p class="text-sm text-gray-700 dark:text-gray-300">
+						Visit <a :href="copilotVerifyUrl" target="_blank" rel="noreferrer"
+							class="font-medium text-blue-600 hover:underline dark:text-blue-400">{{ copilotVerifyUrl }}</a>
+						and enter this code:
+					</p>
+					<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 py-4 dark:border-gray-700 dark:bg-gray-800">
+						<span class="font-mono text-2xl font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
+					</div>
+					<button type="button" :disabled="credSaving"
+						class="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40 dark:bg-gray-700 dark:hover:bg-gray-600"
+						@click="completeCopilotOAuth">
+						<span v-if="credSaving" class="flex items-center justify-center gap-2">
+							<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+							</svg>
+							Waiting for authorization…
+						</span>
+						<span v-else>I've authorized — Continue →</span>
+					</button>
+				</div>
+				<div v-else class="flex flex-col items-center gap-3 py-4 text-center">
+					<svg class="h-8 w-8 animate-spin text-gray-600" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+					</svg>
+					<p class="text-sm text-gray-500 dark:text-gray-400">Requesting device code…</p>
+				</div>
+			</template>
 			</div>
 
 			<!-- API key panel -->
@@ -225,11 +269,18 @@
 					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Lowercase letters, numbers, and hyphens only.</p>
 				</div>
 				<div>
-					<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
-					<input v-model="agentModelInput" type="text"
-						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500" />
-					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Format: <code
-							class="font-mono">provider/model-name</code></p>
+						<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
+						<div class="flex items-center gap-3">
+							<select v-if="currentProvider" v-model="agentModelInput"
+								class="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500">
+								<option :value="currentProvider.defaultModel">Default — {{ currentProvider.defaultModel }}</option>
+								<option v-if="currentProvider.oauthModel" :value="currentProvider.oauthModel">OAuth — {{ currentProvider.oauthModel }}</option>
+							</select>
+							<input v-model="agentModelInput" type="text" placeholder="provider/model-name"
+								class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500" />
+						</div>
+						<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Format: <code
+								class="font-mono">provider/model-name</code></p>
 				</div>
 				<div v-if="agentError"
 					class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
@@ -341,6 +392,19 @@ const providers: Provider[] = [
 		oauthModel: "gemini/gemini-2.0-flash",
 		authKeys: ["gemini:oauth", "gemini:default"],
 	},
+	{
+		id: "github-copilot",
+		name: "GitHub Copilot",
+		emoji: "🐦",
+		description: "GitHub Copilot — code-specialized models",
+		oauth: true,
+		keyPlaceholder: "ghp_... or personal access token",
+		keyHelp:
+			"Use a GitHub Personal Access Token (repo scope) or sign in via OAuth.",
+		apiAuthKey: "github-copilot:default",
+		defaultModel: "github-copilot/gpt-5",
+		authKeys: ["github-copilot:oauth", "github-copilot:default"],
+	},
 ];
 
 type Step = "provider" | "credentials" | "agent" | "done";
@@ -367,6 +431,9 @@ const credError = ref("");
 // Anthropic two-step OAuth state
 const oauthUrl = ref("");
 const oauthCode = ref("");
+
+const copilotUserCode = ref("");
+const copilotVerifyUrl = ref("");
 
 const agentName = ref("assistant");
 const agentModelInput = ref("");
@@ -488,6 +555,39 @@ async function startOpenAIOAuth() {
 		credSaving.value = false;
 	}
 	// Don't clear credSaving on success — the step transition handles it
+}
+
+// ── GitHub Copilot OAuth (device flow) ────────────────────────────────────────
+
+async function startCopilotOAuth() {
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		const raw = await callTool("auth_login_github_copilot");
+		const parsed = JSON.parse(raw) as {
+			user_code?: string;
+			verification_uri?: string;
+		};
+		copilotUserCode.value = parsed.user_code ?? "";
+		copilotVerifyUrl.value = parsed.verification_uri ?? "";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		credSaving.value = false;
+	}
+}
+
+async function completeCopilotOAuth() {
+	credSaving.value = true;
+	credError.value = "";
+	try {
+		await callTool("auth_login_github_copilot_complete");
+		step.value = "agent";
+	} catch (e) {
+		credError.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		credSaving.value = false;
+	}
 }
 
 // ── Gemini OAuth (blocking browser redirect) ──────────────────────────────────
