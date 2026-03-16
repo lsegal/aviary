@@ -287,6 +287,39 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				Stream:   true,
 			}
 
+			// Ensure request fits within a per-model input token budget. If the
+			// estimated request size exceeds the model budget, iteratively
+			// summarize the oldest messages (preserving content) until the
+			// estimate fits. We never drop messages — we replace older ranges
+			// with concise summaries produced by the provider.
+			budget := llm.ModelInputBudget(effectiveModel)
+			if llm.EstimateRequestTokens(req) > budget {
+				slog.Warn("agent: request exceeds input token budget; summarizing", "agent", r.agent.Name, "model", effectiveModel)
+				// Iteratively summarize oldest messages in chunks until under budget.
+				for llm.EstimateRequestTokens(req) > budget && len(req.Messages) > 1 {
+					// choose chunk size = max(1, len/2)
+					chunk := len(req.Messages) / 2
+					if chunk < 1 {
+						chunk = 1
+					}
+					old := make([]llm.Message, chunk)
+					copy(old, req.Messages[:chunk])
+					summary, serr := llm.SummarizeMessages(promptCtx, currentProvider, effectiveModel, old)
+					if serr != nil || strings.TrimSpace(summary) == "" {
+						// Fallback to compact drop if summarization fails.
+						slog.Warn("agent: summarization failed; falling back to drop", "err", serr)
+						req = llm.CompactToTokenBudget(req, budget)
+						break
+					}
+					// Replace the summarized chunk with a single system message.
+					summaryMsg := llm.Message{Role: llm.RoleSystem, Content: "[Summarized earlier conversation]:\n" + summary}
+					newMsgs := make([]llm.Message, 0, 1+len(req.Messages)-chunk)
+					newMsgs = append(newMsgs, summaryMsg)
+					newMsgs = append(newMsgs, req.Messages[chunk:]...)
+					req.Messages = newMsgs
+				}
+			}
+
 			ch, err := currentProvider.Stream(promptCtx, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || promptCtx.Err() != nil {
