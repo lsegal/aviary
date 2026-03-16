@@ -4,10 +4,7 @@
 			<!-- Agent tabs -->
 			<div class="flex items-end border-b border-gray-200 dark:border-gray-800">
 				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
-					<button
-						v-for="a in agentsStore.agents"
-						:key="a.id"
-						type="button"
+					<button v-for="a in agentsStore.agents" :key="a.id" type="button"
 						class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
 						:class="selectedAgent === a.name
 							? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
@@ -15,30 +12,82 @@
 						@click="selectAgent(a.name)">
 						{{ a.name }}
 					</button>
-					<div v-if="!agentsStore.agents.length" class="px-4 py-2.5 text-sm text-gray-400 dark:text-gray-500">No agents configured.</div>
+					<div v-if="!agentsStore.agents.length" class="px-4 py-2.5 text-sm text-gray-400 dark:text-gray-500">No agents
+						configured.</div>
 				</div>
 			</div>
 
 			<!-- Session subtabs -->
-			<div v-if="selectedAgent" class="flex items-end border-b border-gray-200 bg-gray-50 px-4 dark:border-gray-800 dark:bg-gray-900/50">
-				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
-					<button
-						v-for="s in sessions"
-						:key="s.id"
-						type="button"
-						class="-mb-px shrink-0 border-b-2 px-3 py-2 text-xs transition-colors"
-						:class="selectedSessionId === s.id
-							? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-							: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-						@click="selectSession(s.id)">
-						{{ s.name || s.id }}
+			<div v-if="selectedAgent"
+				class="flex items-end border-b border-gray-200 bg-gray-50 px-4 select-none dark:border-gray-800 dark:bg-gray-900/50">
+				<!-- Mobile: session dropdown (Radix) -->
+				<div class="sm:hidden w-full">
+					<DropdownMenuRoot>
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 text-left dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+								{{ selectedSessionName }}
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent class="mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900">
+							<DropdownMenuItem v-for="s in sessions" :key="s.id" @select="selectSession(s.id)"
+								class="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800">
+								{{ s.name || s.id }}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenuRoot>
+				</div>
+				<!-- Desktop: dropdown when >5 sessions, scrollable tabs otherwise -->
+				<div v-if="sessions.length > 5" class="hidden sm:flex flex-1 min-w-0 items-center gap-1.5 py-1.5">
+					<DropdownMenuRoot>
+						<DropdownMenuTrigger asChild>
+							<button type="button"
+								class="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-700/60">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5 shrink-0 opacity-60"><rect x="1" y="5" width="14" height="9" rx="1.5"/><rect x="1" y="2" width="5" height="4" rx="1"/></svg>
+								<span class="max-w-36 truncate">{{ selectedSessionName }}</span>
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0 opacity-50"><path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start" :side-offset="4" class="z-50 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-1 shadow-md dark:border-gray-700 dark:bg-gray-900">
+							<DropdownMenuItem v-for="s in sessions" :key="s.id"
+								class="cursor-pointer rounded px-3 py-1.5 text-xs transition-colors"
+								:class="selectedSessionId === s.id
+									? 'font-semibold text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40'
+									: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+								@select="selectSession(s.id)">
+								{{ s.name || s.id }}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenuRoot>
+					<button type="button" title="New session"
+						class="shrink-0 rounded px-2 py-1.5 text-sm leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+						:disabled="sessionsLoading" @click="createSession">+</button>
+				</div>
+				<div v-else class="hidden sm:flex flex-1 items-end min-w-0">
+					<button v-if="sessionTabsCanScrollLeft" type="button" aria-label="Scroll left"
+						class="shrink-0 self-center mb-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+						@click="scrollSessionTabs(-120)">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5"><path fill-rule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" /></svg>
 					</button>
-					<button
-						type="button"
-						title="New session"
-						class="-mb-px shrink-0 border-b-2 border-transparent px-2.5 py-2 text-base leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-						:disabled="sessionsLoading"
-						@click="createSession">+</button>
+					<div ref="sessionTabsEl" class="scrollbar-none flex flex-1 items-end overflow-x-auto" @scroll="updateSessionTabsScroll">
+						<button v-for="s in sessions" :key="s.id" type="button"
+							class="-mb-px shrink-0 border-b-2 px-3 py-2 text-xs transition-colors"
+							:class="selectedSessionId === s.id
+								? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+								: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+							@click="selectSession(s.id)">
+							{{ s.name || s.id }}
+						</button>
+						<button type="button" title="New session"
+							class="-mb-px shrink-0 border-b-2 border-transparent px-2.5 py-2 text-base leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+							:disabled="sessionsLoading" @click="createSession">+</button>
+					</div>
+					<button v-if="sessionTabsCanScrollRight" type="button" aria-label="Scroll right"
+						class="shrink-0 self-center mb-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+						@click="scrollSessionTabs(120)">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L9.94 8 7.28 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+					</button>
 				</div>
 				<span v-if="sessionsLoading" class="shrink-0 pb-2 text-xs text-gray-400">Loading…</span>
 			</div>
@@ -211,6 +260,12 @@
 
 <script setup lang="ts">
 import { marked } from "marked";
+import {
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuRoot,
+	DropdownMenuTrigger,
+} from "radix-vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
@@ -439,6 +494,10 @@ const { callTool } = useMCP();
 
 const selectedAgent = ref("");
 const selectedSessionId = ref("");
+const selectedSessionName = computed(() => {
+	const s = sessions.value.find((x) => x.id === selectedSessionId.value);
+	return s ? s.name || s.id : "Select a session";
+});
 const sessions = ref<Session[]>([]);
 const sessionsLoading = ref(false);
 const input = ref("");
@@ -643,6 +702,8 @@ async function selectSession(id: string) {
 	await loadSessionMessages();
 }
 
+// (previous mobile handler removed; Radix dropdown calls `selectSession` directly)
+
 async function createSession() {
 	if (!selectedAgent.value) return;
 	try {
@@ -670,6 +731,7 @@ async function loadSessionMessages() {
 	try {
 		const raw = await callTool("session_messages", {
 			session_id: selectedSessionId.value,
+			agent: selectedAgent.value,
 		});
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
@@ -954,6 +1016,28 @@ async function stopSession() {
 	} finally {
 		await refreshSessionProcessing();
 	}
+}
+
+const sessionTabsEl = ref<HTMLElement | null>(null);
+const sessionTabsCanScrollLeft = ref(false);
+const sessionTabsCanScrollRight = ref(false);
+
+function updateSessionTabsScroll() {
+	const el = sessionTabsEl.value;
+	if (!el) {
+		sessionTabsCanScrollLeft.value = false;
+		sessionTabsCanScrollRight.value = false;
+		return;
+	}
+	sessionTabsCanScrollLeft.value = el.scrollLeft > 1;
+	sessionTabsCanScrollRight.value =
+		el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+function scrollSessionTabs(delta: number) {
+	const el = sessionTabsEl.value;
+	if (!el) return;
+	el.scrollBy({ left: delta, behavior: "smooth" });
 }
 
 async function refreshSessionProcessing() {

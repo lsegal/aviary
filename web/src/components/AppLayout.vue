@@ -22,17 +22,13 @@
         </div>
       </div>
       <div class="relative mt-3">
-        <div
-          v-if="upgradeAvailable"
-          class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100"
-        >
+        <div v-if="upgradeAvailable"
+          class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-3">
             <span>New version available: {{ latestVersion }}</span>
-            <button
-              type="button"
+            <button type="button"
               class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading"
-              @click="triggerUpgrade()">
+              :disabled="upgrading" @click="triggerUpgrade()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
@@ -40,9 +36,7 @@
         </div>
         <nav class="flex flex-wrap gap-2">
           <div v-for="link in links" :key="link.to" class="relative">
-            <router-link
-              :to="linkTarget(link)"
-              :class="topLevelLinkClass(link, true)">
+            <router-link :to="linkTarget(link)" :class="topLevelLinkClass(link, true)">
               {{ link.label }}
             </router-link>
           </div>
@@ -50,21 +44,14 @@
       </div>
     </header>
 
-    <div
-      v-if="activeMobileGroup()"
-      class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden"
-    >
+    <div v-if="activeMobileGroup()"
+      class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
       <nav class="flex gap-2 overflow-x-auto pb-1">
-        <router-link
-          v-for="child in childrenForGroup(activeMobileGroup())"
-          :key="child.key"
-          :to="child.to"
+        <router-link v-for="child in childrenForGroup(activeMobileGroup())" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
           {{ child.label }}
         </router-link>
-        <button
-          v-if="activeMobileGroup() === 'settings'"
-          type="button"
+        <button v-if="activeMobileGroup() === 'settings'" type="button"
           class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
           @click="auth.logout(); $router.push('/login')">
           Log out
@@ -72,26 +59,19 @@
       </nav>
     </div>
 
-    <nav class="hidden w-60 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
+    <nav
+      class="hidden w-60 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
       <div class="mb-6 flex items-center gap-2">
         <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
         <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
       </div>
       <div class="space-y-1">
         <template v-for="link in links" :key="link.to">
-          <router-link
-            :to="linkTarget(link)"
-            :class="topLevelLinkClass(link, false)">
+          <router-link :to="linkTarget(link)" :class="topLevelLinkClass(link, false)">
             {{ link.label }}
           </router-link>
-          <div
-            v-if="link.children && isLinkActive(link)"
-            class="mb-3 mt-1 space-y-1 pl-2"
-          >
-            <router-link
-              v-for="child in link.children"
-              :key="child.key"
-              :to="child.to"
+          <div v-if="link.children && isLinkActive(link)" class="mb-3 mt-1 space-y-1 pl-2">
+            <router-link v-for="child in link.children" :key="child.key" :to="child.to"
               :class="childLinkClass(child, false)">
               {{ child.label }}
             </router-link>
@@ -99,17 +79,13 @@
         </template>
       </div>
       <div class="mt-auto flex flex-col gap-2">
-        <div
-          v-if="upgradeAvailable"
-          class="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100"
-        >
+        <div v-if="upgradeAvailable"
+          class="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-2">
             <span>New version available</span>
-            <button
-              type="button"
+            <button type="button"
               class="rounded-lg bg-yellow-500 px-2.5 py-1 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading"
-              @click="triggerUpgrade()">
+              :disabled="upgrading" @click="triggerUpgrade()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
@@ -188,12 +164,12 @@ const settingsChildren: NavChild[] = [
 ];
 
 const systemChildren: NavChild[] = [
+	{ key: "usage", label: "Usage", to: "/usage" },
+	{ key: "jobs", label: "Jobs", to: "/jobs" },
 	{ key: "tools", label: "Tools", to: "/system/tools" },
 	{ key: "skills", label: "Skills", to: "/system/skills" },
 	{ key: "models", label: "Models", to: "/system/models" },
 	{ key: "logs", label: "Logs", to: "/logs" },
-	{ key: "usage", label: "Usage", to: "/usage" },
-	{ key: "jobs", label: "Jobs", to: "/jobs" },
 	{ key: "daemons", label: "Daemons", to: "/daemons" },
 ];
 
