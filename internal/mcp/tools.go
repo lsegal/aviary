@@ -831,6 +831,20 @@ func registerSessionTools(s *sdkmcp.Server) {
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_remove",
+		Description: "Permanently delete a session and all its messages",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		sid := strings.TrimSpace(args.SessionID)
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		if err := agent.NewSessionManager().Delete(sid); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("session %q removed", sid))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "session_set_target",
 		Description: "Set the configured channel target for a session and persist it in the session sidecar",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionSetTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {

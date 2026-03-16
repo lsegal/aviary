@@ -145,6 +145,19 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 	return sessions, nil
 }
 
+// Delete removes the session file for the given session ID.
+// It returns an error if the session cannot be found or deleted.
+func (m *SessionManager) Delete(sessionID string) error {
+	p := store.FindSessionPath(sessionID)
+	if p == "" {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	if err := os.Remove(p); err != nil {
+		return fmt.Errorf("deleting session %q: %w", sessionID, err)
+	}
+	return nil
+}
+
 // AppendMessageToSession appends a message to an existing session and fires
 // the session-message observer so WebSocket clients are notified.
 func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, content string) error {
