@@ -215,6 +215,7 @@ function settingsTabTarget(tab: SettingsTab) {
 
 function groupTarget(group: NavGroup): string {
 	if (group === "settings") {
+		if (route.path.startsWith("/settings/agents")) return route.path;
 		const tab = (route.params.tab as SettingsTab | undefined) ?? "general";
 		return settingsTabTarget(tab);
 	}
@@ -235,11 +236,11 @@ function isLinkActive(link: NavLink): boolean {
 	if (link.group === "system") {
 		return systemChildren.some((child) => route.path === child.to);
 	}
-	return route.path === link.to;
+	return route.path === link.to || route.path.startsWith(`${link.to}/`);
 }
 
 function isChildActive(child: NavChild): boolean {
-	return route.path === child.to;
+	return route.path === child.to || route.path.startsWith(`${child.to}/`);
 }
 
 function topLevelLinkClass(link: NavLink, mobile: boolean): string {

@@ -168,29 +168,38 @@
           <div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`" class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <!-- Subtab nav -->
             <div class="border-b border-gray-200 px-5 dark:border-gray-700">
-              <nav class="flex">
-                <button
-                  v-for="subtab in ([
-                    { key: 'general', label: 'General' },
-                    { key: 'permissions', label: 'Permissions' },
-                    { key: 'channels', label: 'Channels' },
-                    { key: 'files', label: 'Files' },
-                    { key: 'tasks', label: 'Tasks' },
-                  ] as const)"
-                  :key="subtab.key"
-                  type="button"
-                  class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
-                  :class="selectedAgentSubtab === subtab.key
-                    ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-                    : 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-                  @click="selectedAgentSubtab = subtab.key">
-                  {{ subtab.label }}
-                </button>
+              <nav class="flex items-center justify-between gap-4">
+                <div class="flex items-center">
+                  <button
+                    v-for="subtab in ([
+                      { key: 'general', label: 'General' },
+                      { key: 'permissions', label: 'Permissions' },
+                      { key: 'channels', label: 'Channels' },
+                      { key: 'tasks', label: 'Tasks' },
+                    ] as const)"
+                    :key="subtab.key"
+                    type="button"
+                    class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
+                    :class="selectedAgentSubtab === subtab.key
+                      ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+                      : 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+                    @click="selectedAgentSubtab = subtab.key">
+                    {{ subtab.label }}
+                  </button>
+                </div>
+                <div class="flex items-center">
+                  <button
+                    type="button"
+                    class="-mb-px border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:border-red-200 hover:text-red-700 dark:text-red-400 dark:hover:border-red-900 dark:hover:text-red-300"
+                    @click="removeAgent(i)">
+                    Remove Agent
+                  </button>
+                </div>
               </nav>
             </div>
 
             <!-- General subtab -->
-            <div v-show="selectedAgentSubtab === 'general'" class="min-h-[60vh] space-y-4 p-5">
+            <div v-show="selectedAgentSubtab === 'general'" class="space-y-4 p-5">
               <div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
                 <div>
                   <label class="field-label">Name</label>
@@ -205,68 +214,73 @@
                   <ModelSelector v-model="agent.fallbacks" :options="availableModelOptions" multiple placeholder="Add fallbacks…" />
                 </div>
               </div>
-              <div class="pt-2">
-                <button type="button" class="danger-btn" @click="removeAgent(i)">Remove Agent</button>
-              </div>
             </div>
 
-            <!-- Files subtab placeholder (content moved below after channels) -->
-            <div v-show="selectedAgentSubtab === 'files'" class="flex min-h-[60vh] flex-col p-5">
-            <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-              <div class="flex items-center justify-between gap-2">
-                <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files</div>
-                <div class="flex flex-wrap gap-1.5">
-                  <button type="button" class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).loading" @click="loadAgentFiles(agent.name)">
-                    {{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
-                  </button>
-                  <button type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving" @click="saveAgentFile(agent.name)">
-                    {{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
-                  </button>
-                  <button type="button" class="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" :disabled="!agent.name || !canDeleteAgentFile(getAgentFileState(agent.name).selectedFile) || getAgentFileState(agent.name).deleting" @click="deleteAgentFile(agent.name)">
-                    {{ getAgentFileState(agent.name).deleting ? 'Deleting…' : 'Delete' }}
-                  </button>
-                </div>
-              </div>
-              <div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-                <div class="space-y-2 self-start">
-                  <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-                    <div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
-                      <button
-                        v-for="file in getAgentFileState(agent.name).files"
-                        :key="file"
-                        type="button"
-                        class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
-                        :class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
-                        @click="selectAgentFile(agent.name, file)"
-                      >
-                        <span class="truncate">{{ file }}</span>
-                        <span v-if="isProtectedAgentFile(file)" class="ml-2 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
-                      </button>
-                    </div>
-                    <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
-                      {{ agent.name ? 'No root markdown files yet. Refresh or add one.' : 'Name the agent first to manage files.' }}
-                    </p>
-                  </div>
-                  <div class="space-y-1">
-                    <div class="flex gap-1.5">
-                      <input v-model="getAgentFileState(agent.name).draftFileName" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name || getAgentFileState(agent.name).creating" placeholder="IDENTITY.md" />
-                      <button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).creating" @click="createAgentFile(agent.name)">
-                        {{ getAgentFileState(agent.name).creating ? '…' : '+' }}
-                      </button>
-                    </div>
-                    <button type="button" class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).syncing" @click="syncAgentTemplates(agent.name)">
-                      {{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
+            <!-- Files content moved into General subtab -->
+            <div v-show="selectedAgentSubtab === 'general'" class="px-5 pb-5">
+              <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files</div>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <transition name="save-indicator">
+                      <div v-if="getAgentFileState(agent.name).saveFlash" class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="text-[11px] font-medium">Saved</span>
+                      </div>
+                    </transition>
+                    <button type="button" class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).loading" @click="loadAgentFiles(agent.name)">
+                      {{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
                     </button>
-                    <p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span class="font-mono">.md</span> only. <span class="font-mono">SYSTEM.md</span>, <span class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.</p>
+                    <button type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving" @click="saveAgentFile(agent.name)">
+                      {{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
+                    </button>
+                    <button type="button" class="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" :disabled="!agent.name || !canDeleteAgentFile(getAgentFileState(agent.name).selectedFile) || getAgentFileState(agent.name).deleting" @click="promptDeleteAgentFile(agent.name)">
+                      {{ getAgentFileState(agent.name).deleting ? 'Deleting…' : 'Delete' }}
+                    </button>
                   </div>
                 </div>
+                <div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <div class="space-y-2 self-start">
+                    <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+                      <div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
+                        <button
+                          v-for="file in getAgentFileState(agent.name).files"
+                          :key="file"
+                          type="button"
+                          class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
+                          :class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+                          @click="selectAgentFile(agent.name, file)"
+                        >
+                          <span class="truncate">{{ file }}</span>
+                          <span v-if="isProtectedAgentFile(file)" class="ml-2 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
+                        </button>
+                      </div>
+                      <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
+                        {{ agent.name ? 'No root markdown files yet. Refresh or add one.' : 'Name the agent first to manage files.' }}
+                      </p>
+                    </div>
+                    <div class="space-y-1">
+                      <div class="flex gap-1.5">
+                        <input v-model="getAgentFileState(agent.name).draftFileName" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name || getAgentFileState(agent.name).creating" placeholder="IDENTITY.md" />
+                        <button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).creating" @click="createAgentFile(agent.name)">
+                          {{ getAgentFileState(agent.name).creating ? '…' : '+' }}
+                        </button>
+                      </div>
+                      <button type="button" class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40" :disabled="!agent.name || getAgentFileState(agent.name).syncing" @click="syncAgentTemplates(agent.name)">
+                        {{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
+                      </button>
+                      <p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span class="font-mono">.md</span> only. <span class="font-mono">SYSTEM.md</span>, <span class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.</p>
+                    </div>
+                  </div>
 
-                <div class="relative flex flex-col">
-                  <textarea :value="getAgentFileState(agent.name).content" @input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value" class="field-input min-h-[50vh] resize-y py-2 font-mono text-xs" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile" :placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
-                  <p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getAgentFileState(agent.name).error }}</p>
+                  <div class="relative flex flex-col">
+                    <textarea :value="getAgentFileState(agent.name).content" @input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value" @keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }" class="field-input min-h-[50vh] resize-y py-2 font-mono text-xs" :disabled="!agent.name || !getAgentFileState(agent.name).selectedFile" :placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
+                    <p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">{{ getAgentFileState(agent.name).error }}</p>
+                  </div>
                 </div>
               </div>
-            </div>
             </div>
 
             <!-- Permissions subtab -->
@@ -486,6 +500,51 @@
                 </div>
               </div>
 
+              <div class="grid gap-3 lg:grid-cols-2">
+                <div>
+                  <label class="field-label">Channel model override (optional)</label>
+                  <ModelSelector
+                    :model-value="ch.model ?? ''"
+                    :options="availableModelOptions"
+                    placeholder="Default agent model"
+                    @update:model-value="ch.model = typeof $event === 'string' ? ($event || undefined) : undefined"
+                  />
+                </div>
+                <div>
+                  <label class="field-label">Channel fallback overrides (optional)</label>
+                  <ModelSelector
+                    :model-value="ch.fallbacks ?? []"
+                    :options="availableModelOptions"
+                    multiple
+                    placeholder="Default agent fallbacks"
+                    @update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="field-label">Channel disabled tools (optional)</label>
+                <ModelSelector
+                  :model-value="ch.disabledTools ?? []"
+                  :options="availableToolNamesForAgent(agent)"
+                  multiple
+                  placeholder="Exclude tools for this channel…"
+                  empty-text="No matching tools found"
+                  @update:model-value="ch.disabledTools = Array.isArray($event) ? $event : []"
+                />
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Applied after any restrict-tools allow list for messages on this channel.
+                </p>
+                <div class="mt-3">
+                  <button
+                    type="button"
+                    :data-testid="`channel-tool-permissions-inspect-${agent.name || i}-${k}`"
+                    class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    @click="openToolInspectionModal(channelInspectionTitle(agent, i, ch, k), channelToolResolution(agent, ch))"
+                  >Inspect tool permissions</button>
+                </div>
+              </div>
+
               <!-- Allow From entries -->
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
@@ -541,23 +600,38 @@
                       <input :value="entryExcludePrefixes(entry)" type="text" class="field-input" placeholder="!, /" @change="setEntryExcludePrefixes(entry, $event)" />
                     </div>
                   </div>
-                  <div class="grid gap-2 lg:grid-cols-2">
-                    <div></div>
-                    <div class="flex flex-col justify-end gap-1.5 pb-1">
-                      <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                        <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-                        Respond to @mentions
-                      </label>
-                      <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <div class="space-y-2 pt-1">
+                    <label class="block cursor-pointer">
+                      <div class="flex items-center gap-2">
+                        <input type="checkbox" v-model="entry.respondToMentions" class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+                        <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Respond to @mentions</span>
+                      </div>
+                      <p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Respond when the bot is directly @mentioned in a group chat or DM.</p>
+                    </label>
+                    <label class="block cursor-pointer">
+                      <div class="flex items-center gap-2">
                         <input
                           type="checkbox"
                           :checked="entry.mentionPrefixGroupOnly !== false"
-                          class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                          class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                           @change="entry.mentionPrefixGroupOnly = ($event.target as HTMLInputElement).checked ? undefined : false"
                         />
-                        Group chats only (uncheck to also require prefix in DMs)
-                      </label>
-                    </div>
+                        <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Group chats only</span>
+                      </div>
+                      <p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Mention prefix and @mention filters only apply in group chats. DMs from allowed senders are always forwarded.</p>
+                    </label>
+                    <label class="block cursor-pointer">
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          :checked="entry.mentionPrefixGroupOnly === false"
+                          class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                          @change="entry.mentionPrefixGroupOnly = ($event.target as HTMLInputElement).checked ? false : undefined"
+                        />
+                        <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Require mention prefix in DMs</span>
+                      </div>
+                      <p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Agent only responds to direct messages if the message matches a mention prefix or @mention rule.</p>
+                    </label>
                   </div>
                   <div class="grid gap-2 lg:grid-cols-2">
                     <div>
@@ -654,51 +728,6 @@
                       No tools found. The server may not be reachable.
                     </p>
                   </div>
-                </div>
-              </div>
-
-              <div class="grid gap-3 lg:grid-cols-2">
-                <div>
-                  <label class="field-label">Channel model override (optional)</label>
-                  <ModelSelector
-                    :model-value="ch.model ?? ''"
-                    :options="availableModelOptions"
-                    placeholder="Default agent model"
-                    @update:model-value="ch.model = typeof $event === 'string' ? ($event || undefined) : undefined"
-                  />
-                </div>
-                <div>
-                  <label class="field-label">Channel fallback overrides (optional)</label>
-                  <ModelSelector
-                    :model-value="ch.fallbacks ?? []"
-                    :options="availableModelOptions"
-                    multiple
-                    placeholder="Default agent fallbacks"
-                    @update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label class="field-label">Channel disabled tools (optional)</label>
-                <ModelSelector
-                  :model-value="ch.disabledTools ?? []"
-                  :options="availableToolNamesForAgent(agent)"
-                  multiple
-                  placeholder="Exclude tools for this channel…"
-                  empty-text="No matching tools found"
-                  @update:model-value="ch.disabledTools = Array.isArray($event) ? $event : []"
-                />
-                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  Applied after any restrict-tools allow list for messages on this channel.
-                </p>
-                <div class="mt-3">
-                  <button
-                    type="button"
-                    :data-testid="`channel-tool-permissions-inspect-${agent.name || i}-${k}`"
-                    class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                    @click="openToolInspectionModal(channelInspectionTitle(agent, i, ch, k), channelToolResolution(agent, ch))"
-                  >Inspect tool permissions</button>
                 </div>
               </div>
 
@@ -1136,6 +1165,64 @@
     </div>
   </AppLayout>
 
+  <!-- Remove agent confirmation dialog -->
+  <AlertDialogRoot :open="removeAgentTarget !== null" @update:open="(v) => { if (!v) removeAgentTarget = null }">
+    <AlertDialogPortal>
+      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+      <AlertDialogContent
+        class="fixed left-1\2 top-1\2 z-50 w-full max-w-lg -translate-x-1\2 -translate-y-1\2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+        <AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
+          Remove agent?
+        </AlertDialogTitle>
+        <AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          This will remove
+          <span class="font-medium text-gray-900 dark:text-white">{{ removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name || 'this agent') : '' }}</span>
+          from the configuration. This cannot be undone.
+        </AlertDialogDescription>
+        <div class="mt-6 flex justify-end gap-3">
+          <AlertDialogCancel
+            class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+            @click="confirmRemoveAgent">
+            Remove
+          </AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialogPortal>
+  </AlertDialogRoot>
+
+  <!-- Delete file confirmation dialog -->
+  <AlertDialogRoot :open="!!deleteFileTarget" @update:open="(v) => { if (!v) deleteFileTarget = null }">
+    <AlertDialogPortal>
+      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+      <AlertDialogContent
+        class="fixed left-1\2 top-1\2 z-50 w-full max-w-lg -translate-x-1\2 -translate-y-1\2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+        <AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
+          Delete file?
+        </AlertDialogTitle>
+        <AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          This will permanently delete
+          <span class="font-medium text-gray-900 dark:text-white">{{ deleteFileTarget?.file }}</span>.
+          This cannot be undone.
+        </AlertDialogDescription>
+        <div class="mt-6 flex justify-end gap-3">
+          <AlertDialogCancel
+            class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+            @click="confirmDeleteAgentFile">
+            Delete
+          </AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialogPortal>
+  </AlertDialogRoot>
+
   <!-- Remove session confirmation dialog -->
   <AlertDialogRoot :open="!!removeTarget" @update:open="(v) => { if (!v) removeTarget = null }">
     <AlertDialogPortal>
@@ -1178,7 +1265,7 @@ import {
 	AlertDialogTitle,
 } from "radix-vue";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import FancySelect from "../components/FancySelect.vue";
 import ModelSelector from "../components/ModelSelector.vue";
@@ -1258,23 +1345,23 @@ interface ToolInspectionModalState {
 }
 
 const route = useRoute();
+const router = useRouter();
 
 const tabs: Tab[] = ["general", "agents", "skills", "sessions", "providers"];
-const activeTab = ref<Tab>(
-	(route.params.tab as Tab | undefined) &&
-		tabs.includes(route.params.tab as Tab)
-		? (route.params.tab as Tab)
-		: "general",
-);
+
+function routeToActiveTab(): Tab {
+	if (route.path.startsWith("/settings/agents")) return "agents";
+	const tab = route.params.tab as Tab | undefined;
+	return tab && tabs.includes(tab) ? tab : "general";
+}
+
+const activeTab = ref<Tab>(routeToActiveTab());
 
 watch(
-	() => route.params.tab,
-	(tab) => {
-		if (tab && tabs.includes(tab as Tab)) {
-			activeTab.value = tab as Tab;
-		}
+	() => route.path,
+	() => {
+		activeTab.value = routeToActiveTab();
 	},
-	{ immediate: true },
 );
 
 const store = useSettingsStore();
@@ -1329,13 +1416,100 @@ const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
-const selectedAgentIdx = ref(0);
-const selectedAgentSubtab = ref<
-	"general" | "permissions" | "channels" | "files" | "tasks"
->("general");
-watch(selectedAgentIdx, () => {
+const agentSubtabs = [
+	"general",
+	"permissions",
+	"channels",
+	"files",
+	"tasks",
+] as const;
+type AgentSubtab = (typeof agentSubtabs)[number];
+
+// Returns the URL segment for an agent: its name, or "_<index>" if unnamed.
+function agentRouteId(idx: number): string {
+	return draft.value.agents[idx]?.name || `_${idx}`;
+}
+
+// Resolves a URL segment back to an agent index.
+function agentIdxFromParam(param: string): number {
+	if (param.startsWith("_")) {
+		const n = parseInt(param.slice(1), 10);
+		return Number.isNaN(n) ? 0 : n;
+	}
+	const idx = draft.value.agents.findIndex((a) => a.name === param);
+	return idx >= 0 ? idx : 0;
+}
+
+function agentRoutePath(idx: number, subtab: AgentSubtab): string {
+	return `/settings/agents/${agentRouteId(idx)}/${subtab}`;
+}
+
+const selectedAgentSubtab = ref<AgentSubtab>(
+	agentSubtabs.includes(route.params.subtab as AgentSubtab)
+		? (route.params.subtab as AgentSubtab)
+		: "general",
+);
+const selectedAgentIdx = ref(
+	route.params.agent ? agentIdxFromParam(route.params.agent as string) : 0,
+);
+
+// Agent tab click → push new route (also resets subtab).
+watch(selectedAgentIdx, (idx) => {
 	selectedAgentSubtab.value = "general";
+	const target = agentRoutePath(idx, "general");
+	if (route.path !== target) void router.push(target);
 });
+
+// Subtab click → replace current URL segment.
+watch(selectedAgentSubtab, (subtab) => {
+	if (!route.path.startsWith("/settings/agents")) return;
+	const target = agentRoutePath(selectedAgentIdx.value, subtab);
+	if (route.path !== target) void router.replace(target);
+});
+
+// Agent rename (or new agent getting a name) → replace URL in place.
+watch(
+	() => draft.value.agents[selectedAgentIdx.value]?.name,
+	() => {
+		if (!route.path.startsWith("/settings/agents")) return;
+		const target = agentRoutePath(
+			selectedAgentIdx.value,
+			selectedAgentSubtab.value,
+		);
+		if (route.path !== target) void router.replace(target);
+	},
+);
+
+// Browser back/forward or direct URL navigation → sync index and subtab.
+watch(
+	() => route.params.agent as string | undefined,
+	(param) => {
+		if (!param || !draft.value.agents.length) return;
+		const idx = agentIdxFromParam(param);
+		if (idx !== selectedAgentIdx.value) selectedAgentIdx.value = idx;
+	},
+);
+watch(
+	() => route.params.subtab as string | undefined,
+	(subtab) => {
+		if (subtab && agentSubtabs.includes(subtab as AgentSubtab)) {
+			selectedAgentSubtab.value = subtab as AgentSubtab;
+		}
+	},
+);
+
+// /settings/agents with no agent param → redirect to current selection.
+watch(
+	() => route.path,
+	(path) => {
+		if (path === "/settings/agents") {
+			void router.replace(
+				agentRoutePath(selectedAgentIdx.value, selectedAgentSubtab.value),
+			);
+		}
+	},
+	{ immediate: true },
+);
 
 const selectedAgentAsSingletonList = computed(() =>
 	selectedAgentIdx.value < draft.value.agents.length
@@ -1704,9 +1878,11 @@ interface AgentFileEditorState {
 	creating: boolean;
 	syncing: boolean;
 	autoSynced: boolean;
+	saveFlash: boolean;
 	error: string;
 }
 const agentFileEditorState = ref<Record<string, AgentFileEditorState>>({});
+const agentFileSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 function getAgentFileState(agentName: string): AgentFileEditorState {
 	if (!agentFileEditorState.value[agentName]) {
@@ -1721,10 +1897,22 @@ function getAgentFileState(agentName: string): AgentFileEditorState {
 			creating: false,
 			syncing: false,
 			autoSynced: false,
+			saveFlash: false,
 			error: "",
 		};
 	}
 	return agentFileEditorState.value[agentName];
+}
+
+function flashAgentFileSave(agentName: string) {
+	const state = getAgentFileState(agentName);
+	state.saveFlash = true;
+	if (agentFileSaveTimers[agentName])
+		clearTimeout(agentFileSaveTimers[agentName]);
+	agentFileSaveTimers[agentName] = setTimeout(() => {
+		state.saveFlash = false;
+		delete agentFileSaveTimers[agentName];
+	}, 3200);
 }
 
 function isProtectedAgentFile(file: string): boolean {
@@ -1806,6 +1994,7 @@ async function saveAgentFile(agentName: string) {
 			file: state.selectedFile,
 			content: state.content,
 		});
+		flashAgentFileSave(agentName);
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -2016,6 +2205,11 @@ async function loadConfig() {
 			await importAgents();
 		}
 
+		// Re-resolve agent index now that agents are loaded from config.
+		if (route.params.agent) {
+			selectedAgentIdx.value = agentIdxFromParam(route.params.agent as string);
+		}
+
 		if (!sessionAgent.value && draft.value.agents.length) {
 			sessionAgent.value = draft.value.agents[0].name;
 		}
@@ -2125,14 +2319,46 @@ function addAgent() {
 		tasks: [],
 	};
 	draft.value.agents.push(agent);
+	// Setting the index triggers the watch which navigates to _N/general.
 	selectedAgentIdx.value = draft.value.agents.length - 1;
 }
 
+const removeAgentTarget = ref<number | null>(null);
+
 function removeAgent(index: number) {
+	removeAgentTarget.value = index;
+}
+
+function confirmRemoveAgent() {
+	const index = removeAgentTarget.value;
+	if (index === null) return;
+	removeAgentTarget.value = null;
 	draft.value.agents.splice(index, 1);
-	if (selectedAgentIdx.value >= draft.value.agents.length) {
-		selectedAgentIdx.value = Math.max(0, draft.value.agents.length - 1);
+	const next = Math.min(
+		selectedAgentIdx.value,
+		Math.max(0, draft.value.agents.length - 1),
+	);
+	if (next !== selectedAgentIdx.value) {
+		selectedAgentIdx.value = next;
+	} else {
+		// Index unchanged but the agent at this slot may have changed; update URL.
+		void router.replace(agentRoutePath(next, selectedAgentSubtab.value));
 	}
+}
+
+const deleteFileTarget = ref<{ agentName: string; file: string } | null>(null);
+
+function promptDeleteAgentFile(agentName: string) {
+	const state = getAgentFileState(agentName);
+	if (!canDeleteAgentFile(state.selectedFile)) return;
+	deleteFileTarget.value = { agentName, file: state.selectedFile };
+}
+
+async function confirmDeleteAgentFile() {
+	const target = deleteFileTarget.value;
+	if (!target) return;
+	deleteFileTarget.value = null;
+	await deleteAgentFile(target.agentName);
 }
 
 function onAgentNameChange(agentEntry: AgentEntry) {

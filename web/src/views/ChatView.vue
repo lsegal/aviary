@@ -212,6 +212,7 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
@@ -260,7 +261,13 @@ interface PersistedMessage {
 
 const agentsStore = useAgentsStore();
 const authStore = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const { streamAgent } = useStream();
+
+function chatPath(agent: string, sessionId?: string): string {
+	return sessionId ? `/chat/${agent}/${sessionId}` : `/chat/${agent}`;
+}
 
 function renderMarkdown(text: string): string {
 	return marked.parse(text, { async: false }) as string;
@@ -505,11 +512,19 @@ const onWindowKeydown = (e: KeyboardEvent) => {
 
 onMounted(async () => {
 	await agentsStore.fetchAgents();
-	// Auto-select first agent.
-	if (agentsStore.agents.length > 0) {
-		selectedAgent.value = agentsStore.agents[0].name;
-		await loadSessions();
+	const routeAgent =
+		typeof route.params.agent === "string" ? route.params.agent : "";
+	const routeSessionId =
+		typeof route.params.sessionId === "string" ? route.params.sessionId : "";
+	const agentName =
+		agentsStore.agents.find((a) => a.name === routeAgent)?.name ??
+		agentsStore.agents[0]?.name ??
+		"";
+	if (agentName) {
+		selectedAgent.value = agentName;
+		await loadSessions(routeSessionId);
 		await loadSessionMessages();
+		router.replace(chatPath(agentName, selectedSessionId.value));
 	}
 	document.addEventListener("visibilitychange", onVisible);
 	window.addEventListener("keydown", onWindowKeydown);
@@ -578,7 +593,7 @@ function connectSessionWS() {
 	};
 }
 
-async function loadSessions() {
+async function loadSessions(preferredSessionId = "") {
 	if (!selectedAgent.value) return;
 	sessionsLoading.value = true;
 	try {
@@ -589,9 +604,13 @@ async function loadSessions() {
 			nextProcessing[sess.id] = sess.is_processing === true;
 		}
 		sessionProcessing.value = nextProcessing;
-		// Default to "main" session.
+		// Prefer explicit session ID, then "main", then first.
+		const preferred = preferredSessionId
+			? sessions.value.find((s) => s.id === preferredSessionId)
+			: undefined;
 		const main = sessions.value.find((s) => s.name === "main");
-		selectedSessionId.value = main?.id ?? sessions.value[0]?.id ?? "";
+		selectedSessionId.value =
+			preferred?.id ?? main?.id ?? sessions.value[0]?.id ?? "";
 		await loadSessionMessages();
 	} catch (e) {
 		console.error("Failed to load sessions", e);
@@ -613,12 +632,14 @@ async function selectAgent(name: string) {
 	sessions.value = [];
 	resetHistoryNavigation();
 	await loadSessions();
+	router.push(chatPath(name, selectedSessionId.value));
 }
 
 async function selectSession(id: string) {
 	if (selectedSessionId.value === id) return;
 	selectedSessionId.value = id;
 	resetHistoryNavigation();
+	router.push(chatPath(selectedAgent.value, id));
 	await loadSessionMessages();
 }
 
@@ -631,6 +652,7 @@ async function createSession() {
 		const sess = JSON.parse(raw) as Session;
 		sessions.value.push(sess);
 		selectedSessionId.value = sess.id;
+		router.push(chatPath(selectedAgent.value, sess.id));
 		messages.value = [];
 		resetHistoryNavigation();
 	} catch (e) {

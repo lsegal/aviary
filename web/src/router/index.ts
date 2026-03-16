@@ -12,7 +12,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/chat",
+			path: "/chat/:agent?/:sessionId?",
 			component: () => import("../views/ChatView.vue"),
 			meta: { requiresAuth: true },
 		},
@@ -50,7 +50,12 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/settings/:tab(general|agents|skills|sessions|providers)",
+			path: "/settings/agents/:agent?/:subtab(general|permissions|channels|files|tasks)?",
+			component: () => import("../views/SettingsView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/settings/:tab(general|skills|sessions|providers)",
 			component: () => import("../views/SettingsView.vue"),
 			meta: { requiresAuth: true },
 		},
