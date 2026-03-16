@@ -374,15 +374,12 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 	}
 	assert.True(t, foundUser)
 
+	// Verify agent_run did not create extra sessions — the original session
+	// should be the only one for this agent.
 	sessions, err := agent.NewSessionManager().List("agent_assistant")
 	require.NoError(t, err)
-	found := 0
-	for _, candidate := range sessions {
-		if candidate != nil && candidate.Name == "signal:+15551234567" {
-			found++
-		}
-	}
-	assert.Equal(t, 1, found)
+	assert.Equal(t, 1, len(sessions))
+	assert.Equal(t, sess.ID, sessions[0].ID)
 }
 
 func TestAgentRun_RejectsSessionIDAgentMismatch(t *testing.T) {

@@ -1717,3 +1717,92 @@ func TestResolveOAuthToken_OpenAIRefreshesExpiredToken(t *testing.T) {
 	assert.Contains(t, persistedValue, "at-refreshed")
 	assert.Contains(t, persistedValue, "rt-new")
 }
+
+// ---------------------------------------------------------------------------
+// CopilotProvider tests
+// ---------------------------------------------------------------------------
+
+func TestFactory_CopilotProvider_OAuth(t *testing.T) {
+	f := NewFactory(func(ref string) (string, error) {
+		if ref == "auth:github-copilot:oauth" {
+			return `{"access":"ya-access","refresh":"rt","expires_at":9999999999999}`, nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+	p, err := f.ForModel("github-copilot/claude-sonnet-4.5")
+	assert.NoError(t, err)
+	_, ok := p.(*CopilotProvider)
+	assert.True(t, ok, "expected CopilotProvider for github-copilot/* when OAuth present")
+}
+
+func TestFactory_CopilotProvider_PatFallback(t *testing.T) {
+	f := NewFactory(func(ref string) (string, error) {
+		if ref == "auth:github-copilot:default" {
+			return "ghp-testpat", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+	p, err := f.ForModel("github-copilot/gpt-5")
+	assert.NoError(t, err)
+	_, ok := p.(*CopilotProvider)
+	assert.True(t, ok, "expected CopilotProvider for github-copilot/* when PAT present")
+}
+
+func TestFactory_CopilotProvider_MissingCreds(t *testing.T) {
+	f := NewFactory(func(_ string) (string, error) { return "", fmt.Errorf("not found") })
+	_, err := f.ForModel("github-copilot/gpt-5")
+	assert.Error(t, err)
+}
+
+func TestCopilotProvider_PingAndStream(t *testing.T) {
+	// Mock server: /models for Ping and /chat/completions SSE for Stream.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"models":[]}`)
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n")
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2}}\n\n")
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// Create provider pointing at mock server.
+	p := NewCopilotHTTPProvider("test-token", "gpt-5", srv.URL)
+	p.httpClient = &http.Client{Transport: http.DefaultTransport}
+
+	// Ping should succeed.
+	err := p.Ping(context.Background())
+	assert.NoError(t, err)
+
+	// Stream should parse SSE and produce text + usage + done.
+	ch, err := p.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "Hi"}}})
+	assert.NoError(t, err)
+	events := collectEvents(t, ch)
+	var gotText, gotUsage, gotDone bool
+	var textBuf string
+	for _, ev := range events {
+		switch ev.Type {
+		case EventTypeText:
+			textBuf += ev.Text
+			gotText = true
+		case EventTypeUsage:
+			gotUsage = true
+		case EventTypeDone:
+			gotDone = true
+		case EventTypeError:
+			assert.NoError(t, ev.Error)
+		}
+	}
+	assert.True(t, gotText)
+	assert.Equal(t, "Hello", textBuf)
+	assert.True(t, gotUsage)
+	assert.True(t, gotDone)
+}
