@@ -424,19 +424,18 @@ func SessionPath(agentID, sessionID string) string {
 
 // FindSessionPath scans all known agent directories and returns the full path
 // for the first session file matching sessionID.  Returns "" when not found.
-func FindSessionPath(sessionID string) string {
+// FindSessionPath locates the .jsonl file for sessionID by scanning agent
+// directories. An optional agentNameHint causes that agent's directory to be
+// tried first (case-insensitive), which avoids returning the wrong file when
+// multiple agents share the same session name (e.g. "main").
+func FindSessionPath(sessionID string, agentNameHint ...string) string {
 	agentsDir := filepath.Join(DataDir(), DirAgents)
 	entries, err := os.ReadDir(agentsDir)
 	if err != nil {
 		return ""
 	}
 
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		agentName := e.Name()
-		// Try stripped ID: sessionID="agent_foo-main", agentName="foo" -> "main.jsonl"
+	tryAgent := func(agentName string) string {
 		prefixes := []string{"agent_" + agentName + "-", agentName + "-"}
 		for _, p := range prefixes {
 			if strings.HasPrefix(sessionID, p) {
@@ -447,10 +446,34 @@ func FindSessionPath(sessionID string) string {
 				}
 			}
 		}
-
-		// Also try plain sessionID (e.g. for "sess_..." type IDs).
 		p := filepath.Join(agentsDir, agentName, "sessions", sanitizeFileComponent(sessionID)+".jsonl")
 		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+		return ""
+	}
+
+	// When a hint is provided, try that agent first.
+	if len(agentNameHint) > 0 && agentNameHint[0] != "" {
+		hint := agentNameHint[0]
+		for _, e := range entries {
+			if e.IsDir() && strings.EqualFold(e.Name(), hint) {
+				if p := tryAgent(e.Name()); p != "" {
+					return p
+				}
+				break
+			}
+		}
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if len(agentNameHint) > 0 && strings.EqualFold(e.Name(), agentNameHint[0]) {
+			continue // already tried above
+		}
+		if p := tryAgent(e.Name()); p != "" {
 			return p
 		}
 	}

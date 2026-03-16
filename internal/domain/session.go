@@ -4,8 +4,8 @@ import "time"
 
 // Session represents a conversation with an agent.
 type Session struct {
-	ID        string    `json:"id"`
-	AgentID   string    `json:"agent_id"`
+	ID        string    `json:"id,omitempty"`
+	AgentID   string    `json:"agent_id,omitempty"`
 	Name      string    `json:"name,omitempty"`    // human-readable name; "main" for the default session
 	TaskID    string    `json:"task_id,omitempty"` // set for task sessions
 	CreatedAt time.Time `json:"created_at"`
@@ -26,7 +26,7 @@ const (
 // Message represents a single message in a session.
 type Message struct {
 	ID        string      `json:"id"`
-	SessionID string      `json:"session_id"`
+	SessionID string      `json:"session_id,omitempty"`
 	Role      MessageRole `json:"role"`
 	Content   string      `json:"content"`
 	MediaURL  string      `json:"media_url,omitempty"`
