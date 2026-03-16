@@ -846,35 +846,6 @@
               </div>
             </div>
 
-            <div>
-              <div class="mb-2 flex items-center justify-between">
-                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Queued & Recent Jobs</h4>
-                <button type="button" class="rounded-lg border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="jobsLoading" @click="loadAllJobs">{{ jobsLoading ? 'Loading…' : 'Refresh' }}</button>
-              </div>
-              <div v-if="!agentJobsList(agent.name).length" class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                No queued or recent jobs.
-              </div>
-              <div v-else class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                <table class="w-full text-xs">
-                  <thead>
-                    <tr class="border-b border-gray-200 text-left font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                      <th class="px-3 py-2">Task</th>
-                      <th class="px-3 py-2">Status</th>
-                      <th class="px-3 py-2">When</th>
-                      <th class="px-3 py-2">Prompt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="job in agentJobsList(agent.name)" :key="job.id" class="border-b border-gray-100 text-gray-700 last:border-0 dark:border-gray-800 dark:text-gray-300">
-                      <td class="px-3 py-2 font-mono">{{ job.task_id }}</td>
-                      <td class="px-3 py-2"><span :class="jobStatusClass(job.status)" class="rounded px-1.5 py-0.5 text-xs font-medium">{{ job.status }}</span></td>
-                      <td class="px-3 py-2 text-gray-500 dark:text-gray-400">{{ fmtJobDate(job.scheduled_for ?? job.created_at) }}</td>
-                      <td class="max-w-xs truncate px-3 py-2 text-gray-500 dark:text-gray-400">{{ job.prompt }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
             </div>
           </div>
         </section>
@@ -967,7 +938,7 @@
                     <th class="px-3 py-2">Name</th>
                     <th class="px-3 py-2">ID</th>
                     <th class="px-3 py-2">Updated</th>
-                    <th class="px-3 py-2">Action</th>
+                    <th class="px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -976,7 +947,10 @@
                     <td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ s.id.slice(-10) }}</td>
                     <td class="px-3 py-2 text-xs">{{ formatDate(s.updated_at) }}</td>
                     <td class="px-3 py-2">
-                      <button type="button" class="danger-btn" @click="stopSession(s.id)">Stop</button>
+                      <div class="flex items-center gap-2">
+                        <button type="button" class="danger-btn" :disabled="!s.is_processing" :class="!s.is_processing ? 'opacity-40 cursor-not-allowed' : ''" @click="stopSession(s.id)">Stop</button>
+                        <button type="button" class="danger-btn" :disabled="s.name === 'main'" :class="s.name === 'main' ? 'opacity-40 cursor-not-allowed' : ''" @click="s.name !== 'main' && (removeTarget = s)">Remove</button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -1161,9 +1135,48 @@
       </div>
     </div>
   </AppLayout>
+
+  <!-- Remove session confirmation dialog -->
+  <AlertDialogRoot :open="!!removeTarget" @update:open="(v) => { if (!v) removeTarget = null }">
+    <AlertDialogPortal>
+      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+      <AlertDialogContent
+        class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+        <AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
+          Remove session?
+        </AlertDialogTitle>
+        <AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          This will permanently delete
+          <span class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget?.name || removeTarget?.id }}</span>
+          and all its messages. This cannot be undone.
+        </AlertDialogDescription>
+        <div class="mt-6 flex justify-end gap-3">
+          <AlertDialogCancel
+            class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+            @click="confirmRemoveSession">
+            Remove
+          </AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialogPortal>
+  </AlertDialogRoot>
 </template>
 
 <script setup lang="ts">
+import {
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogOverlay,
+	AlertDialogPortal,
+	AlertDialogRoot,
+	AlertDialogTitle,
+} from "radix-vue";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
@@ -1200,6 +1213,7 @@ interface SessionRow {
 	id: string;
 	name: string;
 	updated_at: string;
+	is_processing?: boolean;
 }
 
 interface RuntimeAgent {
@@ -1230,16 +1244,6 @@ interface SkillSettingSchema {
 interface SkillSettingsSchema {
 	type?: string;
 	properties?: Record<string, SkillSettingSchema>;
-}
-
-interface JobEntry {
-	id: string;
-	task_id: string;
-	agent_name: string;
-	status: string;
-	prompt: string;
-	scheduled_for?: string;
-	created_at: string;
 }
 
 interface TaskChannelOption {
@@ -1302,9 +1306,6 @@ function connectWs() {
 			) {
 				if (activeTab.value === "sessions" && sessionAgent.value) {
 					await loadSessions();
-				}
-				if (activeTab.value === "agents") {
-					void loadAllJobs();
 				}
 			}
 		} catch {
@@ -1371,6 +1372,7 @@ const execShellPlaceholder = computed(() => {
 const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
 const sessionLoading = ref(false);
+const removeTarget = ref<SessionRow | null>(null);
 
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
@@ -1484,9 +1486,6 @@ const webSearchSecretSelection = computed({
 		draft.value.search.web.brave_api_key = name ? `auth:${name}` : "";
 	},
 });
-
-const allJobs = ref<JobEntry[]>([]);
-const jobsLoading = ref(false);
 
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
@@ -1681,7 +1680,6 @@ const toolInspectionOutput = computed(() =>
 );
 watch(activeTab, (tab) => {
 	if (tab === "agents") {
-		void loadAllJobs();
 		void preloadAgentFiles();
 	}
 	if (tab === "skills" && !installedSkills.value.length) {
@@ -1895,44 +1893,11 @@ async function preloadAgentFiles() {
 	);
 }
 
-function agentJobsList(agentName: string): JobEntry[] {
-	return allJobs.value.filter((j) => j.agent_name === agentName);
-}
-
-async function loadAllJobs() {
-	if (jobsLoading.value) return;
-	jobsLoading.value = true;
-	try {
-		const raw = await callTool("job_list", {});
-		allJobs.value = (JSON.parse(raw) as JobEntry[] | null) ?? [];
-	} catch {
-		allJobs.value = [];
-	} finally {
-		jobsLoading.value = false;
-	}
-}
-
-function jobStatusClass(status: string): string {
-	if (status === "done")
-		return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-	if (status === "failed")
-		return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-	if (status === "in_progress")
-		return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
-}
-
-function fmtJobDate(s: string | undefined): string {
-	if (!s) return "—";
-	return new Date(s).toLocaleString();
-}
-
 onMounted(async () => {
 	connectWs();
 	window.addEventListener("keydown", onWindowKeydown);
 	await loadConfig();
 	await refreshCredentials();
-	void loadAllJobs();
 });
 
 onUnmounted(() => {
@@ -2175,7 +2140,6 @@ function removeAgent(index: number) {
 function onAgentNameChange(agentEntry: AgentEntry) {
 	if (agentEntry.name) {
 		void loadAgentFiles(agentEntry.name);
-		void loadAllJobs();
 	}
 }
 
@@ -2910,6 +2874,18 @@ async function createSession() {
 async function stopSession(sessionID: string) {
 	try {
 		await callTool("session_stop", { session_id: sessionID });
+		await loadSessions();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function confirmRemoveSession() {
+	const sess = removeTarget.value;
+	removeTarget.value = null;
+	if (!sess) return;
+	try {
+		await callTool("session_remove", { session_id: sess.id });
 		await loadSessions();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
