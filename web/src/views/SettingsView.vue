@@ -1640,7 +1640,7 @@ const KNOWN_PROVIDERS = [
 	},
 	{
 		id: "google",
-		label: "Google",
+		label: "Google (Gemini)",
 		authId: "gemini",
 		hasOAuth: true,
 		hasApiKey: true,
