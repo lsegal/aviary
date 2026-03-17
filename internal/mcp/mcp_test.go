@@ -1453,7 +1453,8 @@ func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatch
 func setupMCPWithExecAgent(t *testing.T, execPerms *config.ExecPermissionsConfig) (*Dispatcher, context.Context) {
 	t.Helper()
 	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(base)
+	t.Cleanup(func() { store.SetDataDir("") })
 	require.NoError(t, store.EnsureDirs())
 
 	old := GetDeps()
