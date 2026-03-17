@@ -50,7 +50,7 @@ func NewAnthropicOAuthProvider(accessToken, model string) *AnthropicProvider {
 		option.WithAuthToken(accessToken),
 		option.WithHTTPClient(httpClient),
 		// Required headers for Anthropic OAuth requests.
-		option.WithHeader("anthropic-beta", "oauth-2025-04-20,interleaved-thinking-2025-05-14"),
+		option.WithHeader("anthropic-beta", "oauth-2025-04-20"),
 		option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
 	}
 	return &AnthropicProvider{
@@ -94,6 +94,10 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleAssistant:
 			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+		case RoleSystem:
+			// Anthropic does not support a "system" role inside the messages array;
+			// inject as a user turn so alternation is preserved.
+			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		}
 	}
 

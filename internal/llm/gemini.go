@@ -273,6 +273,9 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 		case RoleAssistant:
 			c := content{Role: "model", Parts: []part{{Text: msg.Content}}}
 			contents = append(contents, c)
+		case RoleSystem:
+			c := content{Role: "user", Parts: []part{{Text: msg.Content}}}
+			contents = append(contents, c)
 		}
 	}
 
