@@ -218,6 +218,11 @@
 										placeholder="Add fallbacks…" />
 								</div>
 							</div>
+							<div>
+								<label class="field-label">Working directory</label>
+								<input v-model="agent.working_dir" type="text" class="field-input"
+									placeholder="Default: process working directory (e.g. /home/user/projects/myrepo)" />
+							</div>
 						</div>
 
 						<!-- Files content moved into General subtab -->

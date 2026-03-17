@@ -136,10 +136,8 @@ func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, ar
 		return result, nil
 	}
 
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		result.ExitCode = exitErr.ExitCode()
-		return result, err
 	}
 	return result, err
 }
@@ -162,7 +160,7 @@ func shellInvocation(shell, command string) (string, []string, error) {
 	name := strings.TrimSpace(shell)
 	if name == "" {
 		if runtime.GOOS == "windows" {
-			name = "cmd"
+			name = "powershell"
 		} else {
 			name = "sh"
 		}
@@ -176,7 +174,7 @@ func shellInvocation(shell, command string) (string, []string, error) {
 	case "fish":
 		return name, []string{"-c", command}, nil
 	default:
-		return name, []string{"-lc", command}, nil
+		return name, []string{"-c", command}, nil
 	}
 }
 

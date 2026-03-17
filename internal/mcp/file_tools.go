@@ -226,6 +226,9 @@ func resolveAllowedAgentPath(ctx context.Context, rawPath, operation string) (st
 		return "", nil, fmt.Errorf("agent %q not found", agentID)
 	}
 	workspaceDir := store.WorkspaceDir()
+	if cfg := runner.Config(); cfg != nil && cfg.WorkingDir != "" {
+		workspaceDir = cfg.WorkingDir
+	}
 	policy, err := filesystem.PolicyFromAgent(runner.Config(), workspaceDir)
 	if err != nil {
 		return "", nil, err

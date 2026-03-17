@@ -1811,7 +1811,7 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		}
 		terms := strings.Fields(strings.ToLower(args.Query))
 		var matched []string
-		for _, line := range strings.Split(notes, "\n") {
+		for line := range strings.SplitSeq(notes, "\n") {
 			lower := strings.ToLower(line)
 			ok := true
 			for _, t := range terms {

@@ -78,10 +78,15 @@ type AgentConfig struct {
 	Memory       string   `yaml:"memory,omitempty"        json:"memory,omitempty"`
 	MemoryTokens int      `yaml:"memory_tokens,omitempty" json:"memory_tokens,omitempty"`
 	CompactKeep  int      `yaml:"compact_keep,omitempty"  json:"compact_keep,omitempty"`
+	// WorkingDir is the default working directory for this agent. When set it
+	// overrides the process working directory for file-path resolution and
+	// filesystem-policy base-dir expansion.  Supports ~ and environment
+	// variable expansion.  Defaults to the process working directory.
+	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
 	// Rules is an optional set of operating rules injected at the top of every
 	// system prompt for this agent.  It may be inline markdown text or a path
 	// to a file (e.g. "./RULES.md"); file paths are resolved relative to the
-	// process working directory at prompt time.
+	// agent working directory at prompt time.
 	Rules       string             `yaml:"rules,omitempty"       json:"rules,omitempty"`
 	Permissions *PermissionsConfig `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 	Channels    []ChannelConfig    `yaml:"channels,omitempty"    json:"channels,omitempty"`
