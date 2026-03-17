@@ -37,7 +37,7 @@ export function useLogs() {
 
 	// Filter state.
 	const filterComponents = ref<Set<string>>(new Set());
-	const filterLevel = ref<LogLevel>("debug");
+	const filterLevel = ref<LogLevel>("info");
 	const filterText = ref("");
 
 	// All unique components seen so far.
