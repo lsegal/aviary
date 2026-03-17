@@ -16,6 +16,7 @@ import (
 var (
 	once    sync.Once
 	initErr error
+	logFile *os.File
 )
 
 // LogDir returns Aviary's log directory.
@@ -43,6 +44,8 @@ func Init() error {
 			return
 		}
 
+		logFile = f
+
 		stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
 		fileHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
 		slog.SetDefault(slog.New(&teeHandler{a: stderrHandler, b: fileHandler}))
@@ -52,6 +55,22 @@ func Init() error {
 	})
 
 	return initErr
+}
+
+// Shutdown closes any open log file and resets logging state. This is intended
+// for use in tests so temporary log files can be removed.
+func Shutdown() {
+	if logFile != nil {
+		_ = logFile.Close()
+		logFile = nil
+	}
+
+	stdlog.SetOutput(os.Stderr)
+	stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(stderrHandler))
+
+	once = sync.Once{}
+	initErr = nil
 }
 
 type teeHandler struct {

@@ -163,25 +163,21 @@ func TestTeeHandler_WithAttrs_Empty(t *testing.T) {
 }
 
 func TestInit(t *testing.T) {
-	// Use os.TempDir() directly (not t.TempDir()) so the directory persists
-	// past test cleanup and avoids Windows file-lock issues with open log files.
-	tmp, err := os.MkdirTemp("", "aviary-init-test-*")
-	assert.NoError(t, err)
-
-	// Best-effort cleanup; may fail on Windows due to open file handle.
-	defer os.RemoveAll(tmp) //nolint:errcheck
-
+	tmp := t.TempDir()
 	store.SetDataDir(tmp)
 	defer store.SetDataDir("")
 
 	// Reset once so Init() actually runs.
 	once = sync.Once{}
 
-	err = Init()
+	err := Init()
 	assert.NoError(t, err)
 
 	// Log file should now exist.
 	_, serr := os.Stat(LogFilePath())
 	assert.Nil(t, serr)
+
+	// Close logging so the test temp dir can be cleaned up on Windows.
+	Shutdown()
 
 }
