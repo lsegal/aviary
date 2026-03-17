@@ -91,6 +91,12 @@ type AgentConfig struct {
 	Permissions *PermissionsConfig `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 	Channels    []ChannelConfig    `yaml:"channels,omitempty"    json:"channels,omitempty"`
 	Tasks       []TaskConfig       `yaml:"tasks,omitempty"       json:"tasks,omitempty"`
+	// Verbose enables progress status messages before each tool call when the
+	// agent is responding via a channel (Slack, Signal, etc.). When true the
+	// agent emits a brief "I am doing X..." message before executing each tool,
+	// allowing channels that do not support real-time streaming to display
+	// incremental updates by sending or editing a status message.
+	Verbose *bool `yaml:"verbose,omitempty" json:"verbose,omitempty"`
 }
 
 // AllowFromEntry defines a set of allowed senders and optional group-chat

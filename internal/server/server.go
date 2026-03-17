@@ -332,8 +332,35 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		RestrictTools: msg.RestrictTools,
 		DisabledTools: msg.DisabledTools,
 	}
+
+	// Verbose mode: send/edit a live status message for each tool call.
+	var (
+		statusMsgID string
+		statusLines []string
+	)
+	sendOrEditStatus := func(newLine string) {
+		statusLines = append(statusLines, newLine)
+		text := strings.Join(statusLines, "\n")
+		if statusMsgID == "" {
+			if sender, ok := ch.(channels.MessageSenderWithID); ok {
+				id, err := sender.SendAndGetID(msg.Channel, text)
+				if err == nil {
+					statusMsgID = id
+				}
+			} else {
+				_ = ch.Send(msg.Channel, newLine)
+			}
+		} else if editor, ok := ch.(channels.MessageEditor); ok {
+			_ = editor.EditMessage(msg.Channel, statusMsgID, text)
+		} else {
+			_ = ch.Send(msg.Channel, newLine)
+		}
+	}
+
 	runner.PromptMediaWithOverrides(msgCtx, msg.Text, msg.MediaURL, rOpts, func(e agent.StreamEvent) {
 		switch e.Type {
+		case agent.StreamEventStatus:
+			sendOrEditStatus(e.Text)
 		case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
 			if stopTyping != nil {
 				stopTyping()

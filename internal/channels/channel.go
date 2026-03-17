@@ -78,3 +78,16 @@ type MediaSender interface {
 type GroupChatLogger interface {
 	OnGroupChatMessage(fn func(IncomingMessage))
 }
+
+// MessageSenderWithID posts a message and returns an opaque message ID that
+// can later be passed to MessageEditor.EditMessage. Channels that support
+// in-place message editing implement this interface alongside Channel.
+type MessageSenderWithID interface {
+	SendAndGetID(channel, text string) (msgID string, err error)
+}
+
+// MessageEditor is an optional interface for channels that support editing
+// previously posted messages in place.
+type MessageEditor interface {
+	EditMessage(channel, msgID, text string) error
+}

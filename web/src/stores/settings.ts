@@ -62,6 +62,7 @@ export interface AgentPermissions {
 export interface AgentEntry {
 	name: string;
 	model: string;
+	verbose?: boolean;
 	working_dir?: string;
 	memory?: string;
 	rules?: string;

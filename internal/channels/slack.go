@@ -72,6 +72,19 @@ func (c *SlackChannel) Send(channel, text string) error {
 	return err
 }
 
+// SendAndGetID posts a message and returns the Slack message timestamp, which
+// serves as the message ID for EditMessage.
+func (c *SlackChannel) SendAndGetID(channel, text string) (string, error) {
+	_, timestamp, err := c.client.PostMessage(channel, slack.MsgOptionText(text, false))
+	return timestamp, err
+}
+
+// EditMessage updates a previously posted Slack message in place.
+func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
+	_, _, _, err := c.client.UpdateMessage(channel, msgID, slack.MsgOptionText(text, false))
+	return err
+}
+
 // Start connects via Socket Mode and blocks until ctx is cancelled.
 func (c *SlackChannel) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)

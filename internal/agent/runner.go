@@ -913,6 +913,65 @@ func mustJSON(v any) string {
 	return string(data)
 }
 
+// IsVerbose reports whether verbose mode is enabled for this agent.
+// When true the runner emits StreamEventStatus events before each tool call.
+func (r *AgentRunner) IsVerbose() bool {
+	return r.cfg != nil && config.BoolOr(r.cfg.Verbose, false)
+}
+
+// verboseStatusText returns a user-friendly "I am doing X" message for a
+// tool call based on the tool name and its arguments.
+func verboseStatusText(toolName string, args map[string]any) string {
+	lower := strings.ToLower(toolName)
+	switch {
+	case strings.Contains(lower, "search") || strings.Contains(lower, "find") || strings.Contains(lower, "query"):
+		if q, ok := verboseStringArg(args, "query", "q", "search", "pattern", "text"); ok {
+			return fmt.Sprintf("I am searching for \"%s\"", q)
+		}
+		return "I am searching"
+	case strings.Contains(lower, "read") || strings.Contains(lower, "get") || strings.Contains(lower, "fetch"):
+		if path, ok := verboseStringArg(args, "path", "file", "url", "uri"); ok {
+			return fmt.Sprintf("I am reading `%s`", path)
+		}
+		return "I am reading"
+	case strings.Contains(lower, "write") || strings.Contains(lower, "create") || strings.Contains(lower, "edit") || strings.Contains(lower, "append"):
+		if path, ok := verboseStringArg(args, "path", "file"); ok {
+			return fmt.Sprintf("I am writing `%s`", path)
+		}
+		return "I am writing"
+	case strings.Contains(lower, "bash") || strings.Contains(lower, "exec") || strings.Contains(lower, "shell") || strings.Contains(lower, "run"):
+		if cmd, ok := verboseStringArg(args, "command", "cmd", "script"); ok {
+			return fmt.Sprintf("I am running `%s`", cmd)
+		}
+		return "I am running a command"
+	case strings.Contains(lower, "browser") || strings.Contains(lower, "navigate"):
+		if url, ok := verboseStringArg(args, "url"); ok {
+			return fmt.Sprintf("I am navigating to `%s`", url)
+		}
+		return "I am using the browser"
+	case strings.Contains(lower, "memory"):
+		return "I am accessing memory"
+	case strings.Contains(lower, "list") || strings.Contains(lower, "ls"):
+		if path, ok := verboseStringArg(args, "path", "directory", "dir"); ok {
+			return fmt.Sprintf("I am listing `%s`", path)
+		}
+		return "I am listing files"
+	default:
+		return fmt.Sprintf("I am using %s", strings.ReplaceAll(toolName, "_", " "))
+	}
+}
+
+func verboseStringArg(args map[string]any, keys ...string) (string, bool) {
+	for _, key := range keys {
+		if v, ok := args[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (r *AgentRunner) executeToolCall(
 	promptCtx context.Context,
 	emit func(StreamEvent),
@@ -923,6 +982,9 @@ func (r *AgentRunner) executeToolCall(
 	call toolCall,
 ) (string, bool) {
 	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args}})
+	if r.IsVerbose() {
+		emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
+	}
 	if usageRec != nil {
 		usageRec.ToolCalls++
 	}

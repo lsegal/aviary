@@ -223,6 +223,16 @@
 								<input v-model="agent.working_dir" type="text" class="field-input"
 									placeholder="Default: process working directory (e.g. /home/user/projects/myrepo)" />
 							</div>
+							<div class="mt-2">
+								<label class="flex cursor-pointer items-center gap-3">
+									<input v-model="agent.verbose" type="checkbox"
+										class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+									<span class="text-sm text-gray-700 dark:text-gray-300">
+										Verbose mode
+										<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(send live status updates before each tool call on channels that don't support streaming)</span>
+									</span>
+								</label>
+							</div>
 						</div>
 
 						<!-- Files content moved into General subtab -->
@@ -968,7 +978,7 @@
 													@click="stopSession(s.id)">Stop</button>
 												<button type="button" class="danger-btn" :disabled="s.name === 'main'"
 													:class="s.name === 'main' ? 'opacity-40 cursor-not-allowed' : ''"
-													@click="s.name !== 'main' && (removeTarget = s)">Remove</button>
+													@click="s.name !== 'main' && (removeTarget = s, removeTargetOpen = true)">Remove</button>
 											</div>
 										</td>
 									</tr>
@@ -1232,7 +1242,7 @@
 	</AppLayout>
 
 	<!-- Remove agent confirmation dialog -->
-	<AlertDialogRoot :open="removeAgentTarget !== null" @update:open="(v) => { if (!v) removeAgentTarget = null }">
+	<AlertDialogRoot :open="removeAgentOpen" @update:open="(v) => { if (!v) removeAgentOpen = false }">
 		<AlertDialogPortal>
 			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<AlertDialogContent
@@ -1289,7 +1299,7 @@
 	</AlertDialogRoot>
 
 	<!-- Remove session confirmation dialog -->
-	<AlertDialogRoot :open="!!removeTarget" @update:open="(v) => { if (!v) removeTarget = null }">
+	<AlertDialogRoot :open="removeTargetOpen" @update:open="(v) => { if (!v) removeTargetOpen = false }">
 		<AlertDialogPortal>
 			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<AlertDialogContent
@@ -1610,6 +1620,7 @@ const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
 const sessionLoading = ref(false);
 const removeTarget = ref<SessionRow | null>(null);
+const removeTargetOpen = ref(false);
 
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
@@ -2398,15 +2409,18 @@ function addAgent() {
 }
 
 const removeAgentTarget = ref<number | null>(null);
+const removeAgentOpen = ref(false);
 
 function removeAgent(index: number) {
 	removeAgentTarget.value = index;
+	removeAgentOpen.value = true;
 }
 
 function confirmRemoveAgent() {
 	const index = removeAgentTarget.value;
 	if (index === null) return;
 	removeAgentTarget.value = null;
+	removeAgentOpen.value = false;
 	draft.value.agents.splice(index, 1);
 	const next = Math.min(
 		selectedAgentIdx.value,
@@ -3185,6 +3199,7 @@ async function stopSession(sessionID: string) {
 async function confirmRemoveSession() {
 	const sess = removeTarget.value;
 	removeTarget.value = null;
+	removeTargetOpen.value = false;
 	if (!sess) return;
 	try {
 		await callTool("session_remove", { session_id: sess.id });
