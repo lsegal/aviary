@@ -262,7 +262,13 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 			useHistory = *overrides.History
 		}
 		if useHistory {
-			if history := r.loadSessionConversation(sessionID, 24); len(history) > 0 {
+			// For channel sessions, prefer the chat log over the session JSONL: the
+			// chat log captures ALL group messages (not just agent-triggering ones),
+			// so non-triggering user messages become real conversation turns instead
+			// of hidden system-prompt context.
+			if chHistory := r.loadChannelConversation(promptCtx); len(chHistory) > 0 {
+				conversation = chHistory
+			} else if history := r.loadSessionConversation(sessionID, 24); len(history) > 0 {
 				conversation = history
 			}
 		}
@@ -482,6 +488,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 				if answer != "" {
 					r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, "", effectiveModel)
 					r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, answer)
+					r.appendChatLogEntry(promptCtx, "assistant", r.agent.Name, answer)
 					r.maybeCompactMemory()
 				}
 				slog.Info("agent: prompt done", "agent", r.agent.Name, "model", effectiveModel)
@@ -604,6 +611,29 @@ func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.Message
 		return
 	}
 	notifySessionMessage(sessionID, string(role))
+}
+
+// appendChatLogEntry writes a message to the group chat log when the context
+// carries a channel session. This keeps the chat transcript up to date with
+// both user messages (written by the channel manager) and agent replies.
+func (r *AgentRunner) appendChatLogEntry(ctx context.Context, role, from, text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	chType, _, chID, ok := ChannelSessionFromContext(ctx)
+	if !ok || chType == "" || chID == "" {
+		return
+	}
+	path := store.ChatLogPath(r.agent.ID, chType, chID)
+	entry := store.ChatLogEntry{
+		From:      from,
+		Role:      role,
+		Text:      text,
+		Timestamp: time.Now(),
+	}
+	if err := store.AppendChatLog(path, entry, 0); err != nil {
+		slog.Warn("agent: failed to append chat log", "agent", r.agent.Name, "err", err)
+	}
 }
 
 func (r *AgentRunner) appendMemoryMessage(sessionID string, role domain.MessageRole, content string) {
@@ -1669,3 +1699,50 @@ func (r *AgentRunner) Agent() *domain.Agent { return r.agent }
 
 // Config returns the agent's config snapshot.
 func (r *AgentRunner) Config() *config.AgentConfig { return r.cfg }
+
+// loadChannelConversation builds a conversation message slice from the group
+// chat log for the channel session carried in ctx. Unlike loadSessionConversation
+// (which only contains agent-triggered turns), the chat log records every
+// group message, so non-triggering user messages appear as real conversation
+// turns. Consecutive user messages are merged to satisfy LLM alternation rules.
+// Returns nil if there is no channel session or the chat log is empty.
+func (r *AgentRunner) loadChannelConversation(ctx context.Context) []llm.Message {
+	chType, _, chID, ok := ChannelSessionFromContext(ctx)
+	if !ok || chType == "" || chID == "" {
+		return nil
+	}
+	entries, err := store.ReadChatLog(store.ChatLogPath(r.agent.ID, chType, chID))
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+
+	var msgs []llm.Message
+	for _, e := range entries {
+		text := strings.TrimSpace(e.Text)
+		if text == "" {
+			continue
+		}
+		var role llm.Role
+		var content string
+		switch e.Role {
+		case "assistant":
+			role = llm.RoleAssistant
+			content = text
+		default:
+			role = llm.RoleUser
+			from := strings.TrimSpace(e.From)
+			if from != "" {
+				content = from + ": " + text
+			} else {
+				content = text
+			}
+		}
+		// Merge consecutive messages of the same role to satisfy alternation rules.
+		if len(msgs) > 0 && msgs[len(msgs)-1].Role == role {
+			msgs[len(msgs)-1].Content += "\n" + content
+		} else {
+			msgs = append(msgs, llm.Message{Role: role, Content: content})
+		}
+	}
+	return msgs
+}

@@ -255,11 +255,12 @@ type SignalChannel struct {
 	addrMu sync.RWMutex
 	addr   string
 
-	handler   func(IncomingMessage)
-	handlerMu sync.RWMutex
-	stopOnce  sync.Once
-	done      chan struct{}
-	idSeq     atomic.Int64
+	handler         func(IncomingMessage)
+	groupLogHandler func(IncomingMessage)
+	handlerMu       sync.RWMutex
+	stopOnce        sync.Once
+	done            chan struct{}
+	idSeq           atomic.Int64
 
 	logSinkMu sync.RWMutex
 	logSink   *LogSink
@@ -334,6 +335,14 @@ func (c *SignalChannel) OnMessage(fn func(IncomingMessage)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.handler = fn
+}
+
+// OnGroupChatMessage registers a callback invoked for all group messages before
+// allowFrom filtering, enabling a full channel transcript to be maintained.
+func (c *SignalChannel) OnGroupChatMessage(fn func(IncomingMessage)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.groupLogHandler = fn
 }
 
 // Send sends a Signal message to a recipient or group via JSON-RPC over TCP.
@@ -977,6 +986,27 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		channelID = dataMessage.GroupInfo.GroupID
 	}
 
+	receivedAt := time.Now().UTC()
+	if msgTimestamp > 0 {
+		receivedAt = time.UnixMilli(msgTimestamp).UTC()
+	}
+
+	// Log all group messages before allowFrom filtering.
+	if isGroup {
+		c.handlerMu.RLock()
+		logFn := c.groupLogHandler
+		c.handlerMu.RUnlock()
+		if logFn != nil {
+			logFn(IncomingMessage{
+				Type:       "signal",
+				From:       source,
+				Channel:    channelID,
+				Text:       dataMessage.Message,
+				ReceivedAt: receivedAt,
+			})
+		}
+	}
+
 	// Replies to the agent's own messages must still match an allowFrom entry's
 	// sender and group scope; replyToReplies only relaxes mention gating so the
 	// user can continue the same allowed conversation without re-mentioning.
@@ -993,10 +1023,6 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		receivedAt := time.Now().UTC()
-		if msgTimestamp > 0 {
-			receivedAt = time.UnixMilli(msgTimestamp).UTC()
-		}
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,

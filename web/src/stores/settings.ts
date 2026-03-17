@@ -40,6 +40,7 @@ export interface AgentChannel {
 	replyToReplies?: boolean;
 	reactToEmoji?: boolean;
 	sendReadReceipts?: boolean;
+	group_chat_history?: number;
 	model?: string;
 	fallbacks?: string[];
 }
