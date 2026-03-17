@@ -21,11 +21,12 @@ type DiscordChannel struct {
 	fallbacks     []string
 	disabledTools []string
 
-	session   *discordgo.Session
-	handler   func(IncomingMessage)
-	handlerMu sync.RWMutex
-	stopOnce  sync.Once
-	done      chan struct{}
+	session         *discordgo.Session
+	handler         func(IncomingMessage)
+	groupLogHandler func(IncomingMessage)
+	handlerMu       sync.RWMutex
+	stopOnce        sync.Once
+	done            chan struct{}
 }
 
 // NewDiscordChannel creates a DiscordChannel with the given bot token.
@@ -44,6 +45,14 @@ func (c *DiscordChannel) OnMessage(fn func(IncomingMessage)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.handler = fn
+}
+
+// OnGroupChatMessage registers a callback invoked for all group messages before
+// allowFrom filtering, enabling a full channel transcript to be maintained.
+func (c *DiscordChannel) OnGroupChatMessage(fn func(IncomingMessage)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.groupLogHandler = fn
 }
 
 // Send posts a message to a Discord channel by ID.
@@ -124,6 +133,29 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 
 	// Messages sent in a guild channel have a non-empty GuildID.
 	isGroup := msg.GuildID != ""
+
+	receivedAt := time.Now().UTC()
+	if !msg.Timestamp.IsZero() {
+		receivedAt = msg.Timestamp.UTC()
+	}
+	mediaURL := firstDiscordImageDataURL(msg.Attachments)
+
+	// Log all group messages before allowFrom filtering.
+	if isGroup {
+		c.handlerMu.RLock()
+		logFn := c.groupLogHandler
+		c.handlerMu.RUnlock()
+		if logFn != nil {
+			logFn(IncomingMessage{
+				Type:       "discord",
+				From:       msg.Author.ID,
+				Channel:    msg.ChannelID,
+				Text:       msg.Content,
+				ReceivedAt: receivedAt,
+			})
+		}
+	}
+
 	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, false)
 	if !result.allowed {
 		return false
@@ -133,11 +165,6 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 	fn := c.handler
 	c.handlerMu.RUnlock()
 	if fn != nil {
-		receivedAt := time.Now().UTC()
-		if !msg.Timestamp.IsZero() {
-			receivedAt = msg.Timestamp.UTC()
-		}
-		mediaURL := firstDiscordImageDataURL(msg.Attachments)
 		im := IncomingMessage{
 			Type:          "discord",
 			From:          msg.Author.ID,

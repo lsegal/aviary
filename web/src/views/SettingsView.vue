@@ -752,6 +752,12 @@
 										Send read receipts
 									</label>
 								</div>
+								<div class="flex items-center gap-2 pt-1">
+									<label class="text-xs text-gray-600 dark:text-gray-400">Group chat history:</label>
+									<input type="number" v-model.number="ch.group_chat_history" min="-1" step="1" placeholder="50"
+										class="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
+								</div>
 							</div>
 						</div>
 
@@ -2952,6 +2958,10 @@ function normalizedDraftConfig(): AppConfig {
 			replyToReplies: ch.replyToReplies === false ? false : undefined,
 			reactToEmoji: ch.reactToEmoji === false ? false : undefined,
 			sendReadReceipts: ch.sendReadReceipts === false ? false : undefined,
+			group_chat_history:
+				ch.group_chat_history && ch.group_chat_history !== 0
+					? ch.group_chat_history
+					: undefined,
 			allowFrom: (ch.allowFrom ?? [])
 				.map((entry) => ({
 					...entry,

@@ -125,6 +125,10 @@
 								"replyToReplies": { "type": "boolean" },
 								"reactToEmoji": { "type": "boolean" },
 								"sendReadReceipts": { "type": "boolean" },
+								"group_chat_history": {
+									"type": "integer",
+									"description": "Number of recent group chat messages to log and provide as context to the agent. 0 means use the default (50). Set to -1 to disable."
+								},
 								"model": { "type": "string" },
 								"fallbacks": {
 									"type": "array",

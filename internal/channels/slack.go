@@ -26,12 +26,13 @@ type SlackChannel struct {
 
 	botUserID string // populated on connect via auth.test
 
-	client    *slack.Client
-	sm        *socketmode.Client
-	handler   func(IncomingMessage)
-	handlerMu sync.RWMutex
-	stopOnce  sync.Once
-	cancel    context.CancelFunc
+	client          *slack.Client
+	sm              *socketmode.Client
+	handler         func(IncomingMessage)
+	groupLogHandler func(IncomingMessage)
+	handlerMu       sync.RWMutex
+	stopOnce        sync.Once
+	cancel          context.CancelFunc
 }
 
 // NewSlackChannel creates a SlackChannel.
@@ -55,6 +56,14 @@ func (c *SlackChannel) OnMessage(fn func(IncomingMessage)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.handler = fn
+}
+
+// OnGroupChatMessage registers a callback invoked for all group messages before
+// allowFrom filtering, enabling a full channel transcript to be maintained.
+func (c *SlackChannel) OnGroupChatMessage(fn func(IncomingMessage)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.groupLogHandler = fn
 }
 
 // Send posts a message to a Slack channel.
@@ -152,6 +161,32 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 
 	// Slack DM channels start with 'D'; everything else is a group/channel.
 	isGroup := !strings.HasPrefix(channelID, "D")
+
+	receivedAt := time.Now().UTC()
+	rawTimestamp := event.TimeStamp
+	if isEdited && event.Message != nil && event.Message.Timestamp != "" {
+		rawTimestamp = event.Message.Timestamp
+	}
+	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
+		receivedAt = ts
+	}
+
+	// Log all group messages before allowFrom filtering.
+	if isGroup {
+		c.handlerMu.RLock()
+		logFn := c.groupLogHandler
+		c.handlerMu.RUnlock()
+		if logFn != nil {
+			logFn(IncomingMessage{
+				Type:       "slack",
+				From:       from,
+				Channel:    channelID,
+				Text:       text,
+				ReceivedAt: receivedAt,
+			})
+		}
+	}
+
 	result := checkAllowed(c.allowFrom, from, channelID, text, isGroup, c.botUserID, false)
 	if !result.allowed {
 		return
@@ -162,14 +197,6 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		receivedAt := time.Now().UTC()
-		rawTimestamp := event.TimeStamp
-		if isEdited && event.Message != nil && event.Message.Timestamp != "" {
-			rawTimestamp = event.Message.Timestamp
-		}
-		if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
-			receivedAt = ts
-		}
 		mediaURL := c.firstImageDataURL(files)
 		im := IncomingMessage{
 			Type:          "slack",

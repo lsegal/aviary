@@ -186,6 +186,26 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 
 	agentName := spec.agentName
 	channelMeta := spec.metadata
+
+	// Register the group chat logger if the channel supports it.
+	if gcl, ok := ch.(GroupChatLogger); ok {
+		if history := spec.channelConfig.EffectiveGroupChatHistory(); history > 0 {
+			agentID := "agent_" + agentName
+			gcl.OnGroupChatMessage(func(msg IncomingMessage) {
+				path := store.ChatLogPath(agentID, msg.Type, msg.Channel)
+				entry := store.ChatLogEntry{
+					From:      msg.From,
+					Role:      "user",
+					Text:      msg.Text,
+					Timestamp: msg.ReceivedAt,
+				}
+				if err := store.AppendChatLog(path, entry, history); err != nil {
+					slog.Warn("channel: failed to log group chat message", "err", err)
+				}
+			})
+		}
+	}
+
 	ch.OnMessage(func(msg IncomingMessage) {
 		if !shouldProcessIncomingMessage(channelMeta, msg) {
 			return

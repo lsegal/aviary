@@ -199,6 +199,26 @@ type ChannelConfig struct {
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// Fallbacks overrides the agent's default fallbacks for all messages on this channel.
 	Fallbacks []string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
+	// GroupChatHistory is the number of recent group chat messages to log and
+	// provide as context to the agent. 0 means use the default (50).
+	// Set to -1 to disable group chat history logging entirely.
+	GroupChatHistory int `yaml:"group_chat_history,omitempty" json:"group_chat_history,omitempty"`
+}
+
+// DefaultGroupChatHistory is the default number of group chat messages retained
+// in the chat log and provided as context to the agent.
+const DefaultGroupChatHistory = 50
+
+// EffectiveGroupChatHistory returns the number of group chat messages to retain.
+// Returns 0 if logging is disabled (GroupChatHistory == -1).
+func (c ChannelConfig) EffectiveGroupChatHistory() int {
+	if c.GroupChatHistory < 0 {
+		return 0 // disabled
+	}
+	if c.GroupChatHistory == 0 {
+		return DefaultGroupChatHistory
+	}
+	return c.GroupChatHistory
 }
 
 // BoolOr returns the value of b if non-nil, otherwise def.
