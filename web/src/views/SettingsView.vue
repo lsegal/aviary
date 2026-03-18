@@ -320,7 +320,7 @@
 												{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
 											</button>
 											<p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span
-													class="font-mono">.md</span> only. <span class="font-mono">SYSTEM.md</span>, <span
+													class="font-mono">.md</span> only. <span class="font-mono">AGENTS.md</span>, <span class="font-mono">SYSTEM.md</span>, <span
 													class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.
 											</p>
 										</div>
@@ -1957,7 +1957,12 @@ watch(activeTab, (tab) => {
 	}
 });
 
-const PROTECTED_AGENT_FILES = ["SYSTEM.md", "MEMORY.md", "RULES.md"] as const;
+const PROTECTED_AGENT_FILES = [
+	"AGENTS.md",
+	"SYSTEM.md",
+	"MEMORY.md",
+	"RULES.md",
+] as const;
 const protectedAgentFiles = new Set(
 	PROTECTED_AGENT_FILES.map((file) => file.toUpperCase()),
 );

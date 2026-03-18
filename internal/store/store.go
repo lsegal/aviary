@@ -87,6 +87,7 @@ func AgentRulesPath(agentID string) string {
 }
 
 var protectedAgentRootMarkdownFiles = map[string]struct{}{
+	"AGENTS.MD": {},
 	"MEMORY.MD": {},
 	"RULES.MD":  {},
 	"SYSTEM.MD": {},
@@ -122,7 +123,7 @@ func normalizeAgentRootMarkdownFile(file string) (string, error) {
 }
 
 // ListAgentRootMarkdownFiles returns root-level markdown files under an agent
-// directory, including built-in files like RULES.md and MEMORY.md.
+// directory, including built-in files like AGENTS.md, RULES.md, and MEMORY.md.
 func ListAgentRootMarkdownFiles(agentID string) ([]string, error) {
 	root := AgentDir(agentID)
 	entries, err := os.ReadDir(root)

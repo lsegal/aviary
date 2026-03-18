@@ -2389,6 +2389,7 @@ func TestAgentRootFileCRUD_WithTempDir(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
 
 	prevChecker := checkServerRunning
@@ -2401,6 +2402,7 @@ func TestAgentRootFileCRUD_WithTempDir(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "RULES.md")
 	assert.Contains(t, out, "MEMORY.md")
+	assert.Contains(t, out, "AGENTS.md")
 	assert.Contains(t, out, "SYSTEM.md")
 
 	out, err = d.CallTool(context.Background(), "agent_root_file_read", map[string]any{"agent": "bot", "file": "RULES.md"})
@@ -2416,6 +2418,7 @@ func TestAgentRootFileCRUD_WithTempDir(t *testing.T) {
 	assert.Contains(t, out, "PROFILE.md deleted")
 
 	toolCallContains(t, d, "agent_root_file_delete", map[string]any{"agent": "bot", "file": "RULES.md"}, "protected")
+	toolCallContains(t, d, "agent_root_file_delete", map[string]any{"agent": "bot", "file": "AGENTS.md"}, "protected")
 }
 
 func TestAgentAdd_CopiesTemplate(t *testing.T) {
@@ -2445,6 +2448,7 @@ func TestAgentAdd_CopiesTemplate(t *testing.T) {
 	assert.DirExists(t, filepath.Join(agentDir, "memory"))
 	assert.DirExists(t, filepath.Join(agentDir, "sessions"))
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "AGENTS.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
 	assert.NoFileExists(t, filepath.Join(agentDir, "jobs", ".gitkeep"))
 }

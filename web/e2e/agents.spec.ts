@@ -52,6 +52,7 @@ const CONFIG = {
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
 	const agentFiles = new Map<string, string>([
+		["AGENTS.md", "# Agents"],
 		["RULES.md", "# Rules"],
 		["MEMORY.md", "Remembered note"],
 		["IDENTITY.md", "# Identity"],
@@ -341,6 +342,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 
 	await setAuthToken(page);
 	const agentFiles = new Map<string, string>([
+		["AGENTS.md", "# Agents"],
 		["RULES.md", "# Rules"],
 		["MEMORY.md", "Remembered note"],
 		["IDENTITY.md", "# Identity"],
@@ -455,8 +457,11 @@ test("agent files editor lists root markdown files and protects built-ins", asyn
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 
 	await expect(page.getByRole("button", { name: "IDENTITY.md" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
+	await page.getByRole("button", { name: "AGENTS.md" }).click();
+	await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
 	await page.getByRole("button", { name: "RULES.md" }).click();
 	await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
 
@@ -472,6 +477,7 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	page,
 }) => {
 	const syncedFiles = new Map<string, string>([
+		["AGENTS.md", "# Agents"],
 		["RULES.md", "# Rules"],
 		["MEMORY.md", "Remembered note"],
 	]);
@@ -511,6 +517,7 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 	await page.getByRole("button", { name: "Refresh" }).first().click();
 
+	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
 	await expect(

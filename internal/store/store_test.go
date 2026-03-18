@@ -361,6 +361,7 @@ func TestAgentRootMarkdownFiles(t *testing.T) {
 	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("identity"), 0o600))
@@ -369,7 +370,7 @@ func TestAgentRootMarkdownFiles(t *testing.T) {
 
 	files, err := ListAgentRootMarkdownFiles("agent_assistant")
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "RULES.md", "SYSTEM.md"}, files)
+	assert.Equal(t, []string{"AGENTS.md", "IDENTITY.md", "MEMORY.md", "RULES.md", "SYSTEM.md"}, files)
 
 	content, err := ReadAgentRootMarkdownFile("agent_assistant", "SYSTEM.md")
 	assert.NoError(t, err)
@@ -385,6 +386,8 @@ func TestAgentRootMarkdownFiles(t *testing.T) {
 	assert.Error(t, err)
 
 	err = DeleteAgentRootMarkdownFile("agent_assistant", "RULES.md")
+	assert.ErrorContains(t, err, "protected")
+	err = DeleteAgentRootMarkdownFile("agent_assistant", "AGENTS.md")
 	assert.ErrorContains(t, err, "protected")
 	_, err = ReadAgentRootMarkdownFile("agent_assistant", "notes/USER.md")
 	assert.ErrorContains(t, err, "root")
@@ -405,6 +408,7 @@ func TestSyncAgentTemplate(t *testing.T) {
 	assert.DirExists(t, filepath.Join(agentDir, "memory"))
 	assert.DirExists(t, filepath.Join(agentDir, "sessions"))
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "AGENTS.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
 	assert.NoFileExists(t, filepath.Join(agentDir, "jobs", ".gitkeep"))
 
@@ -448,6 +452,7 @@ func TestSyncAgentTemplate_AddsMissingFiles(t *testing.T) {
 
 	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
+	assert.FileExists(t, filepath.Join(agentDir, "AGENTS.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
 }
 
@@ -553,6 +558,38 @@ func TestSyncAgentTemplate_ReplacesOnlySyncedMarkdownSection(t *testing.T) {
 	assert.Contains(t, content, "- keep this local change")
 	assert.Contains(t, content, "Never share sensitive information")
 	assert.NotContains(t, content, "- old synced line")
+}
+
+func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("agent_assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+	dest := strings.Join([]string{
+		"# Old AGENTS",
+		"",
+		"Custom stale preface",
+		"",
+		"## Make It Yours",
+		"",
+		"My local convention",
+		"- keep this",
+		"",
+	}, "\n")
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte(dest), 0o600))
+
+	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+
+	agentsContent, err := os.ReadFile(filepath.Join(agentDir, "AGENTS.md"))
+	assert.NoError(t, err)
+	content := string(agentsContent)
+	assert.Contains(t, content, "# AGENTS.md - Your Workspace")
+	assert.Contains(t, content, "## Make It Yours")
+	assert.Contains(t, content, "My local convention")
+	assert.Contains(t, content, "- keep this")
+	assert.NotContains(t, content, "Custom stale preface")
 }
 
 func TestStripMarkdownCommentLines(t *testing.T) {

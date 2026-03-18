@@ -626,7 +626,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_list",
-		Description: "List root-level markdown files available under an agent directory, including built-in files such as RULES.md and MEMORY.md.",
+		Description: "List root-level markdown files available under an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
@@ -640,7 +640,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_read",
-		Description: "Read a root-level markdown file from an agent directory, including built-in files such as RULES.md and MEMORY.md.",
+		Description: "Read a root-level markdown file from an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
@@ -667,7 +667,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_delete",
-		Description: "Delete a root-level markdown file from an agent directory. Protected built-in files such as SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
+		Description: "Delete a root-level markdown file from an agent directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
