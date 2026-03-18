@@ -118,6 +118,9 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		Content any    `json:"content"`
 	}
 	var input []inputMessage
+	if strings.TrimSpace(req.System) != "" {
+		input = append(input, inputMessage{Role: "system", Content: req.System})
+	}
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
@@ -137,8 +140,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				Content: []inputTextContent{{Type: "output_text", Text: m.Content}},
 			})
 		case RoleSystem:
-			// System messages within the conversation are folded into user turns.
-			input = append(input, inputMessage{Role: "user", Content: m.Content})
+			input = append(input, inputMessage{Role: "system", Content: m.Content})
 		}
 	}
 
@@ -146,8 +148,8 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"model":        p.model,
 		"input":        input,
 		"stream":       true,
-		"instructions": req.System, // required by the backend, even if empty
-		"store":        false,      // chatgpt.com codex rejects streaming requests unless store is false
+		"instructions": "",
+		"store":        false, // chatgpt.com codex rejects streaming requests unless store is false
 	}
 	// The ChatGPT backend does not accept a `previous_response_id` parameter here.
 	// We intentionally do not send it to avoid 400 Bad Request responses.
