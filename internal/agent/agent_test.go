@@ -2167,6 +2167,18 @@ func TestBuildToolSystemPrompt_AdvertisesSessionHistory(t *testing.T) {
 	assert.Contains(t, out2, "order=\"desc\" and limit=20")
 }
 
+func TestBuildToolSystemPrompt_ForbidsEmptyPromisesAndNeedlessClarification(t *testing.T) {
+	out := buildToolSystemPrompt("", nil, "create the issue")
+	assert.Contains(t, out, "Do not say you are going to do something now")
+	assert.Contains(t, out, "Never promise action and then fail to take it")
+	assert.Contains(t, out, "Do not ask for clarification when the reasonable alternative is to do nothing")
+	assert.Contains(t, out, "make the best reasonable assumptions and act")
+	assert.Contains(t, out, "Do not plan first unless the user explicitly asked for a plan")
+	assert.Contains(t, out, "Do not stop at planning, note-writing, summaries, audits, or analysis when the user asked for implementation or execution")
+	assert.Contains(t, out, "Do not hand the task back after creating an intermediate artifact")
+	assert.Contains(t, out, "Treat clear implementation or execution requests as authorization to do the work now")
+}
+
 func TestBuildRulesPreamble(t *testing.T) {
 	runner := NewAgentRunner(
 		&domain.Agent{ID: "agent_bot", Name: "bot"},
