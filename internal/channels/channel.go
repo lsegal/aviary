@@ -71,10 +71,11 @@ type MediaSender interface {
 	SendMedia(channel, caption, filePath string) error
 }
 
-// GroupChatLogger is an optional interface for channels that can log all
-// incoming group messages before allowFrom filtering. The registered callback
-// is invoked for every group message regardless of permission rules, allowing
-// the caller to build a full channel transcript for context.
+// GroupChatLogger is an optional interface for channels that deliver all
+// incoming group messages to a callback before allowFrom filtering. The
+// registered callback is invoked for every group message regardless of
+// permission rules; the manager uses this to write full group transcripts
+// directly into the agent session.
 type GroupChatLogger interface {
 	OnGroupChatMessage(fn func(IncomingMessage))
 }

@@ -2,14 +2,26 @@ package domain
 
 import "time"
 
+// SessionType identifies the kind of session.
+type SessionType string
+
+// SessionType values.
+const (
+	SessionTypeMain    SessionType = "main"
+	SessionTypeChannel SessionType = "channel"
+	SessionTypeTask    SessionType = "task"
+	SessionTypeUser    SessionType = "user"
+)
+
 // Session represents a conversation with an agent.
 type Session struct {
-	ID        string    `json:"id,omitempty"`
-	AgentID   string    `json:"agent_id,omitempty"`
-	Name      string    `json:"name,omitempty"`    // human-readable name; "main" for the default session
-	TaskID    string    `json:"task_id,omitempty"` // set for task sessions
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string      `json:"id,omitempty"`
+	AgentID   string      `json:"agent_id,omitempty"`
+	Name      string      `json:"name,omitempty"`    // human-readable name; "main" for the default session
+	TaskID    string      `json:"task_id,omitempty"` // set for task sessions
+	Type      SessionType `json:"type,omitempty"`    // main, channel, task, or user (default)
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 // MessageRole identifies who sent a message.

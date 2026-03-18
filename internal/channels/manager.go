@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -187,19 +189,23 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 	agentName := spec.agentName
 	channelMeta := spec.metadata
 
-	// Register the group chat logger if the channel supports it.
+	// Write non-triggering group messages directly to the agent session so
+	// they appear as conversation context alongside agent-triggered turns.
 	if gcl, ok := ch.(GroupChatLogger); ok {
-		if history := spec.channelConfig.EffectiveGroupChatHistory(); history > 0 {
+		if spec.channelConfig.EffectiveGroupChatHistory() > 0 {
 			agentID := "agent_" + agentName
 			gcl.OnGroupChatMessage(func(msg IncomingMessage) {
-				path := store.ChatLogPath(agentID, msg.Type, msg.Channel)
-				entry := store.ChatLogEntry{
-					From:      msg.From,
-					Role:      "user",
-					Text:      msg.Text,
-					Timestamp: msg.ReceivedAt,
+				sessionName := msg.Type + ":" + msg.Channel
+				sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName)
+				if err != nil || sess == nil {
+					slog.Warn("channel: failed to get session for chat history", "err", err)
+					return
 				}
-				if err := store.AppendChatLog(path, entry, history); err != nil {
+				content := strings.TrimSpace(msg.Text)
+				if from := strings.TrimSpace(msg.From); from != "" {
+					content = from + ": " + content
+				}
+				if err := agent.AppendMessageToSession(agentID, sess.ID, domain.MessageRoleUser, content); err != nil {
 					slog.Warn("channel: failed to log group chat message", "err", err)
 				}
 			})
