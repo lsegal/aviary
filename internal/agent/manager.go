@@ -154,7 +154,7 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 
 		ctx := WithSessionID(context.Background(), cp.SessionID)
 		checkpointID := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		go runner.recoverPrompt(ctx, checkpointID, path, cp)
+		runner.recoverPrompt(ctx, checkpointID, path, cp)
 	}
 }
 
