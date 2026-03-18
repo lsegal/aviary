@@ -182,7 +182,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	sessionID := job.SessionID
 	if sessionID == "" {
 		// Use a stable named session so scheduled work is resumable across retries and future runs.
-		if sess, err := agent.NewSessionManager().GetOrCreateNamed(job.AgentID, jobSessionName(job)); err != nil {
+		if sess, err := agent.NewSessionManager().GetOrCreateNamedTyped(job.AgentID, jobSessionName(job), domain.SessionTypeTask); err != nil {
 			slog.Warn("job: failed to create session, falling back to main", "id", job.ID, "err", err)
 		} else {
 			sessionID = sess.ID

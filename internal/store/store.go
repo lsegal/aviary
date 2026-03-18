@@ -405,6 +405,13 @@ func SessionChannelsPath(agentID, sessionID string) string {
 	return strings.TrimSuffix(p, ".jsonl") + ".channels.json"
 }
 
+// SessionMetaPath returns the path for the sidecar metadata file for a session.
+// It mirrors SessionPath but uses a .meta.json extension.
+func SessionMetaPath(agentID, sessionID string) string {
+	p := SessionPath(agentID, sessionID)
+	return strings.TrimSuffix(p, ".jsonl") + ".meta.json"
+}
+
 // SessionPath returns the path for the given session file under the agent's
 // sessions directory: <datadir>/agents/<agentID>/sessions/<sessionID>.jsonl.
 func SessionPath(agentID, sessionID string) string {
