@@ -242,7 +242,7 @@ func TestWithTokenSetter(t *testing.T) {
 func TestResolveOAuthToken_Empty(t *testing.T) {
 	// Factory with nil resolver → no token.
 	f := NewFactory(nil)
-	_, ok := f.resolveOAuthToken("anthropic:oauth")
+	_, ok := f.resolveOAuthToken("anthropic:oauth", false)
 	assert.False(t, ok)
 
 }
@@ -252,7 +252,7 @@ func TestResolveOAuthToken_PlainString(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) {
 		return "sk-test-key", nil
 	})
-	tok, ok := f.resolveOAuthToken("anthropic:oauth")
+	tok, ok := f.resolveOAuthToken("anthropic:oauth", false)
 	assert.True(t, ok)
 	assert.Equal(t, "sk-test-key", tok)
 
@@ -1085,12 +1085,31 @@ func TestOpenAICodexProvider_Stream_RequestBody_UsesStoreFalse(t *testing.T) {
 		t.Fatalf("expected stream bool in request envelope")
 	}
 	if v, ok := envelope["instructions"].(string); ok {
-		assert.Equal(t, "Be precise.", v)
+		assert.Equal(t, "", v)
 	} else {
 		t.Fatalf("expected instructions string in request envelope")
 	}
+	input, ok := envelope["input"].([]any)
+	if !ok {
+		t.Fatalf("expected input array in request envelope")
+	}
+	if assert.Len(t, input, 2) {
+		first, ok := input[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected first input item object")
+		}
+		assert.Equal(t, "system", first["role"])
+		assert.Equal(t, "Be precise.", first["content"])
+
+		second, ok := input[1].(map[string]any)
+		if !ok {
+			t.Fatalf("expected second input item object")
+		}
+		assert.Equal(t, "user", second["role"])
+		assert.Equal(t, "Hi", second["content"])
+	}
 	// The backend rejects `previous_response_id`; it must NOT be sent.
-	_, ok := envelope["previous_response_id"]
+	_, ok = envelope["previous_response_id"]
 	assert.False(t, ok)
 }
 
@@ -1691,7 +1710,7 @@ func TestResolveOAuthToken_JSONToken(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) {
 		return tokenJSON, nil
 	})
-	tok, ok := f.resolveOAuthToken("auth:anthropic:oauth")
+	tok, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
 	assert.True(t, ok)
 	assert.NotEqual(t, "", tok)
 
@@ -1701,7 +1720,7 @@ func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) {
 		return `{invalid json`, nil
 	})
-	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
+	_, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
 	assert.False(t, ok)
 
 }
@@ -1710,7 +1729,7 @@ func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) {
 		return `{"access_token":"","refresh_token":"rt"}`, nil
 	})
-	_, ok := f.resolveOAuthToken("auth:anthropic:oauth")
+	_, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
 	assert.False(t, ok)
 
 }
@@ -1743,7 +1762,7 @@ func TestResolveOAuthToken_OpenAIRefreshesExpiredToken(t *testing.T) {
 		return nil
 	})
 
-	tok, ok := f.resolveOAuthToken("auth:openai:oauth")
+	tok, ok := f.resolveOAuthToken("auth:openai:oauth", false)
 	assert.True(t, ok)
 	assert.Equal(t, "at-refreshed", tok)
 	assert.Equal(t, "openai:oauth", persistedKey)

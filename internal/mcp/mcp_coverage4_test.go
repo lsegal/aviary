@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -412,6 +413,74 @@ func TestSessionMessages_WithData(t *testing.T) {
 	assert.False(t, // Should be a valid JSON array
 		strings.TrimSpace(out) != "[]" && strings.TrimSpace(out) != "null")
 
+}
+
+func TestSessionHistory_ReversePaging(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	agentID := "agent_bot"
+	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
+	assert.NoError(t, err)
+
+	appendMessage := func(id string, role domain.MessageRole, content string, sender *domain.MessageSender) {
+		err = store.AppendJSONL(store.SessionPath(agentID, sess.ID), domain.Message{
+			ID:        id,
+			SessionID: sess.ID,
+			Role:      role,
+			Sender:    sender,
+			Content:   content,
+			Timestamp: time.Now().UTC(),
+		})
+		assert.NoError(t, err)
+	}
+
+	appendMessage("m1", domain.MessageRoleUser, "first", domain.NewMessageSender("u1", "Alice", true))
+	appendMessage("m2", domain.MessageRoleAssistant, "second", nil)
+	appendMessage("m3", domain.MessageRoleUser, "third", domain.NewMessageSender("u2", "Bob", false))
+
+	raw, err := d.CallTool(context.Background(), "session_history", map[string]any{
+		"session_id": sess.ID,
+		"order":      "desc",
+		"limit":      2,
+		"skip":       1,
+	})
+	assert.NoError(t, err)
+
+	var messages []struct {
+		ID      string `json:"id"`
+		Content string `json:"content"`
+		Sender  *struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Participant bool   `json:"participant"`
+		} `json:"sender"`
+	}
+	err = json.Unmarshal([]byte(raw), &messages)
+	assert.NoError(t, err)
+	assert.Len(t, messages, 2)
+	assert.Equal(t, "m2", messages[0].ID)
+	assert.Equal(t, "second", messages[0].Content)
+	assert.Nil(t, messages[0].Sender)
+	assert.Equal(t, "m1", messages[1].ID)
+	assert.Equal(t, "first", messages[1].Content)
+	assert.NotNil(t, messages[1].Sender)
+	assert.Equal(t, "u1", messages[1].Sender.ID)
+	assert.Equal(t, "Alice", messages[1].Sender.Name)
+	assert.True(t, messages[1].Sender.Participant)
 }
 
 // ── server tools: config_validate with provider models ───────────────────────

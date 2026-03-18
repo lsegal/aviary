@@ -606,11 +606,69 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 
 	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_tool_history", sess.ID))
 	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, len(lines), 3)
-	assert.Equal(t, domain.MessageRoleTool, lines[len(lines)-2].Role)
-	assert.Contains(t, lines[len(lines)-2].Content, `"name":"web_search"`)
-	assert.Equal(t, domain.MessageRoleAssistant, lines[len(lines)-1].Role)
-	assert.Equal(t, "final answer", lines[len(lines)-1].Content)
+	// Filter to actual messages (skip session-metadata and response-marker entries with empty role).
+	var msgs []domain.Message
+	for _, l := range lines {
+		if l.Role != "" {
+			msgs = append(msgs, l)
+		}
+	}
+	assert.GreaterOrEqual(t, len(msgs), 3)
+	assert.Equal(t, domain.MessageRoleTool, msgs[len(msgs)-2].Role)
+	assert.Contains(t, msgs[len(msgs)-2].Content, `"name":"web_search"`)
+	assert.Equal(t, domain.MessageRoleAssistant, msgs[len(msgs)-1].Role)
+	assert.Equal(t, "final answer", msgs[len(msgs)-1].Content)
+}
+
+func TestAgentRunner_NormalizesSessionHistoryCurrentSessionID(t *testing.T) {
+	setTestDataDir(t)
+
+	toolClient := &recordingToolClient{
+		tools:   []ToolInfo{{Name: "session_history", Description: "Read session history"}},
+		results: map[string]string{"session_history": "[]"},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: `{"tool":"session_history","arguments":{"session_id":"current","order":"desc","limit":20}}`}, {Type: llm.EventTypeDone}},
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_session_history", Name: "assistant", Model: "test/model"},
+		&config.AgentConfig{Name: "assistant", Model: "test/model"},
+		provider,
+		nil,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_session_history", "main")
+	assert.NoError(t, err)
+
+	done := make(chan struct{}, 1)
+	runner.Prompt(WithSessionID(context.Background(), sess.ID), "what just happened?", func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, toolClient.calls, 1) {
+		assert.Equal(t, "session_history", toolClient.calls[0].Tool)
+		assert.Equal(t, sess.ID, toolClient.calls[0].Arguments["session_id"])
+		assert.Equal(t, "desc", toolClient.calls[0].Arguments["order"])
+	}
 }
 
 func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
@@ -768,6 +826,8 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	assert.NoError(t, err)
 	err = os.WriteFile(rulesPath, []byte("Follow local rules."), 0o600)
 	assert.NoError(t, err)
+	err = store.WriteAgentRootMarkdownFile("agent_default", "AGENTS.md", "Agent workspace instructions.")
+	assert.NoError(t, err)
 
 	mem := memory.New()
 	err = mem.Append("agent_default", "sess-default", "assistant", "Remember this later.")
@@ -798,8 +858,19 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	}
 
 	if assert.Len(t, provider.requests, 1) {
-		assert.Contains(t, provider.requests[0].System, "<rules>")
-		assert.Contains(t, provider.requests[0].System, "<available_tools>")
+		system := provider.requests[0].System
+		assert.Contains(t, system, "This is the AGENTS.md in agent workspace")
+		assert.Contains(t, system, "Agent workspace instructions.")
+		assert.Contains(t, system, "<rules>")
+		assert.Contains(t, system, "<available_tools>")
+		agentsIdx := strings.Index(system, "This is the AGENTS.md in agent workspace")
+		rulesIdx := strings.Index(system, "<rules>")
+		toolsIdx := strings.Index(system, "<available_tools>")
+		assert.NotEqual(t, -1, agentsIdx)
+		assert.NotEqual(t, -1, rulesIdx)
+		assert.NotEqual(t, -1, toolsIdx)
+		assert.Less(t, agentsIdx, rulesIdx)
+		assert.Less(t, rulesIdx, toolsIdx)
 	}
 }
 
@@ -1512,6 +1583,29 @@ func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
 
 }
 
+func TestAppendSessionMessageWithSender_PersistsSender(t *testing.T) {
+	setTestDataDir(t)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_sender", Name: "sender"},
+		&config.AgentConfig{Name: "sender"},
+		&mockProvider{},
+		nil,
+		nil,
+	)
+
+	sender := domain.NewMessageSender("u123", "Alice", true)
+	runner.appendSessionMessageWithSender("sess-sender", domain.MessageRoleUser, "Hello, world!", "", "", sender)
+
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_sender", "sess-sender"))
+	assert.NoError(t, err)
+	assert.Len(t, lines, 1)
+	assert.NotNil(t, lines[0].Sender)
+	assert.Equal(t, "u123", lines[0].Sender.ID)
+	assert.Equal(t, "Alice", lines[0].Sender.Name)
+	assert.True(t, lines[0].Sender.Participant)
+}
+
 func TestResolveSessionID_FromContext(t *testing.T) {
 	setTestDataDir(t)
 
@@ -2063,6 +2157,16 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 
 }
 
+func TestBuildToolSystemPrompt_AdvertisesSessionHistory(t *testing.T) {
+	out := buildToolSystemPrompt("", []ToolInfo{{Name: "session_history"}}, "group chat context")
+	assert.Contains(t, out, "inspect recent session history with session_history")
+	assert.Contains(t, out, "order=\"desc\" and limit=20")
+
+	out2 := buildToolSystemPrompt("", []ToolInfo{{Name: "session_messages"}}, "resume context")
+	assert.Contains(t, out2, "inspect recent session history with session_messages")
+	assert.Contains(t, out2, "order=\"desc\" and limit=20")
+}
+
 func TestBuildRulesPreamble(t *testing.T) {
 	runner := NewAgentRunner(
 		&domain.Agent{ID: "agent_bot", Name: "bot"},
@@ -2149,6 +2253,33 @@ func TestLoadSessionConversation_ReplacesHistoricalMediaWithMarker(t *testing.T)
 	assert.Equal(t, llm.RoleAssistant, history[1].Role)
 	assert.Equal(t, "[prior media attached]", history[1].Content)
 	assert.Equal(t, "", history[1].MediaURL)
+}
+
+func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_hist_sender", Name: "hist-sender"},
+		&config.AgentConfig{Name: "hist-sender"},
+		&mockProvider{}, nil, nil,
+	)
+	sess, err := NewSessionManager().Create(runner.agent.ID)
+	assert.NoError(t, err)
+
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "opening question", "", "", domain.NewMessageSender("u1", "Alice", true))
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "opening answer", "", "")
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "side chatter", "", "", domain.NewMessageSender("u2", "Bob", false))
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "actual follow-up", "", "", domain.NewMessageSender("u1", "Alice", true))
+
+	history := runner.loadSessionConversation(sess.ID, 10)
+	assert.Len(t, history, 4)
+	assert.Equal(t, llm.RoleUser, history[0].Role)
+	assert.Equal(t, "Alice (u1): opening question", history[0].Content)
+	assert.Equal(t, llm.RoleAssistant, history[1].Role)
+	assert.Equal(t, "opening answer", history[1].Content)
+	assert.Equal(t, llm.RoleSystem, history[2].Role)
+	assert.Equal(t, "Context only from non-participant Bob (u2): side chatter", history[2].Content)
+	assert.Equal(t, llm.RoleUser, history[3].Role)
+	assert.Equal(t, "Alice (u1): actual follow-up", history[3].Content)
 }
 
 func TestSessionList(t *testing.T) {
