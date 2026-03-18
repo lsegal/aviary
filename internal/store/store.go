@@ -516,6 +516,18 @@ func UsagePath() string {
 	return filepath.Join(SubDir(DirUsage), "usage.jsonl")
 }
 
+// CheckpointDir returns the directory where pending run checkpoints are stored
+// for an agent: <datadir>/agents/<agentID>/checkpoints/.
+func CheckpointDir(agentID string) string {
+	return filepath.Join(AgentDir(agentID), "checkpoints")
+}
+
+// CheckpointPath returns the path for a specific run checkpoint file:
+// <datadir>/agents/<agentID>/checkpoints/<checkpointID>.json.
+func CheckpointPath(agentID, checkpointID string) string {
+	return filepath.Join(CheckpointDir(agentID), sanitizeFileComponent(checkpointID)+".json")
+}
+
 // NotesDir returns the workspace-local notes directory: <workspace>/notes.
 func NotesDir() string {
 	return filepath.Join(WorkspaceDir(), "notes")

@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/memory"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Manager maintains a registry of AgentRunners and reconciles them with config.
@@ -23,6 +27,7 @@ type Manager struct {
 	session *SessionManager
 	factory *llm.Factory
 	memory  *memory.Manager
+	cfg     *config.Config // latest reconciled config, for checkpoint timeout
 }
 
 // NewManager creates a new Manager with an optional LLM factory.
@@ -40,6 +45,8 @@ func NewManager(factory *llm.Factory) *Manager {
 func (m *Manager) Reconcile(cfg *config.Config) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	m.cfg = cfg
 
 	desired := make(map[string]*config.AgentConfig, len(cfg.Agents))
 	for i := range cfg.Agents {
@@ -95,7 +102,58 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 				slog.Warn("failed to create LLM provider", "agent", name, "model", effectiveModel, "err", err)
 			}
 		}
-		m.runners[name] = NewAgentRunner(a, ac, provider, m.factory, m.memory)
+		runner := NewAgentRunner(a, ac, provider, m.factory, m.memory)
+		m.runners[name] = runner
+		go m.recoverCheckpoints(runner)
+	}
+}
+
+// recoverCheckpoints scans the agent's running/ directory for interrupted
+// prompt checkpoints and either re-issues them or sends a timeout notification.
+func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
+	timeout := config.DefaultFailedTaskTimeout
+	if m.cfg != nil {
+		timeout = m.cfg.Server.EffectiveFailedTaskTimeout()
+	}
+
+	dir := store.CheckpointDir(runner.agent.ID)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return // no running/ dir or unreadable — nothing to recover
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		cp, err := store.ReadJSON[RunCheckpoint](path)
+		if err != nil {
+			slog.Warn("agent: ignoring unreadable checkpoint", "path", path, "err", err)
+			_ = store.DeleteJSON(path)
+			continue
+		}
+
+		age := time.Since(cp.CreatedAt)
+		if age > timeout {
+			slog.Info("agent: checkpoint timed out, notifying session",
+				"agent", runner.agent.Name, "session", cp.SessionID, "age", age)
+			msg := fmt.Sprintf("I was interrupted %s ago and the recovery window (%s) has passed. Please resend your request if it is still needed.", age.Round(time.Second), timeout)
+			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, "", "")
+			deliverToSession(cp.SessionID, msg)
+			_ = store.DeleteJSON(path)
+			continue
+		}
+
+		slog.Info("agent: recovering interrupted prompt",
+			"agent", runner.agent.Name, "session", cp.SessionID,
+			"age", age, "retry", cp.RetryCount)
+		// Increment retry count and re-write checkpoint before re-issuing.
+		cp.RetryCount++
+		_ = store.WriteJSON(path, cp)
+
+		ctx := WithSessionID(context.Background(), cp.SessionID)
+		go runner.PromptMediaWithOverrides(ctx, cp.Message, cp.MediaURL, cp.Overrides)
 	}
 }
 

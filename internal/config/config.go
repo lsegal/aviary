@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -35,6 +36,10 @@ type ServerConfig struct {
 	TLS            *TLSConfig `yaml:"tls,omitempty"             json:"tls,omitempty"`
 	ExternalAccess bool       `yaml:"external_access,omitempty" json:"external_access,omitempty"` // bind to 0.0.0.0 instead of 127.0.0.1
 	NoTLS          bool       `yaml:"no_tls,omitempty"          json:"no_tls,omitempty"`          // disable TLS (plain HTTP)
+	// FailedTaskTimeout is the maximum age of a pending run checkpoint before
+	// the agent gives up and notifies the session instead of resuming.
+	// Accepts Go duration strings like "6h", "30m". Defaults to 6h if unset.
+	FailedTaskTimeout string `yaml:"failed_task_timeout,omitempty" json:"failed_task_timeout,omitempty"`
 }
 
 // TLSConfig holds paths to TLS certificate and key.
@@ -307,6 +312,22 @@ func Default() Config {
 			Port: 16677,
 		},
 	}
+}
+
+// DefaultFailedTaskTimeout is used when failed_task_timeout is not set in config.
+const DefaultFailedTaskTimeout = 6 * time.Hour
+
+// EffectiveFailedTaskTimeout returns the parsed duration for FailedTaskTimeout,
+// falling back to DefaultFailedTaskTimeout if unset or invalid.
+func (s ServerConfig) EffectiveFailedTaskTimeout() time.Duration {
+	if s.FailedTaskTimeout == "" {
+		return DefaultFailedTaskTimeout
+	}
+	d, err := time.ParseDuration(s.FailedTaskTimeout)
+	if err != nil || d <= 0 {
+		return DefaultFailedTaskTimeout
+	}
+	return d
 }
 
 // EffectiveAgentModel returns the runtime model for an agent, preferring the

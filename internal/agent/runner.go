@@ -204,10 +204,49 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 
 		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", effectiveModel)
 
+		serverStoppedCh := make(chan struct{})
+
+		// Write checkpoint to disk so the prompt can be resumed after a server restart.
+		// The checkpoint is deleted at goroutine exit unless the server was stopped.
+		checkpointPath := ""
+		if promptMsgID != "" {
+			cp := &RunCheckpoint{
+				AgentName: r.agent.Name,
+				SessionID: sessionID,
+				Message:   message,
+				MediaURL:  mediaURL,
+				Overrides: overrides,
+				CreatedAt: time.Now(),
+			}
+			cpath := store.CheckpointPath(r.agent.ID, promptMsgID)
+			if err := store.WriteJSON(cpath, cp); err != nil {
+				slog.Warn("agent: failed to write run checkpoint", "agent", r.agent.Name, "err", err)
+			} else {
+				checkpointPath = cpath
+			}
+		}
+		// Delete checkpoint at goroutine exit unless the server stopped this runner
+		// (in which case the checkpoint is kept for recovery on restart).
+		defer func() {
+			if checkpointPath == "" {
+				return
+			}
+			select {
+			case <-serverStoppedCh:
+				// Server-initiated stop: keep checkpoint for recovery on restart.
+			default:
+				// Normal completion, user-stop, or provider error: remove checkpoint.
+				if err := store.DeleteJSON(checkpointPath); err != nil {
+					slog.Warn("agent: failed to delete run checkpoint", "agent", r.agent.Name, "err", err)
+				}
+			}
+		}()
+
 		// Stop if stopCh is closed.
 		go func() {
 			select {
 			case <-r.stopCh:
+				close(serverStoppedCh)
 				cancel()
 			case <-promptCtx.Done():
 			}

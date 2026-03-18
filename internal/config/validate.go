@@ -80,6 +80,14 @@ func (v *validator) checkServer(s ServerConfig) {
 			v.errorf("server.tls.key", "cannot read key file %q: %v", s.TLS.Key, err)
 		}
 	}
+	if s.FailedTaskTimeout != "" {
+		d, err := time.ParseDuration(s.FailedTaskTimeout)
+		if err != nil {
+			v.errorf("server.failed_task_timeout", "invalid duration %q: %v", s.FailedTaskTimeout, err)
+		} else if d <= 0 {
+			v.errorf("server.failed_task_timeout", "failed_task_timeout must be a positive duration")
+		}
+	}
 }
 
 // checkAgents validates each AgentConfig, including channels and tasks.
