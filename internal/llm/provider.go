@@ -95,10 +95,11 @@ func (f *Factory) WithTokenSetter(setter func(key, value string) error) *Factory
 }
 
 // resolveOAuthToken tries to resolve a stored OAuth token for a provider.
-// If the token is expired it is automatically refreshed via the provider's
-// refresh-token flow and the new token is persisted via tokenSetter.
+// If the token is expired (or forceRefresh is true) it is automatically
+// refreshed via the provider's refresh-token flow and the new token is
+// persisted via tokenSetter.
 // Returns (accessToken, true) if a usable token is found.
-func (f *Factory) resolveOAuthToken(providerKey string) (string, bool) {
+func (f *Factory) resolveOAuthToken(providerKey string, forceRefresh bool) (string, bool) {
 	raw, err := f.resolveAuth(providerKey)
 	if err != nil || raw == "" {
 		return "", false
@@ -113,8 +114,8 @@ func (f *Factory) resolveOAuthToken(providerKey string) (string, bool) {
 	if err := json.Unmarshal([]byte(raw), &tok); err != nil || tok.AccessToken == "" {
 		return "", false
 	}
-	// Auto-refresh when the token is within 30 s of expiry.
-	if tok.IsExpired() && tok.RefreshToken != "" {
+	// Auto-refresh when the token is within 30 s of expiry, or when forced.
+	if (tok.IsExpired() || forceRefresh) && tok.RefreshToken != "" {
 		if refreshed := f.refreshOAuthToken(providerKey, &tok); refreshed != nil {
 			return refreshed.AccessToken, true
 		}
@@ -162,6 +163,17 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 // model format: "anthropic/claude-sonnet-4.5", "openai/gpt-4o", "google-gemini/gemini-2.5-pro",
 // "google/gemini-2.5-pro" (API key), "stdio/claude" (subprocess), etc.
 func (f *Factory) ForModel(model string) (Provider, error) {
+	return f.forModel(model, false)
+}
+
+// ForModelForceRefresh is like ForModel but forces any OAuth token to be
+// refreshed before creating the provider. Use this after receiving a 401 to
+// obtain a fresh token without waiting for the local expiry heuristic.
+func (f *Factory) ForModelForceRefresh(model string) (Provider, error) {
+	return f.forModel(model, true)
+}
+
+func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid model %q: expected <provider>/<name>", model)
@@ -170,7 +182,7 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 
 	switch provider {
 	case "anthropic":
-		if accessToken, ok := f.resolveOAuthToken("auth:anthropic:oauth"); ok {
+		if accessToken, ok := f.resolveOAuthToken("auth:anthropic:oauth", forceRefresh); ok {
 			return NewAnthropicOAuthProvider(accessToken, name), nil
 		}
 		apiKey, err := f.resolveAuth("auth:anthropic:default")
@@ -187,19 +199,19 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewOpenAIProvider(apiKey, name, ""), nil
 
 	case "openai-codex":
-		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth"); ok {
+		if accessToken, ok := f.resolveOAuthToken("auth:openai:oauth", forceRefresh); ok {
 			return NewOpenAICodexProvider(accessToken, name), nil
 		}
 		return nil, fmt.Errorf("openai-codex auth: missing OAuth token; run 'aviary auth login openai'")
 
 	case "google-gemini":
-		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
+		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth", forceRefresh); ok {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
 		return nil, fmt.Errorf("google-gemini auth: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
 
 	case "github-copilot":
-		if accessToken, ok := f.resolveOAuthToken("auth:github-copilot:oauth"); ok {
+		if accessToken, ok := f.resolveOAuthToken("auth:github-copilot:oauth", forceRefresh); ok {
 			return NewCopilotProvider(accessToken, name), nil
 		}
 		apiKey, err := f.resolveAuth("auth:github-copilot:default")
@@ -219,7 +231,7 @@ func (f *Factory) ForModel(model string) (Provider, error) {
 		return NewGeminiProvider(apiKey, name), nil
 
 	case "gemini-code-assist":
-		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth"); ok {
+		if accessToken, ok := f.resolveOAuthToken("auth:gemini:oauth", forceRefresh); ok {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
 		return nil, fmt.Errorf("gemini-code-assist: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
