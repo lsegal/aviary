@@ -524,7 +524,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return text("") // no rules file yet — not an error
+				return text("")
 			}
 			return nil, struct{}{}, fmt.Errorf("reading rules: %w", err)
 		}
@@ -682,7 +682,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 type sessionMessagesArgs struct {
 	SessionID string `json:"session_id"`
 	Agent     string `json:"agent,omitempty"`
-	ID        string `json:"id,omitempty"` // filter to a single message by ID
+	ID        string `json:"id,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
 	Skip      int    `json:"skip,omitempty"`
 	Order     string `json:"order,omitempty"`
@@ -755,8 +755,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 			Timestamp  string                `json:"timestamp"`
 		}
 
-		// First pass: collect response_id markers (empty-role records that link a
-		// user message ID to the assistant message that answered it).
 		responseIDs := make(map[string]string)
 		for _, msg := range lines {
 			if msg.Role == "" && msg.ID != "" && msg.ResponseID != "" {
@@ -792,7 +790,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 			})
 		}
 
-		// Filter to a single message by ID when requested.
 		if args.ID != "" {
 			filtered := out[:0]
 			for _, m := range out {
@@ -831,9 +828,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
 		}
-		// Resolve the actual agent directory name using a case-insensitive
-		// comparison. This avoids missing existing agent dirs when the
-		// provided agent name differs only by case (common on Windows).
 		agentsDir := filepath.Join(store.DataDir(), store.DirAgents)
 		agentNameDir := strings.TrimSpace(args.Agent)
 		if entries, err := os.ReadDir(agentsDir); err == nil {
@@ -849,7 +843,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 		agentID := fmt.Sprintf("agent_%s", agentNameDir)
 		sm := agent.NewSessionManager()
-		// Ensure the main session exists.
 		slog.Info("mcp: session_list resolving", "agent", args.Agent, "resolved_agent_dir", agentNameDir, "agent_id", agentID)
 		if _, err := sm.GetOrCreateNamed(agentID, "main"); err != nil {
 			slog.Error("mcp: session_list get/create main failed", "agent", agentID, "err", err)
@@ -859,7 +852,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		// Debug: log discovered sessions for easier remote diagnosis.
 		if len(sessions) == 0 {
 			slog.Info("mcp: session_list found no sessions", "agent", agentID)
 		} else {
@@ -873,7 +865,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 			}
 			slog.Info("mcp: session_list found sessions", "agent", agentID, "sessions", strings.Join(ids, ", "))
 		}
-		// Ensure main session (by name or deterministic id suffix) is first
 		mainIndex := -1
 		for i, sess := range sessions {
 			if sess == nil {
@@ -886,11 +877,9 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 		if mainIndex > 0 {
 			m := sessions[mainIndex]
-			// Move main to front
 			sessions = append([]*domain.Session{m}, append(sessions[:mainIndex], sessions[mainIndex+1:]...)...)
 		}
 		if mainIndex >= 0 && sessions[0] != nil && sessions[0].Name == "" {
-			// Normalize: set the display name for the main session so callers see it.
 			sessions[0].Name = "main"
 		}
 		type sessionDTO struct {
@@ -1064,8 +1053,8 @@ type taskScheduleArgs struct {
 	Agent    string `json:"agent"`
 	Name     string `json:"name,omitempty"`
 	Prompt   string `json:"prompt"`
-	In       string `json:"in,omitempty"`       // duration: "5m", "1h", "30s", "5 minutes", etc.
-	Schedule string `json:"schedule,omitempty"` // cron expression with leading seconds field
+	In       string `json:"in,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
@@ -1175,7 +1164,6 @@ func registerTaskTools(s *sdkmcp.Server) {
 		agentID := fmt.Sprintf("agent_%s", args.Agent)
 		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
 
-		// Capture the originating session so the job can reply there when done.
 		replySessionID, _ := agent.SessionIDFromContext(ctx)
 		replyAgentID, _ := agent.SessionAgentIDFromContext(ctx)
 
@@ -1229,8 +1217,6 @@ func registerTaskTools(s *sdkmcp.Server) {
 	})
 }
 
-// parseDuration parses a duration string, accepting both Go format ("5m", "1h30m")
-// and natural language ("5 minutes", "1 hour", "30 seconds").
 func parseDuration(s string) (time.Duration, error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	s = strings.ReplaceAll(s, " ", "")
@@ -1305,9 +1291,9 @@ type jobIDArgs struct {
 
 type jobQueryArgs struct {
 	ID     string `json:"id,omitempty"`
-	Start  string `json:"start,omitempty"`  // YYYY-MM-DD inclusive
-	End    string `json:"end,omitempty"`    // YYYY-MM-DD inclusive
-	Status string `json:"status,omitempty"` // pending|in_progress|completed|failed
+	Start  string `json:"start,omitempty"`
+	End    string `json:"end,omitempty"`
+	Status string `json:"status,omitempty"`
 	Agent  string `json:"agent,omitempty"`
 }
 
@@ -1967,19 +1953,15 @@ type authLoginCompleteArgs struct {
 	Code string `json:"code"`
 }
 
-// authStore returns the auth FileStore from Deps, opening it lazily if needed.
 func authStore() (*auth.FileStore, error) {
 	d := GetDeps()
 	if d.Auth != nil {
 		return d.Auth, nil
 	}
-	// Fallback: open directly (e.g. during tests or before server wires up Deps).
 	authPath := store.SubDir(store.DirAuth) + "/credentials.json"
 	return auth.NewFileStore(authPath)
 }
 
-// reconcileAgents reloads config from disk and reconciles all agent runners so
-// they pick up freshly stored credentials (e.g. after an OAuth login).
 func reconcileAgents() {
 	d := GetDeps()
 	if d == nil || d.Agents == nil {
@@ -2059,8 +2041,6 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("credential %q deleted", args.Name))
 	})
 
-	// ── OAuth login: Anthropic Claude Pro/Max ────────────────────────────────
-
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "auth_login_anthropic",
 		Description: "Start Anthropic Claude Pro/Max OAuth login. " +
@@ -2073,10 +2053,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		}
 		auth.StorePendingPKCE("anthropic", pkce)
 		authURL := auth.AnthropicBuildAuthorizeURL(pkce, "max")
-
-		// Try to open the browser automatically (best-effort).
 		_ = auth.OpenBrowser(authURL)
-
 		return jsonResult(map[string]any{
 			"url":          authURL,
 			"instructions": "Open the URL in your browser (opened automatically if possible). After signing in, you will be shown an authorization code. Call auth_login_anthropic_complete with that code.",
@@ -2094,13 +2071,10 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("no pending Anthropic login; call auth_login_anthropic first")
 		}
-
 		token, err := auth.AnthropicExchange(ctx, args.Code, pkce.Verifier)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("completing Anthropic login: %w", err)
 		}
-
-		// Persist the OAuth token as JSON under the key "anthropic:oauth".
 		tokenJSON, _ := json.Marshal(token)
 		st, err := authStore()
 		if err != nil {
@@ -2110,12 +2084,8 @@ func registerAuthTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		reconcileAgents()
-
-		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).",
-			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
-
-	// ── OAuth login: Google Gemini ───────────────────────────────────────────
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "auth_login_gemini",
@@ -2125,12 +2095,10 @@ func registerAuthTools(s *sdkmcp.Server) {
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-
 		token, err := auth.GeminiLogin(loginCtx)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
 		}
-
 		tokenJSON, _ := json.Marshal(token)
 		st, err := authStore()
 		if err != nil {
@@ -2140,12 +2108,8 @@ func registerAuthTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		reconcileAgents()
-
-		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).",
-			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
-
-	// ── OAuth login: OpenAI / Codex ──────────────────────────────────────────
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "auth_login_openai",
@@ -2153,15 +2117,12 @@ func registerAuthTools(s *sdkmcp.Server) {
 			"listens on localhost:1455 for the callback, exchanges the code for tokens, and stores them. " +
 			"This enables use of ChatGPT Pro/Plus (Codex) models without an API key.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		// Give the user 5 minutes to complete the browser flow.
 		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-
 		token, err := auth.OpenAILogin(loginCtx)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
 		}
-
 		tokenJSON, _ := json.Marshal(token)
 		st, err := authStore()
 		if err != nil {
@@ -2171,12 +2132,9 @@ func registerAuthTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		reconcileAgents()
-
-		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).",
-			time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 
-	// ── OAuth login: GitHub Copilot (device flow) ────────────────────────────
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "auth_login_github_copilot",
 		Description: "Start GitHub Copilot device-flow login. Returns a user_code and verification_uri " +
@@ -2187,10 +2145,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("copilot device code: %w", err)
 		}
 		auth.StoreCopilotDeviceState(state)
-		return jsonResult(map[string]any{
-			"user_code":        state.UserCode,
-			"verification_uri": state.VerificationURI,
-		})
+		return jsonResult(map[string]any{"user_code": state.UserCode, "verification_uri": state.VerificationURI})
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -2201,15 +2156,12 @@ func registerAuthTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("no pending Copilot login; call auth_login_github_copilot first")
 		}
-
 		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
-
 		token, err := auth.CopilotPollDevice(pollCtx, state)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("copilot device poll: %w", err)
 		}
-
 		tokenJSON, _ := json.Marshal(token)
 		st, err := authStore()
 		if err != nil {
@@ -2265,7 +2217,6 @@ func registerServerTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"started": true})
 	})
 
-	// Replace ping placeholder with a proper tool.
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "ping",
 		Description: "Check server connectivity",
@@ -2286,7 +2237,7 @@ func registerServerTools(s *sdkmcp.Server) {
 	})
 
 	type configSaveArgs struct {
-		Config string `json:"config"` // full JSON-encoded Config
+		Config string `json:"config"`
 	}
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -2302,7 +2253,6 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid config JSON: %w", err)
 		}
-		// Structural validation only (no auth store check from MCP context).
 		issues := config.Validate(&cfg, nil)
 		for _, issue := range issues {
 			if issue.Level == config.LevelError {
@@ -2321,11 +2271,6 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {
 			return nil, struct{}{}, err
 		}
-		SyncLiveServer(&cfg)
-		d := GetDeps()
-		if d.Agents != nil {
-			d.Agents.Reconcile(&cfg)
-		}
 		return text("config saved")
 	})
 
@@ -2337,14 +2282,8 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := config.RestoreLatestBackup(""); err != nil {
 			return nil, struct{}{}, err
 		}
-		cfg, err := config.Load("")
-		if err != nil {
+		if _, err := config.Load(""); err != nil {
 			return nil, struct{}{}, fmt.Errorf("loading restored config: %w", err)
-		}
-		SyncLiveServer(cfg)
-		d := GetDeps()
-		if d.Agents != nil {
-			d.Agents.Reconcile(cfg)
 		}
 		return text("latest config backup restored")
 	})
@@ -2358,14 +2297,11 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("loading config: %w", err)
 		}
-
-		// Use the shared auth store if available to avoid redundant file reads/locks.
 		st, err := authStore()
 		var authGet func(string) (string, error)
 		if err == nil {
 			authGet = func(key string) (string, error) { return st.Get(key) }
 		}
-
 		type issueDTO struct {
 			Level   string `json:"level"`
 			Field   string `json:"field"`
@@ -2376,9 +2312,6 @@ func registerServerTools(s *sdkmcp.Server) {
 		for i, iss := range issues {
 			out[i] = issueDTO{Level: string(iss.Level), Field: iss.Field, Message: iss.Message}
 		}
-
-		// Fire background connectivity pings for each configured provider.
-		// The first call returns only static issues; cached ping failures appear on subsequent calls.
 		pingFactory := llm.NewFactory(func(ref string) (string, error) {
 			if authGet == nil {
 				return "", nil
@@ -2387,21 +2320,13 @@ func registerServerTools(s *sdkmcp.Server) {
 		})
 		for provider, model := range config.UniqueProviderModels(cfg) {
 			startProviderPingIfStale(provider, model, pingFactory)
-
-			// Safely check for cached results without holding the lock during pings.
 			providerPingMu.RLock()
 			entry, cached := providerPingCache[provider]
 			providerPingMu.RUnlock()
-
 			if cached && !entry.ok {
-				out = append(out, issueDTO{
-					Level:   string(config.LevelError),
-					Field:   "models." + provider,
-					Message: entry.errMsg,
-				})
+				out = append(out, issueDTO{Level: string(config.LevelError), Field: "models." + provider, Message: entry.errMsg})
 			}
 		}
-
 		return jsonResult(out)
 	})
 }
@@ -2409,8 +2334,8 @@ func registerServerTools(s *sdkmcp.Server) {
 // ── Usage tools ──────────────────────────────────────────────────────────────
 
 type usageQueryArgs struct {
-	Start string `json:"start,omitempty"` // RFC3339 or date (YYYY-MM-DD); defaults to 30 days ago
-	End   string `json:"end,omitempty"`   // RFC3339 or date; defaults to now
+	Start string `json:"start,omitempty"`
+	End   string `json:"end,omitempty"`
 }
 
 func registerUsageTools(s *sdkmcp.Server) {
@@ -2421,7 +2346,6 @@ func registerUsageTools(s *sdkmcp.Server) {
 		now := time.Now()
 		start := now.AddDate(0, 0, -30)
 		end := now
-
 		parse := func(s string, fallback time.Time) time.Time {
 			if s == "" {
 				return fallback
@@ -2435,21 +2359,16 @@ func registerUsageTools(s *sdkmcp.Server) {
 		}
 		start = parse(args.Start, start)
 		end = parse(args.End, end)
-		// end is inclusive for full-day queries: extend to end of day
-		if len(args.End) == 10 { // "YYYY-MM-DD" — extend to end of day
+		if len(args.End) == 10 {
 			end = end.AddDate(0, 0, 1)
 		}
-
 		records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("reading usage log: %w", err)
 		}
-
-		// Filter to requested date range.
 		filtered := records[:0]
 		for _, r := range records {
-			if (r.Timestamp.Equal(start) || r.Timestamp.After(start)) &&
-				r.Timestamp.Before(end) {
+			if (r.Timestamp.Equal(start) || r.Timestamp.After(start)) && r.Timestamp.Before(end) {
 				filtered = append(filtered, r)
 			}
 		}

@@ -1080,7 +1080,7 @@ func TestListToolsAndCallToolText(t *testing.T) {
 
 }
 
-func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
+func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	err := store.EnsureDirs()
@@ -1130,9 +1130,9 @@ func TestConfigSaveSyncsLiveSkillTools(t *testing.T) {
 		"config": string(rawEnabledCfg),
 	})
 	require.NoError(t, err)
-	assert.True(t, hasTool(gogcliToolName))
-	assert.True(t, hasTool(himalayaToolName))
-	assert.True(t, hasTool(notionToolName))
+	assert.False(t, hasTool(gogcliToolName))
+	assert.False(t, hasTool(himalayaToolName))
+	assert.False(t, hasTool(notionToolName))
 
 	rawDisabledCfg, err := json.Marshal(config.Config{})
 	require.NoError(t, err)
