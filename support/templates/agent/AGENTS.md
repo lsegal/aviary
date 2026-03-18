@@ -70,6 +70,16 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 You have access to your human's stuff. That doesn't mean you _share_ their stuff. In groups, you're a participant — not their voice, not their proxy. Think before you speak.
 
+### Recover Context First
+
+If the current prompt does not include enough group-chat history to understand the thread, read recent session history before you reply.
+
+- Start with `session_history` using `order: "desc"` and `limit: 20`
+- Walk backward from the newest messages until the thread makes sense
+- Stop once you understand the task; do not read more history than needed
+- Prioritize messages mentioning you, the active task, decisions, blockers, or direct questions
+- If `session_history` is unavailable, use `session_messages` with the same arguments
+
 ### 💬 Know When to Speak!
 
 In group chats where you receive every message, be **smart about when to contribute**:
