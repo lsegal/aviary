@@ -682,6 +682,10 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 type sessionMessagesArgs struct {
 	SessionID string `json:"session_id"`
 	Agent     string `json:"agent,omitempty"`
+	ID        string `json:"id,omitempty"` // filter to a single message by ID
+	Limit     int    `json:"limit,omitempty"`
+	Skip      int    `json:"skip,omitempty"`
+	Order     string `json:"order,omitempty"`
 }
 
 type sessionStopArgs struct {
@@ -716,6 +720,109 @@ func resolveSessionTargetIdentity(sessionID string) (agentID, agentName string, 
 }
 
 func registerSessionTools(s *sdkmcp.Server) {
+	sessionHistoryHandler := func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionMessagesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if args.SessionID == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		if args.Limit < 0 {
+			return nil, struct{}{}, fmt.Errorf("limit must be >= 0")
+		}
+		if args.Skip < 0 {
+			return nil, struct{}{}, fmt.Errorf("skip must be >= 0")
+		}
+
+		order := strings.ToLower(strings.TrimSpace(args.Order))
+		switch order {
+		case "", "asc", "desc":
+		default:
+			return nil, struct{}{}, fmt.Errorf("order must be 'asc' or 'desc'")
+		}
+
+		lines, err := store.ReadJSONL[domain.Message](store.FindSessionPath(args.SessionID, args.Agent))
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+
+		type messageDTO struct {
+			ID         string                `json:"id"`
+			SessionID  string                `json:"session_id"`
+			Role       string                `json:"role"`
+			Sender     *domain.MessageSender `json:"sender,omitempty"`
+			Content    string                `json:"content"`
+			MediaURL   string                `json:"media_url,omitempty"`
+			Model      string                `json:"model,omitempty"`
+			ResponseID string                `json:"response_id,omitempty"`
+			Timestamp  string                `json:"timestamp"`
+		}
+
+		// First pass: collect response_id markers (empty-role records that link a
+		// user message ID to the assistant message that answered it).
+		responseIDs := make(map[string]string)
+		for _, msg := range lines {
+			if msg.Role == "" && msg.ID != "" && msg.ResponseID != "" {
+				responseIDs[msg.ID] = msg.ResponseID
+			}
+		}
+
+		out := make([]messageDTO, 0, len(lines))
+		for _, msg := range lines {
+			if msg.Role == "" {
+				continue
+			}
+			ts := ""
+			if !msg.Timestamp.IsZero() {
+				ts = msg.Timestamp.Format(time.RFC3339Nano)
+			}
+			sid := msg.SessionID
+			if sid == "" {
+				sid = args.SessionID
+			}
+			responseID := responseIDs[msg.ID]
+
+			out = append(out, messageDTO{
+				ID:         msg.ID,
+				SessionID:  sid,
+				Role:       string(msg.Role),
+				Sender:     msg.Sender,
+				Content:    msg.Content,
+				MediaURL:   msg.MediaURL,
+				Model:      msg.Model,
+				ResponseID: responseID,
+				Timestamp:  ts,
+			})
+		}
+
+		// Filter to a single message by ID when requested.
+		if args.ID != "" {
+			filtered := out[:0]
+			for _, m := range out {
+				if m.ID == args.ID {
+					filtered = append(filtered, m)
+				}
+			}
+			out = filtered
+		}
+
+		if order == "desc" {
+			for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
+				out[left], out[right] = out[right], out[left]
+			}
+		}
+
+		if args.Skip > 0 {
+			if args.Skip >= len(out) {
+				out = out[:0]
+			} else {
+				out = out[args.Skip:]
+			}
+		}
+		if args.Limit > 0 && args.Limit < len(out) {
+			out = out[:args.Limit]
+		}
+
+		return jsonResult(out)
+	}
+
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "session_list",
 		Description: "List all sessions for an agent",
@@ -832,60 +939,13 @@ func registerSessionTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "session_messages",
-		Description: "List persisted messages for a session (user/assistant/system)",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionMessagesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		if args.SessionID == "" {
-			return nil, struct{}{}, fmt.Errorf("session_id is required")
-		}
-		lines, err := store.ReadJSONL[map[string]any](store.FindSessionPath(args.SessionID, args.Agent))
-		if err != nil {
-			return nil, struct{}{}, err
-		}
+		Description: "List persisted messages for a session. Supports order=desc with limit/skip for efficient recent-history reads.",
+	}, sessionHistoryHandler)
 
-		type messageDTO struct {
-			ID        string `json:"id"`
-			SessionID string `json:"session_id"`
-			Role      string `json:"role"`
-			Content   string `json:"content"`
-			MediaURL  string `json:"media_url,omitempty"`
-			Model     string `json:"model,omitempty"`
-			Timestamp string `json:"timestamp"`
-		}
-
-		out := make([]messageDTO, 0, len(lines))
-		for _, line := range lines {
-			role, _ := line["role"].(string)
-			if role == "" {
-				continue
-			}
-
-			content, _ := line["content"].(string)
-			mediaURLVal, _ := line["media_url"].(string)
-			id, _ := line["id"].(string)
-			sid, _ := line["session_id"].(string)
-			modelVal, _ := line["model"].(string)
-			ts := ""
-			switch v := line["timestamp"].(type) {
-			case string:
-				ts = v
-			}
-			if sid == "" {
-				sid = args.SessionID
-			}
-
-			out = append(out, messageDTO{
-				ID:        id,
-				SessionID: sid,
-				Role:      role,
-				Content:   content,
-				MediaURL:  mediaURLVal,
-				Model:     modelVal,
-				Timestamp: ts,
-			})
-		}
-
-		return jsonResult(out)
-	})
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "session_history",
+		Description: "Read session history. Prefer order=desc and limit=20 to recover recent context in group chats or resumed sessions.",
+	}, sessionHistoryHandler)
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "session_stop",
