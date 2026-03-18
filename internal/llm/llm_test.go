@@ -1070,18 +1070,28 @@ func TestOpenAICodexProvider_Stream_RequestBody_UsesStoreFalse(t *testing.T) {
 	}
 	assert.Equal(t, "resp_123", gotResponseID)
 
-	var envelope struct {
-		Store              bool   `json:"store"`
-		Stream             bool   `json:"stream"`
-		Instructions       string `json:"instructions"`
-		PreviousResponseID string `json:"previous_response_id"`
-	}
+	var envelope map[string]any
 	err = json.Unmarshal(body, &envelope)
 	assert.NoError(t, err)
-	assert.False(t, envelope.Store)
-	assert.True(t, envelope.Stream)
-	assert.Equal(t, "Be precise.", envelope.Instructions)
-	assert.Equal(t, "resp_prev", envelope.PreviousResponseID)
+	// store must be false and stream must be true per request construction
+	if v, ok := envelope["store"].(bool); ok {
+		assert.False(t, v)
+	} else {
+		t.Fatalf("expected store bool in request envelope")
+	}
+	if v, ok := envelope["stream"].(bool); ok {
+		assert.True(t, v)
+	} else {
+		t.Fatalf("expected stream bool in request envelope")
+	}
+	if v, ok := envelope["instructions"].(string); ok {
+		assert.Equal(t, "Be precise.", v)
+	} else {
+		t.Fatalf("expected instructions string in request envelope")
+	}
+	// The backend rejects `previous_response_id`; it must NOT be sent.
+	_, ok := envelope["previous_response_id"]
+	assert.False(t, ok)
 }
 
 func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {

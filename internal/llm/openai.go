@@ -149,9 +149,8 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"instructions": req.System, // required by the backend, even if empty
 		"store":        false,      // chatgpt.com codex rejects streaming requests unless store is false
 	}
-	if req.PreviousResponseID != "" {
-		reqBody["previous_response_id"] = req.PreviousResponseID
-	}
+	// The ChatGPT backend does not accept a `previous_response_id` parameter here.
+	// We intentionally do not send it to avoid 400 Bad Request responses.
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
