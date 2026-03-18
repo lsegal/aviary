@@ -31,11 +31,12 @@ type Message struct {
 
 // Request is the input to an LLM provider.
 type Request struct {
-	Model    string
-	Messages []Message
-	System   string // optional system prompt
-	MaxToks  int    // 0 = provider default
-	Stream   bool   // whether to stream
+	Model              string
+	Messages           []Message
+	System             string // optional system prompt
+	MaxToks            int    // 0 = provider default
+	Stream             bool   // whether to stream
+	PreviousResponseID string // provider-native conversation ID; when set, Messages should contain only the new user turn
 }
 
 // Usage holds token-count metrics from an LLM call.
@@ -48,11 +49,12 @@ type Usage struct {
 
 // Event is a single streaming event from an LLM provider.
 type Event struct {
-	Type     EventType
-	Text     string // partial text (EventTypeText)
-	MediaURL string // image data URL (EventTypeMedia)
-	Error    error  // (EventTypeError)
-	Usage    *Usage // token counts (EventTypeUsage)
+	Type       EventType
+	Text       string // partial text (EventTypeText)
+	MediaURL   string // image data URL (EventTypeMedia)
+	Error      error  // (EventTypeError)
+	Usage      *Usage // token counts (EventTypeUsage)
+	ResponseID string // provider-native response/conversation ID (EventTypeDone); non-empty only when supported
 }
 
 // EventType identifies a streaming event.

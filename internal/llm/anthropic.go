@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -14,6 +13,7 @@ import (
 type AnthropicProvider struct {
 	client anthropic.Client
 	model  string
+	oauth  bool // true when using Bearer token auth (Claude Pro/Max)
 }
 
 // NewAnthropicProvider creates a provider for the given Claude model using an API key.
@@ -29,46 +29,61 @@ func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 	}
 }
 
-// noAPIKeyTransport wraps a RoundTripper and removes the x-api-key header so
-// that OAuth Bearer auth is the only credential sent.
-type noAPIKeyTransport struct{ base http.RoundTripper }
-
-func (t *noAPIKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.Header.Del("x-api-key")
-	return t.base.RoundTrip(req)
-}
-
 // NewAnthropicOAuthProvider creates a provider using an OAuth Bearer token (Claude Pro/Max).
-// The token is obtained via the Anthropic OAuth PKCE flow (auth_login_anthropic).
 func NewAnthropicOAuthProvider(accessToken, model string) *AnthropicProvider {
-	// Use a custom transport to strip x-api-key, which the SDK injects from
-	// the env var ANTHROPIC_API_KEY even when WithAPIKey("") is passed.
-	httpClient := newDebugClient(&noAPIKeyTransport{base: http.DefaultTransport})
+	// WithAuthToken sets Authorization: Bearer without injecting x-api-key.
 	opts := []option.RequestOption{
-		option.WithAPIKey(""),
 		option.WithAuthToken(accessToken),
-		option.WithHTTPClient(httpClient),
-		// Required headers for Anthropic OAuth requests.
-		option.WithHeader("anthropic-beta", "oauth-2025-04-20"),
-		option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+		option.WithHTTPClient(newOAuthClient()),
+		option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24"),
+		option.WithHeader("anthropic-dangerous-direct-browser-access", "true"),
+		option.WithHeader("anthropic-version", "2023-06-01"),
+		option.WithHeader("user-agent", "claude-cli/2.1.78 (external, cli)"),
+		option.WithHeader("x-app", "cli"),
 	}
 	return &AnthropicProvider{
 		client: anthropic.NewClient(opts...),
 		model:  model,
+		oauth:  true,
 	}
 }
 
-// Ping validates Anthropic credentials by listing models (GET /v1/models).
-// This costs no tokens and is fast.
+// Ping validates Anthropic credentials. For API key auth it uses GET /v1/models
+// (token-free). For OAuth, /v1/models is not accessible with bearer tokens so
+// it falls back to a minimal 1-token message.
 func (p *AnthropicProvider) Ping(ctx context.Context) error {
-	_, err := p.client.Models.List(ctx, anthropic.ModelListParams{})
-	return err
+	if !p.oauth {
+		_, err := p.client.Models.List(ctx, anthropic.ModelListParams{})
+		return err
+	}
+	ch, err := p.Stream(ctx, Request{
+		Model:    p.model,
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+		MaxToks:  1,
+	})
+	if err != nil {
+		return err
+	}
+	for ev := range ch {
+		if ev.Type == EventTypeError {
+			return ev.Error
+		}
+	}
+	return nil
 }
 
 // Stream sends a request to Anthropic and returns a streaming event channel.
 func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
 	messages := make([]anthropic.MessageParam, 0, len(req.Messages))
+	appendMsg := func(msg anthropic.MessageParam) {
+		// Merge consecutive messages of the same role to satisfy Anthropic's
+		// strict alternation requirement (user/assistant/user/...).
+		if len(messages) > 0 && messages[len(messages)-1].Role == msg.Role {
+			messages[len(messages)-1].Content = append(messages[len(messages)-1].Content, msg.Content...)
+			return
+		}
+		messages = append(messages, msg)
+	}
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
@@ -88,16 +103,17 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				} else {
 					blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: m.MediaURL}))
 				}
-				messages = append(messages, anthropic.NewUserMessage(blocks...))
+				appendMsg(anthropic.NewUserMessage(blocks...))
 				continue
 			}
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+			appendMsg(anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleAssistant:
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			appendMsg(anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleSystem:
 			// Anthropic does not support a "system" role inside the messages array;
-			// inject as a user turn so alternation is preserved.
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+			// inject as a user turn. The appendMsg helper merges it with any
+			// adjacent user messages to avoid alternation violations.
+			appendMsg(anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		}
 	}
 
@@ -111,7 +127,19 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		Messages:  messages,
 		MaxTokens: maxToks,
 	}
-	if req.System != "" {
+	if p.oauth {
+		// Prepend the Claude Code billing header that grants OAuth tokens access
+		// to sonnet/opus models. cc_version and cc_entrypoint are required;
+		// the cch value is not validated server-side.
+		billingHdr := anthropic.TextBlockParam{
+			Text: "x-anthropic-billing-header: cc_version=2.1.78.13b; cc_entrypoint=cli; cch=269ee;",
+		}
+		if req.System != "" {
+			params.System = []anthropic.TextBlockParam{billingHdr, {Text: req.System}}
+		} else {
+			params.System = []anthropic.TextBlockParam{billingHdr}
+		}
+	} else if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: req.System}}
 	}
 

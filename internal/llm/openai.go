@@ -147,7 +147,10 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"input":        input,
 		"stream":       true,
 		"instructions": req.System, // required by the backend, even if empty
-		"store":        false,      // required by chatgpt.com/backend-api
+		"store":        true,       // must be true to get a response ID for conversation continuity
+	}
+	if req.PreviousResponseID != "" {
+		reqBody["previous_response_id"] = req.PreviousResponseID
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -189,6 +192,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 			Delta string `json:"delta"`
 			// For response.completed and response.failed
 			Response *struct {
+				ID    string `json:"id"`
 				Error *struct {
 					Message string `json:"message"`
 					Code    string `json:"code"`
@@ -211,6 +215,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 
 		scanner := bufio.NewScanner(resp.Body)
 		var lastUsage *Usage
+		var lastResponseID string
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -230,12 +235,17 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 					ch <- Event{Type: EventTypeText, Text: ev.Delta}
 				}
 			case "response.completed":
-				if ev.Response != nil && ev.Response.Usage != nil {
-					u := ev.Response.Usage
-					if u.InputTokens > 0 || u.OutputTokens > 0 {
-						lastUsage = &Usage{
-							InputTokens:  u.InputTokens,
-							OutputTokens: u.OutputTokens,
+				if ev.Response != nil {
+					if ev.Response.ID != "" {
+						lastResponseID = ev.Response.ID
+					}
+					if ev.Response.Usage != nil {
+						u := ev.Response.Usage
+						if u.InputTokens > 0 || u.OutputTokens > 0 {
+							lastUsage = &Usage{
+								InputTokens:  u.InputTokens,
+								OutputTokens: u.OutputTokens,
+							}
 						}
 					}
 				}
@@ -258,7 +268,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
 		}
-		ch <- Event{Type: EventTypeDone}
+		ch <- Event{Type: EventTypeDone, ResponseID: lastResponseID}
 	}()
 
 	return ch, nil
