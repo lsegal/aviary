@@ -1,10 +1,15 @@
 package agent
 
-import "context"
+import (
+	"context"
+
+	"github.com/lsegal/aviary/internal/domain"
+)
 
 type sessionContextKey struct{}
 type sessionAgentIDKey struct{}
 type channelSessionKey struct{}
+type sessionSenderKey struct{}
 
 type channelSession struct {
 	channelType  string
@@ -67,4 +72,23 @@ func ChannelSessionFromContext(ctx context.Context) (channelType, configuredID, 
 		return "", "", "", false
 	}
 	return v.channelType, v.configuredID, v.channelID, true
+}
+
+// WithSessionSender stores structured sender information for the current user turn.
+func WithSessionSender(ctx context.Context, sender *domain.MessageSender) context.Context {
+	if sender == nil {
+		return ctx
+	}
+	senderValue := *sender
+	return context.WithValue(ctx, sessionSenderKey{}, senderValue)
+}
+
+// SessionSenderFromContext extracts the structured sender for the current user turn.
+func SessionSenderFromContext(ctx context.Context) (*domain.MessageSender, bool) {
+	v, ok := ctx.Value(sessionSenderKey{}).(domain.MessageSender)
+	if !ok {
+		return nil, false
+	}
+	senderValue := v
+	return &senderValue, true
 }

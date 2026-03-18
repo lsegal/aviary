@@ -272,9 +272,17 @@ func (m *SessionManager) Delete(sessionID string) error {
 // AppendMessageToSession appends a message to an existing session and fires
 // the session-message observer so WebSocket clients are notified.
 func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, content string) error {
+	return AppendMessageToSessionWithSender(agentID, sessionID, role, content, nil)
+}
+
+// AppendMessageToSessionWithSender appends a message with structured sender
+// metadata to an existing session and fires the session-message observer so
+// WebSocket clients are notified.
+func AppendMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content string, sender *domain.MessageSender) error {
 	msg := domain.Message{
 		ID:        newID("msg"),
 		Role:      role,
+		Sender:    sender,
 		Content:   content,
 		Timestamp: time.Now(),
 	}
@@ -288,7 +296,7 @@ func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, 
 // AppendReplyToSession appends an assistant reply to a session and forwards it
 // to any registered delivery targets for that session.
 func AppendReplyToSession(agentID, sessionID, content string) error {
-	if err := AppendMessageToSession(agentID, sessionID, domain.MessageRoleAssistant, content); err != nil {
+	if err := AppendMessageToSessionWithSender(agentID, sessionID, domain.MessageRoleAssistant, content, nil); err != nil {
 		return err
 	}
 	deliverToSession(sessionID, content)
@@ -298,9 +306,16 @@ func AppendReplyToSession(agentID, sessionID, content string) error {
 // AppendMediaMessageToSession appends a message with optional text and media to
 // an existing session and fires the session-message observer.
 func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageRole, content, mediaURL string) error {
+	return AppendMediaMessageToSessionWithSender(agentID, sessionID, role, content, mediaURL, nil)
+}
+
+// AppendMediaMessageToSessionWithSender appends a message with optional text,
+// media, and structured sender metadata to an existing session.
+func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content, mediaURL string, sender *domain.MessageSender) error {
 	msg := domain.Message{
 		ID:        newID("msg"),
 		Role:      role,
+		Sender:    sender,
 		Content:   content,
 		MediaURL:  mediaURL,
 		Timestamp: time.Now(),
@@ -315,4 +330,36 @@ func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageR
 // newID generates a simple timestamped ID with a prefix.
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), idCounter.Add(1))
+}
+
+// MarkMessageResponded appends a response marker to the session JSONL indicating
+// that promptMsgID was successfully answered by responseMsgID. The marker has an
+// empty Role so it is filtered from normal message listings, but the response_id
+// is merged into the original message when listing or looking up by ID.
+func MarkMessageResponded(agentID, sessionID, promptMsgID, responseMsgID string) error {
+	marker := domain.Message{
+		ID:         promptMsgID,
+		ResponseID: responseMsgID,
+	}
+	return store.AppendJSONL(store.SessionPath(agentID, sessionID), marker)
+}
+
+// HasMessageResponse reports whether promptMsgID already has a response_id
+// recorded in the session JSONL (last-write-wins across all records with that ID).
+func HasMessageResponse(agentID, sessionID, promptMsgID string) bool {
+	p := store.FindSessionPath(sessionID)
+	if p == "" {
+		p = store.SessionPath(agentID, sessionID)
+	}
+	lines, err := store.ReadJSONL[domain.Message](p)
+	if err != nil {
+		return false
+	}
+	var responseID string
+	for _, msg := range lines {
+		if msg.ID == promptMsgID && msg.ResponseID != "" {
+			responseID = msg.ResponseID
+		}
+	}
+	return responseID != ""
 }
