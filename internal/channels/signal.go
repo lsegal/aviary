@@ -1000,6 +1000,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			logFn(IncomingMessage{
 				Type:       "signal",
 				From:       source,
+				SenderName: source,
 				Channel:    channelID,
 				Text:       dataMessage.Message,
 				ReceivedAt: receivedAt,
@@ -1026,6 +1027,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
+			SenderName:    source,
 			Channel:       channelID,
 			Text:          dataMessage.Message,
 			MediaURL:      c.firstSignalImageDataURL(dataMessage.Attachments, source, channelID, isGroup),
@@ -1034,6 +1036,10 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			DisabledTools: c.disabledTools,
 			Model:         result.model,
 			Fallbacks:     result.fallbacks,
+		}
+		if dataMessage.Quote != nil {
+			im.QuoteAuthor = dataMessage.Quote.Author
+			im.QuoteText = dataMessage.Quote.Text
 		}
 		if im.Model == "" {
 			im.Model = c.model
@@ -1248,6 +1254,7 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
+			SenderName:    source,
 			Channel:       channelID,
 			Text:          reactionMessage.Emoji,
 			ReceivedAt:    receivedAt,

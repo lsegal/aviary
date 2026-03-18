@@ -201,11 +201,8 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 					slog.Warn("channel: failed to get session for chat history", "err", err)
 					return
 				}
-				content := strings.TrimSpace(msg.Text)
-				if from := strings.TrimSpace(msg.From); from != "" {
-					content = from + ": " + content
-				}
-				if err := agent.AppendMessageToSession(agentID, sess.ID, domain.MessageRoleUser, content); err != nil {
+				sender := domain.NewMessageSender(msg.From, msg.SenderName, false)
+				if err := agent.AppendMessageToSessionWithSender(agentID, sess.ID, domain.MessageRoleUser, strings.TrimSpace(msg.Text), sender); err != nil {
 					slog.Warn("channel: failed to log group chat message", "err", err)
 				}
 			})

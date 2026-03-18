@@ -139,6 +139,10 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		receivedAt = msg.Timestamp.UTC()
 	}
 	mediaURL := firstDiscordImageDataURL(msg.Attachments)
+	senderName := strings.TrimSpace(msg.Author.GlobalName)
+	if senderName == "" {
+		senderName = strings.TrimSpace(msg.Author.Username)
+	}
 
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
@@ -149,6 +153,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 			logFn(IncomingMessage{
 				Type:       "discord",
 				From:       msg.Author.ID,
+				SenderName: senderName,
 				Channel:    msg.ChannelID,
 				Text:       msg.Content,
 				ReceivedAt: receivedAt,
@@ -168,6 +173,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		im := IncomingMessage{
 			Type:          "discord",
 			From:          msg.Author.ID,
+			SenderName:    senderName,
 			Channel:       msg.ChannelID,
 			Text:          msg.Content,
 			MediaURL:      mediaURL,

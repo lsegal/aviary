@@ -19,6 +19,7 @@ import (
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/memory"
@@ -296,6 +297,7 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		return
 	}
 	msgCtx := agent.WithChannelSession(ctx, channelType, configuredID, msg.Channel)
+	msgCtx = agent.WithSessionSender(msgCtx, domain.NewMessageSender(msg.From, msg.SenderName, true))
 
 	agentID := "agent_" + agentName
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
@@ -331,6 +333,13 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		Fallbacks:     msg.Fallbacks,
 		RestrictTools: msg.RestrictTools,
 		DisabledTools: msg.DisabledTools,
+	}
+
+	// If this message quotes another message, include the quoted author/text
+	// in the message text so it becomes part of the prompt/session history.
+	if strings.TrimSpace(msg.QuoteAuthor) != "" && strings.TrimSpace(msg.QuoteText) != "" {
+		// Prefix the incoming user text with the quoted line and author.
+		msg.Text = fmt.Sprintf("%s: %s\n\n%s", msg.QuoteAuthor, msg.QuoteText, msg.Text)
 	}
 
 	// Verbose mode: send/edit a live status message for each tool call.

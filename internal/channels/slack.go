@@ -193,6 +193,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			logFn(IncomingMessage{
 				Type:       "slack",
 				From:       from,
+				SenderName: from,
 				Channel:    channelID,
 				Text:       text,
 				ReceivedAt: receivedAt,
@@ -214,6 +215,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		im := IncomingMessage{
 			Type:          "slack",
 			From:          from,
+			SenderName:    from,
 			Channel:       channelID,
 			Text:          text,
 			MediaURL:      mediaURL,

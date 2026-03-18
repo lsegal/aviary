@@ -9,7 +9,8 @@ import (
 // IncomingMessage represents a message received on a channel.
 type IncomingMessage struct {
 	Type          string // channel type: "discord", "slack", "signal", etc.
-	From          string // user ID or name
+	From          string // sender ID
+	SenderName    string // optional human-readable sender name
 	Channel       string // channel ID or name
 	Text          string
 	MediaURL      string // optional inline media for the LLM (typically a data URL)
@@ -18,6 +19,10 @@ type IncomingMessage struct {
 	DisabledTools []string // per-channel tool deny-list override; applied after the allow-list
 	Model         string   // per-entry model override; "" means use agent default
 	Fallbacks     []string // per-entry fallbacks override; nil means use agent defaults
+	// QuoteAuthor and QuoteText are optional fields populated by channel
+	// implementations when the incoming message quotes another message.
+	QuoteAuthor string
+	QuoteText   string
 }
 
 // Channel is the interface implemented by all messaging channel backends.
