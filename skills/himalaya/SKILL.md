@@ -29,3 +29,8 @@ Respect the configured `allowed_commands` list and do not attempt commands outsi
 Return machine-readable output when possible.
 
 Always read from INBOX by default unless another mailbox is specified.
+
+Tips:
+
+- Search with `envelope list`
+- Read with `message read`
