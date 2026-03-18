@@ -93,6 +93,8 @@ func CompactToTokenBudget(req Request, budget int) Request {
 func ModelInputBudget(model string) int {
 	m := strings.ToLower(model)
 	switch {
+	case strings.Contains(m, "gpt-5"):
+		return 128000
 	case strings.Contains(m, "gpt-4o") || strings.Contains(m, "gpt-4"):
 		return 32768
 	case strings.Contains(m, "gpt-3.5") || strings.Contains(m, "gpt-3"):

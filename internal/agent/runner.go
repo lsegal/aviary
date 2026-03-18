@@ -72,32 +72,39 @@ type RunOverrides struct {
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", RunOverrides{}, consumers...)
+	r.promptCore(ctx, message, "", RunOverrides{}, "", "", true, consumers...)
 }
 
 // PromptMedia is like Prompt but also attaches an image to the user message.
 // mediaURL may be a data URL ("data:image/png;base64,...") or a remote URL.
 // Pass an empty string for text-only messages.
 func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURL, RunOverrides{}, consumers...)
+	r.promptCore(ctx, message, mediaURL, RunOverrides{}, "", "", true, consumers...)
 }
 
 // PromptMediaWithOverrides is like PromptMedia but also applies per-run
 // overrides for model, fallbacks, and tool permissions.
 func (r *AgentRunner) PromptMediaWithOverrides(ctx context.Context, message, mediaURL string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURL, overrides, consumers...)
+	r.promptCore(ctx, message, mediaURL, overrides, "", "", true, consumers...)
 }
 
 // PromptWithOverrides is like Prompt but applies the provided overrides for
 // this call only. Model, Fallbacks, RestrictTools, and DisabledTools in overrides take
 // precedence over agent-level defaults when non-empty.
 func (r *AgentRunner) PromptWithOverrides(ctx context.Context, message string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", overrides, consumers...)
+	r.promptCore(ctx, message, "", overrides, "", "", true, consumers...)
 }
 
 // promptCore is the shared implementation for Prompt, PromptMedia, and
 // PromptWithOverrides.
-func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, overrides RunOverrides, consumers ...StreamConsumer) {
+func (r *AgentRunner) promptCore(
+	ctx context.Context,
+	message, mediaURL string,
+	overrides RunOverrides,
+	promptMsgID, checkpointPath string,
+	persistUserMessage bool,
+	consumers ...StreamConsumer,
+) {
 	r.mu.Lock()
 	if r.canceled {
 		r.mu.Unlock()
@@ -199,8 +206,10 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		if sender, ok := SessionSenderFromContext(promptCtx); ok {
 			userSender = sender
 		}
-		promptMsgID := r.appendSessionMessageWithSender(sessionID, domain.MessageRoleUser, message, mediaURL, effectiveModel, userSender)
-		r.appendMemoryMessage(sessionID, domain.MessageRoleUser, message)
+		if persistUserMessage {
+			promptMsgID = r.appendSessionMessageWithSender(sessionID, domain.MessageRoleUser, message, mediaURL, effectiveModel, userSender)
+			r.appendMemoryMessage(sessionID, domain.MessageRoleUser, message)
+		}
 
 		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", effectiveModel)
 
@@ -208,8 +217,7 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 
 		// Write checkpoint to disk so the prompt can be resumed after a server restart.
 		// The checkpoint is deleted at goroutine exit unless the server was stopped.
-		checkpointPath := ""
-		if promptMsgID != "" {
+		if checkpointPath == "" && promptMsgID != "" {
 			cp := &RunCheckpoint{
 				AgentName: r.agent.Name,
 				SessionID: sessionID,
@@ -415,6 +423,10 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 					newMsgs = append(newMsgs, summaryMsg)
 					newMsgs = append(newMsgs, req.Messages[chunk:]...)
 					req.Messages = newMsgs
+				}
+				if llm.EstimateRequestTokens(req) > budget {
+					slog.Warn("agent: summarized request still exceeds input token budget; compacting", "agent", r.agent.Name, "model", effectiveModel)
+					req = llm.CompactToTokenBudget(req, budget)
 				}
 			}
 
@@ -637,6 +649,10 @@ func (r *AgentRunner) promptCore(ctx context.Context, message, mediaURL string, 
 		deliverToSession(sessionID, errMsg)
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
 	}()
+}
+
+func (r *AgentRunner) recoverPrompt(ctx context.Context, checkpointID, checkpointPath string, cp RunCheckpoint, consumers ...StreamConsumer) {
+	r.promptCore(ctx, cp.Message, cp.MediaURL, cp.Overrides, checkpointID, checkpointPath, false, consumers...)
 }
 
 func shouldSuppressStreamingPrefix(text string, toolCount int) bool {

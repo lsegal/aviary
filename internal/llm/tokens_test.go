@@ -50,6 +50,9 @@ func TestEstimateRequestTokensAndModelBudget(t *testing.T) {
 	if b < 1000 {
 		t.Fatalf("unexpected small budget for gpt-3.5: %d", b)
 	}
+	if got := ModelInputBudget("openai-codex/gpt-5.4"); got < 100000 {
+		t.Fatalf("unexpected small budget for gpt-5.4: %d", got)
+	}
 }
 
 func TestCompactToTokenBudget(t *testing.T) {
@@ -66,6 +69,20 @@ func TestCompactToTokenBudget(t *testing.T) {
 	}
 	if EstimateRequestTokens(compacted) > 10 {
 		t.Fatalf("compacted request still exceeds budget: %d > 10", EstimateRequestTokens(compacted))
+	}
+}
+
+func TestCompactToTokenBudget_SingleLargeMessage(t *testing.T) {
+	req := Request{
+		System:   "sys",
+		Messages: []Message{{Role: RoleUser, Content: strings.Repeat("word ", 2000)}},
+	}
+	compacted := CompactToTokenBudget(req, 32)
+	if len(compacted.Messages) != 1 {
+		t.Fatalf("expected single message after compacting, got %d", len(compacted.Messages))
+	}
+	if EstimateRequestTokens(compacted) > 32 {
+		t.Fatalf("compacted request still exceeds budget: %d > 32", EstimateRequestTokens(compacted))
 	}
 }
 

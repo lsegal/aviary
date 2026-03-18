@@ -122,6 +122,13 @@ func TestRecoverCheckpoints_Fresh(t *testing.T) {
 
 	sessionID := "sess_fresh"
 	path := writeTestCheckpoint(t, "agent_fresh", sessionID, time.Now())
+	require.NoError(t, store.AppendJSONL(store.SessionPath("agent_fresh", sessionID), domain.Message{
+		ID:        "cp_001",
+		SessionID: sessionID,
+		Role:      domain.MessageRoleUser,
+		Content:   "hello",
+		Timestamp: time.Now(),
+	}))
 
 	m.recoverCheckpoints(runner)
 
@@ -133,6 +140,17 @@ func TestRecoverCheckpoints_Fresh(t *testing.T) {
 	// Wait for the re-issued prompt to finish, then verify the provider was called.
 	runner.Wait()
 	assert.GreaterOrEqual(t, provider.callCount(), 1)
+	assert.Equal(t, 0, checkpointCount("agent_fresh"), "original checkpoint should be deleted after successful recovery")
+
+	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_fresh", sessionID))
+	require.NoError(t, err)
+	userCount := 0
+	for _, msg := range msgs {
+		if msg.Role == domain.MessageRoleUser {
+			userCount++
+		}
+	}
+	assert.Equal(t, 1, userCount, "recovery should not append a duplicate user message")
 }
 
 func TestRecoverCheckpoints_UnreadableFile(t *testing.T) {

@@ -153,7 +153,8 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 		_ = store.WriteJSON(path, cp)
 
 		ctx := WithSessionID(context.Background(), cp.SessionID)
-		go runner.PromptMediaWithOverrides(ctx, cp.Message, cp.MediaURL, cp.Overrides)
+		checkpointID := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		go runner.recoverPrompt(ctx, checkpointID, path, cp)
 	}
 }
 
