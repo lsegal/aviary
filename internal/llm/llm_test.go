@@ -435,7 +435,6 @@ func TestWriteHeaders_Empty(t *testing.T) {
 
 }
 
-
 // ---------------------------------------------------------------------------
 // AnthropicProvider tests
 // ---------------------------------------------------------------------------
@@ -1036,6 +1035,53 @@ func TestOpenAICodexProvider_Stream_WithAccountID(t *testing.T) {
 	collectEvents(t, ch)
 	assert.Equal(t, "acc-456", gotAccountID)
 
+}
+
+func TestOpenAICodexProvider_Stream_RequestBody_UsesStoreFalse(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		body, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_123\"}}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := NewOpenAICodexProvider("test-token", "gpt-4o")
+	p.httpClient = &http.Client{Transport: &rewriteURLTransport{target: srv.URL, base: http.DefaultTransport}}
+
+	ch, err := p.Stream(context.Background(), Request{
+		System:             "Be precise.",
+		PreviousResponseID: "resp_prev",
+		Messages:           []Message{{Role: RoleUser, Content: "Hi"}},
+	})
+	assert.NoError(t, err)
+
+	events := collectEvents(t, ch)
+	var gotResponseID string
+	for _, ev := range events {
+		if ev.Type == EventTypeDone {
+			gotResponseID = ev.ResponseID
+		}
+	}
+	assert.Equal(t, "resp_123", gotResponseID)
+
+	var envelope struct {
+		Store              bool   `json:"store"`
+		Stream             bool   `json:"stream"`
+		Instructions       string `json:"instructions"`
+		PreviousResponseID string `json:"previous_response_id"`
+	}
+	err = json.Unmarshal(body, &envelope)
+	assert.NoError(t, err)
+	assert.False(t, envelope.Store)
+	assert.True(t, envelope.Stream)
+	assert.Equal(t, "Be precise.", envelope.Instructions)
+	assert.Equal(t, "resp_prev", envelope.PreviousResponseID)
 }
 
 func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {

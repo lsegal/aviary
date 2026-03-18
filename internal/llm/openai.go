@@ -147,7 +147,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"input":        input,
 		"stream":       true,
 		"instructions": req.System, // required by the backend, even if empty
-		"store":        true,       // must be true to get a response ID for conversation continuity
+		"store":        false,      // chatgpt.com codex rejects streaming requests unless store is false
 	}
 	if req.PreviousResponseID != "" {
 		reqBody["previous_response_id"] = req.PreviousResponseID
