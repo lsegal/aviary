@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -183,7 +182,7 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 			} `json:"usage"`
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
+		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
 		for scanner.Scan() {
 			line := scanner.Text()

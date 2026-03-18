@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -214,7 +213,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 			} `json:"item"`
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
+		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
 		var lastResponseID string
 		for scanner.Scan() {

@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -331,7 +330,7 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 			} `json:"response"`
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
+		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
 		for scanner.Scan() {
 			line := scanner.Text()

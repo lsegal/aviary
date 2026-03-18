@@ -1144,6 +1144,42 @@ func TestOpenAICodexProvider_Stream_InvalidJSONLines(t *testing.T) {
 
 }
 
+func TestOpenAICodexProvider_Stream_LargeDelta(t *testing.T) {
+	largeDelta := strings.Repeat("x", 70*1024)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":%q}\n\n", largeDelta)
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := NewOpenAICodexProvider("test-token", "gpt-4o")
+	p.httpClient = &http.Client{Transport: &rewriteURLTransport{target: srv.URL, base: http.DefaultTransport}}
+
+	ch, err := p.Stream(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+	})
+	assert.NoError(t, err)
+
+	events := collectEvents(t, ch)
+	var text string
+	var gotDone bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventTypeText:
+			text += ev.Text
+		case EventTypeDone:
+			gotDone = true
+		case EventTypeError:
+			assert.NoError(t, ev.Error)
+		}
+	}
+
+	assert.Equal(t, largeDelta, text)
+	assert.True(t, gotDone)
+}
+
 // rewriteURLTransport redirects all requests to a target server (for testing
 // providers that have hardcoded URLs like openAICodexBaseURL).
 type rewriteURLTransport struct {
