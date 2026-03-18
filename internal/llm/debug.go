@@ -35,7 +35,7 @@ func newDebugClient(base http.RoundTripper) *http.Client {
 // that OAuth tokens grant access to the same models as the official claude binary.
 // Debug logging wraps the inner transport when AVIARY_DEBUG_HTTP=1.
 func newOAuthClient() *http.Client {
-	var base http.RoundTripper = http.DefaultTransport
+	base := http.DefaultTransport
 	if DebugHTTP() {
 		base = &debugTransport{base: base}
 	}
