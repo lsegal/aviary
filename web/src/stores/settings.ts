@@ -100,6 +100,7 @@ export interface ModelsConfig {
 export interface BrowserConfig {
 	binary: string;
 	cdp_port: number;
+	headless?: boolean;
 }
 
 export interface WebSearchConfig {

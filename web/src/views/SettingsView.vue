@@ -121,6 +121,16 @@
 								<input v-model="concurrencyInput" type="text" class="field-input" placeholder="auto or number" />
 							</div>
 						</div>
+						<div class="mt-4 flex flex-wrap gap-6">
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.browser.headless" type="checkbox"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Run headless
+									<span class="block text-xs text-gray-500 dark:text-gray-400">No visible browser window</span>
+								</span>
+							</label>
+						</div>
 					</div>
 
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
