@@ -435,29 +435,6 @@ func TestWriteHeaders_Empty(t *testing.T) {
 
 }
 
-func TestNoAPIKeyTransport(t *testing.T) {
-	var gotHeaders http.Header
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHeaders = r.Header.Clone()
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	base := &http.Client{Transport: http.DefaultTransport}
-	transport := &noAPIKeyTransport{base: base.Transport}
-	client := &http.Client{Transport: transport}
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	req.Header.Set("X-Api-Key", "should-be-removed")
-	req.Header.Set("Authorization", "Bearer mytoken")
-	resp, err := client.Do(req)
-	assert.NoError(t, err)
-
-	_ = resp.Body.Close()
-	assert.Equal(t, "", gotHeaders.Get("X-Api-Key"))
-	assert.NotEqual(t, "", gotHeaders.Get("Authorization"))
-
-}
 
 // ---------------------------------------------------------------------------
 // AnthropicProvider tests

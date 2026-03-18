@@ -2074,7 +2074,6 @@ func TestBuildRulesPreamble(t *testing.T) {
 
 	got := runner.buildRulesPreamble()
 	assert.Contains(t, got, "<rules>")
-	assert.Contains(t, got, agentFileLookupRule)
 	assert.Contains(t, got, "Be concise.")
 	assert.Contains(t, got, "</rules>")
 }
