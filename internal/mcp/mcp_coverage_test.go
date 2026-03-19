@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1021,7 +1022,10 @@ func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).Format(time.RFC3339)
 	end := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
 	out, err := d.CallTool(context.Background(), "usage_query", map[string]any{"start": start, "end": end})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "rfc-bot"))
+	require.NoError(t, err)
+	var got []domain.UsageRecord
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, rec.AgentID, got[0].AgentID)
 
 }

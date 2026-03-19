@@ -2031,8 +2031,8 @@ func TestLoadMemoryContext_ExcludesSessionlessSummaries(t *testing.T) {
 
 	poolID := runner.memoryPoolID()
 	err := store.AppendJSONL(store.MemoryPath(poolID), domain.MemoryEntry{
-		ID:   "summary_1",
-		Role: "summary",
+		ID:      "summary_1",
+		Role:    "summary",
 		Content: "summary from another session should not be shared",
 		Tokens:  8,
 	})

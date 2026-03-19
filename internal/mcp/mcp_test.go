@@ -1336,13 +1336,15 @@ func TestUsageQueryTool_DateFilter(t *testing.T) {
 	SetServerChecker(func() bool { return false })
 	SetDeps(&Deps{Agents: agent.NewManager(nil)})
 
+	now := time.Now()
+
 	// Write a usage record from 60 days ago (outside default 30-day window).
 	oldRec := domain.UsageRecord{
-		Timestamp: time.Now().Add(-60 * 24 * time.Hour),
+		Timestamp: now.Add(-60 * 24 * time.Hour),
 		AgentID:   "agent_old_bot",
 	}
 	recentRec := domain.UsageRecord{
-		Timestamp: time.Now().Add(-1 * time.Hour),
+		Timestamp: now.Add(-1 * time.Hour),
 		AgentID:   "agent_recent_bot",
 	}
 	usagePath := store.UsagePath()
@@ -1352,16 +1354,20 @@ func TestUsageQueryTool_DateFilter(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 	// Default range is last 30 days — old record should be excluded.
 	out, err := d.CallTool(context.Background(), "usage_query", map[string]any{})
-	assert.NoError(t, err)
-	assert.False(t, strings.Contains(out, "old-bot"))
-	assert.True(t, strings.Contains(out, "recent-bot"))
+	require.NoError(t, err)
+	var got []domain.UsageRecord
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, recentRec.AgentID, got[0].AgentID)
 
 	// Explicit date range using YYYY-MM-DD format includes old record.
-	startDate := time.Now().Add(-90 * 24 * time.Hour).Format("2006-01-02")
-	endDate := time.Now().Add(-50 * 24 * time.Hour).Format("2006-01-02")
+	startDate := now.Add(-90 * 24 * time.Hour).Format("2006-01-02")
+	endDate := now.Add(-50 * 24 * time.Hour).Format("2006-01-02")
 	out, err = d.CallTool(context.Background(), "usage_query", map[string]any{"start": startDate, "end": endDate})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "old-bot"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, oldRec.AgentID, got[0].AgentID)
 
 }
 
