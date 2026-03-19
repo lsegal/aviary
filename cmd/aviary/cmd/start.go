@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -126,6 +127,8 @@ func runStart(_ *cobra.Command, _ []string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	logging.EnableConsole()
 
 	// Handle SIGINT/SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)

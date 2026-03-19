@@ -3,6 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -180,4 +181,55 @@ func TestInit(t *testing.T) {
 	// Close logging so the test temp dir can be cleaned up on Windows.
 	Shutdown()
 
+}
+
+func TestInit_DoesNotWriteToStderr(t *testing.T) {
+	setTestDataDir(t)
+	Shutdown()
+
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	err = Init()
+	assert.NoError(t, err)
+
+	slog.Info("file only")
+
+	assert.NoError(t, w.Close())
+	os.Stderr = origStderr
+	out, err := io.ReadAll(r)
+	assert.NoError(t, err)
+	assert.Empty(t, string(out))
+	assert.NoError(t, r.Close())
+
+	Shutdown()
+}
+
+func TestEnableConsole_WritesToStderr(t *testing.T) {
+	setTestDataDir(t)
+	Shutdown()
+
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	err = Init()
+	assert.NoError(t, err)
+
+	EnableConsole()
+	slog.Info("console enabled")
+
+	assert.NoError(t, w.Close())
+	os.Stderr = origStderr
+	out, err := io.ReadAll(r)
+	assert.NoError(t, err)
+	assert.Contains(t, string(out), "console enabled")
+	assert.NoError(t, r.Close())
+
+	Shutdown()
 }
