@@ -210,7 +210,10 @@ func waitMsg(t *testing.T, msgs <-chan IncomingMessage, timeout time.Duration) I
 // the zero value and false if nothing arrives in time.
 func waitMsgTimeout(msgs <-chan IncomingMessage, timeout time.Duration) (IncomingMessage, bool) {
 	select {
-	case m := <-msgs:
+	case m, ok := <-msgs:
+		if !ok {
+			return IncomingMessage{}, false
+		}
 		return m, true
 	case <-time.After(timeout):
 		return IncomingMessage{}, false
@@ -1017,6 +1020,7 @@ func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	}
 	go fd2.acceptLoop()
 	defer fd2.Close()
+	waitConnected(t, fd2, 2*time.Second)
 
 	deadline := time.Now().Add(4 * time.Second)
 	var msg IncomingMessage
@@ -1024,9 +1028,11 @@ func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	for time.Now().Before(deadline) {
 		fd2.PushNotification("+1", "after reconnect")
 		if next, ok := waitMsgTimeout(msgs, 150*time.Millisecond); ok {
-			msg = next
-			received = true
-			break
+			if next.Text == "after reconnect" {
+				msg = next
+				received = true
+				break
+			}
 		}
 		time.Sleep(25 * time.Millisecond)
 	}

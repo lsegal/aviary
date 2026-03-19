@@ -1188,19 +1188,18 @@ type taskStopArgs struct {
 }
 
 type taskScheduleArgs struct {
-	Agent         string         `json:"agent"`
-	Name          string         `json:"name,omitempty"`
-	Type          string         `json:"type,omitempty" schema:"enum=prompt|script"`
-	Prompt        string         `json:"prompt,omitempty"`
-	Script        string         `json:"script,omitempty"`
-	Task          map[string]any `json:"task,omitempty"`
-	In            string         `json:"in,omitempty"`
-	Schedule      string         `json:"schedule,omitempty"`
-	Target        string         `json:"target,omitempty"`
-	TriggerType   string         `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
-	CompileScript bool           `json:"compile_script,omitempty"`
-	RunDiscovery  bool           `json:"run_discovery,omitempty"`
-	Schema        struct{}       `json:"-" schema:"atmostone=in|schedule;atleastone=prompt|script|task"`
+	Agent         string   `json:"agent"`
+	Name          string   `json:"name,omitempty"`
+	Type          string   `json:"type,omitempty" schema:"enum=prompt|script"`
+	Prompt        string   `json:"prompt,omitempty"`
+	Script        string   `json:"script,omitempty"`
+	In            string   `json:"in,omitempty"`
+	Schedule      string   `json:"schedule,omitempty"`
+	Target        string   `json:"target,omitempty"`
+	TriggerType   string   `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
+	CompileScript bool     `json:"compile_script,omitempty"`
+	RunDiscovery  bool     `json:"run_discovery,omitempty"`
+	Schema        struct{} `json:"-" schema:"atmostone=in|schedule;atleastone=prompt|script"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
@@ -1250,7 +1249,6 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 		}
 		taskType := strings.ToLower(strings.TrimSpace(args.Type))
-		typeWasExplicit := taskType != ""
 		if taskType == "" {
 			if strings.TrimSpace(args.Script) != "" {
 				taskType = "script"
@@ -1263,27 +1261,12 @@ func registerTaskTools(s *sdkmcp.Server) {
 		}
 		promptText := strings.TrimSpace(args.Prompt)
 		scriptText := strings.TrimSpace(args.Script)
-		if len(args.Task) > 0 {
-			derivedPrompt, derivedScript, err := compileStructuredTask(args.Task)
-			if err != nil {
-				return nil, struct{}{}, err
-			}
-			if promptText == "" {
-				promptText = derivedPrompt
-			}
-			if scriptText == "" {
-				scriptText = derivedScript
-			}
-			if !typeWasExplicit {
-				taskType = "script"
-			}
-		}
 		autoCompile := !args.CompileScript && taskType == "prompt" && promptText != "" && scriptText == ""
 		if autoCompile {
-			compiled, err := resolveTaskPromptCompiler()(ctx, args.Agent, promptText, args.RunDiscovery)
+			compiled, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, promptText, args.RunDiscovery)
 			if err != nil {
 				slog.Warn("task auto-compile failed; falling back to prompt task", "agent", args.Agent, "error", err)
-			} else if compiled.Compilable && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+			} else if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
 				taskType = "script"
 				scriptText = strings.TrimSpace(compiled.Script)
 				slog.Info("task auto-compiled to script", "agent", args.Agent, "steps", len(compiled.Steps))
@@ -1295,11 +1278,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if promptText == "" {
 				return nil, struct{}{}, fmt.Errorf("prompt is required when compile_script is true")
 			}
-			compiled, err := resolveTaskPromptCompiler()(ctx, args.Agent, promptText, args.RunDiscovery)
+			compiled, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, promptText, args.RunDiscovery)
 			if err != nil {
 				return nil, struct{}{}, err
 			}
-			if !compiled.Compilable || strings.TrimSpace(compiled.Script) == "" {
+			if compiled.Type != "script" || strings.TrimSpace(compiled.Script) == "" {
 				return nil, struct{}{}, fmt.Errorf("task prompt could not be compiled into a script: %s", strings.TrimSpace(compiled.Reason))
 			}
 			taskType = "script"
@@ -1478,78 +1461,6 @@ func normalizeTaskSchedule(schedule string) string {
 		}
 	}
 	return trimmed
-}
-
-func compileStructuredTask(task map[string]any) (promptText, scriptText string, err error) {
-	taskType := strings.ToLower(strings.TrimSpace(stringValue(task["type"])))
-	switch taskType {
-	case "http_check":
-		url := strings.TrimSpace(stringValue(task["url"]))
-		method := strings.ToUpper(strings.TrimSpace(stringValue(task["method"])))
-		if method == "" {
-			method = "GET"
-		}
-		expectStatus := intValue(task["expect_status"])
-		if expectStatus == 0 {
-			expectStatus = 200
-		}
-		if url == "" {
-			return "", "", fmt.Errorf("task.url is required for task.type=http_check")
-		}
-		if method != "GET" {
-			return "", "", fmt.Errorf("task.method %q is not supported for task.type=http_check", method)
-		}
-		if expectStatus != 200 {
-			return "", "", fmt.Errorf("task.expect_status=%d is not yet supported for task.type=http_check", expectStatus)
-		}
-		message := ""
-		if onFailure, ok := task["on_failure"].(map[string]any); ok {
-			message = strings.TrimSpace(stringValue(onFailure["message"]))
-		}
-		prompt := fmt.Sprintf("Perform an HTTP GET to %s. If the response status is not 200, let me know.", url)
-		if message != "" {
-			prompt = fmt.Sprintf("Perform an HTTP GET to %s. If the response status is not 200, send this message: %q", url, message)
-		}
-		plan := compileBuiltInTaskPrompt(prompt)
-		if plan == nil || strings.TrimSpace(plan.Script) == "" {
-			return "", "", fmt.Errorf("task.type=http_check could not be compiled")
-		}
-		return prompt, plan.Script, nil
-	default:
-		if taskType == "" {
-			return "", "", fmt.Errorf("task.type is required when task is provided")
-		}
-		return "", "", fmt.Errorf("unsupported task.type %q", taskType)
-	}
-}
-
-func stringValue(v any) string {
-	switch value := v.(type) {
-	case string:
-		return value
-	case fmt.Stringer:
-		return value.String()
-	default:
-		return ""
-	}
-}
-
-func intValue(v any) int {
-	switch value := v.(type) {
-	case int:
-		return value
-	case int32:
-		return int(value)
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	case json.Number:
-		n, _ := value.Int64()
-		return int(n)
-	default:
-		return 0
-	}
 }
 
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {

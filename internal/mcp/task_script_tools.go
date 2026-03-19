@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,12 +25,14 @@ type taskCompileArgs struct {
 	RunDiscovery bool   `json:"run_discovery,omitempty"`
 }
 
-type compiledTaskPlan struct {
-	Compilable     bool               `json:"compilable"`
+type compiledTaskResult struct {
+	Type           string             `json:"type"`
+	Prompt         string             `json:"prompt,omitempty"`
+	Script         string             `json:"script,omitempty"`
 	NeedsDiscovery bool               `json:"needs_discovery,omitempty"`
 	Reason         string             `json:"reason,omitempty"`
 	Steps          []compiledTaskStep `json:"steps,omitempty"`
-	Script         string             `json:"script,omitempty"`
+	Validated      bool               `json:"validated,omitempty"`
 }
 
 type compiledTaskStep struct {
@@ -41,13 +42,26 @@ type compiledTaskStep struct {
 	Description   string `json:"description"`
 }
 
-var taskPromptCompiler func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskPlan, error)
+type compileTaskAnalysis struct {
+	ShouldCompile          bool               `json:"should_compile"`
+	NeedsDiscovery         bool               `json:"needs_discovery,omitempty"`
+	Reason                 string             `json:"reason,omitempty"`
+	DeterministicStepCount int                `json:"deterministic_step_count,omitempty"`
+	Steps                  []compiledTaskStep `json:"steps,omitempty"`
+}
 
-func resolveTaskPromptCompiler() func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskPlan, error) {
-	if taskPromptCompiler != nil {
-		return taskPromptCompiler
+type compileTaskValidation struct {
+	Valid  bool   `json:"valid"`
+	Reason string `json:"reason,omitempty"`
+}
+
+var tryCompileTaskPromptFunc func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error)
+
+func resolveTryCompileTaskPrompt() func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+	if tryCompileTaskPromptFunc != nil {
+		return tryCompileTaskPromptFunc
 	}
-	return compileTaskPrompt
+	return tryCompileTaskPrompt
 }
 
 func registerSessionSendTool(s *sdkmcp.Server) {
@@ -88,7 +102,7 @@ func registerSessionSendTool(s *sdkmcp.Server) {
 func registerTaskCompilerTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_compile_script",
-		Description: "Analyze a natural-language task prompt and, when feasible, generate an embedded Lua script task. Returns JSON with steps, confidence, and generated script.",
+		Description: "Try to compile a natural-language task prompt into an embedded Lua script task. Returns the resulting task definition, analysis steps, and any generated script.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskCompileArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
@@ -96,7 +110,7 @@ func registerTaskCompilerTools(s *sdkmcp.Server) {
 		if strings.TrimSpace(args.Prompt) == "" {
 			return nil, struct{}{}, fmt.Errorf("prompt is required")
 		}
-		plan, err := resolveTaskPromptCompiler()(ctx, args.Agent, args.Prompt, args.RunDiscovery)
+		plan, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, args.Prompt, args.RunDiscovery)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
@@ -104,10 +118,7 @@ func registerTaskCompilerTools(s *sdkmcp.Server) {
 	})
 }
 
-func compileTaskPrompt(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskPlan, error) {
-	if builtIn := compileBuiltInTaskPrompt(prompt); builtIn != nil {
-		return builtIn, nil
-	}
+func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
 	cfg, agentCfg, err := loadCompileAgentConfig(agentName)
 	if err != nil {
 		return nil, err
@@ -124,113 +135,79 @@ func compileTaskPrompt(ctx context.Context, agentName, prompt string, runDiscove
 	if err != nil {
 		return nil, err
 	}
-	analysisSystem := "You are a task compiler for Aviary. Break the task into steps. Mark each step deterministic when it can be executed by a fixed tool call with stable arguments. Mark semantic classification or fuzzy reasoning steps as nondeterministic. If the task has at least one deterministic tool step and the rest can be handled by bounded agent_run --bare calls, it is compilable. Reply with JSON only matching this schema: {\"compilable\":bool,\"needs_discovery\":bool,\"reason\":string,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. If a browser selector cannot be grounded from the prompt alone, set needs_discovery=true instead of guessing a selector."
+
+	analysisSystem := "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic only when it can be executed with bounded, stable tool calls without fuzzy judgment, hidden selectors, or open-ended reasoning. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
 	analysisUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nrun_discovery=%t", prompt, toolList, runDiscovery)
 	analysisText, err := completeLLMText(ctx, provider, model, analysisSystem, analysisUser)
 	if err != nil {
 		return nil, err
 	}
-	var plan compiledTaskPlan
-	if err := json.Unmarshal([]byte(extractJSONObject(analysisText)), &plan); err != nil {
+	var analysis compileTaskAnalysis
+	if err := json.Unmarshal([]byte(extractJSONObject(analysisText)), &analysis); err != nil {
 		return nil, fmt.Errorf("parsing compiler analysis: %w", err)
 	}
-	if !plan.Compilable || plan.NeedsDiscovery {
-		if strings.TrimSpace(plan.Reason) == "" {
-			plan.Reason = "task is not safely compilable into a script from the prompt alone"
+	if analysis.DeterministicStepCount == 0 {
+		for _, step := range analysis.Steps {
+			if step.Deterministic {
+				analysis.DeterministicStepCount++
+			}
 		}
-		return &plan, nil
 	}
+
+	result := &compiledTaskResult{
+		Type:           "prompt",
+		Prompt:         strings.TrimSpace(prompt),
+		NeedsDiscovery: analysis.NeedsDiscovery,
+		Reason:         strings.TrimSpace(analysis.Reason),
+		Steps:          analysis.Steps,
+	}
+	if analysis.DeterministicStepCount <= 1 || !analysis.ShouldCompile || analysis.NeedsDiscovery {
+		if result.Reason == "" {
+			result.Reason = "task could not be validated as deterministic enough for script compilation"
+		}
+		return result, nil
+	}
+
 	generationSystem := "Generate a single-file Lua script for Aviary's embedded runtime. Output only the Lua source code, with no markdown fences. The runtime exposes a sandboxed global table `tool` where each tool is called as tool.name({ ... }) and a global `environment` table containing agent_id, session_id, task_id, and job_id. There is no filesystem, network, package loader, or shell access except through the exposed tools. Use tool calls for all external actions. When the script should emit a user-visible notification, call print(...). Do not invent tools that are not in the available tools list."
-	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler plan JSON:\n%s", prompt, toolList, mustJSON(plan))
+	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s", prompt, toolList, mustJSON(analysis))
 	script, err := completeLLMText(ctx, provider, model, generationSystem, generationUser)
 	if err != nil {
 		return nil, err
 	}
-	plan.Script = strings.TrimSpace(extractCodeFence(script))
-	return &plan, nil
-}
-
-var (
-	taskPromptURLPattern     = regexp.MustCompile(`https?://[^\s"'<>]+`)
-	taskPromptQuotedMsg      = regexp.MustCompile(`(?is)(?:exact message|message)\s*:\s*"([^"]+)"`)
-	taskPromptNon200Patterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\bnot returning (?:a )?200\b`),
-		regexp.MustCompile(`(?i)\bstatus(?: code|)\s+is\s+not\s+200\b`),
-		regexp.MustCompile(`(?i)\bresponse status(?: code|)\s+is\s+not\s+200\b`),
-		regexp.MustCompile(`(?i)\bif .*?\bstatus\b.*?\b!=\s*200\b`),
-		regexp.MustCompile(`(?i)\bif .*?\bstatus\b.*?\bnot\s+200\b`),
-	}
-)
-
-func compileBuiltInTaskPrompt(prompt string) *compiledTaskPlan {
-	trimmed := strings.TrimSpace(prompt)
-	if trimmed == "" {
-		return nil
-	}
-	url := taskPromptURLPattern.FindString(trimmed)
-	if url == "" {
-		return nil
-	}
-	if !mentionsNon200Condition(trimmed) {
-		return nil
-	}
-	message := defaultStatusAlertMessage(url)
-	if match := taskPromptQuotedMsg.FindStringSubmatch(trimmed); len(match) == 2 {
-		message = strings.TrimSpace(match[1])
-	}
-	return &compiledTaskPlan{
-		Compilable: true,
-		Reason:     "bounded HTTP health-check task using the current agent",
-		Steps: []compiledTaskStep{
-			{Kind: "deterministic", Deterministic: true, Description: fmt.Sprintf("Perform an HTTP GET to %s", url)},
-			{Kind: "deterministic", Deterministic: true, Description: "Compare the HTTP status code to 200"},
-			{Kind: "notify", Deterministic: true, Description: "Emit a notification only when the status code is not 200"},
-		},
-		Script: buildHTTPStatusScript(url, message),
-	}
-}
-
-func mentionsNon200Condition(prompt string) bool {
-	for _, pattern := range taskPromptNon200Patterns {
-		if pattern.MatchString(prompt) {
-			return true
+	candidateScript := strings.TrimSpace(extractCodeFence(script))
+	if candidateScript == "" {
+		if result.Reason == "" {
+			result.Reason = "compiler did not produce a script"
 		}
+		return result, nil
 	}
-	return false
-}
 
-func defaultStatusAlertMessage(url string) string {
-	host := strings.TrimPrefix(url, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimSuffix(host, "/")
-	if host == "" {
-		host = url
+	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, or is otherwise unsafe to auto-promote."
+	validationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s\n\nGenerated Lua script:\n%s", prompt, toolList, mustJSON(analysis), candidateScript)
+	validationText, err := completeLLMText(ctx, provider, model, validationSystem, validationUser)
+	if err != nil {
+		return nil, err
 	}
-	return fmt.Sprintf("%s is not returning 200 — status: [STATUS]", host)
-}
+	var validation compileTaskValidation
+	if err := json.Unmarshal([]byte(extractJSONObject(validationText)), &validation); err != nil {
+		return nil, fmt.Errorf("parsing compiler validation: %w", err)
+	}
+	if !validation.Valid {
+		if strings.TrimSpace(validation.Reason) != "" {
+			result.Reason = strings.TrimSpace(validation.Reason)
+		} else if result.Reason == "" {
+			result.Reason = "generated script did not validate against the original prompt"
+		}
+		return result, nil
+	}
 
-func buildHTTPStatusScript(url, message string) string {
-	quotedURL, _ := json.Marshal(url)
-	quotedMessage, _ := json.Marshal(message)
-	return strings.TrimSpace(fmt.Sprintf(`
-local URL = %s
-local MESSAGE_TEMPLATE = %s
-
-local result = tool.agent_run({
-  bare = true,
-  history = false,
-  message = "Check the HTTP status for " .. URL .. ". Reply with only the numeric status code."
-})
-
-local status = tonumber(result)
-if status == nil then
-  error("agent_run did not return a numeric status code")
-end
-
-if status ~= 200 then
-  print(string.gsub(MESSAGE_TEMPLATE, "%%[STATUS%%]", tostring(status)))
-end
-`, quotedURL, quotedMessage))
+	result.Type = "script"
+	result.Script = candidateScript
+	result.Validated = true
+	if strings.TrimSpace(validation.Reason) != "" {
+		result.Reason = strings.TrimSpace(validation.Reason)
+	}
+	return result, nil
 }
 
 func loadCompileAgentConfig(agentName string) (*config.Config, *config.AgentConfig, error) {
