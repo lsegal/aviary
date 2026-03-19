@@ -2754,7 +2754,7 @@ func TestAgentRunScript_UsesCurrentAgentContextForToolCalls(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "agent_run_script", map[string]any{
-		"name":   "bot",
+		"agent":  "bot",
 		"script": "local sessions = tool.session_list({})\nprint(#sessions > 0)\n",
 	})
 	require.NoError(t, err)
@@ -2791,7 +2791,7 @@ func TestAgentRunScript_RespectsDisabledToolPermissions(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "agent_run_script", map[string]any{
-		"name":   "bot",
+		"agent":  "bot",
 		"script": "tool.session_list({})\n",
 	})
 	require.NoError(t, err)

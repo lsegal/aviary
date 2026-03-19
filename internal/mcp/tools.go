@@ -160,7 +160,7 @@ type agentNameArgs struct {
 }
 
 type agentRunScriptArgs struct {
-	Name      string `json:"name,omitempty"`
+	Agent     string `json:"agent,omitempty"`
 	Script    string `json:"script"`
 	Session   string `json:"session,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
@@ -417,14 +417,14 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if d.Agents == nil {
 			return nil, struct{}{}, fmt.Errorf("agent manager not initialized; is the server running?")
 		}
-		agentName := strings.TrimSpace(args.Name)
+		agentName := strings.TrimSpace(args.Agent)
 		if agentName == "" {
 			if fromCtx, ok := agent.SessionAgentIDFromContext(ctx); ok {
 				agentName = strings.TrimSpace(fromCtx)
 			}
 		}
 		if agentName == "" {
-			return nil, struct{}{}, fmt.Errorf("name is required")
+			return nil, struct{}{}, fmt.Errorf("agent is required")
 		}
 
 		var sess *domain.Session
