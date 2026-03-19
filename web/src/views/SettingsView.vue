@@ -839,7 +839,7 @@
 									</div>
 									<div>
 										<label class="field-label">Schedule</label>
-										<input v-model="task.schedule" type="text" class="field-input" placeholder="0 * * * * *" />
+										<input v-model="task.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
 									</div>
 									<div>
 										<label class="field-label">Watch</label>

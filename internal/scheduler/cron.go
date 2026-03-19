@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/robfig/cron/v3"
+
+	"github.com/lsegal/aviary/internal/cronutil"
 )
 
 // CronRunner wraps robfig/cron to add/remove named entries idempotently.
@@ -14,10 +16,11 @@ type CronRunner struct {
 	ids map[string]cron.EntryID // task name → entry ID
 }
 
-// NewCronRunner creates a CronRunner with second-precision support.
+// NewCronRunner creates a CronRunner that accepts 5-field cron expressions and
+// 6-field expressions with a leading seconds field.
 func NewCronRunner() *CronRunner {
 	return &CronRunner{
-		c:   cron.New(cron.WithSeconds()),
+		c:   cronutil.New(),
 		ids: make(map[string]cron.EntryID),
 	}
 }

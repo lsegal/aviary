@@ -51,7 +51,7 @@ func resolveTaskPromptCompiler() func(ctx context.Context, agentName, prompt str
 }
 
 func registerSessionSendTool(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_send",
 		Description: "Send a plain-text assistant message to a session and any connected channel deliveries. Arguments: session_id(optional in-session), content(required).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionSendArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -86,7 +86,7 @@ func registerSessionSendTool(s *sdkmcp.Server) {
 }
 
 func registerTaskCompilerTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "task_compile_script",
 		Description: "Analyze a natural-language task prompt and, when feasible, generate an embedded Lua script task. Returns JSON with steps, confidence, and generated script.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskCompileArgs) (*sdkmcp.CallToolResult, struct{}, error) {

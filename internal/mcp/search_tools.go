@@ -30,7 +30,7 @@ type searchResult struct {
 }
 
 func registerSearchTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "web_search",
 		Description: "Search the web for a query and return a list of results with titles, URLs, and descriptions. " +
 			"Uses the Brave Search API when search.web.brave_api_key is configured with an auth reference; " +

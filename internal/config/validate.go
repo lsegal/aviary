@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	"github.com/lsegal/aviary/internal/cronutil"
 )
 
 // IssueLevel indicates the severity of a validation finding.
@@ -190,9 +190,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			}
 
 			if t.Schedule != "" {
-				c := cron.New(cron.WithSeconds())
+				c := cronutil.New()
 				if _, err := c.AddFunc(t.Schedule, func() {}); err != nil {
-					v.errorf(tf+".schedule", "invalid cron expression %q: %v (aviary uses 6-field format with leading seconds field, e.g. \"0 * * * * *\" for every minute)", t.Schedule, err)
+					v.errorf(tf+".schedule", "invalid cron expression %q: %v (aviary accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\" or \"0 * * * * *\" for every minute)", t.Schedule, err)
 				}
 			}
 
@@ -213,12 +213,7 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			switch {
-			case t.Target == "":
-				v.warnf(tf+".target", "target is empty; completed task output will only appear in job logs")
-			case validTaskRoute(t.Target):
-				// explicit configured delivery route
-			default:
+			if t.Target != "" && !validTaskRoute(t.Target) {
 				v.errorf(tf+".target", "invalid value %q; must be empty (silent) or route:<type>:<id>:<target>", t.Target)
 			}
 		}

@@ -793,11 +793,16 @@ func TestTaskSchedule_InvalidCronSchedule(t *testing.T) {
 
 func TestTaskSchedule_InvalidTriggerType(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
-	toolCallContains(t, d, "task_schedule", map[string]any{
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":        "bot",
 		"prompt":       "run this",
 		"trigger_type": "banana",
-	}, "invalid trigger_type")
+	})
+	msg := out
+	if err != nil {
+		msg = err.Error()
+	}
+	assert.True(t, strings.Contains(msg, "invalid trigger_type") || strings.Contains(msg, "invalid params"))
 }
 
 func TestTaskSchedule_ScheduleRejectsWatchTriggerType(t *testing.T) {
@@ -951,6 +956,9 @@ func TestTaskStopByNameNoMatch(t *testing.T) {
 
 func TestValidateTaskSchedule(t *testing.T) {
 	err := validateTaskSchedule("0 0 10 * * *")
+	assert.NoError(t, err)
+
+	err = validateTaskSchedule("*/5 * * * *")
 	assert.NoError(t, err)
 
 	err = validateTaskSchedule("not-a-cron")

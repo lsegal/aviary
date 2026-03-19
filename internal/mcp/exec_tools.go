@@ -39,7 +39,7 @@ type execResult struct {
 var execCommandContext = exec.CommandContext
 
 func registerExecTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "exec",
 		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it. Arguments: command (required), cwd (optional).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args execArgs) (*sdkmcp.CallToolResult, struct{}, error) {

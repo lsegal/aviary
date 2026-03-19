@@ -88,7 +88,7 @@ func registerSkillRuntimeTool(s *sdkmcp.Server, skill skills.Definition) {
 		Description: strings.TrimSpace(skill.Description + " Arguments: command (array of strings, required)."),
 		InputSchema: skillToolInputSchema(),
 	}
-	sdkmcp.AddTool(s, tool, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args skillRunArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	addTool(s, tool, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args skillRunArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		out, err := runSkillCommand(ctx, skill, args)
 		if err != nil {
 			return nil, struct{}{}, err

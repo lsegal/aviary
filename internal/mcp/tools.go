@@ -17,12 +17,12 @@ import (
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/robfig/cron/v3"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/cronutil"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/scriptruntime"
@@ -257,7 +257,7 @@ func resolveAgentRunHistory(args agentRunArgs) bool {
 }
 
 func registerAgentTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_list",
 		Description: "List all configured agents and their current state",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -268,7 +268,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return jsonResult(d.Agents.List())
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_run",
 		Description: "Send a message to an agent and stream the response",
 	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args agentRunArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -393,7 +393,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(buf.String())
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_stop",
 		Description: "Immediately stop all work in progress for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -409,7 +409,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("agent %q stopped", args.Name))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_run_script",
 		Description: "Run an embedded Lua script for the current agent/session. Scripts get a sandboxed `tool.<name>({ ... })` table and an `environment` table with agent_id, session_id, task_id, and job_id.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentRunScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -475,7 +475,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(output)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_get",
 		Description: "Get the full configuration for a named agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -497,7 +497,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		Fallbacks []string `json:"fallbacks,omitempty"`
 	}
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_add",
 		Description: "Add a new agent to the configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -531,7 +531,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("agent %q added", args.Name))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_template_sync",
 		Description: "Sync the embedded agent template into an agent directory. Missing files are added, existing files are preserved, and markdown files only update the 'Synced by Aviary' section.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentTemplateSyncArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -544,7 +544,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("templates synced for agent %q", args.Agent))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_update",
 		Description: "Update an existing agent's configuration fields",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentUpsertArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -581,7 +581,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("agent %q updated", args.Name))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_delete",
 		Description: "Remove an agent from the configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -621,7 +621,7 @@ type agentRulesSetArgs struct {
 }
 
 func registerRulesTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_rules_get",
 		Description: "Read the RULES.md file for an agent (returns empty string if none)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -640,7 +640,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 		return text(string(data))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_rules_set",
 		Description: "Write the RULES.md file for an agent (creates or replaces)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentRulesSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -680,7 +680,7 @@ type noteWriteArgs struct {
 }
 
 func registerNoteTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "note_write",
 		Description: "Write a workspace note to notes/<descriptive_file>.md using markdown content. Arguments: file (string, required) - descriptive filename; content (string, required) - summarized markdown to write.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args noteWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -705,7 +705,7 @@ func registerNoteTools(s *sdkmcp.Server) {
 }
 
 func registerAgentContextTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_list",
 		Description: "List markdown context files available under an agent directory, excluding RULES.md which is already loaded into the prompt preamble.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -719,7 +719,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		return jsonResult(files)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_read",
 		Description: "Read a markdown context file from an agent directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -733,7 +733,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		return text(content)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_list",
 		Description: "List root-level markdown files available under an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -747,7 +747,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		return jsonResult(files)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_read",
 		Description: "Read a root-level markdown file from an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -761,7 +761,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		return text(content)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_write",
 		Description: "Create or replace a root-level markdown file in an agent directory.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -774,7 +774,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("%s written for agent %q", strings.TrimSpace(args.File), args.Agent))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_root_file_delete",
 		Description: "Delete a root-level markdown file from an agent directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -933,7 +933,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		return jsonResult(out)
 	}
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_list",
 		Description: "List all sessions for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1022,7 +1022,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		return jsonResult(out)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_create",
 		Description: "Create a new session for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1039,17 +1039,17 @@ func registerSessionTools(s *sdkmcp.Server) {
 		return jsonResult(sess)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_messages",
 		Description: "List persisted messages for a session. Supports order=desc with limit/skip for efficient recent-history reads.",
 	}, sessionHistoryHandler)
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_history",
 		Description: "Read session history. Prefer order=desc and limit=20 to recover recent context in group chats or resumed sessions.",
 	}, sessionHistoryHandler)
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_stop",
 		Description: "Stop all in-progress work for a specific session",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1092,7 +1092,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("stopped %d active run(s) in session %q", stopped, sid))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_remove",
 		Description: "Permanently delete a session and all its messages",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1113,7 +1113,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("session %q removed", sid))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "session_set_target",
 		Description: "Set the configured channel target for a session and persist it in the session sidecar",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionSetTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1190,20 +1190,21 @@ type taskStopArgs struct {
 type taskScheduleArgs struct {
 	Agent         string         `json:"agent"`
 	Name          string         `json:"name,omitempty"`
-	Type          string         `json:"type,omitempty"`
+	Type          string         `json:"type,omitempty" schema:"enum=prompt|script"`
 	Prompt        string         `json:"prompt,omitempty"`
 	Script        string         `json:"script,omitempty"`
 	Task          map[string]any `json:"task,omitempty"`
 	In            string         `json:"in,omitempty"`
 	Schedule      string         `json:"schedule,omitempty"`
 	Target        string         `json:"target,omitempty"`
-	TriggerType   string         `json:"trigger_type,omitempty"`
+	TriggerType   string         `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
 	CompileScript bool           `json:"compile_script,omitempty"`
 	RunDiscovery  bool           `json:"run_discovery,omitempty"`
+	Schema        struct{}       `json:"-" schema:"atmostone=in|schedule;atleastone=prompt|script|task"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
 		Description: "List configured tasks and their trigger definitions",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1215,7 +1216,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		return jsonResult(d.Scheduler.ListTasks())
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "task_run",
 		Description: "Immediately trigger a configured task by name (e.g. 'myagent/daily-report' or just 'daily-report')",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1231,9 +1232,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 		return jsonResult(job)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks. Deterministic prompt tasks are automatically promoted to script tasks when Aviary can compile them safely, even if type=prompt was supplied.",
+		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Deterministic prompt tasks are automatically promoted to script tasks when Aviary can compile them safely, even if type=prompt was supplied.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1413,7 +1414,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("Task scheduled %s (job ID: %s). Done — no further action needed.", when, job.ID))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "task_stop",
 		Description: "Stop scheduled task jobs. Optional name=<task-name or agent/task> or job_id=<job-id>; omit both to stop all pending and running jobs.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1456,7 +1457,7 @@ func parseDuration(s string) (time.Duration, error) {
 }
 
 func validateTaskSchedule(schedule string) error {
-	c := cron.New(cron.WithSeconds())
+	c := cronutil.New()
 	if _, err := c.AddFunc(strings.TrimSpace(schedule), func() {}); err != nil {
 		return fmt.Errorf("invalid schedule %q: %w", schedule, err)
 	}
@@ -1620,7 +1621,7 @@ type jobQueryArgs struct {
 }
 
 func registerJobTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "job_list",
 		Description: "Show job history across all tasks",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1636,7 +1637,7 @@ func registerJobTools(s *sdkmcp.Server) {
 		return jsonResult(jobs)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "job_query",
 		Description: "Return job records filtered by id, date range, status, and/or agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1679,7 +1680,7 @@ func registerJobTools(s *sdkmcp.Server) {
 		return jsonResult(out)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "job_logs",
 		Description: "Show captured output for a specific job run",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1698,7 +1699,7 @@ func registerJobTools(s *sdkmcp.Server) {
 		return text(job.Output)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "job_run_now",
 		Description: "Immediately run an existing pending job by ID, ignoring its scheduled time and worker concurrency limits",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1762,7 +1763,7 @@ type browserQueryArgs struct {
 }
 
 func registerBrowserTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_open",
 		Description: "Navigate to a URL in a new browser tab. Returns the tab_id needed for subsequent operations on that tab.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserOpenArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1778,7 +1779,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"tab_id": tabID, "url": args.URL})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_tabs",
 		Description: "List all currently open browser tabs and their IDs",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1796,7 +1797,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(tabs)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_navigate",
 		Description: "Navigate an existing browser tab to a new URL.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserNavigateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1818,7 +1819,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"tab_id": args.TabID, "url": args.URL})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_wait",
 		Description: "Wait for a CSS selector to become visible in the specified tab.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserWaitArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1849,7 +1850,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"tab_id": args.TabID, "selector": args.Selector, "timeout_ms": timeoutMS, "status": "visible"})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_click",
 		Description: "Click an element by CSS selector in the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserSelectorArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1869,7 +1870,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("clicked %q in tab %s", args.Selector, args.TabID))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_keystroke",
 		Description: "Send keystrokes to an element by CSS selector in the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1889,7 +1890,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("keystrokes sent to %q in tab %s", args.Selector, args.TabID))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_fill",
 		Description: "Fill (default typing) text in an element by CSS selector in the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1909,7 +1910,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("filled %q in tab %s", args.Selector, args.TabID))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_text",
 		Description: "Extract normalized visible text from the whole page or from elements matching a CSS selector.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTextArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -1963,7 +1964,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(payload)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_query",
 		Description: "Extract structured data from elements matching a CSS selector, including text and common attributes.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2030,7 +2031,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return jsonResult(payload)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_screenshot",
 		Description: "Capture a screenshot of the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTabArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2065,7 +2066,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("screenshot saved: %s", path))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_eval",
 		Description: "Evaluate JavaScript in the specified tab and return the result. Pass the script in the `javascript` field.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args struct {
@@ -2089,7 +2090,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(result)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "channel_send_file",
 		Description: "Send a local file (e.g. a screenshot) to the current conversation channel. " +
 			"Use this to share images or files with the user instead of asking them to open a path manually. " +
@@ -2124,7 +2125,7 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file sent: %s", args.FilePath))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_close",
 		Description: "Close the browser manager (no-op: Chrome and tabs run independently)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2161,7 +2162,7 @@ type memoryNotesSetArgs struct {
 }
 
 func registerMemoryTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "memory_search",
 		Description: "Search an agent's notes for lines matching a keyword query",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2195,7 +2196,7 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		return text(strings.Join(matched, "\n"))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "memory_show",
 		Description: "Display the full notes memory for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2211,7 +2212,7 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		return text(notes)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "memory_store",
 		Description: "Store a fact or note into an agent's persistent notes. Arguments: agent (string, required) - the agent name; content (string, required) - the text to remember.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryStoreArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2226,7 +2227,7 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("remembered: %s", args.Content))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "memory_notes_set",
 		Description: "Replace the entire notes file for an agent with new content (markdown text). Use this to edit or correct existing memories.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryNotesSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2241,7 +2242,7 @@ func registerMemoryTools(s *sdkmcp.Server) {
 		return text("notes updated")
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "memory_clear",
 		Description: "Wipe all memory (notes and conversation history) for an agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args memoryAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2298,7 +2299,7 @@ func reconcileAgents() {
 }
 
 func registerAuthTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_set",
 		Description: "Store a credential by name (e.g. name=anthropic:default, value=sk-ant-...)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authSetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2315,7 +2316,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("credential %q stored", args.Name))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_get",
 		Description: "Check whether a credential is set (value is masked)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2334,7 +2335,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"name": args.Name, "set": true, "preview": masked})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_list",
 		Description: "List all stored credential names",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2349,7 +2350,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return jsonResult(keys)
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_delete",
 		Description: "Remove a stored credential",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args authNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2363,7 +2364,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("credential %q deleted", args.Name))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_anthropic",
 		Description: "Start Anthropic Claude Pro/Max OAuth login. " +
 			"Returns an authorization URL; open it in a browser, complete sign-in, " +
@@ -2382,7 +2383,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_login_anthropic_complete",
 		Description: "Complete Anthropic OAuth login by exchanging the authorization code. Call this after auth_login_anthropic with the code shown on the Anthropic page.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args authLoginCompleteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2409,7 +2410,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("Anthropic OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_gemini",
 		Description: "Start Google Gemini OAuth login (gemini-cli style). Opens the browser to Google's consent screen, " +
 			"listens on localhost:45289 for the callback, exchanges the code for tokens, and stores them. " +
@@ -2433,7 +2434,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_openai",
 		Description: "Start OpenAI/Codex OAuth login. Opens the browser to the OpenAI consent screen, " +
 			"listens on localhost:1455 for the callback, exchanges the code for tokens, and stores them. " +
@@ -2457,7 +2458,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_github_copilot",
 		Description: "Start GitHub Copilot device-flow login. Returns a user_code and verification_uri " +
 			"to display to the user; call auth_login_github_copilot_complete to finish.",
@@ -2470,7 +2471,7 @@ func registerAuthTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"user_code": state.UserCode, "verification_uri": state.VerificationURI})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_login_github_copilot_complete",
 		Description: "Complete GitHub Copilot login after the user has authorized the device code. Polls GitHub until authorization succeeds and stores the token.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2500,14 +2501,14 @@ func registerAuthTools(s *sdkmcp.Server) {
 // ── Server tools ─────────────────────────────────────────────────────────────
 
 func registerServerTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "server_status",
 		Description: "Get server status, uptime, and connected agents",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return jsonResult(map[string]any{"status": "running"})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "server_version_check",
 		Description: "Check the current Aviary version against the latest GitHub release",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2522,7 +2523,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		Version string `json:"version,omitempty"`
 	}
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
 		Description: "Upgrade Aviary to the latest release and restart the server if needed",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2539,14 +2540,14 @@ func registerServerTools(s *sdkmcp.Server) {
 		return jsonResult(map[string]any{"started": true})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "ping",
 		Description: "Check server connectivity",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return text("pong")
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "config_get",
 		Description: "Get the current server configuration as JSON",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2562,7 +2563,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		Config string `json:"config"`
 	}
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "config_save",
 		Description: "Save an updated server configuration (full JSON-encoded config object)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configSaveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2596,7 +2597,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		return text("config saved")
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "config_restore_latest_backup",
 		Description: "Restore aviary.yaml from the most recent rotating backup file",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2610,7 +2611,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		return text("latest config backup restored")
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "config_validate",
 		Description: "Validate the current configuration and credentials, returning all issues. Provider connectivity is checked asynchronously; results appear on subsequent calls.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2661,7 +2662,7 @@ type usageQueryArgs struct {
 }
 
 func registerUsageTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "usage_query",
 		Description: "Return raw token-usage records within a date range for display in the Usage dashboard",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args usageQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -2702,7 +2703,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	registerConfiguredSkillTools(s)
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {

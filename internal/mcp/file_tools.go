@@ -37,7 +37,7 @@ type fileTruncateArgs struct {
 }
 
 func registerFileTools(s *sdkmcp.Server) {
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_read",
 		Description: "Read a file within the current agent's filesystem allowlist. Arguments: path (required). Returns utf-8 text when possible, otherwise base64.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args filePathArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -69,7 +69,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		})
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_write",
 		Description: "Create or replace a file within the current agent's filesystem allowlist. Arguments: path, content, encoding(optional utf-8|base64).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args fileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -90,7 +90,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file written: %s", path))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_append",
 		Description: "Append data to a file within the current agent's filesystem allowlist. Arguments: path, content, encoding(optional utf-8|base64).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args fileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -116,7 +116,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file appended: %s", path))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_truncate",
 		Description: "Truncate or extend a file within the current agent's filesystem allowlist to a size in bytes. Arguments: path, size.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args fileTruncateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -141,7 +141,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file truncated: %s (%d bytes)", path, args.Size))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_delete",
 		Description: "Delete a file within the current agent's filesystem allowlist. Arguments: path.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args filePathArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -155,7 +155,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file deleted: %s", path))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_copy",
 		Description: "Copy a file within the current agent's filesystem allowlist. Arguments: source, destination.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args fileCopyArgs) (*sdkmcp.CallToolResult, struct{}, error) {
@@ -187,7 +187,7 @@ func registerFileTools(s *sdkmcp.Server) {
 		return text(fmt.Sprintf("file copied: %s -> %s", source, destination))
 	})
 
-	sdkmcp.AddTool(s, &sdkmcp.Tool{
+	addTool(s, &sdkmcp.Tool{
 		Name:        "file_move",
 		Description: "Move or rename a file within the current agent's filesystem allowlist. Arguments: source, destination.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args fileCopyArgs) (*sdkmcp.CallToolResult, struct{}, error) {

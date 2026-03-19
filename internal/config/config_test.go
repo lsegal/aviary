@@ -123,14 +123,14 @@ func TestValidate(t *testing.T) {
 
 	})
 
-	t.Run("empty task target warns that output is silent", func(t *testing.T) {
+	t.Run("empty task target is valid", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{
 			Name:     "t1",
 			Schedule: "*/1 * * * * *",
 			Prompt:   "p",
 		}}}}}
 		issues := Validate(cfg, nil)
-		assert.True(t, hasIssue(issues, "completed task output will only appear in job logs"))
+		assert.False(t, hasIssue(issues, "target"))
 
 	})
 
@@ -776,6 +776,21 @@ func TestValidate_InvalidCronExpression(t *testing.T) {
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "invalid cron expression"))
 
+}
+
+func TestValidate_AcceptsStandardCronExpression(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Tasks: []TaskConfig{{
+				Name:     "t1",
+				Schedule: "*/5 * * * *",
+				Prompt:   "do it",
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "invalid cron expression"))
 }
 
 func TestSchema(t *testing.T) {

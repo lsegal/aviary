@@ -647,6 +647,53 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 
 }
 
+func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "five-field",
+		"prompt":   "send hi",
+		"schedule": "*/5 * * * *",
+	})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "Recurring task"))
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+	assert.Equal(t, "*/5 * * * *", loaded.Agents[0].Tasks[0].Schedule)
+}
+
 func TestTaskListReturnsConfiguredTasks(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -1004,12 +1051,17 @@ func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "task_schedule", map[string]any{
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"prompt":   "send hi",
 		"in":       "1h",
 		"schedule": "0 0 10 * * *",
-	}, "only one of")
+	})
+	msg := out
+	if err != nil {
+		msg = err.Error()
+	}
+	assert.True(t, strings.Contains(msg, "only one of") || strings.Contains(msg, "invalid params"))
 }
 
 func TestTaskSchedule_OneShotUsesBareNamedTaskID(t *testing.T) {
@@ -1397,6 +1449,9 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	tools, err := c.ListTools(context.Background())
 	assert.NoError(t, err)
 	assert.NotEqual(t, 0, len(tools))
+	for _, tool := range tools {
+		assert.NotNil(t, tool.InputSchema, "tool %s is missing input schema", tool.Name)
+	}
 
 	// Verify core, runtime skill, and skill-management tools are present.
 	foundPing := false
@@ -1427,6 +1482,45 @@ func TestListToolsAndCallToolText(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "pong", out)
 
+}
+
+func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	tools, err := c.ListTools(context.Background())
+	require.NoError(t, err)
+
+	var raw any
+	for _, tool := range tools {
+		if tool.Name == "task_schedule" {
+			raw = tool.InputSchema
+			break
+		}
+	}
+	require.NotNil(t, raw)
+
+	data, err := json.Marshal(raw)
+	require.NoError(t, err)
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(data, &schema))
+	assert.Equal(t, "object", schema["type"])
+	assert.Equal(t, false, schema["additionalProperties"])
+
+	props, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, props, "agent")
+	assert.Contains(t, props, "schedule")
+	assert.Contains(t, props, "in")
+	assert.Contains(t, props, "prompt")
+	assert.Contains(t, props, "script")
+	assert.Contains(t, props, "task")
+
+	allOf, ok := schema["allOf"].([]any)
+	require.True(t, ok)
+	assert.Len(t, allOf, 2)
 }
 
 func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
