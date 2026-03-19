@@ -28,7 +28,8 @@ import (
 var signalAttachmentFetcher = fetchSignalAttachmentData
 
 var (
-	urlRegex = regexp.MustCompile(`https?://[^\s<>"{}|\\^\x60\[\]]+`)
+	urlRegex               = regexp.MustCompile(`https?://[^\s<>"{}|\\^\x60\[\]]+`)
+	maxLinkPreviewHTMLSize = int64(256 * 1024)
 )
 
 // linkPreview holds metadata for a URL preview to include in outgoing Signal messages.
@@ -72,7 +73,7 @@ func fetchLinkPreviews(text string) ([]linkPreview, func()) {
 	}
 
 	p := linkPreview{URL: u}
-	z := nethtml.NewTokenizer(io.LimitReader(resp.Body, 64*1024))
+	z := nethtml.NewTokenizer(io.LimitReader(resp.Body, maxLinkPreviewHTMLSize))
 	var inTitle bool
 
 	for {

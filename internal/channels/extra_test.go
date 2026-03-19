@@ -307,6 +307,27 @@ func TestFetchLinkPreviews_FetchError(t *testing.T) {
 
 }
 
+// TestFetchLinkPreviews_LargeHead ensures metadata beyond the initial 64 KiB
+// of HTML is still parsed. Some modern sites inject large inline scripts in
+// <head> before the title and OG tags.
+func TestFetchLinkPreviews_LargeHead(t *testing.T) {
+	padding := strings.Repeat("a", 70*1024)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprintf(w, `<html><head><script>%s</script><title>Large Head Title</title><meta property="og:description" content="Large head description"></head></html>`, padding)
+	}))
+	defer srv.Close()
+
+	previews, cleanup := fetchLinkPreviews(srv.URL)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if assert.NotNil(t, previews) && assert.NotEmpty(t, previews) {
+		assert.Equal(t, "Large Head Title", previews[0].Title)
+		assert.Equal(t, "Large head description", previews[0].Description)
+	}
+}
+
 // ── sharedDaemon.launchDaemon: binary-not-found path ─────────────────────────
 
 // TestSharedDaemon_LaunchDaemonBinaryNotFound calls launchDaemon when signal-cli
