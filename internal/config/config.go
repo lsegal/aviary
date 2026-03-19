@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/lsegal/aviary/internal/testenv"
 )
 
 // Config is the top-level configuration for Aviary.
@@ -482,6 +484,9 @@ func normalize(cfg *Config) {
 func DefaultPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "aviary", "aviary.yaml")
+	}
+	if testHome := testenv.GoTestConfigHome(); testHome != "" {
+		return filepath.Join(testHome, "aviary", "aviary.yaml")
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "aviary", "aviary.yaml")

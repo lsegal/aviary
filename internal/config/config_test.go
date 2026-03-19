@@ -34,7 +34,11 @@ func TestDefaultPath(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", "")
 		got := DefaultPath()
 		assert.NotEqual(t, "", got)
-		assert.True(t, strings.HasSuffix(got, filepath.Join(".config", "aviary", "aviary.yaml")))
+		assert.True(t, strings.Contains(got, filepath.Join("aviary", "aviary.yaml")))
+		home, err := os.UserHomeDir()
+		if err == nil {
+			assert.False(t, strings.HasPrefix(got, filepath.Join(home, ".config", "aviary")))
+		}
 
 	})
 }

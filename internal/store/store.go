@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/lsegal/aviary/internal/testenv"
 )
 
 // Top-level directory name constants under DataDir().
@@ -45,6 +47,9 @@ func DataDir() string {
 	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "aviary")
+	}
+	if testHome := testenv.GoTestConfigHome(); testHome != "" {
+		return filepath.Join(testHome, "aviary")
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "aviary")

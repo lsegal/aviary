@@ -24,18 +24,16 @@ func TestDataDir_XDG(t *testing.T) {
 }
 
 // TestDataDir_Fallback verifies that when XDG_CONFIG_HOME is empty, DataDir
-// falls back to ~/.config/aviary.
+// falls back to an isolated test directory instead of ~/.config/aviary.
 func TestDataDir_Fallback(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home dir:", err)
-	}
-
 	got := DataDir()
-	want := filepath.Join(home, ".config", "aviary")
-	assert.Equal(t, want, got)
+	assert.True(t, strings.Contains(got, "aviary"))
+	home, err := os.UserHomeDir()
+	if err == nil {
+		assert.False(t, strings.HasPrefix(got, filepath.Join(home, ".config", "aviary")))
+	}
 
 }
 
