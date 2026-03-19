@@ -160,9 +160,10 @@
                   <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
                     <th class="px-5 py-2.5 font-medium">Task</th>
                     <th class="px-4 py-2.5 font-medium">Agent</th>
-                    <th class="px-4 py-2.5 font-medium">Type</th>
+                    <th class="px-4 py-2.5 font-medium">Trigger Type</th>
                     <th class="px-4 py-2.5 font-medium">Trigger</th>
-                    <th class="px-4 py-2.5 font-medium">Prompt</th>
+                    <th class="px-4 py-2.5 font-medium">Task Type</th>
+                    <th class="px-4 py-2.5 font-medium">Content</th>
                     <th class="px-4 py-2.5 text-right font-medium">Action</th>
                   </tr>
                 </thead>
@@ -179,8 +180,11 @@
                     <td class="px-4 py-2.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
                       {{ taskTrigger(task) }}
                     </td>
-                    <td class="max-w-lg truncate px-4 py-2.5 text-gray-600 dark:text-gray-400" :title="task.prompt">
-                      {{ task.prompt || "—" }}
+                    <td class="px-4 py-2.5 uppercase text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                      {{ task.type || "prompt" }}
+                    </td>
+                    <td class="max-w-lg truncate px-4 py-2.5 text-gray-600 dark:text-gray-400" :title="taskBody(task)">
+                      {{ taskBody(task) || "—" }}
                     </td>
                     <td class="px-4 py-2.5 text-right">
                       <button
@@ -235,7 +239,7 @@
                     <td class="px-4 py-2.5">
                       <code class="font-mono text-gray-600 dark:text-gray-400">{{ job.task_id }}</code>
                     </td>
-                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ job.agent_name }}</td>
+                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ job.agent_id }}</td>
                     <td class="px-4 py-2.5 text-gray-400">{{ fmtTs(job.created_at) }}</td>
                     <td class="px-4 py-2.5 font-mono text-gray-500">{{ duration(job) }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-500">{{ job.attempts }}/{{ job.max_retries }}</td>
@@ -286,7 +290,7 @@
               <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div>
                   <dt class="text-gray-400">Agent</dt>
-                  <dd class="font-medium text-gray-700 dark:text-gray-300">{{ selectedJob.agent_name }}</dd>
+                  <dd class="font-medium text-gray-700 dark:text-gray-300">{{ selectedJob.agent_id }}</dd>
                 </div>
                 <div>
                   <dt class="text-gray-400">Task</dt>
@@ -459,6 +463,10 @@ function taskTrigger(task: ScheduledTask): string {
 	if (task.start_at) parts.push(`start_at: ${task.start_at}`);
 	if (task.run_once) parts.push("run_once");
 	return parts.length ? parts.join(" | ") : "—";
+}
+
+function taskBody(task: ScheduledTask): string {
+	return task.type === "script" ? task.script || "" : task.prompt || "";
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────

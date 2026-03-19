@@ -75,7 +75,9 @@ export interface AgentEntry {
 export interface AgentTask {
 	enabled?: boolean;
 	name: string;
-	prompt: string;
+	type?: "prompt" | "script";
+	prompt?: string;
+	script?: string;
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
@@ -188,6 +190,9 @@ export const useSettingsStore = defineStore("settings", () => {
 					tasks: (agent.tasks ?? []).map((task) => ({
 						...task,
 						enabled: task.enabled !== false,
+						type: task.type === "script" ? "script" : "prompt",
+						prompt: task.prompt ?? "",
+						script: task.script ?? "",
 					})),
 				})),
 				models: {

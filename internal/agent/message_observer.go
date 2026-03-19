@@ -1,7 +1,7 @@
 package agent
 
 // SessionMessageObserver is invoked whenever a session message is persisted.
-type SessionMessageObserver func(sessionID, role string)
+type SessionMessageObserver func(agentID, sessionID, role string)
 
 var sessionMessageObserver SessionMessageObserver
 
@@ -11,9 +11,9 @@ func SetSessionMessageObserver(obs SessionMessageObserver) {
 	sessionMessageObserver = obs
 }
 
-func notifySessionMessage(sessionID, role string) {
+func notifySessionMessage(agentID, sessionID, role string) {
 	if sessionMessageObserver != nil {
-		sessionMessageObserver(sessionID, role)
+		sessionMessageObserver(agentID, sessionID, role)
 	}
 }
 

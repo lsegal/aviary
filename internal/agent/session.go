@@ -15,6 +15,29 @@ import (
 
 var idCounter atomic.Uint64
 
+// sessionRecord is the JSON shape written as the first line of a session JSONL
+// file. It intentionally omits AgentID because the agent is already encoded in
+// the file path (agents/<agentID>/sessions/<sessionID>.jsonl).
+type sessionRecord struct {
+	ID        string             `json:"id,omitempty"`
+	Name      string             `json:"name,omitempty"`
+	TaskID    string             `json:"task_id,omitempty"`
+	Type      domain.SessionType `json:"type,omitempty"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
+func toSessionRecord(s *domain.Session) sessionRecord {
+	return sessionRecord{
+		ID:        s.ID,
+		Name:      s.Name,
+		TaskID:    s.TaskID,
+		Type:      s.Type,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
+	}
+}
+
 // SessionManager creates and persists agent sessions.
 type SessionManager struct{}
 
@@ -27,18 +50,13 @@ func (m *SessionManager) Create(agentID string) (*domain.Session, error) {
 	sess := &domain.Session{
 		ID:        id,
 		AgentID:   agentID,
+		Name:      id,
 		Type:      domain.SessionTypeUser,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 	path := store.SessionPath(agentID, id)
-	// Avoid storing agent/session identifiers inside the JSONL file; filename
-	// already encodes the session name/ID. Write only the metadata fields.
-	toWrite := *sess
-	toWrite.ID = ""
-	toWrite.AgentID = ""
-	toWrite.Name = ""
-	if err := store.AppendJSONL(path, toWrite); err != nil {
+	if err := store.AppendJSONL(path, toSessionRecord(sess)); err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 	return sess, nil
@@ -56,11 +74,7 @@ func (m *SessionManager) CreateWithName(agentID, name string) (*domain.Session, 
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	toWrite := *sess
-	toWrite.ID = ""
-	toWrite.AgentID = ""
-	toWrite.Name = ""
-	if err := store.AppendJSONL(store.SessionPath(agentID, id), toWrite); err != nil {
+	if err := store.AppendJSONL(store.SessionPath(agentID, id), toSessionRecord(sess)); err != nil {
 		return nil, fmt.Errorf("creating session %q: %w", name, err)
 	}
 	return sess, nil
@@ -84,18 +98,29 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 	if name == "" {
 		name = "main"
 	}
-	id := agentID + "-" + name
+	id := name
 
 	// Try finding existing session first.
-	if p := store.FindSessionPath(id); p != "" {
+	if p := store.FindSessionPath(agentID, id); p != "" {
 		// Read as generic maps and reconstruct session metadata from the
-		// filename and any stored timestamps. Stored JSONL entries intentionally
-		// omit agent/session identifiers.
+		// stored session metadata.
 		lines, err := store.ReadJSONL[map[string]any](p)
 		var created, updated time.Time
 		var sessType domain.SessionType
+		storedID := ""
+		storedName := ""
 		if err == nil {
 			for _, m := range lines {
+				if v, ok := m["id"]; ok {
+					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+						storedID = strings.TrimSpace(s)
+					}
+				}
+				if v, ok := m["name"]; ok {
+					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+						storedName = strings.TrimSpace(s)
+					}
+				}
 				if v, ok := m["created_at"]; ok {
 					if s, ok := v.(string); ok {
 						if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
@@ -129,10 +154,16 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 		if sessType == "" {
 			sessType = inferSessionType(name)
 		}
+		if storedName == "" {
+			storedName = name
+		}
+		if storedID == "" {
+			storedID = id
+		}
 		sess := &domain.Session{
-			ID:        id,
+			ID:        storedID,
 			AgentID:   agentID,
-			Name:      name,
+			Name:      storedName,
 			Type:      sessType,
 			CreatedAt: created,
 			UpdatedAt: updated,
@@ -149,11 +180,7 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	toWrite := *sess
-	toWrite.ID = ""
-	toWrite.AgentID = ""
-	toWrite.Name = ""
-	if err := store.AppendJSONL(path, toWrite); err != nil {
+	if err := store.AppendJSONL(path, toSessionRecord(sess)); err != nil {
 		return nil, fmt.Errorf("creating session %q: %w", name, err)
 	}
 	return sess, nil
@@ -187,51 +214,49 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		}
 		path := filepath.Join(sessDir, e.Name())
 		lines, err := store.ReadJSONL[map[string]any](path)
-		if err != nil {
+		if err != nil || len(lines) == 0 {
 			continue
 		}
+		header := lines[0]
 		var created, updated time.Time
 		var sessType domain.SessionType
-		for _, m := range lines {
-			if v, ok := m["created_at"]; ok {
-				if s, ok := v.(string); ok {
-					if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-						created = t
-					}
+		if v, ok := header["created_at"]; ok {
+			if s, ok := v.(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					created = t
 				}
 			}
-			if v, ok := m["updated_at"]; ok {
-				if s, ok := v.(string); ok {
-					if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-						updated = t
-					}
+		}
+		if v, ok := header["updated_at"]; ok {
+			if s, ok := v.(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					updated = t
 				}
 			}
-			if v, ok := m["type"]; ok {
-				if s, ok := v.(string); ok {
-					sessType = domain.SessionType(s)
-				}
-			}
-			if !created.IsZero() {
-				break
+		}
+		if v, ok := header["type"]; ok {
+			if s, ok := v.(string); ok {
+				sessType = domain.SessionType(s)
 			}
 		}
 		if created.IsZero() {
 			continue
 		}
 		fname := strings.TrimSuffix(e.Name(), ".jsonl")
-		// Decode the filename to recover the original session name (reversing the
-		// percent-encoding applied by encodeSessionName in store.SessionPath).
-		name := store.DecodeSessionName(fname)
+		name := fname
+		id := fname
+		if v, ok := header["name"]; ok {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				name = strings.TrimSpace(s)
+			}
+		}
+		if v, ok := header["id"]; ok {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				id = strings.TrimSpace(s)
+			}
+		}
 		if sessType == "" {
 			sessType = inferSessionType(name)
-		}
-		// Reconstruct the full deterministic ID for named sessions (e.g. "main"
-		// → "agent_alpha-main"). Random IDs generated by newID already start with
-		// "sess_" and are globally unique, so they are used as-is.
-		id := name
-		if !strings.HasPrefix(fname, "sess_") {
-			id = agentID + "-" + name
 		}
 		s := &domain.Session{
 			ID:        id,
@@ -258,8 +283,8 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 
 // Delete removes the session file for the given session ID.
 // It returns an error if the session cannot be found or deleted.
-func (m *SessionManager) Delete(sessionID string) error {
-	p := store.FindSessionPath(sessionID)
+func (m *SessionManager) Delete(agentID, sessionID string) error {
+	p := store.FindSessionPath(agentID, sessionID)
 	if p == "" {
 		return fmt.Errorf("session %q not found", sessionID)
 	}
@@ -289,7 +314,7 @@ func AppendMessageToSessionWithSender(agentID, sessionID string, role domain.Mes
 	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
 		return err
 	}
-	notifySessionMessage(sessionID, string(role))
+	notifySessionMessage(agentID, sessionID, string(role))
 	return nil
 }
 
@@ -299,7 +324,7 @@ func AppendReplyToSession(agentID, sessionID, content string) error {
 	if err := AppendMessageToSessionWithSender(agentID, sessionID, domain.MessageRoleAssistant, content, nil); err != nil {
 		return err
 	}
-	deliverToSession(sessionID, content)
+	deliverToSession(agentID, sessionID, content)
 	return nil
 }
 
@@ -323,7 +348,7 @@ func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domai
 	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
 		return err
 	}
-	notifySessionMessage(sessionID, string(role))
+	notifySessionMessage(agentID, sessionID, string(role))
 	return nil
 }
 
@@ -347,7 +372,7 @@ func MarkMessageResponded(agentID, sessionID, promptMsgID, responseMsgID string)
 // HasMessageResponse reports whether promptMsgID already has a response_id
 // recorded in the session JSONL (last-write-wins across all records with that ID).
 func HasMessageResponse(agentID, sessionID, promptMsgID string) bool {
-	p := store.FindSessionPath(sessionID)
+	p := store.FindSessionPath(agentID, sessionID)
 	if p == "" {
 		p = store.SessionPath(agentID, sessionID)
 	}

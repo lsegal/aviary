@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 )
 
@@ -33,6 +34,7 @@ type WorkerPool struct {
 
 type activeJob struct {
 	taskID    string
+	agentID   string
 	sessionID string
 	cancel    context.CancelFunc
 }
@@ -118,14 +120,14 @@ func (p *WorkerPool) ExecuteNow(job *domain.Job) {
 
 func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	jobCtx, cancel := context.WithCancel(ctx)
-	p.registerActiveJob(job.ID, job.TaskID, cancel)
+	p.registerActiveJob(job.ID, job.TaskID, job.AgentID, cancel)
 	defer p.unregisterActiveJob(job.ID)
 
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
 	go p.heartbeatJob(jobCtx, job.ID, stopHeartbeat)
 
-	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentName)
+	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentID)
 	if err := p.executeJob(jobCtx, job); err != nil {
 		if errors.Is(err, context.Canceled) {
 			if cancelErr := p.queue.Cancel(job.ID); cancelErr != nil {
@@ -174,9 +176,9 @@ func jobSessionName(job *domain.Job) string {
 }
 
 func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
-	runner, ok := p.agents.Get(job.AgentName)
+	runner, ok := p.agents.Get(job.AgentID)
 	if !ok {
-		return fmt.Errorf("agent %q not found", job.AgentName)
+		return fmt.Errorf("agent %q not found", job.AgentID)
 	}
 
 	sessionID := job.SessionID
@@ -197,7 +199,17 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		ctx = agent.WithSessionID(ctx, sessionID)
 	}
 
-	prompt := job.Prompt
+	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
+	if taskType == "script" {
+		output, err := executeScriptJob(ctx, job, runner.Config(), p.deliver)
+		if output != "" {
+			if persistErr := p.queue.UpdateOutput(job.ID, output); persistErr != nil {
+				slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
+			}
+		}
+		return err
+	}
+
 	if job.SessionID != "" && job.Attempts > 1 {
 		prompt = "Continue the unfinished scheduled task from this existing session. Complete any remaining work for the original request:\n\n" + job.Prompt
 	}
@@ -239,7 +251,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 			}
 		}
 		if agent.ShouldDeliverReply(output) && job.OutputChannel != "" && p.deliver != nil {
-			if err := p.deliver(job.AgentName, job.OutputChannel, output); err != nil {
+			if err := p.deliver(job.AgentID, job.OutputChannel, output); err != nil {
 				slog.Warn("job: failed to deliver output to task channel", "id", job.ID, "route", job.OutputChannel, "err", err)
 			}
 		}
@@ -247,15 +259,45 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	return lastErr
 }
 
+func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, prompt, script string) {
+	taskType = strings.ToLower(strings.TrimSpace(job.TaskType))
+	prompt = job.Prompt
+	script = job.Script
+	if taskType != "" {
+		return taskType, prompt, script
+	}
+	if cfg == nil {
+		return "prompt", prompt, script
+	}
+	taskName := jobSessionName(job)
+	for _, task := range cfg.Tasks {
+		if task.Name != taskName {
+			continue
+		}
+		taskType = strings.ToLower(strings.TrimSpace(task.Type))
+		if taskType == "" {
+			taskType = "prompt"
+		}
+		if strings.TrimSpace(prompt) == "" {
+			prompt = task.Prompt
+		}
+		if strings.TrimSpace(script) == "" {
+			script = task.Script
+		}
+		return taskType, prompt, script
+	}
+	return "prompt", prompt, script
+}
+
 // SetTaskOutputDelivery configures the callback used to forward completed task output.
 func (p *WorkerPool) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
 	p.deliver = fn
 }
 
-func (p *WorkerPool) registerActiveJob(jobID, taskID string, cancel context.CancelFunc) {
+func (p *WorkerPool) registerActiveJob(jobID, taskID, agentID string, cancel context.CancelFunc) {
 	p.activeMu.Lock()
 	defer p.activeMu.Unlock()
-	p.active[jobID] = activeJob{taskID: taskID, cancel: cancel}
+	p.active[jobID] = activeJob{taskID: taskID, agentID: agentID, cancel: cancel}
 }
 
 func (p *WorkerPool) setActiveJobSession(jobID, sessionID string) {
@@ -287,7 +329,7 @@ func (p *WorkerPool) StopJobs(matcher func(jobID, taskID string) bool) int {
 			continue
 		}
 		if job.sessionID != "" {
-			agent.StopSession(job.sessionID)
+			agent.StopSession(job.agentID, job.sessionID)
 		}
 		if job.cancel != nil {
 			job.cancel()

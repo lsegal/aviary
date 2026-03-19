@@ -86,7 +86,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 			slog.Info("agent started", "name", name)
 		}
 		a := &domain.Agent{
-			ID:        fmt.Sprintf("agent_%s", name),
+			ID:        name,
 			Name:      name,
 			Model:     effectiveModel,
 			Fallbacks: effectiveFallbacks,
@@ -140,7 +140,7 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 				"agent", runner.agent.Name, "session", cp.SessionID, "age", age)
 			msg := fmt.Sprintf("I was interrupted %s ago and the recovery window (%s) has passed. Please resend your request if it is still needed.", age.Round(time.Second), timeout)
 			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, "", "")
-			deliverToSession(cp.SessionID, msg)
+			deliverToSession(runner.agent.ID, cp.SessionID, msg)
 			_ = store.DeleteJSON(path)
 			continue
 		}
@@ -166,10 +166,9 @@ func (m *Manager) Get(name string) (*AgentRunner, bool) {
 	return r, ok
 }
 
-// GetByID returns the runner for a concrete agent ID such as "agent_assistant".
+// GetByID returns the runner for a concrete agent ID.
 func (m *Manager) GetByID(agentID string) (*AgentRunner, bool) {
-	name := strings.TrimPrefix(agentID, "agent_")
-	return m.Get(name)
+	return m.Get(agentID)
 }
 
 // List returns a snapshot of all agents in config entry order.

@@ -446,7 +446,7 @@ func TestAgentToolClient_ListToolsHidesExecWithoutPermissions(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
 	SetDeps(&Deps{Agents: mgr})
 
-	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	tc, err := NewAgentToolClient(ctx)
 	assert.NoError(t, err)
 	defer tc.Close() //nolint:errcheck
@@ -473,7 +473,7 @@ func TestAgentToolClient_ListToolsHonorsPermissionsPreset(t *testing.T) {
 	}}})
 	SetDeps(&Deps{Agents: mgr})
 
-	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	tc, err := NewAgentToolClient(ctx)
 	assert.NoError(t, err)
 	defer tc.Close() //nolint:errcheck

@@ -6,7 +6,6 @@ export interface Job {
 	id: string;
 	task_id: string;
 	agent_id: string;
-	agent_name: string;
 	prompt: string;
 	status: "pending" | "in_progress" | "completed" | "failed";
 	attempts: number;
@@ -24,12 +23,14 @@ export interface ScheduledTask {
 	agent_id: string;
 	agent_name: string;
 	name: string;
+	type?: "prompt" | "script";
 	trigger_type: "cron" | "watch";
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
 	watch?: string;
-	prompt: string;
+	prompt?: string;
+	script?: string;
 	target?: string;
 }
 
@@ -41,7 +42,11 @@ function isScheduledTask(value: unknown): value is ScheduledTask {
 		typeof task.agent_id === "string" &&
 		typeof task.agent_name === "string" &&
 		typeof task.name === "string" &&
-		typeof task.prompt === "string" &&
+		(task.type === undefined ||
+			task.type === "prompt" ||
+			task.type === "script") &&
+		(task.prompt === undefined || typeof task.prompt === "string") &&
+		(task.script === undefined || typeof task.script === "string") &&
 		(task.trigger_type === "cron" || task.trigger_type === "watch")
 	);
 }
@@ -190,11 +195,11 @@ export const useJobsStore = defineStore("jobs", () => {
 			{ completed: number; failed: number; total: number }
 		>();
 		for (const j of jobs.value) {
-			const v = m.get(j.agent_name) ?? { completed: 0, failed: 0, total: 0 };
+			const v = m.get(j.agent_id) ?? { completed: 0, failed: 0, total: 0 };
 			v.total++;
 			if (j.status === "completed") v.completed++;
 			if (j.status === "failed") v.failed++;
-			m.set(j.agent_name, v);
+			m.set(j.agent_id, v);
 		}
 		return [...m.entries()]
 			.sort((a, b) => b[1].total - a[1].total)

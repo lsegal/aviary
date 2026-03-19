@@ -108,12 +108,12 @@ func New(cfg *config.Config, token string) *Server {
 		Upgrade:   s.triggerUpgrade,
 	})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
-	agent.SetSessionMessageObserver(func(sessionID, role string) {
-		wsBroadcast(wsEvent{Type: "session_message", SessionID: sessionID, Role: role})
+	agent.SetSessionMessageObserver(func(agentID, sessionID, role string) {
+		wsBroadcast(wsEvent{Type: "session_message", AgentID: agentID, SessionID: sessionID, Role: role})
 	})
-	agent.SetSessionProcessingObserver(func(sessionID string, processing bool) {
+	agent.SetSessionProcessingObserver(func(agentID, sessionID string, processing bool) {
 		v := processing
-		wsBroadcast(wsEvent{Type: "session_processing", SessionID: sessionID, IsProcessing: &v})
+		wsBroadcast(wsEvent{Type: "session_processing", AgentID: agentID, SessionID: sessionID, IsProcessing: &v})
 	})
 	agent.SetMemoryCompactionObserver(func(agentID, poolID string, started bool) {
 		v := started
@@ -299,10 +299,10 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 	msgCtx := agent.WithChannelSession(ctx, channelType, configuredID, msg.Channel)
 	msgCtx = agent.WithSessionSender(msgCtx, domain.NewMessageSender(msg.From, msg.SenderName, true))
 
-	agentID := "agent_" + agentName
+	agentID := agentName
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
 		target := store.SessionChannel{Type: msg.Type, ConfiguredID: configuredID, ID: msg.Channel}
-		sessiontarget.Register(agentName, sess.ID, target, s.channels)
+		sessiontarget.Register(agentID, agentName, sess.ID, target, s.channels)
 		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, configuredID, msg.Channel); err != nil {
 			slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
 		}
@@ -515,7 +515,7 @@ func (s *Server) loadSessionDeliveries() {
 	}
 	for _, cfg := range cfgs {
 		for _, ch := range cfg.Channels {
-			sessiontarget.Register(strings.TrimPrefix(cfg.AgentID, "agent_"), cfg.SessionID, ch, s.channels)
+			sessiontarget.Register(cfg.AgentID, cfg.AgentID, cfg.SessionID, ch, s.channels)
 		}
 	}
 	if len(cfgs) > 0 {

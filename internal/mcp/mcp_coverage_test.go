@@ -279,7 +279,7 @@ func TestJobLogsTool(t *testing.T) {
 	toolCallContains(t, d, "job_logs", map[string]any{"id": "nonexistent-job-xyz"}, "not found")
 
 	// Create a real job, then fetch its logs
-	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	// Write output to the job
@@ -318,7 +318,7 @@ func TestJobLogsNoOutput(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "job_logs", map[string]any{"id": job.ID})
@@ -351,7 +351,7 @@ func TestJobQueryWithDateRange(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	// Enqueue a job so there is something to query.
-	_, err = s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
+	_, err = s.Queue().Enqueue("bot/daily", "agent_bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -608,7 +608,7 @@ func TestSessionCreateTool(t *testing.T) {
 	// Valid create
 	out, err := d.CallTool(context.Background(), "session_create", map[string]any{"agent": "bot"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "agent_bot"))
+	assert.True(t, strings.Contains(out, "\"agent_id\": \"bot\""))
 
 }
 
@@ -790,6 +790,25 @@ func TestTaskSchedule_InvalidCronSchedule(t *testing.T) {
 	}, "invalid schedule")
 }
 
+func TestTaskSchedule_InvalidTriggerType(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	toolCallContains(t, d, "task_schedule", map[string]any{
+		"agent":        "bot",
+		"prompt":       "run this",
+		"trigger_type": "banana",
+	}, "invalid trigger_type")
+}
+
+func TestTaskSchedule_ScheduleRejectsWatchTriggerType(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	toolCallContains(t, d, "task_schedule", map[string]any{
+		"agent":        "bot",
+		"prompt":       "run this",
+		"schedule":     "0 0 10 * * *",
+		"trigger_type": "watch",
+	}, "conflicts with schedule")
+}
+
 func TestTaskSchedule_AgentNotFound(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
@@ -866,6 +885,33 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
 		assert.Equal(t, "route:slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
+	}
+}
+
+func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+
+	cfg, err := config.Load("")
+	assert.NoError(t, err)
+	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "signal", ID: "+15550001111"}}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+	s.Reconcile(cfg)
+
+	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":        "bot",
+		"name":         "daily-report",
+		"prompt":       "write report",
+		"schedule":     "0 0 10 * * *",
+		"target":       "route:signal:+15550001111:+15552223333",
+		"trigger_type": "cron",
+	})
+	assert.NoError(t, err)
+
+	updated, err := config.Load("")
+	assert.NoError(t, err)
+	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
+		assert.Equal(t, "route:signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)
 	}
 }
 
@@ -959,7 +1005,7 @@ func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 
 	rec := domain.UsageRecord{
 		Timestamp:    time.Now().Add(-1 * time.Hour),
-		AgentName:    "rfc-bot",
+		AgentID:      "agent_rfc_bot",
 		Model:        "claude-3",
 		Provider:     "anthropic",
 		InputTokens:  10,

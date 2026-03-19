@@ -35,12 +35,12 @@ func TestSessionStop_ViaContextSessionID(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr})
 
 	// Create a session and inject its ID into context
-	agentID := "agent_bot"
+	agentID := "bot"
 	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
 	assert.NoError(t, err)
 
 	// Inject the session ID into the context (exercises the ctx path in session_stop)
-	ctx := agent.WithSessionID(context.Background(), sess.ID)
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), agentID)
 
 	// Use the Dispatcher's CallTool which passes the context through properly
 	d := NewDispatcher("https://localhost:16677", "")
@@ -76,7 +76,7 @@ func TestJobQuery_DateFilterExclusion(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	// Enqueue a job
-	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/daily", "bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -230,7 +230,7 @@ func TestJobQuery_MatchingJobs(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	// Enqueue a job
-	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/daily", "bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -277,7 +277,7 @@ func TestTaskStop_ByJobID(t *testing.T) {
 	t.Cleanup(s.Stop)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
-	job, err := s.Queue().Enqueue("bot/task", "agent_bot", "bot", "run", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/task", "bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -315,10 +315,10 @@ func TestTaskStop_AllJobs(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
 	// Enqueue two jobs
-	_, err = s.Queue().Enqueue("bot/task1", "agent_bot", "bot", "run 1", "", 1, "", "")
+	_, err = s.Queue().Enqueue("bot/task1", "bot", "run 1", "", 1, "", "")
 	assert.NoError(t, err)
 
-	_, err = s.Queue().Enqueue("bot/task2", "agent_bot", "bot", "run 2", "", 1, "", "")
+	_, err = s.Queue().Enqueue("bot/task2", "bot", "run 2", "", 1, "", "")
 	assert.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -403,12 +403,12 @@ func TestSessionMessages_WithData(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 
 	// Create a session and list its messages
-	agentID := "agent_bot"
+	agentID := "bot"
 	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
 	assert.NoError(t, err)
 
 	// Messages should be empty initially
-	out, err := d.CallTool(context.Background(), "session_messages", map[string]any{"session_id": sess.ID})
+	out, err := d.CallTool(context.Background(), "session_messages", map[string]any{"agent": "bot", "session_id": sess.ID})
 	assert.NoError(t, err)
 	assert.False(t, // Should be a valid JSON array
 		strings.TrimSpace(out) != "[]" && strings.TrimSpace(out) != "null")
@@ -432,14 +432,13 @@ func TestSessionHistory_ReversePaging(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr})
 
 	d := NewDispatcher("https://localhost:16677", "")
-	agentID := "agent_bot"
+	agentID := "bot"
 	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
 	assert.NoError(t, err)
 
 	appendMessage := func(id string, role domain.MessageRole, content string, sender *domain.MessageSender) {
 		err = store.AppendJSONL(store.SessionPath(agentID, sess.ID), domain.Message{
 			ID:        id,
-			SessionID: sess.ID,
 			Role:      role,
 			Sender:    sender,
 			Content:   content,
@@ -453,6 +452,7 @@ func TestSessionHistory_ReversePaging(t *testing.T) {
 	appendMessage("m3", domain.MessageRoleUser, "third", domain.NewMessageSender("u2", "Bob", false))
 
 	raw, err := d.CallTool(context.Background(), "session_history", map[string]any{
+		"agent":      "bot",
 		"session_id": sess.ID,
 		"order":      "desc",
 		"limit":      2,

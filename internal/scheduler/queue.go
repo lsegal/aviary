@@ -35,16 +35,17 @@ type JobQueue struct {
 // NewJobQueue creates a JobQueue.
 func NewJobQueue() *JobQueue { return &JobQueue{} }
 
-func (q *JobQueue) newJob(taskID, agentID, agentName, prompt, outputChannel string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
+func (q *JobQueue) newJob(taskID, taskType, agentID, prompt, script, outputChannel string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
 	if maxRetries <= 0 {
 		maxRetries = defaultRetries
 	}
 	job := &domain.Job{
 		ID:             newID("job"),
 		TaskID:         taskID,
+		TaskType:       taskType,
 		AgentID:        agentID,
-		AgentName:      agentName,
 		Prompt:         prompt,
+		Script:         script,
 		OutputChannel:  outputChannel,
 		Status:         status,
 		MaxRetries:     maxRetries,
@@ -65,11 +66,16 @@ func (q *JobQueue) newJob(taskID, agentID, agentName, prompt, outputChannel stri
 // Enqueue writes a new pending job to disk.
 // replyAgentID and replySessionID, if set, identify the session that should
 // receive the job's output when it completes (the "call-back" channel).
-func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt, outputChannel string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) Enqueue(taskID, agentID, prompt, outputChannel string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
+	return q.EnqueueWithType(taskID, "prompt", agentID, prompt, "", outputChannel, maxRetries, replyAgentID, replySessionID)
+}
+
+// EnqueueWithType writes a new pending job with explicit task type and optional script payload.
+func (q *JobQueue) EnqueueWithType(taskID, taskType, agentID, prompt, script, outputChannel string, maxRetries int, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusPending, maxRetries, nil, replyAgentID, replySessionID)
+	job := q.newJob(taskID, taskType, agentID, prompt, script, outputChannel, domain.JobStatusPending, maxRetries, nil, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}
@@ -79,11 +85,16 @@ func (q *JobQueue) Enqueue(taskID, agentID, agentName, prompt, outputChannel str
 
 // StartImmediate writes a job that is already marked in_progress so it can be
 // executed outside the normal queue claim loop.
-func (q *JobQueue) StartImmediate(taskID, agentID, agentName, prompt, outputChannel string, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) StartImmediate(taskID, agentID, prompt, outputChannel string, replyAgentID, replySessionID string) (*domain.Job, error) {
+	return q.StartImmediateWithType(taskID, "prompt", agentID, prompt, "", outputChannel, replyAgentID, replySessionID)
+}
+
+// StartImmediateWithType writes an in-progress job with explicit task type and optional script payload.
+func (q *JobQueue) StartImmediateWithType(taskID, taskType, agentID, prompt, script, outputChannel string, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusInProgress, 1, nil, replyAgentID, replySessionID)
+	job := q.newJob(taskID, taskType, agentID, prompt, script, outputChannel, domain.JobStatusInProgress, 1, nil, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("start immediate job: %w", err)
 	}
@@ -229,11 +240,16 @@ func (q *JobQueue) Fail(id string, cause error) error {
 
 // EnqueueAt writes a new pending job that will not be claimed until at.
 // replyAgentID and replySessionID, if set, identify the session to reply to on completion.
-func (q *JobQueue) EnqueueAt(taskID, agentID, agentName, prompt, outputChannel string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
+func (q *JobQueue) EnqueueAt(taskID, agentID, prompt, outputChannel string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
+	return q.EnqueueAtWithType(taskID, "prompt", agentID, prompt, "", outputChannel, maxRetries, at, replyAgentID, replySessionID)
+}
+
+// EnqueueAtWithType writes a delayed pending job with explicit task type and optional script payload.
+func (q *JobQueue) EnqueueAtWithType(taskID, taskType, agentID, prompt, script, outputChannel string, maxRetries int, at time.Time, replyAgentID, replySessionID string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	job := q.newJob(taskID, agentID, agentName, prompt, outputChannel, domain.JobStatusPending, maxRetries, &at, replyAgentID, replySessionID)
+	job := q.newJob(taskID, taskType, agentID, prompt, script, outputChannel, domain.JobStatusPending, maxRetries, &at, replyAgentID, replySessionID)
 	if err := store.WriteJSON(store.JobPath(agentID, job.ID), job); err != nil {
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}

@@ -48,10 +48,12 @@ const (
 	chFieldModel
 	chFieldFallbacks
 	taskFieldName
+	taskFieldType
 	taskFieldSchedule
 	taskFieldStartAt
 	taskFieldWatch
 	taskFieldPrompt
+	taskFieldScript
 	taskFieldTarget
 )
 
@@ -291,7 +293,7 @@ func (m agentMgrModel) parentModeForTextTarget() agentMgrMode {
 	switch m.textTarget {
 	case chFieldType, chFieldToken, chFieldID, chFieldURL, chFieldAllowFrom, chFieldModel, chFieldFallbacks:
 		return agentModeChannelEdit
-	case taskFieldName, taskFieldSchedule, taskFieldStartAt, taskFieldWatch, taskFieldPrompt, taskFieldTarget:
+	case taskFieldName, taskFieldType, taskFieldSchedule, taskFieldStartAt, taskFieldWatch, taskFieldPrompt, taskFieldScript, taskFieldTarget:
 		return agentModeTaskEdit
 	default:
 		return agentModeEditMenu
@@ -385,6 +387,12 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.channel.Fallbacks = splitCSV(value)
 	case taskFieldName:
 		m.task.Name = value
+	case taskFieldType:
+		if value == "script" {
+			m.task.Type = "script"
+		} else {
+			m.task.Type = "prompt"
+		}
 	case taskFieldSchedule:
 		m.task.Schedule = value
 	case taskFieldStartAt:
@@ -393,6 +401,8 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.task.Watch = value
 	case taskFieldPrompt:
 		m.task.Prompt = value
+	case taskFieldScript:
+		m.task.Script = value
 	case taskFieldTarget:
 		m.task.Target = value
 	}
@@ -542,7 +552,7 @@ func (m agentMgrModel) updateTasks(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.taskIdx++
 		}
 	case "n":
-		m.task = config.TaskConfig{}
+		m.task = config.TaskConfig{Type: "prompt"}
 		m.fieldCursor = 0
 		m.taskIdx = len(m.draft.Tasks)
 		m.mode = agentModeTaskEdit
@@ -590,18 +600,23 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 	case 0:
 		return m.openTextEditor(taskFieldName, m.task.Name, "daily-report")
 	case 1:
-		return m.openTextEditor(taskFieldSchedule, m.task.Schedule, "0 9 * * *")
+		return m.openTextEditor(taskFieldType, taskTypeValue(m.task), "prompt or script")
 	case 2:
-		return m.openTextEditor(taskFieldStartAt, m.task.StartAt, "RFC3339")
+		return m.openTextEditor(taskFieldSchedule, m.task.Schedule, "0 9 * * *")
 	case 3:
-		m.task.RunOnce = !m.task.RunOnce
+		return m.openTextEditor(taskFieldStartAt, m.task.StartAt, "RFC3339")
 	case 4:
-		return m.openTextEditor(taskFieldWatch, m.task.Watch, "*.md")
+		m.task.RunOnce = !m.task.RunOnce
 	case 5:
-		return m.openTextEditor(taskFieldPrompt, m.task.Prompt, "task prompt")
+		return m.openTextEditor(taskFieldWatch, m.task.Watch, "*.md")
 	case 6:
-		return m.openTextEditor(taskFieldTarget, m.task.Target, "route:signal:+15551234567:+15557654321")
+		if taskTypeValue(m.task) == "script" {
+			return m.openTextEditor(taskFieldScript, m.task.Script, "#!/usr/bin/env python3")
+		}
+		return m.openTextEditor(taskFieldPrompt, m.task.Prompt, "task prompt")
 	case 7:
+		return m.openTextEditor(taskFieldTarget, m.task.Target, "route:signal:+15551234567:+15557654321")
+	case 8:
 		if m.taskIdx >= 0 && m.taskIdx < len(m.draft.Tasks) {
 			m.draft.Tasks[m.taskIdx] = m.task
 		} else {
@@ -609,7 +624,7 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 			m.taskIdx = len(m.draft.Tasks) - 1
 		}
 		m.mode = agentModeTasks
-	case 8:
+	case 9:
 		m.mode = agentModeTasks
 	}
 	return m, nil
@@ -762,7 +777,7 @@ func (m agentMgrModel) viewTasks() string {
 	} else {
 		for i, task := range m.draft.Tasks {
 			label := fmtPadRight(task.Name, 18)
-			desc := firstNonEmpty(task.Schedule, task.Watch, task.Prompt, "(empty)")
+			desc := firstNonEmpty(task.Schedule, task.Watch, taskContentValue(task), "(empty)")
 			if i == m.taskIdx {
 				label = tuiSelectedStyle.Render(label)
 				desc = tuiSelectedStyle.Render(desc)
@@ -777,11 +792,12 @@ func (m agentMgrModel) viewTasks() string {
 func (m agentMgrModel) viewTaskEditor() string {
 	values := []string{
 		m.task.Name,
+		taskTypeValue(m.task),
 		m.task.Schedule,
 		m.task.StartAt,
 		boolLabel(m.task.RunOnce),
 		m.task.Watch,
-		m.task.Prompt,
+		taskContentValue(m.task),
 		m.task.Target,
 		"save",
 		"back",
@@ -894,7 +910,25 @@ func (m agentMgrModel) channelFieldLabels() []string {
 }
 
 func (m agentMgrModel) taskFieldLabels() []string {
-	return []string{"Name", "Schedule", "Start at", "Run once", "Watch", "Prompt", "Target", "Save", "Back"}
+	contentLabel := "Prompt"
+	if taskTypeValue(m.task) == "script" {
+		contentLabel = "Script"
+	}
+	return []string{"Name", "Type", "Schedule", "Start at", "Run once", "Watch", contentLabel, "Target", "Save", "Back"}
+}
+
+func taskTypeValue(task config.TaskConfig) string {
+	if strings.TrimSpace(task.Type) == "script" {
+		return "script"
+	}
+	return "prompt"
+}
+
+func taskContentValue(task config.TaskConfig) string {
+	if taskTypeValue(task) == "script" {
+		return task.Script
+	}
+	return task.Prompt
 }
 
 func splitCSV(value string) []string {

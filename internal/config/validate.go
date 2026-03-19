@@ -161,6 +161,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				v.warnf(tf, "neither 'schedule' nor 'watch' is set; task will never be triggered")
 			}
 
+			taskType := strings.ToLower(strings.TrimSpace(t.Type))
+			if taskType == "" {
+				taskType = "prompt"
+			}
+			switch taskType {
+			case "prompt", "script":
+			default:
+				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\" or \"script\"", t.Type)
+			}
+
 			if t.StartAt != "" {
 				if _, err := time.Parse(time.RFC3339, t.StartAt); err != nil {
 					v.errorf(tf+".start_at", "invalid RFC3339 timestamp %q: %v", t.StartAt, err)
@@ -186,8 +196,21 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			if t.Prompt == "" {
-				v.warnf(tf+".prompt", "prompt is empty; a blank message will be sent to the agent")
+			switch taskType {
+			case "prompt":
+				if strings.TrimSpace(t.Prompt) == "" {
+					v.warnf(tf+".prompt", "prompt is empty; a blank message will be sent to the agent")
+				}
+				if strings.TrimSpace(t.Script) != "" {
+					v.warnf(tf+".script", "script is set on a prompt task and will be ignored")
+				}
+			case "script":
+				if strings.TrimSpace(t.Script) == "" {
+					v.errorf(tf+".script", "script tasks require non-empty script content")
+				}
+				if strings.TrimSpace(t.Prompt) != "" {
+					v.warnf(tf+".prompt", "prompt is set on a script task and is only used as a human-readable description")
+				}
 			}
 
 			switch {

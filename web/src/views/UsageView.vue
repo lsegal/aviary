@@ -207,7 +207,7 @@
                     <code class="font-mono text-gray-600 dark:text-gray-400">...{{ s.session_id.slice(-12) }}</code>
                   </span>
                 </td>
-                <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_name }}</td>
+                <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
                 <td class="px-4 py-2.5">
                   <span class="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-gray-800 dark:text-gray-400">{{ s.model }}</span>
                 </td>

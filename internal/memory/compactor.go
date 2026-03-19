@@ -38,9 +38,8 @@ func (m *Manager) Compact(ctx context.Context, poolID string, provider llm.Provi
 	}
 
 	summary := domain.MemoryEntry{
-		ID:        newID("summary"),
-		PoolID:    poolID,
-		Role:      "summary",
+		ID:      newID("summary"),
+		Role:    "summary",
 		Content:   summaryText,
 		Tokens:    estimateTokens(summaryText),
 		Timestamp: time.Now(),

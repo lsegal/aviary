@@ -22,7 +22,7 @@ const JOBS = [
 	{
 		id: "j1",
 		task_id: "nightly",
-		agent_name: "assistant",
+		agent_id: "assistant",
 		status: "completed",
 		attempts: 1,
 		created_at: "",
@@ -31,7 +31,7 @@ const JOBS = [
 	{
 		id: "j2",
 		task_id: "build",
-		agent_name: "coder",
+		agent_id: "coder",
 		status: "in_progress",
 		attempts: 1,
 		created_at: "",

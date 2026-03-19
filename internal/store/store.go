@@ -68,15 +68,13 @@ func SubDir(name string) string {
 	return filepath.Join(DataDir(), name)
 }
 
-// agentDirName converts an agent ID ("agent_foo" or plain "foo") into the
-// directory component used under agents/.
+// agentDirName converts an agent ID into the directory component used under
+// agents/.
 func agentDirName(agentID string) string {
-	name := strings.TrimPrefix(agentID, "agent_")
-	return sanitizeFileComponent(name)
+	return sanitizeFileComponent(agentID)
 }
 
 // AgentDir returns the per-agent directory path: <datadir>/agents/<name>/.
-// agentID may be a full ID like "agent_assistant" or just the name "assistant".
 func AgentDir(agentID string) string {
 	return filepath.Join(DataDir(), DirAgents, agentDirName(agentID))
 }
@@ -416,74 +414,18 @@ func SessionMetaPath(agentID, sessionID string) string {
 // SessionPath returns the path for the given session file under the agent's
 // sessions directory: <datadir>/agents/<agentID>/sessions/<sessionID>.jsonl.
 func SessionPath(agentID, sessionID string) string {
-	name := sessionID
-	// Strip agent prefix if it exists in the session ID to avoid redundant filenames.
-	// e.g. agentID="agent_assistant", sessionID="agent_assistant-main" -> "main.jsonl"
-	agentName := strings.TrimPrefix(agentID, "agent_")
-	prefixes := []string{"agent_" + agentName + "-", agentName + "-"}
-	for _, p := range prefixes {
-		if strings.HasPrefix(name, p) {
-			name = strings.TrimPrefix(name, p)
-			break
-		}
-	}
-	return filepath.Join(AgentDir(agentID), "sessions", encodeSessionName(name)+".jsonl")
+	return filepath.Join(AgentDir(agentID), "sessions", sanitizeFileComponent(sessionID)+".jsonl")
 }
 
-// FindSessionPath scans all known agent directories and returns the full path
-// for the first session file matching sessionID.  Returns "" when not found.
-// FindSessionPath locates the .jsonl file for sessionID by scanning agent
-// directories. An optional agentNameHint causes that agent's directory to be
-// tried first (case-insensitive), which avoids returning the wrong file when
-// multiple agents share the same session name (e.g. "main").
-func FindSessionPath(sessionID string, agentNameHint ...string) string {
-	agentsDir := filepath.Join(DataDir(), DirAgents)
-	entries, err := os.ReadDir(agentsDir)
-	if err != nil {
+// FindSessionPath locates the .jsonl file for sessionID under the given agent.
+// Returns "" when not found.
+func FindSessionPath(agentID, sessionID string) string {
+	if strings.TrimSpace(agentID) == "" || strings.TrimSpace(sessionID) == "" {
 		return ""
 	}
-
-	tryAgent := func(agentName string) string {
-		prefixes := []string{"agent_" + agentName + "-", agentName + "-"}
-		for _, p := range prefixes {
-			if strings.HasPrefix(sessionID, p) {
-				stripped := strings.TrimPrefix(sessionID, p)
-				p2 := filepath.Join(agentsDir, agentName, "sessions", encodeSessionName(stripped)+".jsonl")
-				if _, err := os.Stat(p2); err == nil {
-					return p2
-				}
-			}
-		}
-		p := filepath.Join(agentsDir, agentName, "sessions", encodeSessionName(sessionID)+".jsonl")
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-		return ""
-	}
-
-	// When a hint is provided, try that agent first.
-	if len(agentNameHint) > 0 && agentNameHint[0] != "" {
-		hint := agentNameHint[0]
-		for _, e := range entries {
-			if e.IsDir() && strings.EqualFold(e.Name(), hint) {
-				if p := tryAgent(e.Name()); p != "" {
-					return p
-				}
-				break
-			}
-		}
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if len(agentNameHint) > 0 && strings.EqualFold(e.Name(), agentNameHint[0]) {
-			continue // already tried above
-		}
-		if p := tryAgent(e.Name()); p != "" {
-			return p
-		}
+	p := SessionPath(agentID, sessionID)
+	if _, err := os.Stat(p); err == nil {
+		return p
 	}
 	return ""
 }
@@ -568,72 +510,4 @@ func sanitizeFileComponent(s string) string {
 		return "default"
 	}
 	return out
-}
-
-// encodeSessionName encodes a session name for use as a filename component.
-// Unlike sanitizeFileComponent, this encoding is reversible: use
-// decodeSessionName to recover the original name.
-func encodeSessionName(name string) string {
-	if name == "" {
-		return "default"
-	}
-	var b strings.Builder
-	for _, c := range name {
-		switch c {
-		case '%':
-			b.WriteString("%25")
-		case '<':
-			b.WriteString("%3C")
-		case '>':
-			b.WriteString("%3E")
-		case ':':
-			b.WriteString("%3A")
-		case '"':
-			b.WriteString("%22")
-		case '/':
-			b.WriteString("%2F")
-		case '\\':
-			b.WriteString("%5C")
-		case '|':
-			b.WriteString("%7C")
-		case '?':
-			b.WriteString("%3F")
-		case '*':
-			b.WriteString("%2A")
-		default:
-			b.WriteRune(c)
-		}
-	}
-	return b.String()
-}
-
-// DecodeSessionName reverses encodeSessionName to recover the original session name.
-func DecodeSessionName(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == '%' && i+2 < len(s) {
-			hi := unhex(s[i+1])
-			lo := unhex(s[i+2])
-			if hi >= 0 && lo >= 0 {
-				b.WriteByte(byte(hi<<4 | lo))
-				i += 3
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
-}
-
-func unhex(c byte) int {
-	switch {
-	case c >= '0' && c <= '9':
-		return int(c - '0')
-	case c >= 'A' && c <= 'F':
-		return int(c-'A') + 10
-	case c >= 'a' && c <= 'f':
-		return int(c-'a') + 10
-	}
-	return -1
 }

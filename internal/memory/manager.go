@@ -28,7 +28,6 @@ func (m *Manager) Append(poolID, sessionID, role, content string) error {
 
 	entry := domain.MemoryEntry{
 		ID:        newID("mem"),
-		PoolID:    poolID,
 		SessionID: sessionID,
 		Role:      role,
 		Content:   content,

@@ -125,7 +125,7 @@ func (r *AgentRunner) promptCore(
 		sessionID := r.resolveSessionID(promptCtx)
 		promptCtx = WithSessionID(promptCtx, sessionID)
 		promptCtx = WithSessionAgentID(promptCtx, r.agent.ID)
-		untrack := trackSessionRun(sessionID, cancel)
+		untrack := trackSessionRun(r.agent.ID, sessionID, cancel)
 		defer untrack()
 
 		// Effective model for this run.
@@ -189,7 +189,7 @@ func (r *AgentRunner) promptCore(
 		// Usage tracking: accumulate across all rounds; written on exit.
 		usageRec := &domain.UsageRecord{
 			SessionID: sessionID,
-			AgentName: r.agent.Name,
+			AgentID:   r.agent.ID,
 			Model:     effectiveModel,
 			Provider:  extractProvider(effectiveModel),
 		}
@@ -285,7 +285,7 @@ func (r *AgentRunner) promptCore(
 			msg := fmt.Sprintf("Error: %v", err)
 			// Do NOT persist API errors as assistant messages — they would be
 			// re-sent in subsequent requests and perpetuate the failure loop.
-			deliverToSession(sessionID, msg)
+			deliverToSession(r.agent.ID, sessionID, msg)
 		}
 
 		if currentProvider == nil {
@@ -298,7 +298,7 @@ func (r *AgentRunner) promptCore(
 			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", effectiveModel)
 			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "", effectiveModel)
 			emit(StreamEvent{Type: StreamEventText, Text: msg})
-			deliverToSession(sessionID, msg)
+			deliverToSession(r.agent.ID, sessionID, msg)
 			emit(StreamEvent{Type: StreamEventDone})
 			return
 		}
@@ -618,7 +618,7 @@ func (r *AgentRunner) promptCore(
 						slog.Warn("agent: failed to save session meta", "session", sessionID, "err", err)
 					}
 				}
-				deliverToSession(sessionID, answer)
+				deliverToSession(r.agent.ID, sessionID, answer)
 				emit(StreamEvent{Type: StreamEventDone})
 				return
 			}
@@ -646,7 +646,7 @@ func (r *AgentRunner) promptCore(
 		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "", effectiveModel)
 		r.appendMemoryMessage(sessionID, domain.MessageRoleAssistant, errMsg)
 		usageRec.HasError = true
-		deliverToSession(sessionID, errMsg)
+		deliverToSession(r.agent.ID, sessionID, errMsg)
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
 	}()
 }
@@ -709,11 +709,11 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 		if err == nil && sess != nil && sess.ID != "" {
 			return sess.ID
 		}
-		return r.agent.ID + "-" + name
+		return name
 	}
 	sess, err := NewSessionManager().GetOrCreateNamed(r.agent.ID, "main")
 	if err != nil || sess == nil || sess.ID == "" {
-		return r.agent.ID + "-main"
+		return "main"
 	}
 	return sess.ID
 }
@@ -731,7 +731,6 @@ func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role doma
 	}
 	msg := domain.Message{
 		ID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
-		SessionID: sessionID,
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
@@ -745,7 +744,7 @@ func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role doma
 		slog.Warn("agent: failed to persist session message", "agent", r.agent.Name, "session", sessionID, "err", err)
 		return ""
 	}
-	notifySessionMessage(sessionID, string(role))
+	notifySessionMessage(r.agent.ID, sessionID, string(role))
 	return msg.ID
 }
 

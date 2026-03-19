@@ -831,6 +831,13 @@
 										<input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" />
 									</div>
 									<div>
+										<label class="field-label">Task type</label>
+										<select v-model="task.type" class="field-input">
+											<option value="prompt">Prompt</option>
+											<option value="script">Script</option>
+										</select>
+									</div>
+									<div>
 										<label class="field-label">Schedule</label>
 										<input v-model="task.schedule" type="text" class="field-input" placeholder="0 * * * * *" />
 									</div>
@@ -857,8 +864,10 @@
 
 								<div>
 									<div>
-										<label class="field-label">Prompt</label>
-										<textarea v-model="task.prompt" rows="3" class="field-input"
+										<label class="field-label">{{ task.type === "script" ? "Script" : "Prompt" }}</label>
+										<textarea v-if="task.type === 'script'" v-model="task.script" rows="8" class="field-input font-mono text-xs"
+											placeholder="#!/usr/bin/env python3&#10;print('hello')"></textarea>
+										<textarea v-else v-model="task.prompt" rows="3" class="field-input"
 											placeholder="Task prompt..."></textarea>
 										<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
 											<input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
@@ -2474,7 +2483,9 @@ function addTask(agentIndex: number) {
 	const task: AgentTask = {
 		enabled: true,
 		name: "",
+		type: "prompt",
 		prompt: "",
+		script: "",
 		schedule: "",
 		watch: "",
 		target: "",
@@ -3024,7 +3035,9 @@ function normalizedDraftConfig(): AppConfig {
 			...task,
 			enabled: task.enabled === false ? false : undefined,
 			name: (task.name ?? "").trim(),
+			type: task.type === "script" ? "script" : "prompt",
 			prompt: task.prompt ?? "",
+			script: task.script ?? "",
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
 			start_at: (task.start_at ?? "").trim(),
@@ -3204,7 +3217,10 @@ async function createSession() {
 
 async function stopSession(sessionID: string) {
 	try {
-		await callTool("session_stop", { session_id: sessionID });
+		await callTool("session_stop", {
+			agent: sessionAgent.value,
+			session_id: sessionID,
+		});
 		await loadSessions();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
@@ -3217,7 +3233,10 @@ async function confirmRemoveSession() {
 	removeTargetOpen.value = false;
 	if (!sess) return;
 	try {
-		await callTool("session_remove", { session_id: sess.id });
+		await callTool("session_remove", {
+			agent: sessionAgent.value,
+			session_id: sess.id,
+		});
 		await loadSessions();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);

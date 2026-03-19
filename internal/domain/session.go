@@ -63,7 +63,6 @@ func NewMessageSender(id, name string, participant bool) *MessageSender {
 // Message represents a single message in a session.
 type Message struct {
 	ID         string         `json:"id"`
-	SessionID  string         `json:"session_id,omitempty"`
 	Role       MessageRole    `json:"role"`
 	Sender     *MessageSender `json:"sender,omitempty"`
 	Content    string         `json:"content"`

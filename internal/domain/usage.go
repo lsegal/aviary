@@ -7,7 +7,7 @@ import "time"
 type UsageRecord struct {
 	Timestamp        time.Time `json:"timestamp"`
 	SessionID        string    `json:"session_id"`
-	AgentName        string    `json:"agent_name"`
+	AgentID          string    `json:"agent_id"`
 	Model            string    `json:"model"`
 	Provider         string    `json:"provider"`
 	InputTokens      int       `json:"input_tokens"`

@@ -618,10 +618,12 @@ function connectSessionWS() {
 		try {
 			const data = JSON.parse(e.data as string) as {
 				type?: string;
+				agent_id?: string;
 				session_id?: string;
 				is_processing?: boolean;
 			};
 			if (data.type === "session_processing" && data.session_id) {
+				if (data.agent_id !== `agent_${selectedAgent.value}`) return;
 				sessionProcessing.value = {
 					...sessionProcessing.value,
 					[data.session_id]: data.is_processing === true,
@@ -640,6 +642,7 @@ function connectSessionWS() {
 			}
 			if (data.type !== "session_message") return;
 			if (!selectedSessionId.value) return;
+			if (data.agent_id !== `agent_${selectedAgent.value}`) return;
 			if (data.session_id !== selectedSessionId.value) return;
 			// Skip WS-triggered reloads while streaming — ongoing chunks would be
 			// lost if messages.value is replaced mid-stream.
@@ -1005,7 +1008,10 @@ async function stopSession() {
 	if (!selectedSessionId.value) return;
 	const sessionID = selectedSessionId.value;
 	try {
-		await callTool("session_stop", { session_id: sessionID });
+		await callTool("session_stop", {
+			agent: selectedAgent.value,
+			session_id: sessionID,
+		});
 		sessionProcessing.value = {
 			...sessionProcessing.value,
 			[sessionID]: false,

@@ -5,14 +5,14 @@ import (
 	"sync"
 )
 
-// deliveryRegistry maps sessionID → (channelKey → send fn) for per-session
+// deliveryRegistry maps agent-scoped session runtime keys → (channelKey → send fn) for per-session
 // outbound channel delivery. It is keyed by both session ID and channel
 // identity so that repeated messages from the same channel update the fn
 // in place rather than accumulating duplicates.
 var deliveryRegistry = struct {
 	mu   sync.RWMutex
-	fns  map[string]map[string]func(string)               // sessionID → (chType:chID → text fn)
-	mfns map[string]map[string]func(caption, path string) // sessionID → (chType:chID → media fn)
+	fns  map[string]map[string]func(string)               // sessionRuntimeKey → (chType:chID → text fn)
+	mfns map[string]map[string]func(caption, path string) // sessionRuntimeKey → (chType:chID → media fn)
 }{
 	fns:  make(map[string]map[string]func(string)),
 	mfns: make(map[string]map[string]func(string, string)),
@@ -21,34 +21,36 @@ var deliveryRegistry = struct {
 // RegisterSessionDelivery registers fn as the delivery function for
 // channelType/channelID on the given session. A second call with the same
 // session+channel overwrites the previous entry (idempotent).
-func RegisterSessionDelivery(sessionID, channelType, channelID string, fn func(string)) {
+func RegisterSessionDelivery(agentID, sessionID, channelType, channelID string, fn func(string)) {
 	key := channelType + ":" + channelID
+	sessionKey := SessionRuntimeKey(agentID, sessionID)
 	deliveryRegistry.mu.Lock()
 	defer deliveryRegistry.mu.Unlock()
-	if deliveryRegistry.fns[sessionID] == nil {
-		deliveryRegistry.fns[sessionID] = make(map[string]func(string))
+	if deliveryRegistry.fns[sessionKey] == nil {
+		deliveryRegistry.fns[sessionKey] = make(map[string]func(string))
 	}
-	deliveryRegistry.fns[sessionID][key] = fn
+	deliveryRegistry.fns[sessionKey][key] = fn
 }
 
 // RegisterSessionMediaDelivery registers a media delivery function for
 // channelType/channelID on the given session. fn receives (caption, filePath).
-func RegisterSessionMediaDelivery(sessionID, channelType, channelID string, fn func(caption, path string)) {
+func RegisterSessionMediaDelivery(agentID, sessionID, channelType, channelID string, fn func(caption, path string)) {
 	key := channelType + ":" + channelID
+	sessionKey := SessionRuntimeKey(agentID, sessionID)
 	deliveryRegistry.mu.Lock()
 	defer deliveryRegistry.mu.Unlock()
-	if deliveryRegistry.mfns[sessionID] == nil {
-		deliveryRegistry.mfns[sessionID] = make(map[string]func(string, string))
+	if deliveryRegistry.mfns[sessionKey] == nil {
+		deliveryRegistry.mfns[sessionKey] = make(map[string]func(string, string))
 	}
-	deliveryRegistry.mfns[sessionID][key] = fn
+	deliveryRegistry.mfns[sessionKey][key] = fn
 }
 
 // HasSessionMediaDelivery reports whether the session has any registered media
 // delivery functions.
-func HasSessionMediaDelivery(sessionID string) bool {
+func HasSessionMediaDelivery(agentID, sessionID string) bool {
 	deliveryRegistry.mu.RLock()
 	defer deliveryRegistry.mu.RUnlock()
-	return len(deliveryRegistry.mfns[sessionID]) > 0
+	return len(deliveryRegistry.mfns[SessionRuntimeKey(agentID, sessionID)]) > 0
 }
 
 // ShouldDeliverReply reports whether text should be forwarded to any external
@@ -63,12 +65,12 @@ func ShouldDeliverReply(text string) bool {
 // forwarding text to each associated channel. It is called by the runner
 // before emitting StreamEventDone so every code path (web UI, MCP, scheduled
 // tasks) routes completed responses back to any configured channels.
-func deliverToSession(sessionID, text string) {
+func deliverToSession(agentID, sessionID, text string) {
 	if !ShouldDeliverReply(text) {
 		return
 	}
 	deliveryRegistry.mu.RLock()
-	fns := deliveryRegistry.fns[sessionID]
+	fns := deliveryRegistry.fns[SessionRuntimeKey(agentID, sessionID)]
 	deliveryRegistry.mu.RUnlock()
 	for _, fn := range fns {
 		fn(text)
@@ -77,12 +79,12 @@ func deliverToSession(sessionID, text string) {
 
 // DeliverMediaToSession calls all registered media delivery functions for
 // the session, forwarding the file to each associated channel.
-func DeliverMediaToSession(sessionID, caption, filePath string) {
+func DeliverMediaToSession(agentID, sessionID, caption, filePath string) {
 	if filePath == "" {
 		return
 	}
 	deliveryRegistry.mu.RLock()
-	fns := deliveryRegistry.mfns[sessionID]
+	fns := deliveryRegistry.mfns[SessionRuntimeKey(agentID, sessionID)]
 	deliveryRegistry.mu.RUnlock()
 	for _, fn := range fns {
 		fn(caption, filePath)

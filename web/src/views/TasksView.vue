@@ -26,10 +26,11 @@
                 class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
                 <th class="px-4 py-2">Agent</th>
                 <th class="px-4 py-2">Task</th>
-                <th class="px-4 py-2">Type</th>
+                <th class="px-4 py-2">Trigger Type</th>
                 <th class="px-4 py-2">Trigger</th>
                 <th class="px-4 py-2">Target</th>
-                <th class="px-4 py-2">Prompt</th>
+                <th class="px-4 py-2">Task Type</th>
+                <th class="px-4 py-2">Content</th>
                 <th class="px-4 py-2 text-right">Action</th>
               </tr>
             </thead>
@@ -41,7 +42,8 @@
                 <td class="px-4 py-2 uppercase text-xs font-semibold text-gray-500 dark:text-gray-400">{{ task.trigger_type }}</td>
                 <td class="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ describeTrigger(task) }}</td>
                 <td class="px-4 py-2">{{ task.target || "—" }}</td>
-                <td class="max-w-lg truncate px-4 py-2" :title="task.prompt">{{ task.prompt || "—" }}</td>
+                <td class="px-4 py-2 uppercase text-xs font-semibold text-gray-500 dark:text-gray-400">{{ task.type || "prompt" }}</td>
+                <td class="max-w-lg truncate px-4 py-2" :title="taskBody(task)">{{ taskBody(task) || "—" }}</td>
                 <td class="px-4 py-2 text-right">
                   <button
                     class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -77,7 +79,7 @@
               class="border-b border-gray-100 text-gray-700 dark:border-gray-800/50 dark:text-gray-300">
               <td class="py-2 pr-4 font-mono text-xs text-gray-400 dark:text-gray-500">{{ job.id.slice(-8) }}</td>
               <td class="py-2 pr-4">{{ job.task_id }}</td>
-              <td class="py-2 pr-4">{{ job.agent_name }}</td>
+              <td class="py-2 pr-4">{{ job.agent_id }}</td>
               <td class="py-2 pr-4">
                 <span :class="statusClass(job.status)" class="rounded-full px-2 py-0.5 text-xs font-medium">
                   {{ job.status }}
@@ -121,6 +123,10 @@ function describeTrigger(task: ScheduledTask): string {
 	if (task.start_at) parts.push(`start_at: ${task.start_at}`);
 	if (task.run_once) parts.push("run_once");
 	return parts.length ? parts.join(" | ") : "—";
+}
+
+function taskBody(task: ScheduledTask): string {
+	return task.type === "script" ? task.script || "" : task.prompt || "";
 }
 
 function statusClass(status: string): string {

@@ -1410,7 +1410,7 @@ func TestServerLoadSessionDeliveries_WithData(t *testing.T) {
 	resetSlogForTest()
 
 	// Write a session channels config file so loadSessionDeliveries has something to read.
-	err := store.EnsureSessionChannel("agent_test", "sess1", "slack", "alerts", "C123")
+	err := store.EnsureSessionChannel("test", "sess1", "slack", "alerts", "C123")
 	assert.NoError(t, err)
 
 	cfg := &config.Config{}
@@ -1435,7 +1435,7 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 		MediaURL: "data:image/png;base64,cG5n",
 	})
 
-	sessions, err := agent.NewSessionManager().List("agent_bot")
+	sessions, err := agent.NewSessionManager().List("bot")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, sessions)
 
@@ -1451,7 +1451,7 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	var userMsg domain.Message
 	found := false
 	assert.Eventually(t, func() bool {
-		lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_bot", sessionID))
+		lines, err := store.ReadJSONL[domain.Message](store.SessionPath("bot", sessionID))
 		if err != nil {
 			return false
 		}

@@ -23,7 +23,7 @@ test("task config can trigger a run-now job", async ({ page }) => {
 		task_run: {
 			id: "job_12345678",
 			task_id: "assistant/daily-report",
-			agent_name: "assistant",
+			agent_id: "agent_assistant",
 			status: "in_progress",
 			attempts: 1,
 			created_at: "",

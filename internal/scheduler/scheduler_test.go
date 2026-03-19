@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestJobQueue_EnqueueClaimCompleteAndList(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskA", "agent_a", "agentA", "hello", "", 0, "", "")
+	job, err := q.Enqueue("taskA", "a", "hello", "", 0, "", "")
 	assert.NoError(t, err)
 	assert.Equal(t, domain.JobStatusPending, job.Status)
 	assert.Equal(t, defaultRetries, job.MaxRetries)
@@ -68,7 +69,7 @@ func TestJobQueue_Cancel(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskCancel", "agent_a", "agentA", "hello", "", 0, "", "")
+	job, err := q.Enqueue("taskCancel", "a", "hello", "", 0, "", "")
 	assert.NoError(t, err)
 	err = q.Cancel(job.ID)
 	assert.NoError(t, err)
@@ -83,7 +84,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("taskB", "agent_b", "agentB", "go", "", 2, "", "")
+	job, err := q.Enqueue("taskB", "b", "go", "", 2, "", "")
 	assert.NoError(t, err)
 
 	first, err := q.Claim()
@@ -121,8 +122,7 @@ func TestJobQueue_RecoverStuck(t *testing.T) {
 	job := domain.Job{
 		ID:         newID("job"),
 		TaskID:     "taskC",
-		AgentID:    "agent_c",
-		AgentName:  "agentC",
+		AgentID:    "c",
 		Prompt:     "run",
 		Status:     domain.JobStatusInProgress,
 		Attempts:   1,
@@ -152,8 +152,7 @@ func TestJobQueue_RecoverStuck_RecoversRecentInProgress(t *testing.T) {
 	job := domain.Job{
 		ID:         newID("job"),
 		TaskID:     "taskRecent",
-		AgentID:    "agent_recent",
-		AgentName:  "recent",
+		AgentID:    "recent",
 		Prompt:     "run",
 		Status:     domain.JobStatusInProgress,
 		Attempts:   1,
@@ -181,8 +180,7 @@ func TestJobQueue_RecoverStuck_ExhaustedJobFailsInsteadOfRequeueing(t *testing.T
 	job := domain.Job{
 		ID:         newID("job"),
 		TaskID:     "taskExhausted",
-		AgentID:    "agent_exhausted",
-		AgentName:  "exhausted",
+		AgentID:    "exhausted",
 		Prompt:     "run",
 		Status:     domain.JobStatusInProgress,
 		Attempts:   1,
@@ -332,7 +330,7 @@ func TestScheduler_Reconcile_ResolvesRelativeWatchAgainstAgentDir(t *testing.T) 
 
 	entry, ok := s.watch.handlers["alpha/watchTask"]
 	assert.True(t, ok)
-	assert.Equal(t, filepath.Join(store.AgentDir("agent_alpha"), "docs", "*.md"), entry.glob)
+	assert.Equal(t, filepath.Join(store.AgentDir("alpha"), "docs", "*.md"), entry.glob)
 	assert.Equal(t, filepath.Join("docs", "*.md"), s.tasks["alpha/watchTask"].Watch)
 }
 
@@ -532,11 +530,11 @@ func TestWorkerPool_ExecuteJob(t *testing.T) {
 
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
-	err := p.executeJob(context.Background(), &domain.Job{AgentName: "missing", Prompt: "hello"})
+	err := p.executeJob(context.Background(), &domain.Job{AgentID: "missing", Prompt: "hello"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 
-	err = p.executeJob(context.Background(), &domain.Job{AgentName: "alpha", Prompt: "hello"})
+	err = p.executeJob(context.Background(), &domain.Job{AgentID: "alpha", Prompt: "hello"})
 	assert.NoError(t, err)
 
 }
@@ -549,20 +547,19 @@ func TestWorkerPool_ExecuteJob_RepliesToSessionDelivery(t *testing.T) {
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
 	const (
-		replyAgentID   = "agent_alpha"
-		replySessionID = "agent_alpha-signal:+15551234567"
+		replyAgentID   = "alpha"
+		replySessionID = "alpha-signal:+15551234567"
 	)
 
 	var delivered string
-	agent.RegisterSessionDelivery(replySessionID, "signal", "+15551234567", func(text string) {
+	agent.RegisterSessionDelivery(replyAgentID, replySessionID, "signal", "+15551234567", func(text string) {
 		delivered = text
 	})
 
 	job := &domain.Job{
 		ID:             "job_reply",
 		TaskID:         "oneshot/alpha",
-		AgentID:        "agent_alpha",
-		AgentName:      "alpha",
+		AgentID:        "alpha",
 		Prompt:         "hello",
 		ReplyAgentID:   replyAgentID,
 		ReplySessionID: replySessionID,
@@ -592,14 +589,13 @@ func TestWorkerPool_ExecuteJob_ReusesPersistedSession(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
-	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_alpha", "resume")
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("alpha", "resume")
 	assert.NoError(t, err)
 
 	job := &domain.Job{
 		ID:        "job_resume",
 		TaskID:    "alpha/daily",
-		AgentID:   "agent_alpha",
-		AgentName: "alpha",
+		AgentID:   "alpha",
 		SessionID: sess.ID,
 		Prompt:    "finish report",
 		Attempts:  2,
@@ -607,12 +603,12 @@ func TestWorkerPool_ExecuteJob_ReusesPersistedSession(t *testing.T) {
 	err = p.executeJob(context.Background(), job)
 	assert.NoError(t, err)
 
-	sessions, err := agent.NewSessionManager().List("agent_alpha")
+	sessions, err := agent.NewSessionManager().List("alpha")
 	assert.NoError(t, err)
 	assert.Len(t, sessions, 1)
 	assert.Equal(t, sess.ID, sessions[0].ID)
 
-	data, err := os.ReadFile(store.SessionPath("agent_alpha", sess.ID))
+	data, err := os.ReadFile(store.SessionPath("alpha", sess.ID))
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "Continue the unfinished scheduled task")
 	assert.Contains(t, string(data), "no LLM provider configured")
@@ -632,31 +628,78 @@ func TestWorkerPool_ExecuteJob_UsesStableNamedSession(t *testing.T) {
 	p := NewWorkerPool(NewJobQueue(), mgr, 1)
 
 	first := &domain.Job{
-		ID:        "job_first",
-		TaskID:    "alpha/daily-report",
-		AgentID:   "agent_alpha",
-		AgentName: "alpha",
-		Prompt:    "first run",
+		ID:      "job_first",
+		TaskID:  "alpha/daily-report",
+		AgentID: "alpha",
+		Prompt:  "first run",
 	}
 	err := p.executeJob(context.Background(), first)
 	assert.NoError(t, err)
-	assert.Equal(t, "agent_alpha-daily-report", first.SessionID)
+	assert.Equal(t, "daily-report", first.SessionID)
 
 	second := &domain.Job{
-		ID:        "job_second",
-		TaskID:    "alpha/daily-report",
-		AgentID:   "agent_alpha",
-		AgentName: "alpha",
-		Prompt:    "second run",
+		ID:      "job_second",
+		TaskID:  "alpha/daily-report",
+		AgentID: "alpha",
+		Prompt:  "second run",
 	}
 	err = p.executeJob(context.Background(), second)
 	assert.NoError(t, err)
 	assert.Equal(t, first.SessionID, second.SessionID)
 
-	sessions, err := agent.NewSessionManager().List("agent_alpha")
+	sessions, err := agent.NewSessionManager().List("alpha")
 	assert.NoError(t, err)
 	assert.Len(t, sessions, 1)
 	assert.Equal(t, "daily-report", sessions[0].Name)
+}
+
+func TestWorkerPool_ExecuteJob_UsesBareOneShotTaskIDAsSessionID(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	p := NewWorkerPool(NewJobQueue(), mgr, 1)
+
+	job := &domain.Job{
+		ID:      "job_oneshot",
+		TaskID:  "subscript-uptime-check",
+		AgentID: "alpha",
+		Prompt:  "first run",
+	}
+	err := p.executeJob(context.Background(), job)
+	assert.NoError(t, err)
+	assert.Equal(t, "subscript-uptime-check", job.SessionID)
+}
+
+func TestInterpreterFromShebang_PythonPathResolvesBinaryName(t *testing.T) {
+	interp, args, ext, err := interpreterFromShebang("/usr/bin/python")
+	assert.NoError(t, err)
+	assert.Equal(t, "python", interp)
+	assert.Empty(t, args)
+	assert.Equal(t, ".py", ext)
+}
+
+func TestExecuteScriptJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	job := &domain.Job{
+		ID:       "job_script",
+		TaskID:   "alpha/scripted",
+		TaskType: "script",
+		AgentID:  "alpha",
+		Script:   testScriptBody(),
+	}
+
+	out, err := executeScriptJob(context.Background(), job, &config.AgentConfig{}, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "script-ok", out)
+}
+
+func testScriptBody() string {
+	if runtime.GOOS == "windows" {
+		return "#!/usr/bin/env powershell\nWrite-Output 'script-ok'\n"
+	}
+	return "#!/usr/bin/env sh\necho script-ok\n"
 }
 
 func TestEnqueueAt(t *testing.T) {
@@ -664,7 +707,7 @@ func TestEnqueueAt(t *testing.T) {
 	q := NewJobQueue()
 
 	at := time.Now().Add(1 * time.Hour)
-	job, err := q.EnqueueAt("task1", "agent_alpha", "alpha", "do something", "", 0, at, "", "")
+	job, err := q.EnqueueAt("task1", "alpha", "do something", "", 0, at, "", "")
 	assert.NoError(t, err)
 	assert.NotNil(t, job.ScheduledFor)
 	assert.True(t, job.ScheduledFor.Equal(at))
@@ -675,7 +718,7 @@ func TestUpdateOutput(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()
 
-	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
+	job, err := q.Enqueue("task1", "alpha", "prompt", "", 0, "", "")
 	assert.NoError(t, err)
 	err = q.UpdateOutput(job.ID, "some output")
 	assert.NoError(t, err)
@@ -756,7 +799,7 @@ func TestRunJobNow_ForceStartsPendingJob(t *testing.T) {
 	t.Cleanup(s.Stop)
 
 	at := time.Now().Add(1 * time.Hour)
-	job, err := s.Queue().EnqueueAt("alpha/daily", "agent_alpha", "alpha", "hello", "", 1, at, "", "")
+	job, err := s.Queue().EnqueueAt("alpha/daily", "alpha", "hello", "", 1, at, "", "")
 	assert.NoError(t, err)
 
 	started, err := s.RunJobNow(job.ID)
@@ -777,8 +820,7 @@ func TestRunJobNow_RejectsExhaustedPendingJob(t *testing.T) {
 	job := domain.Job{
 		ID:         newID("job"),
 		TaskID:     "alpha/daily",
-		AgentID:    "agent_alpha",
-		AgentName:  "alpha",
+		AgentID:    "alpha",
 		Prompt:     "run",
 		Status:     domain.JobStatusPending,
 		Attempts:   1,
@@ -813,7 +855,7 @@ func TestScheduler_StopJobs_CancelsPending(t *testing.T) {
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
 
-	job, err := s.Queue().Enqueue("alpha/daily", "agent_alpha", "alpha", "prompt", "", 1, "", "")
+	job, err := s.Queue().Enqueue("alpha/daily", "alpha", "prompt", "", 1, "", "")
 	assert.NoError(t, err)
 
 	stopped, err := s.StopJobs("alpha/daily")
@@ -831,11 +873,11 @@ func TestJobQueue_ListCorrupted(t *testing.T) {
 	q := NewJobQueue()
 
 	// Enqueue a valid job first.
-	job, err := q.Enqueue("task1", "agent_alpha", "alpha", "prompt", "", 0, "", "")
+	job, err := q.Enqueue("task1", "alpha", "prompt", "", 0, "", "")
 	assert.NoError(t, err)
 
 	// Write a corrupted file alongside it.
-	jobsDir := filepath.Join(store.AgentDir("agent_alpha"), "jobs")
+	jobsDir := filepath.Join(store.AgentDir("alpha"), "jobs")
 	err = os.WriteFile(filepath.Join(jobsDir, "job_bad.json"), []byte("not-json"), 0o600)
 	assert.NoError(t, err)
 

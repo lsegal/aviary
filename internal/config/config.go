@@ -249,11 +249,13 @@ func BoolOr(b *bool, def bool) bool {
 type TaskConfig struct {
 	Enabled  *bool  `yaml:"enabled,omitempty"  json:"enabled,omitempty"`
 	Name     string `yaml:"name"               json:"name"`
+	Type     string `yaml:"type,omitempty"     json:"type,omitempty"`
 	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"`
 	StartAt  string `yaml:"start_at,omitempty" json:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
 	Watch    string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt   string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
+	Script   string `yaml:"script,omitempty"   json:"script,omitempty"`
 	Target   string `yaml:"target,omitempty"   json:"target,omitempty"`
 }
 

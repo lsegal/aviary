@@ -12,7 +12,6 @@ test("scheduled tasks panel uses task_list data rather than job history", async 
 		id: `job_${String(index + 1).padStart(8, "0")}`,
 		task_id: `assistant/job-${index + 1}`,
 		agent_id: "agent_assistant",
-		agent_name: "assistant",
 		prompt: `historical prompt ${index + 1}`,
 		status: "completed",
 		attempts: 1,

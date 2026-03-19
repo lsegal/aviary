@@ -53,7 +53,7 @@ func TestStructs_Construct(t *testing.T) {
 	mp := MemoryPool{ID: "m1", Name: "shared"}
 	assert.Equal(t, "shared", mp.Name)
 
-	me := MemoryEntry{ID: "e1", PoolID: "m1", Role: "user", Content: "hello", Tokens: 1, Timestamp: now}
+	me := MemoryEntry{ID: "e1", Role: "user", Content: "hello", Tokens: 1, Timestamp: now}
 	assert.Equal(t, "hello", me.Content)
 	assert.Equal(t, 1, me.Tokens)
 
@@ -75,7 +75,7 @@ func TestStructs_Construct(t *testing.T) {
 	s := Session{ID: "s1", AgentID: "a1", CreatedAt: now, UpdatedAt: now}
 	assert.Equal(t, "a1", s.AgentID)
 
-	msg := Message{ID: "msg1", SessionID: "s1", Role: MessageRoleUser, Content: "hi", Timestamp: now}
+	msg := Message{ID: "msg1", Role: MessageRoleUser, Content: "hi", Timestamp: now}
 	assert.Equal(t, MessageRoleUser, msg.Role)
 	assert.Equal(t, "hi", msg.Content)
 

@@ -5,7 +5,7 @@ import { useMCP } from "../composables/useMCP";
 export interface Job {
 	id: string;
 	task_id: string;
-	agent_name: string;
+	agent_id: string;
 	status: string;
 	attempts: number;
 	created_at: string;
@@ -17,12 +17,14 @@ export interface ScheduledTask {
 	agent_id: string;
 	agent_name: string;
 	name: string;
+	type?: "prompt" | "script";
 	trigger_type: "cron" | "watch";
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
 	watch?: string;
-	prompt: string;
+	prompt?: string;
+	script?: string;
 	target?: string;
 }
 
@@ -34,7 +36,11 @@ function isScheduledTask(value: unknown): value is ScheduledTask {
 		typeof task.agent_id === "string" &&
 		typeof task.agent_name === "string" &&
 		typeof task.name === "string" &&
-		typeof task.prompt === "string" &&
+		(task.type === undefined ||
+			task.type === "prompt" ||
+			task.type === "script") &&
+		(task.prompt === undefined || typeof task.prompt === "string") &&
+		(task.script === undefined || typeof task.script === "string") &&
 		(task.trigger_type === "cron" || task.trigger_type === "watch")
 	);
 }

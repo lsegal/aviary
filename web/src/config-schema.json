@@ -181,14 +181,42 @@
 							"properties": {
 								"enabled": { "type": "boolean" },
 								"name": { "type": "string" },
+								"type": {
+									"type": "string",
+									"enum": ["prompt", "script"]
+								},
 								"schedule": { "type": "string" },
 								"start_at": { "type": "string", "format": "date-time" },
 								"run_once": { "type": "boolean", "default": false },
 								"watch": { "type": "string" },
 								"prompt": { "type": "string" },
+								"script": { "type": "string" },
 								"target": { "type": "string" }
 							},
-							"oneOf": [{ "required": ["schedule"] }, { "required": ["watch"] }]
+							"allOf": [
+								{
+									"oneOf": [
+										{ "required": ["schedule"] },
+										{ "required": ["watch"] }
+									]
+								},
+								{
+									"if": {
+										"properties": { "type": { "const": "script" } }
+									},
+									"then": {
+										"required": ["script"]
+									}
+								},
+								{
+									"if": {
+										"properties": { "type": { "const": "prompt" } }
+									},
+									"then": {
+										"required": ["prompt"]
+									}
+								}
+							]
 						}
 					}
 				}

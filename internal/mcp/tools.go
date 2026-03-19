@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +121,7 @@ func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
 	registerRulesTools(s)
 	registerSessionTools(s)
+	registerSessionSendTool(s)
 	registerTaskTools(s)
 	registerAgentContextTools(s)
 	registerNoteTools(s)
@@ -134,6 +137,7 @@ func Register(s *sdkmcp.Server) {
 	registerServerTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)
+	registerTaskCompilerTools(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
@@ -158,18 +162,34 @@ type agentTemplateSyncArgs struct {
 	Agent string `json:"agent"`
 }
 
-func loadSessionByID(sessionID, agentNameHint string) (*domain.Session, error) {
-	path := store.FindSessionPath(strings.TrimSpace(sessionID), agentNameHint)
-	if path == "" {
-		return nil, fmt.Errorf("session %q not found", sessionID)
+func loadSessionByID(agentName, sessionID string) (*domain.Session, error) {
+	agentID, resolvedAgentName, err := resolveAgentIdentity(agentName)
+	if err != nil {
+		return nil, err
 	}
-	// Reconstruct session metadata from the filename and any stored timestamps.
+	sessionID = strings.TrimSpace(sessionID)
+	path := store.FindSessionPath(agentID, sessionID)
+	if path == "" {
+		return nil, fmt.Errorf("session %q not found for agent %q", sessionID, resolvedAgentName)
+	}
 	lines, err := store.ReadJSONL[map[string]any](path)
 	if err != nil {
 		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
 	}
 	var created, updated time.Time
+	storedID := sessionID
+	storedName := sessionID
 	for _, m := range lines {
+		if v, ok := m["id"]; ok {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				storedID = strings.TrimSpace(s)
+			}
+		}
+		if v, ok := m["name"]; ok {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				storedName = strings.TrimSpace(s)
+			}
+		}
 		if v, ok := m["created_at"]; ok {
 			if s, ok := v.(string); ok {
 				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
@@ -191,19 +211,34 @@ func loadSessionByID(sessionID, agentNameHint string) (*domain.Session, error) {
 	if created.IsZero() {
 		return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
 	}
-	// derive agent ID from the path: <datadir>/agents/<agentName>/sessions/<file>.jsonl
-	agentDir := filepath.Base(filepath.Dir(filepath.Dir(path)))
-	sessName := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if updated.IsZero() {
 		updated = created
 	}
 	return &domain.Session{
-		ID:        sessName,
-		AgentID:   "agent_" + agentDir,
-		Name:      sessName,
+		ID:        storedID,
+		AgentID:   agentID,
+		Name:      storedName,
 		CreatedAt: created,
 		UpdatedAt: updated,
 	}, nil
+}
+
+func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err error) {
+	agentName = strings.TrimSpace(agentName)
+	if agentName == "" {
+		return "", "", fmt.Errorf("agent is required")
+	}
+	agentsDir := filepath.Join(store.DataDir(), store.DirAgents)
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return agentName, agentName, nil
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.EqualFold(entry.Name(), agentName) {
+			return entry.Name(), entry.Name(), nil
+		}
+	}
+	return agentName, agentName, nil
 }
 
 func resolveAgentRunHistory(args agentRunArgs) bool {
@@ -239,7 +274,10 @@ func registerAgentTools(s *sdkmcp.Server) {
 		agentID := ""
 		var sess *domain.Session
 		if strings.TrimSpace(args.SessionID) != "" {
-			loaded, err := loadSessionByID(args.SessionID, agentName)
+			if agentName == "" {
+				return nil, struct{}{}, fmt.Errorf("name is required when session_id is provided")
+			}
+			loaded, err := loadSessionByID(agentName, args.SessionID)
 			if err != nil {
 				return nil, struct{}{}, err
 			}
@@ -248,15 +286,12 @@ func registerAgentTools(s *sdkmcp.Server) {
 			if agentID == "" {
 				return nil, struct{}{}, fmt.Errorf("session %q is missing agent metadata", args.SessionID)
 			}
-			if agentName != "" && agentID != fmt.Sprintf("agent_%s", agentName) {
-				return nil, struct{}{}, fmt.Errorf("session %q does not belong to agent %q", args.SessionID, agentName)
-			}
-			agentName = strings.TrimPrefix(agentID, "agent_")
+			agentName = agentID
 		} else {
 			if agentName == "" {
 				return nil, struct{}{}, fmt.Errorf("name is required when session_id is not provided")
 			}
-			agentID = fmt.Sprintf("agent_%s", agentName)
+			agentID = agentName
 			// Ensure the session exists (defaults to "main").
 			var err error
 			sess, err = agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session)
@@ -270,7 +305,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("agent %q not found", agentName)
 		}
 		if isStopCommand(args.Message) {
-			stopped := agent.StopSession(sess.ID)
+			stopped := agent.StopSession(sess.AgentID, sess.ID)
 			if stopped == 0 {
 				return text(fmt.Sprintf("session %q has no active work", sess.ID))
 			}
@@ -519,7 +554,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
 		}
-		agentID := fmt.Sprintf("agent_%s", args.Name)
+		agentID := args.Name
 		path := store.AgentRulesPath(agentID)
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -538,7 +573,7 @@ func registerRulesTools(s *sdkmcp.Server) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
 		}
-		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		agentID := args.Agent
 		path := store.AgentRulesPath(agentID)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, struct{}{}, fmt.Errorf("creating agent dir: %w", err)
@@ -695,32 +730,32 @@ type sessionStopArgs struct {
 }
 
 type sessionSetTargetArgs struct {
+	Agent       string `json:"agent"`
 	SessionID   string `json:"session_id"`
 	ChannelType string `json:"channel_type"`
 	ChannelID   string `json:"channel_id"`
 	Target      string `json:"target"`
 }
 
-func resolveSessionTargetIdentity(sessionID string) (agentID, agentName string, err error) {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
+func resolveSessionTargetIdentity(agentName, sessionID string) (agentID, resolvedAgentName string, err error) {
+	agentID, resolvedAgentName, err = resolveAgentIdentity(agentName)
+	if err != nil {
+		return "", "", err
+	}
+	if strings.TrimSpace(sessionID) == "" {
 		return "", "", fmt.Errorf("session_id is required")
 	}
-
-	sessionPath := store.FindSessionPath(sessionID)
-	if sessionPath == "" {
-		return "", "", fmt.Errorf("session %q not found", sessionID)
+	if store.FindSessionPath(agentID, sessionID) == "" {
+		return "", "", fmt.Errorf("session %q not found for agent %q", sessionID, resolvedAgentName)
 	}
-	agentName = filepath.Base(filepath.Dir(filepath.Dir(sessionPath)))
-	if agentName == "" {
-		return "", "", fmt.Errorf("could not resolve agent for session %q", sessionID)
-	}
-	agentID = fmt.Sprintf("agent_%s", agentName)
-	return agentID, agentName, nil
+	return agentID, resolvedAgentName, nil
 }
 
 func registerSessionTools(s *sdkmcp.Server) {
 	sessionHistoryHandler := func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionMessagesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
 		if args.SessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
@@ -738,7 +773,15 @@ func registerSessionTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("order must be 'asc' or 'desc'")
 		}
 
-		lines, err := store.ReadJSONL[domain.Message](store.FindSessionPath(args.SessionID, args.Agent))
+		agentID, _, err := resolveAgentIdentity(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		path := store.FindSessionPath(agentID, args.SessionID)
+		if path == "" {
+			return jsonResult([]any{})
+		}
+		lines, err := store.ReadJSONL[domain.Message](path)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
@@ -771,15 +814,11 @@ func registerSessionTools(s *sdkmcp.Server) {
 			if !msg.Timestamp.IsZero() {
 				ts = msg.Timestamp.Format(time.RFC3339Nano)
 			}
-			sid := msg.SessionID
-			if sid == "" {
-				sid = args.SessionID
-			}
 			responseID := responseIDs[msg.ID]
 
 			out = append(out, messageDTO{
 				ID:         msg.ID,
-				SessionID:  sid,
+				SessionID:  args.SessionID,
 				Role:       string(msg.Role),
 				Sender:     msg.Sender,
 				Content:    msg.Content,
@@ -841,7 +880,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				}
 			}
 		}
-		agentID := fmt.Sprintf("agent_%s", agentNameDir)
+		agentID := agentNameDir
 		sm := agent.NewSessionManager()
 		slog.Info("mcp: session_list resolving", "agent", args.Agent, "resolved_agent_dir", agentNameDir, "agent_id", agentID)
 		if _, err := sm.GetOrCreateNamed(agentID, "main"); err != nil {
@@ -870,7 +909,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			if sess == nil {
 				continue
 			}
-			if sess.Name == "main" || strings.HasSuffix(strings.ToLower(sess.ID), "-main") {
+			if sess.Name == "main" || strings.EqualFold(sess.ID, "main") {
 				mainIndex = i
 				break
 			}
@@ -903,7 +942,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				TaskID:       sess.TaskID,
 				CreatedAt:    sess.CreatedAt.Format(time.RFC3339Nano),
 				UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339Nano),
-				IsProcessing: agent.IsSessionProcessing(sess.ID),
+				IsProcessing: agent.IsSessionProcessing(sess.AgentID, sess.ID),
 			})
 		}
 		return jsonResult(out)
@@ -917,7 +956,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent name is required")
 		}
-		agentID := fmt.Sprintf("agent_%s", args.Agent)
+		agentID := args.Agent
 		sm := agent.NewSessionManager()
 		sess, err := sm.Create(agentID)
 		if err != nil {
@@ -941,24 +980,38 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Description: "Stop all in-progress work for a specific session",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		sid := strings.TrimSpace(args.SessionID)
+		agentName := strings.TrimSpace(args.Agent)
 		if sid == "" {
 			if fromCtx, ok := agent.SessionIDFromContext(ctx); ok {
 				sid = fromCtx
 			}
+			if fromCtxAgent, ok := agent.SessionAgentIDFromContext(ctx); ok && agentName == "" {
+				agentName = fromCtxAgent
+			}
 		}
-		if sid == "" && strings.TrimSpace(args.Agent) != "" {
+		if sid == "" && agentName != "" {
 			sessionName := strings.TrimSpace(args.Session)
-			agentID := fmt.Sprintf("agent_%s", strings.TrimSpace(args.Agent))
+			agentID, _, err := resolveAgentIdentity(agentName)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
 			sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName)
 			if err != nil {
 				return nil, struct{}{}, err
 			}
 			sid = sess.ID
 		}
+		if agentName == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
 		if sid == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
-		stopped := agent.StopSession(sid)
+		agentID, _, err := resolveAgentIdentity(agentName)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		stopped := agent.StopSession(agentID, sid)
 		if stopped == 0 {
 			return text(fmt.Sprintf("session %q has no active work", sid))
 		}
@@ -969,11 +1022,18 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Name:        "session_remove",
 		Description: "Permanently delete a session and all its messages",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
 		sid := strings.TrimSpace(args.SessionID)
 		if sid == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
-		if err := agent.NewSessionManager().Delete(sid); err != nil {
+		agentID, _, err := resolveAgentIdentity(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := agent.NewSessionManager().Delete(agentID, sid); err != nil {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("session %q removed", sid))
@@ -983,10 +1043,14 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Name:        "session_set_target",
 		Description: "Set the configured channel target for a session and persist it in the session sidecar",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionSetTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentNameArg := strings.TrimSpace(args.Agent)
 		sessionID := strings.TrimSpace(args.SessionID)
 		channelType := strings.TrimSpace(args.ChannelType)
 		configuredID := strings.TrimSpace(args.ChannelID)
 		targetID := strings.TrimSpace(args.Target)
+		if agentNameArg == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
 		if sessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("session_id is required")
 		}
@@ -1000,7 +1064,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("target is required")
 		}
 
-		agentID, agentName, err := resolveSessionTargetIdentity(sessionID)
+		agentID, agentName, err := resolveSessionTargetIdentity(agentNameArg, sessionID)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
@@ -1050,11 +1114,18 @@ type taskStopArgs struct {
 }
 
 type taskScheduleArgs struct {
-	Agent    string `json:"agent"`
-	Name     string `json:"name,omitempty"`
-	Prompt   string `json:"prompt"`
-	In       string `json:"in,omitempty"`
-	Schedule string `json:"schedule,omitempty"`
+	Agent         string         `json:"agent"`
+	Name          string         `json:"name,omitempty"`
+	Type          string         `json:"type,omitempty"`
+	Prompt        string         `json:"prompt,omitempty"`
+	Script        string         `json:"script,omitempty"`
+	Task          map[string]any `json:"task,omitempty"`
+	In            string         `json:"in,omitempty"`
+	Schedule      string         `json:"schedule,omitempty"`
+	Target        string         `json:"target,omitempty"`
+	TriggerType   string         `json:"trigger_type,omitempty"`
+	CompileScript bool           `json:"compile_script,omitempty"`
+	RunDiscovery  bool           `json:"run_discovery,omitempty"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
@@ -1088,7 +1159,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks.",
+		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks. Prompt-based tasks are automatically compiled into script tasks when Aviary can confidently derive a deterministic script.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1098,20 +1169,95 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if args.Agent == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
 		}
-		if args.Prompt == "" {
-			return nil, struct{}{}, fmt.Errorf("prompt is required")
-		}
 		if d.Agents != nil {
 			if _, ok := d.Agents.Get(args.Agent); !ok {
 				return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
 			}
 		}
+		taskType := strings.ToLower(strings.TrimSpace(args.Type))
+		typeWasExplicit := taskType != ""
+		if taskType == "" {
+			if strings.TrimSpace(args.Script) != "" {
+				taskType = "script"
+			} else {
+				taskType = "prompt"
+			}
+		}
+		if taskType != "prompt" && taskType != "script" {
+			return nil, struct{}{}, fmt.Errorf("invalid task type %q", args.Type)
+		}
+		promptText := strings.TrimSpace(args.Prompt)
+		scriptText := strings.TrimSpace(args.Script)
+		if len(args.Task) > 0 {
+			derivedPrompt, derivedScript, err := compileStructuredTask(args.Task)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			if promptText == "" {
+				promptText = derivedPrompt
+			}
+			if scriptText == "" {
+				scriptText = derivedScript
+			}
+			if !typeWasExplicit {
+				taskType = "script"
+			}
+		}
+		autoCompile := !typeWasExplicit && !args.CompileScript && taskType == "prompt" && promptText != "" && scriptText == ""
+		if autoCompile {
+			compiled, err := resolveTaskPromptCompiler()(ctx, args.Agent, promptText, args.RunDiscovery)
+			if err != nil {
+				slog.Warn("task auto-compile failed; falling back to prompt task", "agent", args.Agent, "error", err)
+			} else if compiled.Compilable && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+				taskType = "script"
+				scriptText = strings.TrimSpace(compiled.Script)
+				slog.Info("task auto-compiled to script", "agent", args.Agent, "steps", len(compiled.Steps))
+			} else {
+				slog.Info("task auto-compile declined; keeping prompt task", "agent", args.Agent, "reason", strings.TrimSpace(compiled.Reason), "needs_discovery", compiled.NeedsDiscovery)
+			}
+		}
+		if args.CompileScript {
+			if promptText == "" {
+				return nil, struct{}{}, fmt.Errorf("prompt is required when compile_script is true")
+			}
+			compiled, err := resolveTaskPromptCompiler()(ctx, args.Agent, promptText, args.RunDiscovery)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			if !compiled.Compilable || strings.TrimSpace(compiled.Script) == "" {
+				return nil, struct{}{}, fmt.Errorf("task prompt could not be compiled into a script: %s", strings.TrimSpace(compiled.Reason))
+			}
+			taskType = "script"
+			scriptText = strings.TrimSpace(compiled.Script)
+		}
+		switch taskType {
+		case "prompt":
+			if promptText == "" {
+				return nil, struct{}{}, fmt.Errorf("prompt is required for prompt tasks")
+			}
+		case "script":
+			if scriptText == "" {
+				return nil, struct{}{}, fmt.Errorf("script is required for script tasks")
+			}
+			if promptText == "" {
+				promptText = generatedTaskName(scriptText)
+			}
+		}
 		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
 			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
 		}
-		if strings.TrimSpace(args.Schedule) != "" {
-			if err := validateTaskSchedule(args.Schedule); err != nil {
+		triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))
+		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
+			return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
+		}
+		target := strings.TrimSpace(args.Target)
+		normalizedSchedule := normalizeTaskSchedule(args.Schedule)
+		if strings.TrimSpace(normalizedSchedule) != "" {
+			if err := validateTaskSchedule(normalizedSchedule); err != nil {
 				return nil, struct{}{}, err
+			}
+			if triggerType == "watch" {
+				return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
 			}
 			cfg, err := config.Load("")
 			if err != nil {
@@ -1129,13 +1275,15 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 			taskName := strings.TrimSpace(args.Name)
 			if taskName == "" {
-				taskName = generatedTaskName(args.Prompt)
+				taskName = generatedTaskName(firstNonEmpty(promptText, scriptText))
 			}
 			nextTask := config.TaskConfig{
+				Type:     taskType,
 				Name:     taskName,
-				Prompt:   args.Prompt,
-				Schedule: strings.TrimSpace(args.Schedule),
-				Target:   defaultScheduledTaskRoute(ctx, cfg, args.Agent),
+				Prompt:   promptText,
+				Script:   scriptText,
+				Schedule: strings.TrimSpace(normalizedSchedule),
+				Target:   firstNonEmpty(target, defaultScheduledTaskRoute(ctx, cfg, args.Agent)),
 			}
 			updated := false
 			for i := range cfg.Agents[agentIdx].Tasks {
@@ -1161,8 +1309,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
 		}
-		agentID := fmt.Sprintf("agent_%s", args.Agent)
-		taskID := fmt.Sprintf("oneshot/%s", args.Agent)
+		agentID := args.Agent
+		taskID := strings.TrimSpace(args.Name)
+		if taskID == "" {
+			taskID = generatedTaskName(firstNonEmpty(promptText, scriptText))
+		}
 
 		replySessionID, _ := agent.SessionIDFromContext(ctx)
 		replyAgentID, _ := agent.SessionAgentIDFromContext(ctx)
@@ -1174,9 +1325,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if parseErr != nil {
 				return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
 			}
-			job, err = d.Scheduler.Queue().EnqueueAt(taskID, agentID, args.Agent, args.Prompt, "", 1, time.Now().Add(delay), replyAgentID, replySessionID)
+			job, err = d.Scheduler.Queue().EnqueueAtWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, time.Now().Add(delay), replyAgentID, replySessionID)
 		} else {
-			job, err = d.Scheduler.Queue().Enqueue(taskID, agentID, args.Agent, args.Prompt, "", 1, replyAgentID, replySessionID)
+			job, err = d.Scheduler.Queue().EnqueueWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, replyAgentID, replySessionID)
 		}
 		if err != nil {
 			return nil, struct{}{}, err
@@ -1238,6 +1389,94 @@ func validateTaskSchedule(schedule string) error {
 	return nil
 }
 
+var everyMinutesPattern = regexp.MustCompile(`(?i)^every\s+(\d+)\s+minutes?$`)
+
+func normalizeTaskSchedule(schedule string) string {
+	trimmed := strings.TrimSpace(schedule)
+	if trimmed == "" {
+		return ""
+	}
+	if match := everyMinutesPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+		n, err := strconv.Atoi(match[1])
+		if err == nil && n > 0 {
+			return fmt.Sprintf("0 */%d * * * *", n)
+		}
+	}
+	return trimmed
+}
+
+func compileStructuredTask(task map[string]any) (promptText, scriptText string, err error) {
+	taskType := strings.ToLower(strings.TrimSpace(stringValue(task["type"])))
+	switch taskType {
+	case "http_check":
+		url := strings.TrimSpace(stringValue(task["url"]))
+		method := strings.ToUpper(strings.TrimSpace(stringValue(task["method"])))
+		if method == "" {
+			method = "GET"
+		}
+		expectStatus := intValue(task["expect_status"])
+		if expectStatus == 0 {
+			expectStatus = 200
+		}
+		if url == "" {
+			return "", "", fmt.Errorf("task.url is required for task.type=http_check")
+		}
+		if method != "GET" {
+			return "", "", fmt.Errorf("task.method %q is not supported for task.type=http_check", method)
+		}
+		if expectStatus != 200 {
+			return "", "", fmt.Errorf("task.expect_status=%d is not yet supported for task.type=http_check", expectStatus)
+		}
+		message := ""
+		if onFailure, ok := task["on_failure"].(map[string]any); ok {
+			message = strings.TrimSpace(stringValue(onFailure["message"]))
+		}
+		prompt := fmt.Sprintf("Perform an HTTP GET to %s. If the response status is not 200, let me know.", url)
+		if message != "" {
+			prompt = fmt.Sprintf("Perform an HTTP GET to %s. If the response status is not 200, send this message: %q", url, message)
+		}
+		plan := compileBuiltInTaskPrompt(prompt)
+		if plan == nil || strings.TrimSpace(plan.Script) == "" {
+			return "", "", fmt.Errorf("task.type=http_check could not be compiled")
+		}
+		return prompt, plan.Script, nil
+	default:
+		if taskType == "" {
+			return "", "", fmt.Errorf("task.type is required when task is provided")
+		}
+		return "", "", fmt.Errorf("unsupported task.type %q", taskType)
+	}
+}
+
+func stringValue(v any) string {
+	switch value := v.(type) {
+	case string:
+		return value
+	case fmt.Stringer:
+		return value.String()
+	default:
+		return ""
+	}
+}
+
+func intValue(v any) int {
+	switch value := v.(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		n, _ := value.Int64()
+		return int(n)
+	default:
+		return 0
+	}
+}
+
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {
 	channelType, configuredID, channelID, ok := agent.ChannelSessionFromContext(ctx)
 	if !ok {
@@ -1277,6 +1516,15 @@ func generatedTaskName(prompt string) string {
 		base = "scheduled"
 	}
 	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // ── Job tools ────────────────────────────────────────────────────────────────
@@ -1349,7 +1597,7 @@ func registerJobTools(s *sdkmcp.Server) {
 			if args.Status != "" && string(j.Status) != args.Status {
 				continue
 			}
-			if args.Agent != "" && j.AgentName != args.Agent {
+			if args.Agent != "" && j.AgentID != args.Agent {
 				continue
 			}
 			out = append(out, j)
@@ -1784,13 +2032,13 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		if !ok || sessionID == "" {
 			return nil, struct{}{}, fmt.Errorf("no active channel session; cannot send file")
 		}
-		if agent.HasSessionMediaDelivery(sessionID) {
-			agent.DeliverMediaToSession(sessionID, args.Caption, args.FilePath)
-			return text(fmt.Sprintf("file sent: %s", args.FilePath))
-		}
 		agentID, ok := agent.SessionAgentIDFromContext(ctx)
 		if !ok || agentID == "" {
 			return nil, struct{}{}, fmt.Errorf("no active session agent; cannot attach file to session")
+		}
+		if agent.HasSessionMediaDelivery(agentID, sessionID) {
+			agent.DeliverMediaToSession(agentID, sessionID, args.Caption, args.FilePath)
+			return text(fmt.Sprintf("file sent: %s", args.FilePath))
 		}
 		mediaURL, err := localFileToDataURL(args.FilePath)
 		if err != nil {

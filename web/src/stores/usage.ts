@@ -5,7 +5,7 @@ import { useMCP } from "../composables/useMCP";
 export interface UsageRecord {
 	timestamp: string;
 	session_id: string;
-	agent_name: string;
+	agent_id: string;
 	model: string;
 	provider: string;
 	input_tokens: number;
@@ -118,7 +118,7 @@ export const useUsageStore = defineStore("usage", () => {
 
 	const topModels = computed(() => tally("model"));
 	const topProviders = computed(() => tally("provider"));
-	const topAgents = computed(() => tally("agent_name"));
+	const topAgents = computed(() => tally("agent_id"));
 
 	// ── Time activity ─────────────────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ export const useUsageStore = defineStore("usage", () => {
 	const sessionList = computed(() => {
 		type S = {
 			session_id: string;
-			agent_name: string;
+			agent_id: string;
 			model: string;
 			provider: string;
 			input: number;
@@ -196,7 +196,7 @@ export const useUsageStore = defineStore("usage", () => {
 			if (!s) {
 				m.set(r.session_id, {
 					session_id: r.session_id,
-					agent_name: r.agent_name,
+					agent_id: r.agent_id,
 					model: r.model,
 					provider: r.provider,
 					input: r.input_tokens,

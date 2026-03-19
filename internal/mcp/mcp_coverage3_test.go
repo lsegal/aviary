@@ -368,7 +368,7 @@ func TestJobListWithScheduler(t *testing.T) {
 	d, s := setupDispatcherWithScheduler(t)
 
 	// Enqueue a job
-	_, err := s.Queue().Enqueue("bot/task", "agent_bot", "bot", "run", "", 1, "", "")
+	_, err := s.Queue().Enqueue("bot/task", "agent_bot", "run", "", 1, "", "")
 	assert.NoError(t, err)
 
 	out, err := d.CallTool(context.Background(), "job_list", map[string]any{})

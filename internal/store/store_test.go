@@ -115,22 +115,22 @@ func TestPathHelpers(t *testing.T) {
 	base := filepath.Join(tmp, "aviary")
 
 	t.Run("JobPath", func(t *testing.T) {
-		got := JobPath("agent_bot", "job-1")
+		got := JobPath("bot", "job-1")
 		want := filepath.Join(base, DirAgents, "bot", "jobs", "job-1.json")
 		assert.Equal(t, want, got)
 
 	})
 
 	t.Run("SessionPath", func(t *testing.T) {
-		got := SessionPath("agent_assistant", "agent_assistant-main")
+		got := SessionPath("assistant", "main")
 		want := filepath.Join(base, DirAgents, "assistant", "sessions", "main.jsonl")
 		assert.Equal(t, want, got)
 
 	})
 
 	t.Run("SessionPath_plain_name", func(t *testing.T) {
-		// agentID without "agent_" prefix should also work.
-		got := SessionPath("assistant", "agent_assistant-main")
+		// agentID without "" prefix should also work.
+		got := SessionPath("assistant", "main")
 		want := filepath.Join(base, DirAgents, "assistant", "sessions", "main.jsonl")
 		assert.Equal(t, want, got)
 
@@ -139,26 +139,32 @@ func TestPathHelpers(t *testing.T) {
 	t.Run("FindSessionPath", func(t *testing.T) {
 		// Setup dummy session file.
 		agentName := "searcher"
-		sessID := "agent_searcher-main"
-		path := SessionPath("agent_"+agentName, sessID)
+		sessID := "main"
+		path := SessionPath(""+agentName, sessID)
 		err := os.MkdirAll(filepath.Dir(path), 0o700)
 		assert.NoError(t, err)
 
 		err = os.WriteFile(path, []byte("{}"), 0o600)
 		assert.NoError(t, err)
 
-		got := FindSessionPath(sessID)
+		got := FindSessionPath(""+agentName, sessID)
 		assert.Equal(t, path, got)
 
 		// Non-prefixed sessID should also work.
 		sess2 := "sess_123"
-		path2 := SessionPath("agent_"+agentName, sess2)
+		path2 := SessionPath(""+agentName, sess2)
 		err = os.WriteFile(path2, []byte("{}"), 0o600)
 		assert.NoError(t, err)
 
-		got2 := FindSessionPath(sess2)
+		got2 := FindSessionPath(""+agentName, sess2)
 		assert.Equal(t, path2, got2)
 
+	})
+
+	t.Run("SessionPath_channel_name_uses_underscores_on_disk", func(t *testing.T) {
+		got := SessionPath("assistant", "signal:+12066439160")
+		want := filepath.Join(base, DirAgents, "assistant", "sessions", "signal_+12066439160.jsonl")
+		assert.Equal(t, want, got)
 	})
 
 	t.Run("MemoryPath_typed", func(t *testing.T) {
@@ -169,14 +175,14 @@ func TestPathHelpers(t *testing.T) {
 	})
 
 	t.Run("AgentDir", func(t *testing.T) {
-		got := AgentDir("agent_researcher")
+		got := AgentDir("researcher")
 		want := filepath.Join(base, DirAgents, "researcher")
 		assert.Equal(t, want, got)
 
 	})
 
 	t.Run("AgentRulesPath", func(t *testing.T) {
-		got := AgentRulesPath("agent_researcher")
+		got := AgentRulesPath("researcher")
 		want := filepath.Join(base, DirAgents, "researcher", "RULES.md")
 		assert.Equal(t, want, got)
 
@@ -222,10 +228,10 @@ func TestAgentDirName(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"agent_foo", "foo"},
-		{"agent_assistant", "assistant"},
 		{"foo", "foo"},
-		{"agent_", "default"},
+		{"assistant", "assistant"},
+		{"foo", "foo"},
+		{"", "default"},
 	}
 	for _, tc := range tests {
 		got := agentDirName(tc.in)
@@ -240,7 +246,7 @@ func TestFindJobPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	// Create a dummy job file.
-	agentID := "agent_finder"
+	agentID := "finder"
 	jobID := "job-abc"
 	p := JobPath(agentID, jobID)
 	err := os.MkdirAll(filepath.Dir(p), 0o700)
@@ -264,7 +270,7 @@ func TestAllJobDirs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	// Create jobs dirs for two agents.
-	for _, agent := range []string{"agent_a1", "agent_a2"} {
+	for _, agent := range []string{"a1", "a2"} {
 		jobDir := filepath.Join(AgentDir(agent), "jobs")
 		err := os.MkdirAll(jobDir, 0o700)
 		assert.NoError(t, err)
@@ -328,7 +334,7 @@ func TestAgentMarkdownFiles(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("id"), 0o600))
@@ -337,19 +343,19 @@ func TestAgentMarkdownFiles(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
 
-	files, err := ListAgentMarkdownFiles("agent_assistant")
+	files, err := ListAgentMarkdownFiles("assistant")
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "notes/USER.md"}, files)
 
-	content, err := ReadAgentMarkdownFile("agent_assistant", "notes/USER.md")
+	content, err := ReadAgentMarkdownFile("assistant", "notes/USER.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "user", content)
 
-	_, err = ReadAgentMarkdownFile("agent_assistant", "RULES.md")
+	_, err = ReadAgentMarkdownFile("assistant", "RULES.md")
 	assert.ErrorContains(t, err, "loaded automatically")
-	_, err = ReadAgentMarkdownFile("agent_assistant", "../outside.md")
+	_, err = ReadAgentMarkdownFile("assistant", "../outside.md")
 	assert.ErrorContains(t, err, "stay within")
-	_, err = ReadAgentMarkdownFile("agent_assistant", "plain.txt")
+	_, err = ReadAgentMarkdownFile("assistant", "plain.txt")
 	assert.ErrorContains(t, err, "markdown")
 }
 
@@ -357,7 +363,7 @@ func TestAgentRootMarkdownFiles(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
@@ -368,30 +374,30 @@ func TestAgentRootMarkdownFiles(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
 
-	files, err := ListAgentRootMarkdownFiles("agent_assistant")
+	files, err := ListAgentRootMarkdownFiles("assistant")
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"AGENTS.md", "IDENTITY.md", "MEMORY.md", "RULES.md", "SYSTEM.md"}, files)
 
-	content, err := ReadAgentRootMarkdownFile("agent_assistant", "SYSTEM.md")
+	content, err := ReadAgentRootMarkdownFile("assistant", "SYSTEM.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "system", content)
 
-	assert.NoError(t, WriteAgentRootMarkdownFile("agent_assistant", "PROFILE.md", "profile"))
-	content, err = ReadAgentRootMarkdownFile("agent_assistant", "PROFILE.md")
+	assert.NoError(t, WriteAgentRootMarkdownFile("assistant", "PROFILE.md", "profile"))
+	content, err = ReadAgentRootMarkdownFile("assistant", "PROFILE.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "profile", content)
 
-	assert.NoError(t, DeleteAgentRootMarkdownFile("agent_assistant", "PROFILE.md"))
-	_, err = ReadAgentRootMarkdownFile("agent_assistant", "PROFILE.md")
+	assert.NoError(t, DeleteAgentRootMarkdownFile("assistant", "PROFILE.md"))
+	_, err = ReadAgentRootMarkdownFile("assistant", "PROFILE.md")
 	assert.Error(t, err)
 
-	err = DeleteAgentRootMarkdownFile("agent_assistant", "RULES.md")
+	err = DeleteAgentRootMarkdownFile("assistant", "RULES.md")
 	assert.ErrorContains(t, err, "protected")
-	err = DeleteAgentRootMarkdownFile("agent_assistant", "AGENTS.md")
+	err = DeleteAgentRootMarkdownFile("assistant", "AGENTS.md")
 	assert.ErrorContains(t, err, "protected")
-	_, err = ReadAgentRootMarkdownFile("agent_assistant", "notes/USER.md")
+	_, err = ReadAgentRootMarkdownFile("assistant", "notes/USER.md")
 	assert.ErrorContains(t, err, "root")
-	err = WriteAgentRootMarkdownFile("agent_assistant", "../outside.md", "x")
+	err = WriteAgentRootMarkdownFile("assistant", "../outside.md", "x")
 	assert.ErrorContains(t, err, "stay within")
 }
 
@@ -400,10 +406,10 @@ func TestSyncAgentTemplate(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	err := SyncAgentTemplate("agent_assistant")
+	err := SyncAgentTemplate("assistant")
 	assert.NoError(t, err)
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.DirExists(t, filepath.Join(agentDir, "jobs"))
 	assert.DirExists(t, filepath.Join(agentDir, "memory"))
 	assert.DirExists(t, filepath.Join(agentDir, "sessions"))
@@ -421,7 +427,7 @@ func TestSyncAgentTemplate(t *testing.T) {
 	assert.Contains(t, string(rulesContent), "## Synced by Aviary")
 
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("custom"), 0o600))
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 
 	memoryContent, err = os.ReadFile(filepath.Join(agentDir, "MEMORY.md"))
 	assert.NoError(t, err)
@@ -433,12 +439,12 @@ func TestSyncAgentTemplate_DoesNotDeleteExtraFiles(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
 	customPath := filepath.Join(agentDir, "CUSTOM.md")
 	assert.NoError(t, os.WriteFile(customPath, []byte("keep me"), 0o600))
 
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 	assert.FileExists(t, customPath)
 }
 
@@ -447,10 +453,10 @@ func TestSyncAgentTemplate_AddsMissingFiles(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
 
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 	assert.FileExists(t, filepath.Join(agentDir, "MEMORY.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "AGENTS.md"))
 	assert.FileExists(t, filepath.Join(agentDir, "RULES.md"))
@@ -461,7 +467,7 @@ func TestRenameMatchingAgentDirs(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	oldDir := AgentDir("agent_old-name")
+	oldDir := AgentDir("old-name")
 	assert.NoError(t, os.MkdirAll(filepath.Join(oldDir, "sessions"), 0o700))
 	assert.NoError(t, os.WriteFile(filepath.Join(oldDir, "MEMORY.md"), []byte("custom memory"), 0o600))
 
@@ -482,7 +488,7 @@ func TestRenameMatchingAgentDirs(t *testing.T) {
 
 	assert.NoError(t, RenameMatchingAgentDirs(prev, next))
 
-	newDir := AgentDir("agent_new-name")
+	newDir := AgentDir("new-name")
 	assert.NoDirExists(t, oldDir)
 	assert.FileExists(t, filepath.Join(newDir, "MEMORY.md"))
 	content, err := os.ReadFile(filepath.Join(newDir, "MEMORY.md"))
@@ -495,8 +501,8 @@ func TestRenameMatchingAgentDirs_SkipsWhenTargetExists(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	oldDir := AgentDir("agent_old-name")
-	newDir := AgentDir("agent_new-name")
+	oldDir := AgentDir("old-name")
+	newDir := AgentDir("new-name")
 	assert.NoError(t, os.MkdirAll(oldDir, 0o700))
 	assert.NoError(t, os.MkdirAll(newDir, 0o700))
 
@@ -513,12 +519,12 @@ func TestSyncAgentTemplate_ReplacesEmptyExistingFile(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
 	rulesPath := filepath.Join(agentDir, "RULES.md")
 	assert.NoError(t, os.WriteFile(rulesPath, nil, 0o600))
 
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 
 	rulesContent, err := os.ReadFile(rulesPath)
 	assert.NoError(t, err)
@@ -530,7 +536,7 @@ func TestSyncAgentTemplate_ReplacesOnlySyncedMarkdownSection(t *testing.T) {
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
 	dest := strings.Join([]string{
 		"# Rules the agent must follow",
@@ -548,7 +554,7 @@ func TestSyncAgentTemplate_ReplacesOnlySyncedMarkdownSection(t *testing.T) {
 	}, "\n")
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte(dest), 0o600))
 
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 
 	rulesContent, err := os.ReadFile(filepath.Join(agentDir, "RULES.md"))
 	assert.NoError(t, err)
@@ -565,7 +571,7 @@ func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) 
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
 	dest := strings.Join([]string{
 		"# Old AGENTS",
@@ -580,7 +586,7 @@ func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) 
 	}, "\n")
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte(dest), 0o600))
 
-	assert.NoError(t, SyncAgentTemplate("agent_assistant"))
+	assert.NoError(t, SyncAgentTemplate("assistant"))
 
 	agentsContent, err := os.ReadFile(filepath.Join(agentDir, "AGENTS.md"))
 	assert.NoError(t, err)
@@ -614,12 +620,12 @@ func TestReadAgentMarkdownFile_StripsCommentLines(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	agentDir := AgentDir("agent_assistant")
+	agentDir := AgentDir("assistant")
 	err := os.MkdirAll(agentDir, 0o700)
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("visible\n<!-- hidden -->\nstill here\n"), 0o600))
 
-	content, err := ReadAgentMarkdownFile("agent_assistant", "IDENTITY.md")
+	content, err := ReadAgentMarkdownFile("assistant", "IDENTITY.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "visible\nstill here\n", content)
 }
@@ -654,8 +660,8 @@ func TestIntegration_StoreSetup(t *testing.T) {
 
 	dataDir := DataDir()
 	for _, p := range []string{
-		JobPath("agent_bot", "j1"),
-		SessionPath("agent_bot", "agent_bot-main"),
+		JobPath("bot", "j1"),
+		SessionPath("bot", "bot-main"),
 		MemoryPath("private:bot"),
 	} {
 		assert.True(t, strings.HasPrefix(p, dataDir))

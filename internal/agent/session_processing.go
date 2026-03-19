@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-type sessionProcessingObserver func(sessionID string, processing bool)
+type sessionProcessingObserver func(agentID, sessionID string, processing bool)
 
 var sessionProcessingObs sessionProcessingObserver
 
@@ -19,31 +19,33 @@ var runs = &sessionRunRegistry{bySession: make(map[string]map[uint64]context.Can
 
 // SetSessionProcessingObserver registers an optional observer for processing
 // state changes in a session.
-func SetSessionProcessingObserver(obs func(sessionID string, processing bool)) {
+func SetSessionProcessingObserver(obs func(agentID, sessionID string, processing bool)) {
 	sessionProcessingObs = obs
 }
 
 // IsSessionProcessing returns true when at least one prompt is currently active
 // for the given session.
-func IsSessionProcessing(sessionID string) bool {
-	if sessionID == "" {
+func IsSessionProcessing(agentID, sessionID string) bool {
+	key := SessionRuntimeKey(agentID, sessionID)
+	if key == "" {
 		return false
 	}
 	runs.mu.Lock()
 	defer runs.mu.Unlock()
-	active := runs.bySession[sessionID]
+	active := runs.bySession[key]
 	return len(active) > 0
 }
 
 // StopSession cancels all in-flight prompts for the given session and returns
 // the number of canceled runs.
-func StopSession(sessionID string) int {
-	if sessionID == "" {
+func StopSession(agentID, sessionID string) int {
+	key := SessionRuntimeKey(agentID, sessionID)
+	if key == "" {
 		return 0
 	}
 
 	runs.mu.Lock()
-	active := runs.bySession[sessionID]
+	active := runs.bySession[key]
 	if len(active) == 0 {
 		runs.mu.Unlock()
 		return 0
@@ -52,27 +54,28 @@ func StopSession(sessionID string) int {
 	for _, cancel := range active {
 		cancels = append(cancels, cancel)
 	}
-	delete(runs.bySession, sessionID)
+	delete(runs.bySession, key)
 	runs.mu.Unlock()
 
-	notifySessionProcessing(sessionID, false)
+	notifySessionProcessing(agentID, sessionID, false)
 	for _, cancel := range cancels {
 		cancel()
 	}
 	return len(cancels)
 }
 
-func trackSessionRun(sessionID string, cancel context.CancelFunc) func() {
-	if sessionID == "" {
+func trackSessionRun(agentID, sessionID string, cancel context.CancelFunc) func() {
+	key := SessionRuntimeKey(agentID, sessionID)
+	if key == "" {
 		return func() {}
 	}
 
 	runs.mu.Lock()
-	active := runs.bySession[sessionID]
+	active := runs.bySession[key]
 	wasProcessing := len(active) > 0
 	if active == nil {
 		active = make(map[uint64]context.CancelFunc)
-		runs.bySession[sessionID] = active
+		runs.bySession[key] = active
 	}
 	runs.nextID++
 	runID := runs.nextID
@@ -80,7 +83,7 @@ func trackSessionRun(sessionID string, cancel context.CancelFunc) func() {
 	runs.mu.Unlock()
 
 	if !wasProcessing {
-		notifySessionProcessing(sessionID, true)
+		notifySessionProcessing(agentID, sessionID, true)
 	}
 
 	var once sync.Once
@@ -88,25 +91,25 @@ func trackSessionRun(sessionID string, cancel context.CancelFunc) func() {
 		once.Do(func() {
 			becameIdle := false
 			runs.mu.Lock()
-			if active := runs.bySession[sessionID]; active != nil {
+			if active := runs.bySession[key]; active != nil {
 				if _, ok := active[runID]; ok {
 					delete(active, runID)
 					if len(active) == 0 {
-						delete(runs.bySession, sessionID)
+						delete(runs.bySession, key)
 						becameIdle = true
 					}
 				}
 			}
 			runs.mu.Unlock()
 			if becameIdle {
-				notifySessionProcessing(sessionID, false)
+				notifySessionProcessing(agentID, sessionID, false)
 			}
 		})
 	}
 }
 
-func notifySessionProcessing(sessionID string, processing bool) {
+func notifySessionProcessing(agentID, sessionID string, processing bool) {
 	if sessionProcessingObs != nil {
-		sessionProcessingObs(sessionID, processing)
+		sessionProcessingObs(agentID, sessionID, processing)
 	}
 }

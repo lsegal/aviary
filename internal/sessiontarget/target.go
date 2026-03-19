@@ -11,12 +11,12 @@ import (
 
 // Register wires the session's text and media delivery to the configured
 // target described by the sidecar entry.
-func Register(agentName, sessionID string, target store.SessionChannel, mgr *channels.Manager) {
+func Register(agentID, agentName, sessionID string, target store.SessionChannel, mgr *channels.Manager) {
 	if mgr == nil || sessionID == "" || target.Type == "" || target.ID == "" {
 		return
 	}
 
-	agent.RegisterSessionDelivery(sessionID, target.Type, target.ID, func(text string) {
+	agent.RegisterSessionDelivery(agentID, sessionID, target.Type, target.ID, func(text string) {
 		var err error
 		if target.ConfiguredID != "" {
 			err = mgr.SendOnConfiguredChannel(agentName, target.Type, target.ConfiguredID, target.ID, text)
@@ -28,7 +28,7 @@ func Register(agentName, sessionID string, target store.SessionChannel, mgr *cha
 		}
 	})
 
-	agent.RegisterSessionMediaDelivery(sessionID, target.Type, target.ID, func(caption, path string) {
+	agent.RegisterSessionMediaDelivery(agentID, sessionID, target.Type, target.ID, func(caption, path string) {
 		deliverPath := path
 		if staged, err := channels.StageOutgoingMedia(target.Type, path); err == nil {
 			deliverPath = staged
@@ -54,6 +54,6 @@ func Set(agentID, agentName, sessionID string, target store.SessionChannel, mgr 
 	if err := store.SetSessionChannel(agentID, sessionID, target.Type, target.ConfiguredID, target.ID); err != nil {
 		return err
 	}
-	Register(agentName, sessionID, target, mgr)
+	Register(agentID, agentName, sessionID, target, mgr)
 	return nil
 }

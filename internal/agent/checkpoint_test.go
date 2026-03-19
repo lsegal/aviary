@@ -124,7 +124,6 @@ func TestRecoverCheckpoints_Fresh(t *testing.T) {
 	path := writeTestCheckpoint(t, "agent_fresh", sessionID, time.Now())
 	require.NoError(t, store.AppendJSONL(store.SessionPath("agent_fresh", sessionID), domain.Message{
 		ID:        "cp_001",
-		SessionID: sessionID,
 		Role:      domain.MessageRoleUser,
 		Content:   "hello",
 		Timestamp: time.Now(),

@@ -882,10 +882,11 @@ func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	runs.nextID = 0
 	runs.mu.Unlock()
 
+	agentID := "agent_test"
 	var mu sync.Mutex
 	changes := make([]bool, 0, 2)
-	SetSessionProcessingObserver(func(sessionID string, processing bool) {
-		if sessionID != "sess-test" {
+	SetSessionProcessingObserver(func(notifiedAgentID, sessionID string, processing bool) {
+		if notifiedAgentID != agentID || sessionID != "sess-test" {
 			return
 		}
 		mu.Lock()
@@ -895,9 +896,9 @@ func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	t.Cleanup(func() { SetSessionProcessingObserver(nil) })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	untrack := trackSessionRun("sess-test", cancel)
-	assert.True(t, IsSessionProcessing("sess-test"))
-	stopped := StopSession("sess-test")
+	untrack := trackSessionRun(agentID, "sess-test", cancel)
+	assert.True(t, IsSessionProcessing(agentID, "sess-test"))
+	stopped := StopSession(agentID, "sess-test")
 	assert.Equal(t, 1, stopped)
 
 	select {
@@ -905,7 +906,7 @@ func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
-	assert.False(t, IsSessionProcessing("sess-test"))
+	assert.False(t, IsSessionProcessing(agentID, "sess-test"))
 
 	// Cleanup should be idempotent even after StopSession removed the run.
 	untrack()
@@ -995,7 +996,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 
 	t.Run("stream setup error delivers to session channel", func(t *testing.T) {
 		var delivered string
-		RegisterSessionDelivery("sess-stream-setup-error", "signal", "+1", func(text string) { delivered = text })
+		RegisterSessionDelivery("a1", "sess-stream-setup-error", "signal", "+1", func(text string) { delivered = text })
 
 		runner := NewAgentRunner(
 			&domain.Agent{ID: "a1", Model: "anthropic/test"},
@@ -1037,7 +1038,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 
 	t.Run("stream event error delivers to session channel", func(t *testing.T) {
 		var delivered string
-		RegisterSessionDelivery("sess-stream-event-error", "signal", "+1", func(text string) { delivered = text })
+		RegisterSessionDelivery("a1", "sess-stream-event-error", "signal", "+1", func(text string) { delivered = text })
 
 		runner := NewAgentRunner(
 			&domain.Agent{ID: "a1", Model: "anthropic/test"},
@@ -1625,35 +1626,35 @@ func TestResolveSessionID_FromContext(t *testing.T) {
 
 func TestSetSessionMessageObserver(t *testing.T) {
 	var notified string
-	SetSessionMessageObserver(func(sessionID, role string) {
-		notified = sessionID + "/" + role
+	SetSessionMessageObserver(func(agentID, sessionID, role string) {
+		notified = agentID + "/" + sessionID + "/" + role
 	})
 	t.Cleanup(func() { SetSessionMessageObserver(nil) })
 
-	notifySessionMessage("sess123", "user")
-	assert.Equal(t, "sess123/user", notified)
+	notifySessionMessage("agent_test", "sess123", "user")
+	assert.Equal(t, "agent_test/sess123/user", notified)
 
 }
 
 func TestRegisterSessionDelivery(t *testing.T) {
 	var received string
-	RegisterSessionDelivery("test-sess", "signal", "+1", func(text string) { received = text })
+	RegisterSessionDelivery("agent_test", "test-sess", "signal", "+1", func(text string) { received = text })
 
-	deliverToSession("test-sess", "hello delivery")
+	deliverToSession("agent_test", "test-sess", "hello delivery")
 	assert.Equal(t, "hello delivery", received)
 
 	// Empty text should not call delivery function.
 	received = ""
-	deliverToSession("test-sess", "")
+	deliverToSession("agent_test", "test-sess", "")
 	assert.Equal(t, "", received)
 
 	// Sentinel NO_REPLY should not call delivery function.
 	received = ""
-	deliverToSession("test-sess", "NO_REPLY")
+	deliverToSession("agent_test", "test-sess", "NO_REPLY")
 	assert.Equal(t, "", received)
 
 	// Unknown session should not panic.
-	deliverToSession("unknown-sess", "no delivery")
+	deliverToSession("agent_test", "unknown-sess", "no delivery")
 }
 
 func TestShouldDeliverReply(t *testing.T) {
@@ -1666,29 +1667,29 @@ func TestShouldDeliverReply(t *testing.T) {
 
 func TestRegisterSessionDelivery_Idempotent(t *testing.T) {
 	var calls int
-	RegisterSessionDelivery("sess-idem", "slack", "C1", func(_ string) { calls++ })
-	RegisterSessionDelivery("sess-idem", "slack", "C1", func(_ string) { calls += 10 })
+	RegisterSessionDelivery("agent_test", "sess-idem", "slack", "C1", func(_ string) { calls++ })
+	RegisterSessionDelivery("agent_test", "sess-idem", "slack", "C1", func(_ string) { calls += 10 })
 
 	// Second registration overwrites the first.
-	deliverToSession("sess-idem", "msg")
+	deliverToSession("agent_test", "sess-idem", "msg")
 	assert.Equal(t, 10, calls)
 
 }
 
 func TestRegisterSessionMediaDelivery(t *testing.T) {
 	var captionGot, pathGot string
-	RegisterSessionMediaDelivery("media-sess", "signal", "+2", func(caption, path string) {
+	RegisterSessionMediaDelivery("agent_test", "media-sess", "signal", "+2", func(caption, path string) {
 		captionGot = caption
 		pathGot = path
 	})
 
-	DeliverMediaToSession("media-sess", "my caption", "/path/to/file.jpg")
+	DeliverMediaToSession("agent_test", "media-sess", "my caption", "/path/to/file.jpg")
 	assert.Equal(t, "my caption", captionGot)
 	assert.Equal(t, "/path/to/file.jpg", pathGot)
 
 	// Empty path should not call delivery function.
 	captionGot = ""
-	DeliverMediaToSession("media-sess", "ignored", "")
+	DeliverMediaToSession("agent_test", "media-sess", "ignored", "")
 	assert.Equal(t, "", captionGot)
 
 }
@@ -1756,7 +1757,7 @@ func TestAppendReplyToSession_Delivers(t *testing.T) {
 	sessionID := "sess_reply"
 
 	var delivered string
-	RegisterSessionDelivery(sessionID, "signal", "+1555", func(text string) {
+	RegisterSessionDelivery(agentID, sessionID, "signal", "+1555", func(text string) {
 		delivered = text
 	})
 	err := AppendReplyToSession(agentID, sessionID, "hi")
@@ -2030,9 +2031,8 @@ func TestLoadMemoryContext_ExcludesSessionlessSummaries(t *testing.T) {
 
 	poolID := runner.memoryPoolID()
 	err := store.AppendJSONL(store.MemoryPath(poolID), domain.MemoryEntry{
-		ID:      "summary_1",
-		PoolID:  poolID,
-		Role:    "summary",
+		ID:   "summary_1",
+		Role: "summary",
 		Content: "summary from another session should not be shared",
 		Tokens:  8,
 	})

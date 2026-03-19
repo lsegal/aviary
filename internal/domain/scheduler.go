@@ -17,12 +17,14 @@ type ScheduledTask struct {
 	AgentName   string      `json:"agent_name"`
 	AgentID     string      `json:"agent_id"`
 	Name        string      `json:"name"`
+	Type        string      `json:"type,omitempty"`
 	TriggerType TriggerType `json:"trigger_type"`
 	Schedule    string      `json:"schedule,omitempty"` // cron expression
 	StartAt     *time.Time  `json:"start_at,omitempty"`
 	RunOnce     bool        `json:"run_once,omitempty"`
 	Watch       string      `json:"watch,omitempty"` // glob pattern
 	Prompt      string      `json:"prompt"`
+	Script      string      `json:"script,omitempty"`
 	Target      string      `json:"target,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
 }
@@ -43,10 +45,11 @@ const (
 type Job struct {
 	ID             string     `json:"id"`
 	TaskID         string     `json:"task_id"`
+	TaskType       string     `json:"task_type,omitempty"`
 	AgentID        string     `json:"agent_id"`
-	AgentName      string     `json:"agent_name"`
 	SessionID      string     `json:"session_id,omitempty"`
 	Prompt         string     `json:"prompt"`
+	Script         string     `json:"script,omitempty"`
 	OutputChannel  string     `json:"output_channel,omitempty"`
 	Status         JobStatus  `json:"status"`
 	Attempts       int        `json:"attempts"`

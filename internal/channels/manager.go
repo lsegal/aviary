@@ -193,7 +193,7 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 	// they appear as conversation context alongside agent-triggered turns.
 	if gcl, ok := ch.(GroupChatLogger); ok {
 		if spec.channelConfig.EffectiveGroupChatHistory() > 0 {
-			agentID := "agent_" + agentName
+			agentID := agentName
 			gcl.OnGroupChatMessage(func(msg IncomingMessage) {
 				sessionName := msg.Type + ":" + msg.Channel
 				sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName)

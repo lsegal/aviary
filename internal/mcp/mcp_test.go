@@ -347,7 +347,7 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
 	SetDeps(&Deps{Agents: mgr})
 
-	sess, err := agent.NewSessionManager().CreateWithName("agent_assistant", "signal:+15551234567")
+	sess, err := agent.NewSessionManager().CreateWithName("assistant", "signal:+15551234567")
 	require.NoError(t, err)
 
 	c, err := NewInProcessClient(context.Background(), NewServer())
@@ -355,19 +355,19 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 	defer c.Close() //nolint:errcheck
 
 	res, err := c.CallTool(context.Background(), "agent_run", map[string]any{
+		"name":       "assistant",
 		"message":    "hi",
 		"session_id": sess.ID,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, extractText(res), "no LLM provider configured")
 
-	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_assistant", sess.ID))
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("assistant", sess.ID))
 	require.NoError(t, err)
 	require.NotEmpty(t, lines)
 	var foundUser bool
 	for _, line := range lines {
 		if line.Role == domain.MessageRoleUser && line.Content == "hi" {
-			assert.Equal(t, sess.ID, line.SessionID)
 			foundUser = true
 			break
 		}
@@ -376,7 +376,7 @@ func TestAgentRun_UsesExactSessionID(t *testing.T) {
 
 	// Verify agent_run did not create extra sessions — the original session
 	// should be the only one for this agent.
-	sessions, err := agent.NewSessionManager().List("agent_assistant")
+	sessions, err := agent.NewSessionManager().List("assistant")
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(sessions))
 	assert.Equal(t, sess.ID, sessions[0].ID)
@@ -402,7 +402,7 @@ func TestAgentRun_RejectsSessionIDAgentMismatch(t *testing.T) {
 	})
 	SetDeps(&Deps{Agents: mgr})
 
-	sess, err := agent.NewSessionManager().CreateWithName("agent_assistant", "signal:+15551234567")
+	sess, err := agent.NewSessionManager().CreateWithName("assistant", "signal:+15551234567")
 	require.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
@@ -410,7 +410,7 @@ func TestAgentRun_RejectsSessionIDAgentMismatch(t *testing.T) {
 		"name":       "other",
 		"message":    "hi",
 		"session_id": sess.ID,
-	}, "does not belong to agent")
+	}, "not found for agent")
 }
 
 func TestResolveAgentRunHistory(t *testing.T) {
@@ -441,6 +441,7 @@ func TestSessionStop_NoActiveWork(t *testing.T) {
 
 	// Calling session_stop on an unknown session should report no active work.
 	res, err := c.CallTool(context.Background(), "session_stop", map[string]any{
+		"agent":      "assistant",
 		"session_id": "nonexistent-session-id-xyz",
 	})
 	assert.NoError(t, err)
@@ -685,6 +686,258 @@ func TestTaskListReturnsConfiguredTasks(t *testing.T) {
 
 }
 
+func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := taskPromptCompiler
+	t.Cleanup(func() { taskPromptCompiler = prevCompiler })
+	taskPromptCompiler = func(_ context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskPlan, error) {
+		assert.Equal(t, "bot", agentName)
+		assert.Equal(t, "check subscript uptime", prompt)
+		assert.False(t, runDiscovery)
+		return &compiledTaskPlan{
+			Compilable: true,
+			Steps: []compiledTaskStep{
+				{Kind: "deterministic", Deterministic: true, Tool: "web_search", Description: "placeholder"},
+			},
+			Script: "#!/usr/bin/env python3\nprint('compiled')\n",
+		}, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "subscript-uptime",
+		"prompt":   "check subscript uptime",
+		"schedule": "0 */10 * * * *",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "script", got.Type)
+	assert.Equal(t, "check subscript uptime", got.Prompt)
+	assert.Contains(t, got.Script, "compiled")
+}
+
+func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := taskPromptCompiler
+	t.Cleanup(func() { taskPromptCompiler = prevCompiler })
+	taskPromptCompiler = func(_ context.Context, _, _ string, _ bool) (*compiledTaskPlan, error) {
+		return &compiledTaskPlan{
+			Compilable: false,
+			Reason:     "not deterministic enough",
+		}, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "manual-review",
+		"prompt":   "review the latest emails and decide what matters",
+		"schedule": "0 0 * * * *",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "prompt", got.Type)
+	assert.Equal(t, "review the latest emails and decide what matters", got.Prompt)
+	assert.Empty(t, got.Script)
+}
+
+func TestTaskSchedule_ExplicitPromptTypeSkipsAutoCompile(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := taskPromptCompiler
+	t.Cleanup(func() { taskPromptCompiler = prevCompiler })
+	called := false
+	taskPromptCompiler = func(_ context.Context, _, _ string, _ bool) (*compiledTaskPlan, error) {
+		called = true
+		return &compiledTaskPlan{
+			Compilable: true,
+			Script:     "#!/usr/bin/env python3\nprint('compiled')\n",
+		}, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "forced-prompt",
+		"type":     "prompt",
+		"prompt":   "check subscript uptime",
+		"schedule": "0 */10 * * * *",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+	assert.False(t, called)
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "prompt", got.Type)
+	assert.Equal(t, "check subscript uptime", got.Prompt)
+	assert.Empty(t, got.Script)
+}
+
+func TestTaskSchedule_AcceptsStructuredHTTPCheckTask(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "subscript-uptime",
+		"schedule": "every 10 minutes",
+		"task": map[string]any{
+			"type":          "http_check",
+			"url":           "https://subscript.to",
+			"method":        "GET",
+			"expect_status": 200,
+			"on_failure": map[string]any{
+				"type":    "sms",
+				"to":      "+12066439160",
+				"message": "subscript.to is not returning 200 — status: [STATUS]",
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "script", got.Type)
+	assert.Equal(t, "0 */10 * * * *", got.Schedule)
+	assert.Contains(t, got.Script, "https://subscript.to")
+	assert.Empty(t, got.Target)
+}
+
 func TestJobRunNowForceStartsPendingJob(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -709,7 +962,7 @@ func TestJobRunNowForceStartsPendingJob(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Cleanup(s.Stop)
-	job, err := s.Queue().EnqueueAt("bot/daily", "agent_bot", "bot", "send hi", "", 1, time.Now().Add(1*time.Hour), "", "")
+	job, err := s.Queue().EnqueueAt("bot/daily", "bot", "send hi", "", 1, time.Now().Add(1*time.Hour), "", "")
 	assert.NoError(t, err)
 
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
@@ -754,6 +1007,93 @@ func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
 		"in":       "1h",
 		"schedule": "0 0 10 * * *",
 	}, "only one of")
+}
+
+func TestTaskSchedule_OneShotUsesBareNamedTaskID(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(base + "/aviary")
+	t.Cleanup(func() { store.SetDataDir("") })
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "Lobby",
+			Model: "test/x",
+		}},
+	}
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":  "Lobby",
+		"name":   "subscript-uptime-check",
+		"prompt": "check subscript uptime",
+		"in":     "10m",
+	})
+	assert.NoError(t, err)
+
+	jobs, err := s.Queue().List("")
+	assert.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, "subscript-uptime-check", jobs[0].TaskID)
+	assert.Equal(t, "Lobby", jobs[0].AgentID)
+}
+
+func TestTaskSchedule_OneShotGeneratedTaskIDIsNotAgentPrefixed(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(base + "/aviary")
+	t.Cleanup(func() { store.SetDataDir("") })
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "Lobby",
+			Model: "test/x",
+		}},
+	}
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":  "Lobby",
+		"prompt": "check subscript uptime",
+		"in":     "10m",
+	})
+	assert.NoError(t, err)
+
+	jobs, err := s.Queue().List("")
+	assert.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.NotContains(t, jobs[0].TaskID, "/")
+	assert.NotContains(t, jobs[0].TaskID, "Lobby")
 }
 
 func TestTaskRunTool(t *testing.T) {
@@ -818,7 +1158,7 @@ func TestTaskStopTool(t *testing.T) {
 	s.Reconcile(cfg)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
 
-	job, err := s.Queue().Enqueue("bot/daily", "agent_bot", "bot", "run now", "", 1, "", "")
+	job, err := s.Queue().Enqueue("bot/daily", "bot", "run now", "", 1, "", "")
 	assert.NoError(t, err)
 
 	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "task_stop", map[string]any{"name": "bot/daily"})
@@ -844,7 +1184,7 @@ func TestChannelSendFile_PersistsMediaForWebSession(t *testing.T) {
 	SetServerChecker(func() bool { return false })
 	SetDeps(&Deps{})
 
-	agentID := "agent_bot"
+	agentID := "bot"
 	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, "main")
 	assert.NoError(t, err)
 
@@ -867,7 +1207,7 @@ func TestChannelSendFile_PersistsMediaForWebSession(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "file sent:"))
 
-	raw, err := d.CallTool(context.Background(), "session_messages", map[string]any{"session_id": sess.ID})
+	raw, err := d.CallTool(context.Background(), "session_messages", map[string]any{"agent": "bot", "session_id": sess.ID})
 	assert.NoError(t, err)
 
 	var messages []struct {
@@ -962,7 +1302,7 @@ func TestUsageQueryTool(t *testing.T) {
 	// Write a usage record within the last 30 days.
 	rec := domain.UsageRecord{
 		Timestamp:    time.Now().Add(-24 * time.Hour),
-		AgentName:    "bot",
+		AgentID:      "agent_bot",
 		Model:        "claude-3",
 		Provider:     "anthropic",
 		InputTokens:  100,
@@ -996,11 +1336,11 @@ func TestUsageQueryTool_DateFilter(t *testing.T) {
 	// Write a usage record from 60 days ago (outside default 30-day window).
 	oldRec := domain.UsageRecord{
 		Timestamp: time.Now().Add(-60 * 24 * time.Hour),
-		AgentName: "old-bot",
+		AgentID:   "agent_old_bot",
 	}
 	recentRec := domain.UsageRecord{
 		Timestamp: time.Now().Add(-1 * time.Hour),
-		AgentName: "recent-bot",
+		AgentID:   "agent_recent_bot",
 	}
 	usagePath := store.UsagePath()
 	_ = store.AppendJSONL(usagePath, oldRec)
@@ -1444,9 +1784,9 @@ func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatch
 	})
 	SetDeps(&Deps{Agents: mgr})
 
-	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
 	require.NoError(t, err)
-	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "agent_bot")
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "bot")
 	return NewDispatcher("https://localhost:16677", ""), ctx, workspace
 }
 
@@ -1475,9 +1815,9 @@ func setupMCPWithExecAgent(t *testing.T, execPerms *config.ExecPermissionsConfig
 	})
 	SetDeps(&Deps{Agents: mgr})
 
-	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
 	require.NoError(t, err)
-	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "agent_bot")
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "bot")
 	return NewDispatcher("https://localhost:16677", ""), ctx
 }
 
@@ -1579,7 +1919,7 @@ func TestFileToolsRequireFilesystemAllowlistAndAgentContext(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "agent session context")
 
-	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./x.txt"})
 	require.NoError(t, err)
 	assert.Contains(t, out, "allowedPaths")
@@ -1630,8 +1970,8 @@ func TestRunExecCommand_LoadsAgentDotEnv(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
 	require.NoError(t, store.EnsureDirs())
-	require.NoError(t, os.MkdirAll(store.AgentDir("agent_bot"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("agent_bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\n"), 0o600))
+	require.NoError(t, os.MkdirAll(store.AgentDir("bot"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\n"), 0o600))
 
 	origExecCommandContext := execCommandContext
 	t.Cleanup(func() { execCommandContext = origExecCommandContext })
@@ -1639,7 +1979,7 @@ func TestRunExecCommand_LoadsAgentDotEnv(t *testing.T) {
 		return exec.CommandContext(ctx, os.Args[0], "-test.run=TestCommandEnvHelperProcess", "--", "AVIARY_TEST_ENV")
 	}
 
-	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	result, err := runExecCommand(ctx, &config.ExecPermissionsConfig{}, execArgs{Command: "helper"}, "")
 	require.NoError(t, err)
 	assert.Contains(t, result.Stdout, "AVIARY_TEST_ENV=from-dotenv")
@@ -1650,8 +1990,8 @@ func TestRunGogCLI_LoadsAgentDotEnvAndRuntimeEnv(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
 	require.NoError(t, store.EnsureDirs())
-	require.NoError(t, os.MkdirAll(store.AgentDir("agent_bot"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("agent_bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\nAVIARY_TEST_SKILL=from-dotenv\n"), 0o600))
+	require.NoError(t, os.MkdirAll(store.AgentDir("bot"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("bot"), ".env"), []byte("AVIARY_TEST_ENV=from-dotenv\nAVIARY_TEST_SKILL=from-dotenv\n"), 0o600))
 	require.NoError(t, config.Save("", &config.Config{
 		Skills: map[string]config.SkillConfig{
 			"gogcli": {Enabled: true},
@@ -1677,7 +2017,7 @@ func TestRunGogCLI_LoadsAgentDotEnvAndRuntimeEnv(t *testing.T) {
 		)
 	}
 
-	ctx := agent.WithSessionAgentID(context.Background(), "agent_bot")
+	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	out, err := runGogCLI(ctx, gogcliRunArgs{Command: []string{"gmail", "list"}})
 	require.NoError(t, err)
 	assert.Contains(t, out, "AVIARY_TEST_ENV=from-dotenv")
@@ -2204,13 +2544,13 @@ func TestSessionCreateAndMessages(t *testing.T) {
 	// session_create returns a new session with agent info.
 	out, err := d.CallTool(context.Background(), "session_create", map[string]any{"agent": "bot"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "agent_bot"))
+	assert.True(t, strings.Contains(out, "bot"))
 
 	// session_messages on a new empty session returns an empty array.
 	// First get a session ID from the session_list.
 	listOut, err := d.CallTool(context.Background(), "session_list", map[string]any{"agent": "bot"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(listOut, "agent_bot"))
+	assert.True(t, strings.Contains(listOut, "bot"))
 
 }
 
@@ -2230,11 +2570,12 @@ func TestSessionSetTargetPersistsSidecar(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
 	SetDeps(&Deps{Agents: mgr})
 
-	sess, err := agent.NewSessionManager().GetOrCreateNamed("agent_bot", "main")
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
 	require.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "session_set_target", map[string]any{
+		"agent":        "bot",
 		"session_id":   sess.ID,
 		"channel_type": "slack",
 		"channel_id":   "alerts",
@@ -2244,12 +2585,135 @@ func TestSessionSetTargetPersistsSidecar(t *testing.T) {
 	assert.Contains(t, out, sess.ID)
 	assert.Contains(t, out, "slack/alerts")
 
-	cfg, err := store.ReadSessionChannels("agent_bot", sess.ID)
+	cfg, err := store.ReadSessionChannels("bot", sess.ID)
 	require.NoError(t, err)
 	require.Len(t, cfg.Channels, 1)
 	assert.Equal(t, "slack", cfg.Channels[0].Type)
 	assert.Equal(t, "alerts", cfg.Channels[0].ConfiguredID)
 	assert.Equal(t, "C123", cfg.Channels[0].ID)
+}
+
+func TestSessionSendTool_DeliversToRegisteredTargets(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
+	require.NoError(t, err)
+
+	var delivered string
+	agent.RegisterSessionDelivery("bot", sess.ID, "signal", "+15551234567", func(text string) {
+		delivered = text
+	})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "session_send", map[string]any{
+		"agent":      "bot",
+		"session_id": sess.ID,
+		"content":    "hello from session_send",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "sent message")
+	assert.Equal(t, "hello from session_send", delivered)
+}
+
+func TestLoadSessionByID_UsesAgentHintForShortSessionID(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	shortSessionID := "signal:+15551234567"
+	_, err = agent.NewSessionManager().GetOrCreateNamed("Coder", shortSessionID)
+	require.NoError(t, err)
+	lobbySess, err := agent.NewSessionManager().GetOrCreateNamed("Lobby", shortSessionID)
+	require.NoError(t, err)
+
+	sess, err := loadSessionByID("Lobby", shortSessionID)
+	require.NoError(t, err)
+	assert.Equal(t, lobbySess.ID, sess.ID)
+	assert.Equal(t, "Lobby", sess.AgentID)
+}
+
+func TestSessionSendTool_RequiresAgent(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{
+		{Name: "Coder", Model: "test/x"},
+		{Name: "Lobby", Model: "test/x"},
+	}})
+	SetDeps(&Deps{Agents: mgr})
+
+	shortSessionID := "signal:+15551234567"
+	_, err = agent.NewSessionManager().GetOrCreateNamed("Coder", shortSessionID)
+	require.NoError(t, err)
+	_, err = agent.NewSessionManager().GetOrCreateNamed("Lobby", shortSessionID)
+	require.NoError(t, err)
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "session_send", map[string]any{
+		"session_id": shortSessionID,
+		"content":    "hello from ambiguous short session id",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "agent is required")
+}
+
+func TestTaskCompileScript_BuiltInHTTPStatusCheck(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "",
+		}},
+	}
+	err = config.Save("", cfg)
+	require.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_compile_script", map[string]any{
+		"agent":  "bot",
+		"prompt": "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"compilable": true`)
+	assert.Contains(t, out, `https://subscript.to`)
+	assert.Contains(t, out, `#!/usr/bin/env python3`)
 }
 
 func TestAgentStop_NotFound(t *testing.T) {

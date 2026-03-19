@@ -93,13 +93,17 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			s.tasks[key] = tc
 			delete(s.onceFired, key)
 
-			agentName := ac.Name
-			agentID := fmt.Sprintf("agent_%s", ac.Name)
+			agentID := ac.Name
 			taskID := key
 			prompt := tc.Prompt
+			taskType := strings.ToLower(strings.TrimSpace(tc.Type))
+			if taskType == "" {
+				taskType = "prompt"
+			}
+			script := tc.Script
 
 			enqueue := func() {
-				if _, err := s.queue.Enqueue(taskID, agentID, agentName, prompt, tc.Target, 0, "", ""); err != nil {
+				if _, err := s.queue.EnqueueWithType(taskID, taskType, agentID, prompt, script, tc.Target, 0, "", ""); err != nil {
 					slog.Warn("scheduler: enqueue failed", "task", taskID, "err", err)
 				}
 			}
@@ -194,9 +198,11 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 		task := domain.ScheduledTask{
 			ID:        key,
 			AgentName: agentName,
-			AgentID:   fmt.Sprintf("agent_%s", agentName),
+			AgentID:   agentName,
 			Name:      taskName,
+			Type:      strings.TrimSpace(tc.Type),
 			Prompt:    tc.Prompt,
+			Script:    tc.Script,
 			Target:    tc.Target,
 			RunOnce:   tc.RunOnce,
 			Schedule:  tc.Schedule,
@@ -233,9 +239,12 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 			continue
 		}
 		parts := strings.SplitN(key, "/", 2)
-		agentName := parts[0]
-		agentID := fmt.Sprintf("agent_%s", agentName)
-		job, err := s.queue.StartImmediate(key, agentID, agentName, tc.Prompt, tc.Target, "", "")
+		agentID := parts[0]
+		taskType := strings.ToLower(strings.TrimSpace(tc.Type))
+		if taskType == "" {
+			taskType = "prompt"
+		}
+		job, err := s.queue.StartImmediateWithType(key, taskType, agentID, tc.Prompt, tc.Script, tc.Target, "", "")
 		if err != nil {
 			return nil, err
 		}

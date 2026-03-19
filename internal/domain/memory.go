@@ -11,7 +11,6 @@ type MemoryPool struct {
 // MemoryEntry is a single entry in a memory pool (stored as JSONL).
 type MemoryEntry struct {
 	ID        string    `json:"id"`
-	PoolID    string    `json:"pool_id"`
 	SessionID string    `json:"session_id,omitempty"`
 	Role      string    `json:"role"`    // "user", "assistant", "summary"
 	Content   string    `json:"content"` // text content
