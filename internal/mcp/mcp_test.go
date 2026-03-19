@@ -812,7 +812,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	assert.Empty(t, got.Script)
 }
 
-func TestTaskSchedule_ExplicitPromptTypeSkipsAutoCompile(t *testing.T) {
+func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	err := store.EnsureDirs()
@@ -827,8 +827,11 @@ func TestTaskSchedule_ExplicitPromptTypeSkipsAutoCompile(t *testing.T) {
 	prevCompiler := taskPromptCompiler
 	t.Cleanup(func() { taskPromptCompiler = prevCompiler })
 	called := false
-	taskPromptCompiler = func(_ context.Context, _, _ string, _ bool) (*compiledTaskPlan, error) {
+	taskPromptCompiler = func(_ context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskPlan, error) {
 		called = true
+		assert.Equal(t, "bot", agentName)
+		assert.Equal(t, "check subscript uptime", prompt)
+		assert.False(t, runDiscovery)
 		return &compiledTaskPlan{
 			Compilable: true,
 			Script:     "#!/usr/bin/env python3\nprint('compiled')\n",
@@ -863,7 +866,7 @@ func TestTaskSchedule_ExplicitPromptTypeSkipsAutoCompile(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
-	assert.False(t, called)
+	assert.True(t, called)
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -871,9 +874,9 @@ func TestTaskSchedule_ExplicitPromptTypeSkipsAutoCompile(t *testing.T) {
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 
 	got := loaded.Agents[0].Tasks[0]
-	assert.Equal(t, "prompt", got.Type)
+	assert.Equal(t, "script", got.Type)
 	assert.Equal(t, "check subscript uptime", got.Prompt)
-	assert.Empty(t, got.Script)
+	assert.Contains(t, got.Script, "compiled")
 }
 
 func TestTaskSchedule_AcceptsStructuredHTTPCheckTask(t *testing.T) {

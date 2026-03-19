@@ -1159,7 +1159,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks. Prompt-based tasks are automatically compiled into script tasks when Aviary can confidently derive a deterministic script.",
+		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<6-field cron with leading seconds> for a recurring configured task. Optional name=<task-name> for recurring tasks. Deterministic prompt tasks are automatically promoted to script tasks when Aviary can compile them safely, even if type=prompt was supplied.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1203,7 +1203,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				taskType = "script"
 			}
 		}
-		autoCompile := !typeWasExplicit && !args.CompileScript && taskType == "prompt" && promptText != "" && scriptText == ""
+		autoCompile := !args.CompileScript && taskType == "prompt" && promptText != "" && scriptText == ""
 		if autoCompile {
 			compiled, err := resolveTaskPromptCompiler()(ctx, args.Agent, promptText, args.RunDiscovery)
 			if err != nil {
