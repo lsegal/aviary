@@ -47,7 +47,7 @@ func TestRunLua_JSONEncode(t *testing.T) {
 			name:   "encode object table",
 			script: `print(json.encode({name="alice", age=30}))`,
 			// map iteration order is non-deterministic, so we test via decode round-trip instead
-			want:   ``, // skipped below
+			want: ``, // skipped below
 		},
 		{
 			name:   "encode nested structure",
