@@ -93,6 +93,33 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 	L.SetMetatable(toolTable, meta)
 	L.SetGlobal("tool", toolTable)
 
+	jsonTable := L.NewTable()
+	L.SetField(jsonTable, "encode", L.NewFunction(func(state *lua.LState) int {
+		val, err := luaValueToGo(state.CheckAny(1))
+		if err != nil {
+			state.RaiseError("%v", err)
+			return 0
+		}
+		b, err := json.Marshal(val)
+		if err != nil {
+			state.RaiseError("%v", err)
+			return 0
+		}
+		state.Push(lua.LString(b))
+		return 1
+	}))
+	L.SetField(jsonTable, "decode", L.NewFunction(func(state *lua.LState) int {
+		s := state.CheckString(1)
+		var parsed any
+		if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+			state.RaiseError("%v", err)
+			return 0
+		}
+		state.Push(goToLuaValue(state, parsed))
+		return 1
+	}))
+	L.SetGlobal("json", jsonTable)
+
 	if err := L.DoString(script); err != nil {
 		return "", err
 	}
