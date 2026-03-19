@@ -709,7 +709,7 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 			Steps: []compiledTaskStep{
 				{Kind: "deterministic", Deterministic: true, Tool: "web_search", Description: "placeholder"},
 			},
-			Script: "#!/usr/bin/env python3\nprint('compiled')\n",
+			Script: "print('compiled')\n",
 		}, nil
 	}
 
@@ -834,7 +834,7 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 		assert.False(t, runDiscovery)
 		return &compiledTaskPlan{
 			Compilable: true,
-			Script:     "#!/usr/bin/env python3\nprint('compiled')\n",
+			Script:     "print('compiled')\n",
 		}, nil
 	}
 
@@ -2722,7 +2722,80 @@ func TestTaskCompileScript_BuiltInHTTPStatusCheck(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, `"compilable": true`)
 	assert.Contains(t, out, `https://subscript.to`)
-	assert.Contains(t, out, `#!/usr/bin/env python3`)
+	assert.Contains(t, out, `tool.agent_run`)
+}
+
+func TestAgentRunScript_UsesCurrentAgentContextForToolCalls(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Permissions: &config.PermissionsConfig{
+				Preset: config.PermissionsPresetFull,
+			},
+		}},
+	}
+	err = config.Save("", cfg)
+	require.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "agent_run_script", map[string]any{
+		"name":   "bot",
+		"script": "local sessions = tool.session_list({})\nprint(#sessions > 0)\n",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "true", strings.TrimSpace(out))
+}
+
+func TestAgentRunScript_RespectsDisabledToolPermissions(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name: "bot",
+			Permissions: &config.PermissionsConfig{
+				Preset:        config.PermissionsPresetFull,
+				DisabledTools: []string{"session_list"},
+			},
+		}},
+	}
+	err = config.Save("", cfg)
+	require.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "agent_run_script", map[string]any{
+		"name":   "bot",
+		"script": "tool.session_list({})\n",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, `tool "session_list" is not enabled for this agent`)
 }
 
 func TestAgentStop_NotFound(t *testing.T) {

@@ -88,7 +88,7 @@ func registerSessionSendTool(s *sdkmcp.Server) {
 func registerTaskCompilerTools(s *sdkmcp.Server) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "task_compile_script",
-		Description: "Analyze a natural-language task prompt and, when feasible, generate a Python script task. Returns JSON with steps, confidence, and generated script.",
+		Description: "Analyze a natural-language task prompt and, when feasible, generate an embedded Lua script task. Returns JSON with steps, confidence, and generated script.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskCompileArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
@@ -140,7 +140,7 @@ func compileTaskPrompt(ctx context.Context, agentName, prompt string, runDiscove
 		}
 		return &plan, nil
 	}
-	generationSystem := "Generate a single-file Python 3 script for Aviary. Output only the script text, starting with #!/usr/bin/env python3. Use only the Python standard library. Use os.environ.get('AVIARY_BIN', 'aviary') to invoke Aviary tools when needed. For deterministic steps, call subprocess against [AVIARY_BIN, 'tool', <tool>, ...]. For nondeterministic semantic checks, call agent_run with --bare semantics through the MCP tool interface. If the script needs to notify, print the notification text to stdout and let Aviary's task scheduler deliver that output to the task's configured target. Do not invent tools that are not in the available tools list."
+	generationSystem := "Generate a single-file Lua script for Aviary's embedded runtime. Output only the Lua source code, with no markdown fences. The runtime exposes a sandboxed global table `tool` where each tool is called as tool.name({ ... }) and a global `environment` table containing agent_id, session_id, task_id, and job_id. There is no filesystem, network, package loader, or shell access except through the exposed tools. Use tool calls for all external actions. When the script should emit a user-visible notification, call print(...). Do not invent tools that are not in the available tools list."
 	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler plan JSON:\n%s", prompt, toolList, mustJSON(plan))
 	script, err := completeLLMText(ctx, provider, model, generationSystem, generationUser)
 	if err != nil {
@@ -180,7 +180,7 @@ func compileBuiltInTaskPrompt(prompt string) *compiledTaskPlan {
 	}
 	return &compiledTaskPlan{
 		Compilable: true,
-		Reason:     "deterministic HTTP health-check task",
+		Reason:     "bounded HTTP health-check task using the current agent",
 		Steps: []compiledTaskStep{
 			{Kind: "deterministic", Deterministic: true, Description: fmt.Sprintf("Perform an HTTP GET to %s", url)},
 			{Kind: "deterministic", Deterministic: true, Description: "Compare the HTTP status code to 200"},
@@ -212,26 +212,24 @@ func defaultStatusAlertMessage(url string) string {
 func buildHTTPStatusScript(url, message string) string {
 	quotedURL, _ := json.Marshal(url)
 	quotedMessage, _ := json.Marshal(message)
-	return strings.TrimSpace(fmt.Sprintf(`#!/usr/bin/env python3
-import urllib.error
-import urllib.request
+	return strings.TrimSpace(fmt.Sprintf(`
+local URL = %s
+local MESSAGE_TEMPLATE = %s
 
-URL = %s
-MESSAGE_TEMPLATE = %s
+local result = tool.agent_run({
+  bare = true,
+  history = false,
+  message = "Check the HTTP status for " .. URL .. ". Reply with only the numeric status code."
+})
 
+local status = tonumber(result)
+if status == nil then
+  error("agent_run did not return a numeric status code")
+end
 
-def fetch_status(url: str) -> int:
-    request = urllib.request.Request(url, method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return int(response.getcode() or 0)
-    except urllib.error.HTTPError as exc:
-        return int(exc.code or 0)
-
-
-status = fetch_status(URL)
-if status != 200:
-    print(MESSAGE_TEMPLATE.replace("[STATUS]", str(status)))
+if status ~= 200 then
+  print(string.gsub(MESSAGE_TEMPLATE, "%%[STATUS%%]", tostring(status)))
+end
 `, quotedURL, quotedMessage))
 }
 

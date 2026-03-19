@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -671,14 +670,6 @@ func TestWorkerPool_ExecuteJob_UsesBareOneShotTaskIDAsSessionID(t *testing.T) {
 	assert.Equal(t, "subscript-uptime-check", job.SessionID)
 }
 
-func TestInterpreterFromShebang_PythonPathResolvesBinaryName(t *testing.T) {
-	interp, args, ext, err := interpreterFromShebang("/usr/bin/python")
-	assert.NoError(t, err)
-	assert.Equal(t, "python", interp)
-	assert.Empty(t, args)
-	assert.Equal(t, ".py", ext)
-}
-
 func TestExecuteScriptJob(t *testing.T) {
 	setupSchedulerDataDir(t)
 
@@ -696,10 +687,7 @@ func TestExecuteScriptJob(t *testing.T) {
 }
 
 func testScriptBody() string {
-	if runtime.GOOS == "windows" {
-		return "#!/usr/bin/env powershell\nWrite-Output 'script-ok'\n"
-	}
-	return "#!/usr/bin/env sh\necho script-ok\n"
+	return "print('script-ok')\n"
 }
 
 func TestEnqueueAt(t *testing.T) {

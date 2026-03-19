@@ -198,6 +198,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		p.setActiveJobSession(job.ID, sessionID)
 		ctx = agent.WithSessionID(ctx, sessionID)
 	}
+	ctx = agent.WithSessionAgentID(ctx, job.AgentID)
+	ctx = agent.WithTaskID(ctx, job.TaskID)
+	ctx = agent.WithJobID(ctx, job.ID)
 
 	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
 	if taskType == "script" {

@@ -25,6 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
@@ -156,6 +157,13 @@ type agentRunArgs struct {
 
 type agentNameArgs struct {
 	Name string `json:"name"`
+}
+
+type agentRunScriptArgs struct {
+	Name      string `json:"name,omitempty"`
+	Script    string `json:"script"`
+	Session   string `json:"session,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 type agentTemplateSyncArgs struct {
@@ -399,6 +407,72 @@ func registerAgentTools(s *sdkmcp.Server) {
 		}
 		runner.Stop()
 		return text(fmt.Sprintf("agent %q stopped", args.Name))
+	})
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "agent_run_script",
+		Description: "Run an embedded Lua script for the current agent/session. Scripts get a sandboxed `tool.<name>({ ... })` table and an `environment` table with agent_id, session_id, task_id, and job_id.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentRunScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if d.Agents == nil {
+			return nil, struct{}{}, fmt.Errorf("agent manager not initialized; is the server running?")
+		}
+		agentName := strings.TrimSpace(args.Name)
+		if agentName == "" {
+			if fromCtx, ok := agent.SessionAgentIDFromContext(ctx); ok {
+				agentName = strings.TrimSpace(fromCtx)
+			}
+		}
+		if agentName == "" {
+			return nil, struct{}{}, fmt.Errorf("name is required")
+		}
+
+		var sess *domain.Session
+		if strings.TrimSpace(args.SessionID) != "" {
+			loaded, err := loadSessionByID(agentName, args.SessionID)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			sess = loaded
+		} else {
+			sessionName := strings.TrimSpace(args.Session)
+			if sessionName == "" {
+				sessionName = "main"
+			}
+			created, err := agent.NewSessionManager().GetOrCreateNamed(agentName, sessionName)
+			if err != nil {
+				return nil, struct{}{}, fmt.Errorf("initializing session: %w", err)
+			}
+			sess = created
+		}
+
+		runCtx := agent.WithSessionAgentID(agent.WithSessionID(ctx, sess.ID), sess.AgentID)
+		if taskID, ok := agent.TaskIDFromContext(ctx); ok {
+			runCtx = agent.WithTaskID(runCtx, taskID)
+		}
+		if jobID, ok := agent.JobIDFromContext(ctx); ok {
+			runCtx = agent.WithJobID(runCtx, jobID)
+		}
+		toolClient, err := newScriptToolClient(runCtx)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		defer toolClient.Close() //nolint:errcheck
+
+		output, err := scriptruntime.RunLua(runCtx, args.Script, scriptruntime.Options{
+			ToolClient: toolClient,
+			Environment: scriptruntime.Environment{
+				AgentID:   sess.AgentID,
+				SessionID: sess.ID,
+			},
+		})
+		if err != nil {
+			return &sdkmcp.CallToolResult{
+				IsError: true,
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: err.Error()}},
+			}, struct{}{}, nil
+		}
+		return text(output)
 	})
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{

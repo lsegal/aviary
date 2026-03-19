@@ -20,6 +20,11 @@ var newToolClientFactory = func(context.Context) (ToolClient, error) {
 	return nil, nil
 }
 
+// NewToolClient returns the currently configured runtime tool client.
+func NewToolClient(ctx context.Context) (ToolClient, error) {
+	return newToolClientFactory(ctx)
+}
+
 // SetToolClientFactory injects the runtime tool client factory used by AgentRunner.
 func SetToolClientFactory(fn func(context.Context) (ToolClient, error)) {
 	if fn == nil {

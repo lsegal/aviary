@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
@@ -31,7 +32,7 @@ func (c *agentToolClient) ListTools(ctx context.Context) ([]agent.ToolInfo, erro
 		if !config.IsToolAllowedByPreset(preset, t.Name) {
 			continue
 		}
-		if t.Name == "exec" && !agentHasExecConfig(ctx) {
+		if err := agentToolPermitted(ctx, t.Name); err != nil {
 			continue
 		}
 		out = append(out, agent.ToolInfo{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
@@ -40,6 +41,9 @@ func (c *agentToolClient) ListTools(ctx context.Context) ([]agent.ToolInfo, erro
 }
 
 func (c *agentToolClient) CallToolText(ctx context.Context, name string, args map[string]any) (string, error) {
+	if err := agentToolPermitted(ctx, name); err != nil {
+		return "", err
+	}
 	return c.client.CallToolText(ctx, name, args)
 }
 
@@ -61,6 +65,37 @@ func agentPermissionsPreset(ctx context.Context) config.PermissionsPreset {
 		return config.PermissionsPresetStandard
 	}
 	return config.EffectivePermissionsPreset(runner.Config().Permissions)
+}
+
+func newScriptToolClient(ctx context.Context) (agent.ToolClient, error) {
+	base, err := NewAgentToolClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &scriptToolClient{base: base, ctx: ctx}, nil
+}
+
+type scriptToolClient struct {
+	base agent.ToolClient
+	ctx  context.Context
+}
+
+func (c *scriptToolClient) ListTools(ctx context.Context) ([]agent.ToolInfo, error) {
+	return c.base.ListTools(ctx)
+}
+
+func (c *scriptToolClient) CallToolText(ctx context.Context, name string, args map[string]any) (string, error) {
+	if c.base == nil {
+		return "", fmt.Errorf("tool client not initialized")
+	}
+	return c.base.CallToolText(ctx, name, agent.NormalizeScriptToolArguments(c.ctx, name, args))
+}
+
+func (c *scriptToolClient) Close() error {
+	if c.base == nil {
+		return nil
+	}
+	return c.base.Close()
 }
 
 func runnerForAgentContext(ctx context.Context) *agent.AgentRunner {

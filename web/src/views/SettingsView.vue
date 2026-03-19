@@ -866,7 +866,7 @@
 									<div>
 										<label class="field-label">{{ task.type === "script" ? "Script" : "Prompt" }}</label>
 										<textarea v-if="task.type === 'script'" v-model="task.script" rows="8" class="field-input font-mono text-xs"
-											placeholder="#!/usr/bin/env python3&#10;print('hello')"></textarea>
+											placeholder="print('hello from lua')"></textarea>
 										<textarea v-else v-model="task.prompt" rows="3" class="field-input"
 											placeholder="Task prompt..."></textarea>
 										<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">

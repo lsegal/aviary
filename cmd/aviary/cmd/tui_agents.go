@@ -611,7 +611,7 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 		return m.openTextEditor(taskFieldWatch, m.task.Watch, "*.md")
 	case 6:
 		if taskTypeValue(m.task) == "script" {
-			return m.openTextEditor(taskFieldScript, m.task.Script, "#!/usr/bin/env python3")
+			return m.openTextEditor(taskFieldScript, m.task.Script, "print('hello from lua')")
 		}
 		return m.openTextEditor(taskFieldPrompt, m.task.Prompt, "task prompt")
 	case 7:

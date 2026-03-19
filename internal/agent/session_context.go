@@ -10,6 +10,8 @@ type sessionContextKey struct{}
 type sessionAgentIDKey struct{}
 type channelSessionKey struct{}
 type sessionSenderKey struct{}
+type taskIDKey struct{}
+type jobIDKey struct{}
 
 type channelSession struct {
 	channelType  string
@@ -91,4 +93,38 @@ func SessionSenderFromContext(ctx context.Context) (*domain.MessageSender, bool)
 	}
 	senderValue := v
 	return &senderValue, true
+}
+
+// WithTaskID stores the current scheduled task ID in context.
+func WithTaskID(ctx context.Context, taskID string) context.Context {
+	if taskID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, taskIDKey{}, taskID)
+}
+
+// TaskIDFromContext extracts the current scheduled task ID if present.
+func TaskIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(taskIDKey{}).(string)
+	if !ok || v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// WithJobID stores the current scheduled job ID in context.
+func WithJobID(ctx context.Context, jobID string) context.Context {
+	if jobID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, jobIDKey{}, jobID)
+}
+
+// JobIDFromContext extracts the current scheduled job ID if present.
+func JobIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(jobIDKey{}).(string)
+	if !ok || v == "" {
+		return "", false
+	}
+	return v, true
 }
