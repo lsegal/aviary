@@ -3048,6 +3048,63 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 	assert.Contains(t, loaded.Agents[0].Tasks[0].Script, `print('compiled')`)
 }
 
+func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	require.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	firstArgs := map[string]any{
+		"agent":    "bot",
+		"content":  "Check https://subscript.to every 5 minutes by performing an HTTP GET. If the HTTP response status code is not 200, output a single line with the status code in this format: DOWN: <status code>. If it is 200, produce no output.",
+		"schedule": "0 */5 * * * *",
+	}
+	secondArgs := map[string]any{
+		"agent":    "bot",
+		"content":  "Check https://subscript.to every run using an HTTP request. If the response status code is not in the 200-299 range, post a message that contains only the URL and the numeric status code (e.g. \"https://subscript.to — 503\"). If the site is up (2xx), do not send anything.",
+		"schedule": "0 */5 * * * *",
+	}
+
+	firstOut, err := d.CallTool(context.Background(), "task_schedule", firstArgs)
+	require.NoError(t, err)
+	assert.Contains(t, firstOut, "created")
+
+	secondOut, err := d.CallTool(context.Background(), "task_schedule", secondArgs)
+	require.NoError(t, err)
+	assert.Contains(t, secondOut, "updated")
+
+	loaded, err := config.Load("")
+	require.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+	assert.Equal(t, "0 */5 * * * *", loaded.Agents[0].Tasks[0].Schedule)
+	assert.Equal(t, secondArgs["content"], loaded.Agents[0].Tasks[0].Prompt)
+}
+
 func TestAgentRunScript_UsesCurrentAgentContextForToolCalls(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)

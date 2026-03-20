@@ -1370,9 +1370,13 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if agentIdx < 0 {
 				return nil, struct{}{}, fmt.Errorf("agent %q not found in config", args.Agent)
 			}
+			taskTarget := nextTaskTarget(ctx, target, loadedCfg, args.Agent)
 			taskName := strings.TrimSpace(args.Name)
 			if taskName == "" {
-				taskName = generatedRecurringTaskName(requestedTaskType, contentText, normalizedSchedule, firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent)))
+				taskName = generatedRecurringTaskName(requestedTaskType, contentText, normalizedSchedule, taskTarget)
+				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok {
+					taskName = existingName
+				}
 			}
 			nextTask := config.TaskConfig{
 				Type:     taskType,
@@ -1380,7 +1384,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Prompt:   promptText,
 				Script:   scriptText,
 				Schedule: strings.TrimSpace(normalizedSchedule),
-				Target:   firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent)),
+				Target:   taskTarget,
 			}
 			updated := false
 			for i := range loadedCfg.Agents[agentIdx].Tasks {
@@ -1556,6 +1560,27 @@ func generatedRecurringTaskName(taskType, content, schedule, target string) stri
 	return fmt.Sprintf("%s-%08x", base, h.Sum32())
 }
 
+func findUnnamedRecurringTaskMatch(tasks []config.TaskConfig, taskType, content, schedule, target string) (string, bool) {
+	base := recurringTaskNameBase(content)
+	expectedPrefix := base + "-"
+	for _, task := range tasks {
+		if strings.TrimSpace(task.Schedule) != strings.TrimSpace(schedule) {
+			continue
+		}
+		if strings.TrimSpace(task.Target) != strings.TrimSpace(target) {
+			continue
+		}
+		if !strings.HasPrefix(task.Name, expectedPrefix) {
+			continue
+		}
+		if generatedRecurringTaskName(taskType, content, schedule, target) == task.Name {
+			return task.Name, true
+		}
+		return task.Name, true
+	}
+	return "", false
+}
+
 func recurringTaskNameBase(content string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(content) {
@@ -1588,6 +1613,10 @@ func firstNonEmpty(values ...string) string {
 }
 
 // ── Job tools ────────────────────────────────────────────────────────────────
+
+func nextTaskTarget(ctx context.Context, target string, cfg *config.Config, agentName string) string {
+	return firstNonEmpty(target, defaultScheduledTaskRoute(ctx, cfg, agentName))
+}
 
 type jobListArgs struct {
 	Task string `json:"task,omitempty"`
