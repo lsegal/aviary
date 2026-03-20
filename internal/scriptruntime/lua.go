@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 
@@ -40,6 +41,7 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 	lua.OpenTable(L)
 	lua.OpenString(L)
 	lua.OpenMath(L)
+	openSafeOS(L)
 	L.SetGlobal("dofile", lua.LNil)
 	L.SetGlobal("loadfile", lua.LNil)
 
@@ -124,6 +126,130 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(strings.Join(output, "\n")), nil
+}
+
+// ValidateLua parses a Lua script without executing it.
+func ValidateLua(script string) error {
+	if strings.TrimSpace(script) == "" {
+		return fmt.Errorf("script is empty")
+	}
+	L := lua.NewState(lua.Options{
+		SkipOpenLibs: true,
+	})
+	defer L.Close()
+	if _, err := L.LoadString(script); err != nil {
+		return err
+	}
+	return nil
+}
+
+func openSafeOS(L *lua.LState) {
+	osTable := L.NewTable()
+	L.SetField(osTable, "date", L.NewFunction(func(state *lua.LState) int {
+		format := "%c"
+		if state.GetTop() >= 1 {
+			format = state.CheckString(1)
+		}
+		when := time.Now()
+		if state.GetTop() >= 2 {
+			when = time.Unix(int64(state.CheckNumber(2)), 0)
+		}
+		useUTC := strings.HasPrefix(format, "!")
+		if useUTC {
+			format = strings.TrimPrefix(format, "!")
+			when = when.UTC()
+		} else {
+			when = when.In(time.Local)
+		}
+		if format == "*t" {
+			table := state.NewTable()
+			state.SetField(table, "year", lua.LNumber(when.Year()))
+			state.SetField(table, "month", lua.LNumber(int(when.Month())))
+			state.SetField(table, "day", lua.LNumber(when.Day()))
+			state.SetField(table, "hour", lua.LNumber(when.Hour()))
+			state.SetField(table, "min", lua.LNumber(when.Minute()))
+			state.SetField(table, "sec", lua.LNumber(when.Second()))
+			state.SetField(table, "wday", lua.LNumber(int(when.Weekday())+1))
+			state.SetField(table, "yday", lua.LNumber(when.YearDay()))
+			state.SetField(table, "isdst", lua.LFalse)
+			state.Push(table)
+			return 1
+		}
+		formatted, err := luaDateFormat(when, format)
+		if err != nil {
+			state.RaiseError("%v", err)
+			return 0
+		}
+		state.Push(lua.LString(formatted))
+		return 1
+	}))
+	L.SetField(osTable, "time", L.NewFunction(func(state *lua.LState) int {
+		state.Push(lua.LNumber(time.Now().Unix()))
+		return 1
+	}))
+	L.SetField(osTable, "difftime", L.NewFunction(func(state *lua.LState) int {
+		t2 := float64(state.CheckNumber(1))
+		t1 := float64(state.CheckNumber(2))
+		state.Push(lua.LNumber(t2 - t1))
+		return 1
+	}))
+	L.SetGlobal("os", osTable)
+}
+
+func luaDateFormat(when time.Time, format string) (string, error) {
+	var b strings.Builder
+	for i := 0; i < len(format); i++ {
+		ch := format[i]
+		if ch != '%' {
+			b.WriteByte(ch)
+			continue
+		}
+		i++
+		if i >= len(format) {
+			return "", fmt.Errorf("invalid os.date format %q", format)
+		}
+		switch format[i] {
+		case '%':
+			b.WriteByte('%')
+		case 'Y':
+			b.WriteString(when.Format("2006"))
+		case 'y':
+			b.WriteString(when.Format("06"))
+		case 'm':
+			b.WriteString(when.Format("01"))
+		case 'd':
+			b.WriteString(when.Format("02"))
+		case 'H':
+			b.WriteString(when.Format("15"))
+		case 'I':
+			b.WriteString(when.Format("03"))
+		case 'M':
+			b.WriteString(when.Format("04"))
+		case 'S':
+			b.WriteString(when.Format("05"))
+		case 'p':
+			b.WriteString(when.Format("PM"))
+		case 'a':
+			b.WriteString(when.Format("Mon"))
+		case 'A':
+			b.WriteString(when.Format("Monday"))
+		case 'b':
+			b.WriteString(when.Format("Jan"))
+		case 'B':
+			b.WriteString(when.Format("January"))
+		case 'j':
+			b.WriteString(fmt.Sprintf("%03d", when.YearDay()))
+		case 'w':
+			b.WriteString(fmt.Sprintf("%d", int(when.Weekday())))
+		case 'Z':
+			b.WriteString(when.Format("MST"))
+		case 'c':
+			b.WriteString(when.Format(time.ANSIC))
+		default:
+			return "", fmt.Errorf("unsupported os.date format %%%c", format[i])
+		}
+	}
+	return b.String(), nil
 }
 
 func luaArgsToMap(L *lua.LState) (map[string]any, error) {

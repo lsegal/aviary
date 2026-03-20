@@ -144,12 +144,32 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 			_ = store.DeleteJSON(path)
 			continue
 		}
+		if cp.RetryCount >= maxCheckpointRecoveryRetries {
+			slog.Info("agent: checkpoint retry limit reached, notifying session",
+				"agent", runner.agent.Name, "session", cp.SessionID,
+				"retry", cp.RetryCount, "limit", maxCheckpointRecoveryRetries)
+			msg := fmt.Sprintf("I was interrupted and retry recovery %d times without finishing, so I stopped retrying. Please resend your request if it is still needed.", cp.RetryCount)
+			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, "", "")
+			deliverToSession(runner.agent.ID, cp.SessionID, msg)
+			_ = store.DeleteJSON(path)
+			continue
+		}
+		if !cp.LastRecoveredAt.IsZero() {
+			sinceLastRecovery := time.Since(cp.LastRecoveredAt)
+			if sinceLastRecovery < checkpointRecoveryCooldown {
+				slog.Debug("agent: skipping recent checkpoint recovery",
+					"agent", runner.agent.Name, "session", cp.SessionID,
+					"retry", cp.RetryCount, "since_last_recovery", sinceLastRecovery)
+				continue
+			}
+		}
 
 		slog.Info("agent: recovering interrupted prompt",
 			"agent", runner.agent.Name, "session", cp.SessionID,
 			"age", age, "retry", cp.RetryCount)
 		// Increment retry count and re-write checkpoint before re-issuing.
 		cp.RetryCount++
+		cp.LastRecoveredAt = time.Now()
 		_ = store.WriteJSON(path, cp)
 
 		ctx := WithSessionID(context.Background(), cp.SessionID)

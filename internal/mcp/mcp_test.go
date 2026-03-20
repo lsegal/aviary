@@ -625,7 +625,7 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "morning-hi",
-		"prompt":   "send hi",
+		"content":  "send hi",
 		"schedule": "0 0 10 * * *",
 	})
 	assert.NoError(t, err)
@@ -681,7 +681,7 @@ func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "five-field",
-		"prompt":   "send hi",
+		"content":  "send hi",
 		"schedule": "*/5 * * * *",
 	})
 	assert.NoError(t, err)
@@ -747,9 +747,10 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 
 	prevCompiler := tryCompileTaskPromptFunc
 	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
+		assert.Empty(t, target)
 		assert.False(t, runDiscovery)
 		return &compiledTaskResult{
 			Type: "script",
@@ -782,7 +783,7 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "subscript-uptime",
-		"prompt":   "check subscript uptime",
+		"content":  "check subscript uptime",
 		"schedule": "0 */10 * * * *",
 	})
 	assert.NoError(t, err)
@@ -813,7 +814,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 
 	prevCompiler := tryCompileTaskPromptFunc
 	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, _, _ string, _ bool) (*compiledTaskResult, error) {
+	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
 		return &compiledTaskResult{
 			Type:   "prompt",
 			Reason: "not deterministic enough",
@@ -842,7 +843,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "manual-review",
-		"prompt":   "review the latest emails and decide what matters",
+		"content":  "review the latest emails and decide what matters",
 		"schedule": "0 0 * * * *",
 	})
 	assert.NoError(t, err)
@@ -874,10 +875,11 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	prevCompiler := tryCompileTaskPromptFunc
 	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
 	called := false
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		called = true
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
+		assert.Empty(t, target)
 		assert.False(t, runDiscovery)
 		return &compiledTaskResult{
 			Type:   "script",
@@ -908,7 +910,7 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 		"agent":    "bot",
 		"name":     "forced-prompt",
 		"type":     "prompt",
-		"prompt":   "check subscript uptime",
+		"content":  "check subscript uptime",
 		"schedule": "0 */10 * * * *",
 	})
 	assert.NoError(t, err)
@@ -924,6 +926,129 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	assert.Equal(t, "script", got.Type)
 	assert.Equal(t, "check subscript uptime", got.Prompt)
 	assert.Contains(t, got.Script, "compiled")
+}
+
+func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	called := false
+	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
+		called = true
+		assert.Equal(t, "bot", agentName)
+		assert.Equal(t, "check subscript uptime", prompt)
+		assert.Equal(t, "route:signal:+15550001111:+15552223333", target)
+		assert.False(t, runDiscovery)
+		return &compiledTaskResult{
+			Type:   "script",
+			Script: "print('compiled')\n",
+		}, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "targeted-prompt",
+		"content":  "check subscript uptime",
+		"schedule": "0 */10 * * * *",
+		"target":   "route:signal:+15550001111:+15552223333",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+	assert.True(t, called)
+}
+
+func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	called := false
+	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
+		called = true
+		return &compiledTaskResult{
+			Type:   "script",
+			Script: "print('compiled')\n",
+		}, nil
+	}
+
+	disabled := false
+	cfg := &config.Config{
+		Scheduler: config.SchedulerConfig{PrecomputeTasks: &disabled},
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "manual-only",
+		"content":  "check subscript uptime",
+		"schedule": "0 */10 * * * *",
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+	assert.False(t, called)
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "prompt", got.Type)
+	assert.Equal(t, "check subscript uptime", got.Prompt)
+	assert.Empty(t, got.Script)
 }
 
 func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
@@ -1050,7 +1175,7 @@ func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
 	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
-		"prompt":   "send hi",
+		"content":  "send hi",
 		"in":       "1h",
 		"schedule": "0 0 10 * * *",
 	})
@@ -1091,10 +1216,10 @@ func TestTaskSchedule_OneShotUsesBareNamedTaskID(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":  "Lobby",
-		"name":   "subscript-uptime-check",
-		"prompt": "check subscript uptime",
-		"in":     "10m",
+		"agent":   "Lobby",
+		"name":    "subscript-uptime-check",
+		"content": "check subscript uptime",
+		"in":      "10m",
 	})
 	assert.NoError(t, err)
 
@@ -1135,9 +1260,9 @@ func TestTaskSchedule_OneShotGeneratedTaskIDIsNotAgentPrefixed(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":  "Lobby",
-		"prompt": "check subscript uptime",
-		"in":     "10m",
+		"agent":   "Lobby",
+		"content": "check subscript uptime",
+		"in":      "10m",
 	})
 	assert.NoError(t, err)
 
@@ -1492,6 +1617,8 @@ func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
 	var raw any
 	for _, tool := range tools {
 		if tool.Name == "task_schedule" {
+			assert.Contains(t, tool.Description, "Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them.")
+			assert.Contains(t, tool.Description, "Use content for the task body.")
 			raw = tool.InputSchema
 			break
 		}
@@ -1511,13 +1638,14 @@ func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
 	assert.Contains(t, props, "agent")
 	assert.Contains(t, props, "schedule")
 	assert.Contains(t, props, "in")
-	assert.Contains(t, props, "prompt")
-	assert.Contains(t, props, "script")
+	assert.Contains(t, props, "content")
 	assert.NotContains(t, props, "task")
+	assert.NotContains(t, props, "prompt")
+	assert.NotContains(t, props, "script")
 
 	allOf, ok := schema["allOf"].([]any)
 	require.True(t, ok)
-	assert.Len(t, allOf, 2)
+	assert.Len(t, allOf, 1)
 }
 
 func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
@@ -2780,7 +2908,7 @@ func TestSessionSendTool_RequiresAgent(t *testing.T) {
 	assert.Contains(t, out, "agent is required")
 }
 
-func TestTaskCompileScript_BuiltInHTTPStatusCheck(t *testing.T) {
+func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	err := store.EnsureDirs()
@@ -2793,9 +2921,10 @@ func TestTaskCompileScript_BuiltInHTTPStatusCheck(t *testing.T) {
 	SetServerChecker(func() bool { return false })
 	prevCompiler := tryCompileTaskPromptFunc
 	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.", prompt)
+		assert.Empty(t, target)
 		assert.False(t, runDiscovery)
 		return &compiledTaskResult{
 			Type:      "script",
@@ -2820,17 +2949,104 @@ func TestTaskCompileScript_BuiltInHTTPStatusCheck(t *testing.T) {
 
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr})
+	s, err := scheduler.New(mgr, 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	tools, err := c.ListTools(context.Background())
+	require.NoError(t, err)
+	for _, tool := range tools {
+		assert.NotEqual(t, "task_compile_script", tool.Name)
+	}
 
 	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "task_compile_script", map[string]any{
-		"agent":  "bot",
-		"prompt": "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.",
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "subscript-status",
+		"content":  "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.",
+		"schedule": "0 */10 * * * *",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, `"type": "script"`)
-	assert.Contains(t, out, `"validated": true`)
-	assert.Contains(t, out, `print('compiled')`)
+	assert.Contains(t, out, "Recurring task")
+
+	loaded, err := config.Load("")
+	require.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
+	assert.Equal(t, "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.", loaded.Agents[0].Tasks[0].Prompt)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Script, `print('compiled')`)
+}
+
+func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	require.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+
+	compileCalls := 0
+	tryCompileTaskPromptFunc = func(_ context.Context, _ string, prompt, _ string, _ bool) (*compiledTaskResult, error) {
+		compileCalls++
+		result := &compiledTaskResult{Type: "prompt", Prompt: prompt}
+		if compileCalls > 1 {
+			result.Type = "script"
+			result.Script = "print('compiled')\n"
+			result.Validated = true
+		}
+		return result, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	require.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	args := map[string]any{
+		"agent":    "bot",
+		"content":  "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.",
+		"schedule": "0 */10 * * * *",
+	}
+
+	firstOut, err := d.CallTool(context.Background(), "task_schedule", args)
+	require.NoError(t, err)
+	assert.Contains(t, firstOut, "Recurring task")
+	secondOut, err := d.CallTool(context.Background(), "task_schedule", args)
+	require.NoError(t, err)
+	assert.Contains(t, secondOut, "updated")
+
+	loaded, err := config.Load("")
+	require.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Script, `print('compiled')`)
 }
 
 func TestAgentRunScript_UsesCurrentAgentContextForToolCalls(t *testing.T) {

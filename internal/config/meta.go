@@ -179,6 +179,7 @@ func setReflectValue(v reflect.Value, value string) error {
 		}
 	case reflect.Interface:
 		// scheduler.concurrency: any = "auto" | integer
+		// scheduler.precompute_tasks: boolean
 		if value == "" || value == "auto" {
 			v.Set(reflect.Zero(v.Type()))
 		} else if n, err := strconv.Atoi(value); err == nil {

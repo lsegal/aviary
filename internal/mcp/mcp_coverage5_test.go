@@ -179,7 +179,7 @@ func TestTaskSchedule_ConfigLoadError(t *testing.T) {
 	// With a schedule param, should try to load config
 	toolCallContains(t, d, "task_schedule", map[string]any{
 		"agent":    "bot",
-		"prompt":   "run",
+		"content":  "run",
 		"schedule": "0 0 10 * * *",
 	}, "")
 }

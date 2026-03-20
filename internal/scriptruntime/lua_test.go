@@ -2,6 +2,7 @@ package scriptruntime
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -217,5 +218,63 @@ func TestRunLua_JSONRoundTrip(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunLua_OSDate(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("formats explicit UTC timestamp", func(t *testing.T) {
+		got, err := RunLua(ctx, `print(os.date("!%Y-%m-%d %H:%M UTC", 0))`, Options{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "1970-01-01 00:00 UTC" {
+			t.Fatalf("got %q, want %q", got, "1970-01-01 00:00 UTC")
+		}
+	})
+
+	t.Run("returns table for star t", func(t *testing.T) {
+		got, err := RunLua(ctx, `local t = os.date("!*t", 0); print(t.year, t.month, t.day, t.hour, t.min, t.sec, t.wday, t.yday)`, Options{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "1970\t1\t1\t0\t0\t0\t5\t1" {
+			t.Fatalf("got %q, want %q", got, "1970\t1\t1\t0\t0\t0\t5\t1")
+		}
+	})
+
+	t.Run("time and difftime are available", func(t *testing.T) {
+		got, err := RunLua(ctx, `print(os.difftime(10, 3))`, Options{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "7" {
+			t.Fatalf("got %q, want %q", got, "7")
+		}
+
+		got, err = RunLua(ctx, `print(os.time())`, Options{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.TrimSpace(got) == "" {
+			t.Fatal("expected non-empty unix timestamp")
+		}
+	})
+}
+
+func TestValidateLua(t *testing.T) {
+	err := ValidateLua(`local x = 1
+print(x)
+`)
+	if err != nil {
+		t.Fatalf("expected valid Lua, got error: %v", err)
+	}
+
+	err = ValidateLua(`#!/bin/sh
+echo hello
+`)
+	if err == nil {
+		t.Fatal("expected shell script to fail Lua validation")
 	}
 }

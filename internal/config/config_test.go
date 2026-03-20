@@ -19,6 +19,7 @@ func TestDefault(t *testing.T) {
 		// fields don't appear in aviary.yaml; consuming code applies its own fallbacks.
 		0, cfg.Browser.CDPPort)
 	assert.Nil(t, cfg.Scheduler.Concurrency)
+	assert.True(t, EffectivePrecomputeTasks(cfg.Scheduler))
 
 }
 
@@ -489,6 +490,21 @@ func TestNormalize(t *testing.T) {
 
 	})
 
+	t.Run("default precompute_tasks omitted when enabled", func(t *testing.T) {
+		enabled := true
+		cfg := &Config{Scheduler: SchedulerConfig{PrecomputeTasks: &enabled}}
+		normalize(cfg)
+		assert.Nil(t, cfg.Scheduler.PrecomputeTasks)
+	})
+
+	t.Run("disabled precompute_tasks preserved", func(t *testing.T) {
+		disabled := false
+		cfg := &Config{Scheduler: SchedulerConfig{PrecomputeTasks: &disabled}}
+		normalize(cfg)
+		assert.NotNil(t, cfg.Scheduler.PrecomputeTasks)
+		assert.False(t, *cfg.Scheduler.PrecomputeTasks)
+	})
+
 	t.Run("enabled task omitted when true and preserved when false", func(t *testing.T) {
 		disabled := false
 		cfg := &Config{Agents: []AgentConfig{{
@@ -502,6 +518,17 @@ func TestNormalize(t *testing.T) {
 		assert.Nil(t, cfg.Agents[0].Tasks[0].Enabled)
 		assert.NotNil(t, cfg.Agents[0].Tasks[1].Enabled)
 		assert.False(t, *cfg.Agents[0].Tasks[1].Enabled)
+	})
+}
+
+func TestEffectivePrecomputeTasks(t *testing.T) {
+	t.Run("defaults to true", func(t *testing.T) {
+		assert.True(t, EffectivePrecomputeTasks(SchedulerConfig{}))
+	})
+
+	t.Run("respects disabled setting", func(t *testing.T) {
+		disabled := false
+		assert.False(t, EffectivePrecomputeTasks(SchedulerConfig{PrecomputeTasks: &disabled}))
 	})
 }
 

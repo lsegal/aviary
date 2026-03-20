@@ -31,14 +31,19 @@ type wsEvent struct {
 	GOOS         string `json:"goos,omitempty"`
 }
 
+type wsClient struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
+
 var wsClients = struct {
 	mu sync.Mutex
-	m  map[*websocket.Conn]struct{}
-}{m: make(map[*websocket.Conn]struct{})}
+	m  map[*websocket.Conn]*wsClient
+}{m: make(map[*websocket.Conn]*wsClient)}
 
 func wsRegister(conn *websocket.Conn) {
 	wsClients.mu.Lock()
-	wsClients.m[conn] = struct{}{}
+	wsClients.m[conn] = &wsClient{conn: conn}
 	wsClients.mu.Unlock()
 }
 
@@ -48,16 +53,35 @@ func wsUnregister(conn *websocket.Conn) {
 	wsClients.mu.Unlock()
 }
 
+func wsClientFor(conn *websocket.Conn) *wsClient {
+	wsClients.mu.Lock()
+	defer wsClients.mu.Unlock()
+	return wsClients.m[conn]
+}
+
+func wsWriteJSON(conn *websocket.Conn, event wsEvent) error {
+	client := wsClientFor(conn)
+	if client == nil {
+		return nil
+	}
+
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+	return client.conn.WriteJSON(event)
+}
+
 func wsBroadcast(event wsEvent) {
 	wsClients.mu.Lock()
-	clients := make([]*websocket.Conn, 0, len(wsClients.m))
-	for conn := range wsClients.m {
-		clients = append(clients, conn)
+	clients := make([]*wsClient, 0, len(wsClients.m))
+	for _, client := range wsClients.m {
+		clients = append(clients, client)
 	}
 	wsClients.mu.Unlock()
 
-	for _, conn := range clients {
-		_ = conn.WriteJSON(event)
+	for _, client := range clients {
+		client.writeMu.Lock()
+		_ = client.conn.WriteJSON(event)
+		client.writeMu.Unlock()
 	}
 }
 
@@ -112,7 +136,7 @@ func wsHandler(token string) http.HandlerFunc {
 		payload := wsEvent{Type: "health", OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS}
 
 		// Send the initial status immediately on connect.
-		if err := conn.WriteJSON(payload); err != nil {
+		if err := wsWriteJSON(conn, payload); err != nil {
 			return
 		}
 
@@ -135,7 +159,7 @@ func wsHandler(token string) http.HandlerFunc {
 			case <-done:
 				return
 			case <-ticker.C:
-				if err := conn.WriteJSON(payload); err != nil {
+				if err := wsWriteJSON(conn, payload); err != nil {
 					return
 				}
 			}

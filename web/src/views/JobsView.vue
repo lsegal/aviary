@@ -201,6 +201,61 @@
             </div>
           </div>
 
+          <div class="mb-4 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+              <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Compile Attempts</h3>
+              <span class="text-xs text-gray-400">{{ store.taskCompiles.length }} recorded</span>
+            </div>
+            <div v-if="store.compilesLoading" class="px-5 py-6 text-sm text-gray-400">
+              Loading compile attempts…
+            </div>
+            <div v-else-if="!store.taskCompiles.length" class="px-5 py-6 text-sm text-gray-400">
+              No compile attempts in this range.
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
+                    <th class="px-5 py-2.5 font-medium">Status</th>
+                    <th class="px-4 py-2.5 font-medium">Task</th>
+                    <th class="px-4 py-2.5 font-medium">Agent</th>
+                    <th class="px-4 py-2.5 font-medium">Created</th>
+                    <th class="px-4 py-2.5 font-medium">Result</th>
+                    <th class="px-4 py-2.5 font-medium">Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="compile in store.taskCompiles" :key="compile.id"
+                    class="cursor-pointer border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
+                    :class="selectedCompile?.id === compile.id ? 'bg-sky-50 dark:bg-sky-950/20' : ''"
+                    @click="selectCompile(compile)">
+                    <td class="px-5 py-2.5">
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                        :class="compileStatusClass(compile.status)">
+                        {{ compileStatusLabel(compile.status) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <div class="font-medium text-gray-700 dark:text-gray-200">
+                        {{ compile.task_name || "ad hoc task" }}
+                      </div>
+                      <div class="font-mono text-[11px] text-gray-400">{{ compile.id }}</div>
+                    </td>
+                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ compile.agent_id }}</td>
+                    <td class="px-4 py-2.5 text-gray-400">{{ fmtTs(compile.created_at) }}</td>
+                    <td class="px-4 py-2.5 font-mono text-gray-500">
+                      {{ compile.requested_task_type || "prompt" }} → {{ compile.result_task_type || "prompt" }}
+                    </td>
+                    <td class="max-w-xl truncate px-4 py-2.5 text-gray-600 dark:text-gray-400"
+                      :title="compile.reason || compile.prompt || ''">
+                      {{ compile.reason || compile.prompt || "—" }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Jobs table -->
           <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
@@ -269,11 +324,11 @@
           leave-active-class="transition-all duration-150 ease-in"
           enter-from-class="opacity-0 translate-x-4"
           leave-to-class="opacity-0 translate-x-4">
-          <div v-if="selectedJob"
+          <div v-if="selectedJob || selectedCompile"
             class="flex w-96 flex-shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <!-- Panel header -->
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-              <div class="flex items-center gap-2">
+              <div v-if="selectedJob" class="flex items-center gap-2">
                 <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold"
                   :class="statusClass(selectedJob.status)">
                   <span v-if="selectedJob.status === 'in_progress'" class="h-1 w-1 animate-pulse rounded-full bg-current" />
@@ -281,12 +336,19 @@
                 </span>
                 <code class="font-mono text-xs text-gray-500">…{{ selectedJob.id.slice(-12) }}</code>
               </div>
+              <div v-else-if="selectedCompile" class="flex items-center gap-2">
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                  :class="compileStatusClass(selectedCompile.status)">
+                  {{ compileStatusLabel(selectedCompile.status) }}
+                </span>
+                <code class="font-mono text-xs text-gray-500">…{{ selectedCompile.id.slice(-12) }}</code>
+              </div>
               <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                @click="selectedJob = null">✕</button>
+                @click="closeSelection">✕</button>
             </div>
 
             <!-- Metadata -->
-            <div class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+            <div v-if="selectedJob" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div>
                   <dt class="text-gray-400">Agent</dt>
@@ -318,15 +380,63 @@
                 </div>
               </dl>
             </div>
+            <div v-else-if="selectedCompile" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+              <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <dt class="text-gray-400">Agent</dt>
+                  <dd class="font-medium text-gray-700 dark:text-gray-300">{{ selectedCompile.agent_id }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Task</dt>
+                  <dd class="text-gray-600 dark:text-gray-400">{{ selectedCompile.task_name || "ad hoc task" }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Created</dt>
+                  <dd class="text-gray-600 dark:text-gray-400">{{ fmtTs(selectedCompile.created_at) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Trigger</dt>
+                  <dd class="text-gray-600 capitalize dark:text-gray-400">{{ selectedCompile.trigger || "—" }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Result</dt>
+                  <dd class="font-mono text-gray-600 dark:text-gray-400">
+                    {{ selectedCompile.requested_task_type || "prompt" }} → {{ selectedCompile.result_task_type || "prompt" }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Validated</dt>
+                  <dd class="text-gray-600 dark:text-gray-400">{{ selectedCompile.validated ? "yes" : "no" }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Deterministic steps</dt>
+                  <dd class="text-gray-600 dark:text-gray-400">{{ selectedCompile.deterministic_steps ?? 0 }}</dd>
+                </div>
+                <div>
+                  <dt class="text-gray-400">Needs discovery</dt>
+                  <dd class="text-gray-600 dark:text-gray-400">{{ selectedCompile.needs_discovery ? "yes" : "no" }}</dd>
+                </div>
+                <div v-if="selectedCompile.target" class="col-span-2">
+                  <dt class="text-gray-400">Target</dt>
+                  <dd class="break-all text-gray-600 dark:text-gray-400">{{ selectedCompile.target }}</dd>
+                </div>
+              </dl>
+            </div>
 
             <!-- Prompt -->
-            <div class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+            <div v-if="selectedJob" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Prompt</p>
               <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedJob.prompt }}</p>
             </div>
+            <div v-else-if="selectedCompile" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+              <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Prompt</p>
+              <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedCompile.prompt || "—" }}</p>
+              <p v-if="selectedCompile.reason" class="mt-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Reason</p>
+              <p v-if="selectedCompile.reason" class="text-xs text-gray-600 dark:text-gray-300">{{ selectedCompile.reason }}</p>
+            </div>
 
             <!-- Output / logs -->
-            <div class="flex flex-1 flex-col overflow-hidden px-5 py-3">
+            <div v-if="selectedJob" class="flex flex-1 flex-col overflow-hidden px-5 py-3">
               <div class="mb-2 flex items-center justify-between">
                 <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
                   {{ selectedJob.status === 'in_progress' ? 'Live Output' : 'Output' }}
@@ -353,6 +463,64 @@
                 <div v-else class="whitespace-pre-wrap">{{ jobOutput }}</div>
               </div>
             </div>
+            <div v-else-if="selectedCompile" class="flex flex-1 flex-col overflow-y-auto px-5 py-3">
+              <div class="mb-3 flex items-center justify-between">
+                <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Compiler Stages</p>
+                <button class="text-[10px] text-blue-500 hover:text-blue-700" @click="reloadCompile">
+                  ↺ Reload
+                </button>
+              </div>
+              <div v-if="compileLoading" class="rounded-lg bg-gray-950 p-3 font-mono text-[11px] text-gray-500">
+                Loading…
+              </div>
+              <div v-else-if="!selectedCompile.stages?.length"
+                class="rounded-lg bg-gray-950 p-3 font-mono text-[11px] text-gray-500">
+                No stage logs captured.
+              </div>
+              <div v-else class="space-y-3">
+                <div v-for="(stage, index) in selectedCompile.stages" :key="`${stage.name}-${index}`"
+                  class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div class="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-950">
+                    <div>
+                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                        {{ stage.name }}
+                      </div>
+                      <div class="text-[10px] text-gray-400">
+                        {{ fmtTs(stage.started_at) }}
+                      </div>
+                    </div>
+                    <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      :class="stageStatusClass(stage.status)">
+                      {{ stage.status }}
+                    </span>
+                  </div>
+                  <div class="space-y-3 px-3 py-3">
+                    <div v-if="stage.system_prompt">
+                      <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">System</p>
+                      <pre class="overflow-x-auto rounded bg-gray-950 p-3 font-mono text-[11px] text-gray-200 whitespace-pre-wrap">{{ stage.system_prompt }}</pre>
+                    </div>
+                    <div v-if="stage.user_prompt">
+                      <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">User</p>
+                      <pre class="overflow-x-auto rounded bg-gray-950 p-3 font-mono text-[11px] text-gray-200 whitespace-pre-wrap">{{ stage.user_prompt }}</pre>
+                    </div>
+                    <div v-if="stage.response">
+                      <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Response</p>
+                      <pre class="overflow-x-auto rounded bg-gray-950 p-3 font-mono text-[11px] text-green-400 whitespace-pre-wrap">{{ stage.response }}</pre>
+                    </div>
+                    <div v-if="stage.error">
+                      <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Error</p>
+                      <pre class="overflow-x-auto rounded bg-red-950/80 p-3 font-mono text-[11px] text-red-300 whitespace-pre-wrap">{{ stage.error }}</pre>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="selectedCompile.script" class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div class="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                    Generated Script
+                  </div>
+                  <pre class="overflow-x-auto bg-gray-950 p-3 font-mono text-[11px] text-green-400 whitespace-pre-wrap">{{ selectedCompile.script }}</pre>
+                </div>
+              </div>
+            </div>
           </div>
         </transition>
       </div>
@@ -364,7 +532,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
-import type { Job, ScheduledTask } from "../stores/jobs";
+import type { Job, ScheduledTask, TaskCompile } from "../stores/jobs";
 import { useJobsStore } from "../stores/jobs";
 
 const store = useJobsStore();
@@ -373,8 +541,10 @@ const { entries } = useLogs();
 const activePreset = ref<number | null>(7);
 const statusFilter = ref<string>("all");
 const selectedJob = ref<Job | null>(null);
+const selectedCompile = ref<TaskCompile | null>(null);
 const jobOutput = ref<string>("");
 const logsLoading = ref(false);
+const compileLoading = ref(false);
 const liveBottom = ref<HTMLElement | null>(null);
 const hoveredDay = ref<number | null>(null);
 const runningTaskID = ref<string | null>(null);
@@ -416,10 +586,23 @@ watch(liveLines, async () => {
 });
 
 async function selectJob(job: Job) {
+	selectedCompile.value = null;
 	selectedJob.value = job;
 	jobOutput.value = "";
 	if (job.status !== "in_progress") {
 		await loadLogs(job.id);
+	}
+}
+
+async function selectCompile(compile: TaskCompile) {
+	selectedJob.value = null;
+	selectedCompile.value = compile;
+	compileLoading.value = true;
+	try {
+		selectedCompile.value =
+			(await store.fetchTaskCompile(compile.id)) ?? compile;
+	} finally {
+		compileLoading.value = false;
 	}
 }
 
@@ -431,6 +614,16 @@ async function loadLogs(id: string) {
 
 async function reloadLogs() {
 	if (selectedJob.value) await loadLogs(selectedJob.value.id);
+}
+
+async function reloadCompile() {
+	if (!selectedCompile.value) return;
+	await selectCompile(selectedCompile.value);
+}
+
+function closeSelection() {
+	selectedJob.value = null;
+	selectedCompile.value = null;
 }
 
 function applyPreset(days: number) {
@@ -467,6 +660,40 @@ function taskTrigger(task: ScheduledTask): string {
 
 function taskBody(task: ScheduledTask): string {
 	return task.type === "script" ? task.script || "" : task.prompt || "";
+}
+
+function compileStatusLabel(status: TaskCompile["status"]): string {
+	return (
+		{
+			succeeded: "Compiled",
+			skipped: "Skipped",
+			failed: "Failed",
+		}[status] ?? status
+	);
+}
+
+function compileStatusClass(status: TaskCompile["status"]): string {
+	return (
+		{
+			succeeded:
+				"bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+			skipped:
+				"bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+			failed: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+		}[status] ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+	);
+}
+
+function stageStatusClass(status: string): string {
+	return (
+		{
+			succeeded:
+				"bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+			failed: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+			started:
+				"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+		}[status] ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+	);
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────

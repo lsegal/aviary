@@ -148,7 +148,7 @@ func TestTaskSchedule_AgentNotInConfig(t *testing.T) {
 	// Schedule with "ghost" agent + cron schedule — agent is in manager but not in saved config
 	toolCallContains(t, d, "task_schedule", map[string]any{
 		"agent":    "ghost",
-		"prompt":   "run this",
+		"content":  "run this",
 		"schedule": "0 0 10 * * *",
 	}, "not found in config")
 }
@@ -196,7 +196,7 @@ func TestTaskSchedule_RecurringUpdate(t *testing.T) {
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "daily",
-		"prompt":   "updated prompt",
+		"content":  "updated prompt",
 		"schedule": "0 0 11 * * *",
 	})
 	assert.NoError(t, err)

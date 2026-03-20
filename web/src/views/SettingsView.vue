@@ -104,9 +104,8 @@
 					</div>
 
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser &
-							Scheduler</h3>
-						<div class="grid gap-4 lg:grid-cols-3">
+						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser</h3>
+						<div class="grid gap-4 lg:grid-cols-2">
 							<div>
 								<label class="field-label">Browser binary</label>
 								<input v-model="draft.browser.binary" type="text" class="field-input" placeholder="/usr/bin/chromium" />
@@ -115,10 +114,6 @@
 								<label class="field-label">CDP port</label>
 								<input :value="cdpPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input"
 									placeholder="9222" @input="updateCDPPortInput" />
-							</div>
-							<div>
-								<label class="field-label">Concurrency</label>
-								<input v-model="concurrencyInput" type="text" class="field-input" placeholder="auto or number" />
 							</div>
 						</div>
 						<div class="mt-4 flex flex-wrap gap-6">
@@ -130,6 +125,16 @@
 									<span class="block text-xs text-gray-500 dark:text-gray-400">No visible browser window</span>
 								</span>
 							</label>
+						</div>
+					</div>
+
+					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scheduler</h3>
+						<div class="grid gap-4 lg:grid-cols-2">
+							<div>
+								<label class="field-label">Concurrency</label>
+								<input v-model="concurrencyInput" type="text" class="field-input" placeholder="auto or number" />
+							</div>
 						</div>
 					</div>
 
@@ -793,6 +798,17 @@
 								<button type="button"
 									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
 									@click="addTask(i)">+ Add Task</button>
+							</div>
+
+							<div class="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+								<label class="flex cursor-pointer items-start gap-3">
+									<input v-model="draft.scheduler.precompute_tasks" type="checkbox"
+										class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+									<span class="text-sm text-gray-700 dark:text-gray-300">
+										Try to precompute tasks
+										<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs</span>
+									</span>
+								</label>
 							</div>
 
 							<div v-if="!agent.tasks?.length"
@@ -2234,13 +2250,16 @@ function emptyConfig(): AppConfig {
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
 		search: { web: { brave_api_key: "" } },
-		scheduler: { concurrency: "" },
+		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
 	};
 }
 
 function hydrateDraftConfig(config: AppConfig): AppConfig {
 	const hydrated = JSON.parse(JSON.stringify(config)) as AppConfig;
+	if (hydrated.scheduler.precompute_tasks === undefined) {
+		hydrated.scheduler.precompute_tasks = true;
+	}
 	hydrated.agents.forEach((agent) => {
 		sanitizeAgentToolSelections(agent);
 		(agent.channels ?? []).forEach((ch) => {
@@ -2968,6 +2987,8 @@ function normalizedDraftConfig(): AppConfig {
 		const n = Number.parseInt(conc, 10);
 		normalized.scheduler.concurrency = Number.isNaN(n) || n < 1 ? "" : n;
 	}
+	normalized.scheduler.precompute_tasks =
+		normalized.scheduler.precompute_tasks === false ? false : undefined;
 
 	normalized.search = {
 		web: {

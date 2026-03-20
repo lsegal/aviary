@@ -85,3 +85,56 @@ type Run struct {
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 }
+
+// TaskCompileStatus describes the outcome of a task precompile attempt.
+type TaskCompileStatus string
+
+// TaskCompileStatus values.
+const (
+	TaskCompileStatusSucceeded TaskCompileStatus = "succeeded"
+	TaskCompileStatusSkipped   TaskCompileStatus = "skipped"
+	TaskCompileStatusFailed    TaskCompileStatus = "failed"
+)
+
+// TaskCompileStage captures a single compiler stage interaction.
+type TaskCompileStage struct {
+	Name         string     `json:"name"`
+	Status       string     `json:"status"`
+	SystemPrompt string     `json:"system_prompt,omitempty"`
+	UserPrompt   string     `json:"user_prompt,omitempty"`
+	Response     string     `json:"response,omitempty"`
+	Error        string     `json:"error,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+// TaskCompileStep summarizes a compiler-analyzed task step.
+type TaskCompileStep struct {
+	Kind          string `json:"kind"`
+	Deterministic bool   `json:"deterministic"`
+	Tool          string `json:"tool,omitempty"`
+	Description   string `json:"description"`
+}
+
+// TaskCompile records a single attempt to precompile a scheduled prompt task.
+type TaskCompile struct {
+	ID                 string             `json:"id"`
+	AgentID            string             `json:"agent_id"`
+	TaskName           string             `json:"task_name,omitempty"`
+	RequestedTaskType  string             `json:"requested_task_type,omitempty"`
+	ResultTaskType     string             `json:"result_task_type,omitempty"`
+	Trigger            string             `json:"trigger,omitempty"`
+	Target             string             `json:"target,omitempty"`
+	Prompt             string             `json:"prompt,omitempty"`
+	RunDiscovery       bool               `json:"run_discovery,omitempty"`
+	NeedsDiscovery     bool               `json:"needs_discovery,omitempty"`
+	DeterministicSteps int                `json:"deterministic_steps,omitempty"`
+	Validated          bool               `json:"validated,omitempty"`
+	Status             TaskCompileStatus  `json:"status"`
+	Reason             string             `json:"reason,omitempty"`
+	Steps              []TaskCompileStep  `json:"steps,omitempty"`
+	Script             string             `json:"script,omitempty"`
+	Stages             []TaskCompileStage `json:"stages,omitempty"`
+	CreatedAt          time.Time          `json:"created_at"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+}

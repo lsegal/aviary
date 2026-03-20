@@ -472,6 +472,16 @@ func TestGeneratedTaskName(t *testing.T) {
 
 }
 
+func TestGeneratedRecurringTaskNameIsStable(t *testing.T) {
+	first := generatedRecurringTaskName("prompt", "Send the daily report", "0 0 * * *", "slack/general")
+	second := generatedRecurringTaskName("prompt", "Send the daily report", "0 0 * * *", "slack/general")
+	changedSchedule := generatedRecurringTaskName("prompt", "Send the daily report", "0 12 * * *", "slack/general")
+
+	assert.Equal(t, first, second)
+	assert.NotEqual(t, first, changedSchedule)
+	assert.False(t, strings.Contains(first, " "))
+}
+
 // ── cdpPortOrDefault ─────────────────────────────────────────────────────────
 
 func TestCDPPortOrDefault(t *testing.T) {
@@ -767,7 +777,7 @@ func TestTaskSchedule_NilScheduler(t *testing.T) {
 	SetServerChecker(func() bool { return false })
 
 	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "bot", "prompt": "hi"}, "scheduler not initialized")
+	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "bot", "content": "hi"}, "scheduler not initialized")
 	toolCallContains(t, d, "task_list", map[string]any{}, "scheduler not initialized")
 	toolCallContains(t, d, "task_run", map[string]any{"name": "bot/daily"}, "scheduler not initialized")
 	toolCallContains(t, d, "task_stop", map[string]any{}, "scheduler not initialized")
@@ -776,9 +786,9 @@ func TestTaskSchedule_NilScheduler(t *testing.T) {
 func TestTaskSchedule_InvalidInDuration(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
-		"agent":  "bot",
-		"prompt": "run this",
-		"in":     "not-a-duration",
+		"agent":   "bot",
+		"content": "run this",
+		"in":      "not-a-duration",
 	}, "invalid duration")
 }
 
@@ -786,7 +796,7 @@ func TestTaskSchedule_InvalidCronSchedule(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
 		"agent":    "bot",
-		"prompt":   "run this",
+		"content":  "run this",
 		"schedule": "not a cron",
 	}, "invalid schedule")
 }
@@ -795,7 +805,7 @@ func TestTaskSchedule_InvalidTriggerType(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":        "bot",
-		"prompt":       "run this",
+		"content":      "run this",
 		"trigger_type": "banana",
 	})
 	msg := out
@@ -809,7 +819,7 @@ func TestTaskSchedule_ScheduleRejectsWatchTriggerType(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
 		"agent":        "bot",
-		"prompt":       "run this",
+		"content":      "run this",
 		"schedule":     "0 0 10 * * *",
 		"trigger_type": "watch",
 	}, "conflicts with schedule")
@@ -818,27 +828,27 @@ func TestTaskSchedule_ScheduleRejectsWatchTriggerType(t *testing.T) {
 func TestTaskSchedule_AgentNotFound(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
-		"agent":  "nonexistent",
-		"prompt": "run this",
+		"agent":   "nonexistent",
+		"content": "run this",
 	}, "not found")
 }
 
-func TestTaskSchedule_PromptRequired(t *testing.T) {
+func TestTaskSchedule_ContentRequired(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
-	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "bot", "prompt": ""}, "required")
+	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "bot", "content": ""}, "required")
 }
 
 func TestTaskSchedule_AgentRequired(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
-	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "", "prompt": "run"}, "required")
+	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "", "content": "run"}, "required")
 }
 
 func TestTaskSchedule_ImmediateTask(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":  "bot",
-		"prompt": "run now",
+		"agent":   "bot",
+		"content": "run now",
 	})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "immediately"))
@@ -854,9 +864,9 @@ func TestTaskSchedule_CapturesReplySessionContext(t *testing.T) {
 	)
 	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sessionID), agentID)
 	_, err := d.CallTool(ctx, "task_schedule", map[string]any{
-		"agent":  "bot",
-		"prompt": "run now",
-		"in":     "30s",
+		"agent":   "bot",
+		"content": "run now",
+		"in":      "30s",
 	})
 	assert.NoError(t, err)
 
@@ -882,7 +892,7 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	_, err = d.CallTool(ctx, "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "daily-report",
-		"prompt":   "write report",
+		"content":  "write report",
 		"schedule": "0 0 10 * * *",
 	})
 	assert.NoError(t, err)
@@ -907,7 +917,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":        "bot",
 		"name":         "daily-report",
-		"prompt":       "write report",
+		"content":      "write report",
 		"schedule":     "0 0 10 * * *",
 		"target":       "route:signal:+15550001111:+15552223333",
 		"trigger_type": "cron",
@@ -925,9 +935,9 @@ func TestTaskSchedule_WithDelay(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":  "bot",
-		"prompt": "run later",
-		"in":     "5m",
+		"agent":   "bot",
+		"content": "run later",
+		"in":      "5m",
 	})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "job ID"))

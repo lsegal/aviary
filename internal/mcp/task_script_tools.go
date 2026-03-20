@@ -4,25 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/scriptruntime"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 type sessionSendArgs struct {
 	Agent     string `json:"agent,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	Content   string `json:"content"`
-}
-
-type taskCompileArgs struct {
-	Agent        string `json:"agent"`
-	Prompt       string `json:"prompt"`
-	RunDiscovery bool   `json:"run_discovery,omitempty"`
 }
 
 type compiledTaskResult struct {
@@ -55,13 +54,102 @@ type compileTaskValidation struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-var tryCompileTaskPromptFunc func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error)
+var tryCompileTaskPromptFunc func(ctx context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error)
 
-func resolveTryCompileTaskPrompt() func(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+type taskCompileTrackerContextKey struct{}
+
+func resolveTryCompileTaskPrompt() func(ctx context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 	if tryCompileTaskPromptFunc != nil {
 		return tryCompileTaskPromptFunc
 	}
 	return tryCompileTaskPrompt
+}
+
+func withTaskCompileTracker(ctx context.Context, tracker *taskCompileTracker) context.Context {
+	if tracker == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, taskCompileTrackerContextKey{}, tracker)
+}
+
+func taskCompileTrackerFromContext(ctx context.Context) *taskCompileTracker {
+	tracker, _ := ctx.Value(taskCompileTrackerContextKey{}).(*taskCompileTracker)
+	return tracker
+}
+
+type taskCompileTracker struct {
+	record *domain.TaskCompile
+}
+
+func newTaskCompileTracker(agentName, taskName, requestedTaskType, prompt, target, trigger string, runDiscovery bool) *taskCompileTracker {
+	now := time.Now().UTC()
+	return &taskCompileTracker{
+		record: &domain.TaskCompile{
+			ID:                fmt.Sprintf("task_compile_%s", now.Format("20060102_150405_000000000")),
+			AgentID:           agentName,
+			TaskName:          strings.TrimSpace(taskName),
+			RequestedTaskType: strings.TrimSpace(requestedTaskType),
+			Prompt:            strings.TrimSpace(prompt),
+			Target:            strings.TrimSpace(target),
+			Trigger:           strings.TrimSpace(trigger),
+			RunDiscovery:      runDiscovery,
+			Status:            domain.TaskCompileStatusSkipped,
+			ResultTaskType:    "prompt",
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+	}
+}
+
+func (t *taskCompileTracker) addStage(name, systemPrompt, userPrompt string) int {
+	stage := domain.TaskCompileStage{
+		Name:         name,
+		Status:       "started",
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
+		StartedAt:    time.Now().UTC(),
+	}
+	t.record.Stages = append(t.record.Stages, stage)
+	t.touch()
+	return len(t.record.Stages) - 1
+}
+
+func (t *taskCompileTracker) finishStage(index int, status, response string, err error) {
+	if index < 0 || index >= len(t.record.Stages) {
+		return
+	}
+	stage := t.record.Stages[index]
+	stage.Status = strings.TrimSpace(status)
+	stage.Response = strings.TrimSpace(response)
+	if err != nil {
+		stage.Error = err.Error()
+	}
+	finishedAt := time.Now().UTC()
+	stage.FinishedAt = &finishedAt
+	t.record.Stages[index] = stage
+	t.touch()
+}
+
+func (t *taskCompileTracker) persist() error {
+	t.touch()
+	return store.WriteJSON(store.TaskCompilePath(t.record.AgentID, t.record.ID), t.record)
+}
+
+func (t *taskCompileTracker) touch() {
+	t.record.UpdatedAt = time.Now().UTC()
+}
+
+func toDomainCompileSteps(steps []compiledTaskStep) []domain.TaskCompileStep {
+	out := make([]domain.TaskCompileStep, 0, len(steps))
+	for _, step := range steps {
+		out = append(out, domain.TaskCompileStep{
+			Kind:          step.Kind,
+			Deterministic: step.Deterministic,
+			Tool:          step.Tool,
+			Description:   step.Description,
+		})
+	}
+	return out
 }
 
 func registerSessionSendTool(s *sdkmcp.Server) {
@@ -99,51 +187,58 @@ func registerSessionSendTool(s *sdkmcp.Server) {
 	})
 }
 
-func registerTaskCompilerTools(s *sdkmcp.Server) {
-	addTool(s, &sdkmcp.Tool{
-		Name:        "task_compile_script",
-		Description: "Try to compile a natural-language task prompt into an embedded Lua script task. Returns the resulting task definition, analysis steps, and any generated script.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskCompileArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		if strings.TrimSpace(args.Agent) == "" {
-			return nil, struct{}{}, fmt.Errorf("agent is required")
-		}
-		if strings.TrimSpace(args.Prompt) == "" {
-			return nil, struct{}{}, fmt.Errorf("prompt is required")
-		}
-		plan, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, args.Prompt, args.RunDiscovery)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(plan)
-	})
-}
-
-func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDiscovery bool) (*compiledTaskResult, error) {
+func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
+	tracker := taskCompileTrackerFromContext(ctx)
 	cfg, agentCfg, err := loadCompileAgentConfig(agentName)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
 		return nil, err
 	}
 	model := config.EffectiveAgentModel(*agentCfg, cfg.Models)
 	if strings.TrimSpace(model) == "" {
-		return nil, fmt.Errorf("agent %q has no model configured", agentName)
+		err := fmt.Errorf("agent %q has no model configured", agentName)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
+		return nil, err
 	}
 	toolList, err := compileToolCatalog(ctx, agentName)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
 		return nil, err
 	}
 	provider, err := compileTaskProvider(model)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
 		return nil, err
 	}
 
-	analysisSystem := "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic only when it can be executed with bounded, stable tool calls without fuzzy judgment, hidden selectors, or open-ended reasoning. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
-	analysisUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nrun_discovery=%t", prompt, toolList, runDiscovery)
-	analysisText, err := completeLLMText(ctx, provider, model, analysisSystem, analysisUser)
+	analysisSystem := "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
+	analysisUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nrun_discovery=%t", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, runDiscovery)
+	analysisText, err := completeLLMText(ctx, provider, model, "analysis", analysisSystem, analysisUser)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
 		return nil, err
 	}
 	var analysis compileTaskAnalysis
 	if err := json.Unmarshal([]byte(extractJSONObject(analysisText)), &analysis); err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = fmt.Sprintf("parsing compiler analysis: %v", err)
+		}
 		return nil, fmt.Errorf("parsing compiler analysis: %w", err)
 	}
 	if analysis.DeterministicStepCount == 0 {
@@ -161,17 +256,56 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDisc
 		Reason:         strings.TrimSpace(analysis.Reason),
 		Steps:          analysis.Steps,
 	}
+	if tracker != nil {
+		tracker.record.NeedsDiscovery = analysis.NeedsDiscovery
+		tracker.record.DeterministicSteps = analysis.DeterministicStepCount
+		tracker.record.Steps = toDomainCompileSteps(analysis.Steps)
+		tracker.record.Reason = strings.TrimSpace(analysis.Reason)
+	}
+	slog.Info(
+		"task_compile: analysis completed",
+		"component", "task_compile",
+		"agent", agentName,
+		"should_compile", analysis.ShouldCompile,
+		"needs_discovery", analysis.NeedsDiscovery,
+		"deterministic_step_count", analysis.DeterministicStepCount,
+		"reason", strings.TrimSpace(analysis.Reason),
+	)
 	if analysis.DeterministicStepCount <= 1 || !analysis.ShouldCompile || analysis.NeedsDiscovery {
 		if result.Reason == "" {
 			result.Reason = "task could not be validated as deterministic enough for script compilation"
 		}
+		slog.Info(
+			"task_compile: compilation declined",
+			"component", "task_compile",
+			"agent", agentName,
+			"should_compile", analysis.ShouldCompile,
+			"needs_discovery", analysis.NeedsDiscovery,
+			"deterministic_step_count", analysis.DeterministicStepCount,
+			"reason", result.Reason,
+		)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusSkipped
+			tracker.record.ResultTaskType = "prompt"
+			tracker.record.Reason = result.Reason
+		}
 		return result, nil
 	}
+	slog.Info(
+		"task_compile: generation starting",
+		"component", "task_compile",
+		"agent", agentName,
+		"deterministic_step_count", analysis.DeterministicStepCount,
+	)
 
-	generationSystem := "Generate a single-file Lua script for Aviary's embedded runtime. Output only the Lua source code, with no markdown fences. The runtime exposes a sandboxed global table `tool` where each tool is called as tool.name({ ... }) and a global `environment` table containing agent_id, session_id, task_id, and job_id. There is no filesystem, network, package loader, or shell access except through the exposed tools. Use tool calls for all external actions. When the script should emit a user-visible notification, call print(...). Do not invent tools that are not in the available tools list."
-	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s", prompt, toolList, mustJSON(analysis))
-	script, err := completeLLMText(ctx, provider, model, generationSystem, generationUser)
+	generationSystem := "Generate a single-file Lua script for Aviary's embedded runtime. Output only the Lua source code, with no markdown fences. The runtime exposes a sandboxed global table `tool` where each tool is called as tool.name({ ... }) and a global `environment` table containing agent_id, session_id, task_id, and job_id. There is no filesystem, network, package loader, or shell access except through the exposed tools. Use tool calls for all external actions. When the script should emit a user-visible notification, call print(...). If a non-empty task output target is provided, Aviary will automatically deliver any print(...) output to that target. In that case, treat print(...) as the delivery mechanism and do not call session_send just to notify the user. Only use session_send when the task explicitly needs to reply to a live session and no task output target is available. Do not invent tools that are not in the available tools list."
+	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, mustJSON(analysis))
+	script, err := completeLLMText(ctx, provider, model, "generation", generationSystem, generationUser)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+		}
 		return nil, err
 	}
 	candidateScript := strings.TrimSpace(extractCodeFence(script))
@@ -179,17 +313,44 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDisc
 		if result.Reason == "" {
 			result.Reason = "compiler did not produce a script"
 		}
+		slog.Warn("task_compile: generation produced empty script", "component", "task_compile", "agent", agentName, "reason", result.Reason)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusSkipped
+			tracker.record.ResultTaskType = "prompt"
+			tracker.record.Reason = result.Reason
+		}
+		return result, nil
+	}
+	if err := scriptruntime.ValidateLua(candidateScript); err != nil {
+		result.Reason = fmt.Sprintf("compiler produced invalid Lua: %v", err)
+		slog.Warn("task_compile: lua validation failed", "component", "task_compile", "agent", agentName, "reason", result.Reason)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.ResultTaskType = "prompt"
+			tracker.record.Reason = result.Reason
+			tracker.record.Script = candidateScript
+		}
 		return result, nil
 	}
 
-	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, or is otherwise unsafe to auto-promote."
-	validationUser := fmt.Sprintf("Task prompt:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s\n\nGenerated Lua script:\n%s", prompt, toolList, mustJSON(analysis), candidateScript)
-	validationText, err := completeLLMText(ctx, provider, model, validationSystem, validationUser)
+	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, or is otherwise unsafe to auto-promote. When a non-empty task output target is provided, Aviary will automatically deliver print(...) output to that target, so prefer scripts that notify via print(...) over scripts that call session_send for the same routed output."
+	validationUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s\n\nGenerated Lua script:\n%s", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, mustJSON(analysis), candidateScript)
+	validationText, err := completeLLMText(ctx, provider, model, "validation", validationSystem, validationUser)
 	if err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = err.Error()
+			tracker.record.Script = candidateScript
+		}
 		return nil, err
 	}
 	var validation compileTaskValidation
 	if err := json.Unmarshal([]byte(extractJSONObject(validationText)), &validation); err != nil {
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusFailed
+			tracker.record.Reason = fmt.Sprintf("parsing compiler validation: %v", err)
+			tracker.record.Script = candidateScript
+		}
 		return nil, fmt.Errorf("parsing compiler validation: %w", err)
 	}
 	if !validation.Valid {
@@ -197,6 +358,13 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDisc
 			result.Reason = strings.TrimSpace(validation.Reason)
 		} else if result.Reason == "" {
 			result.Reason = "generated script did not validate against the original prompt"
+		}
+		slog.Warn("task_compile: validator rejected script", "component", "task_compile", "agent", agentName, "reason", result.Reason)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusSkipped
+			tracker.record.ResultTaskType = "prompt"
+			tracker.record.Reason = result.Reason
+			tracker.record.Script = candidateScript
 		}
 		return result, nil
 	}
@@ -206,6 +374,14 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt string, runDisc
 	result.Validated = true
 	if strings.TrimSpace(validation.Reason) != "" {
 		result.Reason = strings.TrimSpace(validation.Reason)
+	}
+	slog.Info("task_compile: compilation succeeded", "component", "task_compile", "agent", agentName, "validated", result.Validated, "reason", result.Reason)
+	if tracker != nil {
+		tracker.record.Status = domain.TaskCompileStatusSucceeded
+		tracker.record.ResultTaskType = "script"
+		tracker.record.Validated = result.Validated
+		tracker.record.Reason = result.Reason
+		tracker.record.Script = candidateScript
 	}
 	return result, nil
 }
@@ -255,7 +431,12 @@ func compileTaskProvider(model string) (llm.Provider, error) {
 	return factory.ForModel(model)
 }
 
-func completeLLMText(ctx context.Context, provider llm.Provider, model, system, user string) (string, error) {
+func completeLLMText(ctx context.Context, provider llm.Provider, model, stageName, system, user string) (string, error) {
+	tracker := taskCompileTrackerFromContext(ctx)
+	stageIndex := -1
+	if tracker != nil && strings.TrimSpace(stageName) != "" {
+		stageIndex = tracker.addStage(stageName, system, user)
+	}
 	ch, err := provider.Stream(ctx, llm.Request{
 		Model:    model,
 		System:   system,
@@ -263,6 +444,9 @@ func completeLLMText(ctx context.Context, provider llm.Provider, model, system, 
 		Stream:   true,
 	})
 	if err != nil {
+		if tracker != nil && stageIndex >= 0 {
+			tracker.finishStage(stageIndex, "failed", "", err)
+		}
 		return "", err
 	}
 	var b strings.Builder
@@ -271,10 +455,17 @@ func completeLLMText(ctx context.Context, provider llm.Provider, model, system, 
 		case llm.EventTypeText:
 			b.WriteString(ev.Text)
 		case llm.EventTypeError:
+			if tracker != nil && stageIndex >= 0 {
+				tracker.finishStage(stageIndex, "failed", b.String(), ev.Error)
+			}
 			return "", ev.Error
 		}
 	}
-	return strings.TrimSpace(b.String()), nil
+	out := strings.TrimSpace(b.String())
+	if tracker != nil && stageIndex >= 0 {
+		tracker.finishStage(stageIndex, "succeeded", out, nil)
+	}
+	return out, nil
 }
 
 func extractJSONObject(text string) string {

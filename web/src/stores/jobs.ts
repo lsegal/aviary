@@ -18,6 +18,46 @@ export interface Job {
 	updated_at: string;
 }
 
+export interface TaskCompileStep {
+	kind: string;
+	deterministic: boolean;
+	tool?: string;
+	description: string;
+}
+
+export interface TaskCompileStage {
+	name: string;
+	status: string;
+	system_prompt?: string;
+	user_prompt?: string;
+	response?: string;
+	error?: string;
+	started_at: string;
+	finished_at?: string;
+}
+
+export interface TaskCompile {
+	id: string;
+	agent_id: string;
+	task_name?: string;
+	requested_task_type?: string;
+	result_task_type?: string;
+	trigger?: string;
+	target?: string;
+	prompt?: string;
+	run_discovery?: boolean;
+	needs_discovery?: boolean;
+	deterministic_steps?: number;
+	validated?: boolean;
+	status: "succeeded" | "skipped" | "failed";
+	reason?: string;
+	steps?: TaskCompileStep[];
+	script?: string;
+	stages?: TaskCompileStage[];
+	created_at: string;
+	updated_at: string;
+}
+
 export interface ScheduledTask {
 	id: string;
 	agent_id: string;
@@ -67,8 +107,10 @@ export const useJobsStore = defineStore("jobs", () => {
 	const { callTool } = useMCP();
 
 	const jobs = ref<Job[]>([]);
+	const taskCompiles = ref<TaskCompile[]>([]);
 	const scheduledTasks = ref<ScheduledTask[]>([]);
 	const loading = ref(false);
+	const compilesLoading = ref(false);
 	const tasksLoading = ref(false);
 	const error = ref<string | null>(null);
 	const startDate = ref<string>(fmtDate(7));
@@ -92,6 +134,25 @@ export const useJobsStore = defineStore("jobs", () => {
 		}
 	}
 
+	async function fetchTaskCompiles() {
+		compilesLoading.value = true;
+		error.value = null;
+		try {
+			const raw = await callTool("task_compile_query", {
+				start: startDate.value,
+				end: endDate.value,
+			});
+			taskCompiles.value = (JSON.parse(raw) as TaskCompile[] | null) ?? [];
+			taskCompiles.value.sort((a, b) =>
+				b.created_at.localeCompare(a.created_at),
+			);
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+		} finally {
+			compilesLoading.value = false;
+		}
+	}
+
 	async function fetchScheduledTasks() {
 		tasksLoading.value = true;
 		error.value = null;
@@ -109,6 +170,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		// Streamable HTTP MCP requests on the live server are more reliable when
 		// this page initializes sequentially instead of issuing both calls at once.
 		await fetch();
+		await fetchTaskCompiles();
 		await fetchScheduledTasks();
 	}
 
@@ -117,6 +179,16 @@ export const useJobsStore = defineStore("jobs", () => {
 			return await callTool("job_logs", { id: jobID });
 		} catch (e) {
 			return `Error: ${e instanceof Error ? e.message : String(e)}`;
+		}
+	}
+
+	async function fetchTaskCompile(id: string): Promise<TaskCompile | null> {
+		try {
+			const raw = await callTool("task_compile_get", { id });
+			return (JSON.parse(raw) as TaskCompile | null) ?? null;
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+			return null;
 		}
 	}
 
@@ -136,6 +208,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		endDate.value = fmtDate(0);
 		startDate.value = fmtDate(days);
 		fetch();
+		fetchTaskCompiles();
 	}
 
 	// ── Counts ────────────────────────────────────────────────────────────────
@@ -208,16 +281,20 @@ export const useJobsStore = defineStore("jobs", () => {
 
 	return {
 		jobs,
+		taskCompiles,
 		scheduledTasks,
 		loading,
+		compilesLoading,
 		tasksLoading,
 		error,
 		startDate,
 		endDate,
 		fetch,
+		fetchTaskCompiles,
 		fetchScheduledTasks,
 		refreshAll,
 		fetchLogs,
+		fetchTaskCompile,
 		runTaskNow,
 		runJobNow,
 		setPreset,

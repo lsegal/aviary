@@ -2,6 +2,11 @@ package agent
 
 import "time"
 
+const (
+	maxCheckpointRecoveryRetries = 3
+	checkpointRecoveryCooldown   = time.Minute
+)
+
 // RunCheckpoint stores the state of an in-flight agent prompt so it can be
 // resumed after a server restart or config reload. Checkpoint files are written
 // to <agentDir>/checkpoints/ at the start of each prompt and deleted on completion.
@@ -23,4 +28,6 @@ type RunCheckpoint struct {
 	CreatedAt time.Time `json:"created_at"`
 	// RetryCount tracks how many times this checkpoint has been re-issued.
 	RetryCount int `json:"retry_count,omitempty"`
+	// LastRecoveredAt is when the checkpoint was last re-issued.
+	LastRecoveredAt time.Time `json:"last_recovered_at,omitempty"`
 }

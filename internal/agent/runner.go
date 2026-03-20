@@ -215,9 +215,12 @@ func (r *AgentRunner) promptCore(
 
 		serverStoppedCh := make(chan struct{})
 
-		// Write checkpoint to disk so the prompt can be resumed after a server restart.
+		// Write checkpoints only for interactive prompts. Scheduled jobs already
+		// have queue-level retry semantics, and replaying their session checkpoints
+		// on every reconcile creates noisy duplicate recovery loops.
+		_, isScheduledTaskRun := TaskIDFromContext(promptCtx)
 		// The checkpoint is deleted at goroutine exit unless the server was stopped.
-		if checkpointPath == "" && promptMsgID != "" {
+		if checkpointPath == "" && promptMsgID != "" && !isScheduledTaskRun {
 			cp := &RunCheckpoint{
 				AgentName: r.agent.Name,
 				SessionID: sessionID,
@@ -1683,7 +1686,7 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo, query string) str
 	sb.WriteString("Do not stop at planning, note-writing, summaries, audits, or analysis when the user asked for implementation or execution. Those are intermediate artifacts, not completion, unless the user explicitly asked only for them.\n")
 	sb.WriteString("Do not hand the task back after creating an intermediate artifact. Do not ask 'want me to continue', 'should I start', or similar after you already have enough context to proceed.\n")
 	sb.WriteString("Treat clear implementation or execution requests as authorization to do the work now. Do the work instead of proposing the next step.\n")
-	sb.WriteString("When asked to schedule a task or reminder, call task_schedule immediately using your own agent name. Use \"in\" for one-time reminders and \"schedule\" for recurring tasks. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Prefer omitting task type unless you already have concrete script text; Aviary can promote deterministic prompt requests into script tasks automatically. Do not ask where output will appear — scheduled task output is captured in job logs.\n")
+	sb.WriteString("When asked to schedule a task or reminder, call task_schedule directly using your own agent name and the user's task request with only minimal normalization. Put the task body in the \"content\" argument. If type is omitted it defaults to \"prompt\"; use type=\"script\" only when the content is Aviary Lua source. Do not rewrite it into a compiler meta-prompt. Do not ask for shell scripts, POSIX scripts, bash, sh, curl wrappers, shebangs, or exec fallbacks. If Aviary can deterministically precompute a prompt task into embedded Lua, task_schedule will do that internally. Use \"in\" for one-time reminders and \"schedule\" for recurring tasks. Never use a \"cron\" argument name; use \"schedule\". Do not ask where output will appear — scheduled task output is captured in job logs.\n")
 	sb.WriteString("When the user asks or suggests writing something down, or shares important project information that should be preserved as a user-facing artifact, use note_write to create/update a concise markdown summary in notes/<descriptive_file>.md.\n")
 	sb.WriteString("Use memory_store only for durable facts to remember about the user or agent (personal details, preferences, names, relationships, or explicit requests to remember something later), not for general project notes or transcripts.\n")
 	if _, ok := toolNames["session_history"]; ok {

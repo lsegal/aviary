@@ -374,6 +374,49 @@ func AllJobDirs() []string {
 	return dirs
 }
 
+// TaskCompilePath returns the path for a task compile record under the agent's
+// task_compiles directory: <datadir>/agents/<agentID>/task_compiles/<id>.json.
+func TaskCompilePath(agentID, id string) string {
+	return filepath.Join(AgentDir(agentID), "task_compiles", sanitizeFileComponent(id)+".json")
+}
+
+// FindTaskCompilePath scans all known agent directories and returns the full
+// path for the first task compile record matching id. Returns "" when not found.
+func FindTaskCompilePath(id string) string {
+	agentsDir := filepath.Join(DataDir(), DirAgents)
+	if entries, err := os.ReadDir(agentsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			p := filepath.Join(agentsDir, e.Name(), "task_compiles", id+".json")
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+// AllTaskCompileDirs returns all existing agents/<name>/task_compiles/
+// directory paths for bulk compile record enumeration.
+func AllTaskCompileDirs() []string {
+	agentsDir := filepath.Join(DataDir(), DirAgents)
+	var dirs []string
+	if entries, err := os.ReadDir(agentsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			d := filepath.Join(agentsDir, e.Name(), "task_compiles")
+			if _, err := os.Stat(d); err == nil {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
 // MediaDir returns the root directory for persisted media artifacts.
 func MediaDir() string {
 	return SubDir(DirMedia)

@@ -300,7 +300,8 @@ type WebSearchConfig struct {
 
 // SchedulerConfig holds scheduler settings.
 type SchedulerConfig struct {
-	Concurrency any `yaml:"concurrency,omitempty" json:"concurrency,omitempty"` // "auto" or a number
+	Concurrency     any   `yaml:"concurrency,omitempty"      json:"concurrency,omitempty"` // "auto" or a number
+	PrecomputeTasks *bool `yaml:"precompute_tasks,omitempty" json:"precompute_tasks,omitempty"`
 }
 
 // DefaultCDPPort is the default Chrome DevTools Protocol port used when not set in config.
@@ -361,6 +362,12 @@ func EffectiveAgentFallbacks(agent AgentConfig, models ModelsConfig) []string {
 	out := make([]string, len(models.Defaults.Fallbacks))
 	copy(out, models.Defaults.Fallbacks)
 	return out
+}
+
+// EffectivePrecomputeTasks returns whether prompt tasks should be precompiled
+// before scheduling. The default is true when the setting is unset.
+func EffectivePrecomputeTasks(s SchedulerConfig) bool {
+	return BoolOr(s.PrecomputeTasks, true)
 }
 
 // normalize strips zero/empty fields that would produce noisy YAML output.
@@ -477,6 +484,9 @@ func normalize(cfg *Config) {
 	// Strip concurrency if it's the implicit default so it doesn't clutter the YAML.
 	if s, ok := cfg.Scheduler.Concurrency.(string); ok && (s == "" || s == "auto") {
 		cfg.Scheduler.Concurrency = nil
+	}
+	if EffectivePrecomputeTasks(cfg.Scheduler) {
+		cfg.Scheduler.PrecomputeTasks = nil
 	}
 }
 

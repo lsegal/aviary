@@ -81,6 +81,13 @@ func writeTestCheckpoint(t *testing.T, agentID, sessionID string, createdAt time
 	return path
 }
 
+func writeCheckpointFile(t *testing.T, agentID, checkpointID string, cp *RunCheckpoint) string {
+	t.Helper()
+	path := store.CheckpointPath(agentID, checkpointID)
+	require.NoError(t, store.WriteJSON(path, cp))
+	return path
+}
+
 // --- recoverCheckpoints tests ---
 
 func TestRecoverCheckpoints_NoDir(t *testing.T) {
@@ -135,6 +142,7 @@ func TestRecoverCheckpoints_Fresh(t *testing.T) {
 	cp, err := store.ReadJSON[RunCheckpoint](path)
 	require.NoError(t, err)
 	assert.Equal(t, 1, cp.RetryCount)
+	assert.False(t, cp.LastRecoveredAt.IsZero())
 
 	// Wait for the re-issued prompt to finish, then verify the provider was called.
 	runner.Wait()
@@ -150,6 +158,57 @@ func TestRecoverCheckpoints_Fresh(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, userCount, "recovery should not append a duplicate user message")
+}
+
+func TestRecoverCheckpoints_SkipsRecentlyRecovered(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{}
+	m := NewManager(nil)
+	runner := newTestRunner(m, "agent_recent", "recent", provider)
+
+	sessionID := "sess_recent"
+	writeCheckpointFile(t, "agent_recent", "cp_recent", &RunCheckpoint{
+		AgentName:       "recent",
+		SessionID:       sessionID,
+		Message:         "hello",
+		CreatedAt:       time.Now().Add(-time.Minute),
+		RetryCount:      1,
+		LastRecoveredAt: time.Now().Add(-5 * time.Second),
+	})
+
+	m.recoverCheckpoints(runner)
+
+	runner.Wait()
+	assert.Equal(t, 0, provider.callCount(), "recently recovered checkpoint should not be re-issued again immediately")
+	assert.Equal(t, 1, checkpointCount("agent_recent"), "checkpoint should remain for a later retry window")
+}
+
+func TestRecoverCheckpoints_RetryLimit(t *testing.T) {
+	setTestDataDir(t)
+
+	m := NewManager(nil)
+	runner := newTestRunner(m, "agent_retry_limit", "retry-limit", &mockProvider{})
+
+	sessionID := "sess_retry_limit"
+	path := writeCheckpointFile(t, "agent_retry_limit", "cp_retry_limit", &RunCheckpoint{
+		AgentName:       "retry-limit",
+		SessionID:       sessionID,
+		Message:         "hello",
+		CreatedAt:       time.Now().Add(-time.Minute),
+		RetryCount:      maxCheckpointRecoveryRetries,
+		LastRecoveredAt: time.Now().Add(-2 * time.Minute),
+	})
+
+	m.recoverCheckpoints(runner)
+
+	_, err := os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "checkpoint should be deleted once the retry limit is reached")
+
+	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_retry_limit", sessionID))
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, "stopped retrying")
 }
 
 func TestRecoverCheckpoints_UnreadableFile(t *testing.T) {
@@ -218,4 +277,25 @@ func TestRunnerCheckpoint_KeptOnServerStop(t *testing.T) {
 	runner.Wait()
 
 	assert.Equal(t, 1, checkpointCount("agent_stop"), "checkpoint should be kept after server stop")
+}
+
+func TestRunnerCheckpoint_NotWrittenForScheduledTask(t *testing.T) {
+	setTestDataDir(t)
+
+	bp := newBlockingProvider()
+	a := &domain.Agent{ID: "agent_task", Name: "task"}
+	runner := NewAgentRunner(a, &config.AgentConfig{Name: "task"}, bp, nil, nil)
+
+	ctx := WithTaskID(context.Background(), "task/check")
+	runner.Prompt(ctx, "ping")
+
+	select {
+	case <-bp.ready:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for stream to start")
+	}
+	assert.Equal(t, 0, checkpointCount("agent_task"), "scheduled task runs should not create checkpoints")
+
+	close(bp.release)
+	runner.Wait()
 }

@@ -115,6 +115,7 @@ export interface SearchConfig {
 
 export interface SchedulerConfig {
 	concurrency: string | number;
+	precompute_tasks?: boolean;
 }
 
 export interface SkillConfig {
@@ -144,7 +145,7 @@ function defaultConfig(): AppConfig {
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
 		browser: { binary: "", cdp_port: 0 },
 		search: { web: { brave_api_key: "" } },
-		scheduler: { concurrency: "" },
+		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
 	};
 }

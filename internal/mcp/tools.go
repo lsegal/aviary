@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,7 +140,6 @@ func Register(s *sdkmcp.Server) {
 	registerServerTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)
-	registerTaskCompilerTools(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
@@ -479,9 +480,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		Name:        "agent_get",
 		Description: "Get the full configuration for a named agent",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		cfg, err := config.Load("")
-		if err != nil {
-			return nil, struct{}{}, err
+		cfg, loadErr := config.Load("")
+		if loadErr != nil {
+			return nil, struct{}{}, loadErr
 		}
 		for _, ac := range cfg.Agents {
 			if ac.Name == args.Name {
@@ -505,9 +506,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("name is required")
 		}
-		cfg, err := config.Load("")
-		if err != nil {
-			return nil, struct{}{}, err
+		cfg, loadErr := config.Load("")
+		if loadErr != nil {
+			return nil, struct{}{}, loadErr
 		}
 		for _, ac := range cfg.Agents {
 			if ac.Name == args.Name {
@@ -552,9 +553,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if args.Name == "" {
 			return nil, struct{}{}, fmt.Errorf("name is required")
 		}
-		cfg, err := config.Load("")
-		if err != nil {
-			return nil, struct{}{}, err
+		cfg, loadErr := config.Load("")
+		if loadErr != nil {
+			return nil, struct{}{}, loadErr
 		}
 		found := false
 		for i := range cfg.Agents {
@@ -1188,18 +1189,16 @@ type taskStopArgs struct {
 }
 
 type taskScheduleArgs struct {
-	Agent         string   `json:"agent"`
-	Name          string   `json:"name,omitempty"`
-	Type          string   `json:"type,omitempty" schema:"enum=prompt|script"`
-	Prompt        string   `json:"prompt,omitempty"`
-	Script        string   `json:"script,omitempty"`
-	In            string   `json:"in,omitempty"`
-	Schedule      string   `json:"schedule,omitempty"`
-	Target        string   `json:"target,omitempty"`
-	TriggerType   string   `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
-	CompileScript bool     `json:"compile_script,omitempty"`
-	RunDiscovery  bool     `json:"run_discovery,omitempty"`
-	Schema        struct{} `json:"-" schema:"atmostone=in|schedule;atleastone=prompt|script"`
+	Agent        string   `json:"agent"`
+	Name         string   `json:"name,omitempty"`
+	Type         string   `json:"type,omitempty" schema:"enum=prompt|script"`
+	Content      string   `json:"content"`
+	In           string   `json:"in,omitempty"`
+	Schedule     string   `json:"schedule,omitempty"`
+	Target       string   `json:"target,omitempty"`
+	TriggerType  string   `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
+	RunDiscovery bool     `json:"run_discovery,omitempty"`
+	Schema       struct{} `json:"-" schema:"atmostone=in|schedule"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
@@ -1233,7 +1232,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Deterministic prompt tasks are automatically promoted to script tasks when Aviary can compile them safely, even if type=prompt was supplied.",
+		Description: "Schedule a task. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1250,65 +1249,109 @@ func registerTaskTools(s *sdkmcp.Server) {
 		}
 		taskType := strings.ToLower(strings.TrimSpace(args.Type))
 		if taskType == "" {
-			if strings.TrimSpace(args.Script) != "" {
-				taskType = "script"
-			} else {
-				taskType = "prompt"
-			}
+			taskType = "prompt"
 		}
+		requestedTaskType := taskType
 		if taskType != "prompt" && taskType != "script" {
 			return nil, struct{}{}, fmt.Errorf("invalid task type %q", args.Type)
 		}
-		promptText := strings.TrimSpace(args.Prompt)
-		scriptText := strings.TrimSpace(args.Script)
-		autoCompile := !args.CompileScript && taskType == "prompt" && promptText != "" && scriptText == ""
-		if autoCompile {
-			compiled, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, promptText, args.RunDiscovery)
-			if err != nil {
-				slog.Warn("task auto-compile failed; falling back to prompt task", "agent", args.Agent, "error", err)
-			} else if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-				taskType = "script"
-				scriptText = strings.TrimSpace(compiled.Script)
-				slog.Info("task auto-compiled to script", "agent", args.Agent, "steps", len(compiled.Steps))
-			} else {
-				slog.Info("task auto-compile declined; keeping prompt task", "agent", args.Agent, "reason", strings.TrimSpace(compiled.Reason), "needs_discovery", compiled.NeedsDiscovery)
-			}
+		contentText := strings.TrimSpace(args.Content)
+		if contentText == "" {
+			return nil, struct{}{}, fmt.Errorf("content is required")
 		}
-		if args.CompileScript {
-			if promptText == "" {
-				return nil, struct{}{}, fmt.Errorf("prompt is required when compile_script is true")
-			}
-			compiled, err := resolveTryCompileTaskPrompt()(ctx, args.Agent, promptText, args.RunDiscovery)
-			if err != nil {
-				return nil, struct{}{}, err
-			}
-			if compiled.Type != "script" || strings.TrimSpace(compiled.Script) == "" {
-				return nil, struct{}{}, fmt.Errorf("task prompt could not be compiled into a script: %s", strings.TrimSpace(compiled.Reason))
-			}
-			taskType = "script"
-			scriptText = strings.TrimSpace(compiled.Script)
-		}
+		promptText := ""
+		scriptText := ""
 		switch taskType {
 		case "prompt":
-			if promptText == "" {
-				return nil, struct{}{}, fmt.Errorf("prompt is required for prompt tasks")
-			}
+			promptText = contentText
 		case "script":
-			if scriptText == "" {
-				return nil, struct{}{}, fmt.Errorf("script is required for script tasks")
+			scriptText = contentText
+			if err := scriptruntime.ValidateLua(scriptText); err != nil {
+				return nil, struct{}{}, fmt.Errorf("script tasks require valid Aviary Lua source: %w", err)
 			}
-			if promptText == "" {
-				promptText = generatedTaskName(scriptText)
-			}
+			promptText = generatedTaskName(scriptText)
 		}
 		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
 			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
+		}
+		loadedCfg, loadErr := config.Load("")
+		if loadErr != nil {
+			return nil, struct{}{}, loadErr
+		}
+		target := strings.TrimSpace(args.Target)
+		effectiveTarget := target
+		if strings.TrimSpace(normalizeTaskSchedule(args.Schedule)) != "" {
+			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
+		}
+		precomputeEnabled := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
+		if taskType == "prompt" && promptText != "" && scriptText == "" {
+			trigger := "immediate"
+			if strings.TrimSpace(args.In) != "" {
+				trigger = "delay"
+			}
+			if strings.TrimSpace(args.Schedule) != "" {
+				trigger = "schedule"
+			}
+			tracker := newTaskCompileTracker(args.Agent, strings.TrimSpace(args.Name), taskType, promptText, effectiveTarget, trigger, args.RunDiscovery)
+			slog.Info(
+				"task_compile: schedule precompute decision",
+				"component", "task_compile",
+				"agent", args.Agent,
+				"target", effectiveTarget,
+				"precompute_enabled", precomputeEnabled,
+				"run_discovery", args.RunDiscovery,
+			)
+			if precomputeEnabled {
+				compiled, compileErr := resolveTryCompileTaskPrompt()(withTaskCompileTracker(ctx, tracker), args.Agent, promptText, effectiveTarget, args.RunDiscovery)
+				if compileErr != nil {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = compileErr.Error()
+					slog.Warn("task_compile: precompute errored; continuing with prompt task", "component", "task_compile", "agent", args.Agent, "error", compileErr)
+				} else if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+					taskType = "script"
+					scriptText = strings.TrimSpace(compiled.Script)
+					tracker.record.Status = domain.TaskCompileStatusSucceeded
+					tracker.record.ResultTaskType = "script"
+					tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
+					tracker.record.Validated = compiled.Validated
+					tracker.record.Reason = strings.TrimSpace(compiled.Reason)
+					tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
+					tracker.record.Script = scriptText
+					slog.Info(
+						"task_compile: promoted prompt to script",
+						"component", "task_compile",
+						"agent", args.Agent,
+						"validated", compiled.Validated,
+						"steps", len(compiled.Steps),
+						"reason", strings.TrimSpace(compiled.Reason),
+					)
+				} else {
+					tracker.record.Status = domain.TaskCompileStatusSkipped
+					tracker.record.ResultTaskType = compiled.Type
+					tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
+					tracker.record.Validated = compiled.Validated
+					tracker.record.Reason = strings.TrimSpace(compiled.Reason)
+					tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
+					slog.Info(
+						"task_compile: kept prompt after precompute",
+						"component", "task_compile",
+						"agent", args.Agent,
+						"compiled_type", compiled.Type,
+						"needs_discovery", compiled.NeedsDiscovery,
+						"reason", strings.TrimSpace(compiled.Reason),
+					)
+				}
+				if persistErr := tracker.persist(); persistErr != nil {
+					slog.Warn("task_compile: failed to persist compile record", "component", "task_compile", "agent", args.Agent, "error", persistErr)
+				}
+			} else {
+				slog.Info("task_compile: skipped precompute because scheduler setting is disabled", "component", "task_compile", "agent", args.Agent)
+			}
 		}
 		triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))
 		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
 			return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
 		}
-		target := strings.TrimSpace(args.Target)
 		normalizedSchedule := normalizeTaskSchedule(args.Schedule)
 		if strings.TrimSpace(normalizedSchedule) != "" {
 			if err := validateTaskSchedule(normalizedSchedule); err != nil {
@@ -1317,13 +1360,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if triggerType == "watch" {
 				return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
 			}
-			cfg, err := config.Load("")
-			if err != nil {
-				return nil, struct{}{}, err
-			}
 			agentIdx := -1
-			for i := range cfg.Agents {
-				if cfg.Agents[i].Name == args.Agent {
+			for i := range loadedCfg.Agents {
+				if loadedCfg.Agents[i].Name == args.Agent {
 					agentIdx = i
 					break
 				}
@@ -1333,7 +1372,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 			taskName := strings.TrimSpace(args.Name)
 			if taskName == "" {
-				taskName = generatedTaskName(firstNonEmpty(promptText, scriptText))
+				taskName = generatedRecurringTaskName(requestedTaskType, contentText, normalizedSchedule, firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent)))
 			}
 			nextTask := config.TaskConfig{
 				Type:     taskType,
@@ -1341,26 +1380,26 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Prompt:   promptText,
 				Script:   scriptText,
 				Schedule: strings.TrimSpace(normalizedSchedule),
-				Target:   firstNonEmpty(target, defaultScheduledTaskRoute(ctx, cfg, args.Agent)),
+				Target:   firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent)),
 			}
 			updated := false
-			for i := range cfg.Agents[agentIdx].Tasks {
-				if cfg.Agents[agentIdx].Tasks[i].Name == taskName {
-					cfg.Agents[agentIdx].Tasks[i] = nextTask
+			for i := range loadedCfg.Agents[agentIdx].Tasks {
+				if loadedCfg.Agents[agentIdx].Tasks[i].Name == taskName {
+					loadedCfg.Agents[agentIdx].Tasks[i] = nextTask
 					updated = true
 					break
 				}
 			}
 			if !updated {
-				cfg.Agents[agentIdx].Tasks = append(cfg.Agents[agentIdx].Tasks, nextTask)
+				loadedCfg.Agents[agentIdx].Tasks = append(loadedCfg.Agents[agentIdx].Tasks, nextTask)
 			}
-			if err := config.Save("", cfg); err != nil {
+			if err := config.Save("", loadedCfg); err != nil {
 				return nil, struct{}{}, err
 			}
 			if d.Agents != nil {
-				d.Agents.Reconcile(cfg)
+				d.Agents.Reconcile(loadedCfg)
 			}
-			d.Scheduler.Reconcile(cfg)
+			d.Scheduler.Reconcile(loadedCfg)
 			action := "created"
 			if updated {
 				action = "updated"
@@ -1504,6 +1543,41 @@ func generatedTaskName(prompt string) string {
 	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 }
 
+func generatedRecurringTaskName(taskType, content, schedule, target string) string {
+	base := recurringTaskNameBase(content)
+	identity := strings.Join([]string{
+		strings.TrimSpace(strings.ToLower(taskType)),
+		strings.TrimSpace(content),
+		strings.TrimSpace(schedule),
+		strings.TrimSpace(target),
+	}, "\x00")
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(identity))
+	return fmt.Sprintf("%s-%08x", base, h.Sum32())
+}
+
+func recurringTaskNameBase(content string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(content) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && b.String()[b.Len()-1] != '-':
+			b.WriteRune('-')
+		}
+		if b.Len() >= 24 {
+			break
+		}
+	}
+	base := strings.Trim(b.String(), "-")
+	if base == "" {
+		base = "scheduled"
+	}
+	return base
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -1531,7 +1605,85 @@ type jobQueryArgs struct {
 	Agent  string `json:"agent,omitempty"`
 }
 
+type taskCompileQueryArgs struct {
+	ID     string `json:"id,omitempty"`
+	Start  string `json:"start,omitempty"`
+	End    string `json:"end,omitempty"`
+	Status string `json:"status,omitempty"`
+	Agent  string `json:"agent,omitempty"`
+}
+
+func listTaskCompiles() ([]domain.TaskCompile, error) {
+	var records []domain.TaskCompile
+	for _, dir := range store.AllTaskCompileDirs() {
+		batch, err := store.ListJSON[domain.TaskCompile](dir, ".json")
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, batch...)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[j].CreatedAt.Before(records[i].CreatedAt)
+	})
+	return records, nil
+}
+
 func registerJobTools(s *sdkmcp.Server) {
+	addTool(s, &sdkmcp.Tool{
+		Name:        "task_compile_query",
+		Description: "Return task compile attempt records filtered by id, date range, status, and/or agent",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskCompileQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "task_compile", "tool", "task_compile_query")
+		all, err := listTaskCompiles()
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		var start, end time.Time
+		if args.Start != "" {
+			start, _ = time.Parse("2006-01-02", args.Start)
+		}
+		if args.End != "" {
+			end, _ = time.Parse("2006-01-02", args.End)
+			end = end.Add(24*time.Hour - time.Nanosecond)
+		}
+		out := all[:0]
+		for _, record := range all {
+			if args.ID != "" && record.ID != args.ID {
+				continue
+			}
+			if !start.IsZero() && record.CreatedAt.Before(start) {
+				continue
+			}
+			if !end.IsZero() && record.CreatedAt.After(end) {
+				continue
+			}
+			if args.Status != "" && string(record.Status) != args.Status {
+				continue
+			}
+			if args.Agent != "" && record.AgentID != args.Agent {
+				continue
+			}
+			out = append(out, record)
+		}
+		return jsonResult(out)
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "task_compile_get",
+		Description: "Show the full stored record for a specific task compile attempt",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "task_compile", "tool", "task_compile_get", "id", args.ID)
+		path := store.FindTaskCompilePath(args.ID)
+		if path == "" {
+			return nil, struct{}{}, fmt.Errorf("task compile %s not found", args.ID)
+		}
+		record, err := store.ReadJSON[domain.TaskCompile](path)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("reading task compile %s: %w", args.ID, err)
+		}
+		return jsonResult(record)
+	})
+
 	addTool(s, &sdkmcp.Tool{
 		Name:        "job_list",
 		Description: "Show job history across all tasks",
