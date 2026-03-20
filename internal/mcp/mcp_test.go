@@ -946,7 +946,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 		called = true
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
-		assert.Equal(t, "route:signal:+15550001111:+15552223333", target)
+		assert.Equal(t, "signal:+15550001111:+15552223333", target)
 		assert.False(t, runDiscovery)
 		return &compiledTaskResult{
 			Type:   "script",
@@ -978,7 +978,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 		"name":     "targeted-prompt",
 		"content":  "check subscript uptime",
 		"schedule": "0 */10 * * * *",
-		"target":   "route:signal:+15550001111:+15552223333",
+		"target":   "signal:+15550001111:+15552223333",
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")

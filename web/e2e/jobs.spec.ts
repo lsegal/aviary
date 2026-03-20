@@ -165,3 +165,33 @@ test("initial jobs page load sequences MCP requests", async ({ page }) => {
 	await expect(page.getByText("0 jobs")).toBeVisible();
 	await expect(page.getByText("0 configured")).toBeVisible();
 });
+
+test("compile attempts panel shows only the newest five entries", async ({
+	page,
+}) => {
+	const compiles = Array.from({ length: 7 }, (_, index) => ({
+		id: `compile_${index + 1}`,
+		agent_id: "agent_assistant",
+		task_name: `compile task ${index + 1}`,
+		requested_task_type: "prompt",
+		result_task_type: "script",
+		status: "succeeded",
+		prompt: `compile prompt ${index + 1}`,
+		created_at: `2026-03-14T0${index}:00:00Z`,
+		updated_at: `2026-03-14T0${index}:00:30Z`,
+	}));
+
+	await mockMCP(page, {
+		job_query: [],
+		task_list: [],
+		task_compile_query: compiles,
+	});
+
+	await page.goto("/jobs");
+
+	await expect(page.getByText("5 shown of 7 recorded")).toBeVisible();
+	await expect(page.getByText("compile_7")).toBeVisible();
+	await expect(page.getByText("compile_3")).toBeVisible();
+	await expect(page.locator("text=compile_2")).toHaveCount(0);
+	await expect(page.locator("text=compile_1")).toHaveCount(0);
+});

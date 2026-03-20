@@ -480,22 +480,40 @@ func (s *Server) Agents() *agent.Manager { return s.agents }
 
 func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 	route = strings.TrimSpace(route)
-	if route == "" {
+	if route == "" || strings.EqualFold(route, "silent") {
 		return nil
 	}
-	parts := strings.SplitN(route, ":", 4)
-	if len(parts) != 4 || parts[0] != "route" {
-		return fmt.Errorf("invalid task target route %q", route)
+	if strings.HasPrefix(route, "session:") {
+		sessionRef := strings.TrimSpace(strings.TrimPrefix(route, "session:"))
+		if sessionRef == "" {
+			return fmt.Errorf("task target session is required")
+		}
+		if store.FindSessionPath(agentName, sessionRef) != "" {
+			return agent.AppendReplyToSession(agentName, sessionRef, text)
+		}
+		sess, err := agent.NewSessionManager().GetOrCreateNamed(agentName, sessionRef)
+		if err != nil {
+			return fmt.Errorf("resolving task target session %q: %w", sessionRef, err)
+		}
+		return agent.AppendReplyToSession(agentName, sess.ID, text)
 	}
-	configuredID := strings.TrimSpace(parts[2])
-	targetID := strings.TrimSpace(parts[3])
+	parts := strings.SplitN(route, ":", 3)
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid task target %q", route)
+	}
+	channelType := strings.TrimSpace(parts[0])
+	configuredID := strings.TrimSpace(parts[1])
+	targetID := strings.TrimSpace(parts[2])
+	if channelType == "" {
+		return fmt.Errorf("task target channel type is required")
+	}
 	if configuredID == "" {
 		return fmt.Errorf("task target configured channel id is required")
 	}
 	if targetID == "" {
 		return fmt.Errorf("task target delivery id is required")
 	}
-	return s.channels.SendOnConfiguredChannel(agentName, parts[1], configuredID, targetID, text)
+	return s.channels.SendOnConfiguredChannel(agentName, channelType, configuredID, targetID, text)
 }
 
 func stageOutgoingMedia(channelType, sourcePath string) (string, error) {

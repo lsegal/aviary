@@ -213,19 +213,23 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			if t.Target != "" && !validTaskRoute(t.Target) {
-				v.errorf(tf+".target", "invalid value %q; must be empty (silent) or route:<type>:<id>:<target>", t.Target)
+			if !validTaskTarget(t.Target) {
+				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", t.Target)
 			}
 		}
 	}
 }
 
-func validTaskRoute(route string) bool {
-	parts := strings.SplitN(strings.TrimSpace(route), ":", 4)
-	if len(parts) != 4 || parts[0] != "route" || parts[1] == "" || parts[2] == "" || strings.TrimSpace(parts[3]) == "" {
-		return false
+func validTaskTarget(target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" || strings.EqualFold(target, "silent") {
+		return true
 	}
-	return true
+	if strings.HasPrefix(target, "session:") {
+		return strings.TrimSpace(strings.TrimPrefix(target, "session:")) != ""
+	}
+	parts := strings.SplitN(target, ":", 3)
+	return len(parts) == 3 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" && strings.TrimSpace(parts[2]) != ""
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.

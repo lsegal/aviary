@@ -902,7 +902,7 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
-		assert.Equal(t, "route:slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
+		assert.Equal(t, "slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
 	}
 }
 
@@ -921,7 +921,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 		"name":         "daily-report",
 		"content":      "write report",
 		"schedule":     "0 0 10 * * *",
-		"target":       "route:signal:+15550001111:+15552223333",
+		"target":       "signal:+15550001111:+15552223333",
 		"trigger_type": "cron",
 	})
 	assert.NoError(t, err)
@@ -929,7 +929,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
-		assert.Equal(t, "route:signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)
+		assert.Equal(t, "signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)
 	}
 }
 

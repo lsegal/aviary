@@ -24,6 +24,7 @@ import (
 	"github.com/lsegal/aviary/internal/update"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type stubChannel struct{}
@@ -1871,7 +1872,7 @@ func TestDeliverTaskOutput_InvalidRouteIndex(t *testing.T) {
 	setupServerDataDir(t)
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
-	err := srv.deliverTaskOutput("bot", "route:slack:notanumber:C123", "text")
+	err := srv.deliverTaskOutput("bot", "slack:notanumber:C123", "text")
 	assert.Error(t, err)
 
 }
@@ -1880,7 +1881,22 @@ func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
 	setupServerDataDir(t)
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
-	err := srv.deliverTaskOutput("bot", "route:slack:alerts:   ", "text")
+	err := srv.deliverTaskOutput("bot", "slack:alerts:   ", "text")
 	assert.Error(t, err)
 
+}
+
+func TestDeliverTaskOutput_SessionTarget(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
+	require.NoError(t, err)
+
+	err = srv.deliverTaskOutput("bot", "session:main", "hello")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(store.SessionPath("bot", sess.ID))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "hello")
 }

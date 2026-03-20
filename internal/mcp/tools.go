@@ -1278,7 +1278,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if loadErr != nil {
 			return nil, struct{}{}, loadErr
 		}
-		target := strings.TrimSpace(args.Target)
+		target := normalizeTaskTarget(args.Target)
 		effectiveTarget := target
 		if strings.TrimSpace(normalizeTaskSchedule(args.Schedule)) != "" {
 			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
@@ -1509,7 +1509,15 @@ func normalizeTaskSchedule(schedule string) string {
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {
 	channelType, configuredID, channelID, ok := agent.ChannelSessionFromContext(ctx)
 	if !ok {
-		return ""
+		sessionID, _ := agent.SessionIDFromContext(ctx)
+		sessionAgentID, _ := agent.SessionAgentIDFromContext(ctx)
+		if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(sessionAgentID) == "" {
+			return ""
+		}
+		if sessionAgentID != agentName {
+			return ""
+		}
+		return "session:" + strings.TrimSpace(sessionID)
 	}
 	for _, ac := range cfg.Agents {
 		if ac.Name != agentName {
@@ -1517,7 +1525,7 @@ func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentNam
 		}
 		for _, ch := range ac.Channels {
 			if ch.Type == channelType && ch.ID == configuredID {
-				return fmt.Sprintf("route:%s:%s:%s", channelType, configuredID, channelID)
+				return fmt.Sprintf("%s:%s:%s", channelType, configuredID, channelID)
 			}
 		}
 		return ""
@@ -1553,7 +1561,7 @@ func generatedRecurringTaskName(taskType, content, schedule, target string) stri
 		strings.TrimSpace(strings.ToLower(taskType)),
 		strings.TrimSpace(content),
 		strings.TrimSpace(schedule),
-		strings.TrimSpace(target),
+		normalizeTaskTarget(target),
 	}, "\x00")
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(identity))
@@ -1615,7 +1623,15 @@ func firstNonEmpty(values ...string) string {
 // ── Job tools ────────────────────────────────────────────────────────────────
 
 func nextTaskTarget(ctx context.Context, target string, cfg *config.Config, agentName string) string {
-	return firstNonEmpty(target, defaultScheduledTaskRoute(ctx, cfg, agentName))
+	return firstNonEmpty(normalizeTaskTarget(target), defaultScheduledTaskRoute(ctx, cfg, agentName))
+}
+
+func normalizeTaskTarget(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" || strings.EqualFold(target, "silent") {
+		return ""
+	}
+	return target
 }
 
 type jobListArgs struct {

@@ -135,6 +135,17 @@ func TestValidate(t *testing.T) {
 
 	})
 
+	t.Run("session task target is valid", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{
+			Name:     "t1",
+			Schedule: "*/1 * * * * *",
+			Prompt:   "p",
+			Target:   "session:main",
+		}}}}}
+		issues := Validate(cfg, nil)
+		assert.False(t, hasIssue(issues, "target"))
+	})
+
 	t.Run("task names may contain slash", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "folder/subtask", Prompt: "p", Schedule: "*/1 * * * * *"}}}}}
 		issues := Validate(cfg, nil)

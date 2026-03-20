@@ -2526,13 +2526,16 @@ function configuredChannelLabel(ch: AgentChannel, index: number): string {
 }
 
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
-	return (agent.channels ?? [])
-		.filter((ch) => !!ch.type && !!ch.id)
-		.map((ch, index) => ({
-			value: `route:${ch.type}:${ch.id}`,
-			label: configuredChannelLabel(ch, index),
-			type: ch.type,
-		}));
+	return [
+		{ value: "session", label: "session", type: "session" },
+		...(agent.channels ?? [])
+			.filter((ch) => !!ch.type && !!ch.id)
+			.map((ch, index) => ({
+				value: `${ch.type}:${ch.id}`,
+				label: configuredChannelLabel(ch, index),
+				type: ch.type,
+			})),
+	];
 }
 
 function parseTaskChannelValue(target?: string): {
@@ -2542,15 +2545,20 @@ function parseTaskChannelValue(target?: string): {
 } {
 	const raw = (target ?? "").trim();
 	if (!raw) return { selection: "", target: "", type: "" };
-	if (raw.startsWith("route:")) {
-		const parts = raw.split(":", 4);
-		if (parts.length >= 3) {
-			return {
-				selection: parts.slice(0, 3).join(":"),
-				target: parts[3] ?? "",
-				type: parts[1] ?? "",
-			};
-		}
+	if (raw.startsWith("session:")) {
+		return {
+			selection: "session",
+			target: raw.slice("session:".length),
+			type: "session",
+		};
+	}
+	const parts = raw.split(":", 3);
+	if (parts.length === 3) {
+		return {
+			selection: `${parts[0]}:${parts[1]}`,
+			target: parts[2] ?? "",
+			type: parts[0] ?? "",
+		};
 	}
 	return { selection: "", target: "", type: "" };
 }
@@ -2564,12 +2572,13 @@ function taskChannelTarget(task: AgentTask): string {
 }
 
 function taskChannelNeedsTarget(task: AgentTask): boolean {
-	return taskChannelSelection(task).startsWith("route:");
+	return taskChannelSelection(task) !== "";
 }
 
 function taskChannelTargetPlaceholder(task: AgentTask): string {
 	if (!taskChannelNeedsTarget(task)) return "Choose a delivery channel first";
 	const type = parseTaskChannelValue(task.target).type;
+	if (type === "session") return "Session name or ID";
 	if (type === "signal") return "Phone number or group ID";
 	if (type === "slack") return "Slack channel or DM conversation ID";
 	if (type === "discord") return "Discord channel ID";
@@ -2637,13 +2646,21 @@ function setTaskChannelSelection(task: AgentTask, event: Event) {
 		task.target = "";
 		return;
 	}
-	task.target = `${selection}:${parsed.target}`;
+	if (selection === "session") {
+		task.target = `session:${parsed.type === "session" ? parsed.target : ""}`;
+		return;
+	}
+	task.target = `${selection}:${parsed.type === "session" ? "" : parsed.target}`;
 }
 
 function setTaskChannelTarget(task: AgentTask, event: Event) {
 	const target = (event.target as HTMLInputElement).value.trim();
 	const selection = taskChannelSelection(task);
-	if (!selection.startsWith("route:")) return;
+	if (!selection) return;
+	if (selection === "session") {
+		task.target = target ? `session:${target}` : "session:";
+		return;
+	}
 	task.target = `${selection}:${target}`;
 }
 

@@ -141,14 +141,16 @@ agents:
       - name: daily-briefing
         schedule: "0 9 * * *"           # Standard cron syntax
         prompt: "Give me a morning briefing based on recent activity."
-        target: route:slack:workspace-bot:C123
-                                        # route:<type>:<id>:<target> pins delivery to
-                                        # a configured channel; omit for silent
+        target: slack:workspace-bot:C123
+                                        # <channel>:<configured-id>:<target> pins delivery to
+                                        # a configured channel; use session:main (or another
+                                        # session name/id) to send output into a session;
+                                        # omit or set to "silent" for no delivery
 
       - name: organize-downloads
         watch: ~/Downloads/**           # Trigger on any file change, recursively
         prompt: "A file was added or changed in ~/Downloads. Rename it using a clear, descriptive name based on its contents."
-        target: route:slack:workspace-bot:C123
+        target: slack:workspace-bot:C123
 
       - name: onboarding
         run_once: true                  # Run exactly once then disable itself
