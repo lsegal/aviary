@@ -204,7 +204,7 @@
           <div class="mb-4 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Compile Attempts</h3>
-              <span class="text-xs text-gray-400">{{ store.taskCompiles.length }} recorded</span>
+              <span class="text-xs text-gray-400">{{ visibleTaskCompiles.length }} shown of {{ store.taskCompiles.length }} recorded</span>
             </div>
             <div v-if="store.compilesLoading" class="px-5 py-6 text-sm text-gray-400">
               Loading compile attempts…
@@ -225,7 +225,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="compile in store.taskCompiles" :key="compile.id"
+                  <tr v-for="compile in visibleTaskCompiles" :key="compile.id"
                     class="cursor-pointer border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
                     :class="selectedCompile?.id === compile.id ? 'bg-sky-50 dark:bg-sky-950/20' : ''"
                     @click="selectCompile(compile)">
@@ -568,6 +568,7 @@ const filteredJobs = computed(() => {
 	if (statusFilter.value === "all") return store.jobs;
 	return store.jobs.filter((j) => j.status === statusFilter.value);
 });
+const visibleTaskCompiles = computed(() => store.taskCompiles.slice(0, 5));
 
 // Live output: SSE log entries filtered by selected job's ID.
 const liveLines = computed(() => {
