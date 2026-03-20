@@ -178,7 +178,7 @@ func TestBuildToolSystemPrompt_ToolDescriptionInjection(t *testing.T) {
 		{Name: "evil_tool", Description: injectedDesc},
 		{Name: "another_tool", Description: "Fine tool."},
 	}
-	prompt := buildToolSystemPrompt("", tools, "evil tool")
+	prompt := buildToolSystemPrompt("", tools, "evil tool", false)
 	n := strings.Count(prompt, "</available_tools>")
 	assert.Equal(t, 1, n)
 
@@ -195,7 +195,7 @@ func TestBuildToolSystemPrompt_AllToolDescriptionAttacks(t *testing.T) {
 	for _, att := range injectionAttacks {
 		t.Run(att.name, func(t *testing.T) {
 			tools := []ToolInfo{{Name: "t", Description: att.payload}}
-			prompt := buildToolSystemPrompt("", tools, "t")
+			prompt := buildToolSystemPrompt("", tools, "t", false)
 			n := strings.Count(prompt, "</available_tools>")
 			assert.Equal(t, 1, n)
 
@@ -208,7 +208,7 @@ func TestBuildToolSystemPrompt_AllToolDescriptionAttacks(t *testing.T) {
 }
 
 func TestBuildToolSystemPrompt_NoTools(t *testing.T) {
-	prompt := buildToolSystemPrompt("", nil, "")
+	prompt := buildToolSystemPrompt("", nil, "", false)
 	assert.Contains(t, prompt, "<available_tools>")
 	assert.Contains(t, prompt, "</available_tools>")
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/openai/openai-go"
@@ -21,6 +22,9 @@ type OpenAIProvider struct {
 	model   string
 	baseURL string
 }
+
+// SupportsNativeTools reports OpenAI Chat Completions tool support.
+func (p *OpenAIProvider) SupportsNativeTools() bool { return true }
 
 // NewOpenAIProvider creates a provider for an OpenAI-compatible API.
 // baseURL is empty for the default OpenAI API.
@@ -287,9 +291,17 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	if req.System != "" {
 		messages = append(messages, openai.SystemMessage(req.System))
 	}
-	for _, m := range req.Messages {
+	for i := 0; i < len(req.Messages); i++ {
+		m := req.Messages[i]
 		switch m.Role {
 		case RoleUser:
+			if m.Result != nil {
+				if strings.TrimSpace(m.Result.Content) == "" || strings.TrimSpace(m.Result.ToolCallID) == "" {
+					continue
+				}
+				messages = append(messages, openai.ToolMessage(m.Result.Content, m.Result.ToolCallID))
+				continue
+			}
 			if strings.TrimSpace(m.MediaURL) != "" {
 				parts := make([]openai.ChatCompletionContentPartUnionParam, 0, 2)
 				if strings.TrimSpace(m.Content) != "" {
@@ -303,7 +315,49 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 			}
 			messages = append(messages, openai.UserMessage(m.Content))
 		case RoleAssistant:
-			messages = append(messages, openai.AssistantMessage(m.Content))
+			assistantText := m.Content
+			toolCalls := make([]openai.ChatCompletionMessageToolCallParam, 0, 1)
+			for {
+				if m.ToolCall != nil {
+					argsJSON := mustJSONMap(m.ToolCall.Arguments)
+					toolID := strings.TrimSpace(m.ToolCall.ID)
+					if toolID == "" {
+						toolID = "call_" + strconv.Itoa(i)
+					}
+					toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCallParam{
+						ID: toolID,
+						Function: openai.ChatCompletionMessageToolCallFunctionParam{
+							Name:      m.ToolCall.Name,
+							Arguments: argsJSON,
+						},
+					})
+				}
+				if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
+					break
+				}
+				next := req.Messages[i+1]
+				if next.Content != "" {
+					if assistantText != "" {
+						assistantText += "\n"
+					}
+					assistantText += next.Content
+				}
+				if next.ToolCall == nil {
+					i++
+					continue
+				}
+				i++
+				m = next
+			}
+			if len(toolCalls) > 0 {
+				msg := openai.ChatCompletionAssistantMessageParam{ToolCalls: toolCalls}
+				if assistantText != "" {
+					msg.Content.OfString = openai.String(assistantText)
+				}
+				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
+				continue
+			}
+			messages = append(messages, openai.AssistantMessage(assistantText))
 		case RoleSystem:
 			messages = append(messages, openai.SystemMessage(m.Content))
 		}
@@ -316,6 +370,25 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 			IncludeUsage: openai.Bool(true),
 		},
 	}
+	if len(req.Tools) > 0 {
+		params.Tools = make([]openai.ChatCompletionToolParam, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			desc := tool.Description
+			if ex := formatToolExamples(tool.Examples); ex != "" {
+				if desc != "" {
+					desc += "\n\n"
+				}
+				desc += ex
+			}
+			fn := shared.FunctionDefinitionParam{
+				Name:        tool.Name,
+				Parameters:  shared.FunctionParameters(schemaObject(tool.InputSchema)),
+				Description: openai.String(desc),
+				Strict:      openai.Bool(true),
+			}
+			params.Tools = append(params.Tools, openai.ChatCompletionToolParam{Function: fn})
+		}
+	}
 
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 
@@ -323,11 +396,33 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	go func() {
 		defer close(ch)
 		var lastUsage *Usage
+		type pendingToolCall struct {
+			ID        string
+			Name      string
+			Arguments strings.Builder
+		}
+		pendingCalls := map[int64]*pendingToolCall{}
 		for stream.Next() {
 			chunk := stream.Current()
 			for _, choice := range chunk.Choices {
 				if choice.Delta.Content != "" {
 					ch <- Event{Type: EventTypeText, Text: choice.Delta.Content}
+				}
+				for _, tc := range choice.Delta.ToolCalls {
+					call := pendingCalls[tc.Index]
+					if call == nil {
+						call = &pendingToolCall{}
+						pendingCalls[tc.Index] = call
+					}
+					if tc.ID != "" {
+						call.ID = tc.ID
+					}
+					if tc.Function.Name != "" {
+						call.Name = tc.Function.Name
+					}
+					if tc.Function.Arguments != "" {
+						call.Arguments.WriteString(tc.Function.Arguments)
+					}
 				}
 			}
 			// Capture usage from the final chunk (populated when include_usage=true).
@@ -342,6 +437,29 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai stream: %w", err)}
 			return
 		}
+		if len(pendingCalls) > 0 {
+			indexes := make([]int, 0, len(pendingCalls))
+			for idx := range pendingCalls {
+				indexes = append(indexes, int(idx))
+			}
+			sortInts(indexes)
+			for _, idx := range indexes {
+				call := pendingCalls[int64(idx)]
+				if call == nil || strings.TrimSpace(call.Name) == "" {
+					continue
+				}
+				args, err := parseToolArguments(call.Arguments.String())
+				if err != nil {
+					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai tool arguments for %q: %w", call.Name, err)}
+					return
+				}
+				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
+					ID:        call.ID,
+					Name:      call.Name,
+					Arguments: args,
+				}}
+			}
+		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
 		}
@@ -349,4 +467,79 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	}()
 
 	return ch, nil
+}
+
+func mustJSONMap(v map[string]any) string {
+	if v == nil {
+		return "{}"
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func schemaObject(schema any) map[string]any {
+	if schema == nil {
+		return map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	if obj, ok := schema.(map[string]any); ok {
+		return obj
+	}
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	if len(obj) == 0 {
+		return map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	return obj
+}
+
+func formatToolExamples(examples []map[string]any) string {
+	if len(examples) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("Example arguments:\n")
+	limit := len(examples)
+	if limit > 3 {
+		limit = 3
+	}
+	for i := 0; i < limit; i++ {
+		sb.WriteString("- ")
+		sb.WriteString(mustJSONMap(examples[i]))
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func parseToolArguments(raw string) (map[string]any, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]any{}, nil
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		return nil, err
+	}
+	if args == nil {
+		args = map[string]any{}
+	}
+	return args, nil
+}
+
+func sortInts(values []int) {
+	for i := 0; i < len(values); i++ {
+		for j := i + 1; j < len(values); j++ {
+			if values[j] < values[i] {
+				values[i], values[j] = values[j], values[i]
+			}
+		}
+	}
 }

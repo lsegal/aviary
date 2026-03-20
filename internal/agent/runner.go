@@ -312,6 +312,7 @@ func (r *AgentRunner) promptCore(
 			systemPrompt string
 			err          error
 		)
+		nativeToolSupport := llm.SupportsNativeTools(currentProvider)
 		if !overrides.Bare {
 			toolClient, err = newToolClientFactory(promptCtx)
 			if err != nil {
@@ -325,7 +326,7 @@ func (r *AgentRunner) promptCore(
 
 			tools, _ = listToolsSafe(promptCtx, toolClient)
 			tools = r.filterTools(tools, overrides.RestrictTools, overrides.DisabledTools)
-			systemPrompt = buildToolSystemPrompt(r.agent.Name, tools, message)
+			systemPrompt = buildToolSystemPrompt(r.agent.Name, tools, message, nativeToolSupport)
 			prefixParts := make([]string, 0, 2)
 			if agentsMD := r.loadAgentsMD(); agentsMD != "" {
 				prefixParts = append(prefixParts, "This is the AGENTS.md in agent workspace. You can update this file if needed:\n\n"+agentsMD)
@@ -375,6 +376,7 @@ func (r *AgentRunner) promptCore(
 		}
 		retriedToollessRefusal := false
 		retriedInvalidJSON := false
+		llmTools := buildLLMToolDefinitions(tools)
 
 		const maxToolRounds = 200
 		var lastResponseID string // tracks the most recent provider response ID across rounds
@@ -389,6 +391,9 @@ func (r *AgentRunner) promptCore(
 				Messages: conversation,
 				System:   systemPrompt,
 				Stream:   true,
+			}
+			if nativeToolSupport {
+				req.Tools = llmTools
 			}
 			// On the first round, pass the conversation ID so the provider can
 			// resume server-side history without replaying all prior messages.
@@ -454,9 +459,14 @@ func (r *AgentRunner) promptCore(
 			var streamedText strings.Builder
 			var pendingText strings.Builder
 			var mediaURLs []string
+			var nativeCalls []llm.ToolCall
 			var fallbackTriggered bool
 			streamingSuppressed := false
 			streamingDecided := false
+			if nativeToolSupport && len(llmTools) > 0 {
+				streamingSuppressed = true
+				streamingDecided = true
+			}
 			for event := range ch {
 				switch event.Type {
 				case llm.EventTypeText:
@@ -499,6 +509,10 @@ func (r *AgentRunner) promptCore(
 						usageRec.CacheReadTokens += event.Usage.CacheReadTokens
 						usageRec.CacheWriteTokens += event.Usage.CacheWriteTokens
 					}
+				case llm.EventTypeToolCall:
+					if event.ToolCall != nil {
+						nativeCalls = append(nativeCalls, *event.ToolCall)
+					}
 				case llm.EventTypeError:
 					if errors.Is(event.Error, context.Canceled) || promptCtx.Err() != nil {
 						emitCanceled()
@@ -538,6 +552,55 @@ func (r *AgentRunner) promptCore(
 			}
 			if streamingSuppressed && answer != "" {
 				pendingText.Reset()
+			}
+			if nativeToolSupport && len(nativeCalls) > 0 && toolClient != nil {
+				assistantContent := strings.TrimSpace(answer)
+				unavailableTool := ""
+				for _, nativeCall := range nativeCalls {
+					if _, exists := toolNames[nativeCall.Name]; !exists {
+						unavailableTool = nativeCall.Name
+						break
+					}
+					resultText, canceled := r.executeToolCall(
+						promptCtx,
+						emit,
+						toolClient,
+						sessionID,
+						usageRec,
+						toolEventRecord{Name: nativeCall.Name, Args: nativeCall.Arguments},
+						toolCall{Tool: nativeCall.Name, Arguments: nativeCall.Arguments},
+					)
+					if canceled {
+						return
+					}
+					if assistantContent != "" {
+						conversation = append(conversation, llm.Message{Role: llm.RoleAssistant, Content: assistantContent})
+						assistantContent = ""
+					}
+					callID := strings.TrimSpace(nativeCall.ID)
+					if callID == "" {
+						callID = nativeCall.Name
+					}
+					conversation = append(conversation,
+						llm.Message{Role: llm.RoleAssistant, ToolCall: &llm.ToolCall{
+							ID:        callID,
+							Name:      nativeCall.Name,
+							Arguments: nativeCall.Arguments,
+						}},
+						llm.Message{Role: llm.RoleUser, Result: &llm.ToolResult{
+							ToolCallID: callID,
+							Name:       nativeCall.Name,
+							Content:    resultText,
+						}},
+					)
+				}
+				if unavailableTool != "" {
+					conversation = append(conversation,
+						llm.Message{Role: llm.RoleAssistant, Content: answer},
+						llm.Message{Role: llm.RoleUser, Content: fmt.Sprintf("Tool %q is not available. Choose one of the available tools.", unavailableTool)},
+					)
+				}
+				continue
 			}
 			recoveredCalls, trailingText, hasRecoveredCalls := parseRecoveredToolCalls(answer)
 			call, ok := parseToolCall(answer)
@@ -1667,7 +1730,7 @@ func buildToolRetryPrompt(tools []ToolInfo) string {
 	return sb.String()
 }
 
-func buildToolSystemPrompt(agentName string, tools []ToolInfo, query string) string {
+func buildToolSystemPrompt(agentName string, tools []ToolInfo, query string, nativeTools bool) string {
 	var sb strings.Builder
 	toolNames := make(map[string]struct{}, len(tools))
 	for _, t := range tools {
@@ -1693,6 +1756,12 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo, query string) str
 		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_history before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
 	} else if _, ok := toolNames["session_messages"]; ok {
 		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_messages before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
+	}
+	if nativeTools {
+		sb.WriteString("Tool definitions are registered via the provider API. Use those native tools directly when they help.\n")
+		sb.WriteString("Prefer calling tools over guessing arguments or emitting pseudo-tool JSON in plain text.\n")
+		sb.WriteString("After receiving tool results, either call another tool or provide the final user-facing answer as plain text.\n\n")
+		return sb.String()
 	}
 	sb.WriteString("If you decide to call a tool, respond with ONLY <tool_call>{\"tool\":\"<name>\",\"arguments\":{...}}</tool_call>\n")
 	sb.WriteString("JSON rules: all string values must use \\\" to escape double quotes inside them. Never use unescaped double quotes inside a JSON string value.\n")

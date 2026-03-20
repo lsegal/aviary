@@ -2138,7 +2138,7 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 		{Name: "tool_a", Description: "does a"},
 		{Name: "tool_b"},
 	}
-	out := buildToolSystemPrompt("myagent", tools, "use tool a")
+	out := buildToolSystemPrompt("myagent", tools, "use tool a", false)
 	assert.True(t, strings.Contains(out, "myagent"))
 	assert.True(t, strings.Contains(out, "tool_a"))
 	assert.True(t, strings.Contains(out, "does a"))
@@ -2156,23 +2156,23 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	assert.False(t, strings.Contains(out, "ONLY valid JSON"))
 
 	// Without agent name.
-	out2 := buildToolSystemPrompt("", tools, "")
+	out2 := buildToolSystemPrompt("", tools, "", false)
 	assert.False(t, strings.Contains(out2, "agent name is"))
 
 }
 
 func TestBuildToolSystemPrompt_AdvertisesSessionHistory(t *testing.T) {
-	out := buildToolSystemPrompt("", []ToolInfo{{Name: "session_history"}}, "group chat context")
+	out := buildToolSystemPrompt("", []ToolInfo{{Name: "session_history"}}, "group chat context", false)
 	assert.Contains(t, out, "inspect recent session history with session_history")
 	assert.Contains(t, out, "order=\"desc\" and limit=20")
 
-	out2 := buildToolSystemPrompt("", []ToolInfo{{Name: "session_messages"}}, "resume context")
+	out2 := buildToolSystemPrompt("", []ToolInfo{{Name: "session_messages"}}, "resume context", false)
 	assert.Contains(t, out2, "inspect recent session history with session_messages")
 	assert.Contains(t, out2, "order=\"desc\" and limit=20")
 }
 
 func TestBuildToolSystemPrompt_ForbidsEmptyPromisesAndNeedlessClarification(t *testing.T) {
-	out := buildToolSystemPrompt("", nil, "create the issue")
+	out := buildToolSystemPrompt("", nil, "create the issue", false)
 	assert.Contains(t, out, "Do not say you are going to do something now")
 	assert.Contains(t, out, "Never promise action and then fail to take it")
 	assert.Contains(t, out, "Do not ask for clarification when the reasonable alternative is to do nothing")
@@ -2181,6 +2181,13 @@ func TestBuildToolSystemPrompt_ForbidsEmptyPromisesAndNeedlessClarification(t *t
 	assert.Contains(t, out, "Do not stop at planning, note-writing, summaries, audits, or analysis when the user asked for implementation or execution")
 	assert.Contains(t, out, "Do not hand the task back after creating an intermediate artifact")
 	assert.Contains(t, out, "Treat clear implementation or execution requests as authorization to do the work now")
+}
+
+func TestBuildToolSystemPrompt_NativeToolsSkipsCatalogAndWrapperSyntax(t *testing.T) {
+	out := buildToolSystemPrompt("myagent", []ToolInfo{{Name: "tool_a", Description: "desc"}}, "use tool a", true)
+	assert.Contains(t, out, "Tool definitions are registered via the provider API")
+	assert.NotContains(t, out, "<available_tools>")
+	assert.NotContains(t, out, "<tool_call>")
 }
 
 func TestBuildRulesPreamble(t *testing.T) {

@@ -16,6 +16,9 @@ type AnthropicProvider struct {
 	oauth  bool // true when using Bearer token auth (Claude Pro/Max)
 }
 
+// SupportsNativeTools reports Anthropic Messages API tool support.
+func (p *AnthropicProvider) SupportsNativeTools() bool { return true }
+
 // NewAnthropicProvider creates a provider for the given Claude model using an API key.
 func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 	opts := []option.RequestOption{}
@@ -87,6 +90,14 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
+			if m.Result != nil {
+				appendMsg(anthropic.NewUserMessage(anthropic.NewToolResultBlock(
+					m.Result.ToolCallID,
+					m.Result.Content,
+					m.Result.IsError,
+				)))
+				continue
+			}
 			if strings.TrimSpace(m.MediaURL) != "" {
 				blocks := make([]anthropic.ContentBlockParamUnion, 0, 2)
 				if strings.TrimSpace(m.Content) != "" {
@@ -108,6 +119,14 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 			}
 			appendMsg(anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleAssistant:
+			if m.ToolCall != nil {
+				appendMsg(anthropic.NewAssistantMessage(anthropic.NewToolUseBlock(
+					m.ToolCall.ID,
+					m.ToolCall.Arguments,
+					m.ToolCall.Name,
+				)))
+				continue
+			}
 			appendMsg(anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleSystem:
 			// Anthropic does not support a "system" role inside the messages array;
@@ -126,6 +145,16 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		Model:     anthropic.Model(p.model),
 		Messages:  messages,
 		MaxTokens: maxToks,
+	}
+	if len(req.Tools) > 0 {
+		params.Tools = make([]anthropic.ToolUnionParam, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			schema := anthropicToolSchema(tool.InputSchema)
+			params.Tools = append(params.Tools, anthropic.ToolUnionParamOfTool(schema, tool.Name))
+			params.Tools[len(params.Tools)-1].OfTool.Description = anthropic.String(tool.Description)
+			params.Tools[len(params.Tools)-1].OfTool.InputExamples = tool.Examples
+			params.Tools[len(params.Tools)-1].OfTool.Strict = anthropic.Bool(true)
+		}
 	}
 	if p.oauth {
 		// Prepend the Claude Code billing header that grants OAuth tokens access
@@ -149,12 +178,35 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	go func() {
 		defer close(ch)
 		var usageData *Usage
+		type pendingToolCall struct {
+			ID   string
+			Name string
+			JSON strings.Builder
+		}
+		pendingCalls := map[int64]*pendingToolCall{}
 		for stream.Next() {
 			event := stream.Current()
 			switch e := event.AsAny().(type) {
+			case anthropic.ContentBlockStartEvent:
+				if block, ok := e.ContentBlock.AsAny().(anthropic.ToolUseBlock); ok {
+					call := &pendingToolCall{ID: block.ID, Name: block.Name}
+					if len(block.Input) > 0 {
+						call.JSON.Write(block.Input)
+					}
+					pendingCalls[e.Index] = call
+				}
 			case anthropic.ContentBlockDeltaEvent:
 				if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
 					ch <- Event{Type: EventTypeText, Text: delta.Text}
+					continue
+				}
+				if delta, ok := e.Delta.AsAny().(anthropic.InputJSONDelta); ok {
+					call := pendingCalls[e.Index]
+					if call == nil {
+						call = &pendingToolCall{}
+						pendingCalls[e.Index] = call
+					}
+					call.JSON.WriteString(delta.PartialJSON)
 				}
 			case anthropic.MessageDeltaEvent:
 				// Usage totals are reported in the MessageDeltaEvent.
@@ -170,6 +222,29 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("anthropic stream: %w", err)}
 			return
 		}
+		if len(pendingCalls) > 0 {
+			indexes := make([]int, 0, len(pendingCalls))
+			for idx := range pendingCalls {
+				indexes = append(indexes, int(idx))
+			}
+			sortInts(indexes)
+			for _, idx := range indexes {
+				call := pendingCalls[int64(idx)]
+				if call == nil || strings.TrimSpace(call.Name) == "" {
+					continue
+				}
+				args, err := parseToolArguments(call.JSON.String())
+				if err != nil {
+					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("anthropic tool arguments for %q: %w", call.Name, err)}
+					return
+				}
+				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
+					ID:        call.ID,
+					Name:      call.Name,
+					Arguments: args,
+				}}
+			}
+		}
 		if usageData != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: usageData}
 		}
@@ -177,4 +252,31 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	}()
 
 	return ch, nil
+}
+
+func anthropicToolSchema(schema any) anthropic.ToolInputSchemaParam {
+	obj := schemaObject(schema)
+	properties := obj["properties"]
+	required, _ := obj["required"].([]any)
+	requiredStrings := make([]string, 0, len(required))
+	for _, item := range required {
+		if s, ok := item.(string); ok && s != "" {
+			requiredStrings = append(requiredStrings, s)
+		}
+	}
+	if alt, ok := obj["required"].([]string); ok {
+		requiredStrings = append([]string{}, alt...)
+	}
+	extra := map[string]any{}
+	for key, value := range obj {
+		if key == "type" || key == "properties" || key == "required" {
+			continue
+		}
+		extra[key] = value
+	}
+	return anthropic.ToolInputSchemaParam{
+		Properties:  properties,
+		Required:    requiredStrings,
+		ExtraFields: extra,
+	}
 }

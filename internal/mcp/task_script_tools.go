@@ -206,7 +206,7 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		}
 		return nil, err
 	}
-	toolList, err := compileToolCatalog(ctx, agentName)
+	tools, err := compileTools(ctx, agentName)
 	if err != nil {
 		if tracker != nil {
 			tracker.record.Status = domain.TaskCompileStatusFailed
@@ -223,9 +223,13 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		return nil, err
 	}
 
+	nativeToolSupport := llm.SupportsNativeTools(provider)
+	llmTools := agent.BuildLLMToolDefinitions(tools)
+	toolList := formatCompileToolList(tools)
+
 	analysisSystem := "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
-	analysisUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nrun_discovery=%t", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, runDiscovery)
-	analysisText, err := completeLLMText(ctx, provider, model, "analysis", analysisSystem, analysisUser)
+	analysisUser := buildCompileStageUserPrompt(prompt, target, toolList, nativeToolSupport, fmt.Sprintf("run_discovery=%t", runDiscovery))
+	analysisText, err := completeLLMText(ctx, provider, model, "analysis", analysisSystem, analysisUser, llmTools, nativeToolSupport)
 	if err != nil {
 		if tracker != nil {
 			tracker.record.Status = domain.TaskCompileStatusFailed
@@ -299,8 +303,8 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 	)
 
 	generationSystem := "Generate a single-file Lua script for Aviary's embedded runtime. Output only the Lua source code, with no markdown fences. The runtime exposes a sandboxed global table `tool` where each tool is called as tool.name({ ... }) and a global `environment` table containing agent_id, session_id, task_id, and job_id. There is no filesystem, network, package loader, or shell access except through the exposed tools. Use tool calls for all external actions. When the script should emit a user-visible notification, call print(...). If a non-empty task output target is provided, Aviary will automatically deliver any print(...) output to that target. In that case, treat print(...) as the delivery mechanism and do not call session_send just to notify the user. Only use session_send when the task explicitly needs to reply to a live session and no task output target is available. Do not invent tools that are not in the available tools list."
-	generationUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, mustJSON(analysis))
-	script, err := completeLLMText(ctx, provider, model, "generation", generationSystem, generationUser)
+	generationUser := buildCompileStageUserPrompt(prompt, target, toolList, nativeToolSupport, "Compiler analysis JSON:\n"+mustJSON(analysis))
+	script, err := completeLLMText(ctx, provider, model, "generation", generationSystem, generationUser, llmTools, nativeToolSupport)
 	if err != nil {
 		if tracker != nil {
 			tracker.record.Status = domain.TaskCompileStatusFailed
@@ -334,8 +338,8 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 	}
 
 	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, or is otherwise unsafe to auto-promote. When a non-empty task output target is provided, Aviary will automatically deliver print(...) output to that target, so prefer scripts that notify via print(...) over scripts that call session_send for the same routed output."
-	validationUser := fmt.Sprintf("Task prompt:\n%s\n\nTask output target:\n%s\n\nAvailable tools:\n%s\n\nCompiler analysis JSON:\n%s\n\nGenerated Lua script:\n%s", prompt, firstNonEmpty(strings.TrimSpace(target), "(silent)"), toolList, mustJSON(analysis), candidateScript)
-	validationText, err := completeLLMText(ctx, provider, model, "validation", validationSystem, validationUser)
+	validationUser := buildCompileStageUserPrompt(prompt, target, toolList, nativeToolSupport, "Compiler analysis JSON:\n"+mustJSON(analysis), "Generated Lua script:\n"+candidateScript)
+	validationText, err := completeLLMText(ctx, provider, model, "validation", validationSystem, validationUser, llmTools, nativeToolSupport)
 	if err != nil {
 		if tracker != nil {
 			tracker.record.Status = domain.TaskCompileStatusFailed
@@ -399,22 +403,26 @@ func loadCompileAgentConfig(agentName string) (*config.Config, *config.AgentConf
 	return nil, nil, fmt.Errorf("agent %q not found in config", agentName)
 }
 
-func compileToolCatalog(ctx context.Context, agentName string) (string, error) {
+func compileTools(ctx context.Context, agentName string) ([]agent.ToolInfo, error) {
 	toolCtx := agent.WithSessionAgentID(agent.WithSessionID(ctx, "compile-preview"), agentName)
 	client, err := NewAgentToolClient(toolCtx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer client.Close() //nolint:errcheck
 	tools, err := client.ListTools(toolCtx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	return tools, nil
+}
+
+func formatCompileToolList(tools []agent.ToolInfo) string {
 	lines := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		lines = append(lines, fmt.Sprintf("- %s: %s", tool.Name, strings.TrimSpace(tool.Description)))
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n")
 }
 
 func compileTaskProvider(model string) (llm.Provider, error) {
@@ -431,7 +439,13 @@ func compileTaskProvider(model string) (llm.Provider, error) {
 	return factory.ForModel(model)
 }
 
-func completeLLMText(ctx context.Context, provider llm.Provider, model, stageName, system, user string) (string, error) {
+func completeLLMText(
+	ctx context.Context,
+	provider llm.Provider,
+	model, stageName, system, user string,
+	tools []llm.ToolDefinition,
+	nativeToolSupport bool,
+) (string, error) {
 	tracker := taskCompileTrackerFromContext(ctx)
 	stageIndex := -1
 	if tracker != nil && strings.TrimSpace(stageName) != "" {
@@ -442,6 +456,12 @@ func completeLLMText(ctx context.Context, provider llm.Provider, model, stageNam
 		System:   system,
 		Messages: []llm.Message{{Role: llm.RoleUser, Content: user}},
 		Stream:   true,
+		Tools: func() []llm.ToolDefinition {
+			if nativeToolSupport {
+				return tools
+			}
+			return nil
+		}(),
 	})
 	if err != nil {
 		if tracker != nil && stageIndex >= 0 {
@@ -459,6 +479,12 @@ func completeLLMText(ctx context.Context, provider llm.Provider, model, stageNam
 				tracker.finishStage(stageIndex, "failed", b.String(), ev.Error)
 			}
 			return "", ev.Error
+		case llm.EventTypeToolCall:
+			err := fmt.Errorf("unexpected native tool call during %s stage", firstNonEmpty(strings.TrimSpace(stageName), "compiler"))
+			if tracker != nil && stageIndex >= 0 {
+				tracker.finishStage(stageIndex, "failed", b.String(), err)
+			}
+			return "", err
 		}
 	}
 	out := strings.TrimSpace(b.String())
@@ -466,6 +492,25 @@ func completeLLMText(ctx context.Context, provider llm.Provider, model, stageNam
 		tracker.finishStage(stageIndex, "succeeded", out, nil)
 	}
 	return out, nil
+}
+
+func buildCompileStageUserPrompt(prompt, target, toolList string, nativeToolSupport bool, sections ...string) string {
+	parts := []string{
+		"Task prompt:\n" + prompt,
+		"Task output target:\n" + firstNonEmpty(strings.TrimSpace(target), "(silent)"),
+	}
+	if nativeToolSupport {
+		parts = append(parts, "Available tools are registered via the provider API for this request. Use their names, descriptions, and JSON schemas there instead of expecting an inline plaintext catalog.")
+	} else {
+		parts = append(parts, "Available tools:\n"+toolList)
+	}
+	for _, section := range sections {
+		section = strings.TrimSpace(section)
+		if section != "" {
+			parts = append(parts, section)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func extractJSONObject(text string) string {

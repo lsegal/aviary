@@ -27,6 +27,8 @@ type Message struct {
 	Role     Role
 	Content  string
 	MediaURL string
+	ToolCall *ToolCall
+	Result   *ToolResult
 }
 
 // Request is the input to an LLM provider.
@@ -37,6 +39,30 @@ type Request struct {
 	MaxToks            int    // 0 = provider default
 	Stream             bool   // whether to stream
 	PreviousResponseID string // provider-native conversation ID; when set, Messages should contain only the new user turn
+	Tools              []ToolDefinition
+}
+
+// ToolDefinition describes a callable function/tool for provider-native tool APIs.
+type ToolDefinition struct {
+	Name        string
+	Description string
+	InputSchema any
+	Examples    []map[string]any
+}
+
+// ToolCall is a provider-native structured tool invocation emitted by the model.
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments map[string]any
+}
+
+// ToolResult is a provider-native tool result message supplied back to the model.
+type ToolResult struct {
+	ToolCallID string
+	Name       string
+	Content    string
+	IsError    bool
 }
 
 // Usage holds token-count metrics from an LLM call.
@@ -55,6 +81,7 @@ type Event struct {
 	Error      error  // (EventTypeError)
 	Usage      *Usage // token counts (EventTypeUsage)
 	ResponseID string // provider-native response/conversation ID (EventTypeDone); non-empty only when supported
+	ToolCall   *ToolCall
 }
 
 // EventType identifies a streaming event.
@@ -62,11 +89,12 @@ type EventType string
 
 // EventType values.
 const (
-	EventTypeText  EventType = "text"
-	EventTypeMedia EventType = "media"
-	EventTypeError EventType = "error"
-	EventTypeUsage EventType = "usage" // emitted once before EventTypeDone
-	EventTypeDone  EventType = "done"
+	EventTypeText     EventType = "text"
+	EventTypeMedia    EventType = "media"
+	EventTypeError    EventType = "error"
+	EventTypeUsage    EventType = "usage" // emitted once before EventTypeDone
+	EventTypeToolCall EventType = "tool_call"
+	EventTypeDone     EventType = "done"
 )
 
 // Provider is the interface all LLM backends implement.
@@ -74,6 +102,17 @@ type Provider interface {
 	// Stream sends req to the model and returns a channel of events.
 	// The channel is closed when the stream ends (EventTypeDone or EventTypeError).
 	Stream(ctx context.Context, req Request) (<-chan Event, error)
+}
+
+// NativeToolProvider indicates that the provider supports provider-native tool schemas and tool-call events.
+type NativeToolProvider interface {
+	SupportsNativeTools() bool
+}
+
+// SupportsNativeTools reports whether p supports provider-native tool definitions and structured tool-call events.
+func SupportsNativeTools(p Provider) bool {
+	nt, ok := p.(NativeToolProvider)
+	return ok && nt.SupportsNativeTools()
 }
 
 // Factory creates a Provider from a model string of the form "<provider>/<name>".
