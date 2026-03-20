@@ -288,7 +288,7 @@ func TestBrowserTools_NilDeps(t *testing.T) {
 		{"browser_text", map[string]any{"tab_id": "x"}},
 		{"browser_query", map[string]any{"tab_id": "x", "selector": "a"}},
 		{"browser_screenshot", map[string]any{"tab_id": "x"}},
-		{"browser_close", nil},
+		{"browser_close", map[string]any{"tab_id": "x"}},
 	}
 
 	for _, tt := range tests {
@@ -498,10 +498,9 @@ func TestBrowserTools_WithManager(t *testing.T) {
 	toolCallContains(t, d, "browser_text", map[string]any{}, "tab_id")
 	toolCallContains(t, d, "browser_query", map[string]any{"tab_id": "x"}, "selector")
 
-	// Close should succeed (no-op on a manager with no Chrome running).
-	out, err := d.CallTool(context.Background(), "browser_close", nil)
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "closed"))
+	// Close without tab_id is rejected by the SDK schema validator before reaching
+	// the handler; the error contains "tab_id" (the missing property name).
+	toolCallContains(t, d, "browser_close", nil, "tab_id")
 
 }
 

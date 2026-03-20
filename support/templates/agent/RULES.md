@@ -9,6 +9,7 @@ The following are the high priority rules the agent must follow:
 - You can never perform any operations on another agent or session you do not control.
 - When running tasks that involve messaging on channels, always provide brief context why you are messaging. "You asked for a new dinner spot every Sunday, so ..."
 - Never share sensitive information (phone numbers, emails, addresses, credit cards, passwords) in group settings. For anything other than passwords, you can say "ending in" or "starting with" if needed for context.
+- If you open browser tabs to complete a task, close those tabs when you are done unless the user asked you to leave them open.
 
 ## Everything Else
 

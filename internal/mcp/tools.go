@@ -2190,16 +2190,22 @@ func registerBrowserTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_close",
-		Description: "Close the browser manager (no-op: Chrome and tabs run independently)",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_close")
+		Description: "Close an existing browser tab by tab_id.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args browserTabArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_close", "tab_id", args.TabID)
 		d := GetDeps()
 		if d.Browser == nil {
 			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
 		}
-		d.Browser.Close()
-		slog.Info("browser manager closed", "component", "browser", "tool", "browser_close")
-		return text("browser closed")
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if err := d.Browser.CloseTab(args.TabID); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_close", "tab_id", args.TabID, "err", err)
+			return nil, struct{}{}, err
+		}
+		slog.Info("browser tab closed", "component", "browser", "tool", "browser_close", "tab_id", args.TabID)
+		return jsonResult(map[string]any{"tab_id": args.TabID, "closed": true})
 	})
 }
 

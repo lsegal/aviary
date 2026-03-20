@@ -247,6 +247,8 @@ func TestBrowserTools_WithManager_TabsAndErrors(t *testing.T) {
 	toolCallContains(t, d, "browser_eval", map[string]any{"javascript": "1"}, "tab_id")
 	// browser_screenshot missing tab_id
 	toolCallContains(t, d, "browser_screenshot", map[string]any{}, "tab_id")
+	// browser_close missing tab_id
+	toolCallContains(t, d, "browser_close", nil, "tab_id")
 }
 
 // ── Job tools ─────────────────────────────────────────────────────────────────
