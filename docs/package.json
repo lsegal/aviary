@@ -1,0 +1,16 @@
+{
+	"name": "aviary-docs",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"packageManager": "pnpm@8.6.0",
+	"scripts": {
+		"dev": "vitepress dev site",
+		"build": "vitepress build site",
+		"preview": "vitepress preview site"
+	},
+	"devDependencies": {
+		"vitepress": "^1.6.4",
+		"vue": "^3.5.30"
+	}
+}
