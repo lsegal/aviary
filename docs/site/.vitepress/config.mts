@@ -96,7 +96,7 @@ export default defineConfig({
 		},
 		footer: {
 			message:
-				'Licensed under the MIT License. <a href="https://github.com/lsegal/aviary" target="_blank" rel="noreferrer">GitHub</a>',
+				'Licensed under the MIT License. Project on <a href="https://github.com/lsegal/aviary" target="_blank" rel="noreferrer">GitHub</a>.',
 			copyright: "Copyright © 2026 Loren Segal",
 		},
 	},
