@@ -31,8 +31,6 @@ jobs:
         working-directory: docs
       - run: pnpm build
         working-directory: docs
-        env:
-          DOCS_BASE: /aviary/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: docs/site/.vitepress/dist
