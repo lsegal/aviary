@@ -32,9 +32,10 @@
       <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <!-- Agents -->
         <router-link to="/agents"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+          class="relative flex flex-col overflow-hidden rounded-2xl border-2 border-blue-200/90 bg-gradient-to-br from-blue-50 via-white to-sky-100/80 p-5 shadow-[0_18px_50px_-24px_rgba(37,99,235,0.42)] ring-1 ring-blue-200/70 transition-all duration-150 hover:-translate-y-1 hover:border-blue-300 hover:shadow-[0_26px_60px_-26px_rgba(37,99,235,0.48)] hover:ring-blue-300 dark:border-gray-800 dark:bg-gray-900 dark:ring-0 dark:hover:border-blue-700 dark:hover:shadow-none"
         >
-          <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Agents</span>
+          <span aria-hidden="true" class="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400"></span>
+          <span class="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700 dark:text-gray-500">Agents</span>
           <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.agents.length }}</span>
           <div class="mt-2 flex flex-wrap gap-1">
             <span v-for="(count, state) in agentStateCounts" :key="state"
@@ -47,9 +48,10 @@
 
         <!-- Jobs -->
         <router-link to="/tasks"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+          class="relative flex flex-col overflow-hidden rounded-2xl border-2 border-cyan-200/90 bg-gradient-to-br from-cyan-50 via-white to-teal-100/75 p-5 shadow-[0_18px_50px_-24px_rgba(8,145,178,0.42)] ring-1 ring-cyan-200/70 transition-all duration-150 hover:-translate-y-1 hover:border-cyan-300 hover:shadow-[0_26px_60px_-26px_rgba(8,145,178,0.48)] hover:ring-cyan-300 dark:border-gray-800 dark:bg-gray-900 dark:ring-0 dark:hover:border-blue-700 dark:hover:shadow-none"
         >
-          <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Jobs</span>
+          <span aria-hidden="true" class="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-cyan-600 via-sky-500 to-teal-400"></span>
+          <span class="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-700 dark:text-gray-500">Jobs</span>
           <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.jobs.length }}</span>
           <div class="mt-2 flex flex-wrap gap-1">
             <span v-if="inProgressJobs > 0"
@@ -64,15 +66,17 @@
 
         <!-- Sessions -->
         <router-link to="/sessions"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+          class="relative flex flex-col overflow-hidden rounded-2xl border-2 border-violet-200/90 bg-gradient-to-br from-violet-50 via-white to-fuchsia-100/75 p-5 shadow-[0_18px_50px_-24px_rgba(124,58,237,0.38)] ring-1 ring-violet-200/70 transition-all duration-150 hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_26px_60px_-26px_rgba(124,58,237,0.44)] hover:ring-violet-300 dark:border-gray-800 dark:bg-gray-900 dark:ring-0 dark:hover:border-blue-700 dark:hover:shadow-none"
         >
-          <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Sessions</span>
+          <span aria-hidden="true" class="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-pink-400"></span>
+          <span class="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-violet-700 dark:text-gray-500">Sessions</span>
           <span class="text-3xl font-bold text-gray-900 dark:text-white">—</span>
           <span class="mt-2 text-xs text-gray-400 dark:text-gray-500">history available in Sessions</span>
         </router-link>
 
         <!-- Config health -->
-        <div class="flex flex-col rounded-xl border p-5" :class="healthCardClass">
+        <div class="relative flex flex-col overflow-hidden rounded-2xl border-2 p-5 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)] ring-1 ring-inset transition-all duration-150 dark:shadow-none" :class="healthCardClass">
+          <span aria-hidden="true" class="absolute inset-x-0 top-0 h-1.5" :class="healthAccentClass"></span>
           <span class="mb-3 text-xs font-semibold uppercase tracking-wide" :class="healthLabelClass">Config Health</span>
           <div class="flex items-center gap-2">
             <svg v-if="errorCount > 0 || warnCount > 0" class="h-5 w-5 shrink-0" :class="healthTextClass" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -241,10 +245,18 @@ const healthLabel = computed(() => {
 
 const healthCardClass = computed(() => {
 	if (errorCount.value > 0)
-		return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
+		return "border-red-300 bg-gradient-to-br from-red-50 via-white to-rose-100 ring-red-200/80 dark:border-red-900 dark:bg-red-950/30 dark:ring-0";
 	if (warnCount.value > 0)
-		return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
-	return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+		return "border-amber-300 bg-gradient-to-br from-amber-50 via-white to-yellow-100 ring-amber-200/80 dark:border-yellow-900 dark:bg-yellow-950/30 dark:ring-0";
+	return "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-green-100 ring-emerald-200/80 dark:border-green-900 dark:bg-green-950/30 dark:ring-0";
+});
+
+const healthAccentClass = computed(() => {
+	if (errorCount.value > 0)
+		return "bg-gradient-to-r from-red-600 via-rose-500 to-orange-400";
+	if (warnCount.value > 0)
+		return "bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-400";
+	return "bg-gradient-to-r from-emerald-600 via-green-500 to-lime-400";
 });
 
 const healthLabelClass = computed(() => {

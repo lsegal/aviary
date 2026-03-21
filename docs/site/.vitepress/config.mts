@@ -3,8 +3,9 @@ import { defineConfig } from "vitepress";
 const base = process.env.DOCS_BASE ?? "/";
 const siteUrl = process.env.DOCS_SITE_URL ?? "https://aviary.bot";
 const logoPath = `${base}logo.png`;
+const socialImagePath = `${base}logo-social.png`;
 const pageUrl = new URL(base, siteUrl).toString();
-const imageUrl = new URL(logoPath, siteUrl).toString();
+const imageUrl = new URL(socialImagePath, siteUrl).toString();
 const title = "Aviary";
 const description =
 	"Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, etc., have conversations, set up scheduled tasks, and let your agents work for you. All managed from a CLI or a web-based control panel.";
@@ -13,19 +14,25 @@ export default defineConfig({
 	base,
 	title,
 	description,
-	head: [
-		["link", { rel: "icon", type: "image/png", href: logoPath }],
-		["link", { rel: "canonical", href: pageUrl }],
-		["meta", { property: "og:type", content: "website" }],
-		["meta", { property: "og:title", content: title }],
-		["meta", { property: "og:description", content: description }],
-		["meta", { property: "og:url", content: pageUrl }],
-		["meta", { property: "og:image", content: imageUrl }],
-		["meta", { name: "twitter:card", content: "summary_large_image" }],
-		["meta", { name: "twitter:title", content: title }],
-		["meta", { name: "twitter:description", content: description }],
-		["meta", { name: "twitter:image", content: imageUrl }],
-	],
+	transformHead() {
+		return [
+			["link", { rel: "icon", type: "image/png", href: logoPath }],
+			["link", { rel: "canonical", href: pageUrl }],
+			["meta", { property: "og:type", content: "website" }],
+			["meta", { property: "og:title", content: title }],
+			["meta", { property: "og:description", content: description }],
+			["meta", { property: "og:url", content: pageUrl }],
+			["meta", { property: "og:image", content: imageUrl }],
+			["meta", { property: "og:image:width", content: "512" }],
+			["meta", { property: "og:image:height", content: "512" }],
+			["meta", { property: "og:image:alt", content: "Aviary logo on white background" }],
+			["meta", { name: "twitter:card", content: "summary_large_image" }],
+			["meta", { name: "twitter:title", content: title }],
+			["meta", { name: "twitter:description", content: description }],
+			["meta", { name: "twitter:image", content: imageUrl }],
+			["meta", { name: "twitter:image:alt", content: "Aviary logo on white background" }],
+		];
+	},
 	themeConfig: {
 		logo: logoPath,
 		nav: [
