@@ -1,7 +1,7 @@
 import { defineConfig } from "vitepress";
 
 const base = process.env.DOCS_BASE ?? "/";
-const siteUrl = process.env.DOCS_SITE_URL ?? "https://lsegal.github.io/aviary/";
+const siteUrl = process.env.DOCS_SITE_URL ?? "https://aviary.bot";
 const logoPath = `${base}logo.png`;
 const pageUrl = new URL(base, siteUrl).toString();
 const imageUrl = new URL(logoPath, siteUrl).toString();
