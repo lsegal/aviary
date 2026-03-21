@@ -96,8 +96,8 @@ export default defineConfig({
 		},
 		footer: {
 			message:
-				"Draft docs scaffold for the Aviary marketing site and product reference.",
-			copyright: "Copyright © Aviary contributors",
+				'Licensed under the MIT License. <a href="https://github.com/lsegal/aviary" target="_blank" rel="noreferrer">GitHub</a>',
+			copyright: "Copyright © 2026 Loren Segal",
 		},
 	},
 });
