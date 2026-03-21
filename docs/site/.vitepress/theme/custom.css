@@ -316,6 +316,24 @@ a.detail-card:focus-visible {
 		inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
+.dark .panel-icon {
+	background: linear-gradient(180deg, rgba(255, 209, 158, 0.24), rgba(214, 132, 60, 0.32));
+	box-shadow:
+		0 12px 26px rgba(0, 0, 0, 0.24),
+		inset 0 1px 0 rgba(255, 244, 232, 0.2);
+}
+
+.panel-icon svg {
+	width: 1.35rem;
+	height: 1.35rem;
+	color: #a12811;
+	stroke-width: 1.7;
+}
+
+.dark .panel-icon svg {
+	color: #ffd9b5;
+}
+
 .panel-card:hover,
 .detail-card:hover {
 	transform: translateY(-2px);
@@ -331,87 +349,6 @@ a.detail-card:focus-visible {
 	box-shadow:
 		0 30px 48px rgba(0, 0, 0, 0.34),
 		inset 0 1px 0 rgba(255, 244, 232, 0.08);
-}
-
-.panel-icon::before,
-.panel-icon::after {
-	content: "";
-	position: absolute;
-}
-
-.icon-spark::before {
-	width: 0.9rem;
-	height: 0.9rem;
-	background: #a12811;
-	clip-path: polygon(50% 0%, 64% 36%, 100% 50%, 64% 64%, 50% 100%, 36% 64%, 0% 50%, 36% 36%);
-}
-
-.icon-node::before {
-	width: 0.95rem;
-	height: 0.95rem;
-	border: 1.5px solid #a12811;
-	border-radius: 999px;
-}
-
-.icon-node::after {
-	width: 0.2rem;
-	height: 0.2rem;
-	border-radius: 999px;
-	background: #a12811;
-	box-shadow:
-		-0.55rem 0 0 #d05d2d,
-		0.55rem 0 0 #d05d2d;
-}
-
-.icon-grid::before {
-	width: 0.95rem;
-	height: 0.95rem;
-	border: 1.5px solid #a12811;
-	box-shadow:
-		inset 0 0 0 1px rgba(161, 40, 17, 0.08);
-}
-
-.icon-grid::after {
-	width: 0.42rem;
-	height: 0.42rem;
-	background: #d05d2d;
-	box-shadow:
-		0.42rem 0 0 #a12811,
-		0 0.42rem 0 #a12811,
-		0.42rem 0.42rem 0 #d05d2d;
-}
-
-.icon-diamond::before {
-	width: 0.78rem;
-	height: 0.78rem;
-	border: 1.5px solid #a12811;
-	transform: rotate(45deg);
-}
-
-.icon-loop::before {
-	width: 1rem;
-	height: 0.58rem;
-	border: 1.5px solid #a12811;
-	border-radius: 999px;
-}
-
-.icon-loop::after {
-	width: 0.28rem;
-	height: 0.28rem;
-	right: 0.55rem;
-	border-top: 1.5px solid #a12811;
-	border-right: 1.5px solid #a12811;
-	transform: rotate(45deg);
-}
-
-.icon-pulse::before {
-	width: 0.95rem;
-	height: 0.95rem;
-	border-radius: 999px;
-	border: 1.5px solid #a12811;
-	box-shadow:
-		0 0 0 0.2rem rgba(208, 93, 45, 0.12),
-		0 0 0 0.38rem rgba(208, 93, 45, 0.06);
 }
 
 .panel-card.accent-chat::after {
@@ -464,17 +401,32 @@ a.detail-card:focus-visible {
 }
 
 .dark .messaging-logo {
-	background: rgba(255, 244, 232, 0.1);
+	background: rgba(255, 244, 232, 0.2);
 	box-shadow:
-		0 12px 24px rgba(0, 0, 0, 0.2),
-		inset 0 1px 0 rgba(255, 244, 232, 0.08);
+		0 12px 24px rgba(0, 0, 0, 0.22),
+		inset 0 1px 0 rgba(255, 244, 232, 0.18);
 }
 
 .messaging-logo svg {
-	width: 1.4rem;
-	height: 1.4rem;
+	width: 1.55rem;
+	height: 1.55rem;
 	display: block;
-	fill: currentColor;
+}
+
+.messaging-logo .slack-blue {
+	fill: #36c5f0;
+}
+
+.messaging-logo .slack-green {
+	fill: #2eb67d;
+}
+
+.messaging-logo .slack-yellow {
+	fill: #ecb22e;
+}
+
+.messaging-logo .slack-red {
+	fill: #e01e5a;
 }
 
 .messaging-logo.signal {
@@ -487,6 +439,14 @@ a.detail-card:focus-visible {
 
 .messaging-logo.discord {
 	color: #5865f2;
+}
+
+.dark .messaging-logo {
+	color: #ffd9b5;
+}
+
+.dark .messaging-logo .slack-piece {
+	fill: currentColor;
 }
 
 .section-eyebrow {

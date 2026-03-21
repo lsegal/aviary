@@ -5,9 +5,15 @@ settings:
   excludeLinksFromLockfile: false
 
 devDependencies:
+  '@heroicons/vue':
+    specifier: ^2.2.0
+    version: 2.2.0(vue@3.5.30)
   autoprefixer:
     specifier: ^10.4.27
     version: 10.4.27(postcss@8.5.8)
+  simple-icons:
+    specifier: ^16.12.0
+    version: 16.12.0
   vitepress:
     specifier: ^1.6.4
     version: 1.6.4(@algolia/client-search@5.49.2)(postcss@8.5.8)(search-insights@2.17.3)
@@ -462,6 +468,14 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
+
+  /@heroicons/vue@2.2.0(vue@3.5.30):
+    resolution: {integrity: sha512-G3dbSxoeEKqbi/DFalhRxJU4mTXJn7GwZ7ae8NuEQzd1bqdd0jAbdaBZlHPcvPD2xI1iGzNVB4k20Un2AguYPw==}
+    peerDependencies:
+      vue: '>= 3'
+    dependencies:
+      vue: 3.5.30
+    dev: true
 
   /@iconify-json/simple-icons@1.2.74:
     resolution: {integrity: sha512-yqaohfY6jnYjTVpuTkaBQHrWbdUrQyWXhau0r/0EZiNWYXPX/P8WWwl1DoLH5CbvDjjcWQw5J0zADhgCUklOqA==}
@@ -1338,6 +1352,11 @@ packages:
       '@shikijs/types': 2.5.0
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
+    dev: true
+
+  /simple-icons@16.12.0:
+    resolution: {integrity: sha512-fDJDqXUpkb2twqH+eBQpJsCYUE6jEH7VkuuPL9dH16sbLf6KKnwyijULmcx7SCoy3c2L6pl8WCzt+4rpYjoWfw==}
+    engines: {node: '>=0.12.18'}
     dev: true
 
   /source-map-js@1.2.1:
