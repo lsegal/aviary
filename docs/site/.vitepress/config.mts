@@ -1,8 +1,6 @@
 import { defineConfig } from "vitepress";
 
-const repository = process.env.GITHUB_REPOSITORY?.split("/")[1];
-const isGitHubPagesBuild = process.env.GITHUB_ACTIONS === "true";
-const base = isGitHubPagesBuild && repository ? `/${repository}/` : "/";
+const base = process.env.DOCS_BASE ?? "/";
 
 export default defineConfig({
 	base,
