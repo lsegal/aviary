@@ -4,11 +4,11 @@ The reference section is split in two tracks.
 
 ## UI Reference
 
-- [Control Panel Surface](/reference/ui/control-panel) maps the major browser-visible areas and what they expose.
+- [Control Panel Surface](./ui/control-panel) maps the major browser-visible areas and what they expose.
 
 ## MCP Reference
 
-- [MCP Index](/reference/mcp/) groups the callable tool surface by domain.
+- [MCP Index](./mcp/) groups the callable tool surface by domain.
 - Each MCP page below is a placeholder that should expand into request schemas, examples, return values, permissions, and failure modes.
 
 ## Reference Policy

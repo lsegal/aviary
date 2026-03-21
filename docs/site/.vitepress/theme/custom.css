@@ -196,6 +196,23 @@ body {
 	color: var(--vp-c-text-2);
 }
 
+a.detail-card {
+	display: block;
+	height: 100%;
+	color: inherit;
+	text-decoration: none;
+}
+
+a.detail-card:hover h3,
+a.detail-card:focus-visible h3 {
+	color: var(--vp-c-brand-1);
+}
+
+a.detail-card:focus-visible {
+	outline: 2px solid var(--vp-c-brand-2);
+	outline-offset: 3px;
+}
+
 .panel-card::before,
 .detail-card::before {
 	content: "";
@@ -451,41 +468,6 @@ body {
 	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 	gap: 1.35rem;
 	margin-top: 2.35rem;
-}
-
-.quick-list {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: 1rem;
-	padding: 0;
-	margin: 2.8rem 0 0;
-	list-style: none;
-}
-
-.vp-doc .quick-list,
-.vp-doc ul.quick-list {
-	padding-left: 0;
-	margin-left: 0;
-	list-style: none;
-}
-
-.quick-list li {
-	display: block;
-	list-style: none;
-	border-left: 3px solid var(--vp-c-brand-1);
-	border-radius: 14px;
-	padding: 0.8rem 0.95rem 0.8rem 1rem;
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 248, 240, 0.8));
-}
-
-.vp-doc .quick-list li::marker,
-.vp-doc ul.quick-list li::marker {
-	content: "";
-}
-
-.dark .quick-list li {
-	background: rgba(255, 255, 255, 0.03);
 }
 
 .VPHome .container {

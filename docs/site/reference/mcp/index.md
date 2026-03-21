@@ -4,15 +4,15 @@ These pages enumerate the currently registered MCP tools from `internal/mcp/tool
 
 ## Categories
 
-- [Agent Tools](/reference/mcp/agents)
-- [Session Tools](/reference/mcp/sessions)
-- [Task And Job Tools](/reference/mcp/tasks-and-jobs)
-- [Browser And Channel Tools](/reference/mcp/browser-and-channels)
-- [Files And Notes Tools](/reference/mcp/files-and-notes)
-- [Memory Tools](/reference/mcp/memory)
-- [Auth Tools](/reference/mcp/auth)
-- [Server And Config Tools](/reference/mcp/server-and-config)
-- [Usage And Skills Tools](/reference/mcp/usage-and-skills)
+- [Agent Tools](./agents)
+- [Session Tools](./sessions)
+- [Task And Job Tools](./tasks-and-jobs)
+- [Browser And Channel Tools](./browser-and-channels)
+- [Files And Notes Tools](./files-and-notes)
+- [Memory Tools](./memory)
+- [Auth Tools](./auth)
+- [Server And Config Tools](./server-and-config)
+- [Usage And Skills Tools](./usage-and-skills)
 
 ## Next Step For Each Page
 

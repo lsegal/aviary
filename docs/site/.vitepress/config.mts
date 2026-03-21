@@ -8,7 +8,7 @@ export default defineConfig({
 	description:
 		"Aviary is the control plane for long-running AI agents, scheduled work, operator tooling, and channel-connected assistants.",
 	head: [
-		["link", { rel: "icon", type: "image/png", href: "/logo.png" }],
+		["link", { rel: "icon", type: "image/png", href: `${base}logo.png` }],
 	],
 	themeConfig: {
 		logo: "/logo.png",

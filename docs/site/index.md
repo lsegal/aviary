@@ -93,29 +93,22 @@ Aviary is a full AI assistant platform, not just a chat box or a model picker. I
 <h2 class="section-heading">Read This First</h2>
 
 <div class="detail-grid">
-  <div class="detail-card">
+  <a class="detail-card detail-link" href="./guide/getting-started">
     <h3>Getting Started</h3>
     <p>Install Aviary, start the server, authenticate the control panel, and get to the first successful agent run without guesswork.</p>
-  </div>
-  <div class="detail-card">
+  </a>
+  <a class="detail-card detail-link" href="./guide/configuration">
     <h3>Configuration</h3>
     <p>Learn the runtime model when you need to change how Aviary behaves, not just use what is already running.</p>
-  </div>
-  <div class="detail-card">
+  </a>
+  <a class="detail-card detail-link" href="./guide/operations">
     <h3>Operating Aviary</h3>
     <p>Work through chats, sessions, jobs, logs, daemon operations, validation, and the control panel paths you use when things are live.</p>
-  </div>
-  <div class="detail-card">
+  </a>
+  <a class="detail-card detail-link" href="./reference/mcp/">
     <h3>MCP Reference</h3>
     <p>Use the MCP reference when you need schemas, examples, and exact tool behavior instead of broad product copy.</p>
-  </div>
+  </a>
 </div>
 
-<ul class="quick-list">
-  <li><a href="/guide/getting-started">Start here</a> to get the server running and open the control panel with valid auth.</li>
-  <li><a href="/guide/control-panel">Tour the control panel</a> to understand how the current UI is organized in practice.</li>
-  <li><a href="/guide/configuration">Read configuration</a> when you need to change runtime behavior instead of just inspecting it.</li>
-  <li><a href="/reference/ui/control-panel">Use the UI reference</a> for route-level detail on what the browser surface exposes.</li>
-  <li><a href="/reference/mcp/">Use the MCP reference</a> when you need the callable interface, grouped by capability.</li>
-</ul>
 </section>
