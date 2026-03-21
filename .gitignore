@@ -12,6 +12,11 @@
 # Web build output
 /web/dist/
 /docs/site/.vitepress
+!/docs/site/.vitepress/
+!/docs/site/.vitepress/theme/
+!/docs/site/.vitepress/theme/**
+/docs/site/.vitepress/dist/
+/docs/site/.vitepress/cache/
 /node_modules/
 /internal/server/webdist/*
 !/internal/server/webdist/.gitkeep
