@@ -1,17 +1,33 @@
 import { defineConfig } from "vitepress";
 
 const base = process.env.DOCS_BASE ?? "/";
+const siteUrl = process.env.DOCS_SITE_URL ?? "https://lsegal.github.io/aviary/";
+const logoPath = `${base}logo.png`;
+const pageUrl = new URL(base, siteUrl).toString();
+const imageUrl = new URL(logoPath, siteUrl).toString();
+const title = "Aviary";
+const description =
+	"Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, etc., have conversations, set up scheduled tasks, and let your agents work for you. All managed from a CLI or a web-based control panel.";
 
 export default defineConfig({
 	base,
-	title: "Aviary",
-	description:
-		"Aviary is the control plane for long-running AI agents, scheduled work, operator tooling, and channel-connected assistants.",
+	title,
+	description,
 	head: [
-		["link", { rel: "icon", type: "image/png", href: `${base}logo.png` }],
+		["link", { rel: "icon", type: "image/png", href: logoPath }],
+		["link", { rel: "canonical", href: pageUrl }],
+		["meta", { property: "og:type", content: "website" }],
+		["meta", { property: "og:title", content: title }],
+		["meta", { property: "og:description", content: description }],
+		["meta", { property: "og:url", content: pageUrl }],
+		["meta", { property: "og:image", content: imageUrl }],
+		["meta", { name: "twitter:card", content: "summary_large_image" }],
+		["meta", { name: "twitter:title", content: title }],
+		["meta", { name: "twitter:description", content: description }],
+		["meta", { name: "twitter:image", content: imageUrl }],
 	],
 	themeConfig: {
-		logo: "/logo.png",
+		logo: logoPath,
 		nav: [
 			{ text: "Guide", link: "/guide/" },
 			{ text: "Reference", link: "/reference/" },
