@@ -25,6 +25,11 @@
 # Data directory
 ~/.config/aviary/
 
+# Agent workspace runtime files (created by running agents/tests)
+MEMORY.md
+notes/
+memory/
+
 # Editor
 .idea/
 .vscode/
