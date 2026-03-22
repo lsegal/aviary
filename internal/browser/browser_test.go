@@ -674,6 +674,20 @@ func TestManager_withTab_ReusesCachedSession(t *testing.T) {
 
 }
 
+func TestSession_ResizeWindow_Error(t *testing.T) {
+	s := makeTestSession()
+	err := s.ResizeWindow(1280, 800)
+	assert.Error(t, err)
+
+}
+
+func TestManager_ResizeWithoutChrome(t *testing.T) {
+	m := NewManager("", 19876, "", false)
+	err := m.Resize(cancelledCtx(), "tab-id", 1280, 800)
+	assert.Error(t, err)
+
+}
+
 // --- launchChrome: binary not found ---
 
 func TestLaunchChrome_BinaryNotFound(t *testing.T) {
