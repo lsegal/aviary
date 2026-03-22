@@ -14,7 +14,7 @@ import (
 )
 
 const syncedByAviaryHeading = "## Synced by Aviary"
-const makeItYoursHeading = "## Make It Yours"
+const syncedByAviaryComment = "<!-- This file is synced by Aviary"
 
 // SyncAgentTemplate merges the embedded agent scaffold into an agent
 // directory. Files that do not yet exist are created. Existing files are never
@@ -89,15 +89,13 @@ func mergeTemplateFile(path string, srcData, destData []byte) ([]byte, bool) {
 }
 
 func replaceAgentsTemplatePrefix(dest, src string) (string, bool) {
-	destPrefix, destSuffix, ok := agentsTemplateSections(dest)
-	if !ok {
+	if !strings.Contains(dest, syncedByAviaryComment) {
 		return dest, false
 	}
-	srcPrefix, _, ok := agentsTemplateSections(src)
-	if !ok || destPrefix == srcPrefix {
+	if dest == src {
 		return dest, false
 	}
-	return srcPrefix + destSuffix, true
+	return src, true
 }
 
 func replaceSyncedMarkdownSection(dest, src string) (string, bool) {
@@ -150,14 +148,6 @@ func syncedMarkdownSection(content string) (start, end int, section string, ok b
 	}
 
 	return idx, sectionEnd, content[idx:sectionEnd], true
-}
-
-func agentsTemplateSections(content string) (prefix, suffix string, ok bool) {
-	idx := strings.Index(content, makeItYoursHeading)
-	if idx < 0 {
-		return "", "", false
-	}
-	return content[:idx], content[idx:], true
 }
 
 // EnsureNewAgentTemplates syncs the embedded scaffold for agents that are

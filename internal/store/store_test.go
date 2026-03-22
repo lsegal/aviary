@@ -564,7 +564,7 @@ func TestSyncAgentTemplate_ReplacesOnlySyncedMarkdownSection(t *testing.T) {
 	assert.NotContains(t, content, "- old synced line")
 }
 
-func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) {
+func TestSyncAgentTemplate_PreservesAGENTSWithoutSyncComment(t *testing.T) {
 	tmp := t.TempDir()
 	SetDataDir(filepath.Join(tmp, "aviary"))
 	t.Cleanup(func() { SetDataDir("") })
@@ -576,10 +576,31 @@ func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) 
 		"",
 		"Custom stale preface",
 		"",
-		"## Make It Yours",
+	}, "\n")
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte(dest), 0o600))
+
+	assert.NoError(t, SyncAgentTemplate("assistant"))
+
+	agentsContent, err := os.ReadFile(filepath.Join(agentDir, "AGENTS.md"))
+	assert.NoError(t, err)
+	content := string(agentsContent)
+	assert.Contains(t, content, "Custom stale preface")
+	assert.NotContains(t, content, "# AGENTS.md - Your Workspace")
+}
+
+func TestSyncAgentTemplate_OverwritesAGENTSWhenSyncCommentPresent(t *testing.T) {
+	tmp := t.TempDir()
+	SetDataDir(filepath.Join(tmp, "aviary"))
+	t.Cleanup(func() { SetDataDir("") })
+
+	agentDir := AgentDir("assistant")
+	assert.NoError(t, os.MkdirAll(agentDir, 0o700))
+	dest := strings.Join([]string{
+		"# Old AGENTS",
 		"",
-		"My local convention",
-		"- keep this",
+		"<!-- This file is synced by Aviary, remove this line to disable syncing -->",
+		"",
+		"Custom stale content",
 		"",
 	}, "\n")
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte(dest), 0o600))
@@ -590,10 +611,7 @@ func TestSyncAgentTemplate_ReplacesAGENTSContentBeforeMakeItYours(t *testing.T) 
 	assert.NoError(t, err)
 	content := string(agentsContent)
 	assert.Contains(t, content, "# AGENTS.md - Your Workspace")
-	assert.Contains(t, content, "## Make It Yours")
-	assert.Contains(t, content, "My local convention")
-	assert.Contains(t, content, "- keep this")
-	assert.NotContains(t, content, "Custom stale preface")
+	assert.NotContains(t, content, "Custom stale content")
 }
 
 func TestStripMarkdownCommentLines(t *testing.T) {
