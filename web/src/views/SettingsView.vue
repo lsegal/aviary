@@ -1671,7 +1671,14 @@ watch(sessionAgent, (val) => {
 const removeTarget = ref<SessionRow | null>(null);
 const removeTargetOpen = ref(false);
 const removeSessionBtns = ref<HTMLElement>();
-watch(removeTargetOpen, (v) => { if (v) setTimeout(() => { const btns = removeSessionBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
+watch(removeTargetOpen, (v) => {
+	if (v)
+		setTimeout(() => {
+			const btns =
+				removeSessionBtns.value?.querySelectorAll<HTMLElement>("button");
+			btns?.[btns.length - 1]?.focus();
+		});
+});
 
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
@@ -2483,7 +2490,14 @@ function addAgent() {
 const removeAgentTarget = ref<number | null>(null);
 const removeAgentOpen = ref(false);
 const removeAgentBtns = ref<HTMLElement>();
-watch(removeAgentOpen, (v) => { if (v) setTimeout(() => { const btns = removeAgentBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
+watch(removeAgentOpen, (v) => {
+	if (v)
+		setTimeout(() => {
+			const btns =
+				removeAgentBtns.value?.querySelectorAll<HTMLElement>("button");
+			btns?.[btns.length - 1]?.focus();
+		});
+});
 
 function removeAgent(index: number) {
 	removeAgentTarget.value = index;
@@ -2510,7 +2524,14 @@ function confirmRemoveAgent() {
 
 const deleteFileTarget = ref<{ agentName: string; file: string } | null>(null);
 const deleteFileBtns = ref<HTMLElement>();
-watch(deleteFileTarget, (v) => { if (v) setTimeout(() => { const btns = deleteFileBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
+watch(deleteFileTarget, (v) => {
+	if (v)
+		setTimeout(() => {
+			const btns =
+				deleteFileBtns.value?.querySelectorAll<HTMLElement>("button");
+			btns?.[btns.length - 1]?.focus();
+		});
+});
 
 function promptDeleteAgentFile(agentName: string) {
 	const state = getAgentFileState(agentName);
