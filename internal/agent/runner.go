@@ -172,7 +172,11 @@ func (r *AgentRunner) promptCore(
 		// model after receiving a 401. Only one refresh attempt is made per prompt.
 		tokenRefreshAttempted := false
 		tryTokenRefresh := func(origErr error) bool {
-			if r.factory == nil || tokenRefreshAttempted || !isAuthError(origErr) {
+			if r.factory == nil || !isAuthError(origErr) {
+				return false
+			}
+			if tokenRefreshAttempted {
+				slog.Debug("agent: token refresh already attempted, skipping", "agent", r.agent.Name, "err", origErr)
 				return false
 			}
 			tokenRefreshAttempted = true
@@ -636,6 +640,7 @@ func (r *AgentRunner) promptCore(
 			if !ok || toolClient == nil {
 				if shouldRetryToollessRefusal(answer, len(tools), retriedToollessRefusal) {
 					retriedToollessRefusal = true
+					slog.Info("agent: retrying after toolless refusal", "agent", r.agent.Name)
 					conversation = append(conversation,
 						llm.Message{Role: llm.RoleAssistant, Content: answer},
 						llm.Message{Role: llm.RoleUser, Content: buildToolRetryPrompt(tools)},
@@ -644,6 +649,7 @@ func (r *AgentRunner) promptCore(
 				}
 				if !retriedInvalidJSON && looksLikeBrokenToolCall(answer) {
 					retriedInvalidJSON = true
+					slog.Info("agent: retrying broken tool call JSON", "agent", r.agent.Name)
 					conversation = append(conversation,
 						llm.Message{Role: llm.RoleAssistant, Content: answer},
 						llm.Message{Role: llm.RoleUser, Content: "Your tool call could not be parsed as valid JSON. Ensure all double quotes inside string values are escaped as \\\". Respond with only <tool_call>{\"tool\":\"<name>\",\"arguments\":{...}}</tool_call> using corrected JSON."},
@@ -1744,14 +1750,15 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo, query string, nat
 	sb.WriteString("Do not claim lack of access unless a tool call actually fails.\n")
 	sb.WriteString("For plain text replies in the current conversation, your final answer is already delivered to that chat/channel. Do not say you cannot send, post, or message the current conversation.\n")
 	sb.WriteString("Do not say you are going to do something now, about to do it, or will handle it next unless you are taking that action in this response. Never promise action and then fail to take it.\n")
-	sb.WriteString("Do not ask for clarification when the reasonable alternative is to do nothing. If the user already told you to perform an action, make the best reasonable assumptions and act.\n")
+	sb.WriteString("Do not ask for permission, confirmation, or clarification before acting. If the user asked you to do something, do it now using your best judgment. Do not say \"should I do that?\" or \"want me to proceed?\" or similar — just act.\n")
 	sb.WriteString("Do not plan first unless the user explicitly asked for a plan. When the user asked for implementation or execution, start doing the work instead of producing a plan, note, audit, summary, or analysis first.\n")
 	sb.WriteString("Do not stop at planning, note-writing, summaries, audits, or analysis when the user asked for implementation or execution. Those are intermediate artifacts, not completion, unless the user explicitly asked only for them.\n")
 	sb.WriteString("Do not hand the task back after creating an intermediate artifact. Do not ask 'want me to continue', 'should I start', or similar after you already have enough context to proceed.\n")
 	sb.WriteString("Treat clear implementation or execution requests as authorization to do the work now. Do the work instead of proposing the next step.\n")
 	sb.WriteString("When asked to schedule a task or reminder, call task_schedule directly using your own agent name and the user's task request with only minimal normalization. Put the task body in the \"content\" argument. If type is omitted it defaults to \"prompt\"; use type=\"script\" only when the content is Aviary Lua source. Do not rewrite it into a compiler meta-prompt. Do not ask for shell scripts, POSIX scripts, bash, sh, curl wrappers, shebangs, or exec fallbacks. If Aviary can deterministically precompute a prompt task into embedded Lua, task_schedule will do that internally. Use \"in\" for one-time reminders and \"schedule\" for recurring tasks. Never use a \"cron\" argument name; use \"schedule\". Do not ask where output will appear — scheduled task output is captured in job logs.\n")
 	sb.WriteString("When the user asks or suggests writing something down, or shares important project information that should be preserved as a user-facing artifact, use note_write to create/update a concise markdown summary in notes/<descriptive_file>.md.\n")
-	sb.WriteString("Use memory_store only for durable facts to remember about the user or agent (personal details, preferences, names, relationships, or explicit requests to remember something later), not for general project notes or transcripts.\n")
+	sb.WriteString("When the user explicitly says to remember something, states a preference, or uses words like 'always', 'never', 'remember', or 'don't do X', immediately call memory_store before giving your text reply — do not just say 'understood' or 'noted'. Use memory_store only for durable facts about the user or agent (preferences, names, relationships), not for general project notes or transcripts.\n")
+	sb.WriteString("When the user provides feedback or corrections mid-conversation, handle the feedback AND also answer any prior unanswered question from the user in the same response.\n")
 	if _, ok := toolNames["session_history"]; ok {
 		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_history before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
 	} else if _, ok := toolNames["session_messages"]; ok {

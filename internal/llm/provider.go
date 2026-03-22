@@ -156,6 +156,7 @@ func (f *Factory) resolveOAuthToken(providerKey string, forceRefresh bool) (stri
 	// Auto-refresh when the token is within 30 s of expiry, or when forced.
 	if (tok.IsExpired() || forceRefresh) && tok.RefreshToken != "" {
 		if refreshed := f.refreshOAuthToken(providerKey, &tok); refreshed != nil {
+			slog.Info("llm: OAuth token refreshed", "provider", providerKey, "forced", forceRefresh)
 			return refreshed.AccessToken, true
 		}
 		// Refresh failed; fall through and try the stale token — the API

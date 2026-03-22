@@ -2175,8 +2175,8 @@ func TestBuildToolSystemPrompt_ForbidsEmptyPromisesAndNeedlessClarification(t *t
 	out := buildToolSystemPrompt("", nil, "create the issue", false)
 	assert.Contains(t, out, "Do not say you are going to do something now")
 	assert.Contains(t, out, "Never promise action and then fail to take it")
-	assert.Contains(t, out, "Do not ask for clarification when the reasonable alternative is to do nothing")
-	assert.Contains(t, out, "make the best reasonable assumptions and act")
+	assert.Contains(t, out, "Do not ask for permission, confirmation, or clarification before acting")
+	assert.Contains(t, out, "do it now using your best judgment")
 	assert.Contains(t, out, "Do not plan first unless the user explicitly asked for a plan")
 	assert.Contains(t, out, "Do not stop at planning, note-writing, summaries, audits, or analysis when the user asked for implementation or execution")
 	assert.Contains(t, out, "Do not hand the task back after creating an intermediate artifact")
@@ -2344,4 +2344,13 @@ func TestLoadMemoryContext_WithNotes(t *testing.T) {
 	assert.True(t, strings.Contains(got, "important note"))
 	assert.True(t, strings.Contains(got, "Relevant durable memory"))
 
+}
+
+func TestIsAuthError(t *testing.T) {
+	assert.False(t, isAuthError(nil))
+	assert.True(t, isAuthError(errors.New("401 Unauthorized")))
+	assert.True(t, isAuthError(errors.New("request unauthorized")))
+	assert.True(t, isAuthError(errors.New("unauthenticated")))
+	assert.False(t, isAuthError(errors.New("500 internal server error")))
+	assert.False(t, isAuthError(errors.New("context deadline exceeded")))
 }
