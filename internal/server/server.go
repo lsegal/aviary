@@ -22,7 +22,6 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -42,7 +41,6 @@ type Server struct {
 	runCtx            context.Context
 	agents            *agent.Manager
 	sched             *scheduler.Scheduler
-	mem               *memory.Manager
 	channels          *channels.Manager
 	brw               *browser.Manager
 	sampler           *ProcSampler
@@ -85,7 +83,6 @@ func New(cfg *config.Config, token string) *Server {
 		slog.Warn("server: scheduler initialization failed; scheduled tasks disabled", "err", err)
 	}
 
-	s.mem = memory.New()
 	s.channels = channels.NewManager()
 	if s.sched != nil {
 		s.sched.SetTaskOutputDelivery(s.deliverTaskOutput)
@@ -101,7 +98,6 @@ func New(cfg *config.Config, token string) *Server {
 	mcp.SetDeps(&mcp.Deps{
 		Agents:    s.agents,
 		Scheduler: s.sched,
-		Memory:    s.mem,
 		Channels:  s.channels,
 		Browser:   s.brw,
 		Auth:      authStore,
@@ -114,10 +110,6 @@ func New(cfg *config.Config, token string) *Server {
 	agent.SetSessionProcessingObserver(func(agentID, sessionID string, processing bool) {
 		v := processing
 		wsBroadcast(wsEvent{Type: "session_processing", AgentID: agentID, SessionID: sessionID, IsProcessing: &v})
-	})
-	agent.SetMemoryCompactionObserver(func(agentID, poolID string, started bool) {
-		v := started
-		wsBroadcast(wsEvent{Type: "memory_compaction", AgentID: agentID, PoolID: poolID, IsProcessing: &v})
 	})
 
 	// Install the log hub as the global slog handler, delegating to the

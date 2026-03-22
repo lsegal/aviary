@@ -17,7 +17,6 @@ import (
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -724,48 +723,6 @@ func TestSkillsListTool(t *testing.T) {
 		assert.True(t, strings.HasPrefix(out, "["))
 	}
 
-}
-
-// ── memory tools (nil deps) ───────────────────────────────────────────────────
-
-func TestMemoryToolsQuery_NilDeps(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Memory: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// Just verify the query tool errors properly (the others are covered in mcp_test.go)
-	toolCallContains(t, d, "memory_search", map[string]any{"agent": "bot", "query": "test"}, "not initialized")
-}
-
-// ── memory_search (no query / empty result) ───────────────────────────────────
-
-func TestMemorySearch_EmptyQuery(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mem := memory.New()
-	SetDeps(&Deps{Memory: mem})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// memory_search with empty query returns all notes (empty)
-	out, err := d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": ""})
-	assert.NoError(t, err)
-
-	_ = out // may be empty string, that's fine
 }
 
 // ── task_schedule error paths ─────────────────────────────────────────────────

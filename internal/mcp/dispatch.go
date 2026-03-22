@@ -10,7 +10,6 @@ import (
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -87,7 +86,6 @@ func ensureInProcessDeps() error {
 
 	SetDeps(&Deps{
 		Agents:  agents,
-		Memory:  memory.New(),
 		Browser: browser.NewManager(cfg.Browser.Binary, cdpPortOrDefault(cfg.Browser.CDPPort), cfg.Browser.ProfileDir, cfg.Browser.Headless),
 		Auth:    authStore,
 	})

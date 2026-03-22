@@ -23,7 +23,6 @@ const (
 	// Deprecated: legacy flat directories kept for backward-compat migration.
 	DirJobs     = "jobs"     // deprecated: jobs now live under agents/<name>/jobs/
 	DirSessions = "sessions" // deprecated: sessions now live under agents/<name>/sessions/
-	DirMemory   = "memory"   // deprecated: memory now lives under agents/<name>/memory/
 )
 
 var customDataDir string
@@ -478,28 +477,10 @@ func FindSessionPath(agentID, sessionID string) string {
 	return ""
 }
 
-// MemoryPath returns the path for a memory pool file.
-// Pool IDs follow the format "type:agentname" (e.g. "private:assistant"),
-// which maps to <datadir>/agents/<agentname>/memory/<type>.jsonl.
-func MemoryPath(poolID string) string {
-	if i := strings.Index(poolID, ":"); i >= 0 {
-		poolType := sanitizeFileComponent(poolID[:i])
-		agentName := sanitizeFileComponent(poolID[i+1:])
-		return filepath.Join(DataDir(), DirAgents, agentName, "memory", poolType+".jsonl")
-	}
-	// Fallback for pool IDs without a colon.
-	return filepath.Join(DataDir(), DirAgents, "default", "memory", sanitizeFileComponent(poolID)+".jsonl")
-}
-
-// NotesPath returns the path for the human-editable markdown notes file for a
-// memory pool. Pool IDs follow the same format as MemoryPath.
-// e.g. "private:assistant" → <datadir>/agents/assistant/MEMORY.md
-func NotesPath(poolID string) string {
-	if i := strings.Index(poolID, ":"); i >= 0 {
-		agentName := sanitizeFileComponent(poolID[i+1:])
-		return filepath.Join(DataDir(), DirAgents, agentName, "MEMORY.md")
-	}
-	return filepath.Join(DataDir(), DirAgents, "default", "MEMORY.md")
+// NotesPath returns the path for the human-editable markdown notes file in the
+// current workspace directory.
+func NotesPath(_ string) string {
+	return filepath.Join(WorkspaceDir(), "MEMORY.md")
 }
 
 // UsagePath returns the path to the global usage log file.

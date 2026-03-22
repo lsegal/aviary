@@ -165,13 +165,6 @@ func TestPathHelpers(t *testing.T) {
 		assert.Equal(t, want, got)
 	})
 
-	t.Run("MemoryPath_typed", func(t *testing.T) {
-		got := MemoryPath("private:assistant")
-		want := filepath.Join(base, DirAgents, "assistant", "memory", "private.jsonl")
-		assert.Equal(t, want, got)
-
-	})
-
 	t.Run("AgentDir", func(t *testing.T) {
 		got := AgentDir("researcher")
 		want := filepath.Join(base, DirAgents, "researcher")
@@ -312,20 +305,17 @@ func TestMediaDirs(t *testing.T) {
 	assert.Equal(t, filepath.Join(DataDir(), "media", "outgoing", "signal"), OutgoingMediaDir("signal"))
 }
 
-// TestNotesPath verifies notes path format.
+// TestNotesPath verifies notes path is workspace-local.
 func TestNotesPath(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	SetWorkspaceDir(tmp)
+	t.Cleanup(func() { SetWorkspaceDir("") })
 
 	got := NotesPath("private:assistant")
-	want := filepath.Join(DataDir(), DirAgents, "assistant", "MEMORY.md")
-	assert.Equal(t, want, got)
+	assert.Equal(t, filepath.Join(tmp, "MEMORY.md"), got)
 
-	// Without colon: fallback to default.
-	got2 := NotesPath("standalone")
-	want2 := filepath.Join(DataDir(), DirAgents, "default", "MEMORY.md")
-	assert.Equal(t, want2, got2)
-
+	got2 := NotesPath("")
+	assert.Equal(t, filepath.Join(tmp, "MEMORY.md"), got2)
 }
 
 func TestAgentMarkdownFiles(t *testing.T) {
@@ -678,7 +668,6 @@ func TestIntegration_StoreSetup(t *testing.T) {
 	for _, p := range []string{
 		JobPath("bot", "j1"),
 		SessionPath("bot", "bot-main"),
-		MemoryPath("private:bot"),
 	} {
 		assert.True(t, strings.HasPrefix(p, dataDir))
 

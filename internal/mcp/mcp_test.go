@@ -28,7 +28,6 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
@@ -550,16 +549,6 @@ func TestJobTools(t *testing.T) {
 	d := setupMCPDispatcher(t)
 	// job_list should return an array (empty is fine).
 	toolCallContains(t, d, "job_list", map[string]any{}, "")
-}
-
-func TestMemoryTools(t *testing.T) {
-	d := setupMCPDispatcher(t)
-	// memory_query without agent returns empty or error.
-	toolCallContains(t, d, "memory_query", map[string]any{"agent": "bot", "query": "test"}, "")
-	// memory_store requires agent+content.
-	toolCallContains(t, d, "memory_store", map[string]any{"agent": "bot", "content": "remember this"}, "")
-	// memory_clear
-	toolCallContains(t, d, "memory_clear", map[string]any{"agent": "bot"}, "")
 }
 
 func TestAgentTools_RulesGetSet(t *testing.T) {
@@ -1917,47 +1906,6 @@ func TestStartProviderPingIfStale(t *testing.T) {
 	}
 }
 
-func TestMemoryNotesTools(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mem := memory.New()
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
-	SetDeps(&Deps{Agents: mgr, Memory: mem})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// memory_notes_set stores new content.
-	out, err := d.CallTool(context.Background(), "memory_notes_set", map[string]any{"agent": "bot", "content": "# Notes\n- remember this"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "notes updated"))
-
-	// memory_show returns the stored notes.
-	out, err = d.CallTool(context.Background(), "memory_show", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "remember this"))
-
-	// memory_search filters by query.
-	out, err = d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": "remember"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "remember this"))
-
-	// memory_search with no-match query returns empty.
-	out, err = d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": "zzznomatch"})
-	assert.NoError(t, err)
-	assert.False(t, strings.Contains(out, "remember"))
-
-}
-
 func TestNoteWriteTool(t *testing.T) {
 	workspace := t.TempDir()
 	store.SetWorkspaceDir(workspace)
@@ -3205,32 +3153,6 @@ func TestJobListNilScheduler(t *testing.T) {
 
 	// job_list returns an MCP error result when scheduler is nil.
 	toolCallContains(t, d, "job_list", map[string]any{}, "scheduler not initialized")
-}
-
-func TestMemoryTools_NilManager(t *testing.T) {
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	SetDeps(&Deps{Memory: nil})
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// Each tool uses the exact fields for its schema; we check for the nil-manager error.
-	toolCases := []struct {
-		tool string
-		args map[string]any
-	}{
-		{"memory_show", map[string]any{"agent": "bot"}},
-		{"memory_search", map[string]any{"agent": "bot", "query": "x"}},
-		{"memory_store", map[string]any{"agent": "bot", "content": "x"}},
-		{"memory_notes_set", map[string]any{"agent": "bot", "content": "x"}},
-		{"memory_clear", map[string]any{"agent": "bot"}},
-	}
-	for _, tc := range toolCases {
-		toolCallContains(t, d, tc.tool, tc.args, "memory manager not initialized")
-	}
 }
 
 func TestNoteWriteTool_Validation(t *testing.T) {

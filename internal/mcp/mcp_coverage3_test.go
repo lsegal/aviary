@@ -15,7 +15,6 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
 
 	"github.com/stretchr/testify/assert"
@@ -319,47 +318,6 @@ func TestStartProviderPingIfStale_Concurrent(_ *testing.T) {
 	providerPingMu.Lock()
 	delete(providerPingCache, provider)
 	providerPingMu.Unlock()
-}
-
-// ── memory_query tool (old API test coverage gap) ─────────────────────────────
-
-func TestMemoryQueryTool(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mem := memory.New()
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "x"}}})
-	SetDeps(&Deps{Agents: mgr, Memory: mem})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// Store and then query
-	_, err = d.CallTool(context.Background(), "memory_store", map[string]any{"agent": "bot", "content": "cats are great"})
-	assert.NoError(t, err)
-
-	out, err := d.CallTool(context.Background(), "memory_search", map[string]any{"agent": "bot", "query": "cats"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "cats"))
-
-	// memory_show
-	out, err = d.CallTool(context.Background(), "memory_show", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "cats"))
-
-	// memory_clear
-	out, err = d.CallTool(context.Background(), "memory_clear", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "cleared"))
-
 }
 
 // ── job_list with scheduler ───────────────────────────────────────────────────

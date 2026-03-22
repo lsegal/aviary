@@ -50,13 +50,6 @@ func TestStructs_Construct(t *testing.T) {
 	assert.Equal(t, ChannelTypeSlack, ch.Type)
 	assert.Equal(t, "a1", ch.AgentID)
 
-	mp := MemoryPool{ID: "m1", Name: "shared"}
-	assert.Equal(t, "shared", mp.Name)
-
-	me := MemoryEntry{ID: "e1", Role: "user", Content: "hello", Tokens: 1, Timestamp: now}
-	assert.Equal(t, "hello", me.Content)
-	assert.Equal(t, 1, me.Tokens)
-
 	model := Model{ID: "mod1", Name: "anthropic/claude", Provider: ProviderAnthropic, Auth: "auth:anthropic:default"}
 	assert.Equal(t, ProviderAnthropic, model.Provider)
 
