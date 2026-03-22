@@ -1870,6 +1870,12 @@ type browserQueryArgs struct {
 	IncludeHTML   bool   `json:"include_html,omitempty"`
 }
 
+type browserResizeArgs struct {
+	TabID  string `json:"tab_id"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
 func registerBrowserTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_open",
@@ -2172,6 +2178,28 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		slog.Info(fmt.Sprintf("screenshot saved: %s", path), "component", "browser", "tool", "browser_screenshot", "tab_id", args.TabID)
 
 		return text(fmt.Sprintf("screenshot saved: %s", path))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "browser_resize",
+		Description: "Resize the browser window containing the specified tab (width, height in pixels).",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserResizeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_resize", "tab_id", args.TabID, "width", args.Width, "height", args.Height)
+		d := GetDeps()
+		if d.Browser == nil {
+			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
+		}
+		if args.TabID == "" {
+			return nil, struct{}{}, fmt.Errorf("tab_id is required")
+		}
+		if args.Width <= 0 || args.Height <= 0 {
+			return nil, struct{}{}, fmt.Errorf("width and height must be positive")
+		}
+		if err := d.Browser.Resize(ctx, args.TabID, args.Width, args.Height); err != nil {
+			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_resize", "tab_id", args.TabID, "err", err)
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("resized tab %s to %dx%d", args.TabID, args.Width, args.Height))
 	})
 
 	addTool(s, &sdkmcp.Tool{
