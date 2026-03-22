@@ -6,6 +6,7 @@ export interface Job {
 	id: string;
 	task_id: string;
 	agent_id: string;
+	session_id?: string;
 	prompt: string;
 	status: "pending" | "in_progress" | "completed" | "failed";
 	attempts: number;
@@ -179,6 +180,20 @@ export const useJobsStore = defineStore("jobs", () => {
 			return await callTool("job_logs", { id: jobID });
 		} catch (e) {
 			return `Error: ${e instanceof Error ? e.message : String(e)}`;
+		}
+	}
+
+	async function fetchSessionMessages(agentID: string, sessionID: string) {
+		try {
+			const raw = await callTool("session_messages", {
+				agent: agentID,
+				session_id: sessionID,
+				order: "asc",
+			});
+			return (JSON.parse(raw) as any[]) ?? [];
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+			return [];
 		}
 	}
 

@@ -150,10 +150,18 @@ export function useMCP() {
 				const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
 				if (trimmed === "") {
 					if (eventData.length === 0) return;
+					// Coalesce all `data:` lines for this event into a single payload
 					const payload = eventData.join("\n").trim();
 					eventData = [];
 					if (!payload) return;
 					try {
+						// In development, emit one debug log for the fully-assembled SSE payload
+						if (
+							typeof import.meta !== "undefined" &&
+							(import.meta as ImportMeta).env?.DEV
+						) {
+							console.debug("SSE payload:", payload);
+						}
 						const parsed = JSON.parse(payload) as JsonRpcResponse;
 						onEvent?.(parsed);
 						if (parsed.id !== undefined || parsed.result || parsed.error) {

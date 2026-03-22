@@ -459,8 +459,62 @@
                 class="flex-1 overflow-y-auto rounded-lg bg-gray-950 p-3 font-mono text-[11px]"
                 :class="logsLoading ? 'text-gray-500' : 'text-green-400'">
                 <div v-if="logsLoading">Loading…</div>
-                <div v-else-if="!jobOutput" class="text-gray-500">(no output captured)</div>
-                <div v-else class="whitespace-pre-wrap">{{ jobOutput }}</div>
+                <div v-else-if="!jobOutput" class="text-gray-500">
+                  <div v-if="sessionMessagesLoading">Loading session messages…</div>
+                  <div v-else-if="sessionMessages && sessionMessages.length">
+                    <div class="space-y-2">
+                      <div v-for="(m, idx) in sessionMessages" :key="m.id ?? idx"
+                        class="rounded-lg border border-gray-800/40 bg-gray-950 p-2 font-mono text-[11px]">
+                        <div class="mb-1 flex items-center justify-between text-xs text-gray-400">
+                          <div class="flex items-center gap-2">
+                            <span class="inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
+                              :class="m.role === 'assistant' ? 'bg-green-900 text-green-300' : m.role === 'user' ? 'bg-gray-800 text-gray-300' : m.role === 'tool' ? 'bg-purple-900 text-purple-300' : 'bg-gray-700 text-gray-200'">
+                              {{ m.role }}</span>
+                            <span class="text-[11px] text-gray-400">{{ m.timestamp ? fmtTs(m.timestamp) : '' }}</span>
+                          </div>
+                          <button class="text-[11px] text-blue-400 hover:text-blue-200" @click="toggleExpanded(m.id ?? ('sess-'+idx))">
+                            {{ isExpanded(m.id ?? ('sess-'+idx)) ? 'Hide' : 'Show' }}
+                          </button>
+                        </div>
+                        <div class="whitespace-pre-wrap text-sm text-gray-200">
+                          <div v-if="!isExpanded(m.id ?? ('sess-'+idx))">
+                            <div v-if="m.media_url">
+                              <a :href="m.media_url" target="_blank" class="text-blue-400 hover:underline">[media]</a>
+                              <div v-if="m.content" class="mt-1">{{ (m.content || '').slice(0,200) }}{{ (m.content||'').length>200 ? '…' : '' }}</div>
+                            </div>
+                            <div v-else-if="m.role === 'tool'">
+                              {{ (m.content || '').slice(0,200) }}{{ (m.content||'').length>200 ? '…' : '' }}
+                            </div>
+                            <div v-else>
+                              {{ (m.content || '').slice(0,200) }}{{ (m.content||'').length>200 ? '…' : '' }}
+                            </div>
+                          </div>
+                          <pre v-else class="mt-2 overflow-x-auto bg-gray-900 p-2 text-[11px] text-green-300 whitespace-pre-wrap">{{ m.role === 'tool' ? tryPrettyJSON(m.content) : (m.content || '') }}</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else>(no output captured)</div>
+                </div>
+                <div v-else class="space-y-1">
+                  <div v-if="!jobLines.length" class="text-gray-500">No output captured.</div>
+                  <div v-else>
+                    <div v-for="(ln, idx) in jobLines" :key="idx" class="rounded-md border border-gray-800/30 bg-gray-950 p-2 font-mono text-[11px]">
+                      <div class="mb-1 flex items-center justify-between text-xs text-gray-400">
+                        <div class="text-gray-400">Line {{ idx + 1 }}</div>
+                        <button class="text-[11px] text-blue-400 hover:text-blue-200" @click="toggleExpanded(selectedJob.id + '-line-' + idx)">
+                          {{ isExpanded(selectedJob.id + '-line-' + idx) ? 'Hide' : 'Show' }}
+                        </button>
+                      </div>
+                      <div class="whitespace-pre-wrap text-sm text-gray-200">
+                        <div v-if="!isExpanded(selectedJob.id + '-line-' + idx)">
+                          {{ (ln || '').slice(0,200) }}{{ (ln||'').length>200 ? '…' : '' }}
+                        </div>
+                        <pre v-else class="mt-2 overflow-x-auto bg-gray-900 p-2 text-[11px] text-green-300 whitespace-pre-wrap">{{ ln }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div v-else-if="selectedCompile" class="flex flex-1 flex-col overflow-y-auto px-5 py-3">
@@ -544,6 +598,19 @@ const selectedJob = ref<Job | null>(null);
 const selectedCompile = ref<TaskCompile | null>(null);
 const jobOutput = ref<string>("");
 const logsLoading = ref(false);
+const sessionMessages = ref<any[] | null>(null);
+const sessionMessagesLoading = ref(false);
+const expanded = ref<Record<string, boolean>>({});
+
+function toggleExpanded(key: string) {
+  expanded.value[key] = !expanded.value[key];
+}
+
+function isExpanded(key: string) {
+  return !!expanded.value[key];
+}
+
+const jobLines = computed(() => (jobOutput.value ? jobOutput.value.split(/\r?\n/) : []));
 const compileLoading = ref(false);
 const liveBottom = ref<HTMLElement | null>(null);
 const hoveredDay = ref<number | null>(null);
@@ -555,6 +622,17 @@ const presets = [
 	{ label: "7d", days: 7 },
 	{ label: "30d", days: 30 },
 ];
+
+// helpers for UI
+function tryPrettyJSON(s: unknown) {
+  if (!s) return s || "";
+  try {
+    const v = typeof s === "string" ? JSON.parse(s) : s;
+    return JSON.stringify(v, null, 2);
+  } catch (e) {
+    return s;
+  }
+}
 
 const statusFilters = [
 	{ label: "All", value: "all" },
@@ -591,7 +669,16 @@ async function selectJob(job: Job) {
 	selectedJob.value = job;
 	jobOutput.value = "";
 	if (job.status !== "in_progress") {
+    // load persisted job output first
 		await loadLogs(job.id);
+    // if no explicit job output, try loading structured session messages inline
+    if (!jobOutput.value && job.session_id) {
+      sessionMessagesLoading.value = true;
+      sessionMessages.value = await store.fetchSessionMessages(job.agent_id, job.session_id);
+      sessionMessagesLoading.value = false;
+    } else {
+      sessionMessages.value = null;
+    }
 	}
 }
 
