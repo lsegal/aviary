@@ -149,6 +149,16 @@ func (m *Manager) Navigate(ctx context.Context, tabID, url string) error {
 	return m.withTab(opCtx, tabID, func(s *Session) error { return s.Navigate(url) })
 }
 
+// Resize resizes the browser window that contains the given tab, if supported
+// by the browser's CDP implementation.
+func (m *Manager) Resize(ctx context.Context, tabID string, width, height int) error {
+	opCtx, cancel := withDefaultTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
+
+	slog.Info("browser: resize", "tab", tabID, "width", width, "height", height)
+	return m.withTab(opCtx, tabID, func(s *Session) error { return s.ResizeWindow(width, height) })
+}
+
 // CloseTab closes the given tab via the CDP /json/close endpoint and removes
 // its cached session.
 func (m *Manager) CloseTab(tabID string) error {
