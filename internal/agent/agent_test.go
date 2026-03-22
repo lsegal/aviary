@@ -382,10 +382,14 @@ func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
 	}
 
 	if assert.Len(t, provider.requests, 1) {
-		assert.Len(t, provider.requests[0].Messages, 3)
-		assert.Equal(t, "earlier question", provider.requests[0].Messages[0].Content)
-		assert.Equal(t, "earlier answer", provider.requests[0].Messages[1].Content)
-		assert.Equal(t, "new question", provider.requests[0].Messages[2].Content)
+		// Prior conversation is collapsed into a single assistant message
+		// containing a preamble plus the earlier messages, followed by the
+		// new user message.
+		assert.Len(t, provider.requests[0].Messages, 2)
+		assert.Contains(t, provider.requests[0].Messages[0].Content, "I loaded prior conversation history")
+		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier question")
+		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier answer")
+		assert.Equal(t, "new question", provider.requests[0].Messages[1].Content)
 	}
 }
 
@@ -433,10 +437,9 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
-		assert.Contains(t, system, "This is the AGENTS.md in agent workspace")
 		assert.Contains(t, system, "Agent workspace instructions.")
 		assert.Contains(t, system, "<rules>")
-		agentsIdx := strings.Index(system, "This is the AGENTS.md in agent workspace")
+		agentsIdx := strings.Index(system, "Agent workspace instructions.")
 		rulesIdx := strings.Index(system, "<rules>")
 		assert.NotEqual(t, -1, agentsIdx)
 		assert.NotEqual(t, -1, rulesIdx)
@@ -1541,15 +1544,15 @@ func TestLoadSessionConversation_ReplacesHistoricalMediaWithMarker(t *testing.T)
 
 	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "read this", "data:image/png;base64,cG5n", "")
 	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "", "data:image/png;base64,bW9yZQ==", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "follow-up", "", "")
 
 	history := runner.loadSessionConversation(sess.ID, 10)
 	assert.Len(t, history, 2)
-	assert.Equal(t, llm.RoleUser, history[0].Role)
-	assert.Equal(t, "read this\n[prior image attached]", history[0].Content)
-	assert.Equal(t, "", history[0].MediaURL)
-	assert.Equal(t, llm.RoleAssistant, history[1].Role)
-	assert.Equal(t, "[prior media attached]", history[1].Content)
-	assert.Equal(t, "", history[1].MediaURL)
+	assert.Equal(t, llm.RoleAssistant, history[0].Role)
+	assert.Contains(t, history[0].Content, "read this\n[prior image attached]")
+	assert.Contains(t, history[0].Content, "[prior media attached]")
+	assert.Equal(t, llm.RoleUser, history[1].Role)
+	assert.Equal(t, "follow-up", history[1].Content)
 }
 
 func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
@@ -1568,15 +1571,16 @@ func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
 	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "actual follow-up", "", "", domain.NewMessageSender("u1", "Alice", true))
 
 	history := runner.loadSessionConversation(sess.ID, 10)
-	assert.Len(t, history, 4)
-	assert.Equal(t, llm.RoleUser, history[0].Role)
-	assert.Equal(t, "Alice (u1): opening question", history[0].Content)
-	assert.Equal(t, llm.RoleAssistant, history[1].Role)
-	assert.Equal(t, "opening answer", history[1].Content)
-	assert.Equal(t, llm.RoleSystem, history[2].Role)
-	assert.Equal(t, "Context only from non-participant Bob (u2): side chatter", history[2].Content)
-	assert.Equal(t, llm.RoleUser, history[3].Role)
-	assert.Equal(t, "Alice (u1): actual follow-up", history[3].Content)
+	// Prior messages are collapsed into a single assistant message followed by
+	// the last user message containing sender attribution.
+	assert.Len(t, history, 2)
+	assert.Equal(t, llm.RoleAssistant, history[0].Role)
+	assert.Contains(t, history[0].Content, "I loaded prior conversation history")
+	assert.Contains(t, history[0].Content, "<Alice (u1)>: opening question")
+	assert.Contains(t, history[0].Content, "opening answer")
+	assert.Contains(t, history[0].Content, "<Bob (u2) (context only)>: side chatter")
+	assert.Equal(t, llm.RoleUser, history[1].Role)
+	assert.Equal(t, "Alice (u1): actual follow-up", history[1].Content)
 }
 
 func TestSessionList(t *testing.T) {

@@ -211,7 +211,6 @@ func TestExtractFirstImageDataURL(t *testing.T) {
 	_ = cleaned2
 }
 
-
 func TestWithTokenSetter(t *testing.T) {
 	f := NewFactory(nil)
 	var called bool
