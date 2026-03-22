@@ -135,4 +135,3 @@ func writeHeaders(sb *strings.Builder, h http.Header, indent string) {
 		}
 	}
 }
-

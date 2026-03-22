@@ -1800,7 +1800,50 @@ func registerJobTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("reading job %s: %w", args.ID, err)
 		}
-		if job.Output == "" {
+		if strings.TrimSpace(job.Output) == "" {
+			// If no explicit job output was captured, attempt to show the
+			// session message log for the job's session (includes tool
+			// events, secondary inputs, media markers, and assistant text).
+			if job.SessionID != "" {
+				sessPath := store.FindSessionPath(job.AgentID, job.SessionID)
+				if sessPath != "" {
+					lines, err := store.ReadJSONL[domain.Message](sessPath)
+					if err == nil && len(lines) > 0 {
+						var sb strings.Builder
+						for _, msg := range lines {
+							if msg.Role == "" {
+								// response marker or metadata — skip
+								continue
+							}
+							ts := ""
+							if !msg.Timestamp.IsZero() {
+								ts = msg.Timestamp.Format(time.RFC3339Nano)
+							}
+							content := strings.TrimSpace(msg.Content)
+							if msg.MediaURL != "" {
+								if content != "" {
+									content += " "
+								}
+								content += "[media: " + msg.MediaURL + "]"
+							}
+							// Pretty-print tool JSON payloads when possible.
+							if msg.Role == domain.MessageRoleTool && content != "" {
+								var pretty any
+								if jerr := json.Unmarshal([]byte(content), &pretty); jerr == nil {
+									if p, merr := json.MarshalIndent(pretty, "", "  "); merr == nil {
+										content = string(p)
+									}
+								}
+							}
+							fmt.Fprintf(&sb, "[%s] <%s>: %s\n", ts, string(msg.Role), content)
+						}
+						out := sb.String()
+						if strings.TrimSpace(out) != "" {
+							return text(out)
+						}
+					}
+				}
+			}
 			return text("(no output captured)")
 		}
 		return text(job.Output)
