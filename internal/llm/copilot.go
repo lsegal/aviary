@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,16 +121,75 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		return nil, err
 	}
 
+	type toolCallFunc struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	}
+	type toolCallMsg struct {
+		Index    int64        `json:"index"`
+		ID       string       `json:"id,omitempty"`
+		Type     string       `json:"type,omitempty"`
+		Function toolCallFunc `json:"function,omitempty"`
+	}
 	type msgPayload struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string        `json:"role"`
+		Content    any           `json:"content,omitempty"`
+		ToolCallID string        `json:"tool_call_id,omitempty"`
+		ToolCalls  []toolCallMsg `json:"tool_calls,omitempty"`
 	}
 	messages := make([]msgPayload, 0, len(req.Messages)+1)
 	if req.System != "" {
 		messages = append(messages, msgPayload{Role: "system", Content: req.System})
 	}
-	for _, m := range req.Messages {
-		messages = append(messages, msgPayload{Role: string(m.Role), Content: m.Content})
+	for i := 0; i < len(req.Messages); i++ {
+		m := req.Messages[i]
+		switch m.Role {
+		case RoleUser:
+			if m.Result != nil {
+				messages = append(messages, msgPayload{
+					Role:       "tool",
+					Content:    m.Result.Content,
+					ToolCallID: m.Result.ToolCallID,
+				})
+				continue
+			}
+			messages = append(messages, msgPayload{Role: "user", Content: m.Content})
+		case RoleAssistant:
+			msg := msgPayload{Role: "assistant", Content: m.Content}
+			for {
+				if m.ToolCall != nil {
+					toolID := strings.TrimSpace(m.ToolCall.ID)
+					if toolID == "" {
+						toolID = "call_" + strconv.Itoa(i)
+					}
+					msg.ToolCalls = append(msg.ToolCalls, toolCallMsg{
+						Index: int64(len(msg.ToolCalls)),
+						ID:    toolID,
+						Type:  "function",
+						Function: toolCallFunc{
+							Name:      m.ToolCall.Name,
+							Arguments: mustJSONMap(m.ToolCall.Arguments),
+						},
+					})
+				}
+				if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
+					break
+				}
+				i++
+				m = req.Messages[i]
+				if m.Content != "" {
+					if s, ok := msg.Content.(string); ok {
+						msg.Content = s + "\n" + m.Content
+					}
+				}
+			}
+			if len(msg.ToolCalls) > 0 {
+				msg.Content = nil
+			}
+			messages = append(messages, msg)
+		case RoleSystem:
+			messages = append(messages, msgPayload{Role: "system", Content: m.Content})
+		}
 	}
 
 	payload := map[string]any{
@@ -139,6 +199,29 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 	}
 	if req.MaxToks > 0 {
 		payload["max_tokens"] = req.MaxToks
+	}
+	if len(req.Tools) > 0 {
+		type fnDef struct {
+			Name        string `json:"name"`
+			Description string `json:"description,omitempty"`
+			Parameters  any    `json:"parameters,omitempty"`
+		}
+		type toolDef struct {
+			Type     string `json:"type"`
+			Function fnDef  `json:"function"`
+		}
+		tools := make([]toolDef, 0, len(req.Tools))
+		for _, t := range req.Tools {
+			tools = append(tools, toolDef{
+				Type: "function",
+				Function: fnDef{
+					Name:        t.Name,
+					Description: t.Description,
+					Parameters:  schemaObject(t.InputSchema),
+				},
+			})
+		}
+		payload["tools"] = tools
 	}
 
 	body, err := json.Marshal(payload)
@@ -168,8 +251,17 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		defer close(ch)
 		defer resp.Body.Close() //nolint:errcheck
 
+		type tcDelta struct {
+			Index    int64  `json:"index"`
+			ID       string `json:"id"`
+			Function struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			} `json:"function"`
+		}
 		type delta struct {
-			Content string `json:"content"`
+			Content   string    `json:"content"`
+			ToolCalls []tcDelta `json:"tool_calls"`
 		}
 		type choice struct {
 			Delta delta `json:"delta"`
@@ -181,9 +273,15 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 				CompletionTokens int `json:"completion_tokens"`
 			} `json:"usage"`
 		}
+		type pendingToolCall struct {
+			ID        string
+			Name      string
+			Arguments strings.Builder
+		}
 
 		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
+		pendingCalls := map[int64]*pendingToolCall{}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -201,6 +299,22 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 				if choice.Delta.Content != "" {
 					ch <- Event{Type: EventTypeText, Text: choice.Delta.Content}
 				}
+				for _, tc := range choice.Delta.ToolCalls {
+					call := pendingCalls[tc.Index]
+					if call == nil {
+						call = &pendingToolCall{}
+						pendingCalls[tc.Index] = call
+					}
+					if tc.ID != "" {
+						call.ID = tc.ID
+					}
+					if tc.Function.Name != "" {
+						call.Name = tc.Function.Name
+					}
+					if tc.Function.Arguments != "" {
+						call.Arguments.WriteString(tc.Function.Arguments)
+					}
+				}
 			}
 			if c.Usage != nil && (c.Usage.PromptTokens > 0 || c.Usage.CompletionTokens > 0) {
 				lastUsage = &Usage{
@@ -212,6 +326,29 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		if err := scanner.Err(); err != nil {
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("copilot stream: %w", err)}
 			return
+		}
+		if len(pendingCalls) > 0 {
+			indexes := make([]int, 0, len(pendingCalls))
+			for idx := range pendingCalls {
+				indexes = append(indexes, int(idx))
+			}
+			sortInts(indexes)
+			for _, idx := range indexes {
+				call := pendingCalls[int64(idx)]
+				if strings.TrimSpace(call.Name) == "" {
+					continue
+				}
+				args, err := parseToolArguments(call.Arguments.String())
+				if err != nil {
+					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("copilot tool arguments for %q: %w", call.Name, err)}
+					return
+				}
+				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
+					ID:        call.ID,
+					Name:      call.Name,
+					Arguments: args,
+				}}
+			}
 		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}

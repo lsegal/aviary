@@ -23,9 +23,6 @@ type OpenAIProvider struct {
 	baseURL string
 }
 
-// SupportsNativeTools reports OpenAI Chat Completions tool support.
-func (p *OpenAIProvider) SupportsNativeTools() bool { return true }
-
 // NewOpenAIProvider creates a provider for an OpenAI-compatible API.
 // baseURL is empty for the default OpenAI API.
 func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
@@ -107,7 +104,8 @@ func extractChatGPTAccountID(jwtToken string) string {
 // not the Chat Completions format.
 func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
 	// Build input array in Responses API format.
-	// User messages use plain string content; assistant messages use the output_text structure.
+	// Tool results are top-level function_call_output items; function calls from
+	// the assistant are top-level function_call items. Other messages use role/content.
 	type inputTextContent struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
@@ -120,13 +118,21 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		Role    string `json:"role"`
 		Content any    `json:"content"`
 	}
-	var input []inputMessage
+	var input []any
 	if strings.TrimSpace(req.System) != "" {
 		input = append(input, inputMessage{Role: "system", Content: req.System})
 	}
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleUser:
+			if m.Result != nil {
+				input = append(input, map[string]any{
+					"type":    "function_call_output",
+					"call_id": m.Result.ToolCallID,
+					"output":  m.Result.Content,
+				})
+				continue
+			}
 			if strings.TrimSpace(m.MediaURL) != "" {
 				parts := make([]any, 0, 2)
 				if strings.TrimSpace(m.Content) != "" {
@@ -138,6 +144,15 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 			}
 			input = append(input, inputMessage{Role: "user", Content: m.Content})
 		case RoleAssistant:
+			if m.ToolCall != nil {
+				input = append(input, map[string]any{
+					"type":      "function_call",
+					"call_id":   m.ToolCall.ID,
+					"name":      m.ToolCall.Name,
+					"arguments": mustJSONMap(m.ToolCall.Arguments),
+				})
+				continue
+			}
 			input = append(input, inputMessage{
 				Role:    "assistant",
 				Content: []inputTextContent{{Type: "output_text", Text: m.Content}},
@@ -153,6 +168,26 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		"stream":       true,
 		"instructions": "",
 		"store":        false, // chatgpt.com codex rejects streaming requests unless store is false
+	}
+	if len(req.Tools) > 0 {
+		type toolParam struct {
+			Type        string `json:"type"`
+			Name        string `json:"name"`
+			Description string `json:"description,omitempty"`
+			Parameters  any    `json:"parameters,omitempty"`
+			Strict      bool   `json:"strict"`
+		}
+		tools := make([]toolParam, 0, len(req.Tools))
+		for _, t := range req.Tools {
+			tools = append(tools, toolParam{
+				Type:        "function",
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  schemaObject(t.InputSchema),
+				Strict:      true,
+			})
+		}
+		reqBody["tools"] = tools
 	}
 	// The ChatGPT backend does not accept a `previous_response_id` parameter here.
 	// We intentionally do not send it to avoid 400 Bad Request responses.
@@ -188,14 +223,18 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		defer close(ch)
 
 		// Responses API SSE events:
-		//   event: response.output_text.delta  data: {"type":"response.output_text.delta","delta":"text"}
-		//   event: response.completed          data: {"type":"response.completed","response":{...,"usage":{...}}}
-		//   event: response.failed             data: {"type":"response.failed","response":{"error":{...}}}
+		//   response.output_text.delta              {"delta":"text"}
+		//   response.output_item.added              {"output_index":N,"item":{"type":"function_call","call_id":"...","name":"..."}}
+		//   response.function_call_arguments.delta  {"output_index":N,"delta":"..."}
+		//   response.function_call_arguments.done   {"output_index":N,"arguments":"..."}
+		//   response.completed                      {"response":{"id":"...","usage":{...}}}
+		//   response.failed                         {"response":{"error":{...}}}
 		type responsesEvent struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
-			// For response.completed and response.failed
-			Response *struct {
+			Type        string `json:"type"`
+			Delta       string `json:"delta"`
+			Arguments   string `json:"arguments"`
+			OutputIndex int    `json:"output_index"`
+			Response    *struct {
 				ID    string `json:"id"`
 				Error *struct {
 					Message string `json:"message"`
@@ -206,20 +245,22 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 					OutputTokens int `json:"output_tokens"`
 				} `json:"usage"`
 			} `json:"response"`
-			// For response.output_item.done (full item at end)
 			Item *struct {
-				Type    string `json:"type"`
-				Role    string `json:"role"`
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
+				Type   string `json:"type"`
+				CallID string `json:"call_id"`
+				Name   string `json:"name"`
 			} `json:"item"`
+		}
+		type pendingToolCall struct {
+			ID        string
+			Name      string
+			Arguments strings.Builder
 		}
 
 		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
 		var lastResponseID string
+		pendingCalls := map[int]*pendingToolCall{}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -238,6 +279,19 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				if ev.Delta != "" {
 					ch <- Event{Type: EventTypeText, Text: ev.Delta}
 				}
+			case "response.output_item.added":
+				if ev.Item != nil && ev.Item.Type == "function_call" {
+					pendingCalls[ev.OutputIndex] = &pendingToolCall{
+						ID:   ev.Item.CallID,
+						Name: ev.Item.Name,
+					}
+				}
+			case "response.function_call_arguments.delta":
+				if call := pendingCalls[ev.OutputIndex]; call != nil {
+					call.Arguments.WriteString(ev.Delta)
+				}
+			case "response.function_call_arguments.done":
+				// Arguments are already accumulated via deltas; nothing extra needed.
 			case "response.completed":
 				if ev.Response != nil {
 					if ev.Response.ID != "" {
@@ -268,6 +322,29 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		if err := scanner.Err(); err != nil {
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex stream: %w", err)}
 			return
+		}
+		if len(pendingCalls) > 0 {
+			indexes := make([]int, 0, len(pendingCalls))
+			for idx := range pendingCalls {
+				indexes = append(indexes, idx)
+			}
+			sortInts(indexes)
+			for _, idx := range indexes {
+				call := pendingCalls[idx]
+				if strings.TrimSpace(call.Name) == "" {
+					continue
+				}
+				args, err := parseToolArguments(call.Arguments.String())
+				if err != nil {
+					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex tool arguments for %q: %w", call.Name, err)}
+					return
+				}
+				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
+					ID:        call.ID,
+					Name:      call.Name,
+					Arguments: args,
+				}}
+			}
 		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
@@ -481,23 +558,37 @@ func mustJSONMap(v map[string]any) string {
 }
 
 func schemaObject(schema any) map[string]any {
+	empty := map[string]any{"type": "object", "properties": map[string]any{}}
 	if schema == nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
-	}
-	if obj, ok := schema.(map[string]any); ok {
-		return obj
-	}
-	data, err := json.Marshal(schema)
-	if err != nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
+		return empty
 	}
 	var obj map[string]any
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
+	if m, ok := schema.(map[string]any); ok {
+		obj = m
+	} else {
+		data, err := json.Marshal(schema)
+		if err != nil {
+			return empty
+		}
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return empty
+		}
 	}
 	if len(obj) == 0 {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
+		return empty
 	}
+	// Ensure object schemas always have a properties key; required by strict-mode APIs.
+	if t, _ := obj["type"].(string); t == "object" || t == "" {
+		if _, ok := obj["properties"]; !ok {
+			obj["properties"] = map[string]any{}
+		}
+	}
+	// Strip combiners (oneOf/anyOf/allOf/not) from the top level — strict-mode APIs
+	// (Copilot, OpenAI) reject schemas that have these at the root.
+	delete(obj, "oneOf")
+	delete(obj, "anyOf")
+	delete(obj, "allOf")
+	delete(obj, "not")
 	return obj
 }
 
