@@ -1,16 +1,21 @@
-# Memory Tools
+# Memory
 
-Placeholder page for the memory surface exposed to operators and agents.
+Memory in Aviary is managed through the agent's workspace files (`MEMORY.md`, `memory/`) rather than dedicated MCP tools. Agents read and write these files directly via the filesystem tools.
 
-| Tool | Current Purpose | Doc Status |
-| --- | --- | --- |
-| `memory_search` | Search an agent memory pool. | Placeholder |
-| `memory_show` | Return memory contents. | Placeholder |
-| `memory_store` | Persist a new memory entry. | Placeholder |
-| `memory_notes_set` | Replace or update curated notes. | Placeholder |
-| `memory_clear` | Wipe memory and notes for an agent. | Placeholder |
+## Memory Files
 
-## Follow-Up
+- **`MEMORY.md`** — long-term curated notes; agents update this file to persist facts across sessions.
+- **`memory/YYYY-MM-DD.md`** — daily session logs written by the agent as work progresses.
 
-- Explain pool naming, private versus shared memory, and retention behavior.
-- Clarify how memory interacts with session history and notes.
+## Memory Pooling
+
+Agents can share a memory pool via the `memory` config field:
+
+```yaml
+agents:
+  - name: my-agent
+    memory: shared        # "shared", "private", or a named pool (e.g. "team-memory")
+    memory_tokens: 4096   # max tokens injected into each prompt
+```
+
+At the start of each session Aviary injects relevant memory content into the system prompt automatically, up to `memory_tokens`.

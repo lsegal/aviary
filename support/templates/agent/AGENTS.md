@@ -5,7 +5,12 @@
 
 ## Every Session
 
-- Before doing anything else read `MEMORY.md` — this is your memory. Don't ask permission. Just do it.
+Before doing anything else read:
+
+- `MEMORY.md` — this is your long-term memory.
+- `memory/YYYY-MM-DD.md` for today's and yesterday's notes — this is your short-term memory from recent conversations.
+
+Don't ask permission. Just do it.
 
 ## Behavior
 
@@ -24,6 +29,9 @@ You wake up fresh each session. These files are your continuity:
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
+
+Don't tell the user "I'll remember that" — just remember it. Don't say "I have a note about that" — just have the note.
+Don't ask "Should I write that down?" — just write it down if it's worth remembering.
 
 ### 📝 Write It Down - No "Mental Notes"!
 

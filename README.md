@@ -100,7 +100,6 @@ agents:
       preset: minimal                   # "minimal", "standard", or "full" — sets a base tool set
       tools:                            # Explicit list of allowed MCP tools (overrides preset)
         - task_run
-        - memory_append
       disabledTools:                    # Tools to remove from an otherwise-enabled set
         - browser_navigate
       filesystem:
