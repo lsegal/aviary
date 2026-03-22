@@ -16,9 +16,6 @@ type AnthropicProvider struct {
 	oauth  bool // true when using Bearer token auth (Claude Pro/Max)
 }
 
-// SupportsNativeTools reports Anthropic Messages API tool support.
-func (p *AnthropicProvider) SupportsNativeTools() bool { return true }
-
 // NewAnthropicProvider creates a provider for the given Claude model using an API key.
 func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 	opts := []option.RequestOption{}

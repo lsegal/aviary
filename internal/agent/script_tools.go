@@ -21,7 +21,7 @@ func NormalizeScriptToolArguments(ctx context.Context, name string, args map[str
 		if sessionID != "" {
 			cloned["session_id"] = sessionID
 		}
-	case "session_list", "session_create", "memory_search", "memory_show", "memory_store", "memory_notes_set", "memory_clear",
+	case "session_list", "session_create",
 		"agent_file_list", "agent_file_read", "agent_root_file_list", "agent_root_file_read",
 		"agent_root_file_write", "agent_root_file_delete", "task_schedule", "agent_rules_set":
 		if agentID != "" {

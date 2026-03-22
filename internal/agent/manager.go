@@ -15,7 +15,6 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
-	"github.com/lsegal/aviary/internal/memory"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -26,7 +25,6 @@ type Manager struct {
 	order   []string                // agent names in config entry order
 	session *SessionManager
 	factory *llm.Factory
-	memory  *memory.Manager
 	cfg     *config.Config // latest reconciled config, for checkpoint timeout
 }
 
@@ -36,7 +34,6 @@ func NewManager(factory *llm.Factory) *Manager {
 		runners: make(map[string]*AgentRunner),
 		session: NewSessionManager(),
 		factory: factory,
-		memory:  memory.New(),
 	}
 }
 
@@ -102,7 +99,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 				slog.Warn("failed to create LLM provider", "agent", name, "model", effectiveModel, "err", err)
 			}
 		}
-		runner := NewAgentRunner(a, ac, provider, m.factory, m.memory)
+		runner := NewAgentRunner(a, ac, provider, m.factory)
 		m.runners[name] = runner
 		go m.recoverCheckpoints(runner)
 	}

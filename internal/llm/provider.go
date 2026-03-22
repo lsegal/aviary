@@ -104,17 +104,6 @@ type Provider interface {
 	Stream(ctx context.Context, req Request) (<-chan Event, error)
 }
 
-// NativeToolProvider indicates that the provider supports provider-native tool schemas and tool-call events.
-type NativeToolProvider interface {
-	SupportsNativeTools() bool
-}
-
-// SupportsNativeTools reports whether p supports provider-native tool definitions and structured tool-call events.
-func SupportsNativeTools(p Provider) bool {
-	nt, ok := p.(NativeToolProvider)
-	return ok && nt.SupportsNativeTools()
-}
-
 // Factory creates a Provider from a model string of the form "<provider>/<name>".
 type Factory struct {
 	authResolver func(ref string) (string, error)
@@ -275,9 +264,6 @@ func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 			return NewGeminiCodeAssistProvider(accessToken, name), nil
 		}
 		return nil, fmt.Errorf("gemini-code-assist: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
-
-	case "stdio":
-		return NewStdioProvider(name), nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)

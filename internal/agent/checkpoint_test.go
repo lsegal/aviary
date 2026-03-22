@@ -62,7 +62,7 @@ func checkpointCount(agentID string) int {
 func newTestRunner(m *Manager, agentID, agentName string, provider llm.Provider) *AgentRunner {
 	a := &domain.Agent{ID: agentID, Name: agentName}
 	cfg := &config.AgentConfig{Name: agentName}
-	runner := NewAgentRunner(a, cfg, provider, nil, nil)
+	runner := NewAgentRunner(a, cfg, provider, nil)
 	m.runners[agentName] = runner
 	return runner
 }
@@ -236,7 +236,7 @@ func TestRunnerCheckpoint_WrittenAndDeletedOnCompletion(t *testing.T) {
 
 	bp := newBlockingProvider()
 	a := &domain.Agent{ID: "agent_wr", Name: "wr"}
-	runner := NewAgentRunner(a, &config.AgentConfig{Name: "wr"}, bp, nil, nil)
+	runner := NewAgentRunner(a, &config.AgentConfig{Name: "wr"}, bp, nil)
 
 	runner.Prompt(context.Background(), "ping")
 
@@ -260,7 +260,7 @@ func TestRunnerCheckpoint_KeptOnServerStop(t *testing.T) {
 
 	bp := newBlockingProvider()
 	a := &domain.Agent{ID: "agent_stop", Name: "stop"}
-	runner := NewAgentRunner(a, &config.AgentConfig{Name: "stop"}, bp, nil, nil)
+	runner := NewAgentRunner(a, &config.AgentConfig{Name: "stop"}, bp, nil)
 
 	runner.Prompt(context.Background(), "ping")
 
@@ -284,7 +284,7 @@ func TestRunnerCheckpoint_NotWrittenForScheduledTask(t *testing.T) {
 
 	bp := newBlockingProvider()
 	a := &domain.Agent{ID: "agent_task", Name: "task"}
-	runner := NewAgentRunner(a, &config.AgentConfig{Name: "task"}, bp, nil, nil)
+	runner := NewAgentRunner(a, &config.AgentConfig{Name: "task"}, bp, nil)
 
 	ctx := WithTaskID(context.Background(), "task/check")
 	runner.Prompt(ctx, "ping")

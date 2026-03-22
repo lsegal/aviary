@@ -97,9 +97,6 @@ type GeminiProvider struct {
 	apiKey string
 }
 
-// SupportsNativeTools reports support via Gemini's OpenAI-compatible chat endpoint.
-func (p *GeminiProvider) SupportsNativeTools() bool { return true }
-
 // NewGeminiProvider creates a Gemini provider using an API key.
 func NewGeminiProvider(apiKey, model string) *GeminiProvider {
 	return &GeminiProvider{

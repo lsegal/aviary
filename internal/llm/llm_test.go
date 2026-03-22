@@ -55,7 +55,6 @@ func TestFactoryForModel(t *testing.T) {
 		{model: "openai/gpt-4o", wantErr: false},
 		{model: "openai-codex/gpt-5.2", wantErr: false},
 		{model: "google-gemini/gemini-2.0-flash", wantErr: false},
-		{model: "stdio/claude", wantErr: false},
 		{model: "invalid", wantErr: true},
 		{model: "unknown/model", wantErr: true},
 	}
@@ -83,7 +82,7 @@ func TestFactoryResolverError(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = f.ForModel("stdio/codex")
-	assert.NoError(t, err)
+	assert.Error(t, err)
 
 }
 
@@ -113,7 +112,6 @@ func TestIntegration_AllProviderKinds(t *testing.T) {
 		"openai/gpt-4o-mini",
 		"openai-codex/gpt-5.2",
 		"google-gemini/gemini-pro",
-		"stdio/claude",
 	}
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
