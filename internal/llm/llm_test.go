@@ -211,18 +211,6 @@ func TestExtractFirstImageDataURL(t *testing.T) {
 	_ = cleaned2
 }
 
-func TestTruncate(t *testing.T) {
-
-	// Under limit.
-	got := truncate([]byte("hello"), 10)
-	assert.Equal(t, "hello", got)
-
-	// Over limit.
-	long := []byte("abcdefghij")
-	got = truncate(long, 5)
-	assert.Equal(t, "abcde …+5 bytes", got)
-
-}
 
 func TestWithTokenSetter(t *testing.T) {
 	f := NewFactory(nil)

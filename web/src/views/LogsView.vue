@@ -114,12 +114,25 @@
 
           <!-- Message + attrs -->
           <span class="min-w-0 break-words text-gray-200">
-            {{ entry.msg }}
-            <span
-              v-for="(val, key) in entry.attrs"
-              :key="key"
-              class="ml-1 text-gray-500"
-            >{{ key }}=<span class="text-gray-400">{{ val }}</span></span>
+            <template v-if="isLong(entry) && !expanded.has(entry.seq)">
+              {{ entryText(entry).slice(0, 2000) }}<button
+                class="ml-1.5 shrink-0 rounded-full border border-gray-600 bg-gray-800 px-1.5 py-0 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-200"
+                @click="expanded.add(entry.seq); expanded = new Set(expanded)"
+              >+{{ entryText(entry).length - 2000 }} bytes</button>
+            </template>
+            <template v-else>
+              {{ entry.msg }}
+              <span
+                v-for="(val, key) in entry.attrs"
+                :key="key"
+                class="ml-1 text-gray-500"
+              >{{ key }}=<span class="text-gray-400">{{ val }}</span></span>
+              <button
+                v-if="isLong(entry)"
+                class="ml-1.5 shrink-0 rounded-full border border-gray-600 bg-gray-800 px-1.5 py-0 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-200"
+                @click="expanded.delete(entry.seq); expanded = new Set(expanded)"
+              >collapse</button>
+            </template>
           </span>
         </div>
 
@@ -143,6 +156,23 @@ import { useLogs } from "../composables/useLogs";
 const logs = useLogs();
 const scrollEl = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
+const expanded = ref(new Set<number>());
+
+type LogEntry = (typeof logs.filtered.value)[number];
+
+const LONG_THRESHOLD = 2000;
+
+function entryText(entry: LogEntry): string {
+  let text = entry.msg;
+  for (const [key, val] of Object.entries(entry.attrs ?? {})) {
+    text += ` ${key}=${val}`;
+  }
+  return text;
+}
+
+function isLong(entry: LogEntry): boolean {
+  return entryText(entry).length > LONG_THRESHOLD;
+}
 
 // Scroll to bottom when new entries arrive (only when autoScroll is on).
 watch(

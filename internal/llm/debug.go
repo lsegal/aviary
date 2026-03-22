@@ -90,7 +90,7 @@ func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		reqBody, _ = io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewReader(reqBody))
-		fmt.Fprintf(&sb, "    body (%d bytes): %s\n", len(reqBody), truncate(reqBody, 4096))
+		fmt.Fprintf(&sb, "    body (%d bytes):\n%s\n", len(reqBody), string(reqBody))
 	}
 	slog.Debug(sb.String())
 
@@ -105,14 +105,10 @@ func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	fmt.Fprintf(&sb2, "[llm debug] <-- %s\n", resp.Status)
 	writeHeaders(&sb2, resp.Header, "    ")
 
-	// Peek at first 2 KB without consuming the rest of the body.
 	if resp.Body != nil {
-		peek := make([]byte, 2048)
-		n, _ := io.ReadFull(resp.Body, peek)
-		peek = peek[:n]
-		// Stitch peeked bytes back in front of the remaining body stream.
-		resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(peek), resp.Body))
-		fmt.Fprintf(&sb2, "    body (first %d bytes): %s\n", n, truncate(peek, 512))
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		fmt.Fprintf(&sb2, "    body (%d bytes):\n%s\n", len(body), string(body))
 	}
 	slog.Debug(sb2.String())
 
@@ -140,9 +136,3 @@ func writeHeaders(sb *strings.Builder, h http.Header, indent string) {
 	}
 }
 
-func truncate(b []byte, limit int) string {
-	if len(b) <= limit {
-		return string(b)
-	}
-	return string(b[:limit]) + fmt.Sprintf(" …+%d bytes", len(b)-limit)
-}
