@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 	}
 	defer func() { _ = os.RemoveAll(testDataDir) }()
 	store.SetDataDir(testDataDir)
+	store.SetWorkspaceDir(testDataDir)
 	os.Exit(m.Run())
 }
 
