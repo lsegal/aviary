@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	cdpbrowser "github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
@@ -87,4 +88,23 @@ func filteredChromeDPErrorf(format string, args ...any) {
 func isIgnorableChromeDPError(msg string) bool {
 	return strings.Contains(msg, "could not unmarshal event:") &&
 		strings.Contains(msg, `unknown InitiatorType value: FedCM`)
+}
+
+// ResizeWindow resizes the browser window that contains the tab this session
+// is attached to. Not all browsers or environments support setting window
+// bounds via CDP; callers should handle errors accordingly.
+func (s *Session) ResizeWindow(width, height int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return chromedp.Run(s.taskCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		win, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
+		if err != nil {
+			return err
+		}
+		bounds := &cdpbrowser.Bounds{
+			Width:  int64(width),
+			Height: int64(height),
+		}
+		return cdpbrowser.SetWindowBounds(win, bounds).Do(ctx)
+	}))
 }
