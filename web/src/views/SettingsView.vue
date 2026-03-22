@@ -1011,9 +1011,8 @@
 												<button type="button" class="danger-btn" :disabled="!s.is_processing"
 													:class="!s.is_processing ? 'opacity-40 cursor-not-allowed' : ''"
 													@click="stopSession(s.id)">Stop</button>
-												<button type="button" class="danger-btn" :disabled="s.name === 'main'"
-													:class="s.name === 'main' ? 'opacity-40 cursor-not-allowed' : ''"
-													@click="s.name !== 'main' && (removeTarget = s, removeTargetOpen = true)">Remove</button>
+												<button type="button" class="danger-btn"
+													@click="removeTarget = s; removeTargetOpen = true">Remove</button>
 											</div>
 										</td>
 									</tr>
@@ -1291,12 +1290,13 @@
 						class="font-medium text-gray-900 dark:text-white">{{ removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name || 'this agent') : '' }}</span>
 					from the configuration. This cannot be undone.
 				</AlertDialogDescription>
-				<div class="mt-6 flex justify-end gap-3">
+				<div ref="removeAgentBtns" class="mt-6 flex justify-end gap-3">
 					<AlertDialogCancel
 						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
 						Cancel
 					</AlertDialogCancel>
-					<AlertDialogAction class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+					<AlertDialogAction
+						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
 						@click="confirmRemoveAgent">
 						Remove
 					</AlertDialogAction>
@@ -1319,12 +1319,13 @@
 					<span class="font-medium text-gray-900 dark:text-white">{{ deleteFileTarget?.file }}</span>.
 					This cannot be undone.
 				</AlertDialogDescription>
-				<div class="mt-6 flex justify-end gap-3">
+				<div ref="deleteFileBtns" class="mt-6 flex justify-end gap-3">
 					<AlertDialogCancel
 						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
 						Cancel
 					</AlertDialogCancel>
-					<AlertDialogAction class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+					<AlertDialogAction
+						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
 						@click="confirmDeleteAgentFile">
 						Delete
 					</AlertDialogAction>
@@ -1348,12 +1349,13 @@
 						class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget?.name || removeTarget?.id }}</span>
 					and all its messages. This cannot be undone.
 				</AlertDialogDescription>
-				<div class="mt-6 flex justify-end gap-3">
+				<div ref="removeSessionBtns" class="mt-6 flex justify-end gap-3">
 					<AlertDialogCancel
 						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
 						Cancel
 					</AlertDialogCancel>
-					<AlertDialogAction class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+					<AlertDialogAction
+						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
 						@click="confirmRemoveSession">
 						Remove
 					</AlertDialogAction>
@@ -1471,6 +1473,13 @@ watch(
 	() => route.path,
 	() => {
 		activeTab.value = routeToActiveTab();
+		if (activeTab.value === "sessions") {
+			if (!sessionAgent.value && draft.value.agents.length > 0) {
+				sessionAgent.value = draft.value.agents[0].name;
+			} else if (sessionAgent.value) {
+				loadSessions();
+			}
+		}
 	},
 );
 
@@ -1654,8 +1663,15 @@ const execShellPlaceholder = computed(() => {
 const sessionAgent = ref("");
 const sessions = ref<SessionRow[]>([]);
 const sessionLoading = ref(false);
+
+watch(sessionAgent, (val) => {
+	if (val) loadSessions();
+	else sessions.value = [];
+});
 const removeTarget = ref<SessionRow | null>(null);
 const removeTargetOpen = ref(false);
+const removeSessionBtns = ref<HTMLElement>();
+watch(removeTargetOpen, (v) => { if (v) setTimeout(() => { const btns = removeSessionBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
 
 const oauthBusy = ref(false);
 const anthropicUrl = ref("");
@@ -2210,6 +2226,13 @@ onMounted(async () => {
 	window.addEventListener("keydown", onWindowKeydown);
 	await loadConfig();
 	await refreshCredentials();
+	if (
+		activeTab.value === "sessions" &&
+		!sessionAgent.value &&
+		draft.value.agents.length > 0
+	) {
+		sessionAgent.value = draft.value.agents[0].name;
+	}
 });
 
 onUnmounted(() => {
@@ -2223,6 +2246,12 @@ onUnmounted(() => {
 });
 
 function onWindowKeydown(event: KeyboardEvent) {
+	if (event.key === "Escape") {
+		if (toolInspectionModal.value) {
+			closeToolInspectionModal();
+		}
+		return;
+	}
 	if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
 		return;
 	}
@@ -2453,6 +2482,8 @@ function addAgent() {
 
 const removeAgentTarget = ref<number | null>(null);
 const removeAgentOpen = ref(false);
+const removeAgentBtns = ref<HTMLElement>();
+watch(removeAgentOpen, (v) => { if (v) setTimeout(() => { const btns = removeAgentBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
 
 function removeAgent(index: number) {
 	removeAgentTarget.value = index;
@@ -2478,6 +2509,8 @@ function confirmRemoveAgent() {
 }
 
 const deleteFileTarget = ref<{ agentName: string; file: string } | null>(null);
+const deleteFileBtns = ref<HTMLElement>();
+watch(deleteFileTarget, (v) => { if (v) setTimeout(() => { const btns = deleteFileBtns.value?.querySelectorAll<HTMLElement>('button'); btns?.[btns.length - 1]?.focus() }) });
 
 function promptDeleteAgentFile(agentName: string) {
 	const state = getAgentFileState(agentName);

@@ -76,7 +76,8 @@
     <Teleport to="body">
       <div v-if="modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
         @click.self="closeModal()">
-        <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+        <form class="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900"
+          @submit.prevent="saveModal">
           <h3 class="mb-4 text-base font-bold text-gray-900 dark:text-white">
             {{ modal.mode === 'add' ? 'Add Agent' : 'Edit Agent' }}
           </h3>
@@ -97,21 +98,21 @@
           </div>
           <p v-if="modalError" class="mt-3 text-xs text-red-500 dark:text-red-400">{{ modalError }}</p>
           <div class="mt-6 flex justify-end gap-3">
-            <button
+            <button type="button"
               class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
               @click="closeModal()">Cancel</button>
-            <button
+            <button type="submit"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-              :disabled="saving || !modal.name" @click="saveModal()">{{ saving ? 'Saving…' : 'Save' }}</button>
+              :disabled="saving || !modal.name">{{ saving ? 'Saving…' : 'Save' }}</button>
           </div>
-        </div>
+        </form>
       </div>
     </Teleport>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
@@ -146,7 +147,16 @@ onMounted(() => {
 	store.fetchAgents();
 	settingsStore.fetchConfig();
 	void refreshCredentials();
+	window.addEventListener("keydown", onKeydown);
 });
+
+onUnmounted(() => {
+	window.removeEventListener("keydown", onKeydown);
+});
+
+function onKeydown(e: KeyboardEvent) {
+	if (e.key === "Escape" && modal.value) closeModal();
+}
 
 function taskSummary(agentName: string): string {
 	const count = tasksByAgent.value[agentName]?.length ?? 0;
