@@ -8,6 +8,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Global headers for diagnostics and API calls
+$headers = @{ Accept = "application/vnd.github+json" }
 function Get-ConfigRoot {
 	if ($env:XDG_CONFIG_HOME) {
 		return Join-Path $env:XDG_CONFIG_HOME "aviary"
@@ -63,15 +65,34 @@ $null = New-Item -ItemType Directory -Path $tempRoot -Force
 $archivePath = Join-Path $tempRoot $assetName
 
 try {
-	Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
-	tar -xzf $archivePath -C $tempRoot
-	# Attempt a HEAD to show useful diagnostics when things go wrong
+	# Attempt a HEAD to show useful diagnostics before downloading
 	try {
 		$headResp = Invoke-WebRequest -Method Head -Uri $assetUrl -Headers $headers -ErrorAction SilentlyContinue
 		if ($headResp -and $headResp.Headers) {
 			Write-Host "Asset headers: Content-Type=$($headResp.Headers['Content-Type']) Content-Length=$($headResp.Headers['Content-Length'])"
 		}
 	} catch {}
+
+	Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
+
+	# Quick validation: ensure the downloaded file is a gzip archive (magic bytes 1f 8b)
+	try {
+		$bytes = [System.IO.File]::ReadAllBytes($archivePath)
+		if ($bytes.Length -lt 2 -or $bytes[0] -ne 0x1f -or $bytes[1] -ne 0x8b) {
+			$size = (Get-Item $archivePath).Length
+			$previewLen = [Math]::Min(64, $bytes.Length)
+			$hex = ($bytes[0..($previewLen-1)] | ForEach-Object { $_.ToString("x2") }) -join " "
+			Write-Host "Downloaded asset is not a gzip archive (missing 1f 8b header)."
+			Write-Host "Asset URL: $assetUrl"
+			Write-Host "Downloaded file: $archivePath (size: $size bytes)"
+			Write-Host "First $previewLen bytes: $hex"
+			throw "Downloaded asset not a gzip archive"
+		}
+	} catch {
+		throw
+	}
+
+	tar -xzf $archivePath -C $tempRoot
 
 	$binarySource = Join-Path $tempRoot "aviary.exe"
 	if (-not (Test-Path $binarySource)) {
