@@ -7,12 +7,22 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // PIDPath returns the path to the PID file.
 func PIDPath() string {
 	if p := strings.TrimSpace(os.Getenv("AVIARY_PID_FILE")); p != "" {
 		return p
+	}
+
+	// Use the configured Aviary config base dir when available. `config.BaseDir`
+	// returns the explicit `AVIARY_CONFIG_BASE_DIR` when set, otherwise the
+	// parent directory of `DefaultPath()`.
+	base := strings.TrimSpace(config.BaseDir())
+	if base != "" {
+		return filepath.Join(base, "aviary.pid")
 	}
 
 	if runtime.GOOS == "windows" {
