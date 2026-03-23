@@ -16,11 +16,11 @@
 	--vp-home-hero-name-background: linear-gradient(135deg, #cf431f 0%, #7f1809 100%);
 	--vp-home-hero-image-background-image: radial-gradient(circle at center, rgba(217, 88, 33, 0.4) 0%, rgba(217, 88, 33, 0) 70%);
 	--vp-home-hero-image-filter: blur(0px);
-	--aviary-card-gradient-top: rgba(255, 249, 240, 0.74);
-	--aviary-card-gradient-bottom: rgba(245, 229, 214, 0.96);
+	--aviary-card-gradient-top: rgba(255, 249, 240, 0.5);
+	--aviary-card-gradient-bottom: rgba(238, 218, 198, 0.97);
 	--aviary-card-base: rgba(252, 242, 232, 0.9);
-	--aviary-card-dark-gradient-top: rgba(68, 46, 39, 0.94);
-	--aviary-card-dark-gradient-bottom: rgba(28, 20, 18, 0.98);
+	--aviary-card-dark-gradient-top: rgba(62, 42, 35, 0.65);
+	--aviary-card-dark-gradient-bottom: rgba(18, 12, 10, 0.99);
 	--aviary-card-dark-base: rgba(29, 21, 19, 0.95);
 }
 
@@ -36,15 +36,15 @@
 
 body {
 	background:
-		radial-gradient(circle at top left, rgba(214, 87, 31, 0.12), transparent 28%),
+		radial-gradient(circle at top left, rgba(214, 87, 31, 0.06), transparent 28%),
 		linear-gradient(180deg, var(--vp-c-bg) 0%, var(--vp-c-bg-alt) 100%);
 	overflow-x: clip;
 }
 
 .dark body {
 	background:
-		radial-gradient(circle at top left, rgba(214, 87, 31, 0.16), transparent 24%),
-		radial-gradient(circle at top right, rgba(140, 62, 25, 0.14), transparent 26%),
+		radial-gradient(circle at top left, rgba(214, 87, 31, 0.08), transparent 24%),
+		radial-gradient(circle at top right, rgba(140, 62, 25, 0.07), transparent 26%),
 		linear-gradient(180deg, #160f0d 0%, #1d1311 40%, #130d0c 100%);
 }
 
@@ -64,7 +64,7 @@ body {
 		linear-gradient(180deg, var(--aviary-card-gradient-top), var(--aviary-card-gradient-bottom)),
 		var(--aviary-card-base);
 	box-shadow:
-		0 18px 34px rgba(93, 53, 31, 0.08),
+		0 10px 14px -2px rgba(93, 53, 31, 0.12),
 		inset 0 1px 0 rgba(255, 255, 255, 0.55);
 	backdrop-filter: blur(12px);
 	transition:
@@ -79,14 +79,14 @@ body {
 		linear-gradient(180deg, var(--aviary-card-dark-gradient-top), var(--aviary-card-dark-gradient-bottom)),
 		var(--aviary-card-dark-base);
 	box-shadow:
-		0 22px 36px rgba(0, 0, 0, 0.32),
+		0 12px 16px -2px rgba(0, 0, 0, 0.48),
 		inset 0 1px 0 rgba(255, 244, 232, 0.06);
 }
 
 .dark .VPFeature:hover {
 	border-color: rgba(225, 113, 68, 0.28);
 	box-shadow:
-		0 28px 44px rgba(0, 0, 0, 0.38),
+		0 16px 20px -2px rgba(0, 0, 0, 0.57),
 		inset 0 1px 0 rgba(255, 244, 232, 0.08);
 }
 
@@ -94,46 +94,20 @@ body {
 	display: none;
 }
 
-.dark .VPFeature::after {
-	display: none;
-}
-
 .VPFeature:hover {
 	transform: translateY(-3px);
 	border-color: rgba(184, 58, 29, 0.22);
 	box-shadow:
-		0 24px 44px rgba(93, 53, 31, 0.12),
+		0 14px 18px -2px rgba(93, 53, 31, 0.18),
 		inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
-.VPFeature::before,
-.VPFeature::after {
+.VPFeature::before {
 	content: "";
 	position: absolute;
+	inset: 0;
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 55%);
 	pointer-events: none;
-}
-
-.VPFeature::before {
-	inset: 0;
-	background:
-		radial-gradient(circle at top right, rgba(214, 87, 31, 0.16), transparent 32%),
-		linear-gradient(135deg, rgba(255, 255, 255, 0.35), transparent 58%);
-}
-
-.VPFeature::after {
-	inset: 0;
-	opacity: 0.5;
-	background: radial-gradient(circle at 88% 18%, rgba(223, 120, 65, 0.1), transparent 20%);
-}
-
-.VPFeature:nth-child(2)::after {
-	background:
-		radial-gradient(circle at 86% 18%, rgba(208, 93, 45, 0.1), transparent 22%);
-}
-
-.VPFeature:nth-child(3)::after {
-	background:
-		radial-gradient(circle at 86% 18%, rgba(176, 88, 36, 0.1), transparent 22%);
 }
 
 .VPFeature .box {
@@ -200,7 +174,7 @@ body {
 		linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)),
 		#c68c4f;
 	box-shadow:
-		0 24px 60px rgba(123, 34, 12, 0.22),
+		0 12px 18px -2px rgba(123, 34, 12, 0.33),
 		inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
@@ -222,7 +196,7 @@ body {
 		linear-gradient(180deg, var(--aviary-card-gradient-top), var(--aviary-card-gradient-bottom)),
 		var(--aviary-card-base);
 	box-shadow:
-		0 20px 40px rgba(93, 53, 31, 0.06),
+		0 10px 14px -2px rgba(93, 53, 31, 0.09),
 		inset 0 1px 0 rgba(255, 255, 255, 0.45);
 	transition:
 		transform 180ms ease,
@@ -237,7 +211,7 @@ body {
 		linear-gradient(180deg, var(--aviary-card-dark-gradient-top), var(--aviary-card-dark-gradient-bottom)),
 		var(--aviary-card-dark-base);
 	box-shadow:
-		0 22px 38px rgba(0, 0, 0, 0.26),
+		0 12px 16px -2px rgba(0, 0, 0, 0.39),
 		inset 0 1px 0 rgba(255, 244, 232, 0.06);
 }
 
@@ -336,7 +310,7 @@ a.detail-card:focus-visible {
 .detail-card:hover {
 	transform: translateY(-2px);
 	box-shadow:
-		0 26px 48px rgba(93, 53, 31, 0.08),
+		0 14px 18px -2px rgba(93, 53, 31, 0.12),
 		inset 0 1px 0 rgba(255, 255, 255, 0.45);
 	border-color: rgba(184, 58, 29, 0.15);
 }
@@ -345,7 +319,7 @@ a.detail-card:focus-visible {
 .dark .detail-card:hover {
 	border-color: rgba(225, 113, 68, 0.2);
 	box-shadow:
-		0 30px 48px rgba(0, 0, 0, 0.28),
+		0 16px 20px -2px rgba(0, 0, 0, 0.42),
 		inset 0 1px 0 rgba(255, 244, 232, 0.06);
 }
 
@@ -556,7 +530,7 @@ a.detail-card:focus-visible {
 		linear-gradient(180deg, var(--aviary-card-gradient-top), var(--aviary-card-gradient-bottom)),
 		var(--aviary-card-base);
 	box-shadow:
-		0 16px 32px rgba(93, 53, 31, 0.07),
+		0 10px 14px -2px rgba(93, 53, 31, 0.11),
 		inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
@@ -567,7 +541,7 @@ a.detail-card:focus-visible {
 		linear-gradient(180deg, var(--aviary-card-dark-gradient-top), var(--aviary-card-dark-gradient-bottom)),
 		var(--aviary-card-dark-base);
 	box-shadow:
-		0 18px 32px rgba(0, 0, 0, 0.28),
+		0 12px 16px -2px rgba(0, 0, 0, 0.42),
 		inset 0 1px 0 rgba(255, 244, 232, 0.06);
 }
 
