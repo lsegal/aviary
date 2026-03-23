@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go** 1.22+
+- **Go** 1.26+
 - **Node.js** 20+ with **pnpm** 8+
 
 ## Development Setup
@@ -33,6 +33,7 @@ Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and 
 cmd/aviary/          CLI entrypoint (Cobra)
 internal/
   agent/             Agent manager and runner
+  auth/              Credential store and OAuth flows
   browser/           Browser automation (chromedp)
   channels/          Slack, Discord, Signal integrations
   config/            Config loading and file watching
@@ -41,6 +42,9 @@ internal/
   memory/            Agent memory storage and search
   scheduler/         Cron runner, file watcher, job queue
   server/            HTTPS server, TLS, auth, web embed
+  store/             Atomic JSON and append-only JSONL storage
+docs/
+  site/              VitePress documentation site
 web/
   src/               Vue 3 frontend (Pinia, Vue Router, Tailwind)
   e2e/               Playwright end-to-end tests
@@ -89,3 +93,29 @@ The server is usually already running during development (`pnpm dev` starts it).
 - **Go changes:** `pnpm test:go` after every change; `pnpm lint:go` to check style
 - **Web changes:** `pnpm lint:fix` to auto-format; `pnpm test:e2e` to verify UI behavior
 - **Config schema changes:** update `internal/config/config.go` and any relevant stores in `web/src/stores/`
+
+## Submitting a Pull Request
+
+1. **Fork and branch** — fork the repo and create a feature branch from `main`.
+
+2. **Sign your commits** — all commits must be GPG-signed. Configure Git signing before you start:
+
+   ```shell
+   git config --global commit.gpgsign true
+   ```
+
+   GitHub will show a "Verified" badge on signed commits. PRs with unsigned commits will not be merged.
+
+3. **Pass all checks locally** before pushing:
+
+   ```shell
+   pnpm test      # lint + Go tests + e2e (mirrors CI exactly)
+   ```
+
+   CI runs Go tests on Linux, macOS, and Windows, plus Go lint, web lint, and Playwright e2e tests. Fix any failures before opening the PR.
+
+4. **Write focused commits** — keep commits small and on-topic. Use a descriptive subject line (`feat:`, `fix:`, `refactor:`, etc.).
+
+5. **Open the PR against `main`** — provide a short summary of what changed and why. If it fixes an issue, reference it (`Closes #123`).
+
+6. **Keep CI green** — if CI fails after you open the PR, fix the failures before requesting review.
