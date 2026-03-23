@@ -15,12 +15,18 @@ export default defineConfig({
 				target: "https://localhost:16677",
 				secure: false,
 				changeOrigin: true,
+				headers: {
+					Origin: "https://localhost:16677",
+				},
 			},
 			"/api": {
 				target: "https://localhost:16677",
 				secure: false,
 				changeOrigin: true,
 				ws: true,
+				headers: {
+					Origin: "https://localhost:16677",
+				},
 			},
 		},
 	},
