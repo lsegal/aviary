@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Documentation
-    url: https://aviary.run/guide/
+    url: https://aviary.bot/guide/
     about: Check the guide first — most configuration and setup questions are covered there.
   - name: Discussions
     url: https://github.com/lsegal/aviary/discussions
