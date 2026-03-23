@@ -52,7 +52,7 @@ try {
 	const binaryPath = path.join(stageDir, binaryName);
 	const binaryContents =
 		goos === "windows"
-			? "mock aviary windows binary\n"
+			? Buffer.concat([Buffer.from([0x4d, 0x5a]), Buffer.from("mock aviary windows binary\n")])
 			: "#!/usr/bin/env sh\necho mock aviary\n";
 	await writeFile(binaryPath, binaryContents, {
 		mode: goos === "windows" ? 0o644 : 0o755,
