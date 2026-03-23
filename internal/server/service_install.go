@@ -135,9 +135,7 @@ func trySudoRetry(action string, origErr error) error {
 	}
 	lower := strings.ToLower(origErr.Error())
 	// Retry on permission-like errors or common authentication prompts.
-	if strings.Contains(lower, "permission") || strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") || strings.Contains(lower, "interactive authentication") || strings.Contains(lower, "authentication required") || strings.Contains(lower, "polkit") || strings.Contains(lower, "authorization") {
-		// proceed to attempt sudo retry
-	} else {
+	if !(strings.Contains(lower, "permission") || strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") || strings.Contains(lower, "interactive authentication") || strings.Contains(lower, "authentication required") || strings.Contains(lower, "polkit") || strings.Contains(lower, "authorization")) {
 		return origErr
 	}
 

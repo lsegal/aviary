@@ -71,11 +71,7 @@ var serveCmd = &cobra.Command{
 					Env:   env,
 					Files: files,
 				}
-				if runtime.GOOS != "windows" {
-					// Avoid setting platform-specific SysProcAttr fields that may
-					// vary across Go versions; detaching the process is best-effort
-					// and not required in test environments.
-				} else {
+				if runtime.GOOS == "windows" {
 					// On Windows, use Start with creation flags via exec.Command
 					cmd := exec.Command(exe, "serve", "start")
 					if cfgDir != "" {
