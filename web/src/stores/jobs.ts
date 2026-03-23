@@ -192,7 +192,10 @@ export const useJobsStore = defineStore("jobs", () => {
 		}
 	}
 
-	async function fetchSessionMessages(agentID: string, sessionID: string): Promise<SessionMessage[]> {
+	async function fetchSessionMessages(
+		agentID: string,
+		sessionID: string,
+	): Promise<SessionMessage[]> {
 		try {
 			const raw = await callTool("session_messages", {
 				agent: agentID,
@@ -255,8 +258,8 @@ export const useJobsStore = defineStore("jobs", () => {
 	const byDay = computed(() => {
 		const m = new Map<
 			string,
-			{ completed: number; failed: number; running: number }>
-		();
+			{ completed: number; failed: number; running: number }
+		>();
 		for (const j of jobs.value) {
 			const d = j.created_at.slice(0, 10);
 			const v = m.get(d) ?? { completed: 0, failed: 0, running: 0 };
@@ -289,8 +292,8 @@ export const useJobsStore = defineStore("jobs", () => {
 	const byAgent = computed(() => {
 		const m = new Map<
 			string,
-			{ completed: number; failed: number; total: number }>
-		();
+			{ completed: number; failed: number; total: number }
+		>();
 		for (const j of jobs.value) {
 			const v = m.get(j.agent_id) ?? { completed: 0, failed: 0, total: 0 };
 			v.total++;

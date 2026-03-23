@@ -585,7 +585,12 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
-import type { Job, ScheduledTask, TaskCompile, SessionMessage } from "../stores/jobs";
+import type {
+	Job,
+	ScheduledTask,
+	SessionMessage,
+	TaskCompile,
+} from "../stores/jobs";
 import { useJobsStore } from "../stores/jobs";
 
 const store = useJobsStore();
