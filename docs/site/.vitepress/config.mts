@@ -49,6 +49,7 @@ export default defineConfig({
 						{ text: "Getting Started", link: "/guide/getting-started" },
 						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Configuration", link: "/guide/configuration" },
+						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
 						{ text: "Operations", link: "/guide/operations" },
 					],
 				},
@@ -58,8 +59,15 @@ export default defineConfig({
 					text: "Reference",
 					items: [
 						{ text: "Index", link: "/reference/" },
+						{ text: "CLI Reference", link: "/reference/cli" },
+						{ text: "Configuration Reference", link: "/reference/config" },
 						{ text: "UI Surface", link: "/reference/ui/control-panel" },
-						{ text: "MCP Index", link: "/reference/mcp/" },
+					],
+				},
+				{
+					text: "MCP Tools",
+					items: [
+						{ text: "Overview", link: "/reference/mcp/" },
 						{ text: "Agent Tools", link: "/reference/mcp/agents" },
 						{ text: "Session Tools", link: "/reference/mcp/sessions" },
 						{
@@ -74,7 +82,6 @@ export default defineConfig({
 							text: "Files And Notes Tools",
 							link: "/reference/mcp/files-and-notes",
 						},
-						{ text: "Memory Tools", link: "/reference/mcp/memory" },
 						{ text: "Auth Tools", link: "/reference/mcp/auth" },
 						{
 							text: "Server And Config Tools",
