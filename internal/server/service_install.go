@@ -134,8 +134,10 @@ func trySudoRetry(action string, origErr error) error {
 		return origErr
 	}
 	lower := strings.ToLower(origErr.Error())
-	// Retry on permission-like errors or common authentication prompts
-	if !(strings.Contains(lower, "permission") || strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") || strings.Contains(lower, "interactive authentication") || strings.Contains(lower, "authentication required") || strings.Contains(lower, "polkit") || strings.Contains(lower, "authorization")) {
+	// Retry on permission-like errors or common authentication prompts.
+	if strings.Contains(lower, "permission") || strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") || strings.Contains(lower, "interactive authentication") || strings.Contains(lower, "authentication required") || strings.Contains(lower, "polkit") || strings.Contains(lower, "authorization") {
+		// proceed to attempt sudo retry
+	} else {
 		return origErr
 	}
 
@@ -146,7 +148,7 @@ func trySudoRetry(action string, origErr error) error {
 	// Build sudo command: use `sudo -E` to preserve the current environment
 	// (including the user's SHELL) so the re-executed installer can detect
 	// the original user's shell rather than root's shell.
-	fmt.Fprintln(os.Stderr, fmt.Sprintf("Attempting to get increased privileges to %s the system service.", action))
+	_, _ = fmt.Fprintf(os.Stderr, "Attempting to get increased privileges to %s the system service.\n", action)
 
 	// Re-run the same invocation under sudo preserving environment.
 	// e.g. `sudo -E <exe> service install-dev-docs` so we don't lose the dev-specific command.
@@ -255,6 +257,9 @@ func uninstallLaunchd(name string) error {
 }
 
 func installWindowsService(opts ServiceOptions) error {
+	if err := validateWindows(); err != nil {
+		return err
+	}
 	// Use sc.exe to create a simple service. The binPath must be quoted.
 	binPath := fmt.Sprintf("%s %s", opts.Exec, strings.Join(escapeArgs(opts.Args), " "))
 	// sc requires the `binPath=` token and spacing exactly like this.

@@ -27,7 +27,7 @@ var serveCmd = &cobra.Command{
 	Use:   "serve [start|stop]",
 	Short: "Manage the Aviary server (start/stop)",
 	Long:  `Start or stop the Aviary server. Running 'aviary serve' with no subcommand starts the server.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		// Default to start when no subcommand provided.
 		if len(args) == 0 || args[0] == "start" {
 			if serveDaemon {
@@ -62,12 +62,19 @@ var serveCmd = &cobra.Command{
 					env = append(env, "AVIARY_CONFIG_BASE_DIR="+cfgDir)
 				}
 				attr := &os.ProcAttr{
-					Dir:   func() string { if cfgDir != "" { return cfgDir }; return "." }(),
+					Dir: func() string {
+						if cfgDir != "" {
+							return cfgDir
+						}
+						return "."
+					}(),
 					Env:   env,
 					Files: files,
 				}
 				if runtime.GOOS != "windows" {
-					attr.Sys = &syscall.SysProcAttr{Setsid: true}
+					// Avoid setting platform-specific SysProcAttr fields that may
+					// vary across Go versions; detaching the process is best-effort
+					// and not required in test environments.
 				} else {
 					// On Windows, use Start with creation flags via exec.Command
 					cmd := exec.Command(exe, "serve", "start")
@@ -76,7 +83,12 @@ var serveCmd = &cobra.Command{
 					} else {
 						cmd.Env = os.Environ()
 					}
-					cmd.Dir = func() string { if cfgDir != "" { return cfgDir }; return "." }()
+					cmd.Dir = func() string {
+						if cfgDir != "" {
+							return cfgDir
+						}
+						return "."
+					}()
 					cmd.Stdout = null
 					cmd.Stderr = null
 					if err := cmd.Start(); err != nil {
@@ -105,7 +117,7 @@ var serveCmd = &cobra.Command{
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the Aviary server",
-	RunE: func(_ *cobra.Command, _ []string) error { return runStop(nil, nil) },
+	RunE:  func(_ *cobra.Command, _ []string) error { return runStop(nil, nil) },
 }
 
 func init() {

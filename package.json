@@ -24,7 +24,7 @@
 		"lint:web": "biome check .",
 		"lint:fix": "biome check --write . && gofmt -w . && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.2 run --fix ./...",
 		"format": "biome format --write .",
-		"test": "pnpm test:go && pnpm test:e2e",
+		"test": "pnpm lint && pnpm test:go && pnpm test:e2e",
 		"test:go": "go test ./...",
 		"test:e2e": "pnpm exec playwright install && playwright test",
 		"test:e2e:ui": "playwright test --ui",
