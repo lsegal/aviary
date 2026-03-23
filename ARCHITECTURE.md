@@ -36,7 +36,7 @@ The architecture of the orchestrator is made up of 11 major components:
 
 - CLI either calls MCP operations directly in code or uses HTTP API to call to MCP server
 - Every MCP command should be exposed to CLI with the same arguments, so that users can choose to use CLI or HTTP API as they see fit.
-- `aviary start` / `aviary stop` should be disconnected from MCP, everything else should have an equivalent.
+- `aviary serve start` / `aviary serve stop` should be disconnected from MCP, everything else should have an equivalent.
 
 ### Configuration Watcher
 

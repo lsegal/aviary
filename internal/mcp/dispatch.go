@@ -144,7 +144,7 @@ func SetServerChecker(fn func() bool) {
 
 // loadStoredToken is satisfied by the server package — set at startup.
 var loadStoredToken = func() (string, error) {
-	return "", fmt.Errorf("no token configured; use --token or run 'aviary start' first")
+	return "", fmt.Errorf("no token configured; use --token or run 'aviary serve' first")
 }
 
 // SetTokenLoader allows the server package to inject its LoadToken function.

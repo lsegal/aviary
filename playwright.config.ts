@@ -16,7 +16,7 @@ export default defineConfig({
 	},
 	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 	webServer: {
-		command: process.env.CI ? "./aviary start" : "pnpm dev",
+		command: process.env.CI ? "./aviary serve" : "pnpm dev",
 		url: process.env.CI ? "https://localhost:16677" : "http://localhost:5173",
 		ignoreHTTPSErrors: true,
 		reuseExistingServer: !process.env.CI,

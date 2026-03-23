@@ -22,8 +22,8 @@ body:
       label: Steps to reproduce
       description: Minimal steps that reliably trigger the issue.
       placeholder: |
-        1. Start the server with `aviary start`
-        2. Run `aviary agent run assistant`
+        1. Start the server with `aviary serve`
+         2. Run `aviary agent run assistant`
         3. See error
     validations:
       required: true

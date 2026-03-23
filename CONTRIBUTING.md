@@ -86,7 +86,7 @@ Token:    cat ~/.config/aviary/token
 Config:   ~/.config/aviary/aviary.yaml
 ```
 
-The server is usually already running during development (`pnpm dev` starts it). You can restart it by stopping `pnpm dev` and running `go run ./cmd/aviary start`.
+The server is usually already running during development (`pnpm dev` starts it). You can restart it by stopping `pnpm dev` and running `go run ./cmd/aviary serve`.
 
 ## Making Changes
 

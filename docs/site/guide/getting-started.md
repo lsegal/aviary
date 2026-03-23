@@ -36,7 +36,7 @@ Download the latest release for your platform from the [Releases page](https://g
 ## Start the Server
 
 ```bash
-aviary start
+aviary serve
 ```
 
 The server starts on `https://localhost:16677` by default. It generates a self-signed TLS certificate on first run and stores it in `~/.config/aviary/`. The port and TLS settings can be changed in `aviary.yaml` — see the [Configuration guide](/guide/configuration).
@@ -44,7 +44,7 @@ The server starts on `https://localhost:16677` by default. It generates a self-s
 Verify the server is running:
 
 ```bash
-aviary status
+aviary service status
 ```
 
 ## Open the Control Panel

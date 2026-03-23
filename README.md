@@ -40,7 +40,7 @@ Download the latest release for your platform from the [Releases page](https://g
 
 ```shell
 # Start the server
-aviary start
+aviary serve
 
 # Set up a provider credential and create your first agent
 aviary configure

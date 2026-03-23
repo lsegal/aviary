@@ -16,6 +16,7 @@ Environment:
 EOF
 }
 
+AUTO_YES=0
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 	--version)
@@ -30,6 +31,10 @@ while [ "$#" -gt 0 ]; do
 		usage
 		return 0 2>/dev/null || exit 0
 		;;
+		-y)
+			AUTO_YES=1
+			shift
+			;;
 	*)
 		echo "Unknown argument: $1" >&2
 		return 1 2>/dev/null || exit 1
@@ -124,3 +129,16 @@ echo "Version: $VERSION"
 echo "PATH updated for this shell."
 echo "Future POSIX shells will load $PROFILE_FILE."
 echo "To affect the parent shell immediately, run: . ./installer/install.sh"
+
+# Offer to install the system service
+if [ "$AUTO_YES" -eq 1 ]; then
+	"$BIN_DIR/aviary" service install || true
+else
+	printf "Install aviary as a system service? [Y/n] "
+	read -r REPLY || REPLY=""
+	if [ -z "$REPLY" ] || echo "$REPLY" | grep -iq "^y"; then
+		"$BIN_DIR/aviary" service install || true
+	else
+		echo "Skipping service installation."
+	fi
+fi

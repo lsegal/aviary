@@ -60,7 +60,7 @@ func LoadOrGenerateToken() (string, bool, error) {
 func LoadToken() (string, error) {
 	data, err := os.ReadFile(tokenPath())
 	if err != nil {
-		return "", fmt.Errorf("no token found: run 'aviary start' first")
+		return "", fmt.Errorf("no token found: run 'aviary serve' first")
 	}
 	return strings.TrimSpace(string(data)), nil
 }

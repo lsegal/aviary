@@ -5,7 +5,7 @@
 	"type": "module",
 	"packageManager": "pnpm@8.6.0",
 	"scripts": {
-		"dev": "vitepress dev site",
+		"dev": "vitepress dev --host 0.0.0.0 --port 5174 site",
 		"build": "vitepress build site",
 		"preview": "vitepress preview site"
 	},

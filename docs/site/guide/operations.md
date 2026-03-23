@@ -7,9 +7,9 @@ This guide covers day-to-day operations: managing agents and sessions, working w
 ## Starting and Stopping the Server
 
 ```bash
-aviary start    # start in the foreground (Ctrl-C to stop)
-aviary stop     # send stop signal to the running server
-aviary status   # print running/stopped and the PID
+aviary serve    # start in the foreground (-d for background)
+aviary serve stop     # send stop signal to the running server
+aviary service status   # print running/stopped and the PID
 ```
 
 The server writes its PID to `~/.config/aviary/aviary.pid`. If the process crashes without cleaning up, delete the PID file before restarting.

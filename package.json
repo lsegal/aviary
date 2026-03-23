@@ -7,7 +7,7 @@
 	"scripts": {
 		"claude": "claude --dangerously-skip-permissions",
 		"codex": "codex --dangerously-bypass-approvals-and-sandbox",
-		"dev": "concurrently -n vite,go -c cyan,green \"vite\" \"wgo run ./cmd/aviary start\"",
+		"dev": "concurrently -n vite,go -c cyan,green \"vite --host 0.0.0.0\" \"wgo run ./cmd/aviary serve\"",
 		"docs:dev": "pnpm --dir docs dev",
 		"docs:build": "pnpm --dir docs build",
 		"docs:preview": "pnpm --dir docs preview",
@@ -34,7 +34,8 @@
 		"release:stage": "node scripts/release-stage.mjs",
 		"release:major": "cross-env VERSION=major pnpm release:prepare && pnpm release",
 		"release:minor": "cross-env VERSION=minor pnpm release:prepare && pnpm release",
-		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"
+		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release",
+		"postinstall": "node ./scripts/install-go-tools.mjs"
 	},
 	"dependencies": {
 		"marked": "^17.0.4",

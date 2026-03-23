@@ -13,12 +13,12 @@ These flags apply to every `aviary` command.
 
 ---
 
-## aviary start
+## aviary serve
 
 Start the Aviary server over HTTPS on the configured port (default: 16677).
 
 ```
-aviary start
+aviary serve
 ```
 
 No flags.
@@ -37,12 +37,12 @@ No flags.
 
 ---
 
-## aviary status
+## aviary service status
 
 Show whether the Aviary server is currently running.
 
 ```
-aviary status
+aviary service status
 ```
 
 No flags.
