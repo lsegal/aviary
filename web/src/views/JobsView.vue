@@ -598,19 +598,21 @@ const selectedJob = ref<Job | null>(null);
 const selectedCompile = ref<TaskCompile | null>(null);
 const jobOutput = ref<string>("");
 const logsLoading = ref(false);
-const sessionMessages = ref<any[] | null>(null);
+const sessionMessages = ref<object[] | null>(null);
 const sessionMessagesLoading = ref(false);
 const expanded = ref<Record<string, boolean>>({});
 
 function toggleExpanded(key: string) {
-  expanded.value[key] = !expanded.value[key];
+	expanded.value[key] = !expanded.value[key];
 }
 
 function isExpanded(key: string) {
-  return !!expanded.value[key];
+	return !!expanded.value[key];
 }
 
-const jobLines = computed(() => (jobOutput.value ? jobOutput.value.split(/\r?\n/) : []));
+const jobLines = computed(() =>
+	jobOutput.value ? jobOutput.value.split(/\r?\n/) : [],
+);
 const compileLoading = ref(false);
 const liveBottom = ref<HTMLElement | null>(null);
 const hoveredDay = ref<number | null>(null);
@@ -625,13 +627,13 @@ const presets = [
 
 // helpers for UI
 function tryPrettyJSON(s: unknown) {
-  if (!s) return s || "";
-  try {
-    const v = typeof s === "string" ? JSON.parse(s) : s;
-    return JSON.stringify(v, null, 2);
-  } catch (e) {
-    return s;
-  }
+	if (!s) return s || "";
+	try {
+		const v = typeof s === "string" ? JSON.parse(s) : s;
+		return JSON.stringify(v, null, 2);
+	} catch (e) {
+		return s;
+	}
 }
 
 const statusFilters = [
@@ -669,16 +671,19 @@ async function selectJob(job: Job) {
 	selectedJob.value = job;
 	jobOutput.value = "";
 	if (job.status !== "in_progress") {
-    // load persisted job output first
+		// load persisted job output first
 		await loadLogs(job.id);
-    // if no explicit job output, try loading structured session messages inline
-    if (!jobOutput.value && job.session_id) {
-      sessionMessagesLoading.value = true;
-      sessionMessages.value = await store.fetchSessionMessages(job.agent_id, job.session_id);
-      sessionMessagesLoading.value = false;
-    } else {
-      sessionMessages.value = null;
-    }
+		// if no explicit job output, try loading structured session messages inline
+		if (!jobOutput.value && job.session_id) {
+			sessionMessagesLoading.value = true;
+			sessionMessages.value = await store.fetchSessionMessages(
+				job.agent_id,
+				job.session_id,
+			);
+			sessionMessagesLoading.value = false;
+		} else {
+			sessionMessages.value = null;
+		}
 	}
 }
 

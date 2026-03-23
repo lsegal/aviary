@@ -225,13 +225,16 @@ func resolveAllowedAgentPath(ctx context.Context, rawPath, operation string) (st
 	if !ok || runner == nil {
 		return "", nil, fmt.Errorf("agent %q not found", agentID)
 	}
-	workspaceDir := store.WorkspaceDir()
+	workspaceDir := store.AgentDir(agentID)
 	if cfg := runner.Config(); cfg != nil && cfg.WorkingDir != "" {
 		workspaceDir = cfg.WorkingDir
 	}
 	policy, err := filesystem.PolicyFromAgent(runner.Config(), workspaceDir)
 	if err != nil {
 		return "", nil, err
+	}
+	if strings.HasPrefix(strings.TrimSpace(rawPath), "@") {
+		return "", nil, fmt.Errorf("%s path is not allowed: agents cannot access the Aviary config directory", operation)
 	}
 	resolved, err := filesystem.ResolvePath(rawPath, workspaceDir)
 	if err != nil {

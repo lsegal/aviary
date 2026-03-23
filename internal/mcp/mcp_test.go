@@ -1907,9 +1907,9 @@ func TestStartProviderPingIfStale(t *testing.T) {
 }
 
 func TestNoteWriteTool(t *testing.T) {
-	workspace := t.TempDir()
-	store.SetWorkspaceDir(workspace)
-	t.Cleanup(func() { store.SetWorkspaceDir("") })
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -1917,16 +1917,26 @@ func TestNoteWriteTool(t *testing.T) {
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	})
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
+	require.NoError(t, err)
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "bot")
+
 	d := NewDispatcher("https://localhost:16677", "")
 
-	out, err := d.CallTool(context.Background(), "note_write", map[string]any{
+	out, err := d.CallTool(ctx, "note_write", map[string]any{
 		"file":    "project kickoff",
 		"content": "# Project Kickoff\n- Capture goals\n- Confirm owners",
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "note written:")
 
-	data, err := os.ReadFile(store.WorkspaceNotePath("project kickoff"))
+	data, err := os.ReadFile(store.AgentNotePath("bot", "project kickoff"))
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "# Project Kickoff")
 	assert.Contains(t, string(data), "Confirm owners")
@@ -1935,11 +1945,8 @@ func TestNoteWriteTool(t *testing.T) {
 func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatcher, context.Context, string) {
 	t.Helper()
 	base := t.TempDir()
-	workspace := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	require.NoError(t, store.EnsureDirs())
-	store.SetWorkspaceDir(workspace)
-	t.Cleanup(func() { store.SetWorkspaceDir("") })
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
@@ -1962,7 +1969,7 @@ func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatch
 	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
 	require.NoError(t, err)
 	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "bot")
-	return NewDispatcher("https://localhost:16677", ""), ctx, workspace
+	return NewDispatcher("https://localhost:16677", ""), ctx, store.AgentDir("bot")
 }
 
 func setupMCPWithExecAgent(t *testing.T, execPerms *config.ExecPermissionsConfig) (*Dispatcher, context.Context) {

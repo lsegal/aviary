@@ -683,7 +683,7 @@ func registerNoteTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "note_write",
 		Description: "Write a workspace note to notes/<descriptive_file>.md using markdown content. Arguments: file (string, required) - descriptive filename; content (string, required) - summarized markdown to write.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args noteWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args noteWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.File) == "" {
 			return nil, struct{}{}, fmt.Errorf("file is required")
 		}
@@ -691,7 +691,12 @@ func registerNoteTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("content is required")
 		}
 
-		path := store.WorkspaceNotePath(args.File)
+		var path string
+		if agentID, ok := agent.SessionAgentIDFromContext(ctx); ok && agentID != "" {
+			path = store.AgentNotePath(agentID, args.File)
+		} else {
+			path = store.WorkspaceNotePath(args.File)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, struct{}{}, fmt.Errorf("creating notes dir: %w", err)
 		}

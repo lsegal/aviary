@@ -505,6 +505,17 @@ func NotesDir() string {
 	return filepath.Join(WorkspaceDir(), "notes")
 }
 
+// AgentNotePath returns the path for a note file under an agent's notes directory:
+// <datadir>/agents/<agentID>/notes/<name>.md.
+func AgentNotePath(agentID, name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "notes/")
+	name = strings.TrimPrefix(name, "notes\\")
+	name = strings.TrimSuffix(name, ".md")
+	name = sanitizeFileComponent(name)
+	return filepath.Join(AgentDir(agentID), "notes", name+".md")
+}
+
 // WorkspaceNotePath returns the workspace-local path for a markdown note file.
 // The provided name may include a ".md" suffix and/or a leading "notes/" segment.
 func WorkspaceNotePath(name string) string {

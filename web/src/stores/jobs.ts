@@ -190,7 +190,7 @@ export const useJobsStore = defineStore("jobs", () => {
 				session_id: sessionID,
 				order: "asc",
 			});
-			return (JSON.parse(raw) as any[]) ?? [];
+			return (JSON.parse(raw) as object[]) ?? [];
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 			return [];
@@ -312,6 +312,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		fetchTaskCompile,
 		runTaskNow,
 		runJobNow,
+		fetchSessionMessages,
 		setPreset,
 		pending,
 		running,
