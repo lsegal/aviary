@@ -8,13 +8,6 @@ hero:
   image:
     src: /logo.png
     alt: Aviary logo
-  actions:
-    - theme: brand
-      text: Read the guide
-      link: /guide/
-    - theme: alt
-      text: Browse the reference
-      link: /reference/
 
 features:
   - title: Connected Assistants
@@ -85,53 +78,53 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
 
 <div class="panel-grid">
   <div class="panel-card accent-chat">
-    <FeatureIcon name="chat" />
+    <FeatureIcon name="chat"></FeatureIcon>
     <h3>Live Conversations</h3>
     <p>Chat with your agents in real time, see what tools they're calling, attach files, and pick up where you left off without losing context.</p>
   </div>
   <div class="panel-card accent-message messaging-card">
     <div class="messaging-logos" aria-label="Supported messaging channels">
-      <MessagingLogo name="signal" />
-      <MessagingLogo name="slack" />
-      <MessagingLogo name="discord" />
+      <MessagingLogo name="signal"></MessagingLogo>
+      <MessagingLogo name="slack"></MessagingLogo>
+      <MessagingLogo name="discord"></MessagingLogo>
     </div>
     <h3>Chat Where Your Team Already Is</h3>
     <p>Drop your agent into Signal, Slack, or Discord and it shows up like any other team member — no new app, no new login, no context switching.</p>
   </div>
   <div class="panel-card accent-flow">
-    <FeatureIcon name="clock" />
+    <FeatureIcon name="clock"></FeatureIcon>
     <h3>Scheduled Tasks And Automation</h3>
     <p>Set a task to run on a schedule or whenever a file changes. Aviary automatically converts routine tasks into fast, free scripts so they never burn tokens just for running on repeat.</p>
   </div>
   <div class="panel-card accent-catalog">
-    <FeatureIcon name="browser" />
+    <FeatureIcon name="browser"></FeatureIcon>
     <h3>Browser Automation</h3>
     <p>Let your agents browse the web, fill out forms, and scrape pages — all through a shared browser session that gets cleaned up automatically when each task finishes.</p>
   </div>
   <div class="panel-card accent-ops">
-    <FeatureIcon name="chart" />
+    <FeatureIcon name="chart"></FeatureIcon>
     <h3>Usage And Analytics</h3>
     <p>See exactly where your tokens are going, check on running jobs, and dig into failures — all while everything is live.</p>
   </div>
   <div class="panel-card accent-catalog">
-    <FeatureIcon name="tools" />
+    <FeatureIcon name="tools"></FeatureIcon>
     <h3>Skills, Tools, And Models</h3>
     <p>Browse available AI models, see what tools your agents can use, and manage the skills installed on your system — all in one place.</p>
   </div>
   <div class="panel-card accent-flow">
-    <FeatureIcon name="controls" />
+    <FeatureIcon name="controls"></FeatureIcon>
     <h3>Web Dashboard</h3>
     <p>Configure agents, set permissions, connect channels, and tweak settings from a clean web UI instead of hand-editing config files.</p>
   </div>
   <div class="panel-card accent-ops">
-    <FeatureIcon name="cli" />
+    <FeatureIcon name="cli"></FeatureIcon>
     <h3>Terminal Control</h3>
     <p>Run commands, trigger tasks, tail logs, and manage agents directly from the terminal whenever you prefer the keyboard over a browser.</p>
   </div>
 </div>
 </section>
 
-<section class="content-section content-section-alt">
+<section class="content-section content-section-alt content-section-last">
 <p class="section-eyebrow">Guide Coverage</p>
 
 <h2 class="section-heading">Read This First</h2>

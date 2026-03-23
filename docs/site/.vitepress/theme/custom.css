@@ -50,7 +50,8 @@ body {
 
 .VPNavBar,
 .VPDoc,
-.VPHome {
+.VPHome,
+.VPFooter {
 	background: transparent;
 }
 
@@ -457,6 +458,34 @@ a.detail-card:focus-visible {
 	z-index: -1;
 }
 
+/* Align hero action buttons with left edge of hero subheading */
+.VPHome .home-hero {
+	--aviary-hero-content-pad: 1.25rem;
+}
+.VPHome .home-hero .hero-actions,
+.VPHome .home-hero .actions,
+.VPHome .home-hero .vp-home-hero-ctas {
+	display: flex;
+	justify-content: flex-start;
+	margin: 0;
+	padding-left: var(--aviary-hero-content-pad);
+	gap: 0.75rem;
+}
+.VPHome .home-hero .hero-subheading,
+.VPHome .home-hero .subtitle,
+.VPHome .home-hero .tagline {
+	margin-left: var(--aviary-hero-content-pad);
+}
+
+/* Tweak button sizing to sit neatly under the subheading */
+.VPHome .home-hero .vp-btn,
+.VPHome .home-hero .actions .vp-btn,
+.VPHome .home-hero .hero-actions .vp-btn {
+	font-size: 0.95rem;
+	padding: 0.5rem 0.9rem;
+}
+
+
 .content-section-alt::after {
 	background:
 		linear-gradient(180deg, rgba(248, 240, 229, 0.94), rgba(243, 232, 217, 0.8)),
@@ -473,6 +502,10 @@ a.detail-card:focus-visible {
 	background:
 		linear-gradient(180deg, rgba(24, 17, 15, 0.96), rgba(16, 12, 10, 0.92)),
 		radial-gradient(circle at center top, rgba(180, 95, 42, 0.08), transparent 60%);
+}
+
+.content-section-last::after {
+	height: calc(100% + 2.5rem);
 }
 
 .detail-grid {
@@ -494,6 +527,78 @@ a.detail-card:focus-visible {
 .VPHomeHero .main,
 .VPHomeHero .image {
 	padding-bottom: 1rem;
+}
+
+.VPHomeHero {
+	padding-bottom: 0 !important;
+}
+
+/* Hero actions bar — below the title|image row, full width */
+.hero-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	padding: 1.2rem 0px 2.5rem;
+	max-width: 900px;
+	margin: 0 auto;
+	box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+		.hero-actions { display: flex; justify-content: center; max-width: 640px; }
+}
+
+.hero-btn {
+	display: inline-flex;
+	align-items: center;
+	border-radius: 20px;
+	padding: 0 20px;
+	line-height: 38px;
+	font-size: 0.875rem;
+	font-weight: 600;
+	text-decoration: none;
+	white-space: nowrap;
+	transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.hero-btn-brand {
+	background-color: var(--vp-button-brand-bg);
+	color: var(--vp-button-brand-text);
+	border: 1px solid var(--vp-button-brand-border);
+}
+
+.hero-btn-brand:hover {
+	background-color: var(--vp-button-brand-hover-bg);
+	color: var(--vp-button-brand-hover-text);
+	border-color: var(--vp-button-brand-hover-border);
+}
+
+.hero-btn-alt {
+	background-color: var(--vp-button-alt-bg);
+	color: var(--vp-button-alt-text);
+	border: 1px solid var(--vp-button-alt-border);
+}
+
+.hero-btn-alt:hover {
+	background-color: var(--vp-button-alt-hover-bg);
+	color: var(--vp-button-alt-hover-text);
+	border-color: var(--vp-button-alt-hover-border);
+}
+
+.hero-actions .install-block {
+	margin: 0;
+}
+
+@media (min-width: 960px) {
+	.VPHomeHero .container {
+		max-width: 900px !important;
+		gap: 3rem;
+	}
+
+	.VPHomeHero .image-container {
+		transform: none !important;
+	}
 }
 
 .VPHomeFeatures {
@@ -654,4 +759,351 @@ a.detail-card:focus-visible {
 	.comparison-label {
 		flex: 0 0 5.5rem;
 	}
+}
+
+/* ============================================================
+   HERO STYLING
+   ============================================================ */
+
+:root {
+	--vp-home-hero-name-background: linear-gradient(
+		140deg,
+		#f05320 0%,
+		#9b2010 50%,
+		#d44c1e 100%
+	);
+}
+
+/* ============================================================
+   HERO ANIMATIONS
+   ============================================================ */
+
+/* Logo gentle float */
+.hero-logo {
+	animation: hero-float 7s ease-in-out infinite;
+}
+
+@keyframes hero-float {
+	0%,
+	100% {
+		transform: translateY(0px);
+	}
+	50% {
+		transform: translateY(-9px);
+	}
+}
+
+/* Hero name gradient shimmer */
+.VPHomeHero .name .clip {
+	background-size: 220% 100%;
+	animation: name-shimmer 6s ease-in-out infinite alternate;
+}
+
+@keyframes name-shimmer {
+	0% {
+		background-position: 0% 50%;
+	}
+	100% {
+		background-position: 100% 50%;
+	}
+}
+
+/* ============================================================
+   SCROLL REVEAL SYSTEM
+   ============================================================ */
+
+.sr {
+	opacity: 0;
+	transform: translateY(24px);
+	transition:
+		opacity 0.58s cubic-bezier(0.16, 1, 0.3, 1) var(--sr-delay, 0ms),
+		transform 0.58s cubic-bezier(0.16, 1, 0.3, 1) var(--sr-delay, 0ms);
+}
+
+.sr.sr-visible {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+/* ============================================================
+   COMPARISON BAR ENTRANCE ANIMATION
+   ============================================================ */
+
+.comparison-bar {
+	transform-origin: left center;
+	transform: scaleX(0);
+	transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.1s;
+}
+
+.comparison-row:nth-child(2) .comparison-bar {
+	transition-delay: 0.28s;
+}
+
+.comparison-card.sr-visible .comparison-bar {
+	transform: scaleX(1);
+}
+
+/* ============================================================
+   ENHANCED CARD TRANSITIONS & GLOW HOVER
+   ============================================================ */
+
+.VPFeature {
+	border-color: rgba(99, 62, 46, 0.18);
+	transition:
+		transform 230ms cubic-bezier(0.16, 1, 0.3, 1),
+		box-shadow 230ms cubic-bezier(0.16, 1, 0.3, 1),
+		border-color 230ms ease;
+}
+
+.VPFeature:hover {
+	transform: translateY(-5px);
+	border-color: rgba(184, 58, 29, 0.28);
+	box-shadow:
+		0 0 0 1px rgba(184, 58, 29, 0.2),
+		0 20px 30px -4px rgba(93, 53, 31, 0.22),
+		0 0 38px -8px rgba(184, 58, 29, 0.24),
+		inset 0 1px 0 rgba(255, 255, 255, 0.66);
+}
+
+.dark .VPFeature:hover {
+	border-color: rgba(225, 113, 68, 0.32);
+	box-shadow:
+		0 0 0 1px rgba(225, 113, 68, 0.26),
+		0 22px 30px -4px rgba(0, 0, 0, 0.62),
+		0 0 44px -10px rgba(213, 77, 33, 0.28),
+		inset 0 1px 0 rgba(255, 244, 232, 0.09);
+}
+
+.panel-card,
+.detail-card {
+	border-color: rgba(99, 62, 46, 0.18);
+	transition:
+		transform 230ms cubic-bezier(0.16, 1, 0.3, 1),
+		box-shadow 230ms cubic-bezier(0.16, 1, 0.3, 1),
+		border-color 230ms ease;
+}
+
+.panel-card:hover,
+.detail-card:hover {
+	transform: translateY(-5px);
+	border-color: rgba(184, 58, 29, 0.22);
+	box-shadow:
+		0 0 0 1px rgba(184, 58, 29, 0.18),
+		0 20px 30px -4px rgba(93, 53, 31, 0.2),
+		0 0 34px -8px rgba(184, 58, 29, 0.2),
+		inset 0 1px 0 rgba(255, 255, 255, 0.58);
+}
+
+.dark .panel-card:hover,
+.dark .detail-card:hover {
+	border-color: rgba(225, 113, 68, 0.28);
+	box-shadow:
+		0 0 0 1px rgba(225, 113, 68, 0.22),
+		0 22px 30px -4px rgba(0, 0, 0, 0.58),
+		0 0 40px -10px rgba(213, 77, 33, 0.24),
+		inset 0 1px 0 rgba(255, 244, 232, 0.08);
+}
+
+/* Panel icon glow on parent card hover */
+.panel-card:hover .panel-icon {
+	box-shadow:
+		0 0 0 3px rgba(184, 58, 29, 0.14),
+		0 12px 28px rgba(185, 93, 36, 0.2),
+		inset 0 1px 0 rgba(255, 255, 255, 0.3);
+	transition: box-shadow 230ms ease;
+}
+
+.dark .panel-card:hover .panel-icon {
+	box-shadow:
+		0 0 0 3px rgba(213, 77, 33, 0.2),
+		0 12px 28px rgba(0, 0, 0, 0.32),
+		inset 0 1px 0 rgba(255, 244, 232, 0.2);
+}
+
+/* ============================================================
+   ENHANCED FEATURE CARD TOP BORDERS (stronger contrast)
+   ============================================================ */
+
+.VPFeatures .item:nth-child(1) .VPFeature {
+	border-top: 2px solid rgba(184, 58, 29, 0.48);
+}
+
+.VPFeatures .item:nth-child(2) .VPFeature {
+	border-top: 2px solid rgba(154, 87, 35, 0.42);
+}
+
+.VPFeatures .item:nth-child(3) .VPFeature {
+	border-top: 2px solid rgba(124, 78, 36, 0.4);
+}
+
+/* ============================================================
+   SECTION EYEBROW — DECORATIVE ACCENT LINE
+   ============================================================ */
+
+.section-eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.6rem;
+}
+
+.section-eyebrow::before {
+	content: "";
+	display: inline-block;
+	width: 1.6rem;
+	height: 2px;
+	background: var(--vp-c-brand-1);
+	border-radius: 2px;
+	opacity: 0.75;
+	flex-shrink: 0;
+}
+
+/* ============================================================
+   ENHANCED SECTION BACKGROUNDS (more contrast)
+   ============================================================ */
+
+.content-section::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(255, 252, 247, 0.97),
+			rgba(255, 244, 230, 0.9)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(214, 87, 31, 0.08),
+			transparent 50%
+		);
+}
+
+.content-section-alt::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(246, 236, 220, 0.97),
+			rgba(240, 228, 210, 0.92)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(154, 87, 35, 0.07),
+			transparent 54%
+		);
+}
+
+.dark .content-section::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(27, 18, 15, 0.97),
+			rgba(17, 11, 9, 0.94)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(214, 87, 31, 0.15),
+			transparent 50%
+		);
+}
+
+.dark .content-section-alt::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(21, 14, 12, 0.98),
+			rgba(13, 9, 7, 0.96)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(180, 95, 42, 0.14),
+			transparent 54%
+		);
+}
+
+.content-section-stats::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(252, 245, 236, 0.97),
+			rgba(245, 235, 220, 0.9)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(184, 58, 29, 0.08),
+			transparent 52%
+		);
+}
+
+.dark .content-section-stats::after {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(25, 17, 14, 0.97),
+			rgba(17, 11, 9, 0.94)
+		),
+		radial-gradient(
+			circle at center top,
+			rgba(184, 58, 29, 0.14),
+			transparent 52%
+		);
+}
+
+/* Install block */
+.install-block {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5em;
+	padding: 0.55em 1em 0.55em 0.9em;
+	border-radius: 20px;
+	background: rgba(36, 24, 20, 0.88);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow:
+		0 4px 16px rgba(0, 0, 0, 0.18),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	font-family: var(--vp-font-family-mono);
+	font-size: 0.88rem;
+	color: #f2dac8;
+	margin: 1.25rem 0;
+	max-width: 100%;
+	user-select: none;
+}
+
+.install-prompt {
+	color: rgba(213, 77, 33, 0.85);
+	font-weight: 600;
+	flex-shrink: 0;
+}
+
+.install-command {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	user-select: text;
+}
+
+.install-copy {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin-left: 0.4em;
+	padding: 0.3em;
+	border-radius: 5px;
+	border: none;
+	background: transparent;
+	color: rgba(242, 218, 200, 0.55);
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: color 150ms ease, background 150ms ease;
+}
+
+.install-copy:hover {
+	color: #f2dac8;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.install-copy.copied {
+	color: #6ee084;
+}
+
+/* Section heading — heavier weight for contrast */
+.section-heading {
+	font-weight: 700;
+	letter-spacing: -0.022em;
 }
