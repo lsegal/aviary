@@ -1102,6 +1102,34 @@ a.detail-card:focus-visible {
 	color: #6ee084;
 }
 
+/* Typing caret for install command */
+.install-command {
+	position: relative;
+}
+.install-caret {
+	display: inline-block;
+	width: 1px;
+	background: rgba(242,218,200,0.9);
+	margin-left: 2px;
+	animation: blink 1s steps(2,start) infinite;
+	height: 1em;
+	vertical-align: text-bottom;
+}
+.install-command.typing-done .install-caret { display: none; }
+
+@keyframes blink {
+	0% { opacity: 1 }
+	50% { opacity: 0 }
+	100% { opacity: 1 }
+}
+
+/* Reserve the full command width while typing via JS-measured min-width (avoid ::before) */
+
+/* Faster caret flash used briefly before typing */
+.install-caret.pre-flash {
+	animation-duration: 0.16s;
+}
+
 /* Section heading — heavier weight for contrast */
 .section-heading {
 	font-weight: 700;
