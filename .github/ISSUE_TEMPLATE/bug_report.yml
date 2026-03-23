@@ -69,7 +69,6 @@ body:
       options:
         - Binary release (GitHub releases)
         - Built from source
-        - Homebrew
         - Other
     validations:
       required: true
