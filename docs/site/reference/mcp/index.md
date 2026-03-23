@@ -9,7 +9,6 @@ These pages enumerate the currently registered MCP tools from `internal/mcp/tool
 - [Task And Job Tools](./tasks-and-jobs)
 - [Browser And Channel Tools](./browser-and-channels)
 - [Files And Notes Tools](./files-and-notes)
-- [Memory Tools](./memory)
 - [Auth Tools](./auth)
 - [Server And Config Tools](./server-and-config)
 - [Usage And Skills Tools](./usage-and-skills)
