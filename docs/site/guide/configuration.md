@@ -28,7 +28,7 @@ A minimal working config needs only a server port (which defaults to `16677`) an
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
   defaults:
     model: anthropic/claude-sonnet-4-6
 
@@ -37,7 +37,7 @@ agents:
     memory: private
 ```
 
-The `auth` value is the name of the credential stored via `aviary auth set`. The model can be specified per-agent or inherited from `models.defaults`.
+The `auth` value is a credential reference of the form `auth:<provider>:<name>`, where the provider and name match the key stored via `aviary auth set`. The model can be specified per-agent or inherited from `models.defaults`.
 
 ## Model Providers and Fallbacks
 
@@ -47,9 +47,9 @@ Aviary talks to LLM providers through a unified model string: `<provider>/<model
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
     openai:
-      auth: OPENAI_API_KEY
+      auth: auth:openai:default
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
@@ -174,6 +174,41 @@ agents:
             respondToMentions: true         # forward @bot mentions
 ```
 
+### Signal
+
+Aviary connects to Signal via [signal-cli](https://github.com/AsamK/signal-cli). Install signal-cli and register (or link) your account before configuring this channel.
+
+```bash
+# Register a new number with Signal
+signal-cli -a +15551234567 register
+signal-cli -a +15551234567 verify <code>
+
+# Or link to an existing Signal account as a secondary device
+signal-cli link -n "Aviary"
+```
+
+Once registered, add the channel using the phone number as the `id`:
+
+```yaml
+agents:
+  - name: assistant
+    channels:
+      - type: signal
+        id: "+15551234567"      # your registered Signal number
+        allowFrom:
+          - from: "+19995550100"  # only respond to this contact
+```
+
+Aviary launches and manages `signal-cli` automatically. The `signal-cli` binary must be on your `$PATH`.
+
+If you are already running signal-cli as a daemon on a known TCP port, point Aviary at it with `url` to avoid a second process:
+
+```yaml
+      - type: signal
+        id: "+15551234567"
+        url: "127.0.0.1:7583"   # existing signal-cli --tcp daemon address
+```
+
 **Sender filtering** controls who the agent responds to:
 
 - `from: "*"` matches any sender; a specific user/phone ID matches only that sender.
@@ -231,9 +266,9 @@ server:
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
     openai:
-      auth: OPENAI_API_KEY
+      auth: auth:openai:default
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:

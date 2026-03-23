@@ -231,13 +231,13 @@ Provider credentials and default model settings.
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
     openai:
-      auth: OPENAI_API_KEY
+      auth: auth:openai:default
     gemini:
-      auth: GEMINI_API_KEY
+      auth: auth:gemini:default
     github-copilot:
-      auth: GITHUB_COPILOT_TOKEN
+      auth: auth:github-copilot:default
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
@@ -246,7 +246,7 @@ models:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `providers.<name>.auth` | string | Name of the stored credential for this provider (see `aviary auth set`) |
+| `providers.<name>.auth` | string | Credential reference in the form `auth:<provider>:<name>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
 
@@ -339,7 +339,7 @@ server:
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
   defaults:
     model: anthropic/claude-sonnet-4-6
 

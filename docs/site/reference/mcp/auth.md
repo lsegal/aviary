@@ -8,16 +8,16 @@ The `auth_*` tools are blocked by the `standard` and `minimal` presets. They req
 
 ## Credential Names
 
-Credentials are stored by name. The name used in `auth_set` must match the `auth` field in `models.providers.<name>` in `aviary.yaml`.
+Credentials are stored by name. The `auth` field in `models.providers.<name>` must reference the stored key using the form `auth:<provider>:<name>`.
 
 ```yaml
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY   # must match the name passed to auth_set
+      auth: auth:anthropic:default   # references the key stored as "anthropic:default"
 ```
 
-Store the credential with: `auth_set { name: "ANTHROPIC_API_KEY", value: "sk-ant-..." }`
+Store the credential with: `auth_set { name: "anthropic:default", value: "sk-ant-..." }`
 
 ---
 

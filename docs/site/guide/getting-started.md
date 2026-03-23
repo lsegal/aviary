@@ -9,7 +9,21 @@ This guide walks you through installing Aviary, starting the server, and creatin
 
 ## Install
 
-**macOS / Linux (Homebrew)**
+**macOS / Linux**
+
+```bash
+curl -fsSL https://aviary.bot/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+iwr https://aviary.bot/install.ps1 | iex
+```
+
+Both scripts download the latest release binary to `~/.config/aviary/bin/` and add it to your `PATH`.
+
+**Homebrew**
 
 ```bash
 brew install lsegal/tap/aviary
@@ -53,39 +67,61 @@ Copy the token from that file and paste it into the login field.
 
 ## Store a Provider Credential
 
-Before creating an agent you need at least one provider credential. The easiest path is OAuth login for Anthropic (no API key needed):
+Before creating an agent you need at least one provider credential.
 
-1. In the control panel, go to **Settings → Providers**.
-2. Click **Log in with Anthropic**.
-3. Complete the sign-in flow in the browser tab that opens.
-4. Return to the control panel — the Anthropic provider should show as connected.
-
-For a raw API key instead, use the CLI:
+**Option 1 — Interactive wizard (recommended)**
 
 ```bash
-aviary auth set ANTHROPIC_API_KEY sk-ant-...
+aviary configure providers
 ```
 
-Then reference it in `aviary.yaml`:
+Select a provider, then choose between API key entry or OAuth login. The wizard stores the credential and updates `aviary.yaml` automatically.
+
+**Option 2 — Control panel**
+
+1. In the control panel, go to **Settings → Providers**.
+2. Click **Log in with Anthropic** (or the provider of your choice).
+3. Complete the sign-in flow in the browser tab that opens.
+4. Return to the control panel — the provider should show as connected.
+
+**Option 3 — CLI directly**
+
+```bash
+aviary auth set anthropic:default sk-ant-...
+```
+
+Then reference the credential in `aviary.yaml` using the `auth:<provider>:<name>` format:
 
 ```yaml
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
 ```
+
+Credentials stored via OAuth use the name `<provider>:oauth`; those set manually use whatever name you give them (e.g. `anthropic:default`). The `auth:` prefix in the YAML value tells Aviary to look up the credential by name rather than treating the string as a literal key.
 
 ## Create Your First Agent
 
+**Option 1 — Interactive wizard**
+
+```bash
+aviary configure agents
+```
+
+Choose **Add agent**, enter a name and model, and save. The wizard writes the agent to `aviary.yaml` immediately.
+
+**Option 2 — Control panel**
+
 If no agents are configured, the control panel shows a setup wizard on the Overview page. Click **Create Agent**, fill in a name and model, and save.
 
-Or add the agent directly to `aviary.yaml`:
+**Option 3 — Edit `aviary.yaml` directly**
 
 ```yaml
 models:
   providers:
     anthropic:
-      auth: ANTHROPIC_API_KEY
+      auth: auth:anthropic:default
   defaults:
     model: anthropic/claude-sonnet-4-6
 
