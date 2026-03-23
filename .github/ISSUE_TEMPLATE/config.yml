@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://aviary.run/guide/
+    about: Check the guide first — most configuration and setup questions are covered there.
+  - name: Discussions
+    url: https://github.com/lsegal/aviary/discussions
+    about: For questions, ideas, and general conversation that aren't bugs or feature requests.

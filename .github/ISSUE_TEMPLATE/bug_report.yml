@@ -1,0 +1,81 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out the sections below — especially the `aviary doctor` output, which gives us everything we need to reproduce environment-specific issues quickly.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. What did you expect to happen, and what actually happened?
+      placeholder: "When I run `aviary agent run assistant`, it exits immediately with..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that reliably trigger the issue.
+      placeholder: |
+        1. Start the server with `aviary start`
+        2. Run `aviary agent run assistant`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: aviary doctor output
+      description: |
+        Run `aviary doctor` and paste the full output here. This captures your version, OS, config paths, configured agents, and server memory — all at once.
+      render: text
+      placeholder: |
+        System information
+        ──────────────────
+          Aviary version : v1.2.3
+          Go version     : go1.24.0
+          OS/Arch        : darwin/arm64
+          ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: |
+        Paste any relevant log lines. Run `aviary logs` to tail the server log.
+        Wrap in triple backticks for formatting.
+      render: text
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config snippet (aviary.yaml)
+      description: |
+        If the issue is config-related, paste the relevant section of your `aviary.yaml` here. Remove or redact any credentials or tokens.
+      render: yaml
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: How did you install Aviary?
+      options:
+        - Binary release (GitHub releases)
+        - Built from source
+        - Homebrew
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant — screenshots, related issues, workarounds you tried, etc.

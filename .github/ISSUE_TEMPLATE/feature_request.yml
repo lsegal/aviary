@@ -1,0 +1,46 @@
+name: Feature Request
+description: Suggest an improvement or new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for Aviary? Describe what you want and why it matters.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or limitation driving this request. A concrete scenario is more helpful than an abstract description.
+      placeholder: "I'm running a scheduled task that polls an API every minute, but there's no way to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Aviary to do? How would you interact with it?
+      placeholder: "A `retry_on_fail` field in the task config that re-queues the job after..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you've tried, or other approaches that could address the same need.
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: aviary doctor output (optional)
+      description: |
+        If your request is tied to a specific environment (OS, version, channel setup), paste `aviary doctor` output here.
+      render: text
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, links to related issues, or anything else that helps illustrate the request.
