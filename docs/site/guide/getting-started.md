@@ -23,12 +23,6 @@ iwr https://aviary.bot/install.ps1 | iex
 
 Both scripts download the latest release binary to `~/.config/aviary/bin/` and add it to your `PATH`.
 
-**Homebrew**
-
-```bash
-brew install lsegal/tap/aviary
-```
-
 **Go install**
 
 ```bash

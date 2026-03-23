@@ -19,17 +19,29 @@ Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal,
 
 ### Install
 
-macOS / Linux:
+**macOS / Linux**
 
 ```shell
-curl -fsSL https://avia.ry/install.sh | sh
+curl -fsSL https://aviary.bot/install.sh | sh
 ```
 
-Windows:
+**Windows (PowerShell)**
 
 ```powershell
-iwr -useb https://avia.ry/install.ps1 | iex
+iwr https://aviary.bot/install.ps1 | iex
 ```
+
+Both scripts download the latest release binary to `~/.config/aviary/bin/` and add it to your `PATH`.
+
+**Go install**
+
+```shell
+go install github.com/lsegal/aviary/cmd/aviary@latest
+```
+
+**Binary release**
+
+Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
 
 ### First Run
 
