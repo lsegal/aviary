@@ -19,6 +19,15 @@ export interface Job {
 	updated_at: string;
 }
 
+export interface SessionMessage {
+	id?: string;
+	role?: "assistant" | "user" | "tool" | string;
+	timestamp?: string;
+	content?: string | null;
+	media_url?: string | null;
+	[key: string]: unknown;
+}
+
 export interface TaskCompileStep {
 	kind: string;
 	deterministic: boolean;
@@ -183,14 +192,14 @@ export const useJobsStore = defineStore("jobs", () => {
 		}
 	}
 
-	async function fetchSessionMessages(agentID: string, sessionID: string) {
+	async function fetchSessionMessages(agentID: string, sessionID: string): Promise<SessionMessage[]> {
 		try {
 			const raw = await callTool("session_messages", {
 				agent: agentID,
 				session_id: sessionID,
 				order: "asc",
 			});
-			return (JSON.parse(raw) as object[]) ?? [];
+			return (JSON.parse(raw) as SessionMessage[]) ?? [];
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 			return [];
@@ -246,8 +255,8 @@ export const useJobsStore = defineStore("jobs", () => {
 	const byDay = computed(() => {
 		const m = new Map<
 			string,
-			{ completed: number; failed: number; running: number }
-		>();
+			{ completed: number; failed: number; running: number }>
+		();
 		for (const j of jobs.value) {
 			const d = j.created_at.slice(0, 10);
 			const v = m.get(d) ?? { completed: 0, failed: 0, running: 0 };
@@ -280,8 +289,8 @@ export const useJobsStore = defineStore("jobs", () => {
 	const byAgent = computed(() => {
 		const m = new Map<
 			string,
-			{ completed: number; failed: number; total: number }
-		>();
+			{ completed: number; failed: number; total: number }>
+		();
 		for (const j of jobs.value) {
 			const v = m.get(j.agent_id) ?? { completed: 0, failed: 0, total: 0 };
 			v.total++;

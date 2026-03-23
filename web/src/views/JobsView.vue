@@ -177,7 +177,7 @@
                     <td class="px-4 py-2.5 uppercase text-[10px] font-semibold text-gray-500 dark:text-gray-400">
                       {{ task.trigger_type }}
                     </td>
-                    <td class="px-4 py-2.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                    <td class="px-4 py-2.5 font-mono text-[11px] text-gray-500">
                       {{ taskTrigger(task) }}
                     </td>
                     <td class="px-4 py-2.5 uppercase text-[10px] font-semibold text-gray-500 dark:text-gray-400">
@@ -306,8 +306,7 @@
                         v-if="job.status === 'pending'"
                         class="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                         :disabled="runningJobID === job.id"
-                        @click.stop="runQueuedJobNow(job.id)"
-                      >
+                        @click.stop="runQueuedJobNow(job.id)">
                         {{ runningJobID === job.id ? "Running…" : "Run Now" }}
                       </button>
                     </td>
@@ -586,7 +585,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import { useLogs } from "../composables/useLogs";
-import type { Job, ScheduledTask, TaskCompile } from "../stores/jobs";
+import type { Job, ScheduledTask, TaskCompile, SessionMessage } from "../stores/jobs";
 import { useJobsStore } from "../stores/jobs";
 
 const store = useJobsStore();
@@ -598,7 +597,7 @@ const selectedJob = ref<Job | null>(null);
 const selectedCompile = ref<TaskCompile | null>(null);
 const jobOutput = ref<string>("");
 const logsLoading = ref(false);
-const sessionMessages = ref<object[] | null>(null);
+const sessionMessages = ref<SessionMessage[] | null>(null);
 const sessionMessagesLoading = ref(false);
 const expanded = ref<Record<string, boolean>>({});
 

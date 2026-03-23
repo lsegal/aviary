@@ -15,6 +15,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -26,6 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -37,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -51,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -72,6 +84,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -94,6 +109,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
@@ -107,7 +125,7 @@ jobs:
           export XDG_CONFIG_HOME="$RUNNER_TEMP/xdg"
           export AVIARY_API_BASE="http://127.0.0.1:8765"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
-          node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-api" --port 8765 >/tmp/aviary-installer-http.log 2>&1 &
+          node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-api" --port 8765 > /tmp/aviary-installer-http.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           sleep 1
@@ -120,6 +138,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
