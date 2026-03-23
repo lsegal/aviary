@@ -65,7 +65,46 @@ $archivePath = Join-Path $tempRoot $assetName
 try {
 	Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
 	tar -xzf $archivePath -C $tempRoot
+	# Attempt a HEAD to show useful diagnostics when things go wrong
+	try {
+		$headResp = Invoke-WebRequest -Method Head -Uri $assetUrl -Headers $headers -ErrorAction SilentlyContinue
+		if ($headResp -and $headResp.Headers) {
+			Write-Host "Asset headers: Content-Type=$($headResp.Headers['Content-Type']) Content-Length=$($headResp.Headers['Content-Length'])"
+		}
+	} catch {}
+
 	$binarySource = Join-Path $tempRoot "aviary.exe"
+	if (-not (Test-Path $binarySource)) {
+		$found = Get-ChildItem -Path $tempRoot -Filter "aviary*" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+		if ($found) { $binarySource = $found.FullName }
+	}
+
+	if (-not (Test-Path $binarySource)) {
+		Write-Host "Expected binary not found in archive. Listing extracted files:"
+		Get-ChildItem -Path $tempRoot -Recurse | ForEach-Object { Write-Host $_.FullName }
+		throw "Binary not found in extracted archive."
+	}
+
+	# Validate Windows PE header (MZ) so we fail fast with diagnostics if a wrong artifact was downloaded
+	try {
+		$fs = [System.IO.File]::OpenRead($binarySource)
+		$first2 = New-Object byte[] 2
+		$fs.Read($first2,0,2) | Out-Null
+		$fs.Close()
+		if ($first2[0] -ne 0x4D -or $first2[1] -ne 0x5A) {
+			$size = (Get-Item $binarySource).Length
+			$bytes = [System.IO.File]::ReadAllBytes($binarySource)
+			$previewLen = [Math]::Min(64, $bytes.Length)
+			$hex = ($bytes[0..($previewLen-1)] | ForEach-Object { $_.ToString("x2") }) -join " "
+			Write-Host "Downloaded binary is not a Windows PE file (missing 'MZ' header)."
+			Write-Host "Asset URL: $assetUrl"
+			Write-Host "Downloaded file: $binarySource (size: $size bytes)"
+			Write-Host "First $previewLen bytes: $hex"
+			throw "Downloaded binary not Windows PE"
+		}
+	} catch {
+		throw
+	}
 	$binaryDest = Join-Path $binDir "aviary.exe"
 	Copy-Item -Path $binarySource -Destination $binaryDest -Force
 
