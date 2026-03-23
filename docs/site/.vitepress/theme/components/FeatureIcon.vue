@@ -5,12 +5,13 @@ import {
 	ChatBubbleLeftRightIcon,
 	CommandLineIcon,
 	ClockIcon,
+	GlobeAltIcon,
 	WrenchScrewdriverIcon,
 } from "@heroicons/vue/24/outline";
 import { computed } from "vue";
 
 const props = defineProps<{
-	name: "chat" | "clock" | "chart" | "tools" | "controls" | "cli";
+	name: "chat" | "clock" | "chart" | "tools" | "controls" | "cli" | "browser";
 }>();
 
 const icon = computed(() => {
@@ -27,6 +28,8 @@ const icon = computed(() => {
 			return AdjustmentsHorizontalIcon;
 		case "cli":
 			return CommandLineIcon;
+		case "browser":
+			return GlobeAltIcon;
 	}
 });
 </script>

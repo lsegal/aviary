@@ -276,9 +276,7 @@ a.detail-card:focus-visible {
 	content: "";
 	position: absolute;
 	inset: 0;
-	background:
-		radial-gradient(circle at top right, rgba(212, 96, 37, 0.14), transparent 34%),
-		linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 60%);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 55%);
 	pointer-events: none;
 }
 
@@ -286,7 +284,7 @@ a.detail-card:focus-visible {
 	content: "";
 	position: absolute;
 	inset: 0;
-	opacity: 0.6;
+	opacity: 0.4;
 	pointer-events: none;
 }
 
@@ -310,17 +308,17 @@ a.detail-card:focus-visible {
 	height: 2.8rem;
 	margin-bottom: 0.9rem;
 	border-radius: 0.95rem;
-	background: linear-gradient(180deg, rgba(230, 161, 94, 0.4), rgba(206, 124, 48, 0.18));
+	background: linear-gradient(180deg, rgba(230, 161, 94, 0.3), rgba(206, 124, 48, 0.12));
 	box-shadow:
-		0 10px 24px rgba(185, 93, 36, 0.12),
-		inset 0 1px 0 rgba(255, 255, 255, 0.28);
+		0 10px 24px rgba(185, 93, 36, 0.08),
+		inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .dark .panel-icon {
-	background: linear-gradient(180deg, rgba(255, 209, 158, 0.24), rgba(214, 132, 60, 0.32));
+	background: linear-gradient(180deg, rgba(255, 209, 158, 0.16), rgba(214, 132, 60, 0.22));
 	box-shadow:
-		0 12px 26px rgba(0, 0, 0, 0.24),
-		inset 0 1px 0 rgba(255, 244, 232, 0.2);
+		0 12px 26px rgba(0, 0, 0, 0.2),
+		inset 0 1px 0 rgba(255, 244, 232, 0.14);
 }
 
 .panel-icon svg {
@@ -338,44 +336,44 @@ a.detail-card:focus-visible {
 .detail-card:hover {
 	transform: translateY(-2px);
 	box-shadow:
-		0 26px 48px rgba(93, 53, 31, 0.1),
-		inset 0 1px 0 rgba(255, 255, 255, 0.52);
-	border-color: rgba(184, 58, 29, 0.18);
+		0 26px 48px rgba(93, 53, 31, 0.08),
+		inset 0 1px 0 rgba(255, 255, 255, 0.45);
+	border-color: rgba(184, 58, 29, 0.15);
 }
 
 .dark .panel-card:hover,
 .dark .detail-card:hover {
-	border-color: rgba(225, 113, 68, 0.28);
+	border-color: rgba(225, 113, 68, 0.2);
 	box-shadow:
-		0 30px 48px rgba(0, 0, 0, 0.34),
-		inset 0 1px 0 rgba(255, 244, 232, 0.08);
+		0 30px 48px rgba(0, 0, 0, 0.28),
+		inset 0 1px 0 rgba(255, 244, 232, 0.06);
 }
 
 .panel-card.accent-chat::after {
 	background:
-		radial-gradient(circle at 88% 18%, rgba(224, 82, 45, 0.12), transparent 22%);
+		radial-gradient(circle at 88% 18%, rgba(224, 82, 45, 0.07), transparent 26%);
 }
 
 .panel-card.accent-ops::after {
 	background:
-		radial-gradient(circle at 86% 20%, rgba(176, 88, 36, 0.12), transparent 24%);
+		radial-gradient(circle at 86% 20%, rgba(176, 88, 36, 0.07), transparent 28%);
 }
 
 .panel-card.accent-flow::after {
 	background:
-		radial-gradient(circle at 86% 18%, rgba(144, 88, 40, 0.12), transparent 24%);
+		radial-gradient(circle at 86% 18%, rgba(144, 88, 40, 0.07), transparent 28%);
 }
 
 .panel-card.accent-catalog::after {
 	background:
-		radial-gradient(circle at 86% 18%, rgba(184, 121, 34, 0.12), transparent 24%);
+		radial-gradient(circle at 86% 18%, rgba(184, 121, 34, 0.07), transparent 28%);
 }
 
 .panel-card.accent-message::after {
 	background:
-		radial-gradient(circle at 84% 18%, rgba(248, 230, 140, 0.1), transparent 12%),
-		radial-gradient(circle at 90% 30%, rgba(88, 172, 111, 0.1), transparent 12%),
-		radial-gradient(circle at 78% 28%, rgba(88, 101, 242, 0.1), transparent 14%);
+		radial-gradient(circle at 84% 18%, rgba(248, 230, 140, 0.06), transparent 16%),
+		radial-gradient(circle at 90% 30%, rgba(88, 172, 111, 0.06), transparent 16%),
+		radial-gradient(circle at 78% 28%, rgba(88, 101, 242, 0.06), transparent 18%);
 }
 
 .messaging-card .messaging-logos {

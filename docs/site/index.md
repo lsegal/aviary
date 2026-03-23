@@ -22,7 +22,7 @@ features:
   - title: Run Tasks Without Burning Tokens
     details: Repeat the same task every hour? Aviary can compile it into a lightweight script that runs directly — no AI call, no API cost, every time.
   - title: One Small Binary
-    details: A single ~32 MB file to download and run. No Node, no Python, no Docker. Just start it and go.
+    details: Written in Go. As little as 6 MB memory at runtime. No Node, no Python, no Docker. Just start it and... Go.
 ---
 
 Aviary is a full AI assistant platform. It goes beyond a chat window — it connects your AI models to the apps you already use, keeps conversations going over time, runs tasks on a schedule, and gives you a web dashboard plus a CLI to keep it all under control.
@@ -41,9 +41,9 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
       <div class="comparison-row">
         <span class="comparison-label">Aviary *</span>
         <div class="comparison-bar-wrap">
-          <div class="comparison-bar comparison-bar-aviary" style="width: 3.2%"></div>
+          <div class="comparison-bar comparison-bar-aviary" style="width: 12.5%"></div>
         </div>
-        <span class="comparison-bar-value">32 MB</span>
+        <span class="comparison-bar-value">128 MB</span>
       </div>
       <div class="comparison-row">
         <span class="comparison-label">OpenClaw</span>
@@ -67,11 +67,13 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
       </div>
       <div class="comparison-row">
         <span class="comparison-label">Compiled script</span>
-        <div class="comparison-bar-wrap"></div>
-        <span class="comparison-zero-label">0 tokens</span>
+        <div class="comparison-bar-wrap">
+          <div class="comparison-bar comparison-bar-aviary" style="width: 2%"></div>
+        </div>
+        <span class="comparison-zero-label">~100 tokens</span>
       </div>
     </div>
-    <p class="comparison-footnote">Measured from real Aviary usage data. Simple tasks (URL checks, API polls) average ~5,000 tokens/run. Research tasks run higher. Compiled scripts: always 0.</p>
+    <p class="comparison-footnote">Measured from real Aviary usage data. Simple tasks (URL checks, API polls) average ~5,000 tokens/run. Research tasks run higher. Average of 100 is based on minimal overhead from non-deterministic operations in compiled scripts.</p>
   </div>
 </div>
 </section>
