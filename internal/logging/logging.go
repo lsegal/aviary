@@ -9,15 +9,19 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/lsegal/aviary/internal/store"
 )
 
 var (
-	once    sync.Once
-	initErr error
-	logFile *os.File
-	mu      sync.Mutex
+	once       sync.Once
+	initErr    error
+	rotLogger  *lumberjack.Logger
+	mu         sync.Mutex
+	stopRotate chan struct{}
 )
 
 // LogDir returns Aviary's log directory.
@@ -40,18 +44,44 @@ func Init() error {
 			return
 		}
 
+		// Ensure the file exists immediately (lumberjack creates it lazily).
 		f, err := os.OpenFile(LogFilePath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
 			initErr = err
 			return
 		}
+		_ = f.Close()
 
-		logFile = f
+		rotLogger = &lumberjack.Logger{
+			Filename: LogFilePath(),
+			MaxSize:  50, // megabytes
+			Compress: true,
+		}
+
+		stop := make(chan struct{})
+		stopRotate = stop
+		go dailyRotate(rotLogger, stop)
 
 		configureLocked(false)
 	})
 
 	return initErr
+}
+
+// dailyRotate forces a log rotation at midnight each day.
+func dailyRotate(l *lumberjack.Logger, stop <-chan struct{}) {
+	for {
+		now := time.Now()
+		next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+		timer := time.NewTimer(time.Until(next))
+		select {
+		case <-stop:
+			timer.Stop()
+			return
+		case <-timer.C:
+			_ = l.Rotate()
+		}
+	}
 }
 
 // EnableConsole mirrors slog + stdlib logs to stderr in addition to the log
@@ -69,9 +99,14 @@ func Shutdown() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if logFile != nil {
-		_ = logFile.Close()
-		logFile = nil
+	if stopRotate != nil {
+		close(stopRotate)
+		stopRotate = nil
+	}
+
+	if rotLogger != nil {
+		_ = rotLogger.Close()
+		rotLogger = nil
 	}
 
 	stdlog.SetOutput(os.Stderr)
@@ -83,17 +118,17 @@ func Shutdown() {
 }
 
 func configureLocked(console bool) {
-	if logFile == nil {
+	if rotLogger == nil {
 		return
 	}
 
-	fileHandler := slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelDebug})
+	fileHandler := slog.NewJSONHandler(rotLogger, &slog.HandlerOptions{Level: slog.LevelDebug})
 	handler := slog.Handler(fileHandler)
-	output := io.Writer(logFile)
+	output := io.Writer(rotLogger)
 	if console {
 		stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
 		handler = &teeHandler{a: stderrHandler, b: fileHandler}
-		output = io.MultiWriter(os.Stderr, logFile)
+		output = io.MultiWriter(os.Stderr, rotLogger)
 	}
 
 	slog.SetDefault(slog.New(handler))
