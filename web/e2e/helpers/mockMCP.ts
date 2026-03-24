@@ -1,5 +1,24 @@
 import type { Page } from "@playwright/test";
 
+/** Common argument shapes for MCP tool handlers used in tests. */
+export interface AgentFileArgs {
+	file?: string;
+	content?: string;
+}
+
+export interface ConfigSaveArgs {
+	config?: string;
+}
+
+export interface TaskRunArgs {
+	name: string;
+	force?: boolean | string;
+}
+
+export type ToolHandler<P = Record<string, unknown>, R = unknown> = (
+	args?: P,
+) => R | Promise<R>;
+
 /** Fixture data keyed by MCP tool name. */
 export interface ToolFixtures {
 	agent_list?: object[];
@@ -7,10 +26,19 @@ export interface ToolFixtures {
 	config_validate?: object[];
 	session_list?: object[];
 	server_status?: object;
-	task_run?: object | null;
+	task_run?: ToolHandler<TaskRunArgs> | object | null;
 	tool_list?: object[];
+
+	agent_file_list?: ToolHandler<void, string[]> | string[];
+	agent_file_read?: ToolHandler<AgentFileArgs> | string;
+	agent_file_write?: ToolHandler<AgentFileArgs> | string;
+	agent_file_delete?: ToolHandler<AgentFileArgs> | string;
+
+	config_save?: ToolHandler<ConfigSaveArgs> | object;
+
 	[key: string]:
 		| unknown
+		| ToolHandler<Record<string, unknown>, unknown>
 		| ((args?: Record<string, unknown>) => unknown | Promise<unknown>);
 }
 
