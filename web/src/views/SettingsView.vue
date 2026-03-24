@@ -524,6 +524,13 @@
 											<option value="signal">signal</option>
 										</select>
 									</div>
+									<div>
+										<label class="field-label">Primary User ID (optional)</label>
+										<input v-model="ch.primary" type="text" class="field-input" placeholder="e.g. +15551234567 or user ID" />
+										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+											Messages from this ID will be marked as the primary user in history/context.
+										</p>
+									</div>
 								</div>
 
 								<div class="grid gap-3 lg:grid-cols-2">
