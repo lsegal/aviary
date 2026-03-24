@@ -9,7 +9,7 @@ Each agent has a workspace directory (`~/.config/aviary/agents/<name>/`) that pe
 - **`MEMORY.md`** — long-term curated notes; agents update this file to persist facts across sessions.
 - **`memory/YYYY-MM-DD.md`** — daily session logs written by the agent as work progresses.
 
-Agents read and write these files with `file_read`, `file_write`, and `note_write`.
+Agents read and write these files with `agent_file_read`, `agent_file_write`, and `file_read`/`file_write` (when filesystem permissions are configured).
 
 ## Memory Pooling
 
