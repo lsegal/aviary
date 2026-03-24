@@ -59,7 +59,7 @@ test.beforeEach(async ({ page }) => {
 			},
 			{ name: "config_get", description: "Read the active configuration." },
 		],
-		task_run: async (args) => {
+		task_run: async (args: any) => {
 			await new Promise((resolve) => setTimeout(resolve, 150));
 			return {
 				ok: true,
@@ -177,7 +177,7 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
-		config_save: (args) => {
+		config_save: (args: any) => {
 			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
 				string,
 				unknown

@@ -77,12 +77,12 @@ test.beforeEach(async ({ page }) => {
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
 		agent_file_list: () => Array.from(agentFiles.keys()).sort(),
-		agent_file_read: (args) => agentFiles.get(String(args?.file ?? "")) ?? "",
-		agent_file_write: (args) => {
+		agent_file_read: (args: any) => agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_write: (args: any) => {
 			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
 			return "ok";
 		},
-		agent_file_delete: (args) => {
+		agent_file_delete: (args: any) => {
 			agentFiles.delete(String(args?.file ?? ""));
 			return "ok";
 		},
@@ -348,7 +348,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 	]);
 	await mockMCP(page, {
 		config_get: CONFIG,
-		config_save: (args) => {
+		config_save: (args: any) => {
 			savedConfig = JSON.parse(String(args?.config ?? "{}"));
 			return "ok";
 		},
@@ -370,12 +370,12 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
 		agent_file_list: () => Array.from(agentFiles.keys()).sort(),
-		agent_file_read: (args) => agentFiles.get(String(args?.file ?? "")) ?? "",
-		agent_file_write: (args) => {
+		agent_file_read: (args: any) => agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_write: (args: any) => {
 			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
 			return "ok";
 		},
-		agent_file_delete: (args) => {
+		agent_file_delete: (args: any) => {
 			agentFiles.delete(String(args?.file ?? ""));
 			return "ok";
 		},
@@ -503,7 +503,7 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 		],
 		agent_file_list: () =>
 			synced ? Array.from(syncedFiles.keys()).sort() : [],
-		agent_file_read: (args) => syncedFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_read: (args: any) => syncedFiles.get(String(args?.file ?? "")) ?? "",
 		agent_template_sync: () => {
 			synced = true;
 			return "ok";
