@@ -128,7 +128,7 @@ func launchChrome(m *Manager) error {
 		"--no-first-run",
 		"--no-default-browser-check",
 	}
-	if m.headless || testing.Testing() {
+	if m.headless || testing.Testing() || (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "") {
 		args = append(args, "--headless", "--disable-gpu")
 	}
 
