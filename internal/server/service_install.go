@@ -223,15 +223,15 @@ func installLaunchd(opts ServiceOptions) error {
 	b.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	b.WriteString("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n")
 	b.WriteString("<plist version=\"1.0\">\n<dict>\n")
-	b.WriteString(fmt.Sprintf("  <key>Label</key>\n  <string>%s</string>\n", plistName))
+	fmt.Fprintf(&b, "  <key>Label</key>\n  <string>%s</string>\n", plistName)
 	b.WriteString("  <key>KeepAlive</key>\n  <true/>\n")
 	b.WriteString("  <key>RunAtLoad</key>\n  <true/>\n")
 	b.WriteString("  <key>WorkingDirectory</key>\n")
-	b.WriteString(fmt.Sprintf("  <string>%s</string>\n", escapeXML(opts.WorkingDir)))
+	fmt.Fprintf(&b, "  <string>%s</string>\n", escapeXML(opts.WorkingDir))
 	b.WriteString("  <key>ProgramArguments</key>\n  <array>\n")
-	b.WriteString(fmt.Sprintf("    <string>%s</string>\n", escapeXML(opts.Exec)))
+	fmt.Fprintf(&b, "    <string>%s</string>\n", escapeXML(opts.Exec))
 	for _, a := range opts.Args {
-		b.WriteString(fmt.Sprintf("    <string>%s</string>\n", escapeXML(a)))
+		fmt.Fprintf(&b, "    <string>%s</string>\n", escapeXML(a))
 	}
 	b.WriteString("  </array>\n</dict>\n</plist>\n")
 

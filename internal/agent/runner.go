@@ -1,6 +1,4 @@
-
 package agent
-
 
 import (
 	"context"
@@ -1217,31 +1215,31 @@ func markUsageFailure(rec *domain.UsageRecord, err error) {
 }
 
 func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
-       var sb strings.Builder
-       toolNames := make(map[string]struct{}, len(tools))
-       for _, t := range tools {
-	       toolNames[t.Name] = struct{}{}
-       }
-       // Add Aviary version header
-       sb.WriteString("You are using Aviary AI assistant software (https://aviary.bot) version ")
-       sb.WriteString(buildinfo.Version)
-       sb.WriteString("\n\n")
-       sb.WriteString("You are an autonomous local assistant with tool access in this runtime.\n")
-       if agentName != "" {
-	       fmt.Fprintf(&sb, "Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName)
-       }
-       sb.WriteString("Execute tools when the user asks to change state; do not claim lack of access unless a tool call actually fails.\n")
-       sb.WriteString("Plain-text replies are already delivered to the current conversation — do not say you cannot send, post, or message it.\n")
-       sb.WriteString("Act immediately: do not ask for permission or confirmation, do not promise an action without taking it, and do not produce plans, summaries, or audits when the user asked for implementation. Do the work now.\n")
-       sb.WriteString("When asked to schedule a task or reminder, call task_schedule with your agent name and the user's request (minimal normalization). Put the body in \"content\"; type defaults to \"prompt\" (use \"script\" only for Aviary Lua). Use \"in\" for one-time and \"schedule\" for recurring; never use \"cron\". Do not ask for shell scripts or where output appears — output goes to job logs.\n")
-       sb.WriteString("When the user asks to write something down, preserve information, or remember something, use note_write to create/update notes/<descriptive_file>.md.\n")
-       sb.WriteString("When the user gives feedback mid-conversation, address the feedback and answer any prior unanswered question in the same response.\n")
-       if _, ok := toolNames["session_history"]; ok {
-	       sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_history before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
-       } else if _, ok := toolNames["session_messages"]; ok {
-	       sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_messages before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
-       }
-       return sb.String()
+	var sb strings.Builder
+	toolNames := make(map[string]struct{}, len(tools))
+	for _, t := range tools {
+		toolNames[t.Name] = struct{}{}
+	}
+	// Add Aviary version header
+	sb.WriteString("You are using Aviary AI assistant software (https://aviary.bot) version ")
+	sb.WriteString(buildinfo.Version)
+	sb.WriteString("\n\n")
+	sb.WriteString("You are an autonomous local assistant with tool access in this runtime.\n")
+	if agentName != "" {
+		fmt.Fprintf(&sb, "Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName)
+	}
+	sb.WriteString("Execute tools when the user asks to change state; do not claim lack of access unless a tool call actually fails.\n")
+	sb.WriteString("Plain-text replies are already delivered to the current conversation — do not say you cannot send, post, or message it.\n")
+	sb.WriteString("Act immediately: do not ask for permission or confirmation, do not promise an action without taking it, and do not produce plans, summaries, or audits when the user asked for implementation. Do the work now.\n")
+	sb.WriteString("When asked to schedule a task or reminder, call task_schedule with your agent name and the user's request (minimal normalization). Put the body in \"content\"; type defaults to \"prompt\" (use \"script\" only for Aviary Lua). Use \"in\" for one-time and \"schedule\" for recurring; never use \"cron\". Do not ask for shell scripts or where output appears — output goes to job logs.\n")
+	sb.WriteString("When the user asks to write something down, preserve information, or remember something, use note_write to create/update notes/<descriptive_file>.md.\n")
+	sb.WriteString("When the user gives feedback mid-conversation, address the feedback and answer any prior unanswered question in the same response.\n")
+	if _, ok := toolNames["session_history"]; ok {
+		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_history before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
+	} else if _, ok := toolNames["session_messages"]; ok {
+		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_messages before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
+	}
+	return sb.String()
 }
 
 func selectRelevantNoteLines(notes, query string, maxTokens int) []string {

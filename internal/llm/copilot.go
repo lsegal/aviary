@@ -141,64 +141,64 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 	if req.System != "" {
 		messages = append(messages, msgPayload{Role: "system", Content: req.System})
 	}
-	       var userMeta string
-	       for i := 0; i < len(req.Messages); i++ {
-		       m := req.Messages[i]
-		       switch m.Role {
-		       case RoleUser:
-			       if m.Result != nil {
-				       messages = append(messages, msgPayload{
-					       Role:       "tool",
-					       Content:    m.Result.Content,
-					       ToolCallID: m.Result.ToolCallID,
-				       })
-				       continue
-			       }
-			       // Extract metadata if present (e.g., from m.Content or a new field)
-			       // For now, assume metadata is not in m.Content, but could be passed via a new field in Message in the future.
-			       // If you want to support metadata, parse it here and set userMeta accordingly.
-			       messages = append(messages, msgPayload{Role: "user", Content: m.Content})
-		       case RoleAssistant:
-			       msg := msgPayload{Role: "assistant", Content: m.Content}
-			       for {
-				       if m.ToolCall != nil {
-					       toolID := strings.TrimSpace(m.ToolCall.ID)
-					       if toolID == "" {
-						       toolID = "call_" + strconv.Itoa(i)
-					       }
-					       msg.ToolCalls = append(msg.ToolCalls, toolCallMsg{
-						       Index: int64(len(msg.ToolCalls)),
-						       ID:    toolID,
-						       Type:  "function",
-						       Function: toolCallFunc{
-							       Name:      m.ToolCall.Name,
-							       Arguments: mustJSONMap(m.ToolCall.Arguments),
-						       },
-					       })
-				       }
-				       if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
-					       break
-				       }
-				       i++
-				       m = req.Messages[i]
-				       if m.Content != "" {
-					       if s, ok := msg.Content.(string); ok {
-						       msg.Content = s + "\n" + m.Content
-					       }
-				       }
-			       }
-			       if len(msg.ToolCalls) > 0 {
-				       msg.Content = nil
-			       }
-			       messages = append(messages, msg)
-		       case RoleSystem:
-			       messages = append(messages, msgPayload{Role: "system", Content: m.Content})
-		       }
-	       }
-	       // If userMeta is set, append a final assistant message with the metadata line
-	       if userMeta != "" {
-		       messages = append(messages, msgPayload{Role: "assistant", Content: userMeta})
-	       }
+	var userMeta string
+	for i := 0; i < len(req.Messages); i++ {
+		m := req.Messages[i]
+		switch m.Role {
+		case RoleUser:
+			if m.Result != nil {
+				messages = append(messages, msgPayload{
+					Role:       "tool",
+					Content:    m.Result.Content,
+					ToolCallID: m.Result.ToolCallID,
+				})
+				continue
+			}
+			// Extract metadata if present (e.g., from m.Content or a new field)
+			// For now, assume metadata is not in m.Content, but could be passed via a new field in Message in the future.
+			// If you want to support metadata, parse it here and set userMeta accordingly.
+			messages = append(messages, msgPayload{Role: "user", Content: m.Content})
+		case RoleAssistant:
+			msg := msgPayload{Role: "assistant", Content: m.Content}
+			for {
+				if m.ToolCall != nil {
+					toolID := strings.TrimSpace(m.ToolCall.ID)
+					if toolID == "" {
+						toolID = "call_" + strconv.Itoa(i)
+					}
+					msg.ToolCalls = append(msg.ToolCalls, toolCallMsg{
+						Index: int64(len(msg.ToolCalls)),
+						ID:    toolID,
+						Type:  "function",
+						Function: toolCallFunc{
+							Name:      m.ToolCall.Name,
+							Arguments: mustJSONMap(m.ToolCall.Arguments),
+						},
+					})
+				}
+				if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
+					break
+				}
+				i++
+				m = req.Messages[i]
+				if m.Content != "" {
+					if s, ok := msg.Content.(string); ok {
+						msg.Content = s + "\n" + m.Content
+					}
+				}
+			}
+			if len(msg.ToolCalls) > 0 {
+				msg.Content = nil
+			}
+			messages = append(messages, msg)
+		case RoleSystem:
+			messages = append(messages, msgPayload{Role: "system", Content: m.Content})
+		}
+	}
+	// If userMeta is set, append a final assistant message with the metadata line
+	if userMeta != "" {
+		messages = append(messages, msgPayload{Role: "assistant", Content: userMeta})
+	}
 
 	payload := map[string]any{
 		"model":    p.model,

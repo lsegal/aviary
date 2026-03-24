@@ -136,7 +136,8 @@ func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, ar
 		return result, nil
 	}
 
-	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		result.ExitCode = exitErr.ExitCode()
 	}
 	return result, err

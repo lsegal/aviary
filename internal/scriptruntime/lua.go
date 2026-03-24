@@ -238,9 +238,9 @@ func luaDateFormat(when time.Time, format string) (string, error) {
 		case 'B':
 			b.WriteString(when.Format("January"))
 		case 'j':
-			b.WriteString(fmt.Sprintf("%03d", when.YearDay()))
+			fmt.Fprintf(&b, "%03d", when.YearDay())
 		case 'w':
-			b.WriteString(fmt.Sprintf("%d", int(when.Weekday())))
+			fmt.Fprintf(&b, "%d", int(when.Weekday()))
 		case 'Z':
 			b.WriteString(when.Format("MST"))
 		case 'c':
