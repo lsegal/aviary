@@ -284,6 +284,14 @@ func (d *sharedDaemon) listen(ctx context.Context, addr string) error {
 			body = append(body, '\n')
 			_, _ = conn.Write(body)
 		}
+		// Fetch the account UUID for each subscriber so that @mention detection
+		// works even when Signal sends mentions with UUID only (no phone number).
+		d.subsMu.RLock()
+		subs := append([]*SignalChannel(nil), d.subs...)
+		d.subsMu.RUnlock()
+		for _, sub := range subs {
+			sub.fetchUUID(ctx)
+		}
 	}()
 
 	go func() {

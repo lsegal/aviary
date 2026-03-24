@@ -236,6 +236,7 @@ func downloadTempImage(ctx context.Context, imageURL string) (string, error) {
 //	      - from: "+15559876543"
 type SignalChannel struct {
 	phone         string // registered Signal account phone number
+	uuid          string // Signal UUID for this account (populated after connect)
 	initAddr      string // configured TCP address; empty → managed daemon mode
 	allowFrom     []config.AllowFromEntry
 	model         string
@@ -779,7 +780,7 @@ func (c *SignalChannel) listen(ctx context.Context, addr string) error {
 
 	slog.Info("signal: connected", "addr", addr, "phone", c.phone)
 
-	// Enable link previews for the account.
+	// Enable link previews for the account and fetch the account UUID.
 	go func() {
 		time.Sleep(500 * time.Millisecond) // wait a beat for the daemon to be ready
 		type configParams struct {
@@ -795,6 +796,7 @@ func (c *SignalChannel) listen(ctx context.Context, addr string) error {
 			body = append(body, '\n')
 			_, _ = conn.Write(body)
 		}
+		c.fetchUUID(ctx)
 	}()
 
 	// Close the connection when context is cancelled or Stop is called.
@@ -961,14 +963,49 @@ func (c *SignalChannel) dispatch(line []byte) {
 	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(dataMessage), isReplyToSelf, dataMessage)
 }
 
+// fetchUUID calls listAccounts on the signal-cli daemon to discover and store
+// the UUID for this account. This is needed to detect @mentions in groups
+// because newer Signal clients send mentions with UUID only (not phone number).
+func (c *SignalChannel) fetchUUID(ctx context.Context) {
+	req := jsonrpcRequest[struct{}]{
+		JSONRPC: "2.0",
+		Method:  "listAccounts",
+		ID:      c.idSeq.Add(1),
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return
+	}
+	var resp jsonrpcResponse
+	if err := c.rpcCallContext(ctx, body, &resp); err != nil {
+		slog.Debug("signal: listAccounts failed", "err", err)
+		return
+	}
+	var accounts []struct {
+		Number string `json:"number"`
+		UUID   string `json:"uuid"`
+	}
+	if err := json.Unmarshal(resp.Result, &accounts); err != nil {
+		slog.Debug("signal: listAccounts parse failed", "err", err)
+		return
+	}
+	for _, a := range accounts {
+		if a.Number == c.phone && a.UUID != "" {
+			c.uuid = a.UUID
+			slog.Info("signal: resolved account UUID", "phone", c.phone, "uuid", c.uuid)
+			return
+		}
+	}
+}
+
 // isMentioned checks the dataMessage.mentions array for the bot's own phone
-// number, which is how signal-cli signals a @mention.
+// number or UUID, which is how signal-cli signals a @mention.
 func (c *SignalChannel) isMentioned(dataMessage *signalDataMessage) bool {
 	if dataMessage == nil || c.phone == "" {
 		return false
 	}
 	for _, m := range dataMessage.Mentions {
-		if m.Number == c.phone {
+		if m.Number == c.phone || (c.uuid != "" && m.UUID == c.uuid) {
 			return true
 		}
 	}
