@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -162,53 +163,71 @@ func trySudoRetry(action string, origErr error) error {
 	return nil
 }
 
-func installSystemd(opts ServiceOptions) error {
-	// Build service unit; include User when provided. Don't override HOME or
-	// other environment variables — running as the specified User will cause
-	// systemd to set HOME appropriately for that account.
-	userLine := ""
-	if opts.User != "" {
-		userLine = fmt.Sprintf("User=%s\n", opts.User)
+func systemdUserDir(username string) (string, error) {
+	if username != "" {
+		u, err := osuser.Lookup(username)
+		if err != nil {
+			return "", fmt.Errorf("looking up user %s: %w", username, err)
+		}
+		return filepath.Join(u.HomeDir, ".config", "systemd", "user"), nil
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting home dir: %w", err)
+	}
+	return filepath.Join(home, ".config", "systemd", "user"), nil
+}
 
+func installSystemd(opts ServiceOptions) error {
 	unit := fmt.Sprintf(`[Unit]
 Description=%s
 After=network.target
 
 [Service]
 Type=simple
-%sWorkingDirectory=%s
+WorkingDirectory=%s
 ExecStart=%s %s
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
-`, opts.Description, userLine, escapeSystemPath(opts.WorkingDir), escapeSystemPath(opts.Exec), strings.Join(escapeArgs(opts.Args), " "))
+WantedBy=graphical.target
+`, opts.Description, escapeSystemPath(opts.WorkingDir), escapeSystemPath(opts.Exec), strings.Join(escapeArgs(opts.Args), " "))
 
-	path := filepath.Join("/etc/systemd/system", opts.Name+".service")
+	unitDir, err := systemdUserDir(opts.User)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		return fmt.Errorf("creating systemd user dir: %w", err)
+	}
+	path := filepath.Join(unitDir, opts.Name+".service")
 	if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
 		return fmt.Errorf("writing unit file: %w", err)
 	}
-	if err := runCmd("systemctl", "daemon-reload"); err != nil {
+	if err := runCmd("systemctl", "--user", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
 	}
-	if err := runCmd("systemctl", "enable", opts.Name); err != nil {
+	if err := runCmd("systemctl", "--user", "enable", opts.Name); err != nil {
 		return fmt.Errorf("systemctl enable: %w", err)
 	}
-	if err := runCmd("systemctl", "start", opts.Name); err != nil {
+	if err := runCmd("systemctl", "--user", "start", opts.Name); err != nil {
 		return fmt.Errorf("systemctl start: %w", err)
 	}
 	return nil
 }
 
 func uninstallSystemd(name string) error {
-	_ = runCmd("systemctl", "stop", name)
-	_ = runCmd("systemctl", "disable", name)
-	path := filepath.Join("/etc/systemd/system", name+".service")
+	_ = runCmd("systemctl", "--user", "stop", name)
+	_ = runCmd("systemctl", "--user", "disable", name)
+	unitDir, err := systemdUserDir("")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(unitDir, name+".service")
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing unit file: %w", err)
 	}
-	if err := runCmd("systemctl", "daemon-reload"); err != nil {
+	if err := runCmd("systemctl", "--user", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
 	}
 	return nil
