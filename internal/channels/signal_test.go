@@ -571,6 +571,33 @@ func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {
 
 }
 
+func TestDispatch_GroupMentionUUIDOnly_RespondToMentions(t *testing.T) {
+	const botPhone = "+12130000000"
+	const botUUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	const groupID = "Z2lkPQ=="
+	allowFrom := []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}
+	ch := NewSignalChannel(botPhone, "", allowFrom, true, true, true, true, "test", nil)
+	ch.uuid = botUUID // simulate UUID resolved via listAccounts
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	// Message that @mentions the bot via UUID only (number field empty) → should be received.
+	withUUIDMention := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"},"mentions":[{"number":"","uuid":"` + botUUID + `","start":0,"length":3}]}}}}`
+	ch.dispatch([]byte(withUUIDMention))
+	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
+	assert.True(t, ok, "UUID-only mention should trigger response")
+
+	// Message that @mentions a different UUID → should be blocked.
+	otherUUID := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":"hey","groupInfo":{"groupId":"` + groupID + `"},"mentions":[{"number":"","uuid":"other-uuid","start":0,"length":3}]}}}}`
+	ch.dispatch([]byte(otherUUID))
+	_, ok = waitMsgTimeout(msgs, 50*time.Millisecond)
+	assert.False(t, ok, "mention of different UUID should be blocked")
+}
+
 func TestDispatch_EditedGroupMention_RespondToMentions(t *testing.T) {
 	const botPhone = "+12130000000"
 	const groupID = "Z2lkPQ=="

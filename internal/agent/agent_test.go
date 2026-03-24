@@ -1690,6 +1690,50 @@ func TestLoadSessionConversation_PrimaryAnnotationApplied(t *testing.T) {
 	}
 }
 
+// Regression test: the triggering message in a Signal group chat must be labeled "group",
+// not "private", even though its Sender.Participant==true.
+func TestLoadSessionConversation_SignalGroupLabeledCorrectly(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_signal_group_label", Name: "signal-group-label"},
+		&config.AgentConfig{Name: "signal-group-label"},
+		&mockProvider{}, nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_signal_group_label", "main")
+	assert.NoError(t, err)
+
+	// Signal group ID (base64, not a phone number).
+	groupID := "0LFvhmak+y3f4dwJfYty819gLi9il1IZU7xctbcWqzE="
+	chCfg := &store.SessionChannelsConfig{
+		SessionID: sess.ID,
+		AgentID:   "agent_signal_group_label",
+		Channels:  []store.SessionChannel{{Type: "signal", ConfiguredID: groupID, ID: groupID}},
+	}
+	assert.NoError(t, store.WriteSessionChannels(chCfg))
+
+	t1 := time.Date(2026, 3, 23, 22, 10, 16, 0, time.UTC)
+	t2 := time.Date(2026, 3, 23, 23, 3, 2, 0, time.UTC)
+
+	// Context-only member (Participant=false) — should be "group".
+	msg1 := domain.Message{ID: "ctx1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("uuid-other", "Other", false), Content: "signal does care about that", Timestamp: t1}
+	// Triggering member (Participant=true) — should ALSO be "group", not "private".
+	msg2 := domain.Message{ID: "trig1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("+12066439160", "+12066439160", true), Content: "is this a private chat?", Timestamp: t2}
+
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_signal_group_label", sess.ID), msg1))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_signal_group_label", sess.ID), msg2))
+
+	conv := runner.loadSessionConversation(sess.ID, 24)
+	if assert.Len(t, conv, 2) {
+		// Context block should label the non-participant as "group".
+		assert.Contains(t, conv[0].Content, "group")
+		assert.NotContains(t, conv[0].Content, "private")
+		// Triggering message must also be labeled "group".
+		assert.Contains(t, conv[1].Content, "(group,")
+		assert.NotContains(t, conv[1].Content, "(private,")
+	}
+}
+
 func TestSessionList(t *testing.T) {
 	setTestDataDir(t)
 	sm := NewSessionManager()
