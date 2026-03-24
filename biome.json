@@ -7,8 +7,8 @@
 			"*.js",
 			"!web/dist",
 			"!docs/**/dist",
-			"!docs/**/dist/**",
-			"!docs/**/.vitepress/cache/**",
+			"!docs/**/dist",
+			"!docs/**/.vitepress/cache",
 			"!web/node_modules",
 			"!node_modules",
 			"!**/*.css"
