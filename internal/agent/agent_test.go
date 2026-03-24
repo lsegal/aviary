@@ -305,6 +305,54 @@ func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
 	assert.Equal(t, 0, toolClientCalls)
 }
 
+func TestLoadSessionConversation_IncludesChannelMetadataAndTimestamp(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{{{Type: llm.EventTypeDone}}}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_hist", Name: "hist", Model: "test/model"},
+		&config.AgentConfig{Name: "hist", Model: "test/model"},
+		provider,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_hist", "main")
+	assert.NoError(t, err)
+
+	// Add a channel sidecar for this session
+	chCfg := &store.SessionChannelsConfig{
+		SessionID: sess.ID,
+		AgentID:   "agent_hist",
+		Channels:  []store.SessionChannel{{Type: "slack", ConfiguredID: "alerts", ID: "C123"}},
+	}
+	assert.NoError(t, store.WriteSessionChannels(chCfg))
+
+	// Create three user messages so prior context and last user message are present.
+	t1 := time.Date(2026, 3, 22, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 3, 22, 11, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 3, 23, 12, 34, 56, 0, time.UTC)
+
+	msg1 := domain.Message{ID: "m1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("alice", "Alice", true), Content: "Hello", Timestamp: t1}
+	msg2 := domain.Message{ID: "m2", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("bob", "Bob", true), Content: "FYI", Timestamp: t2}
+	msg3 := domain.Message{ID: "m3", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("charlie", "Charlie", true), Content: "What's next?", Timestamp: t3}
+
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist", sess.ID), msg1))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist", sess.ID), msg2))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist", sess.ID), msg3))
+
+	// Directly load the conversation to verify injected metadata and formatting.
+	conv := runner.loadSessionConversation(sess.ID, 24)
+	if assert.Len(t, conv, 2) {
+		// Assistant context
+		assert.Contains(t, conv[0].Content, "Conversation context (channel metadata)")
+		assert.Contains(t, conv[0].Content, "Known members:")
+		// Last user message formatting: timestamp and sender name present
+		assert.Contains(t, conv[1].Content, "[2026-03-23 12:34:56]")
+		assert.Contains(t, conv[1].Content, "<Charlie")
+	}
+}
+
 func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) {
 	setTestDataDir(t)
 
@@ -342,7 +390,7 @@ func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) 
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Len(t, provider.requests[0].Messages, 1)
-		assert.Equal(t, "new question", provider.requests[0].Messages[0].Content)
+		assert.Contains(t, provider.requests[0].Messages[0].Content, "new question")
 	}
 }
 
@@ -389,7 +437,7 @@ func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
 		assert.Contains(t, provider.requests[0].Messages[0].Content, "I loaded prior conversation history")
 		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier question")
 		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier answer")
-		assert.Equal(t, "new question", provider.requests[0].Messages[1].Content)
+		assert.Contains(t, provider.requests[0].Messages[1].Content, "new question")
 	}
 }
 
@@ -1552,7 +1600,7 @@ func TestLoadSessionConversation_ReplacesHistoricalMediaWithMarker(t *testing.T)
 	assert.Contains(t, history[0].Content, "read this\n[prior image attached]")
 	assert.Contains(t, history[0].Content, "[prior media attached]")
 	assert.Equal(t, llm.RoleUser, history[1].Role)
-	assert.Equal(t, "follow-up", history[1].Content)
+	assert.Contains(t, history[1].Content, "follow-up")
 }
 
 func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
@@ -1576,11 +1624,70 @@ func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
 	assert.Len(t, history, 2)
 	assert.Equal(t, llm.RoleAssistant, history[0].Role)
 	assert.Contains(t, history[0].Content, "I loaded prior conversation history")
-	assert.Contains(t, history[0].Content, "<Alice (u1)>: opening question")
+	assert.Contains(t, history[0].Content, "Alice (u1)")
+	assert.Contains(t, history[0].Content, "opening question")
 	assert.Contains(t, history[0].Content, "opening answer")
-	assert.Contains(t, history[0].Content, "<Bob (u2) (context only)>: side chatter")
+	assert.Contains(t, history[0].Content, "Bob (u2)")
+	assert.Contains(t, history[0].Content, "side chatter")
+	assert.Contains(t, history[0].Content, "group")
 	assert.Equal(t, llm.RoleUser, history[1].Role)
-	assert.Equal(t, "Alice (u1): actual follow-up", history[1].Content)
+	assert.Contains(t, history[1].Content, "actual follow-up")
+	assert.Contains(t, history[1].Content, "Alice (u1)")
+}
+
+func TestLoadSessionConversation_PrimaryAnnotationApplied(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{{{Type: llm.EventTypeDone}}}}
+
+	// Agent config includes a channel with Primary set to "bob".
+	cfg := &config.AgentConfig{
+		Name:     "hist-primary",
+		Model:    "test/model",
+		Channels: []config.ChannelConfig{{Type: "slack", ID: "alerts", Primary: "bob"}},
+	}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_hist_primary", Name: "hist-primary", Model: "test/model"},
+		cfg,
+		provider,
+		nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_hist_primary", "main")
+	assert.NoError(t, err)
+
+	chCfg := &store.SessionChannelsConfig{
+		SessionID: sess.ID,
+		AgentID:   "agent_hist_primary",
+		Channels:  []store.SessionChannel{{Type: "slack", ConfiguredID: "alerts", ID: "C123"}},
+	}
+	assert.NoError(t, store.WriteSessionChannels(chCfg))
+
+	t1 := time.Date(2026, 3, 22, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 3, 22, 11, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 3, 23, 12, 34, 56, 0, time.UTC)
+
+	msg1 := domain.Message{ID: "m1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("alice", "Alice", true), Content: "Hello", Timestamp: t1}
+	msg2 := domain.Message{ID: "m2", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("bob", "Bob", true), Content: "FYI", Timestamp: t2}
+	msg3 := domain.Message{ID: "m3", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("charlie", "Charlie", true), Content: "What's next?", Timestamp: t3}
+
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist_primary", sess.ID), msg1))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist_primary", sess.ID), msg2))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_hist_primary", sess.ID), msg3))
+
+	conv := runner.loadSessionConversation(sess.ID, 24)
+	if assert.Len(t, conv, 2) {
+		// Assistant context should include the prior messages and mark Bob as primary
+		assert.Contains(t, conv[0].Content, "source=slack:C123")
+		assert.Contains(t, conv[0].Content, "primary")
+		assert.Contains(t, conv[0].Content, "Bob")
+
+		// Last user message should have metadata before the name and include source
+		assert.Contains(t, conv[1].Content, "[2026-03-23 12:34:56]")
+		assert.Contains(t, conv[1].Content, "(private, source=slack:C123)")
+		assert.Contains(t, conv[1].Content, "<Charlie")
+	}
 }
 
 func TestSessionList(t *testing.T) {

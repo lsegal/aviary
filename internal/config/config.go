@@ -188,10 +188,15 @@ func (e *AllowFromEntry) UnmarshalJSON(b []byte) error {
 
 // ChannelConfig describes a communication channel for an agent.
 type ChannelConfig struct {
-	Enabled       *bool            `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
-	Type          string           `yaml:"type"                    json:"type"`
-	Token         string           `yaml:"token,omitempty"         json:"token,omitempty"`
-	ID            string           `yaml:"id,omitempty"            json:"id,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
+	Type    string `yaml:"type"                    json:"type"`
+	Token   string `yaml:"token,omitempty"         json:"token,omitempty"`
+	ID      string `yaml:"id,omitempty"            json:"id,omitempty"`
+	// Primary optionally identifies the configured ID of the "primary" user
+	// for this channel (e.g. a phone number for Signal). When set, messages
+	// originating from this ID will be annotated as coming from the primary
+	// user in historical context displays.
+	Primary       string           `yaml:"primary,omitempty"       json:"primary,omitempty"`
 	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
 	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
 	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
