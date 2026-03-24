@@ -1,8 +1,6 @@
 module github.com/lsegal/aviary
 
-go 1.26
-
-toolchain go1.26.0
+go 1.25.8
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1

@@ -17,7 +17,7 @@ if (!hasGo()) {
 
 const cmds = [
   ['go', 'install', 'github.com/bokwoon95/wgo@latest'],
-  ['go', 'install', 'github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.2']
+  ['go', 'install', 'github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4']
 ];
 
 for (const cmd of cmds) {
