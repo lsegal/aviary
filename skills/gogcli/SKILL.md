@@ -5,6 +5,8 @@ description: Access Google Workspace capabilities through gogcli. Use for Gmail,
 
 Use this skill to perform Google Workspace operations through the local `gog` binary.
 
+Use `--help` to identify commands and flags for each command.
+
 Prefer structured commands over vague requests.
 
 Respect the configured `allowed_commands` list and do not attempt commands outside it.
