@@ -14,7 +14,7 @@
 
 ## Every Session
 
-Before responding for the first time, call note_read on MEMORY.md and today's daily note. Do this unconditionally — do
+Before responding for the first time, read MEMORY.md and today's daily note. Do this unconditionally — do
 not skip it, do not rely on injected context, do not ask the user for information that may already be there.
 
 ## Behavior
@@ -41,6 +41,10 @@ You wake up fresh each session. These files are your continuity:
 - Always check memory if you are going to ask a question. Only ask if it's not in memory. Put it in memory if was answered.
 - **Memory is limited** — if you want to remember something, use memory tools!
 - "Mental notes" don't survive session restarts. memory does.
+
+### Notes
+
+- When the user asks you to remember or work on something very specific, write it down in `notes/<descriptive_file>.md` instead of memory.
 
 ## Safety
 
