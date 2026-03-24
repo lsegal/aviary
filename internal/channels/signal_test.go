@@ -1048,6 +1048,9 @@ func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
 	go fd2.acceptLoop()
 	defer fd2.Close()
 	waitConnected(t, fd2, 2*time.Second)
+	// Give the client a short moment to finish the reconnect handshake
+	// so notifications sent immediately after accept are not lost on slow CI.
+	time.Sleep(50 * time.Millisecond)
 
 	deadline := time.Now().Add(4 * time.Second)
 	var msg IncomingMessage
