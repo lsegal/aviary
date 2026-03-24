@@ -495,6 +495,53 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	}
 }
 
+func TestAgentRunner_NonInteractiveJobPrompt(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_task", Name: "task", Model: "test/model"},
+		&config.AgentConfig{Name: "task", Model: "test/model"},
+		provider,
+		nil,
+	)
+
+	// Create a session whose header declares type=task so the runner treats
+	// it as a non-interactive job run.
+	sess := &domain.Session{
+		ID:        "agent_task-main",
+		AgentID:   "agent_task",
+		Name:      "main",
+		Type:      domain.SessionTypeTask,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_task", sess.ID), sess))
+
+	done := make(chan struct{}, 1)
+	runner.Prompt(WithSessionID(context.Background(), sess.ID), "run job", func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		assert.Contains(t, provider.requests[0].System, "IMPORTANT: This is a non-interactive job run.")
+	}
+}
+
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	t.Helper()
 
