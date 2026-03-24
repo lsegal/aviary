@@ -1,10 +1,14 @@
 {
 	"files": {
 		"includes": [
+			"docs/**",
 			"web/**",
 			"*.ts",
 			"*.js",
 			"!web/dist",
+			"!docs/**/dist",
+			"!docs/**/dist/**",
+			"!docs/**/.vitepress/cache/**",
 			"!web/node_modules",
 			"!node_modules",
 			"!**/*.css"

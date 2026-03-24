@@ -12,7 +12,7 @@ function initReveal() {
 			entries.forEach((e) => {
 				if (e.isIntersecting) {
 					e.target.classList.add("sr-visible");
-					io!.unobserve(e.target);
+					io?.unobserve(e.target);
 				}
 			});
 		},
@@ -22,7 +22,7 @@ function initReveal() {
 	document.querySelectorAll(sel).forEach((el, i) => {
 		el.classList.add("sr");
 		(el as HTMLElement).style.setProperty("--sr-delay", `${(i % 5) * 65}ms`);
-		io!.observe(el);
+		io?.observe(el);
 	});
 }
 

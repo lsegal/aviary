@@ -3,8 +3,8 @@ import {
 	AdjustmentsHorizontalIcon,
 	ChartBarSquareIcon,
 	ChatBubbleLeftRightIcon,
-	CommandLineIcon,
 	ClockIcon,
+	CommandLineIcon,
 	GlobeAltIcon,
 	WrenchScrewdriverIcon,
 } from "@heroicons/vue/24/outline";

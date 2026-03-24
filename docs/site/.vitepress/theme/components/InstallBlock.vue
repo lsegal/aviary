@@ -17,37 +17,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 const isWindows = computed(() => {
-  if (typeof navigator === "undefined") return false;
-  const uaPlatform = (navigator as any).userAgentData?.platform || navigator.platform || navigator.userAgent || ''
-  return /win/i.test(String(uaPlatform))
+	if (typeof navigator === "undefined") return false;
+	const uaPlatform =
+		(navigator as unknown as { userAgentData?: { platform?: string } })
+			.userAgentData?.platform ||
+		navigator.platform ||
+		navigator.userAgent ||
+		"";
+	return /win/i.test(String(uaPlatform));
 });
 
 const command = computed(() =>
-  isWindows.value
-    ? "iwr https://aviary.bot/install.ps1 | iex"
-    : "curl -fsSL https://aviary.bot/install.sh | sh"
+	isWindows.value
+		? "iwr https://aviary.bot/install.ps1 | iex"
+		: "curl -fsSL https://aviary.bot/install.sh | sh",
 );
 
 const copied = ref(false);
 
 function copy() {
-  navigator.clipboard?.writeText(command.value).then(() => {
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 2000);
-  });
+	navigator.clipboard?.writeText(command.value).then(() => {
+		copied.value = true;
+		setTimeout(() => {
+			copied.value = false;
+		}, 2000);
+	});
 }
 
-const cmdEl = ref<HTMLElement | null>(null)
+const cmdEl = ref<HTMLElement | null>(null);
 
 onMounted(() => {
-  if (cmdEl.value) {
-    // set the client-side install text so typing script sees correct command
-    cmdEl.value.setAttribute('data-install-text', command.value)
-    // ensure the visible text is correct after client-side platform detection
-    cmdEl.value.textContent = command.value
-  }
-})
+	if (cmdEl.value) {
+		// set the client-side install text so typing script sees correct command
+		cmdEl.value.setAttribute("data-install-text", command.value);
+		// ensure the visible text is correct after client-side platform detection
+		cmdEl.value.textContent = command.value;
+	}
+});
 </script>
