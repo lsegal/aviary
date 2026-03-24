@@ -3,7 +3,8 @@ param(
 	[string]$Version = $env:AVIARY_VERSION,
 	[string]$Repo = $(if ($env:AVIARY_REPO) { $env:AVIARY_REPO } else { "lsegal/aviary" }),
 	[string]$ApiBase = $(if ($env:AVIARY_API_BASE) { $env:AVIARY_API_BASE } else { "https://api.github.com" }),
-	[switch]$Yes
+	[switch]$Yes,
+	[switch]$SkipService
 )
 
 $ErrorActionPreference = "Stop"
@@ -145,7 +146,9 @@ try {
 	Write-Host "Version: $Version"
 	Write-Host "PATH updated for this PowerShell session and persisted to the user environment."
 	# Prompt to install the service
-	if ($Yes) {
+	if ($SkipService) {
+		Write-Host "Skipping service installation."
+	} elseif ($Yes) {
 		& $binaryDest service install
 	} else {
 		$ans = Read-Host "Install aviary as a service? [Y/n]"
