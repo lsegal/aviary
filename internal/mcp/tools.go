@@ -127,7 +127,6 @@ func Register(s *sdkmcp.Server) {
 	registerSessionSendTool(s)
 	registerTaskTools(s)
 	registerAgentContextTools(s)
-	registerNoteTools(s)
 	registerFileTools(s)
 	registerExecTools(s)
 	registerSessionTools(s)
@@ -660,63 +659,40 @@ func registerRulesTools(s *sdkmcp.Server) {
 }
 
 type sessionAgentArgs struct {
-	Agent string `json:"agent"`
+	Agent string `json:"agent,omitempty"`
 }
 
 type agentFileReadArgs struct {
-	Agent string `json:"agent"`
+	Agent string `json:"agent,omitempty"`
 	File  string `json:"file"`
 }
 
 type agentFileWriteArgs struct {
-	Agent   string `json:"agent"`
+	Agent   string `json:"agent,omitempty"`
 	File    string `json:"file"`
 	Content string `json:"content"`
 }
 
-type noteWriteArgs struct {
-	File    string `json:"file"`
-	Content string `json:"content"`
-}
-
-func registerNoteTools(s *sdkmcp.Server) {
-	addTool(s, &sdkmcp.Tool{
-		Name:        "note_write",
-		Description: "Write a workspace note to notes/<descriptive_file>.md using markdown content. Arguments: file (string, required) - descriptive filename; content (string, required) - summarized markdown to write.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args noteWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		if strings.TrimSpace(args.File) == "" {
-			return nil, struct{}{}, fmt.Errorf("file is required")
-		}
-		if strings.TrimSpace(args.Content) == "" {
-			return nil, struct{}{}, fmt.Errorf("content is required")
-		}
-
-		var path string
-		if agentID, ok := agent.SessionAgentIDFromContext(ctx); ok && agentID != "" {
-			path = store.AgentNotePath(agentID, args.File)
-		} else {
-			path = store.WorkspaceNotePath(args.File)
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, struct{}{}, fmt.Errorf("creating notes dir: %w", err)
-		}
-
-		content := strings.TrimRight(args.Content, "\r\n") + "\n"
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return nil, struct{}{}, fmt.Errorf("writing note: %w", err)
-		}
-		return text(fmt.Sprintf("note written: %s", path))
-	})
+// resolveAgentID returns the agent ID from session context, falling back to the
+// explicit agent arg for callers without a session (e.g. the web UI).
+func resolveAgentID(ctx context.Context, argAgent string) (string, bool) {
+	if id, ok := agent.SessionAgentIDFromContext(ctx); ok && id != "" {
+		return id, true
+	}
+	if argAgent != "" {
+		return argAgent, true
+	}
+	return "", false
 }
 
 func registerAgentContextTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_list",
-		Description: "List markdown context files available under an agent directory, excluding RULES.md which is already loaded into the prompt preamble.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
+		Description: "List all markdown files under the current agent's data directory, including subdirectories and built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentID, ok := resolveAgentID(ctx, args.Agent)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent_file_list requires an agent session context")
 		}
 		files, err := store.ListAgentMarkdownFiles(agentID)
 		if err != nil {
@@ -727,11 +703,11 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_read",
-		Description: "Read a markdown context file from an agent directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
+		Description: "Read a markdown file from the current agent's data directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentID, ok := resolveAgentID(ctx, args.Agent)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent_file_read requires an agent session context")
 		}
 		content, err := store.ReadAgentMarkdownFile(agentID, args.File)
 		if err != nil {
@@ -741,61 +717,31 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 	})
 
 	addTool(s, &sdkmcp.Tool{
-		Name:        "agent_root_file_list",
-		Description: "List root-level markdown files available under an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
+		Name:        "agent_file_write",
+		Description: "Create or replace a markdown file in the current agent's data directory. Use paths like notes/foo.md for notes or MEMORY.md for memory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted but can be written.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentID, ok := resolveAgentID(ctx, args.Agent)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent_file_write requires an agent session context")
 		}
-		files, err := store.ListAgentRootMarkdownFiles(agentID)
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("listing root agent files: %w", err)
+		if err := store.WriteAgentMarkdownFile(agentID, args.File, args.Content); err != nil {
+			return nil, struct{}{}, fmt.Errorf("writing agent file: %w", err)
 		}
-		return jsonResult(files)
+		return text(fmt.Sprintf("%s written", strings.TrimSpace(args.File)))
 	})
 
 	addTool(s, &sdkmcp.Tool{
-		Name:        "agent_root_file_read",
-		Description: "Read a root-level markdown file from an agent directory, including built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
+		Name:        "agent_file_delete",
+		Description: "Delete a markdown file from the current agent's data directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentID, ok := resolveAgentID(ctx, args.Agent)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent_file_delete requires an agent session context")
 		}
-		content, err := store.ReadAgentRootMarkdownFile(agentID, args.File)
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("reading root agent file: %w", err)
+		if err := store.DeleteAgentMarkdownFile(agentID, args.File); err != nil {
+			return nil, struct{}{}, fmt.Errorf("deleting agent file: %w", err)
 		}
-		return text(content)
-	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "agent_root_file_write",
-		Description: "Create or replace a root-level markdown file in an agent directory.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		if err := store.WriteAgentRootMarkdownFile(agentID, args.File, args.Content); err != nil {
-			return nil, struct{}{}, fmt.Errorf("writing root agent file: %w", err)
-		}
-		return text(fmt.Sprintf("%s written for agent %q", strings.TrimSpace(args.File), agentID))
-	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "agent_root_file_delete",
-		Description: "Delete a root-level markdown file from an agent directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentID, _, err := resolveAgentIdentity(args.Agent)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		if err := store.DeleteAgentRootMarkdownFile(agentID, args.File); err != nil {
-			return nil, struct{}{}, fmt.Errorf("deleting root agent file: %w", err)
-		}
-		return text(fmt.Sprintf("%s deleted for agent %q", strings.TrimSpace(args.File), agentID))
+		return text(fmt.Sprintf("%s deleted", strings.TrimSpace(args.File)))
 	})
 }
 

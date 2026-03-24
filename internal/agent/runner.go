@@ -1225,7 +1225,7 @@ func buildToolSystemPrompt(agentName string, tools []ToolInfo) string {
 	sb.WriteString(buildinfo.Version)
 	sb.WriteString(" with tool access in this runtime.\n\n")
 	if agentName != "" {
-		fmt.Fprintf(&sb, "Your agent name is %q. Use this name as the \"agent\" argument when calling memory tools or task_schedule for yourself.\n", agentName)
+		fmt.Fprintf(&sb, "Your agent name is %q. Use this name as the \"agent\" argument when calling task_schedule for yourself.\n", agentName)
 	}
 	if _, ok := toolNames["session_history"]; ok {
 		sb.WriteString("If context seems incomplete, especially in group chats or resumed sessions, inspect recent session history with session_history before replying. Start with order=\"desc\" and limit=20, then page older messages only if needed.\n")
@@ -1342,7 +1342,7 @@ func (r *AgentRunner) loadRules() string {
 // loadAgentsMD reads AGENTS.md from the agent's data directory, bypassing
 // filesystem permission checks. Returns an empty string if the file does not exist.
 func (r *AgentRunner) loadAgentsMD() string {
-	data, err := store.ReadAgentRootMarkdownFile(r.agent.ID, "AGENTS.md")
+	data, err := store.ReadAgentMarkdownFile(r.agent.ID, "AGENTS.md")
 	if err != nil {
 		return ""
 	}

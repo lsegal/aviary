@@ -27,6 +27,7 @@ class MCPHTTPError extends Error {
 
 interface CallToolOptions {
 	onProgress?: (chunk: string) => void;
+	agentId?: string;
 }
 
 export interface MCPToolInfo {
@@ -89,7 +90,10 @@ export function useMCP() {
 		await new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
-	async function post(body: unknown): Promise<Response> {
+	async function post(
+		body: unknown,
+		extraHeaders?: Record<string, string>,
+	): Promise<Response> {
 		const res = await fetch("/mcp", {
 			method: "POST",
 			headers: {
@@ -97,6 +101,7 @@ export function useMCP() {
 				Accept: "application/json, text/event-stream",
 				...authHeaders(),
 				...sessionHeaders(),
+				...extraHeaders,
 			},
 			body: JSON.stringify(body),
 		});
@@ -260,16 +265,22 @@ export function useMCP() {
 						? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 						: undefined;
 
-			const res = await post({
-				jsonrpc: "2.0",
-				id: Date.now(),
-				method: "tools/call",
-				params: {
-					name,
-					arguments: args ?? {},
-					...(progressToken ? { _meta: { progressToken } } : {}),
+			const agentHeaders = options?.agentId
+				? { "X-Aviary-Agent-ID": options.agentId }
+				: undefined;
+			const res = await post(
+				{
+					jsonrpc: "2.0",
+					id: Date.now(),
+					method: "tools/call",
+					params: {
+						name,
+						arguments: args ?? {},
+						...(progressToken ? { _meta: { progressToken } } : {}),
+					},
 				},
-			});
+				agentHeaders,
+			);
 
 			if (!res.ok) throw httpError("MCP error", res);
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/buildinfo"
 )
 
@@ -31,6 +32,9 @@ func HTTPHandler(s *mcp.Server) http.Handler {
 	}, nil)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if agentID := r.Header.Get("X-Aviary-Agent-ID"); agentID != "" {
+			r = r.WithContext(agent.WithSessionAgentID(r.Context(), agentID))
+		}
 		if r.Method == http.MethodPost && r.Body != nil {
 			body, err := io.ReadAll(r.Body)
 			if err == nil {

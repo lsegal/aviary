@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/lsegal/aviary/internal/testenv"
@@ -100,7 +99,9 @@ func isProtectedAgentRootMarkdownFile(file string) bool {
 	return ok
 }
 
-func normalizeAgentRootMarkdownFile(file string) (string, error) {
+// normalizeAgentMarkdownFile validates and cleans a relative markdown file path,
+// allowing subdirectories. Returns the cleaned path.
+func normalizeAgentMarkdownFile(file string) (string, error) {
 	file = strings.TrimSpace(file)
 	if file == "" {
 		return "", fmt.Errorf("file is required")
@@ -115,85 +116,43 @@ func normalizeAgentRootMarkdownFile(file string) (string, error) {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("file must stay within the agent directory")
 	}
-	if filepath.Base(clean) != clean {
-		return "", fmt.Errorf("file must be in the root of the agent directory")
-	}
 	if !strings.EqualFold(filepath.Ext(clean), ".md") {
 		return "", fmt.Errorf("file must be a markdown file")
 	}
 	return clean, nil
 }
 
-// ListAgentRootMarkdownFiles returns root-level markdown files under an agent
-// directory, including built-in files like AGENTS.md, RULES.md, and MEMORY.md.
-func ListAgentRootMarkdownFiles(agentID string) ([]string, error) {
-	root := AgentDir(agentID)
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.EqualFold(filepath.Ext(name), ".md") {
-			continue
-		}
-		files = append(files, name)
-	}
-	slices.Sort(files)
-	return files, nil
-}
-
-// ReadAgentRootMarkdownFile reads a root-level markdown file from an agent
-// directory without stripping comment lines.
-func ReadAgentRootMarkdownFile(agentID, file string) (string, error) {
-	clean, err := normalizeAgentRootMarkdownFile(file)
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(filepath.Join(AgentDir(agentID), clean))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// WriteAgentRootMarkdownFile creates or replaces a root-level markdown file
-// under an agent directory.
-func WriteAgentRootMarkdownFile(agentID, file, content string) error {
-	clean, err := normalizeAgentRootMarkdownFile(file)
+// WriteAgentMarkdownFile creates or replaces a markdown file under an agent
+// directory. file may be a relative path including subdirectories (e.g. notes/foo.md).
+func WriteAgentMarkdownFile(agentID, file, content string) error {
+	clean, err := normalizeAgentMarkdownFile(file)
 	if err != nil {
 		return err
 	}
-	root := AgentDir(agentID)
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	path := filepath.Join(AgentDir(agentID), clean)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, clean), []byte(content), 0o600)
+	return os.WriteFile(path, []byte(content), 0o600)
 }
 
-// DeleteAgentRootMarkdownFile deletes a root-level markdown file from an agent
-// directory, except for protected built-in files.
-func DeleteAgentRootMarkdownFile(agentID, file string) error {
-	clean, err := normalizeAgentRootMarkdownFile(file)
+// DeleteAgentMarkdownFile deletes a markdown file from an agent directory.
+// Root-level protected files (AGENTS.md, MEMORY.md, RULES.md, SYSTEM.md) cannot be deleted.
+func DeleteAgentMarkdownFile(agentID, file string) error {
+	clean, err := normalizeAgentMarkdownFile(file)
 	if err != nil {
 		return err
 	}
-	if isProtectedAgentRootMarkdownFile(clean) {
+	// Only protect root-level built-ins.
+	if filepath.Base(clean) == clean && isProtectedAgentRootMarkdownFile(clean) {
 		return fmt.Errorf("%s is protected and cannot be deleted", clean)
 	}
 	return os.Remove(filepath.Join(AgentDir(agentID), clean))
 }
 
-// ListAgentMarkdownFiles returns markdown files under an agent directory,
-// excluding RULES.md which is handled as prompt preamble instead of ad hoc
-// context. Returned paths are slash-delimited and relative to the agent dir.
+// ListAgentMarkdownFiles returns all markdown files under an agent directory,
+// recursively including subdirectories. Returned paths are slash-delimited
+// and relative to the agent dir.
 func ListAgentMarkdownFiles(agentID string) ([]string, error) {
 	root := AgentDir(agentID)
 	entries := []string{}
@@ -206,9 +165,6 @@ func ListAgentMarkdownFiles(agentID string) ([]string, error) {
 		}
 		name := d.Name()
 		if !strings.EqualFold(filepath.Ext(name), ".md") {
-			return nil
-		}
-		if strings.EqualFold(name, "RULES.md") {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
@@ -227,8 +183,8 @@ func ListAgentMarkdownFiles(agentID string) ([]string, error) {
 	return entries, nil
 }
 
-// ReadAgentMarkdownFile reads a markdown file from an agent directory, excluding
-// RULES.md. file must be a relative path beneath the agent directory.
+// ReadAgentMarkdownFile reads a markdown file from an agent directory.
+// file must be a relative path beneath the agent directory.
 func ReadAgentMarkdownFile(agentID, file string) (string, error) {
 	file = strings.TrimSpace(file)
 	if file == "" {
@@ -236,9 +192,6 @@ func ReadAgentMarkdownFile(agentID, file string) (string, error) {
 	}
 	if !strings.EqualFold(filepath.Ext(file), ".md") {
 		return "", fmt.Errorf("file must be a markdown file")
-	}
-	if strings.EqualFold(filepath.Base(file), "RULES.md") {
-		return "", fmt.Errorf("RULES.md is loaded automatically and cannot be read via agent_file_read")
 	}
 	if filepath.IsAbs(file) {
 		return "", fmt.Errorf("file must be relative to the agent directory")
@@ -498,33 +451,6 @@ func CheckpointDir(agentID string) string {
 // <datadir>/agents/<agentID>/checkpoints/<checkpointID>.json.
 func CheckpointPath(agentID, checkpointID string) string {
 	return filepath.Join(CheckpointDir(agentID), sanitizeFileComponent(checkpointID)+".json")
-}
-
-// NotesDir returns the workspace-local notes directory: <workspace>/notes.
-func NotesDir() string {
-	return filepath.Join(WorkspaceDir(), "notes")
-}
-
-// AgentNotePath returns the path for a note file under an agent's notes directory:
-// <datadir>/agents/<agentID>/notes/<name>.md.
-func AgentNotePath(agentID, name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.TrimPrefix(name, "notes/")
-	name = strings.TrimPrefix(name, "notes\\")
-	name = strings.TrimSuffix(name, ".md")
-	name = sanitizeFileComponent(name)
-	return filepath.Join(AgentDir(agentID), "notes", name+".md")
-}
-
-// WorkspaceNotePath returns the workspace-local path for a markdown note file.
-// The provided name may include a ".md" suffix and/or a leading "notes/" segment.
-func WorkspaceNotePath(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.TrimPrefix(name, "notes/")
-	name = strings.TrimPrefix(name, "notes\\")
-	name = strings.TrimSuffix(name, ".md")
-	name = sanitizeFileComponent(name)
-	return filepath.Join(NotesDir(), name+".md")
 }
 
 func sanitizeFileComponent(s string) string {

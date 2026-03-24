@@ -2087,7 +2087,7 @@ function normalizeNewAgentFileName(file: string): string {
 async function readAgentFile(agentName: string, file: string) {
 	const state = getAgentFileState(agentName);
 	state.error = "";
-	state.content = await callTool("agent_root_file_read", {
+	state.content = await callTool("agent_file_read", {
 		agent: agentName,
 		file,
 	});
@@ -2100,13 +2100,16 @@ async function loadAgentFiles(agentName: string) {
 	state.loading = true;
 	state.error = "";
 	try {
-		let raw = await callTool("agent_root_file_list", { agent: agentName });
-		state.files = (JSON.parse(raw) as string[] | null) ?? [];
+		let raw = await callTool("agent_file_list", { agent: agentName });
+		const allFiles = (JSON.parse(raw) as string[] | null) ?? [];
+		state.files = allFiles.filter((f) => !f.includes("/"));
 		if (state.files.length === 0 && !state.autoSynced) {
 			state.autoSynced = true;
 			await callTool("agent_template_sync", { agent: agentName });
-			raw = await callTool("agent_root_file_list", { agent: agentName });
-			state.files = (JSON.parse(raw) as string[] | null) ?? [];
+			raw = await callTool("agent_file_list", { agent: agentName });
+			state.files = ((JSON.parse(raw) as string[] | null) ?? []).filter(
+				(f) => !f.includes("/"),
+			);
 		}
 		if (state.selectedFile && state.files.includes(state.selectedFile)) {
 			await readAgentFile(agentName, state.selectedFile);
@@ -2144,7 +2147,7 @@ async function saveAgentFile(agentName: string) {
 	state.saving = true;
 	state.error = "";
 	try {
-		await callTool("agent_root_file_write", {
+		await callTool("agent_file_write", {
 			agent: agentName,
 			file: state.selectedFile,
 			content: state.content,
@@ -2185,7 +2188,7 @@ async function createAgentFile(agentName: string) {
 	state.creating = true;
 	state.error = "";
 	try {
-		await callTool("agent_root_file_write", {
+		await callTool("agent_file_write", {
 			agent: agentName,
 			file,
 			content: "",
@@ -2208,7 +2211,7 @@ async function deleteAgentFile(agentName: string) {
 	state.error = "";
 	try {
 		const deletedFile = state.selectedFile;
-		await callTool("agent_root_file_delete", {
+		await callTool("agent_file_delete", {
 			agent: agentName,
 			file: deletedFile,
 		});
