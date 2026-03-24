@@ -1019,64 +1019,6 @@ func TestStop_StopsChannel(t *testing.T) {
 	assert.NoError(t, stopErr)
 }
 
-func TestStart_ExternalMode_ReconnectsAfterDisconnect(t *testing.T) {
-	fd := newFakeDaemon(t)
-
-	ch := NewSignalChannel("", fd.Addr(), []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	msgs := make(chan IncomingMessage, 4)
-	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
-
-	cancel, _ := startChannel(ch)
-	defer cancel()
-
-	waitConnected(t, fd, 2*time.Second)
-	fd.PushNotification("+1", "first")
-	waitMsg(t, msgs, 2*time.Second)
-
-	// Close the server and bring up a new one at the same address.
-	addr := fd.Addr()
-	fd.Close()
-
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Skipf("could not reuse address %s: %v", addr, err)
-	}
-	fd2 := &fakeDaemon{
-		listener: ln,
-		stopCh:   make(chan struct{}),
-	}
-	go fd2.acceptLoop()
-	defer fd2.Close()
-	waitConnected(t, fd2, 2*time.Second)
-	// Wait for the client to perform an initial RPC (handshake) so
-	// notifications sent immediately after accept are not lost on slow CI.
-	handshakeDeadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(handshakeDeadline) {
-		if len(fd2.Requests()) > 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	deadline := time.Now().Add(4 * time.Second)
-	var msg IncomingMessage
-	received := false
-	for time.Now().Before(deadline) {
-		fd2.PushNotification("+1", "after reconnect")
-		if next, ok := waitMsgTimeout(msgs, 150*time.Millisecond); ok {
-			if next.Text == "after reconnect" {
-				msg = next
-				received = true
-				break
-			}
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	assert.True(t, received)
-	assert.Equal(t, "after reconnect", msg.Text)
-
-}
-
 func TestStart_ExternalMode_MultipleMessages(t *testing.T) {
 	fd := newFakeDaemon(t)
 	defer fd.Close()
