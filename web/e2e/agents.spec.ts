@@ -76,14 +76,13 @@ test.beforeEach(async ({ page }) => {
 			{ name: "browser_open", description: "Open a browser tab" },
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
-		agent_root_file_list: () => Array.from(agentFiles.keys()).sort(),
-		agent_root_file_read: (args) =>
-			agentFiles.get(String(args?.file ?? "")) ?? "",
-		agent_root_file_write: (args) => {
+		agent_file_list: () => Array.from(agentFiles.keys()).sort(),
+		agent_file_read: (args) => agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_write: (args) => {
 			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
 			return "ok";
 		},
-		agent_root_file_delete: (args) => {
+		agent_file_delete: (args) => {
 			agentFiles.delete(String(args?.file ?? ""));
 			return "ok";
 		},
@@ -370,14 +369,13 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 			{ name: "browser_open", description: "Open a browser tab" },
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
-		agent_root_file_list: () => Array.from(agentFiles.keys()).sort(),
-		agent_root_file_read: (args) =>
-			agentFiles.get(String(args?.file ?? "")) ?? "",
-		agent_root_file_write: (args) => {
+		agent_file_list: () => Array.from(agentFiles.keys()).sort(),
+		agent_file_read: (args) => agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_write: (args) => {
 			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
 			return "ok";
 		},
-		agent_root_file_delete: (args) => {
+		agent_file_delete: (args) => {
 			agentFiles.delete(String(args?.file ?? ""));
 			return "ok";
 		},
@@ -503,10 +501,9 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 			{ name: "browser_open", description: "Open a browser tab" },
 			{ name: "usage_query", description: "Read usage metrics" },
 		],
-		agent_root_file_list: () =>
+		agent_file_list: () =>
 			synced ? Array.from(syncedFiles.keys()).sort() : [],
-		agent_root_file_read: (args) =>
-			syncedFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_read: (args) => syncedFiles.get(String(args?.file ?? "")) ?? "",
 		agent_template_sync: () => {
 			synced = true;
 			return "ok";

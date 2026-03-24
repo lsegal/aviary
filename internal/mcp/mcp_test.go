@@ -1906,7 +1906,7 @@ func TestStartProviderPingIfStale(t *testing.T) {
 	}
 }
 
-func TestNoteWriteTool(t *testing.T) {
+func TestAgentFileWriteTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	require.NoError(t, store.EnsureDirs())
@@ -1929,14 +1929,14 @@ func TestNoteWriteTool(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	out, err := d.CallTool(ctx, "note_write", map[string]any{
-		"file":    "project kickoff",
+	out, err := d.CallTool(ctx, "agent_file_write", map[string]any{
+		"file":    "notes/project-kickoff.md",
 		"content": "# Project Kickoff\n- Capture goals\n- Confirm owners",
 	})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "note written:")
+	assert.Contains(t, out, "written")
 
-	data, err := os.ReadFile(store.AgentNotePath("bot", "project kickoff"))
+	data, err := os.ReadFile(filepath.Join(store.AgentDir("bot"), "notes", "project-kickoff.md"))
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "# Project Kickoff")
 	assert.Contains(t, string(data), "Confirm owners")
@@ -3162,14 +3162,13 @@ func TestJobListNilScheduler(t *testing.T) {
 	toolCallContains(t, d, "job_list", map[string]any{}, "scheduler not initialized")
 }
 
-func TestNoteWriteTool_Validation(t *testing.T) {
+func TestAgentFileWriteTool_NoSession(t *testing.T) {
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
 	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "note_write", map[string]any{"file": "", "content": "x"}, "file is required")
-	toolCallContains(t, d, "note_write", map[string]any{"file": "test", "content": ""}, "content is required")
+	toolCallContains(t, d, "agent_file_write", map[string]any{"file": "test.md", "content": "x"}, "session context")
 }
 
 func TestAgentRulesGetSet_WithTempDir(t *testing.T) {
@@ -3201,7 +3200,7 @@ func TestAgentRulesGetSet_WithTempDir(t *testing.T) {
 
 }
 
-func TestAgentFileListRead_WithTempDir(t *testing.T) {
+func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	err := store.EnsureDirs()
@@ -3213,67 +3212,68 @@ func TestAgentFileListRead_WithTempDir(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("identity"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	})
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	SetDeps(&Deps{Agents: mgr})
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
+	require.NoError(t, err)
+	ctx := agent.WithSessionAgentID(agent.WithSessionID(context.Background(), sess.ID), "bot")
+
 	d := NewDispatcher("https://localhost:16677", "")
 
-	out, err := d.CallTool(context.Background(), "agent_file_list", map[string]any{"agent": "bot"})
+	// List includes all files including RULES.md and subdirectory files.
+	out, err := d.CallTool(ctx, "agent_file_list", map[string]any{})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "IDENTITY.md")
 	assert.Contains(t, out, "notes/USER.md")
-	assert.NotContains(t, out, "RULES.md")
+	assert.Contains(t, out, "RULES.md")
+	assert.Contains(t, out, "MEMORY.md")
 
-	out, err = d.CallTool(context.Background(), "agent_file_read", map[string]any{"agent": "bot", "file": "IDENTITY.md"})
+	// Read a regular file.
+	out, err = d.CallTool(ctx, "agent_file_read", map[string]any{"file": "IDENTITY.md"})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "identity")
 
-	toolCallContains(t, d, "agent_file_read", map[string]any{"agent": "bot", "file": "RULES.md"}, "loaded automatically")
-}
-
-func TestAgentRootFileCRUD_WithTempDir(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	agentDir := store.AgentDir("bot")
-	err = os.MkdirAll(agentDir, 0o700)
-	assert.NoError(t, err)
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
-
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	out, err := d.CallTool(context.Background(), "agent_root_file_list", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.Contains(t, out, "RULES.md")
-	assert.Contains(t, out, "MEMORY.md")
-	assert.Contains(t, out, "AGENTS.md")
-	assert.Contains(t, out, "SYSTEM.md")
-
-	out, err = d.CallTool(context.Background(), "agent_root_file_read", map[string]any{"agent": "bot", "file": "RULES.md"})
+	// Read RULES.md (no longer blocked).
+	out, err = d.CallTool(ctx, "agent_file_read", map[string]any{"file": "RULES.md"})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "rules")
 
-	out, err = d.CallTool(context.Background(), "agent_root_file_write", map[string]any{"agent": "bot", "file": "PROFILE.md", "content": "profile"})
+	// Write a new file (root level).
+	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "PROFILE.md", "content": "profile"})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "PROFILE.md written")
 
-	out, err = d.CallTool(context.Background(), "agent_root_file_delete", map[string]any{"agent": "bot", "file": "PROFILE.md"})
+	// Write a note (subdir).
+	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "notes/project.md", "content": "project notes"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "notes/project.md written")
+
+	// Delete a regular file.
+	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "PROFILE.md"})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "PROFILE.md deleted")
 
-	toolCallContains(t, d, "agent_root_file_delete", map[string]any{"agent": "bot", "file": "RULES.md"}, "protected")
-	toolCallContains(t, d, "agent_root_file_delete", map[string]any{"agent": "bot", "file": "AGENTS.md"}, "protected")
+	// Protected files cannot be deleted.
+	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "RULES.md"})
+	assert.True(t, (err != nil && strings.Contains(err.Error(), "protected")) || strings.Contains(out, "protected"))
+	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "AGENTS.md"})
+	assert.True(t, (err != nil && strings.Contains(err.Error(), "protected")) || strings.Contains(out, "protected"))
+
+	// Tools without session context fail.
+	toolCallContains(t, d, "agent_file_list", map[string]any{}, "session context")
 }
 
 func TestAgentAdd_CopiesTemplate(t *testing.T) {

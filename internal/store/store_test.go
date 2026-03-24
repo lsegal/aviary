@@ -179,11 +179,6 @@ func TestPathHelpers(t *testing.T) {
 
 	})
 
-	t.Run("WorkspaceNotePath", func(t *testing.T) {
-		got := WorkspaceNotePath("notes/project plan.md")
-		want := filepath.Join(tmp, "notes", "project plan.md")
-		assert.Equal(t, want, got)
-	})
 }
 
 // TestSanitizeFileComponent verifies the sanitizer replaces forbidden chars and
@@ -333,59 +328,57 @@ func TestAgentMarkdownFiles(t *testing.T) {
 
 	files, err := ListAgentMarkdownFiles("assistant")
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "notes/USER.md"}, files)
+	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "RULES.md", "notes/USER.md"}, files)
 
 	content, err := ReadAgentMarkdownFile("assistant", "notes/USER.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "user", content)
 
-	_, err = ReadAgentMarkdownFile("assistant", "RULES.md")
-	assert.ErrorContains(t, err, "loaded automatically")
+	content, err = ReadAgentMarkdownFile("assistant", "RULES.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "rules", content)
+
 	_, err = ReadAgentMarkdownFile("assistant", "../outside.md")
 	assert.ErrorContains(t, err, "stay within")
 	_, err = ReadAgentMarkdownFile("assistant", "plain.txt")
 	assert.ErrorContains(t, err, "markdown")
 }
 
-func TestAgentRootMarkdownFiles(t *testing.T) {
+func TestAgentMarkdownFilesWriteDelete(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	agentDir := AgentDir("assistant")
 	err := os.MkdirAll(filepath.Join(agentDir, "notes"), 0o700)
 	assert.NoError(t, err)
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "SYSTEM.md"), []byte("system"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("identity"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "notes", "USER.md"), []byte("user"), 0o600))
-	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 
-	files, err := ListAgentRootMarkdownFiles("assistant")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"AGENTS.md", "IDENTITY.md", "MEMORY.md", "RULES.md", "SYSTEM.md"}, files)
-
-	content, err := ReadAgentRootMarkdownFile("assistant", "SYSTEM.md")
-	assert.NoError(t, err)
-	assert.Equal(t, "system", content)
-
-	assert.NoError(t, WriteAgentRootMarkdownFile("assistant", "PROFILE.md", "profile"))
-	content, err = ReadAgentRootMarkdownFile("assistant", "PROFILE.md")
+	// Write a root-level file.
+	assert.NoError(t, WriteAgentMarkdownFile("assistant", "PROFILE.md", "profile"))
+	content, err := ReadAgentMarkdownFile("assistant", "PROFILE.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "profile", content)
 
-	assert.NoError(t, DeleteAgentRootMarkdownFile("assistant", "PROFILE.md"))
-	_, err = ReadAgentRootMarkdownFile("assistant", "PROFILE.md")
+	// Write a subdir file.
+	assert.NoError(t, WriteAgentMarkdownFile("assistant", "notes/summary.md", "summary"))
+	content, err = ReadAgentMarkdownFile("assistant", "notes/summary.md")
+	assert.NoError(t, err)
+	assert.Equal(t, "summary", content)
+
+	// Delete a regular file.
+	assert.NoError(t, DeleteAgentMarkdownFile("assistant", "PROFILE.md"))
+	_, err = ReadAgentMarkdownFile("assistant", "PROFILE.md")
 	assert.Error(t, err)
 
-	err = DeleteAgentRootMarkdownFile("assistant", "RULES.md")
+	// Protected files cannot be deleted.
+	err = DeleteAgentMarkdownFile("assistant", "RULES.md")
 	assert.ErrorContains(t, err, "protected")
-	err = DeleteAgentRootMarkdownFile("assistant", "AGENTS.md")
+	err = DeleteAgentMarkdownFile("assistant", "AGENTS.md")
 	assert.ErrorContains(t, err, "protected")
-	_, err = ReadAgentRootMarkdownFile("assistant", "notes/USER.md")
-	assert.ErrorContains(t, err, "root")
-	err = WriteAgentRootMarkdownFile("assistant", "../outside.md", "x")
+
+	// Traversal is rejected.
+	err = WriteAgentMarkdownFile("assistant", "../outside.md", "x")
 	assert.ErrorContains(t, err, "stay within")
 }
 
@@ -647,13 +640,12 @@ func TestUsagePath(t *testing.T) {
 
 }
 
-func TestWorkspaceDirAndNotesDir(t *testing.T) {
+func TestWorkspaceDir(t *testing.T) {
 	tmp := t.TempDir()
 	SetWorkspaceDir(tmp)
 	t.Cleanup(func() { SetWorkspaceDir("") })
 
 	assert.Equal(t, tmp, WorkspaceDir())
-	assert.Equal(t, filepath.Join(tmp, "notes"), NotesDir())
 }
 
 // TestIntegration_StoreSetup exercises DataDir + SubDir + EnsureDirs together,

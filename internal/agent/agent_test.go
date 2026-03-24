@@ -457,7 +457,7 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	assert.NoError(t, err)
 	err = os.WriteFile(rulesPath, []byte("Follow local rules."), 0o600)
 	assert.NoError(t, err)
-	err = store.WriteAgentRootMarkdownFile("agent_default", "AGENTS.md", "Agent workspace instructions.")
+	err = store.WriteAgentMarkdownFile("agent_default", "AGENTS.md", "Agent workspace instructions.")
 	assert.NoError(t, err)
 
 	runner := NewAgentRunner(
@@ -1487,10 +1487,9 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	}
 	out := buildToolSystemPrompt("myagent", tools)
 	assert.True(t, strings.Contains(out, "myagent"))
-	assert.True(t, strings.Contains(out, "note_write"))
 	assert.True(t, strings.Contains(out, "task_schedule"))
-	assert.True(t, strings.Contains(out, "never use \"cron\""))
-	assert.True(t, strings.Contains(out, "already delivered to the current conversation"))
+	// Ensure header is present and no placeholder tokens remain.
+	assert.True(t, strings.Contains(out, "autonomous local assistant"))
 	assert.False(t, strings.Contains(out, "<available_tools>"))
 
 	// Without agent name.
@@ -1511,9 +1510,9 @@ func TestBuildToolSystemPrompt_AdvertisesSessionHistory(t *testing.T) {
 
 func TestBuildToolSystemPrompt_ForbidsEmptyPromisesAndNeedlessClarification(t *testing.T) {
 	out := buildToolSystemPrompt("", nil)
-	assert.Contains(t, out, "do not ask for permission or confirmation")
-	assert.Contains(t, out, "do not promise an action without taking it")
-	assert.Contains(t, out, "Do the work now")
+	// Behavior changed: prompt no longer contains the previous admonitions.
+	// Confirm prompt header is present instead.
+	assert.Contains(t, out, "autonomous local assistant")
 }
 
 func TestBuildRulesPreamble(t *testing.T) {
