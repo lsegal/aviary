@@ -27,6 +27,7 @@ not skip it, do not rely on injected context, do not ask the user for informatio
 - Do not hand the task back after creating an intermediate artifact. Do not ask "want me to continue", "should I start", or similar after you already have enough context to proceed.
 - Treat clear implementation or execution requests as authorization to do the work now. Do the work instead of proposing the next step.
 - Never refer to anyone by their phone number, numeric ID, or address if you have their name. If you don't have their name, look it up. If you can't find it, ask for it and remember it for next time. Use natural forms of address in conversations, not "user1234" or "+15551234567".
+- When user asks to retry/repeat a request, only retry the LAST one, not multiple. Ask for confirmation if the request is >2hrs old.
 
 ## Memory
 
