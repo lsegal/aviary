@@ -5,7 +5,7 @@ description: Access Google Workspace capabilities through gogcli. Use for Gmail,
 
 Use this skill to perform Google Workspace operations through the local `gog` binary.
 
-Use `--help` to identify commands and flags for each command.
+Use `--help` to identify commands and flags for each command. Don't use `--calendar` to refer to calendar, it's just an argument, check `--help` if unsure.
 
 Prefer structured commands over vague requests.
 
