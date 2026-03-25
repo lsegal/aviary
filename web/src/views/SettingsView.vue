@@ -812,118 +812,84 @@
 									@click="addTask(i)">+ Add Task</button>
 							</div>
 
-							<div class="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-								<label class="flex cursor-pointer items-start gap-3">
-									<input v-model="draft.scheduler.precompute_tasks" type="checkbox"
-										class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-									<span class="text-sm text-gray-700 dark:text-gray-300">
-										Try to precompute tasks
-										<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs</span>
-									</span>
-								</label>
-							</div>
 
 							<div v-if="!agent.tasks?.length"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
 								No tasks configured for this agent.
 							</div>
 
-							<div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" :class="taskCardClass(task)"
-								class="space-y-3 rounded-lg border p-4">
-								<div class="flex items-start justify-between gap-3">
-									<div>
-										<div class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Task
-										</div>
-										<div class="mt-1 flex items-center gap-2">
-											<span :class="statusBadgeClass(isTaskEnabled(task))">
-												{{ isTaskEnabled(task) ? "Enabled" : "Disabled" }}
-											</span>
-											<span v-if="task.from_file && task.name"
-												class="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">
-												Defined in: tasks/{{ task.name }}.md
-											</span>
-											<span v-else
-												class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-												Defined in: aviary.yaml
-											</span>
-										</div>
-									</div>
-									<div class="flex items-center gap-2">
-										<button type="button" :class="enabledToggleClass(isTaskEnabled(task))"
-											@click="toggleTaskEnabled(task)">
-											{{ isTaskEnabled(task) ? "Disable" : "Enable" }}
-										</button>
-										<button v-if="(!task.type || task.type === 'prompt') && task.prompt" type="button"
-											class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950"
-											:disabled="!task.name"
-											:title="task.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'"
-											@click="convertTaskToScript(agent.name, task.name)">
-											Convert to Script
-										</button>
-										<button v-if="!task.from_file" type="button"
-											class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-											:disabled="!task.name"
-											:title="task.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'"
-											@click="moveTaskToFile(i, j, agent.name, task.name)">
-											Move to File
-										</button>
-										<button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
-									</div>
-								</div>
+<div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" :class="taskCardClass(task)" class="rounded-lg border p-4">
+<div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
+<!-- Left column: task name, status and actions -->
+<div class="space-y-3">
+<div class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Task</div>
+<div class="mt-1 flex items-center gap-2">
+<span :class="statusBadgeClass(isTaskEnabled(task))">{{ isTaskEnabled(task) ? 'Enabled' : 'Disabled' }}</span>
+</div>
+<div>
+<label class="field-label">Name</label>
+<input v-model="task.name" type="text" class="field-input font-mono" placeholder="daily-briefing" :data-task-id="task.name" />
+</div>
+<div class="flex flex-col gap-2">
+<button type="button" :class="enabledToggleClass(isTaskEnabled(task))" @click="toggleTaskEnabled(task)">{{ isTaskEnabled(task) ? 'Disable' : 'Enable' }}</button>
+<button v-if="(!task.type || task.type === 'prompt') && task.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!task.name" :title="task.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, task.name)">Convert to Script</button>
+<button v-if="!task.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!task.name" :title="task.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, j, agent.name, task.name)">Move to File</button>
+<button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
+</div>
+</div>
 
-								<p v-if="!isTaskEnabled(task)" class="text-xs text-gray-500 dark:text-gray-400">
-									Disabled tasks are ignored by the scheduler until re-enabled.
-								</p>
+<!-- Right column: config fields and large editor -->
+<div>
+<div class="grid gap-3 lg:grid-cols-3">
+<div>
+<label class="field-label">Task type</label>
+<select v-model="task.type" class="field-input">
+<option value="prompt">Prompt</option>
+<option value="script">Script</option>
+</select>
+</div>
+<div>
+<label class="field-label">Schedule</label>
+<input v-model="task.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
+</div>
+<div>
+<label class="field-label">Watch</label>
+<input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
+</div>
+</div>
+<div class="grid gap-3 lg:grid-cols-2 mt-3">
+<div>
+<label class="field-label">Send Via</label>
+<select :value="taskChannelSelection(task)" class="field-input" @change="setTaskChannelSelection(task, $event)">
+<option value="">silent</option>
+<option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
+</select>
+</div>
+<div>
+<label class="field-label">Target</label>
+<input :value="taskChannelTarget(task)" type="text" class="field-input" :disabled="!taskChannelNeedsTarget(task)" :placeholder="taskChannelTargetPlaceholder(task)" @input="setTaskChannelTarget(task, $event)" />
+</div>
+</div>
 
-								<div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr]">
-									<div>
-										<label class="field-label">Task name</label>
-										<input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" :data-task-id="task.name" />
-									</div>
-									<div>
-										<label class="field-label">Task type</label>
-										<select v-model="task.type" class="field-input">
-											<option value="prompt">Prompt</option>
-											<option value="script">Script</option>
-										</select>
-									</div>
-									<div>
-										<label class="field-label">Schedule</label>
-										<input v-model="task.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
-									</div>
-									<div>
-										<label class="field-label">Watch</label>
-										<input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
-									</div>
-									<div>
-										<label class="field-label">Send Via</label>
-										<select :value="taskChannelSelection(task)" class="field-input"
-											@change="setTaskChannelSelection(task, $event)">
-											<option value="">silent</option>
-											<option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value"
-												:value="option.value">{{ option.label }}</option>
-										</select>
-									</div>
-									<div>
-										<label class="field-label">Target</label>
-										<input :value="taskChannelTarget(task)" type="text" class="field-input"
-											:disabled="!taskChannelNeedsTarget(task)" :placeholder="taskChannelTargetPlaceholder(task)"
-											@input="setTaskChannelTarget(task, $event)" />
-									</div>
-								</div>
-
-								<div>
-									<div>
-										<label class="field-label">{{ task.type === "script" ? "Script" : "Prompt" }}</label>
-										<textarea v-model="task.prompt" :rows="task.type === 'script' ? 8 : 3" class="field-input" :class="{'font-mono text-xs': task.type === 'script'}"
-											:placeholder="task.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
-										<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-											<input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
-											Run once
-										</label>
-									</div>
-								</div>
-							</div>
+<div class="mt-4">
+<label class="field-label">{{ task.type === 'script' ? 'Script' : 'Prompt' }}</label>
+<textarea v-model="task.prompt" rows="8" class="field-input min-h-[28vh] font-mono text-xs" :class="{'font-mono text-xs': task.type === 'script'}" :placeholder="task.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
+<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+<input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
+Run once
+</label>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+<label class="flex cursor-pointer items-start gap-3">
+<input v-model="draft.scheduler.precompute_tasks" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute tasks
+<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs</span>
+</span>
+</label>
+</div>
 
 						</div>
 					</div>
