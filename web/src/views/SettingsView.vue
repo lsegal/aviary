@@ -3213,7 +3213,10 @@ function confirmDeleteTaskAction() {
 	removeTask(agentIndex, taskIndex);
 	const tasks = draft.value.agents[agentIndex]?.tasks ?? [];
 	if (tasks.length) {
-		selectedTaskIdx.value = Math.min(selectedTaskIdx.value ?? 0, tasks.length - 1);
+		selectedTaskIdx.value = Math.min(
+			selectedTaskIdx.value ?? 0,
+			tasks.length - 1,
+		);
 	} else {
 		selectedTaskIdx.value = null;
 	}
