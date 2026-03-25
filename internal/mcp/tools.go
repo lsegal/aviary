@@ -1812,6 +1812,25 @@ func registerJobTools(s *sdkmcp.Server) {
 	})
 
 	addTool(s, &sdkmcp.Tool{
+		Name:        "job_stop",
+		Description: "Stop a pending or running job by ID. Cancels execution and marks the job as canceled.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_stop", "id", args.ID)
+		d := GetDeps()
+		if d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		stopped, err := d.Scheduler.StopJobs(args.ID)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if stopped == 0 {
+			return text(fmt.Sprintf("no pending or running job found with ID %q", args.ID))
+		}
+		return text(fmt.Sprintf("stopped job %s", args.ID))
+	})
+
+	addTool(s, &sdkmcp.Tool{
 		Name:        "job_run_now",
 		Description: "Immediately run an existing pending job by ID, ignoring its scheduled time and worker concurrency limits",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {

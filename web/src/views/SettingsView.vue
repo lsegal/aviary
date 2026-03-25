@@ -2584,6 +2584,18 @@ function removeTask(agentIndex: number, taskIndex: number) {
 	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
+async function moveTaskToFile(agentIndex: number, taskIndex: number, agentName: string, taskName: string) {
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const result = await callTool("config_task_move_to_file", { agent: agentName, task: taskName });
+		removeTask(agentIndex, taskIndex);
+		okMessage.value = result;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
 function configuredChannelLabel(ch: AgentChannel, index: number): string {
 	if (ch.id) return `${ch.type} via ${ch.id}`;
 	return `${ch.type} via #${index + 1}`;

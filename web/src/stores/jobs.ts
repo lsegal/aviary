@@ -231,6 +231,11 @@ export const useJobsStore = defineStore("jobs", () => {
 		return (JSON.parse(raw) as Job | null) ?? null;
 	}
 
+	async function stopJob(jobID: string): Promise<void> {
+		await callTool("job_stop", { id: jobID });
+		await refreshAll();
+	}
+
 	function setPreset(days: number) {
 		endDate.value = fmtDate(0);
 		startDate.value = fmtDate(days);
@@ -324,6 +329,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		fetchTaskCompile,
 		runTaskNow,
 		runJobNow,
+		stopJob,
 		fetchSessionMessages,
 		setPreset,
 		pending,

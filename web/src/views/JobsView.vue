@@ -309,6 +309,13 @@
                         @click.stop="runQueuedJobNow(job.id)">
                         {{ runningJobID === job.id ? "Running…" : "Run Now" }}
                       </button>
+                      <button
+                        v-else-if="job.status === 'in_progress'"
+                        class="rounded-lg bg-red-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                        :disabled="stoppingJobID === job.id"
+                        @click.stop="stopJob(job.id)">
+                        {{ stoppingJobID === job.id ? "Stopping…" : "Stop" }}
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -622,6 +629,7 @@ const liveBottom = ref<HTMLElement | null>(null);
 const hoveredDay = ref<number | null>(null);
 const runningTaskID = ref<string | null>(null);
 const runningJobID = ref<string | null>(null);
+const stoppingJobID = ref<string | null>(null);
 
 const presets = [
 	{ label: "Today", days: 0 },
@@ -743,6 +751,15 @@ async function runQueuedJobNow(jobID: string) {
 		await store.runJobNow(jobID);
 	} finally {
 		runningJobID.value = null;
+	}
+}
+
+async function stopJob(jobID: string) {
+	stoppingJobID.value = jobID;
+	try {
+		await store.stopJob(jobID);
+	} finally {
+		stoppingJobID.value = null;
 	}
 }
 
