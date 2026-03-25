@@ -180,6 +180,12 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 		return fmt.Errorf("channel %q could not be created", key)
 	}
 
+	// If this is a Signal channel, record the owning agent name so the
+	// channel implementation can substitute a human-readable agent name into
+	// incoming messages where needed.
+	if sc, ok := ch.(*SignalChannel); ok {
+		sc.AgentName = spec.agentName
+	}
 	sink := newLogSink()
 	m.sinks[key] = sink
 	if ss, ok := ch.(LogSinkSetter); ok {

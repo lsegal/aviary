@@ -1,6 +1,120 @@
 package channels
 
 import (
+    "context"
+    "io/ioutil"
+    "net/http"
+    "net/http/httptest"
+    "os"
+    "strings"
+    "testing"
+
+    "github.com/lsegal/aviary/internal/config"
+)
+
+// Test that the object-replacement character is substituted with AgentName
+// (or phone fallback) for both message and quoted text.
+func TestDispatchEnvelopeAgentNameReplacement(t *testing.T) {
+    sc := &SignalChannel{
+        phone:    "+15550000",
+        AgentName: "Alice",
+        done:     make(chan struct{}),
+    }
+
+    // allowFrom entry that permits any DM sender
+    sc.allowFrom = []config.AllowFromEntry{{From: "*"}}
+
+    got := make(chan string, 1)
+    sc.OnMessage(func(im IncomingMessage) {
+        got <- im.Text
+    })
+
+    dm := &signalDataMessage{Message: "\uFFFC hello"}
+    sc.dispatchEnvelope("+1555123", 0, false, false, dm)
+
+    select {
+    case text := <-got:
+        if !strings.Contains(text, "Alice") {
+            t.Fatalf("expected AgentName replacement, got %q", text)
+        }
+    default:
+        t.Fatal("no message dispatched")
+    }
+
+    // blank AgentName falls back to phone
+    sc2 := &SignalChannel{phone: "+19990000", done: make(chan struct{})}
+    sc2.allowFrom = []config.AllowFromEntry{{From: "*"}}
+    got2 := make(chan string, 1)
+    sc2.OnMessage(func(im IncomingMessage) { got2 <- im.Text })
+    dm2 := &signalDataMessage{Message: "\uFFFC bye"}
+    sc2.dispatchEnvelope("+1555123", 0, false, false, dm2)
+    select {
+    case text := <-got2:
+        if !strings.Contains(text, "+19990000") {
+            t.Fatalf("expected phone fallback replacement, got %q", text)
+        }
+    default:
+        t.Fatal("no message dispatched for phone fallback")
+    }
+}
+
+// Test fetchLinkPreviews and downloadTempImage using an httptest server.
+func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
+    // Start a server that serves an HTML page and an image.
+    ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if strings.HasSuffix(r.URL.Path, "/img.jpg") {
+            w.Header().Set("Content-Type", "image/jpeg")
+            w.Write([]byte("JPEGDATA"))
+            return
+        }
+        // HTML page with title and og:image
+        w.Header().Set("Content-Type", "text/html")
+        w.Write([]byte(`<!doctype html><html><head><title>My Title</title><meta property="og:image" content="` + ts.URL + `/img.jpg"></head><body></body></html>`))
+    }))
+    defer ts.Close()
+
+    previews, cleanup := fetchLinkPreviews("check " + ts.URL + "/")
+    if cleanup != nil {
+        defer cleanup()
+    }
+    if previews == nil || len(previews) == 0 {
+        t.Fatal("expected a preview")
+    }
+    p := previews[0]
+    if p.Title != "My Title" {
+        t.Fatalf("unexpected title: %q", p.Title)
+    }
+    if p.Image == "" {
+        t.Fatal("expected an image path")
+    }
+    // ensure file exists
+    if _, err := os.Stat(p.Image); err != nil {
+        t.Fatalf("preview image not found: %v", err)
+    }
+    // cleanup should remove the file
+    if cleanup != nil {
+        cleanup()
+        if _, err := os.Stat(p.Image); err == nil {
+            t.Fatal("expected image file removed by cleanup")
+        }
+    }
+
+    // Also test downloadTempImage directly
+    ctx := context.Background()
+    path, err := downloadTempImage(ctx, ts.URL+"/img.jpg")
+    if err != nil {
+        t.Fatalf("downloadTempImage failed: %v", err)
+    }
+    // file should exist and contain data
+    data, _ := ioutil.ReadFile(path)
+    if len(data) == 0 {
+        t.Fatal("downloaded file empty")
+    }
+    os.Remove(path) //nolint:errcheck
+}
+package channels
+
+import (
 	"bufio"
 	"context"
 	"encoding/base64"

@@ -257,6 +257,11 @@ type SignalChannel struct {
 	addrMu sync.RWMutex
 	addr   string
 
+	// AgentName is the owning agent's name (set by the manager). Used to
+	// replace object-replacement characters in incoming messages with a
+	// human-readable agent identifier.
+	AgentName string
+
 	handler         func(IncomingMessage)
 	groupLogHandler func(IncomingMessage)
 	handlerMu       sync.RWMutex
@@ -1029,6 +1034,17 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		receivedAt = time.UnixMilli(msgTimestamp).UTC()
 	}
 
+	// Prepare message text, replacing the object-replacement character with
+	// the agent name (fallback to the channel phone if agent name not set).
+	msgText := dataMessage.Message
+	repl := c.AgentName
+	if strings.TrimSpace(repl) == "" {
+		repl = c.phone
+	}
+	if strings.Contains(msgText, "\uFFFC") {
+		msgText = strings.ReplaceAll(msgText, "\uFFFC", repl)
+	}
+
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
 		c.handlerMu.RLock()
@@ -1040,7 +1056,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 				From:       source,
 				SenderName: source,
 				Channel:    channelID,
-				Text:       dataMessage.Message,
+				Text:       msgText,
 				ReceivedAt: receivedAt,
 			})
 		}
@@ -1049,7 +1065,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	// Replies to the agent's own messages must still match an allowFrom entry's
 	// sender and group scope; replyToReplies only relaxes mention gating so the
 	// user can continue the same allowed conversation without re-mentioning.
-	result := checkAllowed(c.allowFrom, source, channelID, dataMessage.Message, isGroup, "", wasMentioned)
+	result := checkAllowed(c.allowFrom, source, channelID, msgText, isGroup, "", wasMentioned)
 	if isReplyToSelf {
 		result = checkAllowedReplyToSelf(c.allowFrom, source, channelID, isGroup)
 	}
@@ -1067,7 +1083,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			From:          source,
 			SenderName:    source,
 			Channel:       channelID,
-			Text:          dataMessage.Message,
+			Text:          msgText,
 			MediaURL:      c.firstSignalImageDataURL(dataMessage.Attachments, source, channelID, isGroup),
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
@@ -1077,7 +1093,11 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		}
 		if dataMessage.Quote != nil {
 			im.QuoteAuthor = dataMessage.Quote.Author
-			im.QuoteText = dataMessage.Quote.Text
+			qtext := dataMessage.Quote.Text
+			if strings.Contains(qtext, "\uFFFC") {
+				qtext = strings.ReplaceAll(qtext, "\uFFFC", repl)
+			}
+			im.QuoteText = qtext
 		}
 		if im.Model == "" {
 			im.Model = c.model
