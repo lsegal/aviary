@@ -3198,7 +3198,11 @@ const deleteTaskTarget = ref<{
 } | null>(null);
 const deleteTaskOpen = ref(false);
 
-function promptDeleteTask(agentIndex: number, taskIndex: number, name?: string) {
+function promptDeleteTask(
+	agentIndex: number,
+	taskIndex: number,
+	name?: string,
+) {
 	deleteTaskTarget.value = { agentIndex, taskIndex, name };
 	deleteTaskOpen.value = true;
 }
@@ -3208,7 +3212,11 @@ function confirmDeleteTaskAction() {
 	const { agentIndex, taskIndex } = deleteTaskTarget.value;
 	removeTask(agentIndex, taskIndex);
 	const tasks = draft.value.agents[agentIndex]?.tasks ?? [];
-	selectedTaskIdx.value = tasks.length ? Math.min(selectedTaskIdx.value ?? 0, tasks.length - 1) : null;
+	if (tasks.length) {
+		selectedTaskIdx.value = Math.min(selectedTaskIdx.value ?? 0, tasks.length - 1);
+	} else {
+		selectedTaskIdx.value = null;
+	}
 	deleteTaskOpen.value = false;
 	deleteTaskTarget.value = null;
 }
