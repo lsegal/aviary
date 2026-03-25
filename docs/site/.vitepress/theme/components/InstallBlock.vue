@@ -1,7 +1,11 @@
 <template>
   <div class="install-block">
     <span class="install-prompt" aria-hidden="true">$</span>
-    <span ref="cmdEl" class="install-command" :data-install-text="command">{{ command }}</span>
+		<span
+			ref="cmdEl"
+			class="install-command"
+			:data-install-text="isClient ? command : undefined"
+		>{{ isClient ? command : "" }}</span>
     <button class="install-copy" :class="{ copied }" @click="copy" :title="copied ? 'Copied!' : 'Copy'">
       <svg v-if="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -48,8 +52,11 @@ function copy() {
 }
 
 const cmdEl = ref<HTMLElement | null>(null);
+const isClient = ref(false);
 
 onMounted(() => {
+	isClient.value = true;
+
 	if (cmdEl.value) {
 		// set the client-side install text so typing script sees correct command
 		cmdEl.value.setAttribute("data-install-text", command.value);
