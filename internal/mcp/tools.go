@@ -2736,6 +2736,12 @@ func registerServerTools(s *sdkmcp.Server) {
 		if taskIdx < 0 {
 			return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q (only tasks defined in aviary.yaml can be moved to files)", args.Task, args.Agent)
 		}
+
+		// If the task was loaded from a file, it is already defined as a task
+		// markdown file and should not be moved again.
+		if cfg.Agents[agentIdx].Tasks[taskIdx].FromFile {
+			return nil, struct{}{}, fmt.Errorf("task %q is already defined as a file", args.Task)
+		}
 		task := cfg.Agents[agentIdx].Tasks[taskIdx]
 		dir := config.AgentTasksDir(cfg.Agents[agentIdx])
 		path, err := config.SaveMarkdownTask(dir, task)
