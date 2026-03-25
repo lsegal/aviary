@@ -175,7 +175,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 	}
 	cfgFile = resolvedCfgPath
 
-	// Load config.
+	// Load config (including file-based tasks from agents' tasks/ directories).
 	cfg, err := config.Load(resolvedCfgPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)

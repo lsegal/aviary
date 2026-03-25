@@ -90,13 +90,12 @@ func TestParseMarkdownTask(t *testing.T) {
 		assert.Equal(t, "Do something.", task.Prompt)
 	})
 
-	t.Run("script task with empty body", func(t *testing.T) {
-		data := []byte("---\ntype: script\nschedule: \"0 * * * *\"\nscript: |\n  print('hello')\n---\n")
+	t.Run("script task with body", func(t *testing.T) {
+		data := []byte("---\ntype: script\nschedule: \"0 * * * *\"\n---\n\nprint('hello')\n")
 		task, err := ParseMarkdownTask("my-script", data)
 		assert.NoError(t, err)
 		assert.Equal(t, "script", task.Type)
-		assert.Contains(t, task.Script, "print('hello')")
-		assert.Empty(t, task.Prompt)
+		assert.Contains(t, task.Prompt, "print('hello')")
 	})
 }
 
@@ -120,7 +119,7 @@ func TestSaveAndLoadMarkdownTask(t *testing.T) {
 	assert.Equal(t, "Write a daily summary of what happened.", loaded.Prompt)
 }
 
-func TestLoadWithTaskFiles(t *testing.T) {
+func TestLoadMergesTaskFiles(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
@@ -140,19 +139,15 @@ func TestLoadWithTaskFiles(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	// LoadWithTaskFiles should merge the file task in.
-	loaded, err := LoadWithTaskFiles("")
+	// Load merges file tasks in and marks them with FromFile.
+	loaded, err := Load("")
 	assert.NoError(t, err)
 	assert.Len(t, loaded.Agents, 1)
 	assert.Len(t, loaded.Agents[0].Tasks, 1)
 	assert.Equal(t, "morning-check", loaded.Agents[0].Tasks[0].Name)
 	assert.Equal(t, "0 9 * * *", loaded.Agents[0].Tasks[0].Schedule)
 	assert.Equal(t, "Check the news.", loaded.Agents[0].Tasks[0].Prompt)
-
-	// Plain Load should not include the file task.
-	plain, err := Load("")
-	assert.NoError(t, err)
-	assert.Empty(t, plain.Agents[0].Tasks)
+	assert.True(t, loaded.Agents[0].Tasks[0].FromFile)
 }
 
 func TestLoad(t *testing.T) {

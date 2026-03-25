@@ -14,6 +14,8 @@ import (
 // taskFileFrontmatter holds the YAML frontmatter fields recognised in a task
 // markdown file.  All fields are optional.  When absent, the consuming code
 // falls back to defaults (e.g. Name derived from the filename stem).
+// The task body (below the closing "---") is always the content field:
+// the prompt text for prompt tasks, the Lua source for script tasks.
 type taskFileFrontmatter struct {
 	Name     string `yaml:"name,omitempty"`
 	Enabled  *bool  `yaml:"enabled,omitempty"`
@@ -22,7 +24,6 @@ type taskFileFrontmatter struct {
 	StartAt  string `yaml:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty"`
 	Watch    string `yaml:"watch,omitempty"`
-	Script   string `yaml:"script,omitempty"`
 	Target   string `yaml:"target,omitempty"`
 }
 
@@ -32,7 +33,7 @@ type taskFileFrontmatter struct {
 // used as the task prompt.
 func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	content := string(data)
-	task := TaskConfig{Name: defaultName}
+	task := TaskConfig{Name: defaultName, FromFile: true}
 
 	if !strings.HasPrefix(content, "---\n") {
 		task.Prompt = strings.TrimSpace(content)
@@ -60,7 +61,6 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.StartAt = fm.StartAt
 	task.RunOnce = fm.RunOnce
 	task.Watch = fm.Watch
-	task.Script = fm.Script
 	task.Target = fm.Target
 	task.Prompt = strings.TrimSpace(rest[idx+5:])
 	return task, nil
@@ -88,18 +88,16 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 	fullPath := filepath.Join(dir, filename)
 
 	// Build frontmatter — only include fields that are set.
+	// Task content (prompt text or Lua script) always lives in the file body.
 	fm := taskFileFrontmatter{
-		Enabled: task.Enabled,
-		Type:    task.Type,
-		Target:  task.Target,
+		Enabled:  task.Enabled,
+		Type:     task.Type,
+		Target:   task.Target,
+		Schedule: task.Schedule,
+		StartAt:  task.StartAt,
+		RunOnce:  task.RunOnce,
+		Watch:    task.Watch,
 	}
-	// Cron/watch trigger fields.
-	fm.Schedule = task.Schedule
-	fm.StartAt = task.StartAt
-	fm.RunOnce = task.RunOnce
-	fm.Watch = task.Watch
-	// Script content goes in frontmatter for script tasks (body carries prompt).
-	fm.Script = task.Script
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")
 	if task.Name != stem {
@@ -197,29 +195,6 @@ func mergeTasksByName(base []TaskConfig, fileTasks []TaskConfig) []TaskConfig {
 		}
 	}
 	return result
-}
-
-// LoadWithTaskFiles loads aviary.yaml and then merges task definitions from
-// each agent's tasks/ directory.  It is equivalent to Load followed by a
-// merge of all discovered *.md task files.  Other tools that write back to
-// aviary.yaml should use Load to avoid persisting file-sourced tasks.
-func LoadWithTaskFiles(path string) (*Config, error) {
-	cfg, err := Load(path)
-	if err != nil {
-		return nil, err
-	}
-	for i := range cfg.Agents {
-		fileTasks, ftErr := LoadAgentTaskFiles(cfg.Agents[i])
-		if ftErr != nil {
-			slog.Warn("config: failed to load agent task files",
-				"agent", cfg.Agents[i].Name, "err", ftErr)
-			continue
-		}
-		if len(fileTasks) > 0 {
-			cfg.Agents[i].Tasks = mergeTasksByName(cfg.Agents[i].Tasks, fileTasks)
-		}
-	}
-	return cfg, nil
 }
 
 // taskNameToFilename converts a task name to a safe filename component by

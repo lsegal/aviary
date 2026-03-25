@@ -42,6 +42,11 @@
 					class="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
 					{{ okMessage }}
 				</div>
+				<div v-if="compileToastVisible"
+					class="mb-4 flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+					<span>Compile in progress… <RouterLink to="/jobs" class="font-medium underline">View jobs</RouterLink></span>
+					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
+				</div>
 
 				<section v-show="activeTab === 'general'" class="space-y-6 pb-8">
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
@@ -833,6 +838,14 @@
 											<span :class="statusBadgeClass(isTaskEnabled(task))">
 												{{ isTaskEnabled(task) ? "Enabled" : "Disabled" }}
 											</span>
+											<span v-if="task.from_file && task.name"
+												class="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">
+												Defined in: tasks/{{ task.name }}.md
+											</span>
+											<span v-else
+												class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+												Defined in: aviary.yaml
+											</span>
 										</div>
 									</div>
 									<div class="flex items-center gap-2">
@@ -840,7 +853,14 @@
 											@click="toggleTaskEnabled(task)">
 											{{ isTaskEnabled(task) ? "Disable" : "Enable" }}
 										</button>
-										<button type="button"
+										<button v-if="(!task.type || task.type === 'prompt') && task.prompt" type="button"
+											class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950"
+											:disabled="!task.name"
+											:title="task.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'"
+											@click="convertTaskToScript(agent.name, task.name)">
+											Convert to Script
+										</button>
+										<button v-if="!task.from_file" type="button"
 											class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
 											:disabled="!task.name"
 											:title="task.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'"
@@ -858,7 +878,7 @@
 								<div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr]">
 									<div>
 										<label class="field-label">Task name</label>
-										<input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" />
+										<input v-model="task.name" type="text" class="field-input" placeholder="daily-briefing" :data-task-id="task.name" />
 									</div>
 									<div>
 										<label class="field-label">Task type</label>
@@ -895,10 +915,8 @@
 								<div>
 									<div>
 										<label class="field-label">{{ task.type === "script" ? "Script" : "Prompt" }}</label>
-										<textarea v-if="task.type === 'script'" v-model="task.script" rows="8" class="field-input font-mono text-xs"
-											placeholder="print('hello from lua')"></textarea>
-										<textarea v-else v-model="task.prompt" rows="3" class="field-input"
-											placeholder="Task prompt..."></textarea>
+										<textarea v-model="task.prompt" :rows="task.type === 'script' ? 8 : 3" class="field-input" :class="{'font-mono text-xs': task.type === 'script'}"
+											:placeholder="task.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
 										<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
 											<input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
 											Run once
@@ -1542,6 +1560,7 @@ const saving = ref(false);
 const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
+const compileToastVisible = ref(false);
 const hostGoos = ref("");
 const saveSuccessVisible = ref(false);
 const headerNoticeText = ref("Settings saved");
@@ -2572,31 +2591,72 @@ function onAgentNameChange(agentEntry: AgentEntry) {
 function addTask(agentIndex: number) {
 	const task: AgentTask = {
 		enabled: true,
-		name: "",
+		name: `scheduled-${Date.now()}`,
 		type: "prompt",
 		prompt: "",
-		script: "",
 		schedule: "",
 		watch: "",
 		target: "",
 		run_once: false,
+		from_file: true,
 	};
 	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
 		draft.value.agents[agentIndex].tasks = [];
 	}
 	draft.value.agents[agentIndex].tasks.push(task);
+	// Focus the new task's name field so the user can rename it immediately.
+	void nextTick().then(() => {
+		try {
+			// Give the browser a tiny moment to paint the new element before focusing.
+			setTimeout(() => {
+				const el = document.querySelector<HTMLInputElement>(
+					`input[data-task-id="${task.name}"]`,
+				);
+				el?.focus();
+				el?.select();
+			}, 20);
+		} catch {
+			// ignore
+		}
+	});
 }
 
 function removeTask(agentIndex: number, taskIndex: number) {
 	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
-async function moveTaskToFile(agentIndex: number, taskIndex: number, agentName: string, taskName: string) {
+async function convertTaskToScript(agentName: string, taskName: string) {
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const result = await callTool("config_task_move_to_file", { agent: agentName, task: taskName });
-		removeTask(agentIndex, taskIndex);
+		await callTool("config_task_convert_to_script", {
+			agent: agentName,
+			task: taskName,
+		});
+		compileToastVisible.value = true;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function moveTaskToFile(
+	agentIndex: number,
+	taskIndex: number,
+	agentName: string,
+	taskName: string,
+) {
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const result = await callTool("config_task_move_to_file", {
+			agent: agentName,
+			task: taskName,
+		});
+		// Keep the task visible in the UI but mark it as coming from a file so
+		// it renders as `tasks/<name>.md` instead of disappearing until reload.
+		if (draft.value?.agents?.[agentIndex]?.tasks?.[taskIndex]) {
+			draft.value.agents[agentIndex].tasks[taskIndex].from_file = true;
+		}
 		okMessage.value = result;
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
@@ -3158,7 +3218,6 @@ function normalizedDraftConfig(): AppConfig {
 			name: (task.name ?? "").trim(),
 			type: task.type === "script" ? "script" : "prompt",
 			prompt: task.prompt ?? "",
-			script: task.script ?? "",
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
 			start_at: (task.start_at ?? "").trim(),

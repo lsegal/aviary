@@ -265,7 +265,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, prompt, script string) {
 	taskType = strings.ToLower(strings.TrimSpace(job.TaskType))
 	prompt = job.Prompt
-	script = job.Script
+	script = job.Prompt
 	if taskType != "" {
 		return taskType, prompt, script
 	}
@@ -285,7 +285,7 @@ func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, p
 			prompt = task.Prompt
 		}
 		if strings.TrimSpace(script) == "" {
-			script = task.Script
+			script = task.Prompt
 		}
 		return taskType, prompt, script
 	}

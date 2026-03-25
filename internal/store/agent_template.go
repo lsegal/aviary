@@ -245,6 +245,7 @@ func RenameMatchingAgentDirs(prev, next *config.Config) error {
 		if oldDir == newDir {
 			continue
 		}
+
 		if _, err := os.Stat(oldDir); err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -252,7 +253,20 @@ func RenameMatchingAgentDirs(prev, next *config.Config) error {
 			return fmt.Errorf("stat old agent dir for %q: %w", rename.from, err)
 		}
 		if _, err := os.Stat(newDir); err == nil {
-			continue
+			// If the target exists but appears to contain only scaffold/template
+			// files (i.e. it was created by SyncAgentTemplate rather than
+			// containing real user data), remove it so we can perform the
+			// rename. If it contains any non-template files, skip the rename.
+			isTemplateOnly, tErr := isTemplateOnlyDir(newDir)
+			if tErr != nil {
+				return fmt.Errorf("stat new agent dir for %q: %w", rename.to, tErr)
+			}
+			if !isTemplateOnly {
+				continue
+			}
+			if err := os.RemoveAll(newDir); err != nil {
+				return fmt.Errorf("remove template dir %q: %w", newDir, err)
+			}
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("stat new agent dir for %q: %w", rename.to, err)
 		}
@@ -268,10 +282,103 @@ func RenameMatchingAgentDirs(prev, next *config.Config) error {
 }
 
 func agentConfigRenameKey(agent config.AgentConfig) (string, error) {
-	agent.Name = ""
-	data, err := json.Marshal(agent)
+	// Build a canonical representation that ignores the agent name and
+	// normalizes empty slices/maps so logically-identical configs compare equal
+	// even when zero-valued fields differ (nil vs empty slice).
+	type canonAgent struct {
+		Model        string                    `json:"model,omitempty"`
+		Fallbacks    []string                  `json:"fallbacks,omitempty"`
+		Memory       string                    `json:"memory,omitempty"`
+		MemoryTokens int                       `json:"memory_tokens,omitempty"`
+		CompactKeep  int                       `json:"compact_keep,omitempty"`
+		WorkingDir   string                    `json:"working_dir,omitempty"`
+		Rules        string                    `json:"rules,omitempty"`
+		Permissions  *config.PermissionsConfig `json:"permissions,omitempty"`
+		Channels     []config.ChannelConfig    `json:"channels,omitempty"`
+		Tasks        []config.TaskConfig       `json:"tasks,omitempty"`
+	}
+
+	c := canonAgent{
+		Model:        agent.Model,
+		Fallbacks:    agent.Fallbacks,
+		Memory:       agent.Memory,
+		MemoryTokens: agent.MemoryTokens,
+		CompactKeep:  agent.CompactKeep,
+		WorkingDir:   agent.WorkingDir,
+		Rules:        agent.Rules,
+		Permissions:  agent.Permissions,
+		Channels:     agent.Channels,
+		Tasks:        agent.Tasks,
+	}
+
+	// Normalize empty slices to nil so that [] vs nil don't affect equality.
+	if len(c.Fallbacks) == 0 {
+		c.Fallbacks = nil
+	}
+	if len(c.Channels) == 0 {
+		c.Channels = nil
+	}
+	if len(c.Tasks) == 0 {
+		c.Tasks = nil
+	}
+
+	data, err := json.Marshal(c)
 	if err != nil {
 		return "", fmt.Errorf("marshal agent config: %w", err)
 	}
 	return string(data), nil
+}
+
+// isTemplateOnlyDir returns true when dir contains only the standard
+// scaffold files and (at most) empty scaffold directories created by the
+// embedded agent template. Any extra files cause it to return false.
+func isTemplateOnlyDir(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+
+	allowedFiles := map[string]struct{}{
+		"AGENTS.md": {},
+		"MEMORY.md": {},
+		"RULES.md":  {},
+	}
+	allowedDirs := map[string]struct{}{
+		"jobs":          {},
+		"sessions":      {},
+		"memory":        {},
+		"task_compiles": {},
+	}
+
+	markerFound := false
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			if _, ok := allowedDirs[name]; !ok {
+				return false, nil
+			}
+			// Ensure the scaffold dir contains only .gitkeep or is empty.
+			subs, err := os.ReadDir(filepath.Join(dir, name))
+			if err != nil {
+				return false, err
+			}
+			for _, se := range subs {
+				if se.IsDir() {
+					return false, nil
+				}
+				if se.Name() == ".gitkeep" {
+					markerFound = true
+					continue
+				}
+				// Any other file in the subdir disqualifies it as template-only.
+				return false, nil
+			}
+		} else {
+			if _, ok := allowedFiles[name]; !ok {
+				return false, nil
+			}
+			markerFound = true
+		}
+	}
+	return markerFound, nil
 }

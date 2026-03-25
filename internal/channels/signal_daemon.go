@@ -187,6 +187,22 @@ func (d *sharedDaemon) run(ctx context.Context) {
 // launchDaemon starts signal-cli as a subprocess, waits for it to accept TCP
 // connections, and returns the address and running Cmd.
 func (d *sharedDaemon) launchDaemon(ctx context.Context) (string, *exec.Cmd, error) {
+	return launchDaemonImpl(ctx, d)
+}
+
+// launchDaemonFuncType is the signature used to start the managed signal-cli
+// subprocess. Tests may replace `launchDaemonImpl` with a stub to avoid
+// launching the real binary during `go test`.
+type launchDaemonFuncType func(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error)
+
+// launchDaemonImpl is the package-level implementation used by
+// `sharedDaemon.launchDaemon`. It defaults to `defaultLaunchDaemon` but can
+// be swapped by tests.
+var launchDaemonImpl launchDaemonFuncType = defaultLaunchDaemon
+
+// defaultLaunchDaemon contains the original implementation for starting the
+// `signal-cli` subprocess and waiting for it to accept TCP connections.
+func defaultLaunchDaemon(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, fmt.Errorf("find free port: %w", err)

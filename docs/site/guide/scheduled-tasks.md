@@ -38,32 +38,53 @@ Supported frontmatter fields mirror the `aviary.yaml` task fields:
 | `watch` | Glob pattern to watch for file changes |
 | `target` | Output delivery route (e.g. `slack:#channel`) |
 | `type` | `prompt` (default) or `script` |
-| `script` | Lua script source (for `type: script` tasks) |
 | `start_at` | ISO-8601 timestamp for deferred start |
 | `run_once` | `true` to disarm after the first execution |
 | `enabled` | `false` to disable without deleting the file |
 
-For script tasks, the Lua source goes in the frontmatter `script` field and the body is left empty:
+For script tasks, the Lua source goes in the file body — the same position as a prompt:
 
 ```markdown
 ---
 type: script
 schedule: "0 * * * *"
 target: slack:#ops-alerts
-script: |
-  local result = tool.bash({ command = "df -h /" })
-  local pct = tonumber(result:match("(%d+)%%"))
-  if pct and pct > 85 then
-    print("Disk usage at " .. pct .. "% — investigate soon.")
-  else
-    print("SKIP")
-  end
 ---
+
+local result = tool.bash({ command = "df -h /" })
+local pct = tonumber(result:match("(%d+)%%"))
+if pct and pct > 85 then
+  print("Disk usage at " .. pct .. "% — investigate soon.")
+else
+  print("SKIP")
+end
 ```
 
 The agent's tasks directory defaults to `<data-dir>/agents/<name>/tasks/`. When `working_dir` is set in `aviary.yaml`, tasks are loaded from `<working_dir>/tasks/` instead.
 
 When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
+
+## Converting Existing Prompt Tasks to Scripts
+
+Prompt tasks that were already created can be compiled to Lua scripts at any time. This is useful when a task was created before the precompiler ran, when precompilation was disabled at the time, or when you want to retry compilation after improving the prompt.
+
+**CLI:**
+
+```sh
+aviary config convert-task-to-script <agent> <task-name>
+```
+
+For example:
+
+```sh
+aviary config convert-task-to-script assistant weather-check
+```
+
+The command returns immediately and runs compilation in the background. Use `task_compile_query` to track progress, or check the **Jobs** page in the web UI. If compilation succeeds, the task is updated in place — YAML-defined tasks stay in `aviary.yaml` and file-based tasks stay in their `.md` file.
+
+**MCP tool:** `config_task_convert_to_script` — accepts `agent` and `task` arguments. Returns a compile ID immediately; track with `task_compile_query`.
+
+**Web UI:** In **Settings → Agents → Tasks**, each prompt-type task shows a **Convert to Script** button. Clicking it starts compilation in the background and opens a notification banner with a link to the Jobs page.
 
 ## Moving Tasks from aviary.yaml to Files
 
@@ -72,13 +93,13 @@ Tasks that were originally defined inline in `aviary.yaml` can be migrated to th
 **CLI:**
 
 ```sh
-aviary task move-to-file <agent> <task-name>
+aviary config move-task-to-file <agent> <task-name>
 ```
 
 For example:
 
 ```sh
-aviary task move-to-file assistant daily-report
+aviary config move-task-to-file assistant daily-report
 ```
 
 This removes the `daily-report` task from `aviary.yaml` and writes it as `~/.config/aviary/agents/assistant/tasks/daily-report.md`. All task fields (schedule, prompt, target, etc.) are preserved in the file's frontmatter and body.

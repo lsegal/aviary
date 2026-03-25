@@ -647,11 +647,16 @@ func TestConfigTaskMoveToFileTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "daily-report"))
 
-	// task should be removed from aviary.yaml
+	// After moving the task to a file, loading config will merge file-based
+	// tasks back in and mark them with `FromFile`. Ensure there are no
+	// remaining inline (yaml) tasks.
 	savedCfg, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, savedCfg.Agents, 1)
-	assert.Empty(t, savedCfg.Agents[0].Tasks)
+	require.NotEmpty(t, savedCfg.Agents[0].Tasks)
+	for _, tt := range savedCfg.Agents[0].Tasks {
+		assert.True(t, tt.FromFile)
+	}
 
 	// task file should exist and be loadable
 	tasksDir := config.AgentTasksDir(savedCfg.Agents[0])
@@ -661,8 +666,8 @@ func TestConfigTaskMoveToFileTool(t *testing.T) {
 	assert.Equal(t, "0 9 * * *", task.Schedule)
 	assert.Equal(t, "Generate the daily report.", task.Prompt)
 
-	// error: task already moved (no longer in yaml)
-	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"}, "not found")
+	// error: task already moved (now defined as a file)
+	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"}, "already defined")
 }
 
 // ── session_create tool ───────────────────────────────────────────────────────
@@ -927,7 +932,7 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	updated, err := config.LoadWithTaskFiles("")
+	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
 		assert.Equal(t, "slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
@@ -954,7 +959,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 	})
 	assert.NoError(t, err)
 
-	updated, err := config.LoadWithTaskFiles("")
+	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
 		assert.Equal(t, "signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)

@@ -1230,7 +1230,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
 			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
 		}
-		loadedCfg, loadErr := config.LoadWithTaskFiles("")
+		loadedCfg, loadErr := config.Load("")
 		if loadErr != nil {
 			return nil, struct{}{}, loadErr
 		}
@@ -1334,11 +1334,16 @@ func registerTaskTools(s *sdkmcp.Server) {
 					taskName = existingName
 				}
 			}
+			// For script tasks, store the Lua source in Prompt so that
+			// task markdown files contain the script body as the file body.
+			body := promptText
+			if taskType == "script" {
+				body = scriptText
+			}
 			nextTask := config.TaskConfig{
 				Type:     taskType,
 				Name:     taskName,
-				Prompt:   promptText,
-				Script:   scriptText,
+				Prompt:   body,
 				Schedule: strings.TrimSpace(normalizedSchedule),
 				Target:   taskTarget,
 			}
@@ -1357,7 +1362,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, saveErr
 			}
 			// Reload config (including newly written task file) then reconcile.
-			reloadedCfg, reloadErr := config.LoadWithTaskFiles("")
+			reloadedCfg, reloadErr := config.Load("")
 			if reloadErr != nil {
 				return nil, struct{}{}, reloadErr
 			}

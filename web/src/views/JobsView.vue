@@ -773,7 +773,7 @@ function taskTrigger(task: ScheduledTask): string {
 }
 
 function taskBody(task: ScheduledTask): string {
-	return task.type === "script" ? task.script || "" : task.prompt || "";
+	return task.prompt || "";
 }
 
 function compileStatusLabel(status: TaskCompile["status"]): string {

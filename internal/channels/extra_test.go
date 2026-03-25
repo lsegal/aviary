@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +78,13 @@ func TestStart_NoPhoneNoAddr(t *testing.T) {
 // TestSharedDaemon_ContextCancelsDuringRun verifies that when signal-cli is not
 // present (or ctx times out before the daemon becomes ready), run exits cleanly.
 func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
+	// Prevent tests from spawning the real signal-cli; stub the launcher.
+	orig := launchDaemonImpl
+	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
+		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
+	}
+	defer func() { launchDaemonImpl = orig }()
+
 	d := &sharedDaemon{phone: "+15550001111"}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -96,6 +104,13 @@ func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
 // TestSharedDaemon_CancelBeforeRun verifies that a pre-cancelled ctx causes
 // run to return immediately without launching signal-cli.
 func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
+	// Prevent tests from spawning the real signal-cli; stub the launcher.
+	orig := launchDaemonImpl
+	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
+		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
+	}
+	defer func() { launchDaemonImpl = orig }()
+
 	d := &sharedDaemon{phone: "+15550001111"}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -333,6 +348,13 @@ func TestFetchLinkPreviews_LargeHead(t *testing.T) {
 // TestSharedDaemon_LaunchDaemonBinaryNotFound calls launchDaemon when signal-cli
 // is absent, exercising the cmd.Start error path.
 func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
+	// Prevent tests from spawning the real signal-cli; stub the launcher.
+	orig := launchDaemonImpl
+	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
+		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
+	}
+	defer func() { launchDaemonImpl = orig }()
+
 	d := &sharedDaemon{phone: "+15550001111"}
 	ctx := context.Background()
 	addr, cmd, err := d.launchDaemon(ctx)

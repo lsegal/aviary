@@ -53,30 +53,7 @@ specified task (format: <agent>/<task> or <task-name>).
 	},
 }
 
-var taskMoveToFileCmd = &cobra.Command{
-	Use:   "move-to-file <agent> <task>",
-	Short: "Move a task from aviary.yaml to a markdown file in the agent's tasks/ directory",
-	Long: `Move a scheduled task that is currently defined inline in aviary.yaml to a
-markdown file inside the agent's tasks/ directory. The task is removed from
-aviary.yaml and written as <task-name>.md.
-
-Example:
-  aviary task move-to-file myagent daily-report`,
-	Args: cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		out, err := dispatcher.CallTool(cmd.Context(), "config_task_move_to_file", map[string]any{
-			"agent": args[0],
-			"task":  args[1],
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(out)
-		return nil
-	},
-}
-
 func init() {
-	taskCmd.AddCommand(taskListCmd, taskRunCmd, taskStopCmd, taskMoveToFileCmd)
+	taskCmd.AddCommand(taskListCmd, taskRunCmd, taskStopCmd)
 	rootCmd.AddCommand(taskCmd)
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,8 +263,11 @@ type TaskConfig struct {
 	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
 	Watch    string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt   string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
-	Script   string `yaml:"script,omitempty"   json:"script,omitempty"`
 	Target   string `yaml:"target,omitempty"   json:"target,omitempty"`
+	// FromFile is set when the task was loaded from a markdown file rather than
+	// defined inline in aviary.yaml. It is intentionally excluded from YAML
+	// serialization so it never gets written back to the config file.
+	FromFile bool `yaml:"-" json:"from_file,omitempty"`
 }
 
 // ModelsConfig holds model provider configuration and defaults.
@@ -641,8 +645,8 @@ func RestoreLatestBackup(path string) error {
 	return nil
 }
 
-// Load reads and parses the config file at path.
-// If path is empty, DefaultPath() is used.
+// Load reads and parses the config file at path, then merges task definitions
+// from each agent's tasks/ directory. If path is empty, DefaultPath() is used.
 // Only fields present in the file are populated; unset fields remain zero so
 // they are omitted from YAML on the next save. Consuming code applies its own
 // runtime defaults (e.g. port 16677, CDP port 9222).
@@ -673,6 +677,18 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	for i := range cfg.Agents {
+		fileTasks, ftErr := LoadAgentTaskFiles(cfg.Agents[i])
+		if ftErr != nil {
+			slog.Warn("config: failed to load agent task files",
+				"agent", cfg.Agents[i].Name, "err", ftErr)
+			continue
+		}
+		if len(fileTasks) > 0 {
+			cfg.Agents[i].Tasks = mergeTasksByName(cfg.Agents[i].Tasks, fileTasks)
+		}
 	}
 
 	return &cfg, nil

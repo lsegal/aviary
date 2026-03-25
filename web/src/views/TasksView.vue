@@ -126,7 +126,7 @@ function describeTrigger(task: ScheduledTask): string {
 }
 
 function taskBody(task: ScheduledTask): string {
-	return task.type === "script" ? task.script || "" : task.prompt || "";
+	return task.prompt || "";
 }
 
 function statusClass(status: string): string {

@@ -78,12 +78,12 @@ export interface AgentTask {
 	name: string;
 	type?: "prompt" | "script";
 	prompt?: string;
-	script?: string;
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
 	watch?: string;
 	target?: string;
+	from_file?: boolean;
 }
 
 export interface ProviderConfig {
@@ -194,7 +194,6 @@ export const useSettingsStore = defineStore("settings", () => {
 						enabled: task.enabled !== false,
 						type: task.type === "script" ? "script" : "prompt",
 						prompt: task.prompt ?? "",
-						script: task.script ?? "",
 					})),
 				})),
 				models: {

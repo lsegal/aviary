@@ -13,7 +13,12 @@ import (
 
 func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (string, error) {
 	_ = cfg
+	// Prefer explicit script body on the job; fall back to Prompt for
+	// backwards compatibility.
 	script := strings.TrimSpace(job.Script)
+	if script == "" {
+		script = strings.TrimSpace(job.Prompt)
+	}
 	if script == "" {
 		return "", fmt.Errorf("script task %q has no script content", job.TaskID)
 	}

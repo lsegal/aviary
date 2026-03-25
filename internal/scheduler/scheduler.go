@@ -100,7 +100,7 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			if taskType == "" {
 				taskType = "prompt"
 			}
-			script := tc.Script
+			script := tc.Prompt
 
 			enqueue := func() {
 				if _, err := s.queue.EnqueueWithType(taskID, taskType, agentID, prompt, script, tc.Target, 0, "", ""); err != nil {
@@ -202,7 +202,6 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Name:      taskName,
 			Type:      strings.TrimSpace(tc.Type),
 			Prompt:    tc.Prompt,
-			Script:    tc.Script,
 			Target:    tc.Target,
 			RunOnce:   tc.RunOnce,
 			Schedule:  tc.Schedule,
@@ -244,7 +243,7 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 		if taskType == "" {
 			taskType = "prompt"
 		}
-		job, err := s.queue.StartImmediateWithType(key, taskType, agentID, tc.Prompt, tc.Script, tc.Target, "", "")
+		job, err := s.queue.StartImmediateWithType(key, taskType, agentID, tc.Prompt, tc.Prompt, tc.Target, "", "")
 		if err != nil {
 			return nil, err
 		}

@@ -201,15 +201,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if strings.TrimSpace(t.Prompt) == "" {
 					v.warnf(tf+".prompt", "prompt is empty; a blank message will be sent to the agent")
 				}
-				if strings.TrimSpace(t.Script) != "" {
-					v.warnf(tf+".script", "script is set on a prompt task and will be ignored")
-				}
 			case "script":
-				if strings.TrimSpace(t.Script) == "" {
-					v.errorf(tf+".script", "script tasks require non-empty script content")
-				}
-				if strings.TrimSpace(t.Prompt) != "" {
-					v.warnf(tf+".prompt", "prompt is set on a script task and is only used as a human-readable description")
+				if strings.TrimSpace(t.Prompt) == "" {
+					v.errorf(tf+".prompt", "script tasks require non-empty prompt content")
 				}
 			}
 

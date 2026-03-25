@@ -622,7 +622,7 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "Recurring task"))
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	assert.Len(t, loaded.Agents, 1)
 	assert.Len(t, loaded.Agents[0].Tasks, 1)
@@ -681,7 +681,7 @@ func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "Recurring task"))
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -786,15 +786,14 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "script", got.Type)
-	assert.Equal(t, "check subscript uptime", got.Prompt)
-	assert.Contains(t, got.Script, "compiled")
+	assert.Contains(t, got.Prompt, "compiled")
 }
 
 func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
@@ -849,7 +848,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -857,7 +856,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "review the latest emails and decide what matters", got.Prompt)
-	assert.Empty(t, got.Script)
+
 }
 
 func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
@@ -920,15 +919,14 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	assert.Contains(t, out, "Recurring task")
 	assert.True(t, called)
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "script", got.Type)
-	assert.Equal(t, "check subscript uptime", got.Prompt)
-	assert.Contains(t, got.Script, "compiled")
+	assert.Contains(t, got.Prompt, "compiled")
 }
 
 func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
@@ -1046,7 +1044,7 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 	assert.Contains(t, out, "Recurring task")
 	assert.False(t, called)
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -1054,7 +1052,7 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "check subscript uptime", got.Prompt)
-	assert.Empty(t, got.Script)
+
 }
 
 func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
@@ -2950,13 +2948,12 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 	require.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
-	assert.Equal(t, "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.", loaded.Agents[0].Tasks[0].Prompt)
-	assert.Contains(t, loaded.Agents[0].Tasks[0].Script, `print('compiled')`)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Prompt, `print('compiled')`)
 }
 
 func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T) {
@@ -3019,12 +3016,12 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 	require.NoError(t, err)
 	assert.Contains(t, secondOut, "updated")
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
-	assert.Contains(t, loaded.Agents[0].Tasks[0].Script, `print('compiled')`)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Prompt, `print('compiled')`)
 }
 
 func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.T) {
@@ -3079,7 +3076,7 @@ func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.
 	require.NoError(t, err)
 	assert.Contains(t, secondOut, "updated")
 
-	loaded, err := config.LoadWithTaskFiles("")
+	loaded, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)

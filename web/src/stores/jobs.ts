@@ -96,7 +96,6 @@ function isScheduledTask(value: unknown): value is ScheduledTask {
 			task.type === "prompt" ||
 			task.type === "script") &&
 		(task.prompt === undefined || typeof task.prompt === "string") &&
-		(task.script === undefined || typeof task.script === "string") &&
 		(task.trigger_type === "cron" || task.trigger_type === "watch")
 	);
 }

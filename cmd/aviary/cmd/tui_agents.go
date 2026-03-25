@@ -402,7 +402,7 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 	case taskFieldPrompt:
 		m.task.Prompt = value
 	case taskFieldScript:
-		m.task.Script = value
+		m.task.Prompt = value
 	case taskFieldTarget:
 		m.task.Target = value
 	}
@@ -611,7 +611,7 @@ func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
 		return m.openTextEditor(taskFieldWatch, m.task.Watch, "*.md")
 	case 6:
 		if taskTypeValue(m.task) == "script" {
-			return m.openTextEditor(taskFieldScript, m.task.Script, "print('hello from lua')")
+			return m.openTextEditor(taskFieldScript, m.task.Prompt, "print('hello from lua')")
 		}
 		return m.openTextEditor(taskFieldPrompt, m.task.Prompt, "task prompt")
 	case 7:
@@ -926,7 +926,7 @@ func taskTypeValue(task config.TaskConfig) string {
 
 func taskContentValue(task config.TaskConfig) string {
 	if taskTypeValue(task) == "script" {
-		return task.Script
+		return task.Prompt
 	}
 	return task.Prompt
 }

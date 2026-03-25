@@ -31,7 +31,54 @@ Set a value:
 	RunE: runConfigGetSet,
 }
 
+var configConvertTaskToScriptCmd = &cobra.Command{
+	Use:   "convert-task-to-script <agent> <task>",
+	Short: "Compile a prompt task to a Lua script and update it in place",
+	Long: `Asynchronously compile a PROMPT-type task to a Lua script. If compilation
+succeeds the task is updated in place — YAML-defined tasks stay in aviary.yaml
+and file-based tasks stay in their .md file.
+
+Example:
+  aviary config convert-task-to-script myagent weather-check`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		out, err := dispatcher.CallTool(cmd.Context(), "config_task_convert_to_script", map[string]any{
+			"agent": args[0],
+			"task":  args[1],
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
+var configMoveTaskToFileCmd = &cobra.Command{
+	Use:   "move-task-to-file <agent> <task>",
+	Short: "Move a task from aviary.yaml to a markdown file in the agent's tasks/ directory",
+	Long: `Move a scheduled task that is currently defined inline in aviary.yaml to a
+markdown file inside the agent's tasks/ directory. The task is removed from
+aviary.yaml and written as <task-name>.md.
+
+Example:
+  aviary config move-task-to-file myagent daily-report`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		out, err := dispatcher.CallTool(cmd.Context(), "config_task_move_to_file", map[string]any{
+			"agent": args[0],
+			"task":  args[1],
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	},
+}
+
 func init() {
+	configCmd.AddCommand(configConvertTaskToScriptCmd, configMoveTaskToFileCmd)
 	rootCmd.AddCommand(configCmd)
 }
 
