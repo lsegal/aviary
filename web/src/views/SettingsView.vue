@@ -867,12 +867,13 @@
 									</div>
 									<div class="flex items-center gap-2">
 										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
-										<label class="inline-flex items-center cursor-pointer">
-											<input type="checkbox" :checked="isTaskEnabled(selectedTask)" class="sr-only" @change="toggleTaskEnabled(selectedTask)" />
-											<span :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="inline-block h-6 w-11 rounded-full p-1 transition-colors">
-												<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"></span>
-											</span>
-										</label>
+										<label class="inline-flex items-center gap-2 cursor-pointer">
+<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
+<input type="checkbox" :checked="isTaskEnabled(selectedTask)" class="sr-only" role="switch" :aria-checked="isTaskEnabled(selectedTask)" @change="toggleTaskEnabled(selectedTask)" />
+<span :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors focus:outline-none">
+<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"></span>
+</span>
+</label>
 									</div>
 								</div>
 
