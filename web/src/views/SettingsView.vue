@@ -807,9 +807,6 @@
 						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
 							<div class="flex items-center justify-between">
 								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
-								<button type="button"
-									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									@click="addTask(i)">+ Add Task</button>
 							</div>
 
 
@@ -818,67 +815,96 @@
 								No tasks configured for this agent.
 							</div>
 
-<div v-for="(task, j) in agent.tasks" :key="`task-${i}-${j}`" :class="taskCardClass(task)" class="rounded-lg border p-4">
-<div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
-<!-- Left column: task name, status and actions -->
-<div class="space-y-3">
-<div class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Task</div>
-<div class="mt-1 flex items-center gap-2">
-<span :class="statusBadgeClass(isTaskEnabled(task))">{{ isTaskEnabled(task) ? 'Enabled' : 'Disabled' }}</span>
-</div>
+<div class="grid grid-cols-[180px_minmax(0,1fr)] gap-3">
+<!-- Left: list of tasks -->
 <div>
-<label class="field-label">Name</label>
-<input v-model="task.name" type="text" class="field-input font-mono" placeholder="daily-briefing" :data-task-id="task.name" />
+<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+<div v-if="agent.tasks?.length" class="space-y-1">
+<button v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" type="button" class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
+<span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
+<span v-if="task.from_file && task.name" class="ml-2 shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">file</span>
+</button>
 </div>
-<div class="flex flex-col gap-2">
-<button type="button" :class="enabledToggleClass(isTaskEnabled(task))" @click="toggleTaskEnabled(task)">{{ isTaskEnabled(task) ? 'Disable' : 'Enable' }}</button>
-<button v-if="(!task.type || task.type === 'prompt') && task.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!task.name" :title="task.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, task.name)">Convert to Script</button>
-<button v-if="!task.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!task.name" :title="task.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, j, agent.name, task.name)">Move to File</button>
-<button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
+<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
+</div>
+<div class="mt-2 space-y-2">
+<div class="flex gap-1.5">
+<button type="button" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" @click="addTask(i)">+ Add</button>
+<button type="button" class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="selectedTaskIdx === null || !agent.tasks?.length" @click="removeTask(i, selectedTaskIdx ?? 0)">Delete</button>
+</div>
+<div class="mt-2">
+<label class="flex cursor-pointer items-start gap-3">
+<input v-model="draft.scheduler.precompute_tasks" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute tasks
+<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling or delayed runs</span>
+</span>
+</label>
+</div>
 </div>
 </div>
 
-<!-- Right column: config fields and large editor -->
+<!-- Right: single editor for selected task -->
 <div>
-<div class="grid gap-3 lg:grid-cols-3">
+<div v-if="selectedTask">
+								<div class="flex items-start justify-between mb-3">
+									<div class="min-w-0">
+										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ selectedTask.name || "Task" }}</h5>
+										<p class="text-xs text-gray-400">{{ selectedTask.type }}</p>
+									</div>
+									<div class="flex items-center gap-2">
+										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
+										<label class="inline-flex items-center cursor-pointer">
+											<input type="checkbox" :checked="isTaskEnabled(selectedTask)" class="sr-only" @change="toggleTaskEnabled(selectedTask)" />
+											<span :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="inline-block h-6 w-11 rounded-full p-1 transition-colors">
+												<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"></span>
+											</span>
+										</label>
+									</div>
+								</div>
+
+								<div class="grid gap-3 lg:grid-cols-3">
+<div>
+<label class="field-label">Task name</label>
+<input v-model="selectedTask.name" type="text" class="field-input font-mono" placeholder="daily-briefing" />
+</div>
 <div>
 <label class="field-label">Task type</label>
-<select v-model="task.type" class="field-input">
+<select v-model="selectedTask.type" class="field-input">
 <option value="prompt">Prompt</option>
 <option value="script">Script</option>
 </select>
 </div>
 <div>
 <label class="field-label">Schedule</label>
-<input v-model="task.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
-</div>
-<div>
-<label class="field-label">Watch</label>
-<input v-model="task.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
+<input v-model="selectedTask.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
 </div>
 </div>
+
 <div class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
+<label class="field-label">Watch</label>
+<input v-model="selectedTask.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
+</div>
+<div>
 <label class="field-label">Send Via</label>
-<select :value="taskChannelSelection(task)" class="field-input" @change="setTaskChannelSelection(task, $event)">
+<select :value="taskChannelSelection(selectedTask)" class="field-input" @change="setTaskChannelSelection(selectedTask, $event)">
 <option value="">silent</option>
 <option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
 </select>
 </div>
-<div>
-<label class="field-label">Target</label>
-<input :value="taskChannelTarget(task)" type="text" class="field-input" :disabled="!taskChannelNeedsTarget(task)" :placeholder="taskChannelTargetPlaceholder(task)" @input="setTaskChannelTarget(task, $event)" />
-</div>
 </div>
 
 <div class="mt-4">
-<label class="field-label">{{ task.type === 'script' ? 'Script' : 'Prompt' }}</label>
-<textarea v-model="task.prompt" rows="8" class="field-input min-h-[28vh] font-mono text-xs" :class="{'font-mono text-xs': task.type === 'script'}" :placeholder="task.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
-<label class="mt-3 inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-<input v-model="task.run_once" type="checkbox" class="accent-blue-600" />
-Run once
-</label>
+<label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
+<textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
+<div class="flex gap-2 mt-3">
+<!-- Move task to file -->
+<button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
 </div>
+</div>
+</div>
+<div v-else class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+Select a task to edit.
 </div>
 </div>
 </div>
@@ -1570,6 +1596,19 @@ const selectedAgentSubtab = ref<AgentSubtab>(
 const selectedAgentIdx = ref(
 	route.params.agent ? agentIdxFromParam(route.params.agent as string) : 0,
 );
+
+// Selected task index for the currently-open agent (null when none selected)
+const selectedTaskIdx = ref<number | null>(
+	draft.value.agents[selectedAgentIdx.value]?.tasks?.length ? 0 : null,
+);
+
+const selectedTask = computed((): AgentTask | null => {
+	const agent = draft.value.agents[selectedAgentIdx.value];
+	if (!agent?.tasks?.length) return null;
+	const idx = selectedTaskIdx.value ?? 0;
+	if (idx < 0 || idx >= agent.tasks.length) return agent.tasks[0] ?? null;
+	return agent.tasks[idx] ?? null;
+});
 
 // Agent tab click → push new route (also resets subtab).
 watch(selectedAgentIdx, (idx) => {
