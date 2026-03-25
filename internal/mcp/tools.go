@@ -2696,6 +2696,53 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		return jsonResult(out)
 	})
+
+	type configTaskMoveToFileArgs struct {
+		Agent string `json:"agent"`
+		Task  string `json:"task"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "config_task_move_to_file",
+		Description: "Move a task defined in aviary.yaml to a markdown file in the agent's tasks/ directory. The task is removed from aviary.yaml and written as <task-name>.md. Only tasks defined directly in aviary.yaml can be moved; file-based tasks are already in files.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskMoveToFileArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_move_to_file", "agent", args.Agent, "task", args.Task)
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		agentIdx := -1
+		for i, a := range cfg.Agents {
+			if a.Name == args.Agent {
+				agentIdx = i
+				break
+			}
+		}
+		if agentIdx < 0 {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Agent)
+		}
+		taskIdx := -1
+		for i, t := range cfg.Agents[agentIdx].Tasks {
+			if t.Name == args.Task {
+				taskIdx = i
+				break
+			}
+		}
+		if taskIdx < 0 {
+			return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q (only tasks defined in aviary.yaml can be moved to files)", args.Task, args.Agent)
+		}
+		task := cfg.Agents[agentIdx].Tasks[taskIdx]
+		dir := config.AgentTasksDir(cfg.Agents[agentIdx])
+		path, err := config.SaveMarkdownTask(dir, task)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("writing task file: %w", err)
+		}
+		cfg.Agents[agentIdx].Tasks = append(cfg.Agents[agentIdx].Tasks[:taskIdx], cfg.Agents[agentIdx].Tasks[taskIdx+1:]...)
+		if err := config.Save("", cfg); err != nil {
+			return nil, struct{}{}, fmt.Errorf("saving config: %w", err)
+		}
+		return text(fmt.Sprintf("task %q moved to %s", args.Task, path))
+	})
 }
 
 // ── Usage tools ──────────────────────────────────────────────────────────────

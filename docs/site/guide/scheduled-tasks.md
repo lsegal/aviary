@@ -65,6 +65,28 @@ The agent's tasks directory defaults to `<data-dir>/agents/<name>/tasks/`. When 
 
 When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
 
+## Moving Tasks from aviary.yaml to Files
+
+Tasks that were originally defined inline in `aviary.yaml` can be migrated to the file-based format without losing any configuration. This is useful when you want to manage tasks as plain files alongside your agent's workspace.
+
+**CLI:**
+
+```sh
+aviary task move-to-file <agent> <task-name>
+```
+
+For example:
+
+```sh
+aviary task move-to-file assistant daily-report
+```
+
+This removes the `daily-report` task from `aviary.yaml` and writes it as `~/.config/aviary/agents/assistant/tasks/daily-report.md`. All task fields (schedule, prompt, target, etc.) are preserved in the file's frontmatter and body.
+
+**MCP tool:** `config_task_move_to_file` — accepts `agent` and `task` arguments.
+
+**Web UI:** In **Settings → Agents → Tasks**, each inline task has a **Move to File** button that performs the same operation.
+
 ## Triggering Tasks
 
 Tasks are defined under an agent in `aviary.yaml` or as markdown files in the agent's `tasks/` directory (see above). Three trigger modes are supported:

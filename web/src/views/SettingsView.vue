@@ -840,6 +840,13 @@
 											@click="toggleTaskEnabled(task)">
 											{{ isTaskEnabled(task) ? "Disable" : "Enable" }}
 										</button>
+										<button type="button"
+											class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+											:disabled="!task.name"
+											:title="task.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'"
+											@click="moveTaskToFile(i, j, agent.name, task.name)">
+											Move to File
+										</button>
 										<button type="button" class="danger-btn" @click="removeTask(i, j)">Remove Task</button>
 									</div>
 								</div>

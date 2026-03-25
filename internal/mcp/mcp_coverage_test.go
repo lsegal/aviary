@@ -595,6 +595,76 @@ func TestConfigGetSaveValidateTools(t *testing.T) {
 	assert.True(t, config.BoolOr(restoredCfg.Agents[0].Channels[0].Enabled, true))
 }
 
+// ── config_task_move_to_file tool ─────────────────────────────────────────────
+
+func TestConfigTaskMoveToFileTool(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	enabled := true
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-3-haiku",
+			Tasks: []config.TaskConfig{
+				{
+					Enabled:  &enabled,
+					Name:     "daily-report",
+					Schedule: "0 9 * * *",
+					Prompt:   "Generate the daily report.",
+				},
+			},
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	// error: agent not found
+	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "missing", "task": "daily-report"}, "not found")
+
+	// error: task not found
+	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "missing-task"}, "not found")
+
+	// success: move task to file
+	out, err := d.CallTool(context.Background(), "config_task_move_to_file", map[string]any{
+		"agent": "bot",
+		"task":  "daily-report",
+	})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "daily-report"))
+
+	// task should be removed from aviary.yaml
+	savedCfg, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, savedCfg.Agents, 1)
+	assert.Empty(t, savedCfg.Agents[0].Tasks)
+
+	// task file should exist and be loadable
+	tasksDir := config.AgentTasksDir(savedCfg.Agents[0])
+	task, err := config.LoadMarkdownTask(filepath.Join(tasksDir, "daily-report.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, "daily-report", task.Name)
+	assert.Equal(t, "0 9 * * *", task.Schedule)
+	assert.Equal(t, "Generate the daily report.", task.Prompt)
+
+	// error: task already moved (no longer in yaml)
+	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"}, "not found")
+}
+
 // ── session_create tool ───────────────────────────────────────────────────────
 
 func TestSessionCreateTool(t *testing.T) {
