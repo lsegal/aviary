@@ -1408,7 +1408,7 @@ import {
 	AlertDialogRoot,
 	AlertDialogTitle,
 } from "radix-vue";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import FancySelect from "../components/FancySelect.vue";
@@ -2607,14 +2607,17 @@ function addTask(agentIndex: number) {
 	// Focus the new task's name field so the user can rename it immediately.
 	void nextTick().then(() => {
 		try {
-			// Give the browser a tiny moment to paint the new element before focusing.
-			setTimeout(() => {
-				const el = document.querySelector<HTMLInputElement>(
-					`input[data-task-id="${task.name}"]`,
-				);
-				el?.focus();
-				el?.select();
-			}, 20);
+			// Use requestAnimationFrame twice to ensure the element is painted
+			// and inserted in the DOM before attempting to focus it.
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					const el = document.querySelector<HTMLInputElement>(
+						`input[data-task-id="${task.name}"]`,
+					);
+					el?.focus();
+					el?.select();
+				});
+			});
 		} catch {
 			// ignore
 		}
