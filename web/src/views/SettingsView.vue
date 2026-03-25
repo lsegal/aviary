@@ -837,20 +837,7 @@
 </div>
 <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
 </div>
-<div class="mt-2 space-y-2">
-<div class="flex gap-1.5">
-<button type="button" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" @click="addTask(i)">+ Add</button>
-<button type="button" class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="selectedTaskIdx === null || !agent.tasks?.length" @click="removeTask(i, selectedTaskIdx ?? 0)">Delete</button>
-</div>
-<div class="mt-2">
-<label class="flex cursor-pointer items-start gap-3">
-<input v-model="draft.scheduler.precompute_tasks" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute tasks
-<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling or delayed runs</span>
-</span>
-</label>
-</div>
-</div>
+<div class="mt-2"></div>
 </div>
 
 <!-- Right: single editor for selected task -->
