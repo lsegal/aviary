@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -76,12 +75,16 @@ func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/img.jpg") {
 			w.Header().Set("Content-Type", "image/jpeg")
-			w.Write([]byte("JPEGDATA"))
+			if _, err := w.Write([]byte("JPEGDATA")); err != nil {
+				t.Fatalf("failed to write image: %v", err)
+			}
 			return
 		}
 		// HTML page with title and og:image
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<!doctype html><html><head><title>My Title</title><meta property="og:image" content="` + ts.URL + `/img.jpg"></head><body></body></html>`))
+		if _, err := w.Write([]byte(`<!doctype html><html><head><title>My Title</title><meta property="og:image" content="` + ts.URL + `/img.jpg"></head><body></body></html>`)); err != nil {
+			t.Fatalf("failed to write html: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -89,7 +92,7 @@ func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if previews == nil || len(previews) == 0 {
+	if len(previews) == 0 {
 		t.Fatal("expected a preview")
 	}
 	p := previews[0]
@@ -118,7 +121,10 @@ func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
 		t.Fatalf("downloadTempImage failed: %v", err)
 	}
 	// file should exist and contain data
-	data, _ := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read downloaded file: %v", err)
+	}
 	if len(data) == 0 {
 		t.Fatal("downloaded file empty")
 	}
