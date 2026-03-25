@@ -3174,7 +3174,7 @@ async function importAgents() {
 	}
 }
 
-const newTaskNameMap = ref<Record<string,string>>({});
+const newTaskNameMap = ref<Record<string, string>>({});
 
 function createTaskFromName(agentIndex: number) {
 	const agent = draft.value.agents[agentIndex];
@@ -3191,7 +3191,11 @@ function createTaskFromName(agentIndex: number) {
 	});
 }
 
-const deleteTaskTarget = ref<{ agentIndex: number; taskIndex: number; name?: string } | null>(null);
+const deleteTaskTarget = ref<{
+	agentIndex: number;
+	taskIndex: number;
+	name?: string;
+} | null>(null);
 const deleteTaskOpen = ref(false);
 
 function promptDeleteTask(agentIndex: number, taskIndex: number, name?: string) {
