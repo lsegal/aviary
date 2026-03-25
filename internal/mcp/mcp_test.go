@@ -582,6 +582,9 @@ func TestTaskTools(t *testing.T) {
 func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -619,7 +622,7 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "Recurring task"))
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	assert.Len(t, loaded.Agents, 1)
 	assert.Len(t, loaded.Agents[0].Tasks, 1)
@@ -638,6 +641,9 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -675,7 +681,7 @@ func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "Recurring task"))
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -724,6 +730,9 @@ func TestTaskListReturnsConfiguredTasks(t *testing.T) {
 func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -777,7 +786,7 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -791,6 +800,9 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -837,7 +849,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -851,6 +863,9 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -905,7 +920,7 @@ func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
 	assert.Contains(t, out, "Recurring task")
 	assert.True(t, called)
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -977,6 +992,9 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -1028,7 +1046,7 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 	assert.Contains(t, out, "Recurring task")
 	assert.False(t, called)
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -2865,6 +2883,9 @@ func TestSessionSendTool_RequiresAgent(t *testing.T) {
 func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	require.NoError(t, err)
 
@@ -2929,7 +2950,7 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 	require.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -2941,6 +2962,9 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	require.NoError(t, err)
 
@@ -2995,7 +3019,7 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 	require.NoError(t, err)
 	assert.Contains(t, secondOut, "updated")
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
@@ -3006,6 +3030,9 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
 	err := store.EnsureDirs()
 	require.NoError(t, err)
 
@@ -3052,7 +3079,7 @@ func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.
 	require.NoError(t, err)
 	assert.Contains(t, secondOut, "updated")
 
-	loaded, err := config.Load("")
+	loaded, err := config.LoadWithTaskFiles("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)

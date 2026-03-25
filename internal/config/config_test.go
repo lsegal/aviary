@@ -62,6 +62,99 @@ func TestBaseDir(t *testing.T) {
 	})
 }
 
+func TestParseMarkdownTask(t *testing.T) {
+	t.Run("no frontmatter", func(t *testing.T) {
+		data := []byte("check the weather every morning")
+		task, err := ParseMarkdownTask("no-fm", data)
+		assert.NoError(t, err)
+		assert.Equal(t, "no-fm", task.Name)
+		assert.Equal(t, "check the weather every morning", task.Prompt)
+	})
+
+	t.Run("frontmatter with body prompt", func(t *testing.T) {
+		data := []byte("---\nschedule: \"*/5 * * * *\"\ntarget: slack:#alerts\n---\n\nCheck weather.\n")
+		task, err := ParseMarkdownTask("weather-check", data)
+		assert.NoError(t, err)
+		assert.Equal(t, "weather-check", task.Name)
+		assert.Equal(t, "*/5 * * * *", task.Schedule)
+		assert.Equal(t, "slack:#alerts", task.Target)
+		assert.Equal(t, "Check weather.", task.Prompt)
+	})
+
+	t.Run("frontmatter name overrides default", func(t *testing.T) {
+		data := []byte("---\nname: custom-name\nschedule: \"0 9 * * *\"\n---\n\nDo something.\n")
+		task, err := ParseMarkdownTask("file-stem", data)
+		assert.NoError(t, err)
+		assert.Equal(t, "custom-name", task.Name)
+		assert.Equal(t, "0 9 * * *", task.Schedule)
+		assert.Equal(t, "Do something.", task.Prompt)
+	})
+
+	t.Run("script task with empty body", func(t *testing.T) {
+		data := []byte("---\ntype: script\nschedule: \"0 * * * *\"\nscript: |\n  print('hello')\n---\n")
+		task, err := ParseMarkdownTask("my-script", data)
+		assert.NoError(t, err)
+		assert.Equal(t, "script", task.Type)
+		assert.Contains(t, task.Script, "print('hello')")
+		assert.Empty(t, task.Prompt)
+	})
+}
+
+func TestSaveAndLoadMarkdownTask(t *testing.T) {
+	dir := t.TempDir()
+	task := TaskConfig{
+		Name:     "daily-report",
+		Schedule: "0 9 * * *",
+		Target:   "slack:#general",
+		Prompt:   "Write a daily summary of what happened.",
+	}
+	path, err := SaveMarkdownTask(dir, task)
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "daily-report.md"), path)
+
+	loaded, err := LoadMarkdownTask(path)
+	assert.NoError(t, err)
+	assert.Equal(t, "daily-report", loaded.Name)
+	assert.Equal(t, "0 9 * * *", loaded.Schedule)
+	assert.Equal(t, "slack:#general", loaded.Target)
+	assert.Equal(t, "Write a daily summary of what happened.", loaded.Prompt)
+}
+
+func TestLoadWithTaskFiles(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
+
+	// Write aviary.yaml with one agent, no tasks.
+	cfg := &Config{
+		Agents: []AgentConfig{{Name: "bot", Model: "test/x"}},
+	}
+	assert.NoError(t, Save("", cfg))
+
+	// Write a task file.
+	tasksDir := AgentTasksDir(cfg.Agents[0])
+	_, err := SaveMarkdownTask(tasksDir, TaskConfig{
+		Name:     "morning-check",
+		Schedule: "0 9 * * *",
+		Prompt:   "Check the news.",
+	})
+	assert.NoError(t, err)
+
+	// LoadWithTaskFiles should merge the file task in.
+	loaded, err := LoadWithTaskFiles("")
+	assert.NoError(t, err)
+	assert.Len(t, loaded.Agents, 1)
+	assert.Len(t, loaded.Agents[0].Tasks, 1)
+	assert.Equal(t, "morning-check", loaded.Agents[0].Tasks[0].Name)
+	assert.Equal(t, "0 9 * * *", loaded.Agents[0].Tasks[0].Schedule)
+	assert.Equal(t, "Check the news.", loaded.Agents[0].Tasks[0].Prompt)
+
+	// Plain Load should not include the file task.
+	plain, err := Load("")
+	assert.NoError(t, err)
+	assert.Empty(t, plain.Agents[0].Tasks)
+}
+
 func TestLoad(t *testing.T) {
 	t.Run("missing returns empty config", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())

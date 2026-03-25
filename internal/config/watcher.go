@@ -94,9 +94,9 @@ func (w *Watcher) Stop() {
 	close(w.done)
 }
 
-// reload reads the config and notifies all handlers.
+// reload reads the config (including agent task files) and notifies all handlers.
 func (w *Watcher) reload() {
-	cfg, err := Load(w.path)
+	cfg, err := LoadWithTaskFiles(w.path)
 	if err != nil {
 		slog.Error("config reload failed", "path", w.path, "err", err)
 		return

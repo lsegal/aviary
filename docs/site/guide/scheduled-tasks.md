@@ -12,9 +12,62 @@ Aviary runs two kinds of scheduled work:
 
 Both types support the same triggers, deliver output to the same targets, and appear identically in the job queue. The difference is entirely in how they execute.
 
+## Defining Tasks in Files
+
+The preferred way to define tasks is as markdown files inside the agent's `tasks/` directory. This keeps task definitions alongside the agent's workspace and out of `aviary.yaml`.
+
+Each file is named `<task-name>.md` and contains an optional YAML frontmatter block followed by the task prompt as the file body:
+
+```markdown
+---
+schedule: "*/5 * * * *"
+target: slack:#alerts
+---
+
+Check the weather forecast and alert me if rain is likely today.
+```
+
+Aviary loads all `*.md` files from the agent's `tasks/` directory at startup and on every config reload. The filename stem (`weather-check` for `weather-check.md`) becomes the task name unless the frontmatter overrides it with a `name:` field.
+
+Supported frontmatter fields mirror the `aviary.yaml` task fields:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Override the task name (defaults to filename stem) |
+| `schedule` | Cron expression (5-field or 6-field with leading seconds) |
+| `watch` | Glob pattern to watch for file changes |
+| `target` | Output delivery route (e.g. `slack:#channel`) |
+| `type` | `prompt` (default) or `script` |
+| `script` | Lua script source (for `type: script` tasks) |
+| `start_at` | ISO-8601 timestamp for deferred start |
+| `run_once` | `true` to disarm after the first execution |
+| `enabled` | `false` to disable without deleting the file |
+
+For script tasks, the Lua source goes in the frontmatter `script` field and the body is left empty:
+
+```markdown
+---
+type: script
+schedule: "0 * * * *"
+target: slack:#ops-alerts
+script: |
+  local result = tool.bash({ command = "df -h /" })
+  local pct = tonumber(result:match("(%d+)%%"))
+  if pct and pct > 85 then
+    print("Disk usage at " .. pct .. "% — investigate soon.")
+  else
+    print("SKIP")
+  end
+---
+```
+
+The agent's tasks directory defaults to `<data-dir>/agents/<name>/tasks/`. When `working_dir` is set in `aviary.yaml`, tasks are loaded from `<working_dir>/tasks/` instead.
+
+When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
+
 ## Triggering Tasks
 
-Tasks are defined under an agent in `aviary.yaml`. Three trigger modes are supported:
+Tasks are defined under an agent in `aviary.yaml` or as markdown files in the agent's `tasks/` directory (see above). Three trigger modes are supported:
 
 **Cron schedule** — runs on a fixed interval using a standard 5-field cron expression or a 6-field expression with a leading seconds field.
 
@@ -188,6 +241,40 @@ The Lua runtime exposes:
 - `environment.agent_id`, `.session_id`, `.task_id`, `.job_id` — runtime context
 
 File I/O, `os.execute`, `loadfile`, and `dofile` are disabled. Scripts run fully sandboxed with access only to the tools explicitly granted to their agent.
+
+## Managing the Job Queue
+
+The job queue shows all pending, running, completed, and failed jobs. You can inspect and control jobs through the control panel or directly via MCP tools.
+
+**Stopping a job** — cancel a specific pending or running job by ID:
+
+```
+job_stop id=<job-id>
+```
+
+The job transitions to `canceled` status. If the job is actively running, its context is interrupted and the agent session is stopped. If the job is pending, it is removed from the queue without executing.
+
+**Running a pending job immediately** — bypass the scheduled time and concurrency limits:
+
+```
+job_run_now id=<job-id>
+```
+
+**Querying jobs** — list jobs by date range, status, or agent:
+
+```
+job_query start=2024-01-01 end=2024-01-31
+```
+
+**Stopping all jobs for a task** — cancel every pending and running job for a given task:
+
+```
+task_stop name=<task-name>
+task_stop name=<agent/task>
+task_stop           # stops all pending and running jobs
+```
+
+The control panel Jobs page also provides a **Stop** button next to any running job and a **Run Now** button for pending jobs.
 
 ## Inspecting Compile Attempts
 

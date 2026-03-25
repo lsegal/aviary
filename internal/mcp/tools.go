@@ -1230,7 +1230,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
 			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
 		}
-		loadedCfg, loadErr := config.Load("")
+		loadedCfg, loadErr := config.LoadWithTaskFiles("")
 		if loadErr != nil {
 			return nil, struct{}{}, loadErr
 		}
@@ -1342,24 +1342,29 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Schedule: strings.TrimSpace(normalizedSchedule),
 				Target:   taskTarget,
 			}
+			// Check whether a task with this name already exists (for action message).
 			updated := false
-			for i := range loadedCfg.Agents[agentIdx].Tasks {
-				if loadedCfg.Agents[agentIdx].Tasks[i].Name == taskName {
-					loadedCfg.Agents[agentIdx].Tasks[i] = nextTask
+			for _, t := range loadedCfg.Agents[agentIdx].Tasks {
+				if t.Name == taskName {
 					updated = true
 					break
 				}
 			}
-			if !updated {
-				loadedCfg.Agents[agentIdx].Tasks = append(loadedCfg.Agents[agentIdx].Tasks, nextTask)
+			// Write the task definition to the agent's tasks/ directory as a
+			// markdown file.  This keeps task definitions out of aviary.yaml.
+			tasksDir := config.AgentTasksDir(loadedCfg.Agents[agentIdx])
+			if _, saveErr := config.SaveMarkdownTask(tasksDir, nextTask); saveErr != nil {
+				return nil, struct{}{}, saveErr
 			}
-			if err := config.Save("", loadedCfg); err != nil {
-				return nil, struct{}{}, err
+			// Reload config (including newly written task file) then reconcile.
+			reloadedCfg, reloadErr := config.LoadWithTaskFiles("")
+			if reloadErr != nil {
+				return nil, struct{}{}, reloadErr
 			}
 			if d.Agents != nil {
-				d.Agents.Reconcile(loadedCfg)
+				d.Agents.Reconcile(reloadedCfg)
 			}
-			d.Scheduler.Reconcile(loadedCfg)
+			d.Scheduler.Reconcile(reloadedCfg)
 			action := "created"
 			if updated {
 				action = "updated"

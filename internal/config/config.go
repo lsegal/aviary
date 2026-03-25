@@ -514,7 +514,19 @@ func BaseDir() string {
 	if base := os.Getenv("AVIARY_CONFIG_BASE_DIR"); base != "" {
 		return base
 	}
-	return filepath.Dir(DefaultPath())
+	// Prefer an existing config file if one is present. DefaultPath() still
+	// points to aviary.yaml, but we also accept aviary.yml when looking up
+	// the base config directory.
+	def := DefaultPath()
+	if _, err := os.Stat(def); err == nil {
+		return filepath.Dir(def)
+	}
+	// Fallback: check for aviary.yml in the same directory.
+	alt := filepath.Join(filepath.Dir(def), "aviary.yml")
+	if _, err := os.Stat(alt); err == nil {
+		return filepath.Dir(alt)
+	}
+	return filepath.Dir(def)
 }
 
 // Save writes cfg to path as YAML (creating parent directories as needed).
@@ -642,9 +654,20 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{}, nil
+			// Try alternate filename aviary.yml in the same directory.
+			alt := filepath.Join(filepath.Dir(path), "aviary.yml")
+			data, err = os.ReadFile(alt)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return &Config{}, nil
+				}
+				return nil, fmt.Errorf("reading config %s: %w", alt, err)
+			}
+			// Use the alternate path for error messages further down.
+			path = alt
+		} else {
+			return nil, fmt.Errorf("reading config %s: %w", path, err)
 		}
-		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
 	var cfg Config

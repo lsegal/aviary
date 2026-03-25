@@ -29,6 +29,7 @@ func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Schedul
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
 	err := store.EnsureDirs()
 	assert.NoError(t, err)
 
@@ -856,7 +857,7 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	updated, err := config.Load("")
+	updated, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
 		assert.Equal(t, "slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
@@ -883,7 +884,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 	})
 	assert.NoError(t, err)
 
-	updated, err := config.Load("")
+	updated, err := config.LoadWithTaskFiles("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
 		assert.Equal(t, "signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)
@@ -964,6 +965,82 @@ func TestJobRunNow_NilScheduler(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 	toolCallContains(t, d, "job_run_now", map[string]any{"id": "x"}, "scheduler not initialized")
+}
+
+// ── job_stop ──────────────────────────────────────────────────────────────────
+
+func TestJobStop_NilScheduler(t *testing.T) {
+	old := GetDeps()
+	SetDeps(&Deps{Scheduler: nil})
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	d := NewDispatcher("https://localhost:16677", "")
+	toolCallContains(t, d, "job_stop", map[string]any{"id": "x"}, "scheduler not initialized")
+}
+
+func TestJobStop_StopsPendingJob(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	}
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
+
+	job, err := s.Queue().EnqueueAt("bot/daily", "bot", "send hi", "", 1, time.Now().Add(1*time.Hour), "", "")
+	assert.NoError(t, err)
+
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "job_stop", map[string]any{"id": job.ID})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "stopped job")
+	assert.Contains(t, out, job.ID)
+}
+
+func TestJobStop_NotFound(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	}
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
+
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "job_stop", map[string]any{"id": "nonexistent-job-xyz"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "no pending or running job found")
 }
 
 // ── usage_query with RFC3339 timestamps ──────────────────────────────────────
