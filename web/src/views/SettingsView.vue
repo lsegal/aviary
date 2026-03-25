@@ -815,14 +815,24 @@
 								No tasks configured for this agent.
 							</div>
 
-<div class="grid grid-cols-[180px_minmax(0,1fr)] gap-3">
+<div class="grid grid-cols-[260px_minmax(0,1fr)] gap-3">
 <!-- Left: list of tasks -->
 <div>
 <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+<div class="flex gap-1.5 mb-2">
+<input v-model="newTaskNameMap[agent.name || i]" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" placeholder="task-name" />
+<button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!agent.name" @click="createTaskFromName(i)">+</button>
+</div>
 <div v-if="agent.tasks?.length" class="space-y-1">
 <button v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" type="button" class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
 <span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
-<span v-if="task.from_file && task.name" class="ml-2 shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">file</span>
+
+<button type="button" class="ml-2 text-gray-400 hover:text-red-600 p-1" aria-label="Delete task" @click.stop="promptDeleteTask(i, j, task.name)">
+<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+<path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3.5a.5.5 0 000 1H4v9a2 2 0 002 2h8a2 2 0 002-2V5h1.5a.5.5 0 000-1H15V3a1 1 0 00-1-1H6zM8 6a1 1 0 012 0v7a1 1 0 11-2 0V6zm4 0a1 1 0 012 0v7a1 1 0 11-2 0V6z" clip-rule="evenodd" />
+</svg>
+</button>
+
 </button>
 </div>
 <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
@@ -849,7 +859,11 @@
 								<div class="flex items-start justify-between mb-3">
 									<div class="min-w-0">
 										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ selectedTask.name || "Task" }}</h5>
-										<p class="text-xs text-gray-400">{{ selectedTask.type }}</p>
+										<div class="flex gap-2 mt-1">
+										<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">Defined in: {{ selectedTask.from_file ? 'tasks' : 'aviary.yml' }}</span>
+										<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ selectedTask.type }}</span>
+										<span v-if="!isTaskEnabled(selectedTask)" class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">disabled</span>
+									</div>
 									</div>
 									<div class="flex items-center gap-2">
 										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
@@ -1353,6 +1367,21 @@ Select a task to edit.
 						@click="confirmDeleteAgentFile">
 						Delete
 					</AlertDialogAction>
+				</div>
+			</AlertDialogContent>
+		</AlertDialogPortal>
+	</AlertDialogRoot>
+
+	<!-- Delete task confirmation dialog -->
+	<AlertDialogRoot :open="deleteTaskOpen" @update:open="(v) => { if (!v) deleteTaskOpen = false }">
+		<AlertDialogPortal>
+			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+			<AlertDialogContent class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">Delete task?</AlertDialogTitle>
+				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">This will permanently delete <span class="font-medium text-gray-900 dark:text-white">{{ deleteTaskTarget?.name || 'this task' }}</span>. This cannot be undone.</AlertDialogDescription>
+				<div ref="deleteTaskBtns" class="mt-6 flex justify-end gap-3">
+					<AlertDialogCancel class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">Cancel</AlertDialogCancel>
+					<AlertDialogAction class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500" @click="confirmDeleteTaskAction">Delete</AlertDialogAction>
 				</div>
 			</AlertDialogContent>
 		</AlertDialogPortal>
@@ -3143,6 +3172,41 @@ async function importAgents() {
 	} catch {
 		// best-effort import
 	}
+}
+
+const newTaskNameMap = ref<Record<string,string>>({});
+
+function createTaskFromName(agentIndex: number) {
+	const agent = draft.value.agents[agentIndex];
+	if (!agent) return;
+	const key = agent.name || String(agentIndex);
+	const desired = (newTaskNameMap.value[key] || "").trim();
+	addTask(agentIndex);
+	nextTick(() => {
+		const tasks = draft.value.agents[agentIndex].tasks;
+		const idx = tasks.length - 1;
+		if (desired) tasks[idx].name = desired;
+		selectedTaskIdx.value = idx;
+		newTaskNameMap.value[key] = "";
+	});
+}
+
+const deleteTaskTarget = ref<{ agentIndex: number; taskIndex: number; name?: string } | null>(null);
+const deleteTaskOpen = ref(false);
+
+function promptDeleteTask(agentIndex: number, taskIndex: number, name?: string) {
+	deleteTaskTarget.value = { agentIndex, taskIndex, name };
+	deleteTaskOpen.value = true;
+}
+
+function confirmDeleteTaskAction() {
+	if (!deleteTaskTarget.value) return;
+	const { agentIndex, taskIndex } = deleteTaskTarget.value;
+	removeTask(agentIndex, taskIndex);
+	const tasks = draft.value.agents[agentIndex]?.tasks ?? [];
+	selectedTaskIdx.value = tasks.length ? Math.min(selectedTaskIdx.value ?? 0, tasks.length - 1) : null;
+	deleteTaskOpen.value = false;
+	deleteTaskTarget.value = null;
 }
 
 function normalizedDraftConfig(): AppConfig {
