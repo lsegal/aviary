@@ -5,6 +5,8 @@ Usage:
 - **Install**: `aviary service install` — Installs and starts the Aviary service for the current OS (systemd on Linux, launchd on macOS, Windows Service via sc).
 - **Uninstall**: `aviary service uninstall` — Stops and removes the installed service.
 - **Status**: `aviary service status` — Shows whether the Aviary server is running.
+- **Start**: `aviary service start` — Start the installed Aviary service.
+- **Stop**: `aviary service stop` — Stop the installed Aviary service.
 
 Notes:
 

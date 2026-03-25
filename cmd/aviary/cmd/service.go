@@ -30,6 +30,18 @@ func init() {
 	})
 
 	serviceCmd.AddCommand(&cobra.Command{
+		Use:   "start",
+		Short: "Start the Aviary service (if installed)",
+		RunE:  runStartService,
+	})
+
+	serviceCmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "Stop the Aviary service (if installed)",
+		RunE:  runStopService,
+	})
+
+	serviceCmd.AddCommand(&cobra.Command{
 		Use:   "install",
 		Short: "Install the Aviary OS service",
 		RunE:  runInstallService,
@@ -63,6 +75,30 @@ func init() {
 			Short: "Uninstall the `pnpm docs:dev` service (dev builds only)",
 			RunE:  runUninstallDevDocsService,
 		})
+
+		serviceCmd.AddCommand(&cobra.Command{
+			Use:   "start-dev",
+			Short: "Start the Aviary dev service (dev builds only)",
+			RunE:  runStartDevService,
+		})
+
+		serviceCmd.AddCommand(&cobra.Command{
+			Use:   "stop-dev",
+			Short: "Stop the Aviary dev service (dev builds only)",
+			RunE:  runStopDevService,
+		})
+
+		serviceCmd.AddCommand(&cobra.Command{
+			Use:   "start-dev-docs",
+			Short: "Start the Aviary docs:dev service (dev builds only)",
+			RunE:  runStartDevDocsService,
+		})
+
+		serviceCmd.AddCommand(&cobra.Command{
+			Use:   "stop-dev-docs",
+			Short: "Stop the Aviary docs:dev service (dev builds only)",
+			RunE:  runStopDevDocsService,
+		})
 	}
 }
 
@@ -79,11 +115,22 @@ func runInstallService(_ *cobra.Command, _ []string) error {
 		Args:        []string{"serve", "start", "-d"},
 		WorkingDir:  filepath.Dir(exe),
 	}
-	return server.InstallService(opts)
+	fmt.Printf("Installing service: %s\n", opts.Name)
+	if err := server.InstallService(opts); err != nil {
+		return err
+	}
+	fmt.Printf("Service installed and started: %s\n", opts.Name)
+	return nil
 }
 
 func runUninstallService(_ *cobra.Command, _ []string) error {
-	return server.UninstallService("aviary")
+	name := "aviary"
+	fmt.Printf("Uninstalling service: %s\n", name)
+	if err := server.UninstallService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service uninstalled: %s\n", name)
+	return nil
 }
 
 func runInstallDevService(_ *cobra.Command, _ []string) error {
@@ -147,11 +194,22 @@ func runInstallDevService(_ *cobra.Command, _ []string) error {
 		WorkingDir:  wd,
 		User:        username,
 	}
-	return server.InstallService(opts)
+	fmt.Printf("Installing service: %s\n", opts.Name)
+	if err := server.InstallService(opts); err != nil {
+		return err
+	}
+	fmt.Printf("Service installed and started: %s\n", opts.Name)
+	return nil
 }
 
 func runUninstallDevService(_ *cobra.Command, _ []string) error {
-	return server.UninstallService("aviary-dev")
+	name := "aviary-dev"
+	fmt.Printf("Uninstalling service: %s\n", name)
+	if err := server.UninstallService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service uninstalled: %s\n", name)
+	return nil
 }
 
 func runInstallDevDocsService(_ *cobra.Command, _ []string) error {
@@ -195,14 +253,88 @@ func runInstallDevDocsService(_ *cobra.Command, _ []string) error {
 		WorkingDir:  wd,
 		User:        username,
 	}
-	return server.InstallService(opts)
+	fmt.Printf("Installing service: %s\n", opts.Name)
+	if err := server.InstallService(opts); err != nil {
+		return err
+	}
+	fmt.Printf("Service installed and started: %s\n", opts.Name)
+	return nil
 }
 
 func runUninstallDevDocsService(_ *cobra.Command, _ []string) error {
-	return server.UninstallService("aviary-dev-docs")
+	name := "aviary-dev-docs"
+	fmt.Printf("Uninstalling service: %s\n", name)
+	if err := server.UninstallService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service uninstalled: %s\n", name)
+	return nil
+}
+
+func runStartService(_ *cobra.Command, _ []string) error {
+	name := "aviary"
+	fmt.Printf("Starting service: %s\n", name)
+	if err := server.StartService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service started: %s\n", name)
+	return nil
+}
+func runStopService(_ *cobra.Command, _ []string) error {
+	name := "aviary"
+	fmt.Printf("Stopping service: %s\n", name)
+	if err := server.StopService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service stopped: %s\n", name)
+	return nil
+}
+
+func runStartDevService(_ *cobra.Command, _ []string) error {
+	name := "aviary-dev"
+	fmt.Printf("Starting service: %s\n", name)
+	if err := server.StartService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service started: %s\n", name)
+	return nil
+}
+
+func runStopDevService(_ *cobra.Command, _ []string) error {
+	name := "aviary-dev"
+	fmt.Printf("Stopping service: %s\n", name)
+	if err := server.StopService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service stopped: %s\n", name)
+	return nil
+}
+
+func runStartDevDocsService(_ *cobra.Command, _ []string) error {
+	name := "aviary-dev-docs"
+	fmt.Printf("Starting service: %s\n", name)
+	if err := server.StartService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service started: %s\n", name)
+	return nil
+}
+
+func runStopDevDocsService(_ *cobra.Command, _ []string) error {
+	name := "aviary-dev-docs"
+	fmt.Printf("Stopping service: %s\n", name)
+	if err := server.StopService(name); err != nil {
+		return err
+	}
+	fmt.Printf("Service stopped: %s\n", name)
+	return nil
 }
 
 func runStatus(_ *cobra.Command, _ []string) error {
+	// The status command reports on the running server process rather than
+	// the platform service name, but include the canonical service name
+	// being queried for clarity.
+	serviceName := "aviary"
 	running, pid, err := server.IsRunning()
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
@@ -212,10 +344,10 @@ func runStatus(_ *cobra.Command, _ []string) error {
 			// Stale PID file — clean it up.
 			_ = server.RemovePID()
 		}
-		fmt.Println("Aviary is not running.")
+		fmt.Printf("Service '%s' is not running.\n", serviceName)
 		return nil
 	}
-	fmt.Printf("Aviary is running (PID %d).\n", pid)
+	fmt.Printf("Service '%s' is running (PID %d).\n", serviceName, pid)
 	fmt.Printf("PID file: %s\n", server.PIDPath())
 	return nil
 }

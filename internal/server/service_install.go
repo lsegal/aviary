@@ -124,6 +124,48 @@ func UninstallService(name string) error {
 	}
 }
 
+// StartService starts the named service using the platform's service manager.
+func StartService(name string) error {
+	switch runtime.GOOS {
+	case "linux":
+		if err := runCmd("systemctl", "--user", "start", name); err != nil {
+			return err
+		}
+		return nil
+	case "darwin":
+		label := "bot.aviary." + name
+		if err := runCmd("launchctl", "start", label); err != nil {
+			return err
+		}
+		return nil
+	case "windows":
+		return runCmd("sc", "start", name)
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
+}
+
+// StopService stops the named service using the platform's service manager.
+func StopService(name string) error {
+	switch runtime.GOOS {
+	case "linux":
+		if err := runCmd("systemctl", "--user", "stop", name); err != nil {
+			return err
+		}
+		return nil
+	case "darwin":
+		label := "bot.aviary." + name
+		if err := runCmd("launchctl", "stop", label); err != nil {
+			return err
+		}
+		return nil
+	case "windows":
+		return runCmd("sc", "stop", name)
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
+}
+
 // trySudoRetry checks for permission-related errors and, if appropriate,
 // re-executes the same aviary binary via sudo to retry the requested action.
 func trySudoRetry(action string, origErr error) error {
