@@ -91,6 +91,24 @@ export default {
 
 			function runTypingOnce() {
 				const els = Array.from(document.querySelectorAll(".install-command"));
+
+				// If an element was pre-rendered with the full text and 'typing-done'
+				// but lacks the caret, clear it so typing can restart.
+				for (const el of els) {
+					try {
+						const hasDone = el.classList.contains("typing-done");
+						const hasCaret = !!el.querySelector(".install-caret");
+						const dataText = el.getAttribute("data-install-text") || "";
+						const currentText = el.textContent?.trim() || "";
+						if (hasDone && !hasCaret && dataText && currentText === dataText) {
+							el.classList.remove("typing-done");
+							el.textContent = "";
+						}
+					} catch (e) {
+						// ignore per-element errors
+					}
+				}
+
 				const pending = els.filter(
 					(el) =>
 						!el.classList.contains("typing-done") &&
