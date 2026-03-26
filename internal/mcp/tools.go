@@ -158,6 +158,12 @@ type agentNameArgs struct {
 	Name string `json:"name"`
 }
 
+type agentStopArgs struct {
+	Name      string `json:"name"`
+	SessionID string `json:"session_id,omitempty"`
+	Session   string `json:"session,omitempty"`
+}
+
 type agentRunScriptArgs struct {
 	Agent     string `json:"agent,omitempty"`
 	Script    string `json:"script"`
@@ -395,7 +401,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_stop",
 		Description: "Immediately stop all work in progress for an agent",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d.Agents == nil {
 			return nil, struct{}{}, fmt.Errorf("agent manager not initialized; is the server running?")
@@ -404,7 +410,69 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
 		}
+
+		// If a session was specified, only stop that session and delete matching
+		// checkpoints. Otherwise stop the whole agent and delete all checkpoints.
+		sid := strings.TrimSpace(args.SessionID)
+		if sid == "" && strings.TrimSpace(args.Session) != "" {
+			// Resolve agent ID then get/create named session to obtain session ID.
+			agentID, _, err := resolveAgentIdentity(args.Name)
+			if err == nil {
+				if sess, err2 := agent.NewSessionManager().GetOrCreateNamed(agentID, args.Session); err2 == nil && sess != nil {
+					sid = sess.ID
+				}
+			}
+		}
+
+		if sid != "" {
+			// Stop only the specified session (does nothing if no active work).
+			stopped := agent.StopSession(args.Name, sid)
+			if stopped == 0 {
+				// Still attempt to delete matching checkpoints even if nothing was running.
+				slog.Info("mcp: agent_stop - no active runs for session", "agent", args.Name, "session", sid)
+			}
+			// Delete checkpoints matching this session ID.
+			dir := store.CheckpointDir(args.Name)
+			entries, err := os.ReadDir(dir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+						continue
+					}
+					p := filepath.Join(dir, e.Name())
+					var cp agent.RunCheckpoint
+					if rerr := store.ReadJSON(p, &cp); rerr == nil {
+						if cp.SessionID == sid {
+							if derr := store.DeleteJSON(p); derr != nil {
+								slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", derr)
+							}
+						}
+					} else {
+						// Couldn't read checkpoint — try to delete to avoid leaving corrupt files.
+						if derr := store.DeleteJSON(p); derr != nil {
+							slog.Warn("mcp: failed to delete unreadable checkpoint", "agent", args.Name, "path", p, "err", derr)
+						}
+					}
+				}
+			}
+			return text(fmt.Sprintf("agent %q stopped (session %s)", args.Name, sid))
+		}
+
+		// No session specified: stop whole agent and delete all checkpoints.
 		runner.Stop()
+		dir := store.CheckpointDir(args.Name)
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+					continue
+				}
+				p := filepath.Join(dir, e.Name())
+				if err := store.DeleteJSON(p); err != nil {
+					slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", err)
+				}
+			}
+		}
 		return text(fmt.Sprintf("agent %q stopped", args.Name))
 	})
 
@@ -2630,6 +2698,19 @@ func registerServerTools(s *sdkmcp.Server) {
 			if issue.Level == config.LevelError {
 				return nil, struct{}{}, fmt.Errorf("validation: [%s] %s: %s", issue.Level, issue.Field, issue.Message)
 			}
+		}
+		// Remove tasks that were loaded from files (from_file=true) to avoid
+		// copying file-defined tasks into aviary.yaml when the web UI sends a
+		// merged config (which includes both aviary.yaml and tasks/*.md).
+		for i := range cfg.Agents {
+			var filtered []config.TaskConfig
+			for _, t := range cfg.Agents[i].Tasks {
+				if t.FromFile {
+					continue
+				}
+				filtered = append(filtered, t)
+			}
+			cfg.Agents[i].Tasks = filtered
 		}
 		if err := config.Save("", &cfg); err != nil {
 			return nil, struct{}{}, err
