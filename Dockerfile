@@ -45,6 +45,6 @@ ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
 WORKDIR /home/bot
 
 # Install aviary release
-RUN curl -fsSL https://aviary.bot/install.sh | sh - -y
+RUN curl -fsSL https://aviary.bot/install.sh | sh
 
 CMD [ "sleep" ]
