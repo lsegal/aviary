@@ -29,9 +29,9 @@
 		"test:e2e": "pnpm exec playwright install && playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"package": "pnpm exec vpr run -f pnpm package:stage",
-		"package:stage": "node scripts/package.mjs",
+		"package:stage": "pnpm install && node scripts/package.mjs",
 		"release": "pnpm exec vpr run -c pnpm release:stage && git pull",
-		"release:stage": "node scripts/release.mjs",
+		"release:stage": "pnpm install && node scripts/release.mjs",
 		"release:major": "cross-env VERSION=major pnpm release:prepare && pnpm release",
 		"release:minor": "cross-env VERSION=minor pnpm release:prepare && pnpm release",
 		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"

@@ -424,6 +424,89 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
 });
 
+test("deleting a task from settings persists immediately", async ({ page }) => {
+	let savedConfig: unknown = null;
+
+	await setAuthToken(page);
+	const agentFiles = new Map<string, string>([
+		["AGENTS.md", "# Agents"],
+		["RULES.md", "# Rules"],
+		["MEMORY.md", "Remembered note"],
+		["IDENTITY.md", "# Identity"],
+	]);
+	await mockMCP(page, {
+		config_get: {
+			...CONFIG,
+			agents: [
+				{
+					...CONFIG.agents[0],
+					tasks: [
+						{
+							enabled: true,
+							name: "file-task",
+							prompt: "From file",
+							from_file: true,
+							file: "tasks/file-task.md",
+						},
+					],
+				},
+			],
+		},
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+		agent_file_list: () => Array.from(agentFiles.keys()).sort(),
+		agent_file_read: (args) => agentFiles.get(String(args?.file ?? "")) ?? "",
+		agent_file_write: (args) => {
+			agentFiles.set(String(args?.file ?? ""), String(args?.content ?? ""));
+			return "ok";
+		},
+		agent_file_delete: (args) => {
+			agentFiles.delete(String(args?.file ?? ""));
+			return "ok";
+		},
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Tasks", exact: true })
+		.first()
+		.click();
+
+	await expect(page.getByRole("button", { name: "file-task" })).toBeVisible();
+	await page.getByLabel("Delete task").click();
+	await page.getByRole("button", { name: "Delete" }).click();
+
+	await expect(page.getByRole("button", { name: "file-task" })).toHaveCount(0);
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [
+			{
+				tasks: [],
+			},
+		],
+	});
+});
+
 test("agent files editor lists root markdown files and protects built-ins", async ({
 	page,
 }) => {

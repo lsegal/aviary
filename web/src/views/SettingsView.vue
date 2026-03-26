@@ -3275,8 +3275,10 @@ function promptDeleteTask(
 	deleteTaskOpen.value = true;
 }
 
-function confirmDeleteTaskAction() {
+async function confirmDeleteTaskAction() {
 	if (!deleteTaskTarget.value) return;
+	const draftSnapshot = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+	const previousSelectedTaskIdx = selectedTaskIdx.value;
 	const { agentIndex, taskIndex } = deleteTaskTarget.value;
 	removeTask(agentIndex, taskIndex);
 	const tasks = draft.value.agents[agentIndex]?.tasks ?? [];
@@ -3288,8 +3290,15 @@ function confirmDeleteTaskAction() {
 	} else {
 		selectedTaskIdx.value = null;
 	}
-	deleteTaskOpen.value = false;
-	deleteTaskTarget.value = null;
+	try {
+		await persistDraftConfig();
+		deleteTaskOpen.value = false;
+		deleteTaskTarget.value = null;
+	} catch (e) {
+		draft.value = draftSnapshot;
+		selectedTaskIdx.value = previousSelectedTaskIdx;
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
 }
 
 function normalizedDraftConfig(): AppConfig {
@@ -3483,29 +3492,33 @@ async function saveAll() {
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const normalized = normalizedDraftConfig();
-		const snapshot = JSON.stringify(normalized);
-		if (snapshot === lastSavedSnapshot) {
-			okMessage.value = "Settings already up to date.";
-			return;
-		}
-
-		await store.saveConfig(normalized);
-		lastSavedSnapshot = snapshot;
-		draft.value = hydrateDraftConfig(normalized);
-		serverPortInput.value =
-			draft.value.server.port > 0 ? String(draft.value.server.port) : "";
-		cdpPortInput.value =
-			draft.value.browser.cdp_port > 0
-				? String(draft.value.browser.cdp_port)
-				: "";
-		revertAvailable.value = true;
-		flashSaveSuccess();
+		await persistDraftConfig();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		saving.value = false;
 	}
+}
+
+async function persistDraftConfig() {
+	const normalized = normalizedDraftConfig();
+	const snapshot = JSON.stringify(normalized);
+	if (snapshot === lastSavedSnapshot) {
+		okMessage.value = "Settings already up to date.";
+		return;
+	}
+
+	await store.saveConfig(normalized);
+	lastSavedSnapshot = snapshot;
+	draft.value = hydrateDraftConfig(normalized);
+	serverPortInput.value =
+		draft.value.server.port > 0 ? String(draft.value.server.port) : "";
+	cdpPortInput.value =
+		draft.value.browser.cdp_port > 0
+			? String(draft.value.browser.cdp_port)
+			: "";
+	revertAvailable.value = true;
+	flashSaveSuccess();
 }
 
 async function revertToLatestBackup() {
