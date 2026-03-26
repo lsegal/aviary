@@ -27,5 +27,5 @@ if (assets.length === 0) {
 	throw new Error("no release assets found in dist/release");
 }
 
-run(`git push origin HEAD:main ${tag}`);
+run(`git push origin main ${tag}`);
 run(`gh release create --generate-notes ${tag} ${assets.join(" ")}`);
