@@ -774,7 +774,6 @@ func TestConfigSaveDeletesRemovedFileTasks(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr))
 }
 
-
 func TestConfigTaskRenameTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
