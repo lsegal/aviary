@@ -670,6 +670,103 @@ func TestConfigTaskMoveToFileTool(t *testing.T) {
 	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"}, "already defined")
 }
 
+func TestConfigTaskRenameTool(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	// Inline task rename
+	enabled := true
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-3-haiku",
+			Tasks: []config.TaskConfig{{
+				Enabled: &enabled,
+				Name:    "old-inline",
+				Prompt:  "hello",
+			}},
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	out, err := d.CallTool(context.Background(), "config_task_rename", map[string]any{"agent": "bot", "task": "old-inline", "new_name": "new-inline"})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "renamed") || strings.Contains(out, "new-inline"))
+
+	savedCfg, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, savedCfg.Agents, 1)
+	found := false
+	for _, tt := range savedCfg.Agents[0].Tasks {
+		if tt.Name == "new-inline" {
+			found = true
+			assert.False(t, tt.FromFile)
+		}
+	}
+	assert.True(t, found)
+
+	// File-backed task rename
+	// Start from inline task and move to file
+	cfg2 := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "anthropic/claude-3-haiku",
+			Tasks: []config.TaskConfig{{
+				Enabled:  &enabled,
+				Name:     "daily-report",
+				Schedule: "0 9 * * *",
+				Prompt:   "Generate the daily report.",
+			}},
+		}},
+	}
+	err = config.Save("", cfg2)
+	assert.NoError(t, err)
+
+	mgr2 := agent.NewManager(nil)
+	mgr2.Reconcile(cfg2)
+	SetDeps(&Deps{Agents: mgr2})
+	d2 := NewDispatcher("https://localhost:16677", "")
+
+	_, err = d2.CallTool(context.Background(), "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"})
+	assert.NoError(t, err)
+
+	// Now rename the file-backed task
+	out, err = d2.CallTool(context.Background(), "config_task_rename", map[string]any{"agent": "bot", "task": "daily-report", "new_name": "daily-report-renamed"})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "daily-report-renamed") || strings.Contains(out, "renamed"))
+
+	savedCfg2, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, savedCfg2.Agents, 1)
+	foundRenamed := false
+	for _, tt := range savedCfg2.Agents[0].Tasks {
+		if tt.Name == "daily-report-renamed" {
+			foundRenamed = true
+			assert.True(t, tt.FromFile)
+		}
+	}
+	assert.True(t, foundRenamed)
+	tasksDir := config.AgentTasksDir(savedCfg2.Agents[0])
+	// ensure file exists
+	_, ferr := os.Stat(filepath.Join(tasksDir, "daily-report-renamed.md"))
+	assert.NoError(t, ferr)
+}
+
 // ── session_create tool ───────────────────────────────────────────────────────
 
 func TestSessionCreateTool(t *testing.T) {

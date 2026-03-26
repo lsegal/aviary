@@ -147,3 +147,30 @@ Validate the current configuration and credentials. Returns all issues found. Pr
 ```
 
 An empty array means no issues were found. `level` is `"error"` for issues that prevent normal operation and `"warning"` for non-blocking concerns.
+
+---
+
+## config_task_rename
+
+Rename a task for an agent. This tool handles both inline tasks defined in `aviary.yaml` and tasks backed by markdown files.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | The agent that owns the task (agent name) |
+| `task` | string | yes | The current task name to rename |
+| `new_name` | string | yes | The new task name to apply |
+
+**Behavior:**
+- If the task is defined inline in `aviary.yaml`, the tool updates the `name` field in the config and saves the configuration.
+- If the task is file-backed (a `.md` in the agent tasks directory), the tool updates the YAML frontmatter `name` and renames the file on disk to match the new task filename derived from the `name`.
+
+**Returns:** Text confirmation on success or an error describing the failure (conflict, missing agent/task, or validation error).
+
+**Side effects:**
+- May write or remove files under the agent tasks directory.
+- Saves `aviary.yaml` when inline tasks are modified.
+- Reloads the live configuration and reconciles agent and scheduler state after changes.
+
+**Permissions:** Requires the `full` permissions preset because it mutates server configuration and the filesystem.

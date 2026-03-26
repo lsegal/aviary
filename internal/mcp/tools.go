@@ -440,9 +440,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 						continue
 					}
 					p := filepath.Join(dir, e.Name())
-					var cp agent.RunCheckpoint
-					if rerr := store.ReadJSON(p, &cp); rerr == nil {
-						if cp.SessionID == sid {
+					v, rerr := store.ReadJSON[agent.RunCheckpoint](p)
+					if rerr == nil {
+						if v.SessionID == sid {
 							if derr := store.DeleteJSON(p); derr != nil {
 								slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", derr)
 							}
@@ -1434,10 +1434,13 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if reloadErr != nil {
 				return nil, struct{}{}, reloadErr
 			}
-			if d.Agents != nil {
-				d.Agents.Reconcile(reloadedCfg)
+			deps := GetDeps()
+			if deps != nil && deps.Agents != nil {
+				deps.Agents.Reconcile(reloadedCfg)
 			}
-			d.Scheduler.Reconcile(reloadedCfg)
+			if deps != nil && deps.Scheduler != nil {
+				deps.Scheduler.Reconcile(reloadedCfg)
+			}
 			action := "created"
 			if updated {
 				action = "updated"
@@ -2725,6 +2728,158 @@ func registerServerTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return text("config saved")
+	})
+
+	type configTaskRenameArgs struct {
+		Agent   string `json:"agent"`
+		Task    string `json:"task"`
+		NewName string `json:"new_name"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "config_task_rename",
+		Description: "Rename a task: updates aviary.yaml inline task names or renames file-backed task markdown and frontmatter",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskRenameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_rename", "agent", args.Agent, "task", args.Task, "new", args.NewName)
+		if strings.TrimSpace(args.NewName) == "" {
+			return nil, struct{}{}, fmt.Errorf("new name must be provided")
+		}
+
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		// Keep a copy of previous config for reconciliation helpers later.
+		prevCfg := *cfg
+
+		agentIdx := -1
+		for i, a := range cfg.Agents {
+			if a.Name == args.Agent {
+				agentIdx = i
+				break
+			}
+		}
+		if agentIdx < 0 {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Agent)
+		}
+
+		// Check for existing task with the target name
+		for _, t := range cfg.Agents[agentIdx].Tasks {
+			if t.Name == args.NewName {
+				return nil, struct{}{}, fmt.Errorf("task %q already defined for agent %q", args.NewName, args.Agent)
+			}
+		}
+
+		// Locate the task to rename
+		taskIdx := -1
+		for i, t := range cfg.Agents[agentIdx].Tasks {
+			if t.Name == args.Task {
+				taskIdx = i
+				break
+			}
+		}
+		if taskIdx < 0 {
+			// As a fallback, try to locate a file in the tasks dir that parses
+			// to the requested task name (covers edge cases where FromFile
+			// tracking may be inconsistent).
+			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+			pattern := filepath.Join(tasksDir, "*.md")
+			files, gerr := filepath.Glob(pattern)
+			if gerr != nil {
+				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
+			}
+			found := false
+			for _, f := range files {
+				tc, terr := config.LoadMarkdownTask(f)
+				if terr != nil {
+					continue
+				}
+				if tc.Name == args.Task {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q", args.Task, args.Agent)
+			}
+			// If found via file scan, proceed by treating it as a file-backed task
+			// below by forcing taskIdx to -2 sentinel.
+			taskIdx = -2
+		}
+
+		// If task is file-backed
+		if taskIdx >= 0 && cfg.Agents[agentIdx].Tasks[taskIdx].FromFile || taskIdx == -2 {
+			// Locate the markdown file that defines the task
+			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+			pattern := filepath.Join(tasksDir, "*.md")
+			files, gerr := filepath.Glob(pattern)
+			if gerr != nil {
+				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
+			}
+			oldPath := ""
+			var taskCfg config.TaskConfig
+			for _, f := range files {
+				tc, terr := config.LoadMarkdownTask(f)
+				if terr != nil {
+					continue
+				}
+				if tc.Name == args.Task {
+					oldPath = f
+					taskCfg = tc
+					break
+				}
+			}
+			if oldPath == "" {
+				return nil, struct{}{}, fmt.Errorf("task file for %q not found", args.Task)
+			}
+			// Update task name and write a new file using SaveMarkdownTask (which
+			// derives a safe filename). Then remove the old file.
+			taskCfg.Name = args.NewName
+			newPath, serr := config.SaveMarkdownTask(tasksDir, taskCfg)
+			if serr != nil {
+				return nil, struct{}{}, fmt.Errorf("writing renamed task file: %w", serr)
+			}
+			if filepath.Clean(newPath) != filepath.Clean(oldPath) {
+				if rerr := os.Remove(oldPath); rerr != nil {
+					// Best effort: warn but continue
+					slog.Warn("failed to remove old task file after rename", "old", oldPath, "err", rerr)
+				}
+			}
+			// Reload config (including task files) and reconcile runtime state.
+			reloadedCfg, reloadErr := config.Load("")
+			if reloadErr != nil {
+				return nil, struct{}{}, reloadErr
+			}
+			deps := GetDeps()
+			if deps != nil && deps.Agents != nil {
+				deps.Agents.Reconcile(reloadedCfg)
+			}
+			if deps != nil && deps.Scheduler != nil {
+				deps.Scheduler.Reconcile(reloadedCfg)
+			}
+			return text(fmt.Sprintf("task %q renamed to %q (file: %s)", args.Task, args.NewName, filepath.Base(newPath)))
+		}
+
+		// Inline task in aviary.yaml: just rename and save config
+		if taskIdx >= 0 {
+			cfg.Agents[agentIdx].Tasks[taskIdx].Name = args.NewName
+			// Save config and run the same follow-up actions as config_save
+			if err := config.Save("", cfg); err != nil {
+				return nil, struct{}{}, err
+			}
+			if err := store.RenameMatchingAgentDirs(&prevCfg, cfg); err != nil {
+				return nil, struct{}{}, err
+			}
+			if err := store.EnsureNewAgentTemplates(&prevCfg, cfg); err != nil {
+				return nil, struct{}{}, err
+			}
+			if err := store.UpdateChannelMetadataState(&prevCfg, cfg, time.Now().UTC()); err != nil {
+				return nil, struct{}{}, err
+			}
+			return text(fmt.Sprintf("task %q renamed to %q", args.Task, args.NewName))
+		}
+
+		return nil, struct{}{}, fmt.Errorf("unexpected error locating task %q", args.Task)
 	})
 
 	addTool(s, &sdkmcp.Tool{
