@@ -21,7 +21,7 @@
 		"preview": "vite preview",
 		"lint": "concurrently -n go,web \"pnpm lint:go\" \"pnpm lint:web\"",
 		"lint:go": "go tool golangci-lint run ./...",
-		"lint:web": "biome check .",
+		"lint:web": "concurrently -n biome,tsc \"biome check .\" \"vue-tsc --noEmit\"",
 		"lint:fix": "concurrently -n biome,go \"biome check --write .\" \"gofmt -w . && go tool golangci-lint run --fix ./...\"",
 		"format": "biome format --write .",
 		"test": "concurrently -n go,web \"pnpm test:go\" \"pnpm test:e2e\"",
