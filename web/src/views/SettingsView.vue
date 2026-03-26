@@ -828,8 +828,13 @@
 <span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
 
 <button type="button" class="ml-2 text-gray-400 hover:text-red-600 p-1" aria-label="Delete task" @click.stop="promptDeleteTask(i, j, task.name)">
-<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-<path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3.5a.5.5 0 000 1H4v9a2 2 0 002 2h8a2 2 0 002-2V5h1.5a.5.5 0 000-1H15V3a1 1 0 00-1-1H6zM8 6a1 1 0 012 0v7a1 1 0 11-2 0V6zm4 0a1 1 0 012 0v7a1 1 0 11-2 0V6z" clip-rule="evenodd" />
+<!-- Heroicons outline trash -->
+<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 6h18" />
+<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+<path d="M10 11v6" />
+<path d="M14 11v6" />
+<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
 </svg>
 </button>
 
@@ -854,12 +859,12 @@
 									</div>
 									<div class="flex items-center gap-2">
 										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
-										<label class="inline-flex items-center gap-2 cursor-pointer">
-<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
-<input type="checkbox" :checked="isTaskEnabled(selectedTask)" class="sr-only" role="switch" :aria-checked="isTaskEnabled(selectedTask)" @change="toggleTaskEnabled(selectedTask)" />
-<span :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors focus:outline-none">
-<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"></span>
-</span>
+										<label class="inline-flex items-center gap-2">
+	<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
+	<button type="button" role="switch" :aria-checked="isTaskEnabled(selectedTask)" @click="toggleTaskEnabled(selectedTask)" :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors focus:outline-none">
+		<span class="sr-only">Toggle task enabled</span>
+		<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"></span>
+	</button>
 </label>
 									</div>
 								</div>
