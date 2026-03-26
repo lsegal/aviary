@@ -12,6 +12,8 @@ const CONFIG = {
 			channels: [
 				{
 					type: "signal",
+					id: "+15551234567",
+					primary: "+15551234567",
 					disabledTools: ["task_run"],
 					allowFrom: [
 						{
