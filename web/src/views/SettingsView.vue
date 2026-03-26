@@ -2836,57 +2836,20 @@ function taskChannelSelection(task: AgentTask): string {
 	return parseTaskChannelValue(task.target).selection;
 }
 
-function taskChannelTarget(task: AgentTask): string {
-	return parseTaskChannelValue(task.target).target;
-}
-
-function taskChannelNeedsTarget(task: AgentTask): boolean {
-	return taskChannelSelection(task) !== "";
-}
-
-function taskChannelTargetPlaceholder(task: AgentTask): string {
-	if (!taskChannelNeedsTarget(task)) return "Choose a delivery channel first";
-	const type = parseTaskChannelValue(task.target).type;
-	if (type === "session") return "Session name or ID";
-	if (type === "signal") return "Phone number or group ID";
-	if (type === "slack") return "Slack channel or DM conversation ID";
-	if (type === "discord") return "Discord channel ID";
-	return "Destination ID";
-}
-
 function isChannelEnabled(channel: AgentChannel): boolean {
 	return channel.enabled !== false;
-}
-
-function toggleChannelEnabled(channel: AgentChannel) {
-	channel.enabled = !isChannelEnabled(channel);
 }
 
 function isAllowFromEnabled(entry: AllowFromEntry): boolean {
 	return entry.enabled !== false;
 }
 
-function toggleAllowFromEnabled(entry: AllowFromEntry) {
-	entry.enabled = !isAllowFromEnabled(entry);
-}
-
 function isTaskEnabled(task: AgentTask): boolean {
 	return task.enabled !== false;
 }
 
-function toggleTaskEnabled(task: AgentTask) {
-	task.enabled = !isTaskEnabled(task);
-}
-
 // Toggle the currently-selected task's enabled state. Using selectedAgentIdx/selectedTaskIdx
 // ensures we mutate the task object directly on the reactive draft structure.
-function toggleSelectedTaskEnabled() {
-	const agent = draft.value.agents[selectedAgentIdx.value];
-	const idx = selectedTaskIdx.value ?? -1;
-	if (!agent || idx < 0 || idx >= (agent.tasks?.length ?? 0)) return;
-	const task = agent.tasks[idx];
-	task.enabled = !isTaskEnabled(task);
-}
 
 function setSelectedTaskEnabled(val: boolean) {
 	const agent = draft.value.agents[selectedAgentIdx.value];
@@ -2923,12 +2886,6 @@ function statusBadgeClass(enabled: boolean): string {
 		: "rounded-full bg-gray-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300";
 }
 
-function enabledToggleClass(enabled: boolean): string {
-	return enabled
-		? "rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300 dark:hover:bg-amber-950"
-		: "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950";
-}
-
 function channelCardClass(channel: AgentChannel): string {
 	return isChannelEnabled(channel)
 		? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
@@ -2939,12 +2896,6 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 	return isAllowFromEnabled(entry)
 		? "border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"
 		: "border-gray-200 bg-gray-50 opacity-75 dark:border-gray-800 dark:bg-gray-950";
-}
-
-function taskCardClass(task: AgentTask): string {
-	return isTaskEnabled(task)
-		? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
-		: "border-gray-300 bg-gray-50 opacity-75 dark:border-gray-700 dark:bg-gray-950";
 }
 
 function setTaskChannelSelection(task: AgentTask, event: Event) {
@@ -2959,17 +2910,6 @@ function setTaskChannelSelection(task: AgentTask, event: Event) {
 		return;
 	}
 	task.target = `${selection}:${parsed.type === "session" ? "" : parsed.target}`;
-}
-
-function setTaskChannelTarget(task: AgentTask, event: Event) {
-	const target = (event.target as HTMLInputElement).value.trim();
-	const selection = taskChannelSelection(task);
-	if (!selection) return;
-	if (selection === "session") {
-		task.target = target ? `session:${target}` : "session:";
-		return;
-	}
-	task.target = `${selection}:${target}`;
 }
 
 function addChannel(agentIndex: number) {
