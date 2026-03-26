@@ -49,6 +49,9 @@ devDependencies:
   cross-env:
     specifier: ^10.1.0
     version: 10.1.0
+  execa:
+    specifier: ^9.6.1
+    version: 9.6.1
   postcss:
     specifier: ^8.5.8
     version: 8.5.8
