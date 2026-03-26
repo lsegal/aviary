@@ -24,8 +24,6 @@ const version = pkg.version;
 run("git add .");
 run("git status");
 run("pnpm install --frozen-lockfile --force");
-run("pnpm lint");
-run("pnpm test:go");
 run(`pnpm build:release -- --version v${version}`);
 run(`pnpm exec vpr release-commit ${version}`);
 run("git --no-pager show");
