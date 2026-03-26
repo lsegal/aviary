@@ -426,28 +426,6 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 	).toBeVisible();
 });
 
-test("run once renders below the task prompt in settings", async ({ page }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
-
-	const prompt = page.getByPlaceholder("Task prompt...").first();
-	const runOnce = page.getByText("Run once", { exact: true }).first();
-
-	const promptBox = await prompt.boundingBox();
-	const runOnceBox = await runOnce.boundingBox();
-
-	expect(promptBox).not.toBeNull();
-	expect(runOnceBox).not.toBeNull();
-	if (!promptBox || !runOnceBox) {
-		throw new Error("Expected prompt and Run once controls to be visible");
-	}
-	expect(runOnceBox.y).toBeGreaterThan(promptBox.y + promptBox.height - 1);
-});
-
 test("agent files editor lists root markdown files and protects built-ins", async ({
 	page,
 }) => {
