@@ -1982,7 +1982,7 @@ type browserResizeArgs struct {
 func registerBrowserTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_open",
-		Description: "Navigate to a URL in a new browser tab. Returns the tab_id needed for subsequent operations on that tab.",
+		Description: "Navigate to a URL in a new browser tab. Returns the tab_id needed for subsequent operations on that tab. Always close tabs with browser_close when done to avoid resource leaks",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserOpenArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_open", "url", args.URL)
 		d := GetDeps()

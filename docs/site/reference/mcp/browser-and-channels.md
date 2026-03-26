@@ -36,6 +36,8 @@ Open a URL in a new browser tab and return the tab ID.
 { "tab_id": "CDC1", "url": "https://example.com" }
 ```
 
+Note: Please make sure to `browser_close` tabs when done to avoid resource leaks.
+
 ---
 
 ## browser_tabs
