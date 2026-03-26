@@ -2990,6 +2990,273 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		return text(fmt.Sprintf("task %q moved to %s", args.Task, path))
 	})
+
+	type configTaskConvertToScriptArgs struct {
+		Agent string `json:"agent"`
+		Task  string `json:"task"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "config_task_convert_to_script",
+		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		agentIdx := -1
+		for i, a := range cfg.Agents {
+			if a.Name == args.Agent {
+				agentIdx = i
+				break
+			}
+		}
+		if agentIdx < 0 {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Agent)
+		}
+
+		// Locate task and determine prompt/body and whether it's file-backed.
+		taskIdx := -1
+		for i, t := range cfg.Agents[agentIdx].Tasks {
+			if t.Name == args.Task {
+				taskIdx = i
+				break
+			}
+		}
+		if taskIdx < 0 {
+			// Try to find via markdown files as a fallback.
+			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+			pattern := filepath.Join(tasksDir, "*.md")
+			files, gerr := filepath.Glob(pattern)
+			if gerr != nil {
+				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
+			}
+			found := false
+			var taskCfg config.TaskConfig
+			for _, f := range files {
+				tc, terr := config.LoadMarkdownTask(f)
+				if terr != nil {
+					continue
+				}
+				if tc.Name == args.Task {
+					taskCfg = tc
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q", args.Task, args.Agent)
+			}
+			// For file-backed tasks found via file, treat as file-backed and use that prompt body.
+			prompt := taskCfg.Prompt
+			target := taskCfg.Target
+			tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
+			if err := tracker.persist(); err != nil {
+				slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
+			}
+			go func() {
+				ctx2 := withTaskCompileTracker(context.Background(), tracker)
+				compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
+				if cerr != nil {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = cerr.Error()
+					_ = tracker.persist()
+					return
+				}
+				tracker.record.ResultTaskType = compiled.Type
+				tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
+				tracker.record.Validated = compiled.Validated
+				tracker.record.Reason = strings.TrimSpace(compiled.Reason)
+				tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
+				tracker.record.Script = strings.TrimSpace(compiled.Script)
+				if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+					// Overwrite the existing markdown file with the script body.
+					nextTask := taskCfg
+					nextTask.Type = "script"
+					nextTask.Prompt = strings.TrimSpace(compiled.Script)
+					tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+					if _, serr := config.SaveMarkdownTask(tasksDir, nextTask); serr != nil {
+						tracker.record.Status = domain.TaskCompileStatusFailed
+						tracker.record.Reason = serr.Error()
+						_ = tracker.persist()
+						return
+					}
+					tracker.record.Status = domain.TaskCompileStatusSucceeded
+					_ = tracker.persist()
+					// Reload and reconcile runtime state.
+					reloadedCfg, reloadErr := config.Load("")
+					if reloadErr == nil {
+						deps := GetDeps()
+						if deps != nil && deps.Agents != nil {
+							deps.Agents.Reconcile(reloadedCfg)
+						}
+						if deps != nil && deps.Scheduler != nil {
+							deps.Scheduler.Reconcile(reloadedCfg)
+						}
+					}
+					return
+				}
+				// If not promoted to script, mark as skipped.
+				tracker.record.Status = domain.TaskCompileStatusSkipped
+				_ = tracker.persist()
+			}()
+			return text(tracker.record.ID)
+		}
+
+		// Found inline task in aviary.yaml
+		task := cfg.Agents[agentIdx].Tasks[taskIdx]
+		if task.FromFile {
+			// If FromFile is true, treat similar to file-backed case by loading file.
+			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+			pattern := filepath.Join(tasksDir, "*.md")
+			files, gerr := filepath.Glob(pattern)
+			if gerr != nil {
+				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
+			}
+			found := false
+			var taskCfg config.TaskConfig
+			for _, f := range files {
+				tc, terr := config.LoadMarkdownTask(f)
+				if terr != nil {
+					continue
+				}
+				if tc.Name == args.Task {
+					taskCfg = tc
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q", args.Task, args.Agent)
+			}
+			prompt := taskCfg.Prompt
+			target := taskCfg.Target
+			tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
+			if err := tracker.persist(); err != nil {
+				slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
+			}
+			go func() {
+				ctx2 := withTaskCompileTracker(context.Background(), tracker)
+				compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
+				if cerr != nil {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = cerr.Error()
+					_ = tracker.persist()
+					return
+				}
+				tracker.record.ResultTaskType = compiled.Type
+				tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
+				tracker.record.Validated = compiled.Validated
+				tracker.record.Reason = strings.TrimSpace(compiled.Reason)
+				tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
+				tracker.record.Script = strings.TrimSpace(compiled.Script)
+				if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+					// Update the markdown file backing this task with the script.
+					nextTask := taskCfg
+					nextTask.Type = "script"
+					nextTask.Prompt = strings.TrimSpace(compiled.Script)
+					tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
+					if _, serr := config.SaveMarkdownTask(tasksDir, nextTask); serr != nil {
+						tracker.record.Status = domain.TaskCompileStatusFailed
+						tracker.record.Reason = serr.Error()
+						_ = tracker.persist()
+						return
+					}
+					tracker.record.Status = domain.TaskCompileStatusSucceeded
+					_ = tracker.persist()
+					reloadedCfg, reloadErr := config.Load("")
+					if reloadErr == nil {
+						deps := GetDeps()
+						if deps != nil && deps.Agents != nil {
+							deps.Agents.Reconcile(reloadedCfg)
+						}
+						if deps != nil && deps.Scheduler != nil {
+							deps.Scheduler.Reconcile(reloadedCfg)
+						}
+					}
+					return
+				}
+				tracker.record.Status = domain.TaskCompileStatusSkipped
+				_ = tracker.persist()
+			}()
+			return text(tracker.record.ID)
+		}
+
+		// Inline prompt task: attempt to compile and, on success, update aviary.yaml
+		prompt := task.Prompt
+		target := task.Target
+		tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
+		if err := tracker.persist(); err != nil {
+			slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
+		}
+		go func() {
+			ctx2 := withTaskCompileTracker(context.Background(), tracker)
+			compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
+			if cerr != nil {
+				tracker.record.Status = domain.TaskCompileStatusFailed
+				tracker.record.Reason = cerr.Error()
+				_ = tracker.persist()
+				return
+			}
+			tracker.record.ResultTaskType = compiled.Type
+			tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
+			tracker.record.Validated = compiled.Validated
+			tracker.record.Reason = strings.TrimSpace(compiled.Reason)
+			tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
+			tracker.record.Script = strings.TrimSpace(compiled.Script)
+			if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
+				// Update inline task in aviary.yaml to script type and store Lua in Prompt
+				cfg2, lerr := config.Load("")
+				if lerr != nil {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = lerr.Error()
+					_ = tracker.persist()
+					return
+				}
+				agentIdx2 := -1
+				for i, a := range cfg2.Agents {
+					if a.Name == args.Agent {
+						agentIdx2 = i
+						break
+					}
+				}
+				if agentIdx2 < 0 {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = fmt.Sprintf("agent %q not found during save", args.Agent)
+					_ = tracker.persist()
+					return
+				}
+				for i := range cfg2.Agents[agentIdx2].Tasks {
+					if cfg2.Agents[agentIdx2].Tasks[i].Name == args.Task {
+						cfg2.Agents[agentIdx2].Tasks[i].Type = "script"
+						cfg2.Agents[agentIdx2].Tasks[i].Prompt = strings.TrimSpace(compiled.Script)
+						break
+					}
+				}
+				if serr := config.Save("", cfg2); serr != nil {
+					tracker.record.Status = domain.TaskCompileStatusFailed
+					tracker.record.Reason = serr.Error()
+					_ = tracker.persist()
+					return
+				}
+				tracker.record.Status = domain.TaskCompileStatusSucceeded
+				_ = tracker.persist()
+				// Reconcile runtime state
+				deps := GetDeps()
+				if deps != nil && deps.Agents != nil {
+					deps.Agents.Reconcile(cfg2)
+				}
+				if deps != nil && deps.Scheduler != nil {
+					deps.Scheduler.Reconcile(cfg2)
+				}
+				return
+			}
+			tracker.record.Status = domain.TaskCompileStatusSkipped
+			_ = tracker.persist()
+		}()
+		return text(tracker.record.ID)
+	})
 }
 
 // ── Usage tools ──────────────────────────────────────────────────────────────
