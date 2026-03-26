@@ -126,7 +126,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		.first()
 		.click();
 	await expect(
-		page.locator('input[placeholder="Phone number or group ID"]').first(),
+		page.locator('input[placeholder="e.g. +15551234567 or user ID"]').first(),
 	).toHaveValue("+15551234567");
 });
 
@@ -415,7 +415,9 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 		.click();
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
-	const toggle = page.getByRole("switch", { name: "Toggle task enabled" }).first();
+	const toggle = page
+		.getByRole("switch", { name: "Toggle task enabled" })
+		.first();
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
 });
