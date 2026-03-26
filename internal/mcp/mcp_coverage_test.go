@@ -670,6 +670,111 @@ func TestConfigTaskMoveToFileTool(t *testing.T) {
 	toolCallContains(t, d, "config_task_move_to_file", map[string]any{"agent": "bot", "task": "daily-report"}, "already defined")
 }
 
+// Ensure config_save writes tasks marked as FromFile to markdown files and
+// removes them from the inline aviary.yaml.
+func TestConfigSaveWritesFromFileTasks(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	// start with a minimal saved config so DefaultPath exists
+	initial := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}}
+	err = config.Save("", initial)
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(initial)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	// Build incoming config containing a task marked as from_file.
+	task := config.TaskConfig{
+		Enabled:  nil,
+		Name:     "daily-report",
+		Schedule: "0 9 * * *",
+		Prompt:   "Generate the daily report.",
+		FromFile: true,
+	}
+	incoming := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku", Tasks: []config.TaskConfig{task}}}}
+	b, err := json.Marshal(incoming)
+	assert.NoError(t, err)
+
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": string(b)})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
+
+	// Task file should exist under agent tasks dir.
+	tasksDir := config.AgentTasksDir(incoming.Agents[0])
+	expected := filepath.Join(tasksDir, "daily-report.md")
+	data, rerr := os.ReadFile(expected)
+	assert.NoError(t, rerr)
+	assert.True(t, strings.Contains(string(data), "Generate the daily report."))
+
+	// The saved aviary.yaml should not contain the inline task name.
+	cfgBytes, err := os.ReadFile(config.DefaultPath())
+	assert.NoError(t, err)
+	assert.False(t, strings.Contains(string(cfgBytes), "daily-report"))
+}
+
+// Ensure config_save deletes markdown task files when they were present in
+// the previous config but are omitted from the incoming config.
+func TestConfigSaveDeletesRemovedFileTasks(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	// Save a base config and create a markdown task file for the agent.
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	task := config.TaskConfig{
+		Name:   "to-delete",
+		Prompt: "please delete me",
+	}
+	tasksDir := config.AgentTasksDir(cfg.Agents[0])
+	path, err := config.SaveMarkdownTask(tasksDir, task)
+	assert.NoError(t, err)
+	// Ensure file exists
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	// Incoming config omits the task entirely (no tasks listed).
+	incoming := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}}
+	b, err := json.Marshal(incoming)
+	assert.NoError(t, err)
+
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": string(b)})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
+
+	// The previously-existing task file should be removed.
+	_, statErr = os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr))
+}
+
+
 func TestConfigTaskRenameTool(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -765,6 +870,56 @@ func TestConfigTaskRenameTool(t *testing.T) {
 	// ensure file exists
 	_, ferr := os.Stat(filepath.Join(tasksDir, "daily-report-renamed.md"))
 	assert.NoError(t, ferr)
+}
+
+// Ensure config_save tolerates a missing file on disk when attempting to
+// delete a markdown task file (the file may already have been removed).
+func TestConfigSaveIgnoresMissingTaskFileOnDisk(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	// Save a base config and create a markdown task file for the agent.
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	task := config.TaskConfig{
+		Name:   "to-delete",
+		Prompt: "please delete me",
+	}
+	tasksDir := config.AgentTasksDir(cfg.Agents[0])
+	path, err := config.SaveMarkdownTask(tasksDir, task)
+	assert.NoError(t, err)
+	// Ensure file exists
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr)
+
+	// Remove the file from disk to simulate an external deletion.
+	rmErr := os.Remove(path)
+	assert.NoError(t, rmErr)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr})
+
+	d := NewDispatcher("https://localhost:16677", "")
+
+	// Incoming config omits the task entirely (no tasks listed).
+	incoming := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}}
+	b, err := json.Marshal(incoming)
+	assert.NoError(t, err)
+
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": string(b)})
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(out, "saved"))
 }
 
 // ── session_create tool ───────────────────────────────────────────────────────

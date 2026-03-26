@@ -51,6 +51,10 @@ var (
 	providerPingActive sync.Map // provider → struct{} while in flight
 )
 
+// deleteAgentMarkdownFile is an indirection for deleting agent markdown files
+// so tests can simulate edge conditions (e.g. file-not-exist races).
+var deleteAgentMarkdownFile = store.DeleteAgentMarkdownFile
+
 const maxInlineSessionMediaBytes = 8 << 20
 
 // startProviderPingIfStale fires a background goroutine to ping the provider
@@ -2702,13 +2706,73 @@ func registerServerTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, fmt.Errorf("validation: [%s] %s: %s", issue.Level, issue.Field, issue.Message)
 			}
 		}
-		// Remove tasks that were loaded from files (from_file=true) to avoid
-		// copying file-defined tasks into aviary.yaml when the web UI sends a
-		// merged config (which includes both aviary.yaml and tasks/*.md).
+		// Handle task files: detect tasks that were previously defined in
+		// markdown but are now removed from the incoming config and delete
+		// their files; then write any tasks marked FromFile in the incoming
+		// config to markdown files and remove them from the inline config so
+		// aviary.yaml does not duplicate file-backed tasks.
 		for i := range cfg.Agents {
+			// Build set of previous file-backed task names.
+			prevFileTasks := map[string]struct{}{}
+			if i < len(prevCfg.Agents) {
+				for _, t := range prevCfg.Agents[i].Tasks {
+					if t.FromFile {
+						prevFileTasks[t.Name] = struct{}{}
+					}
+				}
+			}
+
+			// Build set of current task names for quick lookup.
+			currTasks := map[string]struct{}{}
+			for _, t := range cfg.Agents[i].Tasks {
+				currTasks[t.Name] = struct{}{}
+			}
+
+			// Any prev file-backed task missing from currTasks should have
+			// its markdown file removed.
+			if len(prevFileTasks) > 0 {
+				tasksDir := config.AgentTasksDir(cfg.Agents[i])
+				pattern := filepath.Join(tasksDir, "*.md")
+				files, _ := filepath.Glob(pattern)
+				for name := range prevFileTasks {
+					if _, ok := currTasks[name]; ok {
+						continue
+					}
+					// Find matching file by parsing each markdown file and
+					// comparing the parsed task name.
+					for _, f := range files {
+						tc, terr := config.LoadMarkdownTask(f)
+						if terr != nil {
+							continue
+						}
+						if tc.Name == name {
+							// Delete via store helper using agent name and
+							// relative filename.
+							rel := filepath.Base(f)
+							if derr := store.DeleteAgentMarkdownFile(cfg.Agents[i].Name, rel); derr != nil {
+								if os.IsNotExist(derr) {
+									// Ignore missing files (race or already-removed).
+									continue
+								}
+								return nil, struct{}{}, fmt.Errorf("deleting task file %s: %w", rel, derr)
+							}
+							break
+						}
+					}
+				}
+			}
+
+			// Now write any tasks in the incoming config that are marked
+			// FromFile to actual markdown files and remove them from the
+			// inline config to avoid duplication.
 			var filtered []config.TaskConfig
 			for _, t := range cfg.Agents[i].Tasks {
 				if t.FromFile {
+					dir := config.AgentTasksDir(cfg.Agents[i])
+					if _, err := config.SaveMarkdownTask(dir, t); err != nil {
+						return nil, struct{}{}, fmt.Errorf("writing task file: %w", err)
+					}
+					// skip adding to filtered (remove from inline config)
 					continue
 				}
 				filtered = append(filtered, t)
