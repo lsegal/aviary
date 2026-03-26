@@ -810,7 +810,7 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent_file_delete requires an agent session context")
 		}
-		if err := store.DeleteAgentMarkdownFile(agentID, args.File); err != nil {
+		if err := deleteAgentMarkdownFile(agentID, args.File); err != nil {
 			return nil, struct{}{}, fmt.Errorf("deleting agent file: %w", err)
 		}
 		return text(fmt.Sprintf("%s deleted", strings.TrimSpace(args.File)))
@@ -2749,7 +2749,7 @@ func registerServerTools(s *sdkmcp.Server) {
 							// Delete via store helper using agent name and
 							// relative filename.
 							rel := filepath.Base(f)
-							if derr := store.DeleteAgentMarkdownFile(cfg.Agents[i].Name, rel); derr != nil {
+							if derr := deleteAgentMarkdownFile(cfg.Agents[i].Name, rel); derr != nil {
 								if os.IsNotExist(derr) {
 									// Ignore missing files (race or already-removed).
 									continue
