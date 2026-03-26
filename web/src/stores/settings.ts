@@ -84,6 +84,7 @@ export interface AgentTask {
 	watch?: string;
 	target?: string;
 	from_file?: boolean;
+	file?: string;
 }
 
 export interface ProviderConfig {

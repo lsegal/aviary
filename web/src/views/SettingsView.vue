@@ -179,11 +179,6 @@
 								class="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2.5 text-lg leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
 								@click="addAgent">+</button>
 						</div>
-						<div class="flex shrink-0 items-center pb-1 pl-3">
-							<button type="button"
-								class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-								@click="importAgents">Import</button>
-						</div>
 					</div>
 
 					<div v-if="!draft.agents.length"
@@ -510,10 +505,18 @@
 										</span>
 									</div>
 									<div class="flex items-center gap-2">
-										<button type="button" :class="enabledToggleClass(isChannelEnabled(ch))"
-											@click="toggleChannelEnabled(ch)">
-											{{ isChannelEnabled(ch) ? "Disable" : "Enable" }}
-										</button>
+										<SwitchRoot
+											:checked="isChannelEnabled(ch)"
+											@update:checked="(v) => setChannelEnabled(ch, v)"
+											aria-label="Toggle channel enabled"
+											class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+											:class="isChannelEnabled(ch) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
+										>
+											<SwitchThumb
+												class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+												:class="isChannelEnabled(ch) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
+											/>
+										</SwitchRoot>
 										<button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
 									</div>
 								</div>
@@ -593,10 +596,18 @@
 												</span>
 											</div>
 											<div class="flex items-center gap-2">
-												<button type="button" :class="enabledToggleClass(isAllowFromEnabled(entry))"
-													@click="toggleAllowFromEnabled(entry)">
-													{{ isAllowFromEnabled(entry) ? "Disable" : "Enable" }}
-												</button>
+												<SwitchRoot
+													:checked="isAllowFromEnabled(entry)"
+													@update:checked="(v) => setAllowFromEnabled(entry, v)"
+													aria-label="Toggle allow-from entry enabled"
+													class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+													:class="isAllowFromEnabled(entry) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
+												>
+													<SwitchThumb
+														class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+														:class="isAllowFromEnabled(entry) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
+													/>
+												</SwitchRoot>
 												<button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
 											</div>
 										</div>
@@ -819,10 +830,6 @@
 <!-- Left: list of tasks -->
 <div>
 <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-<div class="flex gap-1.5 mb-2">
-<input v-model="newTaskNameMap[agent.name || i]" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" placeholder="task-name" />
-<button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!agent.name" @click="createTaskFromName(i)">+</button>
-</div>
 <div v-if="agent.tasks?.length" class="space-y-1">
 <button v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" type="button" class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
 <span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
@@ -839,8 +846,14 @@
 </button>
 
 </button>
+
 </div>
 <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
+
+<div class="flex gap-1.5 mt-2">
+<input v-model="newTaskNameMap[agent.name || i]" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" placeholder="task-name" />
+<button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!agent.name" @click="createTaskFromName(i)">+</button>
+</div>
 </div>
 <div class="mt-2"></div>
 </div>
@@ -848,23 +861,32 @@
 <!-- Right: single editor for selected task -->
 <div>
 <div v-if="selectedTask">
-								<div class="flex items-start justify-between mb-3">
+								<div class="flex items-center justify-between mb-3">
 									<div class="min-w-0">
-										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ selectedTask.name || "Task" }}</h5>
-										<div class="flex gap-2 mt-1">
-										<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">Defined in: {{ selectedTask.from_file ? 'tasks' : 'aviary.yml' }}</span>
-										<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ selectedTask.type }}</span>
-										<span v-if="!isTaskEnabled(selectedTask)" class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">disabled</span>
-									</div>
+										<div class="flex items-center gap-3 whitespace-nowrap">
+											<span v-if="!isTaskEnabled(selectedTask)" class="flex-shrink-0 rounded-full bg-red-50 px-3 py-1 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">disabled</span>
+											<span class="flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium"
+												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
+												{{ selectedTask.type }}</span>
+											<span class="flex-shrink-0 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">Defined in: {{ taskDefinedIn(selectedTask) }}</span>
+										</div>
 									</div>
 									<div class="flex items-center gap-2">
 										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
 										<label class="inline-flex items-center gap-2">
 	<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
-	<button type="button" role="switch" :aria-checked="isTaskEnabled(selectedTask)" @click="toggleTaskEnabled(selectedTask)" :class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200'" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors focus:outline-none">
-		<span class="sr-only">Toggle task enabled</span>
-		<span :class="isTaskEnabled(selectedTask) ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"></span>
-	</button>
+	<SwitchRoot
+		:checked="isTaskEnabled(selectedTask)"
+		@update:checked="setSelectedTaskEnabled"
+		aria-label="Toggle task enabled"
+		class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+		:class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
+	>
+		<SwitchThumb
+			class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+			:class="isTaskEnabled(selectedTask) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
+		/>
+	</SwitchRoot>
 </label>
 									</div>
 								</div>
@@ -872,7 +894,8 @@
 								<div class="grid gap-3 lg:grid-cols-3">
 <div>
 <label class="field-label">Task name</label>
-<input v-model="selectedTask.name" type="text" class="field-input font-mono" placeholder="daily-briefing" />
+<input v-model="selectedTask.name" type="text" class="field-input font-mono" placeholder="daily-briefing"
+	@focus="onTaskNameFocus" @blur="onTaskNameBlur" :disabled="renamingTask" />
 </div>
 <div>
 <label class="field-label">Task type</label>
@@ -1421,6 +1444,8 @@ import {
 	AlertDialogPortal,
 	AlertDialogRoot,
 	AlertDialogTitle,
+	SwitchRoot,
+	SwitchThumb,
 } from "radix-vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -1535,6 +1560,11 @@ const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
 const authStore = useAuthStore();
 
+// Rename state for tasks
+const editingTaskOriginalName = ref<string | null>(null);
+const renamingTask = ref(false);
+const renameTaskError = ref<string | null>(null);
+
 let settingsWs: WebSocket | null = null;
 
 function connectWs() {
@@ -1632,11 +1662,14 @@ const selectedTask = computed((): AgentTask | null => {
 	return agent.tasks[idx] ?? null;
 });
 
-// Agent tab click → push new route (also resets subtab).
+// Agent tab click → push new route (also resets subtab) and reset selectedTaskIdx for the new agent.
 watch(selectedAgentIdx, (idx) => {
 	selectedAgentSubtab.value = "general";
 	const target = agentRoutePath(idx, "general");
 	if (route.path !== target) void router.push(target);
+	// Reset selectedTaskIdx for the newly-selected agent so a task is shown if available.
+	const tasks = draft.value.agents[idx]?.tasks ?? [];
+	selectedTaskIdx.value = tasks.length ? 0 : null;
 });
 
 // Subtab click → replace current URL segment.
@@ -1656,6 +1689,21 @@ watch(
 			selectedAgentSubtab.value,
 		);
 		if (route.path !== target) void router.replace(target);
+	},
+);
+
+// Ensure selectedTaskIdx is set when tasks are loaded or changed (e.g., importAgents).
+watch(
+	() => draft.value.agents[selectedAgentIdx.value]?.tasks?.length,
+	(len) => {
+		if (
+			len &&
+			(selectedTaskIdx.value === null || selectedTaskIdx.value === undefined)
+		) {
+			selectedTaskIdx.value = 0;
+		} else if (!len) {
+			selectedTaskIdx.value = null;
+		}
 	},
 );
 
@@ -2615,6 +2663,36 @@ function onAgentNameChange(agentEntry: AgentEntry) {
 	}
 }
 
+function onTaskNameFocus() {
+	editingTaskOriginalName.value = selectedTask?.value?.name ?? null;
+	renameTaskError.value = null;
+}
+
+async function onTaskNameBlur() {
+	if (!editingTaskOriginalName.value) return;
+	const oldName = editingTaskOriginalName.value;
+	editingTaskOriginalName.value = null;
+	const newName = selectedTask?.value?.name ?? "";
+	if (newName === oldName) return;
+	renamingTask.value = true;
+	try {
+		const agentName = draft.value.agents[selectedAgentIdx.value]?.name ?? "";
+		if (!agentName) throw new Error("agent name required to rename task");
+		await callTool("config_task_rename", {
+			agent: agentName,
+			task: oldName,
+			new_name: newName,
+		});
+		await loadConfig();
+	} catch (e) {
+		renameTaskError.value = e instanceof Error ? e.message : String(e);
+		// revert on error
+		if (selectedTask?.value) selectedTask.value.name = oldName;
+	} finally {
+		renamingTask.value = false;
+	}
+}
+
 function addTask(agentIndex: number) {
 	const task: AgentTask = {
 		enabled: true,
@@ -2684,8 +2762,26 @@ async function moveTaskToFile(
 		});
 		// Keep the task visible in the UI but mark it as coming from a file so
 		// it renders as `tasks/<name>.md` instead of disappearing until reload.
-		if (draft.value?.agents?.[agentIndex]?.tasks?.[taskIndex]) {
-			draft.value.agents[agentIndex].tasks[taskIndex].from_file = true;
+		const taskObj = draft.value?.agents?.[agentIndex]?.tasks?.[taskIndex];
+		if (taskObj) {
+			// Try to parse a returned path (e.g. "tasks/foo.md") from the tool result.
+			let parsed: string | null = null;
+			if (typeof result === "string") {
+				const m = result.match(/tasks\/[^\s]+\.md/);
+				if (m?.[0]) parsed = m[0];
+			}
+			if (parsed) {
+				taskObj.file = parsed;
+			} else {
+				// Fallback: sanitize the taskName or task.name and guess a filename.
+				const src = (taskName || taskObj.name || "task").toLowerCase();
+				const base = src
+					.replace(/[^a-z0-9-_]+/g, "-")
+					.replace(/-+/g, "-")
+					.replace(/(^-|-$)/g, "");
+				taskObj.file = `tasks/${base || "task"}.md`;
+			}
+			taskObj.from_file = true;
 		}
 		okMessage.value = result;
 	} catch (e) {
@@ -2780,6 +2876,45 @@ function isTaskEnabled(task: AgentTask): boolean {
 
 function toggleTaskEnabled(task: AgentTask) {
 	task.enabled = !isTaskEnabled(task);
+}
+
+// Toggle the currently-selected task's enabled state. Using selectedAgentIdx/selectedTaskIdx
+// ensures we mutate the task object directly on the reactive draft structure.
+function toggleSelectedTaskEnabled() {
+	const agent = draft.value.agents[selectedAgentIdx.value];
+	const idx = selectedTaskIdx.value ?? -1;
+	if (!agent || idx < 0 || idx >= (agent.tasks?.length ?? 0)) return;
+	const task = agent.tasks[idx];
+	task.enabled = !isTaskEnabled(task);
+}
+
+function setSelectedTaskEnabled(val: boolean) {
+	const agent = draft.value.agents[selectedAgentIdx.value];
+	const idx = selectedTaskIdx.value ?? -1;
+	if (!agent || idx < 0 || idx >= (agent.tasks?.length ?? 0)) return;
+	const task = agent.tasks[idx];
+	task.enabled = val;
+}
+
+function setChannelEnabled(channel: AgentChannel, val: boolean) {
+	channel.enabled = val;
+}
+
+function setAllowFromEnabled(entry: AllowFromEntry, val: boolean) {
+	entry.enabled = val;
+}
+
+function taskDefinedIn(task: AgentTask | null): string {
+	if (!task) return "";
+	if (task.file && String(task.file).trim()) return String(task.file);
+	// If task is marked as coming from a file but no explicit file path is present,
+	// try to infer from the task name; otherwise it's in aviary.yaml
+	if (task.from_file) {
+		const name = (task.name || "").trim();
+		if (name) return `tasks/${name.replace(/[^a-z0-9-_]+/gi, "-")}.md`;
+		return "tasks/*.md";
+	}
+	return "aviary.yaml";
 }
 
 function statusBadgeClass(enabled: boolean): string {

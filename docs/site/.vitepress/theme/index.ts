@@ -104,7 +104,7 @@ export default {
 							el.classList.remove("typing-done");
 							el.textContent = "";
 						}
-					} catch (e) {
+					} catch (_e) {
 						// ignore per-element errors
 					}
 				}
