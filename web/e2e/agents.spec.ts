@@ -111,10 +111,10 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
 	await expect(
-		page.getByText("Disabled", { exact: true }).first(),
+		page.getByText("disabled", { exact: true }).first(),
 	).toBeVisible();
 	await expect(
-		page.getByRole("button", { name: "Enable" }).first(),
+		page.getByRole("switch", { name: "Toggle task enabled" }).first(),
 	).toBeVisible();
 	await expect(
 		page.getByRole("heading", { name: "Tasks", exact: true }),
@@ -414,16 +414,10 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 		.first()
 		.click();
 
-	await expect(
-		page.getByText(
-			"Disabled tasks are ignored by the scheduler until re-enabled.",
-		),
-	).toBeVisible();
-	await page.getByRole("button", { name: "Enable" }).first().click();
-
-	await expect(
-		page.getByRole("button", { name: "Disable" }).first(),
-	).toBeVisible();
+	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
+	const toggle = page.getByRole("switch", { name: "Toggle task enabled" }).first();
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-checked", "true");
 });
 
 test("agent files editor lists root markdown files and protects built-ins", async ({

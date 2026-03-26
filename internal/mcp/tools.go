@@ -2999,7 +2999,7 @@ func registerServerTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_task_convert_to_script",
 		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
 		cfg, err := config.Load("")
 		if err != nil {
