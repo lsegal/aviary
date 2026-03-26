@@ -2747,8 +2747,14 @@ func registerServerTools(s *sdkmcp.Server) {
 						}
 						if tc.Name == name {
 							// Delete via store helper using agent name and
-							// relative filename.
-							rel := filepath.Base(f)
+							// relative filename (preserve subdirectory such as "tasks/").
+							// Compute the path relative to the agent directory so the
+							// store helper deletes the correct file.
+							agentDir := store.AgentDir(cfg.Agents[i].Name)
+							rel, rerr := filepath.Rel(agentDir, f)
+							if rerr != nil {
+								return nil, struct{}{}, fmt.Errorf("computing relative task file path: %w", rerr)
+							}
 							if derr := deleteAgentMarkdownFile(cfg.Agents[i].Name, rel); derr != nil {
 								if os.IsNotExist(derr) {
 									// Ignore missing files (race or already-removed).
