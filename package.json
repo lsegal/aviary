@@ -40,7 +40,7 @@
 		"marked": "^17.0.4",
 		"pinia": "^3.0.4",
 		"radix-vue": "^1.9.17",
-		"vue": "^3.5.30",
+		"vue": "^3.5.31",
 		"vue-router": "^5.0.4"
 	},
 	"devDependencies": {
