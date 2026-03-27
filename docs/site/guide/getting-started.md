@@ -33,6 +33,18 @@ go install github.com/lsegal/aviary/cmd/aviary@latest
 
 Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
 
+**Docker**
+
+```bash
+mkdir -p ~/.config/aviary
+docker run --rm -it \
+  -p 16677:16677 \
+  -v ~/.config/aviary:/home/bot/.config/aviary \
+  ghcr.io/lsegal/aviary:latest
+```
+
+The image runs `aviary serve` by default. The bind mount keeps your config, TLS certs, and login token on the host in `~/.config/aviary/`.
+
 ## Start the Server
 
 ```bash
@@ -40,6 +52,15 @@ aviary serve
 ```
 
 The server starts on `https://localhost:16677` by default. It generates a self-signed TLS certificate on first run and stores it in `~/.config/aviary/`. The port and TLS settings can be changed in `aviary.yaml` — see the [Configuration guide](/guide/configuration).
+
+If you are using Docker, the `docker run` command above already starts the server. To run CLI commands against the same config directory, override the container command:
+
+```bash
+docker run --rm -it \
+  -v ~/.config/aviary:/home/bot/.config/aviary \
+  ghcr.io/lsegal/aviary:latest \
+  aviary configure
+```
 
 Verify the server is running:
 

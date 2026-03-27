@@ -34,6 +34,18 @@ go install github.com/lsegal/aviary/cmd/aviary@latest
 
 Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
 
+**Docker**
+
+```shell
+mkdir -p ~/.config/aviary
+docker run --rm -it \
+  -p 16677:16677 \
+  -v ~/.config/aviary:/home/bot/.config/aviary \
+  ghcr.io/lsegal/aviary:latest
+```
+
+The image runs `aviary serve` by default. With the bind mount above, Aviary stores its config, TLS certs, and login token in your host `~/.config/aviary/` directory.
+
 ---
 
 ## Quick Start
@@ -50,6 +62,15 @@ aviary agent run assistant "Hello!"
 ```
 
 Open the web control panel at `https://localhost:16677` and log in with the token from `~/.config/aviary/token`.
+
+Using Docker, run one-off CLI commands against the same mounted config directory by overriding the container command:
+
+```shell
+docker run --rm -it \
+  -v ~/.config/aviary:/home/bot/.config/aviary \
+  ghcr.io/lsegal/aviary:latest \
+  aviary configure
+```
 
 For a full walkthrough see the [Getting Started guide](https://aviary.bot/guide/getting-started).
 
