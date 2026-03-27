@@ -1,4 +1,4 @@
-FROM node:24-bookworm AS web-builder
+FROM node:25-bookworm AS web-builder
 
 WORKDIR /src
 
