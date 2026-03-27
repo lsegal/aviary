@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/server"
@@ -90,7 +91,7 @@ var serveCmd = &cobra.Command{
 					if err := cmd.Start(); err != nil {
 						return fmt.Errorf("starting background process: %w", err)
 					}
-					fmt.Printf("Aviary started in background (PID %d)\n", cmd.Process.Pid)
+					fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, cmd.Process.Pid)
 					return nil
 				}
 
@@ -98,7 +99,7 @@ var serveCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("starting background process: %w", err)
 				}
-				fmt.Printf("Aviary started in background (PID %d)\n", proc.Pid)
+				fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, proc.Pid)
 				return nil
 			}
 			return runStart(nil, nil)
@@ -213,7 +214,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 	if port == 0 {
 		port = 16677
 	}
-	_, _ = fmt.Fprintf(os.Stdout, "Aviary started on https://localhost:%d\n", port)
+	_, _ = fmt.Fprintf(os.Stdout, "Aviary %s started on https://localhost:%d\n", buildinfo.Version, port)
 	if isNew {
 		_, _ = fmt.Fprintf(os.Stdout, "Your access token: %s\n", tok)
 		_, _ = fmt.Fprintf(os.Stdout, "Save this token — you'll need it to access the web panel.\n")
