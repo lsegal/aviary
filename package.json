@@ -7,7 +7,7 @@
 	"scripts": {
 		"claude": "claude --dangerously-skip-permissions",
 		"codex": "codex --dangerously-bypass-approvals-and-sandbox",
-		"dev": "concurrently -n vite,go -c cyan,green \"vite --host 0.0.0.0\" \"go tool wgo run ./cmd/aviary serve\"",
+		"dev": "concurrently -n web,doc,srv -c cyan,yellow,green \"vite --host 0.0.0.0\" \"pnpm docs:dev\" \"go tool wgo run ./cmd/aviary serve\"",
 		"docs:dev": "pnpm --dir docs dev",
 		"docs:build": "pnpm --dir docs build",
 		"docs:preview": "pnpm --dir docs preview",
