@@ -37,7 +37,7 @@
 		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"
 	},
 	"dependencies": {
-		"marked": "^17.0.4",
+		"marked": "^17.0.5",
 		"pinia": "^3.0.4",
 		"radix-vue": "^1.9.17",
 		"vue": "^3.5.30",
