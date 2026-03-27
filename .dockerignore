@@ -1,0 +1,7 @@
+.git
+.github
+node_modules
+docs/node_modules
+dist
+web/dist
+internal/server/webdist
