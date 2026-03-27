@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
   xdg-utils \
   libu2f-udev \
   libvulkan1
-# Chrome instalation
+# Chrome installation
 RUN curl -LO  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
 RUN rm google-chrome-stable_current_amd64.deb
