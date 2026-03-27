@@ -7,6 +7,60 @@
 
 ## Development Setup
 
+If you want a prebuilt environment with Go, Node, pnpm, Chrome, `codex`, `claude`, `gogcli`, and `himalaya`, use one of the container-based quick starts below.
+
+### Quick Start With Devcontainers
+
+[Dev Containers](https://containers.dev/) let you open the repository inside a preconfigured Docker-based development environment directly from VS Code, so you do not need to install the full toolchain on your host machine first.
+
+Create the local Aviary config file used by the container:
+
+```shell
+cat > .devcontainer/aviary/aviary.yaml <<'EOF'
+models:
+  defaults:
+    model: openai-codex/gpt-5.2
+EOF
+```
+
+Open the repository in VS Code and run **Dev Containers: Reopen in Container**.
+
+This starts:
+
+- The Vite dev server at **http://localhost:5173**
+- The docs dev server at **http://localhost:5174**
+- The Aviary backend at **https://localhost:16677**
+
+The container persists Aviary runtime state under `.devcontainer/aviary/`, including the generated token at `.devcontainer/aviary/token`.
+
+### Quick Start With Docker Compose
+
+Create the local Aviary config file used by the container:
+
+```shell
+cat > .devcontainer/aviary/aviary.yaml <<'EOF'
+models:
+  defaults:
+    model: openai-codex/gpt-5.2
+EOF
+```
+
+Start the containerized development environment:
+
+```shell
+docker compose up --build
+```
+
+This starts:
+
+- The Vite dev server at **http://localhost:5173**
+- The docs dev server at **http://localhost:5174**
+- The Aviary backend at **https://localhost:16677**
+
+The container persists Aviary runtime state under `.devcontainer/aviary/`, including the generated token at `.devcontainer/aviary/token`.
+
+### Quick Start Without Containers
+
 Install web dependencies:
 
 ```shell
@@ -20,6 +74,7 @@ pnpm dev
 ```
 
 This starts:
+
 - The Vite dev server at **http://localhost:5173** (hot-reload, no HTTPS)
 - The Aviary Go backend at **https://localhost:16677** (auto-restarts on Go file changes via `wgo`)
 
@@ -29,7 +84,7 @@ Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and 
 
 ## Project Structure
 
-```
+```plain
 cmd/aviary/          CLI entrypoint (Cobra)
 internal/
   agent/             Agent manager and runner

@@ -36,3 +36,8 @@ memory/
 *.swp
 *.swo
 test-results
+
+# Local devcontainer state
+.devcontainer/aviary/*
+!.devcontainer/aviary/.gitignore
+!.devcontainer/aviary/README.md

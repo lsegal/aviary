@@ -1,0 +1,26 @@
+services:
+  aviary-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /src
+    command: >
+      sh -lc
+      "pnpm install --frozen-lockfile &&
+      pnpm --dir docs install --frozen-lockfile &&
+      pnpm dev"
+    ports:
+      - "5173:5173"
+      - "5174:5174"
+      - "16677:16677"
+    volumes:
+      - .:/src
+      - ./.devcontainer/aviary:/home/dev/.config/aviary
+      - aviary-node_modules:/src/node_modules
+      - aviary-docs-node_modules:/src/docs/node_modules
+      - aviary-pnpm-store:/pnpm/store
+
+volumes:
+  aviary-node_modules:
+  aviary-docs-node_modules:
+  aviary-pnpm-store:

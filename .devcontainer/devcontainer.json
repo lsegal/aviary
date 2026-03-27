@@ -1,0 +1,31 @@
+{
+  "name": "aviary",
+  "dockerComposeFile": [
+    "../docker-compose.yml"
+  ],
+  "service": "aviary-dev",
+  "workspaceFolder": "/src",
+  "remoteUser": "dev",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go",
+        "Vue.volar",
+        "biomejs.biome",
+        "bradlc.vscode-tailwindcss",
+        "eamodio.gitlens",
+        "editorconfig.editorconfig",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "files.eol": "\n",
+        "go.testFlags": [
+          "./..."
+        ],
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

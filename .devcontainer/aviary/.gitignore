@@ -1,0 +1,4 @@
+# Ignore local Aviary runtime state, but keep this scaffold in git.
+*
+!.gitignore
+!README.md
