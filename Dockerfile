@@ -35,16 +35,17 @@ RUN echo "linuxbrew ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/linuxbrew && chmod 
 USER linuxbrew
 RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 RUN /home/linuxbrew/.linuxbrew/bin/brew install gogcli himalaya
+RUN chmod 777 /home/linuxbrew/ && chmod 777 /home/linuxbrew/.linuxbrew
 
 # Create a default user
 USER root
 RUN useradd -m bot -d /home/bot -s /bin/bash
 RUN mkdir -p /home/bot/.local/bin && chown -R bot:bot /home/bot/.local
 USER bot
-ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
+ENV PATH="/home/bot/.config/aviary/bin:/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
 WORKDIR /home/bot
 
 # Install aviary release
 RUN curl -fsSL https://aviary.bot/install.sh | sh
 
-CMD [ "sleep" ]
+CMD [ "aviary", "serve" ]
