@@ -134,7 +134,8 @@ jobs:
           sleep 1
           sh installer/install.sh --repo lsegal/aviary
           test -f "$XDG_CONFIG_HOME/aviary/bin/aviary"
-          grep -F "export PATH=\"$XDG_CONFIG_HOME/aviary/bin:\$PATH\"" "$HOME/.profile"
+          test -f "$HOME/.bashrc"
+          grep -F "export PATH=\"$XDG_CONFIG_HOME/aviary/bin:\$PATH\"" "$HOME/.bashrc"
 
   installer-windows:
     name: Installer smoke test (Windows)
@@ -159,7 +160,7 @@ jobs:
           $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-api'), '--port', '8765' -PassThru -WindowStyle Hidden
           try {
             Start-Sleep -Seconds 1
-            ./installer/install.ps1 -Version v9.9.9 -Repo lsegal/aviary -ApiBase http://127.0.0.1:8765 -SkipService
+            ./installer/install.ps1 -Version v9.9.9 -Repo lsegal/aviary -ApiBase http://127.0.0.1:8765
             $bin = Join-Path $env:HOME '.config\aviary\bin\aviary.exe'
             if (-not (Test-Path $bin)) {
               throw "installer did not create $bin"
