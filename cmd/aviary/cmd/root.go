@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/server"
@@ -26,6 +27,7 @@ var rootCmd = &cobra.Command{
 	Short: "Aviary — the AI agent orchestrator",
 	Long: `Aviary is an autonomous AI agent orchestrator. Connect your AI models
 to messaging channels, set up scheduled tasks, and let your agents work for you.`,
+	Version: buildinfo.Version,
 }
 
 // dispatcher is the global MCP dispatcher used by all subcommands.
@@ -52,6 +54,11 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.SetHelpTemplate(`{{with (or .Long .Short)}}{{.}}{{end}}
+
+Version: {{.Version}}
+
+{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aviary/aviary.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory (default: ~/.config/aviary)")
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
