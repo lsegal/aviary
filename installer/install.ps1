@@ -2,9 +2,7 @@
 param(
 	[string]$Version = $env:AVIARY_VERSION,
 	[string]$Repo = $(if ($env:AVIARY_REPO) { $env:AVIARY_REPO } else { "lsegal/aviary" }),
-	[string]$ApiBase = $(if ($env:AVIARY_API_BASE) { $env:AVIARY_API_BASE } else { "https://api.github.com" }),
-	[switch]$Yes,
-	[switch]$SkipService
+	[string]$ApiBase = $(if ($env:AVIARY_API_BASE) { $env:AVIARY_API_BASE } else { "https://api.github.com" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +34,20 @@ function Get-Release {
 		return Invoke-RestMethod -Headers $headers -Uri "$ApiRoot/repos/$RepoName/releases/tags/$Tag"
 	}
 	return Invoke-RestMethod -Headers $headers -Uri "$ApiRoot/repos/$RepoName/releases/latest"
+}
+
+function Get-DisplayPath {
+	param([string]$Path)
+
+	$homeCandidates = @($HOME, $env:HOME, $env:USERPROFILE) | Where-Object { $_ } | Select-Object -Unique
+	foreach ($homeDir in $homeCandidates) {
+		$normalizedHome = $homeDir.TrimEnd('\', '/')
+		if ($Path.StartsWith($normalizedHome, [System.StringComparison]::OrdinalIgnoreCase)) {
+			return "~" + $Path.Substring($normalizedHome.Length)
+		}
+	}
+
+	return $Path
 }
 
 switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
@@ -142,22 +154,19 @@ try {
 		[Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
 	}
 
-	Write-Host "Installed aviary to $binaryDest"
-	Write-Host "Version: $Version"
-	Write-Host "PATH updated for this PowerShell session and persisted to the user environment."
-	# Prompt to install the service
-	if ($SkipService) {
-		Write-Host "Skipping service installation."
-	} elseif ($Yes) {
-		& $binaryDest service install
-	} else {
-		$ans = Read-Host "Install aviary as a service? [Y/n]"
-		if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^[Yy]') {
-			& $binaryDest service install
-		} else {
-			Write-Host "Skipping service installation."
-		}
+	$binaryDisplay = Get-DisplayPath -Path $binaryDest
+	$reset = ""
+	$boldWhite = ""
+	if ($Host.UI.SupportsVirtualTerminal) {
+		$reset = "$([char]27)[0m"
+		$boldWhite = "$([char]27)[1;97m"
 	}
+
+	Write-Host ("Installed {0}aviary {1}{2} to {0}{3}{4}" -f $boldWhite, $Version, $reset, $binaryDisplay, $reset)
+	Write-Host "PATH updated for this PowerShell session and persisted to the user environment."
+	Write-Host ""
+	Write-Host ("Run {0}aviary configure{1} to set up your Aviary configuration." -f $boldWhite, $reset)
+	Write-Host ("Run {0}aviary service install{1} to set up and start the system service (optional)." -f $boldWhite, $reset)
 } finally {
 	if (Test-Path $tempRoot) {
 		Remove-Item -Path $tempRoot -Recurse -Force
