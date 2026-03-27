@@ -581,6 +581,42 @@ func TestEnsureChrome_CancelledContext(t *testing.T) {
 
 }
 
+func TestEnsureChrome_FallsBackToHeadlessWhenHeadedLaunchDoesNotBecomeReady(t *testing.T) {
+	oldLaunchChromeWithModeFn := launchChromeWithModeFn
+	oldShouldLaunchHeadlessFn := shouldLaunchHeadlessFn
+	oldWaitForChromeFn := waitForChromeFn
+	t.Cleanup(func() {
+		launchChromeWithModeFn = oldLaunchChromeWithModeFn
+		shouldLaunchHeadlessFn = oldShouldLaunchHeadlessFn
+		waitForChromeFn = oldWaitForChromeFn
+	})
+
+	var launchModes []bool
+	launchChromeWithModeFn = func(_ *Manager, headless bool) error {
+		launchModes = append(launchModes, headless)
+		return nil
+	}
+	shouldLaunchHeadlessFn = func(_ *Manager) bool { return false }
+
+	waitCalls := 0
+	waitForChromeFn = func(_ context.Context, _ string) (string, error) {
+		waitCalls++
+		if waitCalls == 1 {
+			return "", context.DeadlineExceeded
+		}
+		return "ws://127.0.0.1:9222/devtools/browser/fallback", nil
+	}
+
+	m := NewManager("", 19876, "", false)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	wsURL, err := m.ensureChrome(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "ws://127.0.0.1:9222/devtools/browser/fallback", wsURL)
+	assert.Equal(t, []bool{false, true}, launchModes)
+}
+
 // --- Manager.Open via mock CDP ---
 
 func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {

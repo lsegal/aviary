@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +25,10 @@ type ChromeTab struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
 }
+
+var launchChromeWithModeFn = launchChromeWithMode
+var shouldLaunchHeadlessFn = shouldLaunchHeadless
+var waitForChromeFn = waitForChrome
 
 // fetchTabs returns all open tabs from the Chrome CDP /json/list endpoint.
 func fetchTabs(cdpBaseURL string) ([]ChromeTab, error) {
@@ -117,6 +122,14 @@ func fetchWebSocketURL(cdpBaseURL string) (string, error) {
 // launchChrome starts Chrome as a detached OS process that will survive after
 // the calling process exits. It does not wait for Chrome to become ready.
 func launchChrome(m *Manager) error {
+	return launchChromeWithMode(m, shouldLaunchHeadless(m))
+}
+
+func shouldLaunchHeadless(m *Manager) bool {
+	return m.headless || testing.Testing() || (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "")
+}
+
+func launchChromeWithMode(m *Manager, headless bool) error {
 	chromePath, err := findChrome(m.binary)
 	if err != nil {
 		return err
@@ -128,7 +141,7 @@ func launchChrome(m *Manager) error {
 		"--no-first-run",
 		"--no-default-browser-check",
 	}
-	if m.headless || testing.Testing() || (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "") {
+	if headless {
 		args = append(args, "--headless", "--disable-gpu")
 	}
 
@@ -139,6 +152,17 @@ func launchChrome(m *Manager) error {
 		return fmt.Errorf("starting Chrome (%s): %w", chromePath, err)
 	}
 	return nil
+}
+
+func launchChromeAndWait(ctx context.Context, m *Manager, cdpBaseURL string, headless bool) (string, error) {
+	if err := launchChromeWithModeFn(m, headless); err != nil {
+		return "", err
+	}
+	slog.Info("browser: chrome launched", "port", m.cdpPort, "headless", headless)
+
+	waitCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return waitForChromeFn(waitCtx, cdpBaseURL)
 }
 
 // waitForChrome polls the CDP endpoint until Chrome is ready or the context expires.

@@ -222,14 +222,17 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if err := launchChrome(m); err != nil {
-		return "", err
+	headless := shouldLaunchHeadlessFn(m)
+	wsURL, err := launchChromeAndWait(ctx, m, cdpBaseURL, headless)
+	if err == nil || headless {
+		return wsURL, err
 	}
-	slog.Info("browser: chrome launched", "port", m.cdpPort)
+	if wsURL, retryErr := fetchWebSocketURL(cdpBaseURL); retryErr == nil {
+		return wsURL, nil
+	}
 
-	waitCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
-	defer cancel()
-	return waitForChrome(waitCtx, cdpBaseURL)
+	slog.Warn("browser: headed launch failed; retrying in headless mode", "port", m.cdpPort, "err", err)
+	return launchChromeAndWait(ctx, m, cdpBaseURL, true)
 }
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
