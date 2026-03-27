@@ -16,7 +16,6 @@ Environment:
 EOF
 }
 
-AUTO_YES=0
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 	--version)
@@ -31,10 +30,6 @@ while [ "$#" -gt 0 ]; do
 		usage
 		return 0 2>/dev/null || exit 0
 		;;
-		-y)
-			AUTO_YES=1
-			shift
-			;;
 	*)
 		echo "Unknown argument: $1" >&2
 		return 1 2>/dev/null || exit 1
