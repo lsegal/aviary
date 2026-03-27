@@ -29,6 +29,8 @@ RUN CGO_ENABLED=0 go build \
 
 FROM debian:bookworm-slim
 
+ARG TARGETARCH
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
@@ -57,10 +59,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xdg-utils \
   && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
-  && rm -f /tmp/google-chrome.deb \
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+    amd64) \
+      curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
+      && rm -f /tmp/google-chrome.deb \
+      ;; \
+    arm64) \
+      apt-get update \
+      && apt-get install -y --no-install-recommends chromium chromium-sandbox \
+      && ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+      && ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable \
+      ;; \
+    *) \
+      echo "unsupported TARGETARCH: ${TARGETARCH:-$(dpkg --print-architecture)}" >&2 \
+      && exit 1 \
+      ;; \
+  esac \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m linuxbrew -d /home/linuxbrew -s /bin/bash \

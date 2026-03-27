@@ -2,6 +2,8 @@ FROM golang:1.26-bookworm AS go-toolchain
 
 FROM node:24-bookworm
 
+ARG TARGETARCH
+
 ENV GOROOT=/usr/local/go
 ENV GOPATH=/home/dev/go
 ENV PNPM_HOME=/pnpm
@@ -43,10 +45,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xdg-utils \
   && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
-  && rm -f /tmp/google-chrome.deb \
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+    amd64) \
+      curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
+      && rm -f /tmp/google-chrome.deb \
+      ;; \
+    arm64) \
+      apt-get update \
+      && apt-get install -y --no-install-recommends chromium chromium-sandbox \
+      && ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+      && ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable \
+      ;; \
+    *) \
+      echo "unsupported TARGETARCH: ${TARGETARCH:-$(dpkg --print-architecture)}" >&2 \
+      && exit 1 \
+      ;; \
+  esac \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash dev \
