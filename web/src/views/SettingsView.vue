@@ -831,10 +831,12 @@
 <div>
 <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
 <div v-if="agent.tasks?.length" class="space-y-1">
-<button v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" type="button" class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
+<div v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" class="flex items-center gap-1">
+<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
 <span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
+</button>
 
-<button type="button" class="ml-2 text-gray-400 hover:text-red-600 p-1" aria-label="Delete task" @click.stop="promptDeleteTask(i, j, task.name)">
+<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete task" @click="promptDeleteTask(i, j, task.name)">
 <!-- Heroicons outline trash -->
 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 <path d="M3 6h18" />
@@ -845,7 +847,7 @@
 </svg>
 </button>
 
-</button>
+</div>
 
 </div>
 <p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
