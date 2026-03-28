@@ -1427,6 +1427,11 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "stub"}}}
 	srv := New(cfg, "tok")
 	srv.agents.Reconcile(cfg)
+	t.Cleanup(func() {
+		if runner, ok := srv.agents.Get("bot"); ok {
+			runner.Wait()
+		}
+	})
 
 	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", stubChannel{}, channels.IncomingMessage{
 		Type:     "slack",
@@ -1468,6 +1473,10 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	assert.True(t, found)
 	assert.Equal(t, "describe this", userMsg.Content)
 	assert.Equal(t, "data:image/png;base64,cG5n", userMsg.MediaURL)
+
+	if runner, ok := srv.agents.Get("bot"); ok {
+		runner.Wait()
+	}
 }
 
 func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {
