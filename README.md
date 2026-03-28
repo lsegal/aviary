@@ -24,16 +24,6 @@ iwr https://aviary.bot/install.ps1 | iex
 
 Both scripts download the latest release binary to `~/.config/aviary/bin/` and add it to your `PATH`.
 
-**Go install**
-
-```shell
-go install github.com/lsegal/aviary/cmd/aviary@latest
-```
-
-**Binary release**
-
-Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
-
 **Docker**
 
 ```shell
@@ -45,6 +35,16 @@ docker run --rm -it \
 ```
 
 The image runs `aviary serve` by default. With the bind mount above, Aviary stores its config, TLS certs, and login token in your host `~/.config/aviary/` directory.
+
+**Binary release**
+
+Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
+
+**Go install**
+
+```shell
+go install github.com/lsegal/aviary/cmd/aviary@latest
+```
 
 ---
 
