@@ -22,7 +22,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             echo "aviary_version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           else
-            echo "aviary_version=$(node -p \"require('./package.json').version\").dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            echo "aviary_version=$(jq -r .version package.json).dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
       - uses: docker/setup-buildx-action@v3
       - uses: docker/metadata-action@v6
