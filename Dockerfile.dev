@@ -82,7 +82,7 @@ RUN chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
 
 USER root
 
-RUN corepack enable && corepack prepare pnpm@8.6.0 --activate
+RUN npm install -g pnpm@8.6.0
 RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 COPY package.json pnpm-lock.yaml ./

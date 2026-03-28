@@ -3,7 +3,7 @@ FROM node:25-bookworm AS web-builder
 WORKDIR /src
 
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && corepack prepare pnpm@8.6.0 --activate
+RUN npm install -g pnpm@8.6.0
 RUN pnpm install --frozen-lockfile
 
 COPY . .
