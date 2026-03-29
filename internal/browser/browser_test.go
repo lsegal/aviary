@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -335,6 +336,41 @@ func TestFindChrome_NotFound(t *testing.T) {
 	}
 	assert.Regexp(t, "Chrome|not found", err.Error())
 
+}
+
+func TestShouldAutoLaunchHeadless_WindowsIgnoresDisplayEnv(t *testing.T) {
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+
+	assert.False(t, shouldAutoLaunchHeadless("windows"))
+}
+
+func TestShouldAutoLaunchHeadless_UnixRequiresDisplay(t *testing.T) {
+	origDisplay, hadDisplay := os.LookupEnv("DISPLAY")
+	origWayland, hadWayland := os.LookupEnv("WAYLAND_DISPLAY")
+	t.Cleanup(func() {
+		if hadDisplay {
+			assert.NoError(t, os.Setenv("DISPLAY", origDisplay))
+		} else {
+			assert.NoError(t, os.Unsetenv("DISPLAY"))
+		}
+		if hadWayland {
+			assert.NoError(t, os.Setenv("WAYLAND_DISPLAY", origWayland))
+		} else {
+			assert.NoError(t, os.Unsetenv("WAYLAND_DISPLAY"))
+		}
+	})
+
+	assert.NoError(t, os.Unsetenv("DISPLAY"))
+	assert.NoError(t, os.Unsetenv("WAYLAND_DISPLAY"))
+	assert.True(t, shouldAutoLaunchHeadless("linux"))
+
+	assert.NoError(t, os.Setenv("DISPLAY", ":0"))
+	assert.False(t, shouldAutoLaunchHeadless("linux"))
+
+	assert.NoError(t, os.Unsetenv("DISPLAY"))
+	assert.NoError(t, os.Setenv("WAYLAND_DISPLAY", "wayland-0"))
+	assert.False(t, shouldAutoLaunchHeadless("linux"))
 }
 
 // --- Manager.CloseTab ---

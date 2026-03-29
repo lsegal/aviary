@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -126,7 +127,14 @@ func launchChrome(m *Manager) error {
 }
 
 func shouldLaunchHeadless(m *Manager) bool {
-	return m.headless || testing.Testing() || (os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "")
+	return m.headless || testing.Testing() || shouldAutoLaunchHeadless(runtime.GOOS)
+}
+
+func shouldAutoLaunchHeadless(goos string) bool {
+	if goos == "windows" {
+		return false
+	}
+	return os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == ""
 }
 
 func launchChromeWithMode(m *Manager, headless bool) error {
