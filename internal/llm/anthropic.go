@@ -9,6 +9,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+const anthropicStrictToolLimit = 20
+
 // AnthropicProvider streams responses from Anthropic's Claude models.
 type AnthropicProvider struct {
 	client anthropic.Client
@@ -144,13 +146,16 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		MaxTokens: maxToks,
 	}
 	if len(req.Tools) > 0 {
+		useStrictTools := len(req.Tools) <= anthropicStrictToolLimit
 		params.Tools = make([]anthropic.ToolUnionParam, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			schema := anthropicToolSchema(tool.InputSchema)
 			params.Tools = append(params.Tools, anthropic.ToolUnionParamOfTool(schema, tool.Name))
 			params.Tools[len(params.Tools)-1].OfTool.Description = anthropic.String(tool.Description)
 			params.Tools[len(params.Tools)-1].OfTool.InputExamples = tool.Examples
-			params.Tools[len(params.Tools)-1].OfTool.Strict = anthropic.Bool(true)
+			if useStrictTools {
+				params.Tools[len(params.Tools)-1].OfTool.Strict = anthropic.Bool(true)
+			}
 		}
 	}
 	if p.oauth {
@@ -176,9 +181,10 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		defer close(ch)
 		var usageData *Usage
 		type pendingToolCall struct {
-			ID   string
-			Name string
-			JSON strings.Builder
+			ID           string
+			Name         string
+			JSON         strings.Builder
+			HasJSONDelta bool
 		}
 		pendingCalls := map[int64]*pendingToolCall{}
 		for stream.Next() {
@@ -202,6 +208,10 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 					if call == nil {
 						call = &pendingToolCall{}
 						pendingCalls[e.Index] = call
+					}
+					if !call.HasJSONDelta {
+						call.JSON.Reset()
+						call.HasJSONDelta = true
 					}
 					call.JSON.WriteString(delta.PartialJSON)
 				}

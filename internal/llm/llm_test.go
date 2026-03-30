@@ -17,6 +17,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/auth"
 )
@@ -305,6 +306,19 @@ func anthropicSSEResponse(w http.ResponseWriter, text string) {
 	_, _ = fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 }
 
+func anthropicToolUseSSSEResponse(w http.ResponseWriter, initialInput string, deltaParts ...string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-5-sonnet-20241022\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":1}}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"agent_file_read\",\"input\":%s}}\n\n", initialInput)
+	for _, part := range deltaParts {
+		_, _ = fmt.Fprintf(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":%q}}\n\n", part)
+	}
+	_, _ = fmt.Fprintf(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+	_, _ = fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+}
+
 // openAISSEResponse writes a minimal OpenAI chat completion SSE response.
 func openAISSEResponse(w http.ResponseWriter, text string) {
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -514,6 +528,131 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 	}
 	assert.True(t, gotDone)
 
+}
+
+func TestAnthropicProvider_Stream_StrictToolsDisabledAboveLimit(t *testing.T) {
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		anthropicSSEResponse(w, "ok")
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	tools := make([]ToolDefinition, 0, anthropicStrictToolLimit+1)
+	for i := 0; i < anthropicStrictToolLimit+1; i++ {
+		tools = append(tools, ToolDefinition{
+			Name:        fmt.Sprintf("tool_%d", i),
+			Description: "test tool",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string"},
+				},
+			},
+		})
+	}
+
+	ch, err := p.Stream(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+		Tools:    tools,
+	})
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(requestBody, &payload))
+	rawTools, ok := payload["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, rawTools, anthropicStrictToolLimit+1)
+	for _, rawTool := range rawTools {
+		toolMap, ok := rawTool.(map[string]any)
+		require.True(t, ok)
+		_, hasStrict := toolMap["strict"]
+		assert.False(t, hasStrict)
+	}
+}
+
+func TestAnthropicProvider_Stream_StrictToolsEnabledWithinLimit(t *testing.T) {
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		anthropicSSEResponse(w, "ok")
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	ch, err := p.Stream(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+		Tools: []ToolDefinition{{
+			Name:        "tool_1",
+			Description: "test tool",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string"},
+				},
+			},
+		}},
+	})
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(requestBody, &payload))
+	rawTools, ok := payload["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, rawTools, 1)
+	toolMap, ok := rawTools[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, true, toolMap["strict"])
+}
+
+func TestAnthropicProvider_Stream_ToolCallPrefersJSONDeltas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		anthropicToolUseSSSEResponse(
+			w,
+			`{"file":"stale.md"}`,
+			`{"file":"`,
+			`MEMORY.md`,
+			`"}`,
+		)
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	ch, err := p.Stream(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "Read the memory file"}},
+		Tools: []ToolDefinition{{
+			Name:        "agent_file_read",
+			Description: "Read an agent markdown file",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{"type": "string"},
+				},
+			},
+		}},
+	})
+	assert.NoError(t, err)
+
+	events := collectEvents(t, ch)
+	var toolCall *ToolCall
+	for _, ev := range events {
+		if ev.Type == EventTypeToolCall {
+			toolCall = ev.ToolCall
+		}
+		if ev.Type == EventTypeError {
+			assert.NoError(t, ev.Error)
+		}
+	}
+	require.NotNil(t, toolCall)
+	assert.Equal(t, "agent_file_read", toolCall.Name)
+	assert.Equal(t, "MEMORY.md", toolCall.Arguments["file"])
 }
 
 func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {

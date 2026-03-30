@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/lsegal/aviary/internal/llm"
@@ -35,37 +36,42 @@ func synthesizeToolExamples(tool ToolInfo) []map[string]any {
 	if len(props) == 0 {
 		return nil
 	}
+	requiredNames := []string{}
 	requiredSet := map[string]struct{}{}
 	switch req := schema["required"].(type) {
 	case []any:
 		for _, item := range req {
 			if s, ok := item.(string); ok && s != "" {
+				requiredNames = append(requiredNames, s)
 				requiredSet[s] = struct{}{}
 			}
 		}
 	case []string:
 		for _, item := range req {
 			if item != "" {
+				requiredNames = append(requiredNames, item)
 				requiredSet[item] = struct{}{}
 			}
 		}
 	}
 
 	example := map[string]any{}
-	for name, raw := range props {
+	for _, name := range requiredNames {
+		raw, ok := props[name]
+		if !ok {
+			continue
+		}
 		prop, _ := raw.(map[string]any)
-		if len(requiredSet) > 0 {
-			if _, ok := requiredSet[name]; !ok {
-				continue
-			}
-		}
 		example[name] = exampleValue(tool.Name, name, prop)
-		if len(example) >= 3 {
-			break
-		}
 	}
 	if len(example) == 0 {
-		for name, raw := range props {
+		propertyNames := make([]string, 0, len(props))
+		for name := range props {
+			propertyNames = append(propertyNames, name)
+		}
+		sort.Strings(propertyNames)
+		for _, name := range propertyNames {
+			raw := props[name]
 			prop, _ := raw.(map[string]any)
 			example[name] = exampleValue(tool.Name, name, prop)
 			if len(example) >= 2 {
@@ -112,6 +118,12 @@ func exampleValue(toolName, fieldName string, prop map[string]any) any {
 		return "notes/example.md"
 	case "session_id":
 		return "current"
+	case "channel_id":
+		return "alerts"
+	case "channel_type":
+		return "slack"
+	case "target":
+		return "C12345678"
 	case "order":
 		return "desc"
 	case "limit":
