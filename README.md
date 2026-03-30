@@ -2,6 +2,12 @@
 
 <p align="center"><img src="web/public/logo.png" alt="Aviary logo" width="200" /></p>
 
+<p align="center">
+  <a href="https://github.com/lsegal/aviary/releases"><img src="https://img.shields.io/github/v/release/lsegal/aviary?display_name=tag&sort=semver" alt="Release" /></a>
+  <a href="https://github.com/lsegal/aviary/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lsegal/aviary/ci.yml?branch=main&label=tests" alt="Tests" /></a>
+  <a href="https://github.com/lsegal/aviary/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lsegal/aviary" alt="License" /></a>
+</p>
+
 Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, and more. Have conversations, set up scheduled tasks, and let your agents work for you — all managed from a CLI or a web-based control panel.
 
 [Website](https://aviary.bot) | Docs: [Getting Started](https://aviary.bot/guide/getting-started) · [Configuration](https://aviary.bot/guide/configuration) · [CLI Reference](https://aviary.bot/reference/cli) · [MCP Tools](https://aviary.bot/reference/mcp/)

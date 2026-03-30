@@ -590,6 +590,35 @@ a.detail-card:focus-visible {
 	margin: 0;
 }
 
+.header-release-badge {
+	display: inline-flex;
+	align-items: center;
+	margin-left: 12px;
+	line-height: 0;
+	opacity: 0.72;
+	transition: opacity 160ms ease;
+}
+
+.header-release-badge:hover {
+	opacity: 1;
+}
+
+.header-release-badge img {
+	display: block;
+	height: 20px;
+	filter: grayscale(1) contrast(0.88);
+}
+
+.dark .header-release-badge img {
+	filter: grayscale(1) invert(1) contrast(0.82);
+}
+
+@media (max-width: 959px) {
+	.header-release-badge {
+		display: none;
+	}
+}
+
 @media (min-width: 960px) {
 	.VPHomeHero .container {
 		max-width: 900px !important;

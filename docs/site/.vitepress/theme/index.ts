@@ -1,6 +1,7 @@
 import DefaultTheme from "vitepress/theme";
 import { h } from "vue";
 import FeatureIcon from "./components/FeatureIcon.vue";
+import HeaderReleaseBadge from "./components/HeaderReleaseBadge.vue";
 import HeroActions from "./components/HeroActions.vue";
 import MessagingLogo from "./components/MessagingLogo.vue";
 import ScreenshotGallery from "./components/ScreenshotGallery.vue";
@@ -12,6 +13,7 @@ export default {
 	Layout() {
 		return h(DefaultTheme.Layout, null, {
 			"home-hero-after": () => h(HeroActions),
+			"nav-bar-content-after": () => h(HeaderReleaseBadge),
 			"layout-bottom": () => h(SiteEffects),
 		});
 	},
