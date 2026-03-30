@@ -424,6 +424,55 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
 });
 
+test("task header wraps cleanly on mobile", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Tasks", exact: true })
+		.first()
+		.click();
+
+	const definedIn = page.getByText("Defined in: aviary.yaml", {
+		exact: true,
+	});
+	const convertButton = page.getByRole("button", { name: "Convert to Script" });
+	const enabledSwitch = page.getByRole("switch", {
+		name: "Toggle task enabled",
+	});
+
+	await expect(definedIn).toBeVisible();
+	await expect(convertButton).toBeVisible();
+	await expect(enabledSwitch).toBeVisible();
+
+	const definedInBox = await definedIn.boundingBox();
+	const convertButtonBox = await convertButton.boundingBox();
+	const enabledSwitchBox = await enabledSwitch.boundingBox();
+
+	expect(definedInBox).not.toBeNull();
+	expect(convertButtonBox).not.toBeNull();
+	expect(enabledSwitchBox).not.toBeNull();
+
+	if (definedInBox && convertButtonBox && enabledSwitchBox) {
+		expect(definedInBox.x).toBeGreaterThanOrEqual(0);
+		expect(definedInBox.x + definedInBox.width).toBeLessThanOrEqual(390);
+		expect(convertButtonBox.x).toBeGreaterThanOrEqual(0);
+		expect(convertButtonBox.x + convertButtonBox.width).toBeLessThanOrEqual(
+			390,
+		);
+		expect(enabledSwitchBox.x).toBeGreaterThanOrEqual(0);
+		expect(enabledSwitchBox.x + enabledSwitchBox.width).toBeLessThanOrEqual(
+			390,
+		);
+	}
+
+	const pageWidths = await page.evaluate(() => ({
+		clientWidth: document.documentElement.clientWidth,
+		scrollWidth: document.documentElement.scrollWidth,
+	}));
+	expect(pageWidths.scrollWidth).toBeLessThanOrEqual(pageWidths.clientWidth);
+});
+
 test("deleting a task from settings persists immediately", async ({ page }) => {
 	let savedConfig: unknown = null;
 

@@ -71,6 +71,82 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
 </div>
 </section>
 
+<section class="content-section content-section-showcase">
+<p class="section-eyebrow">Control Panel</p>
+
+<h2 class="section-heading">See Aviary In Action</h2>
+
+<p class="section-subheading">The same control panel gives you live status, long-running conversations, and token-level usage data without leaving the browser.</p>
+
+<ScreenshotGallery
+  :items="[
+    {
+      src: '/screenshots/chat-workspace.png',
+      alt: 'Aviary chat workspace focused on web search, calendar checks, and email triage',
+      title: 'Plan The Morning',
+      description: 'Work through search results, today’s calendar, and unread email in a single agent thread.',
+      featured: true,
+    },
+    {
+      src: '/screenshots/configure-everything.png',
+      alt: 'Aviary agent channel configuration screen showing Slack channel settings, allowed senders, and per-channel model overrides',
+      title: 'Configure Everything',
+      description: 'Set up channels, sender rules, model overrides, and day-to-day routing from one agent config screen.',
+    },
+    {
+      src: '/screenshots/usage-analytics.png',
+      alt: 'Aviary usage page with token charts, provider breakdowns, and session analytics',
+      title: 'Usage Analytics',
+      description: 'Track token spend, provider mix, and session activity from one live reporting view.',
+    },
+    {
+      src: '/screenshots/security-minded.png',
+      alt: 'Aviary agent permissions page showing a low-privilege preset, tool restrictions, filesystem rules, and exec command allowlists',
+      title: 'Security Minded',
+      description: 'Keep agents on a low-privilege setup with tight tool access, path rules, and explicit command allowlists.',
+    },
+  ]"
+/>
+</section>
+
+<section class="content-section content-section-alt">
+<p class="section-eyebrow">System Views</p>
+
+<h2 class="section-heading">Inspect The Whole Runtime</h2>
+
+<p class="section-subheading">The system surfaces give you a live catalog of what Aviary can do, what is installed, and what your scheduled automations are doing right now.</p>
+
+<ScreenshotGallery
+  compact
+  :items="[
+    {
+      src: '/screenshots/system-jobs.png',
+      alt: 'Aviary jobs page showing queue health, scheduled tasks, compile attempts, and a detail panel',
+      title: 'Jobs',
+      description: 'Review scheduled runs, compile attempts, and live job state with detail panes for follow-up.',
+    },
+    {
+      src: '/screenshots/system-skills.png',
+      alt: 'Aviary skill marketplace showing installed and enabled skills',
+      title: 'Skills',
+      description: 'Browse installed skills, filter by source, and toggle what is available to your agents.',
+    },
+    {
+      src: '/screenshots/system-tools.png',
+      alt: 'Aviary system tools page with the run tool modal open and a completed tool output',
+      title: 'Tools',
+      description: 'Inspect the MCP tool catalog and run a real tool call from the browser when you want to test quickly.',
+    },
+    {
+      src: '/screenshots/system-models.png',
+      alt: 'Aviary models page showing searchable provider and model cards',
+      title: 'Models',
+      description: 'Search the built-in model catalog by provider and capability before assigning defaults or fallbacks.',
+    },
+  ]"
+/>
+</section>
+
 <section class="content-section">
 <p class="section-eyebrow">Core Workflows</p>
 

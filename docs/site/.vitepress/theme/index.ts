@@ -3,6 +3,7 @@ import { h } from "vue";
 import FeatureIcon from "./components/FeatureIcon.vue";
 import HeroActions from "./components/HeroActions.vue";
 import MessagingLogo from "./components/MessagingLogo.vue";
+import ScreenshotGallery from "./components/ScreenshotGallery.vue";
 import SiteEffects from "./components/SiteEffects.vue";
 import "./custom.css";
 
@@ -18,6 +19,7 @@ export default {
 		DefaultTheme.enhanceApp?.({ app });
 		app.component("FeatureIcon", FeatureIcon);
 		app.component("MessagingLogo", MessagingLogo);
+		app.component("ScreenshotGallery", ScreenshotGallery);
 
 		if (typeof window !== "undefined") {
 			function typeInstallCommand(el: Element) {

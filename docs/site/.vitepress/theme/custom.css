@@ -601,6 +601,7 @@ a.detail-card:focus-visible {
 	}
 }
 
+
 .VPHomeFeatures {
 	padding-top: 2.4rem;
 	padding-bottom: 2rem;
@@ -624,6 +625,67 @@ a.detail-card:focus-visible {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 	gap: 1.4rem;
+}
+
+.content-section-showcase {
+	margin-top: 5rem;
+}
+
+.screenshot-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: 1.5rem;
+	margin-top: 2.35rem;
+}
+
+.screenshot-card {
+	margin: 0;
+	overflow: hidden;
+	border: 1px solid rgba(99, 62, 46, 0.16);
+	border-radius: 24px;
+	background:
+		linear-gradient(180deg, var(--aviary-card-gradient-top), var(--aviary-card-gradient-bottom)),
+		var(--aviary-card-base);
+	box-shadow:
+		0 16px 32px -14px rgba(93, 53, 31, 0.32),
+		inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.dark .screenshot-card {
+	border-color: rgba(255, 223, 196, 0.12);
+	background:
+		linear-gradient(180deg, var(--aviary-card-dark-gradient-top), var(--aviary-card-dark-gradient-bottom)),
+		var(--aviary-card-dark-base);
+	box-shadow:
+		0 18px 34px -14px rgba(0, 0, 0, 0.5),
+		inset 0 1px 0 rgba(255, 244, 232, 0.06);
+}
+
+.screenshot-card img {
+	display: block;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 16 / 10;
+	object-fit: cover;
+	background: rgba(255, 255, 255, 0.92);
+}
+
+.dark .screenshot-card img {
+	background: rgba(24, 17, 15, 0.96);
+}
+
+.screenshot-card figcaption {
+	padding: 1.15rem 1.2rem 1.25rem;
+}
+
+.screenshot-card h3 {
+	margin: 0 0 0.4rem;
+	font-size: 1rem;
+}
+
+.screenshot-card p {
+	margin: 0;
+	color: var(--vp-c-text-2);
 }
 
 .comparison-card {

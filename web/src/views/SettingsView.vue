@@ -826,9 +826,9 @@
 								No tasks configured for this agent.
 							</div>
 
-<div class="grid grid-cols-[260px_minmax(0,1fr)] gap-3">
+<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
 <!-- Left: list of tasks -->
-<div>
+<div class="min-w-0">
 <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
 <div v-if="agent.tasks?.length" class="space-y-1">
 <div v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" class="flex items-center gap-1">
@@ -863,19 +863,21 @@
 <!-- Right: single editor for selected task -->
 <div>
 <div v-if="selectedTask">
-								<div class="flex items-center justify-between mb-3">
+								<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 									<div class="min-w-0">
-										<div class="flex items-center gap-3 whitespace-nowrap">
+										<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 											<span v-if="!isTaskEnabled(selectedTask)" class="flex-shrink-0 rounded-full bg-red-50 px-3 py-1 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">disabled</span>
 											<span class="flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium"
 												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
 												{{ selectedTask.type }}</span>
-											<span class="flex-shrink-0 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">Defined in: {{ taskDefinedIn(selectedTask) }}</span>
+											<span class="min-w-0 max-w-full rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+												<span class="block truncate sm:inline">Defined in: {{ taskDefinedIn(selectedTask) }}</span>
+											</span>
 										</div>
 									</div>
-									<div class="flex items-center gap-2">
+									<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
 										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
-										<label class="inline-flex items-center gap-2">
+										<label class="inline-flex min-w-0 items-center gap-2">
 	<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
 	<SwitchRoot
 		:checked="isTaskEnabled(selectedTask)"
