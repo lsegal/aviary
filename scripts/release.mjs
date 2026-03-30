@@ -13,5 +13,10 @@ if (assets.length === 0) {
 }
 
 const opts = { shell: true, stderr: process.stderr, stdout: process.stdout };
-await $(opts)`git push origin main v${pkg.version}`;
+const pushTarget =
+	process.env.GH_TOKEN && process.env.GITHUB_REPOSITORY
+		? `https://x-access-token:${process.env.GH_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git`
+		: "origin";
+
+await $(opts)`git push ${pushTarget} main v${pkg.version}`;
 await $(opts)`gh release create --generate-notes v${pkg.version} ${assets.join(" ")}`;
