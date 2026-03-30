@@ -8,6 +8,7 @@
 *.exe
 *.test
 *.out
+/coverage
 
 # Web build output
 /web/dist/
