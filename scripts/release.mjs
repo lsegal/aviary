@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 const pkgData = await readFile("package.json");
 const pkg = JSON.parse(pkgData.toString());
-const pkgfile = `${pkg.name}-v${pkg.version}.tgz`;
 const assets = (await readdir("dist/release"))
 	.filter((name) => name.endsWith(".tar.gz") || name === "checksums.txt")
 	.map((name) => join("dist/release", name));
