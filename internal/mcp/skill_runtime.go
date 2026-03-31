@@ -23,16 +23,13 @@ type skillCommandFunc func(context.Context, string, ...string) *exec.Cmd
 var (
 	gogLookPath      = exec.LookPath
 	himalayaLookPath = exec.LookPath
-	notionLookPath   = exec.LookPath
 	gogCommand       = exec.CommandContext
 	himalayaCommand  = exec.CommandContext
-	notionCommand    = exec.CommandContext
 )
 
 const (
 	gogcliToolName   = "skill_gogcli"
 	himalayaToolName = "skill_himalaya"
-	notionToolName   = "skill_notion"
 )
 
 type gogcliRunArgs struct {
@@ -41,10 +38,6 @@ type gogcliRunArgs struct {
 }
 
 type himalayaRunArgs struct {
-	Command []string `json:"command"`
-}
-
-type notionRunArgs struct {
 	Command []string `json:"command"`
 }
 
@@ -138,8 +131,6 @@ func runSkillCommandArgs(ctx context.Context, skill skills.Definition, rawComman
 		switch skill.Name {
 		case "gogcli":
 			return "", fmt.Errorf("a gog service command is required")
-		case "notion":
-			return "", fmt.Errorf("a notion-cli command is required")
 		default:
 			return "", fmt.Errorf("a %s command is required", skill.Name)
 		}
@@ -214,14 +205,6 @@ func runHimalayaCLI(ctx context.Context, args himalayaRunArgs) (string, error) {
 	return runSkillCommandArgs(ctx, skill, args.Command)
 }
 
-func runNotionCLI(ctx context.Context, args notionRunArgs) (string, error) {
-	skill, err := builtinSkillDefinition("notion")
-	if err != nil {
-		return "", err
-	}
-	return runSkillCommandArgs(ctx, skill, args.Command)
-}
-
 func builtinSkillDefinition(name string) (skills.Definition, error) {
 	list, err := skills.ListInstalled(&config.Config{})
 	if err != nil {
@@ -241,8 +224,6 @@ func skillLookPathFunc(name string) func(string) (string, error) {
 		return gogLookPath
 	case "himalaya":
 		return himalayaLookPath
-	case "notion":
-		return notionLookPath
 	default:
 		return exec.LookPath
 	}
@@ -254,8 +235,6 @@ func skillCommandFuncForName(name string) skillCommandFunc {
 		return gogCommand
 	case "himalaya":
 		return himalayaCommand
-	case "notion":
-		return notionCommand
 	default:
 		return exec.CommandContext
 	}

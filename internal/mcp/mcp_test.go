@@ -1687,13 +1687,10 @@ func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
 
 	assert.False(t, hasTool(gogcliToolName))
 	assert.False(t, hasTool(himalayaToolName))
-	assert.False(t, hasTool(notionToolName))
-
 	enabledCfg := config.Config{
 		Skills: map[string]config.SkillConfig{
 			"gogcli":   {Enabled: true},
 			"himalaya": {Enabled: true},
-			"notion":   {Enabled: true},
 		},
 	}
 	rawEnabledCfg, err := json.Marshal(enabledCfg)
@@ -1704,7 +1701,6 @@ func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, hasTool(gogcliToolName))
 	assert.False(t, hasTool(himalayaToolName))
-	assert.False(t, hasTool(notionToolName))
 
 	rawDisabledCfg, err := json.Marshal(config.Config{})
 	require.NoError(t, err)
@@ -1714,7 +1710,6 @@ func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, hasTool(gogcliToolName))
 	assert.False(t, hasTool(himalayaToolName))
-	assert.False(t, hasTool(notionToolName))
 }
 
 func TestServerVersionTools_Emulated(t *testing.T) {
@@ -2663,62 +2658,6 @@ func TestRunHimalayaCLI_MockBinary(t *testing.T) {
 	assert.NotEqual(t, "", out)
 	require.GreaterOrEqual(t, len(capturedArgs), 5)
 	assert.Equal(t, []string{"--output", "json", "--config", "mail.toml", "envelope", "list"}, capturedArgs)
-}
-
-func TestRunNotionCLI_CommandRequired(t *testing.T) {
-	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{}})
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "command is required"))
-}
-
-func TestRunNotionCLI_DisallowedCommand(t *testing.T) {
-	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"workspace"}})
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "not allowed"))
-}
-
-func TestRunNotionCLI_OnlyFlags(t *testing.T) {
-	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"--json"}})
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "command is required"))
-}
-
-func TestRunNotionCLI_BinaryNotFound(t *testing.T) {
-	origLookPath := notionLookPath
-	t.Cleanup(func() { notionLookPath = origLookPath })
-	notionLookPath = func(_ string) (string, error) {
-		return "", fmt.Errorf("not found in PATH")
-	}
-	origBin := os.Getenv("AVIARY_NOTION_BIN")
-	t.Cleanup(func() { os.Setenv("AVIARY_NOTION_BIN", origBin) }) //nolint:errcheck
-	os.Unsetenv("AVIARY_NOTION_BIN")                              //nolint:errcheck
-
-	_, err := runNotionCLI(context.Background(), notionRunArgs{Command: []string{"search", "docs"}})
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "not found"))
-}
-
-func TestRunNotionCLI_MockBinary(t *testing.T) {
-	origCmd := notionCommand
-	t.Cleanup(func() { notionCommand = origCmd })
-	origLookPath := notionLookPath
-	t.Cleanup(func() { notionLookPath = origLookPath })
-
-	var capturedArgs []string
-	notionLookPath = func(_ string) (string, error) { return "/fake/notion-cli", nil }
-	notionCommand = func(_ context.Context, _ string, args ...string) *exec.Cmd {
-		capturedArgs = args
-		return exec.Command("go", "env", "GOMOD")
-	}
-
-	out, err := runNotionCLI(context.Background(), notionRunArgs{
-		Command: []string{"--json", "page", "list"},
-	})
-	if err != nil {
-		t.Skipf("skipping notion mock binary test: %v", err)
-	}
-	assert.NotEqual(t, "", out)
-	assert.Equal(t, []string{"--json", "page", "list"}, capturedArgs)
 }
 
 func TestSessionCreateAndMessages(t *testing.T) {

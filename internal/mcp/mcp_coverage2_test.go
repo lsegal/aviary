@@ -207,26 +207,6 @@ func TestSkillHimalayaTool_ViaDispatcher(t *testing.T) {
 	toolCallContains(t, d, "skill_himalaya", map[string]any{"command": []any{"envelope", "list"}}, "")
 }
 
-func TestSkillNotionTool_ViaDispatcher(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	require.NoError(t, store.EnsureDirs())
-	require.NoError(t, config.Save("", &config.Config{
-		Skills: map[string]config.SkillConfig{"notion": {Enabled: true}},
-	}))
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	SetDeps(&Deps{Agents: agent.NewManager(nil)})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	toolCallContains(t, d, "skill_notion", map[string]any{"command": []any{"search", "docs"}}, "")
-}
-
 // ── ensureInProcessDeps path ──────────────────────────────────────────────────
 
 func TestEnsureInProcessDeps_WhenDepsNotSet(t *testing.T) {
