@@ -45,6 +45,7 @@ type Server struct {
 	brw               *browser.Manager
 	sampler           *ProcSampler
 	watcher           *config.Watcher
+	skillsWatcher     *skills.Watcher
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
 	upgradeCh         chan struct{}
@@ -127,6 +128,10 @@ func New(cfg *config.Config, token string) *Server {
 	s.watcher.OnChange(func(newCfg *config.Config) {
 		s.applyConfigReload(newCfg)
 	})
+	s.skillsWatcher = skills.NewWatcher()
+	s.skillsWatcher.OnChange(func() {
+		mcp.SyncLiveServer(s.cfg)
+	})
 
 	s.registerRoutes()
 	return s
@@ -196,6 +201,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	go func() {
 		if err := s.watcher.Start(); err != nil {
 			_ = err // Non-fatal; hot-reload just won't work.
+		}
+	}()
+	go func() {
+		if err := s.skillsWatcher.Start(); err != nil {
+			_ = err // Non-fatal; skill hot-reload just won't work.
 		}
 	}()
 
@@ -270,6 +280,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 
 		s.watcher.Stop()
+		s.skillsWatcher.Stop()
 		s.channels.Stop()
 		if s.sched != nil {
 			s.sched.Stop()

@@ -64,6 +64,34 @@ func InstalledDir() string {
 	return filepath.Join(config.BaseDir(), "skills")
 }
 
+// AgentsInstalledDir returns the shared agent-skills directory.
+func AgentsInstalledDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return filepath.Join(".agents", "skills")
+	}
+	return filepath.Join(home, ".agents", "skills")
+}
+
+// InstalledDirs returns all on-disk directories used for user-installed skills.
+func InstalledDirs() []string {
+	dirs := []string{InstalledDir(), AgentsInstalledDir()}
+	out := make([]string, 0, len(dirs))
+	seen := make(map[string]struct{}, len(dirs))
+	for _, dir := range dirs {
+		dir = filepath.Clean(strings.TrimSpace(dir))
+		if dir == "" {
+			continue
+		}
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		out = append(out, dir)
+	}
+	return out
+}
+
 // ListInstalled returns all bundled and on-disk skills.
 // Bundled skills are loaded first, then overridden by on-disk skills of the same name.
 func ListInstalled(cfg *config.Config) ([]Definition, error) {
@@ -77,12 +105,14 @@ func ListInstalled(cfg *config.Config) ([]Definition, error) {
 		byName[sk.Name] = markEnabled(sk, cfg)
 	}
 
-	disk, err := loadDisk(InstalledDir())
-	if err != nil {
-		return nil, err
-	}
-	for _, sk := range disk {
-		byName[sk.Name] = markEnabled(sk, cfg)
+	for _, dir := range InstalledDirs() {
+		disk, err := loadDisk(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, sk := range disk {
+			byName[sk.Name] = markEnabled(sk, cfg)
+		}
 	}
 
 	out := make([]Definition, 0, len(byName))
