@@ -25,6 +25,7 @@ type Environment struct {
 type Options struct {
 	ToolClient  agent.ToolClient
 	Environment Environment
+	Logf        func(format string, args ...any)
 }
 
 // RunLua executes a Lua script with a sandboxed global environment.
@@ -51,7 +52,11 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 		for i := 1; i <= state.GetTop(); i++ {
 			parts = append(parts, state.Get(i).String())
 		}
-		output = append(output, strings.Join(parts, "\t"))
+		line := strings.Join(parts, "\t")
+		output = append(output, line)
+		if opts.Logf != nil {
+			opts.Logf("print: %s", line)
+		}
 		return 0
 	}))
 
@@ -73,13 +78,25 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 			L.SetField(toolTable, toolName, L.NewFunction(func(state *lua.LState) int {
 				args, err := luaArgsToMap(state)
 				if err != nil {
+					if opts.Logf != nil {
+						opts.Logf("tool %s argument error: %v", toolName, err)
+					}
 					state.RaiseError("%v", err)
 					return 0
 				}
+				if opts.Logf != nil {
+					opts.Logf("tool %s args: %s", toolName, prettyLogText(mustJSON(args)))
+				}
 				result, err := opts.ToolClient.CallToolText(ctx, toolName, args)
 				if err != nil {
+					if opts.Logf != nil {
+						opts.Logf("tool %s error: %v", toolName, err)
+					}
 					state.RaiseError("%v", err)
 					return 0
+				}
+				if opts.Logf != nil {
+					opts.Logf("tool %s result: %s", toolName, prettyLogText(result))
 				}
 				state.Push(decodeToolResult(state, result))
 				return 1
@@ -123,9 +140,34 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 	L.SetGlobal("json", jsonTable)
 
 	if err := L.DoString(script); err != nil {
+		if opts.Logf != nil {
+			opts.Logf("error: %v", err)
+		}
 		return "", err
 	}
 	return strings.TrimSpace(strings.Join(output, "\n")), nil
+}
+
+func mustJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(data)
+}
+
+func prettyLogText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+		if pretty, err := json.MarshalIndent(decoded, "", "  "); err == nil {
+			return string(pretty)
+		}
+	}
+	return text
 }
 
 // ValidateLua parses a Lua script without executing it.

@@ -204,9 +204,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 
 	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
 	if taskType == "script" {
-		output, err := executeScriptJob(ctx, job, runner.Config(), p.deliver)
-		if output != "" {
-			if persistErr := p.queue.UpdateOutput(job.ID, output); persistErr != nil {
+		result, err := executeScriptJob(ctx, job, runner.Config(), p.deliver)
+		if result.Logs != "" {
+			if persistErr := p.queue.UpdateOutput(job.ID, result.Logs); persistErr != nil {
 				slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
 			}
 		}
@@ -218,19 +218,29 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	}
 
 	var lastErr error
-	var buf strings.Builder
+	var reply strings.Builder
+	var logs jobLogBuilder
+	startedAt := time.Now().UTC()
 	done := make(chan struct{}, 1)
 	runner.Prompt(ctx, prompt, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
-			buf.WriteString(e.Text)
+			reply.WriteString(e.Text)
+		case agent.StreamEventStatus:
+			logs.Addf("status: %s", e.Text)
+		case agent.StreamEventMedia:
+			logs.Addf("media: %s", e.MediaURL)
 		case agent.StreamEventDone, agent.StreamEventStop:
+			if e.Type == agent.StreamEventStop {
+				logs.Addf("stopped")
+			}
 			select {
 			case done <- struct{}{}:
 			default:
 			}
 		case agent.StreamEventError:
 			lastErr = e.Err
+			logs.Addf("error: %v", e.Err)
 			select {
 			case done <- struct{}{}:
 			default:
@@ -242,19 +252,30 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	output := buf.String()
+	if sessionID != "" {
+		sessionLogs, err := collectJobSessionToolLogs(job.AgentID, sessionID, startedAt, time.Now().UTC().Add(time.Second))
+		if err != nil {
+			logs.Addf("error collecting tool logs: %v", err)
+		} else {
+			logs.AddBlock(sessionLogs)
+		}
+	}
+	output := logs.String()
 	if output != "" {
 		if err := p.queue.UpdateOutput(job.ID, output); err != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", err)
 		}
+	}
+	replyOutput := reply.String()
+	if replyOutput != "" {
 		// Reply to the originating session/channel if one was recorded.
 		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
-			if err := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, output); err != nil {
+			if err := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, replyOutput); err != nil {
 				slog.Warn("job: failed to send reply to session", "id", job.ID, "session", job.ReplySessionID, "err", err)
 			}
 		}
-		if agent.ShouldDeliverReply(output) && job.OutputChannel != "" && p.deliver != nil {
-			if err := p.deliver(job.AgentID, job.OutputChannel, output); err != nil {
+		if agent.ShouldDeliverReply(replyOutput) && job.OutputChannel != "" && p.deliver != nil {
+			if err := p.deliver(job.AgentID, job.OutputChannel, replyOutput); err != nil {
 				slog.Warn("job: failed to deliver output to task channel", "id", job.ID, "route", job.OutputChannel, "err", err)
 			}
 		}

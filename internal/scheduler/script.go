@@ -11,7 +11,12 @@ import (
 	"github.com/lsegal/aviary/internal/scriptruntime"
 )
 
-func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (string, error) {
+type scriptExecutionResult struct {
+	Output string
+	Logs   string
+}
+
+func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (scriptExecutionResult, error) {
 	_ = cfg
 	// Prefer explicit script body on the job; fall back to Prompt for
 	// backwards compatibility.
@@ -20,15 +25,16 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 		script = strings.TrimSpace(job.Prompt)
 	}
 	if script == "" {
-		return "", fmt.Errorf("script task %q has no script content", job.TaskID)
+		return scriptExecutionResult{}, fmt.Errorf("script task %q has no script content", job.TaskID)
 	}
 	baseToolClient, err := agent.NewToolClient(ctx)
 	if err != nil {
-		return "", err
+		return scriptExecutionResult{}, err
 	}
 	toolClient := &scriptToolClient{base: baseToolClient, ctx: ctx}
 	defer toolClient.Close() //nolint:errcheck
 
+	var logs jobLogBuilder
 	output, err := scriptruntime.RunLua(ctx, script, scriptruntime.Options{
 		ToolClient: toolClient,
 		Environment: scriptruntime.Environment{
@@ -37,23 +43,24 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 			TaskID:    job.TaskID,
 			JobID:     job.ID,
 		},
+		Logf: logs.Addf,
 	})
 	if output != "" {
 		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
 			if replyErr := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, output); replyErr != nil {
-				return output, replyErr
+				return scriptExecutionResult{Output: output, Logs: logs.String()}, replyErr
 			}
 		}
 		if agent.ShouldDeliverReply(output) && job.OutputChannel != "" && deliver != nil {
 			if deliverErr := deliver(job.AgentID, job.OutputChannel, output); deliverErr != nil {
-				return output, deliverErr
+				return scriptExecutionResult{Output: output, Logs: logs.String()}, deliverErr
 			}
 		}
 	}
 	if err != nil {
-		return output, fmt.Errorf("running lua script task: %w", err)
+		return scriptExecutionResult{Output: output, Logs: logs.String()}, fmt.Errorf("running lua script task: %w", err)
 	}
-	return output, nil
+	return scriptExecutionResult{Output: output, Logs: logs.String()}, nil
 }
 
 type scriptToolClient struct {

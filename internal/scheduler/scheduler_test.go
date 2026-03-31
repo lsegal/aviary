@@ -681,9 +681,31 @@ func TestExecuteScriptJob(t *testing.T) {
 		Script:   testScriptBody(),
 	}
 
-	out, err := executeScriptJob(context.Background(), job, &config.AgentConfig{}, nil)
+	result, err := executeScriptJob(context.Background(), job, &config.AgentConfig{}, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, "script-ok", out)
+	assert.Equal(t, "script-ok", result.Output)
+	assert.Contains(t, result.Logs, "print: script-ok")
+}
+
+func TestCollectJobSessionToolLogs(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("alpha", "logs")
+	assert.NoError(t, err)
+
+	before := time.Now().UTC()
+	err = agent.AppendMessageToSession("alpha", sess.ID, domain.MessageRoleTool, `{"name":"browser_open","args":{"url":"https://example.com"},"result":"{\"ok\":true}"}`)
+	assert.NoError(t, err)
+	err = agent.AppendMessageToSession("alpha", sess.ID, domain.MessageRoleAssistant, "final answer")
+	assert.NoError(t, err)
+
+	logs, err := collectJobSessionToolLogs("alpha", sess.ID, before.Add(-time.Second), time.Now().UTC().Add(time.Second))
+	assert.NoError(t, err)
+	assert.Contains(t, logs, "tool [")
+	assert.Contains(t, logs, "browser_open")
+	assert.Contains(t, logs, "\"url\": \"https://example.com\"")
+	assert.Contains(t, logs, "\"ok\": true")
+	assert.NotContains(t, logs, "final answer")
 }
 
 func testScriptBody() string {
