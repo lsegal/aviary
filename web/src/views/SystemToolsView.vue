@@ -54,12 +54,12 @@
             </div>
 
             <div class="divide-y divide-gray-100 dark:divide-gray-800">
-              <div v-for="tool in group.tools" :key="tool.name" class="grid gap-3 px-5 py-4 md:grid-cols-[220px_minmax(0,1fr)_auto]">
-                <div class="space-y-1">
-                  <code class="text-sm font-semibold text-gray-900 dark:text-white">{{ tool.name }}</code>
+              <div v-for="tool in group.tools" :key="tool.name" class="grid min-w-0 gap-3 px-5 py-4 md:grid-cols-[220px_minmax(0,1fr)_auto]">
+                <div class="min-w-0 space-y-1">
+                  <code class="block break-all text-sm font-semibold text-gray-900 dark:text-white">{{ tool.name }}</code>
                   <p class="text-xs text-gray-400 dark:text-gray-500">{{ group.label }}</p>
                 </div>
-                <p class="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                <p class="min-w-0 text-sm leading-6 text-gray-600 dark:text-gray-300">
                   {{ tool.description?.trim() || "No description available from the MCP server." }}
                 </p>
                 <div class="flex items-start justify-end">
