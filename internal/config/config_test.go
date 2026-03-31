@@ -150,6 +150,19 @@ func TestLoadMergesTaskFiles(t *testing.T) {
 	assert.True(t, loaded.Agents[0].Tasks[0].FromFile)
 }
 
+func TestAgentTasksDirIgnoresWorkingDir(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
+
+	taskDir := AgentTasksDir(AgentConfig{
+		Name:       "bot",
+		WorkingDir: filepath.Join(base, "workspace"),
+	})
+
+	assert.Equal(t, filepath.Join(base, "aviary", "agents", "bot", "tasks"), taskDir)
+}
+
 func TestLoad(t *testing.T) {
 	t.Run("missing returns empty config", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())

@@ -60,7 +60,7 @@ else
 end
 ```
 
-The agent's tasks directory defaults to `<data-dir>/agents/<name>/tasks/`. When `working_dir` is set in `aviary.yaml`, tasks are loaded from `<working_dir>/tasks/` instead.
+The agent's tasks directory is `<data-dir>/agents/<name>/tasks/`, regardless of the agent's `working_dir`.
 
 When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
 

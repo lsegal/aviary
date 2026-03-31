@@ -152,6 +152,23 @@ function defaultConfig(): AppConfig {
 	};
 }
 
+function parseConfigPayload(raw: string): Partial<AppConfig> {
+	const trimmed = raw.trim();
+	if (!trimmed) {
+		return {};
+	}
+	try {
+		const parsed = JSON.parse(trimmed) as Partial<AppConfig> | null;
+		return parsed ?? {};
+	} catch (error) {
+		// Treat empty/truncated responses as an empty config so the UI remains usable.
+		if (error instanceof SyntaxError) {
+			return {};
+		}
+		throw error;
+	}
+}
+
 export const useSettingsStore = defineStore("settings", () => {
 	const config = ref<AppConfig | null>(null);
 	const loading = ref(false);
@@ -164,7 +181,7 @@ export const useSettingsStore = defineStore("settings", () => {
 		error.value = null;
 		try {
 			const raw = await callTool("config_get");
-			const parsed = JSON.parse(raw) as Partial<AppConfig>;
+			const parsed = parseConfigPayload(raw);
 			const base = defaultConfig();
 			// Merge to ensure all keys exist even if absent in stored config.
 			config.value = {

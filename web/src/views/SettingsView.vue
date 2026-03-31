@@ -1531,6 +1531,22 @@ interface ToolInspectionModalState {
 	resolution: ResolvedToolPermissions;
 }
 
+function safeJsonParse<T>(raw: string, fallback: T): T {
+	const trimmed = raw.trim();
+	if (!trimmed) {
+		return fallback;
+	}
+	try {
+		const parsed = JSON.parse(trimmed) as T | null;
+		return parsed ?? fallback;
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return fallback;
+		}
+		throw error;
+	}
+}
+
 const route = useRoute();
 const router = useRouter();
 
@@ -2206,13 +2222,13 @@ async function loadAgentFiles(agentName: string) {
 	state.error = "";
 	try {
 		let raw = await callTool("agent_file_list", { agent: agentName });
-		const allFiles = (JSON.parse(raw) as string[] | null) ?? [];
+		const allFiles = safeJsonParse<string[]>(raw, []);
 		state.files = allFiles.filter((f) => !f.includes("/"));
 		if (state.files.length === 0 && !state.autoSynced) {
 			state.autoSynced = true;
 			await callTool("agent_template_sync", { agent: agentName });
 			raw = await callTool("agent_file_list", { agent: agentName });
-			state.files = ((JSON.parse(raw) as string[] | null) ?? []).filter(
+			state.files = safeJsonParse<string[]>(raw, []).filter(
 				(f) => !f.includes("/"),
 			);
 		}
@@ -2512,7 +2528,7 @@ async function loadInstalledSkills() {
 	skillsLoading.value = true;
 	try {
 		const raw = await callTool("skills_list");
-		installedSkills.value = (JSON.parse(raw) as InstalledSkill[] | null) ?? [];
+		installedSkills.value = safeJsonParse<InstalledSkill[]>(raw, []);
 	} catch {
 		installedSkills.value = [];
 	} finally {
@@ -3228,7 +3244,7 @@ function toggleCategory(agent: AgentEntry, cat: string, enabled: boolean) {
 async function importAgents() {
 	try {
 		const raw = await callTool("agent_list");
-		const agents = (JSON.parse(raw) as RuntimeAgent[] | null) ?? [];
+		const agents = safeJsonParse<RuntimeAgent[]>(raw, []);
 		if (!agents.length) return;
 		draft.value.agents = agents.map((agent) => ({
 			name: agent.name ?? "",
@@ -3548,7 +3564,7 @@ async function loadSessions() {
 	errorMessage.value = "";
 	try {
 		const raw = await callTool("session_list", { agent: sessionAgent.value });
-		sessions.value = (JSON.parse(raw) as SessionRow[] | null) ?? [];
+		sessions.value = safeJsonParse<SessionRow[]>(raw, []);
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 		sessions.value = [];

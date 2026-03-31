@@ -219,3 +219,57 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 		},
 	});
 });
+
+test("settings tolerates an empty config payload", async ({ page }) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: "",
+		skills_list: [],
+		tool_list: [],
+	});
+
+	await page.goto("/settings");
+
+	await expect(
+		page.getByRole("heading", { name: "Settings", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Server", exact: true }),
+	).toBeVisible();
+	await expect(page.getByText("Unexpected end of JSON input")).toHaveCount(0);
+});
+
+test("settings tolerates empty auxiliary JSON payloads on startup", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: {
+				port: 16677,
+				tls: { cert: "", key: "" },
+				external_access: false,
+				no_tls: false,
+			},
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "", cdp_port: 0 },
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		auth_list: "",
+		skills_list: "",
+		agent_list: "",
+		tool_list: [],
+	});
+
+	await page.goto("/settings");
+
+	await expect(
+		page.getByRole("heading", { name: "Settings", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Server", exact: true }),
+	).toBeVisible();
+	await expect(page.getByText("Unexpected end of JSON input")).toHaveCount(0);
+});

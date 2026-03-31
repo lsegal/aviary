@@ -125,32 +125,12 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 	return fullPath, nil
 }
 
-// AgentTasksDir returns the tasks/ directory for an agent workspace.  When the
-// agent config has a non-empty WorkingDir it is expanded (~ and env vars) and
-// used; otherwise the default agent directory under BaseDir() is used.
+// AgentTasksDir returns the tasks/ directory under the agent's Aviary data
+// directory. Task definitions are always stored with the agent metadata rather
+// than in the agent's working directory.
 func AgentTasksDir(agentCfg AgentConfig) string {
-	dir := expandHome(agentCfg.WorkingDir)
-	if dir == "" {
-		dir = filepath.Join(BaseDir(), "agents", agentCfg.Name)
-	}
+	dir := filepath.Join(BaseDir(), "agents", agentCfg.Name)
 	return filepath.Join(dir, "tasks")
-}
-
-// expandHome replaces a leading "~" with the user home directory and expands
-// environment variables in path.
-func expandHome(path string) string {
-	if path == "" {
-		return ""
-	}
-	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, path[2:])
-	}
-	if path == "~" {
-		home, _ := os.UserHomeDir()
-		return home
-	}
-	return os.ExpandEnv(path)
 }
 
 // LoadAgentTaskFiles globs <AgentTasksDir>/*.md and returns the parsed task

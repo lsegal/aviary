@@ -21,13 +21,13 @@ export type ToolHandler<P = Record<string, unknown>, R = unknown> = (
 
 /** Fixture data keyed by MCP tool name. */
 export interface ToolFixtures {
-	agent_list?: object[];
+	agent_list?: object[] | string;
 	job_list?: object[] | null;
 	config_validate?: object[];
-	session_list?: object[];
+	session_list?: object[] | string;
 	server_status?: object;
 	task_run?: ToolHandler<TaskRunArgs> | object | null;
-	tool_list?: object[];
+	tool_list?: object[] | string;
 
 	agent_file_list?: ToolHandler<void, string[]> | string[];
 	agent_file_read?: ToolHandler<AgentFileArgs> | string;

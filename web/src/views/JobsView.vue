@@ -48,10 +48,10 @@
         {{ store.error }}
       </div>
 
-      <div class="flex flex-1 overflow-hidden">
+      <div class="flex min-h-0 flex-1 overflow-hidden">
 
         <!-- Left: main content -->
-        <div class="flex flex-1 flex-col overflow-y-auto px-6 py-4">
+        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
 
           <!-- Stat cards -->
           <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -331,7 +331,7 @@
           enter-from-class="opacity-0 translate-x-4"
           leave-to-class="opacity-0 translate-x-4">
           <div v-if="selectedJob || selectedCompile"
-            class="flex w-96 flex-shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            class="flex min-h-0 w-96 flex-shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <!-- Panel header -->
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <div v-if="selectedJob" class="flex items-center gap-2">
@@ -431,18 +431,26 @@
 
             <!-- Prompt -->
             <div v-if="selectedJob" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-              <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Prompt</p>
-              <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedJob.prompt }}</p>
+              <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                {{ selectedJobTaskType === "script" ? "Script" : "Prompt" }}
+              </p>
+              <pre v-if="selectedJobTaskType === 'script'"
+                class="max-h-[40vh] overflow-auto rounded-lg bg-gray-950 p-3 font-mono text-[11px] text-green-400 whitespace-pre-wrap">{{ selectedJob.prompt }}</pre>
+              <div v-else class="max-h-[40vh] overflow-y-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-950/40">
+                <p class="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{{ selectedJob.prompt }}</p>
+              </div>
             </div>
             <div v-else-if="selectedCompile" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Prompt</p>
-              <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedCompile.prompt || "—" }}</p>
+              <div class="max-h-[40vh] overflow-y-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-950/40">
+                <p class="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{{ selectedCompile.prompt || "—" }}</p>
+              </div>
               <p v-if="selectedCompile.reason" class="mt-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Reason</p>
               <p v-if="selectedCompile.reason" class="text-xs text-gray-600 dark:text-gray-300">{{ selectedCompile.reason }}</p>
             </div>
 
             <!-- Output / logs -->
-            <div v-if="selectedJob" class="flex flex-1 flex-col overflow-hidden px-5 py-3">
+            <div v-if="selectedJob" class="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3">
               <div class="mb-2 flex items-center justify-between">
                 <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
                   {{ selectedJob.status === 'in_progress' ? 'Live Output' : 'Output' }}
@@ -523,7 +531,7 @@
                 </div>
               </div>
             </div>
-            <div v-else-if="selectedCompile" class="flex flex-1 flex-col overflow-y-auto px-5 py-3">
+            <div v-else-if="selectedCompile" class="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-3">
               <div class="mb-3 flex items-center justify-between">
                 <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Compiler Stages</p>
                 <button class="text-[10px] text-blue-500 hover:text-blue-700" @click="reloadCompile">
@@ -661,6 +669,13 @@ const filteredJobs = computed(() => {
 	return store.jobs.filter((j) => j.status === statusFilter.value);
 });
 const visibleTaskCompiles = computed(() => store.taskCompiles.slice(0, 5));
+const selectedJobTaskType = computed<"prompt" | "script">(() => {
+	if (!selectedJob.value) return "prompt";
+	return (
+		store.scheduledTasks.find((task) => task.id === selectedJob.value?.task_id)
+			?.type ?? "prompt"
+	);
+});
 
 // Live output: SSE log entries filtered by selected job's ID.
 const liveLines = computed(() => {

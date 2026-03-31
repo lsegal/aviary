@@ -19,6 +19,22 @@ export function useAvailableModels() {
 	const credentials = ref<string[]>([]);
 	const { callTool } = useMCP();
 
+	function parseStringArrayPayload(raw: string): string[] {
+		const trimmed = raw.trim();
+		if (!trimmed) {
+			return [];
+		}
+		try {
+			const parsed = JSON.parse(trimmed) as string[] | null;
+			return parsed ?? [];
+		} catch (error) {
+			if (error instanceof SyntaxError) {
+				return [];
+			}
+			throw error;
+		}
+	}
+
 	const authenticatedProviders = computed(() => {
 		const providers = new Set<string>();
 		for (const cred of credentials.value) {
@@ -40,7 +56,7 @@ export function useAvailableModels() {
 	async function refreshCredentials() {
 		try {
 			const raw = await callTool("auth_list");
-			credentials.value = (JSON.parse(raw) as string[] | null) ?? [];
+			credentials.value = parseStringArrayPayload(raw);
 		} catch {
 			credentials.value = [];
 		}
