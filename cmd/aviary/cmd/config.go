@@ -24,6 +24,7 @@ Set a value:
 	aviary config browser.profile_directory Aviary
   aviary config browser.binary /usr/bin/chromium
   aviary config browser.cdp_port 9333
+  aviary config browser.reuse_tabs false
   aviary config server.port 8080
   aviary config models.defaults.model anthropic/claude-sonnet-4-5
   aviary config scheduler.concurrency 4`,
@@ -174,6 +175,8 @@ func setInMap(m map[string]any, parts []string, value string) error {
 	if len(parts) == 1 {
 		if n, err := strconv.Atoi(value); err == nil {
 			m[p] = n
+		} else if b, err := strconv.ParseBool(value); err == nil {
+			m[p] = b
 		} else {
 			m[p] = value
 		}

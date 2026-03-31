@@ -85,9 +85,15 @@ func ensureInProcessDeps() error {
 	agents.Reconcile(cfg)
 
 	SetDeps(&Deps{
-		Agents:  agents,
-		Browser: browser.NewManager(cfg.Browser.Binary, cdpPortOrDefault(cfg.Browser.CDPPort), cfg.Browser.ProfileDir, cfg.Browser.Headless),
-		Auth:    authStore,
+		Agents: agents,
+		Browser: browser.NewManager(
+			cfg.Browser.Binary,
+			cdpPortOrDefault(cfg.Browser.CDPPort),
+			cfg.Browser.ProfileDir,
+			cfg.Browser.Headless,
+			config.EffectiveBrowserReuseTabs(cfg.Browser),
+		),
+		Auth: authStore,
 	})
 
 	agent.SetToolClientFactory(NewAgentToolClient)

@@ -23,15 +23,17 @@ func TestNewManager_Defaults(t *testing.T) {
 	m := NewManager("", 0, "", false)
 	assert.Equal(t, 9222, m.cdpPort)
 	assert.Equal(t, "", m.binary)
+	assert.True(t, m.reuseTabs)
 
 }
 
 func TestNewManager_CustomPort(t *testing.T) {
-	m := NewManager("/usr/bin/chromium", 9333, "/tmp/profile", true)
+	m := NewManager("/usr/bin/chromium", 9333, "/tmp/profile", true, false)
 	assert.Equal(t, 9333, m.cdpPort)
 	assert.Equal(t, "/usr/bin/chromium", m.binary)
 	assert.Equal(t, "/tmp/profile", m.profileDir)
 	assert.True(t, m.headless)
+	assert.False(t, m.reuseTabs)
 
 }
 
@@ -685,6 +687,83 @@ func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "opened-tab-1", tabID)
 
+}
+
+func TestManager_Open_ReusesExactURLMatch(t *testing.T) {
+	newTabCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/json/version":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
+			})
+		case r.URL.Path == "/json/list":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+				{ID: "existing-tab", Type: "page", URL: "https://example.com"},
+				{ID: "other-tab", Type: "page", URL: "https://example.com/about"},
+			})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
+			newTabCalls++
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
+				ID: "new-tab", Type: "page", URL: "https://example.com",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false, true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	tabID, err := m.Open(ctx, "https://example.com")
+	assert.NoError(t, err)
+	assert.Equal(t, "existing-tab", tabID)
+	assert.Equal(t, 0, newTabCalls)
+}
+
+func TestManager_Open_DoesNotReuseWhenDisabled(t *testing.T) {
+	newTabCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/json/version":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
+			})
+		case r.URL.Path == "/json/list":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+				{ID: "existing-tab", Type: "page", URL: "https://example.com"},
+			})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
+			newTabCalls++
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
+				ID: "new-tab", Type: "page", URL: "https://example.com",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false, false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	tabID, err := m.Open(ctx, "https://example.com")
+	assert.NoError(t, err)
+	assert.Equal(t, "new-tab", tabID)
+	assert.Equal(t, 1, newTabCalls)
 }
 
 func TestManager_Open_WithoutChrome(t *testing.T) {

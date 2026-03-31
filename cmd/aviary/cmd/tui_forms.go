@@ -41,6 +41,9 @@ func newSectionFormModel(title, section string, cfg *config.Config, cfgPath stri
 	fields := make([]simpleFormField, 0, len(metas))
 	for _, m := range metas {
 		current := config.GetField(cfg, m.Path)
+		if current == "" && m.Default != "" {
+			current = m.Default
+		}
 		f := simpleFormField{label: m.Label, desc: m.Description, path: m.Path}
 		switch m.Type {
 		case "bool":

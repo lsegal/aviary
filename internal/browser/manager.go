@@ -22,6 +22,7 @@ type Manager struct {
 	cdpPort    int
 	profileDir string
 	headless   bool
+	reuseTabs  bool
 	sessions   map[string]*Session
 }
 
@@ -32,11 +33,17 @@ const defaultOperationTimeout = 15 * time.Second
 // cdpPort is the remote debugging port (0 = default 9222).
 // profileDir is the Chrome profile-directory name (empty = "Default").
 // headless controls whether the browser window is shown (false = visible).
-func NewManager(binary string, cdpPort int, profileDir string, headless bool) *Manager {
+// reuseTabs controls whether Open reuses an existing tab when the URL matches exactly.
+// When reuseTabs is omitted it defaults to true.
+func NewManager(binary string, cdpPort int, profileDir string, headless bool, reuseTabs ...bool) *Manager {
 	if cdpPort == 0 {
 		cdpPort = 9222
 	}
-	return &Manager{binary: binary, cdpPort: cdpPort, profileDir: profileDir, headless: headless, sessions: make(map[string]*Session)}
+	shouldReuseTabs := true
+	if len(reuseTabs) > 0 {
+		shouldReuseTabs = reuseTabs[0]
+	}
+	return &Manager{binary: binary, cdpPort: cdpPort, profileDir: profileDir, headless: headless, reuseTabs: shouldReuseTabs, sessions: make(map[string]*Session)}
 }
 
 // Open navigates to url in a new Chrome tab, launching Chrome if necessary.
@@ -49,6 +56,18 @@ func (m *Manager) Open(ctx context.Context, url string) (string, error) {
 
 	if _, err := m.ensureChrome(opCtx); err != nil {
 		return "", err
+	}
+
+	if m.reuseTabs {
+		tabs, err := m.Tabs()
+		if err == nil {
+			for _, tab := range tabs {
+				if tab.URL == url {
+					slog.Info("browser: reused tab", "url", url, "tab", tab.ID)
+					return tab.ID, nil
+				}
+			}
+		}
 	}
 
 	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)

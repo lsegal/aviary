@@ -46,7 +46,7 @@ func newConfigureMenuModel(cfg *config.Config, st authpkg.Store) configureMenuMo
 			{configureMenuAgents, "Agents", configureAgentsSummary(cfg), "Add, edit, or remove configured agents."},
 			{configureMenuSkills, "Skills", configureSkillsSummary(cfg), "Enable installed skills and configure skill runtime settings."},
 			{configureMenuServer, "Server", configureServerSummary(cfg), "Port, TLS, and external access."},
-			{configureMenuBrowser, "Browser", configureBrowserSummary(cfg), "Browser binary, CDP port, profile, and headless mode."},
+			{configureMenuBrowser, "Browser", configureBrowserSummary(cfg), "Browser binary, CDP port, profile, headless mode, and tab reuse."},
 			{configureMenuScheduler, "Scheduler", configureSchedulerSummary(cfg), "Background task concurrency."},
 			{configureMenuQuit, "Done", "Exit configure", "Return to the shell."},
 		},
@@ -247,10 +247,14 @@ func configureBrowserSummary(cfg *config.Config) string {
 	if cfg.Browser.Headless {
 		mode = "headless"
 	}
-	if strings.TrimSpace(cfg.Browser.Binary) != "" {
-		return mode + ", custom binary"
+	reuse := "reuse tabs"
+	if !config.EffectiveBrowserReuseTabs(cfg.Browser) {
+		reuse = "new tabs only"
 	}
-	return mode
+	if strings.TrimSpace(cfg.Browser.Binary) != "" {
+		return mode + ", " + reuse + ", custom binary"
+	}
+	return mode + ", " + reuse
 }
 
 func configureSchedulerSummary(cfg *config.Config) string {

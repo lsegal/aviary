@@ -295,6 +295,7 @@ type BrowserConfig struct {
 	// Defaults to <OS config dir>/aviary/browser if unset.
 	ProfileDir string `yaml:"profile_directory,omitempty" json:"profile_directory,omitempty"`
 	Headless   bool   `yaml:"headless,omitempty"          json:"headless,omitempty"`
+	ReuseTabs  *bool  `yaml:"reuse_tabs,omitempty"        json:"reuse_tabs,omitempty"`
 }
 
 // SearchConfig holds search backend settings.
@@ -379,6 +380,13 @@ func EffectivePrecomputeTasks(s SchedulerConfig) bool {
 	return BoolOr(s.PrecomputeTasks, true)
 }
 
+// EffectiveBrowserReuseTabs returns whether browser_open should reuse an
+// existing tab whose URL exactly matches the requested URL.
+// Defaults to true when unset.
+func EffectiveBrowserReuseTabs(b BrowserConfig) bool {
+	return BoolOr(b.ReuseTabs, true)
+}
+
 // normalize strips zero/empty fields that would produce noisy YAML output.
 // It is called automatically by Save.
 func normalize(cfg *Config) {
@@ -392,6 +400,9 @@ func normalize(cfg *Config) {
 	}
 	if len(cfg.Models.Providers) == 0 {
 		cfg.Models.Providers = nil
+	}
+	if EffectiveBrowserReuseTabs(cfg.Browser) {
+		cfg.Browser.ReuseTabs = nil
 	}
 	if cfg.Search.Web.BraveAPIKey == "" {
 		cfg.Search.Web = WebSearchConfig{}

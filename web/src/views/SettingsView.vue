@@ -130,6 +130,14 @@
 									<span class="block text-xs text-gray-500 dark:text-gray-400">No visible browser window</span>
 								</span>
 							</label>
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.browser.reuse_tabs" type="checkbox"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Reuse matching tabs
+									<span class="block text-xs text-gray-500 dark:text-gray-400">browser_open reuses an existing tab when the URL matches exactly</span>
+								</span>
+							</label>
 						</div>
 					</div>
 
@@ -2415,7 +2423,7 @@ function emptyConfig(): AppConfig {
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 0 },
+		browser: { binary: "", cdp_port: 0, reuse_tabs: true },
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
@@ -2426,6 +2434,9 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	const hydrated = JSON.parse(JSON.stringify(config)) as AppConfig;
 	if (hydrated.scheduler.precompute_tasks === undefined) {
 		hydrated.scheduler.precompute_tasks = true;
+	}
+	if (hydrated.browser.reuse_tabs === undefined) {
+		hydrated.browser.reuse_tabs = true;
 	}
 	hydrated.agents.forEach((agent) => {
 		sanitizeAgentToolSelections(agent);
@@ -3333,6 +3344,8 @@ function normalizedDraftConfig(): AppConfig {
 	}
 	normalized.scheduler.precompute_tasks =
 		normalized.scheduler.precompute_tasks === false ? false : undefined;
+	normalized.browser.reuse_tabs =
+		normalized.browser.reuse_tabs === false ? false : undefined;
 
 	normalized.search = {
 		web: {

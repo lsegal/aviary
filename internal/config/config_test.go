@@ -18,8 +18,10 @@ func TestDefault(t *testing.T) {
 	assert.Equal(t, // CDPPort and Concurrency are intentionally absent from Default() so unset
 		// fields don't appear in aviary.yaml; consuming code applies its own fallbacks.
 		0, cfg.Browser.CDPPort)
+	assert.Nil(t, cfg.Browser.ReuseTabs)
 	assert.Nil(t, cfg.Scheduler.Concurrency)
 	assert.True(t, EffectivePrecomputeTasks(cfg.Scheduler))
+	assert.True(t, EffectiveBrowserReuseTabs(cfg.Browser))
 
 }
 
@@ -631,6 +633,20 @@ func TestNormalize(t *testing.T) {
 		assert.NotNil(t, cfg.Agents[0].Tasks[1].Enabled)
 		assert.False(t, *cfg.Agents[0].Tasks[1].Enabled)
 	})
+
+	t.Run("browser reuse_tabs omitted when true and preserved when false", func(t *testing.T) {
+		enabled := true
+		disabled := false
+
+		cfg := &Config{Browser: BrowserConfig{ReuseTabs: &enabled}}
+		normalize(cfg)
+		assert.Nil(t, cfg.Browser.ReuseTabs)
+
+		cfg = &Config{Browser: BrowserConfig{ReuseTabs: &disabled}}
+		normalize(cfg)
+		assert.NotNil(t, cfg.Browser.ReuseTabs)
+		assert.False(t, *cfg.Browser.ReuseTabs)
+	})
 }
 
 func TestEffectivePrecomputeTasks(t *testing.T) {
@@ -641,6 +657,17 @@ func TestEffectivePrecomputeTasks(t *testing.T) {
 	t.Run("respects disabled setting", func(t *testing.T) {
 		disabled := false
 		assert.False(t, EffectivePrecomputeTasks(SchedulerConfig{PrecomputeTasks: &disabled}))
+	})
+}
+
+func TestEffectiveBrowserReuseTabs(t *testing.T) {
+	t.Run("defaults to true", func(t *testing.T) {
+		assert.True(t, EffectiveBrowserReuseTabs(BrowserConfig{}))
+	})
+
+	t.Run("respects disabled setting", func(t *testing.T) {
+		disabled := false
+		assert.False(t, EffectiveBrowserReuseTabs(BrowserConfig{ReuseTabs: &disabled}))
 	})
 }
 

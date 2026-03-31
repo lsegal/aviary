@@ -14,6 +14,7 @@ browser:
   cdp_port: 9222
   profile_directory: ~/.config/aviary/browser
   headless: false
+  reuse_tabs: true
 ```
 
 Each browser session is identified by a **`tab_id`** returned when a tab is opened. Pass this ID to all subsequent operations on that tab.
@@ -23,6 +24,8 @@ Each browser session is identified by a **`tab_id`** returned when a tab is open
 ## browser_open
 
 Open a URL in a new browser tab and return the tab ID.
+
+When `browser.reuse_tabs` is enabled (the default), Aviary first looks for an existing page tab whose current URL exactly matches the requested URL and returns that tab instead of opening a duplicate.
 
 **Arguments:**
 

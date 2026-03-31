@@ -13,6 +13,8 @@ func TestConfigGetKey_Simple(t *testing.T) {
 	cfg.Browser.ProfileDir = "/my/profile"
 	cfg.Browser.Binary = "/usr/bin/chromium"
 	cfg.Browser.CDPPort = 9222
+	reuseTabs := false
+	cfg.Browser.ReuseTabs = &reuseTabs
 	cfg.Scheduler.Concurrency = "auto"
 
 	tests := []struct {
@@ -22,6 +24,7 @@ func TestConfigGetKey_Simple(t *testing.T) {
 		{"browser.profile_directory", "/my/profile"},
 		{"browser.binary", "/usr/bin/chromium"},
 		{"browser.cdp_port", "9222"},
+		{"browser.reuse_tabs", "false"},
 		{"server.port", "16677"},
 		{"scheduler.concurrency", "auto"},
 	}
@@ -88,6 +91,16 @@ func TestConfigSetKey_CDPPort(t *testing.T) {
 
 }
 
+func TestConfigSetKey_BrowserReuseTabs(t *testing.T) {
+	cfg := config.Default()
+	err := configSetKey(&cfg, "browser.reuse_tabs", "false")
+	assert.NoError(t, err)
+
+	if assert.NotNil(t, cfg.Browser.ReuseTabs) {
+		assert.False(t, *cfg.Browser.ReuseTabs)
+	}
+}
+
 func TestConfigSetKey_NestedModel(t *testing.T) {
 	cfg := config.Default()
 	err := configSetKey(&cfg, "models.defaults.model", "anthropic/claude-sonnet-4-5")
@@ -104,6 +117,7 @@ func TestConfigRoundtrip(t *testing.T) {
 	sets := []struct{ key, val string }{
 		{"browser.profile_directory", "/aviary/profile"},
 		{"browser.cdp_port", "9444"},
+		{"browser.reuse_tabs", "false"},
 		{"server.port", "8080"},
 	}
 	for _, s := range sets {

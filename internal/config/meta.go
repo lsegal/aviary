@@ -17,6 +17,7 @@ type FieldMeta struct {
 	Label       string // x-label from schema — short display name
 	Placeholder string // x-placeholder — input hint / example value
 	Description string // description — shown as help text
+	Default     string // schema default rendered as a string for form hydration
 	Type        string // "string" | "int" | "bool"
 	Section     string // top-level config key: "server", "browser", etc.
 	Order       int    // x-order within section; lower = first
@@ -209,6 +210,7 @@ func ensureMeta() {
 // schemaNode is a minimal JSON schema object for metadata extraction.
 type schemaNode struct {
 	Type         any                    `json:"type"`
+	Default      any                    `json:"default"`
 	Properties   map[string]*schemaNode `json:"properties"`
 	Description  string                 `json:"description"`
 	OneOf        []*schemaNode          `json:"oneOf"`
@@ -250,6 +252,7 @@ func extractFields(node *schemaNode, path, section string) []FieldMeta {
 				Label:       node.XLabel,
 				Placeholder: node.XPlaceholder,
 				Description: node.Description,
+				Default:     schemaDefault(node.Default),
 				Type:        ft,
 				Section:     section,
 				Order:       node.XOrder,
@@ -287,4 +290,19 @@ func schemaType(node *schemaNode) string {
 		return "string"
 	}
 	return ""
+}
+
+func schemaDefault(v any) string {
+	switch d := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return d
+	case bool:
+		return strconv.FormatBool(d)
+	case float64:
+		return strconv.FormatInt(int64(d), 10)
+	default:
+		return fmt.Sprintf("%v", d)
+	}
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
+	"github.com/lsegal/aviary/skills"
 )
 
 // ErrRestartRequired is returned by ListenAndServe when an explicit process
@@ -93,7 +94,13 @@ func New(cfg *config.Config, token string) *Server {
 	if cdpPort == 0 {
 		cdpPort = config.DefaultCDPPort
 	}
-	s.brw = browser.NewManager(cfg.Browser.Binary, cdpPort, cfg.Browser.ProfileDir, cfg.Browser.Headless)
+	s.brw = browser.NewManager(
+		cfg.Browser.Binary,
+		cdpPort,
+		cfg.Browser.ProfileDir,
+		cfg.Browser.Headless,
+		config.EffectiveBrowserReuseTabs(cfg.Browser),
+	)
 
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{
@@ -150,6 +157,19 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
 		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)
 	}
+	cdpPort := newCfg.Browser.CDPPort
+	if cdpPort == 0 {
+		cdpPort = config.DefaultCDPPort
+	}
+	s.brw = browser.NewManager(
+		newCfg.Browser.Binary,
+		cdpPort,
+		newCfg.Browser.ProfileDir,
+		newCfg.Browser.Headless,
+		config.EffectiveBrowserReuseTabs(newCfg.Browser),
+	)
+	deps := mcp.GetDeps()
+	deps.Browser = s.brw
 	s.cfg = newCfg
 	if serverSettingsChanged(oldCfg, newCfg) {
 		slog.Info("server: settings changed, rotating listener")

@@ -46,7 +46,7 @@ const CONFIG = {
 		},
 		defaults: { model: "anthropic/claude-sonnet-4-5", fallbacks: [] },
 	},
-	browser: { binary: "", cdp_port: 9222 },
+	browser: { binary: "", cdp_port: 9222, reuse_tabs: true },
 	search: { web: { brave_api_key: "auth:brave_api_key" } },
 	scheduler: { concurrency: "auto" },
 };

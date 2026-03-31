@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 			},
 			agents: [],
 			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-			browser: { binary: "", cdp_port: 0 },
+			browser: { binary: "", cdp_port: 0, reuse_tabs: true },
 			scheduler: { concurrency: "" },
 			skills: {
 				gogcli: { enabled: true },
@@ -173,7 +173,7 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 			},
 			agents: [],
 			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-			browser: { binary: "" },
+			browser: { binary: "", reuse_tabs: true },
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
@@ -220,6 +220,52 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 	});
 });
 
+test("settings can disable browser tab reuse", async ({ page }) => {
+	let savedConfig: Record<string, unknown> | null = null;
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: {
+				port: 16677,
+				tls: { cert: "", key: "" },
+				external_access: false,
+				no_tls: false,
+			},
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "", cdp_port: 9222 },
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
+				string,
+				unknown
+			>;
+			return {};
+		},
+		skills_list: [],
+		tool_list: [],
+	});
+
+	await page.goto("/settings");
+
+	const reuseTabs = page.getByRole("checkbox", {
+		name: /Reuse matching tabs/i,
+	});
+	await expect(reuseTabs).toBeChecked();
+	await reuseTabs.uncheck();
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	expect(savedConfig).not.toBeNull();
+	expect(savedConfig).toMatchObject({
+		browser: {
+			cdp_port: 9222,
+			reuse_tabs: false,
+		},
+	});
+});
+
 test("settings tolerates an empty config payload", async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {
@@ -253,7 +299,7 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async ({
 			},
 			agents: [],
 			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-			browser: { binary: "", cdp_port: 0 },
+			browser: { binary: "", cdp_port: 0, reuse_tabs: true },
 			scheduler: { concurrency: "" },
 			skills: {},
 		},

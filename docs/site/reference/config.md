@@ -264,6 +264,7 @@ browser:
   cdp_port: 9222
   profile_directory: Default
   headless: false
+  reuse_tabs: true
 ```
 
 | Field | Type | Default | Description |
@@ -272,6 +273,7 @@ browser:
 | `cdp_port` | int | `9222` | Chrome DevTools Protocol debugging port |
 | `profile_directory` | string | `~/.config/aviary/browser` | Chrome user data directory |
 | `headless` | bool | `false` | Run Chrome in headless mode |
+| `reuse_tabs` | bool | `true` | Reuse an existing page tab in `browser_open` when the requested URL exactly matches the current URL |
 
 ---
 

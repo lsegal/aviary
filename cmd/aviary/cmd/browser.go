@@ -21,7 +21,7 @@ var browserCmd = &cobra.Command{
 	Short: "Control a Chromium browser via CDP",
 	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		if internalmcp.GetDeps().Browser == nil {
-			internalmcp.GetDeps().Browser = browser.NewManager(browserBinary, browserCDPPort, browserProfileDir, false)
+			internalmcp.GetDeps().Browser = browser.NewManager(browserBinary, browserCDPPort, browserProfileDir, false, true)
 		}
 		return nil
 	},

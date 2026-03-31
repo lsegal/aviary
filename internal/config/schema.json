@@ -309,6 +309,13 @@
           "x-label": "Headless mode",
           "x-order": 4,
           "description": "Run the browser without a visible window. Defaults to false so the browser is visible."
+        },
+        "reuse_tabs": {
+          "type": "boolean",
+          "default": true,
+          "x-label": "Reuse matching tabs",
+          "x-order": 5,
+          "description": "When enabled, browser_open reuses an existing page tab if the requested URL exactly matches the current URL. Defaults to true."
         }
       }
     },

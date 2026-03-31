@@ -39,6 +39,8 @@ agents:
 
 The `auth` value is a credential reference of the form `auth:<provider>:<name>`, where the provider and name match the key stored via `aviary auth set`. The model can be specified per-agent or inherited from `models.defaults`.
 
+For browser automation, `browser.reuse_tabs` defaults to `true`, so `browser_open` reuses an existing page tab when the requested URL already matches exactly. Set it to `false` if you always want a fresh tab.
+
 ## Model Providers and Fallbacks
 
 Aviary talks to LLM providers through a unified model string: `<provider>/<model-id>`. Configure API credentials once under `models.providers`:
@@ -318,6 +320,7 @@ agents:
 browser:
   headless: false
   cdp_port: 9222
+  reuse_tabs: true
 
 search:
   web:

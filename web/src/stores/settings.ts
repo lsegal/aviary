@@ -105,6 +105,7 @@ export interface BrowserConfig {
 	binary: string;
 	cdp_port: number;
 	headless?: boolean;
+	reuse_tabs?: boolean;
 }
 
 export interface WebSearchConfig {
@@ -145,7 +146,7 @@ function defaultConfig(): AppConfig {
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 0 },
+		browser: { binary: "", cdp_port: 0, reuse_tabs: true },
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
@@ -218,7 +219,11 @@ export const useSettingsStore = defineStore("settings", () => {
 					providers: parsed.models?.providers ?? {},
 					defaults: { ...base.models.defaults, ...parsed.models?.defaults },
 				},
-				browser: { ...base.browser, ...parsed.browser },
+				browser: {
+					...base.browser,
+					...parsed.browser,
+					reuse_tabs: parsed.browser?.reuse_tabs !== false,
+				},
 				search: {
 					web: { ...base.search.web, ...(parsed.search?.web ?? {}) },
 				},
