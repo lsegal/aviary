@@ -260,7 +260,20 @@
           <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
               <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Job Queue</h3>
-              <span class="text-xs text-gray-400">{{ filteredJobs.length }} shown</span>
+              <div class="flex items-center gap-3 text-xs text-gray-400">
+                <span>{{ jobsRangeLabel }}</span>
+                <label class="flex items-center gap-2">
+                  <span>Per page</span>
+                  <select
+                    v-model.number="jobsPageSize"
+                    class="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                  >
+                    <option :value="25">25</option>
+                    <option :value="50">50</option>
+                    <option :value="100">100</option>
+                  </select>
+                </label>
+              </div>
             </div>
             <div v-if="!filteredJobs.length" class="px-5 py-8 text-center text-sm text-gray-400">
               No jobs in this range.
@@ -280,7 +293,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="job in filteredJobs" :key="job.id"
+                  <tr v-for="job in paginatedJobs" :key="job.id"
                     class="cursor-pointer border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
                     :class="selectedJob?.id === job.id ? 'bg-blue-50 dark:bg-blue-950/20' : ''"
                     @click="selectJob(job)">
@@ -320,6 +333,45 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div
+              v-if="filteredJobs.length"
+              class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-5 py-3 text-xs dark:border-gray-800"
+            >
+              <span class="text-gray-400">{{ jobsRangeLabel }}</span>
+              <div class="flex items-center gap-2">
+                <button
+                  class="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  :disabled="jobsPage <= 1"
+                  @click="jobsPage = 1"
+                >
+                  First
+                </button>
+                <button
+                  class="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  :disabled="jobsPage <= 1"
+                  @click="jobsPage--"
+                >
+                  Prev
+                </button>
+                <span class="min-w-24 text-center text-gray-500 dark:text-gray-400">
+                  Page {{ jobsPage }} of {{ totalJobPages }}
+                </span>
+                <button
+                  class="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  :disabled="jobsPage >= totalJobPages"
+                  @click="jobsPage++"
+                >
+                  Next
+                </button>
+                <button
+                  class="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  :disabled="jobsPage >= totalJobPages"
+                  @click="jobsPage = totalJobPages"
+                >
+                  Last
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -638,6 +690,8 @@ const hoveredDay = ref<number | null>(null);
 const runningTaskID = ref<string | null>(null);
 const runningJobID = ref<string | null>(null);
 const stoppingJobID = ref<string | null>(null);
+const jobsPage = ref(1);
+const jobsPageSize = ref(25);
 
 const presets = [
 	{ label: "Today", days: 0 },
@@ -668,6 +722,22 @@ const filteredJobs = computed(() => {
 	if (statusFilter.value === "all") return store.jobs;
 	return store.jobs.filter((j) => j.status === statusFilter.value);
 });
+const totalJobPages = computed(() =>
+	Math.max(1, Math.ceil(filteredJobs.value.length / jobsPageSize.value)),
+);
+const paginatedJobs = computed(() => {
+	const start = (jobsPage.value - 1) * jobsPageSize.value;
+	return filteredJobs.value.slice(start, start + jobsPageSize.value);
+});
+const jobsRangeLabel = computed(() => {
+	if (!filteredJobs.value.length) return "Showing 0-0 of 0";
+	const start = (jobsPage.value - 1) * jobsPageSize.value + 1;
+	const end = Math.min(
+		filteredJobs.value.length,
+		start + paginatedJobs.value.length - 1,
+	);
+	return `Showing ${start}-${end} of ${filteredJobs.value.length}`;
+});
 const visibleTaskCompiles = computed(() => store.taskCompiles.slice(0, 5));
 const selectedJobTaskType = computed<"prompt" | "script">(() => {
 	if (!selectedJob.value) return "prompt";
@@ -692,6 +762,23 @@ watch(liveLines, async () => {
 		liveBottom.value?.scrollIntoView({ behavior: "smooth" });
 	}
 });
+
+watch(statusFilter, () => {
+	jobsPage.value = 1;
+});
+
+watch(jobsPageSize, () => {
+	jobsPage.value = 1;
+});
+
+watch(
+	() => filteredJobs.value.length,
+	() => {
+		if (jobsPage.value > totalJobPages.value) {
+			jobsPage.value = totalJobPages.value;
+		}
+	},
+);
 
 async function selectJob(job: Job) {
 	selectedCompile.value = null;
