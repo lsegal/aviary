@@ -28,6 +28,8 @@ This page summarizes the implemented browser UI as it exists today.
 | Sessions | Session list, stop, create, and remove operations. |
 | Providers | API keys, OAuth flows, and secret management. |
 
+Settings detects built-in skills plus disk-installed skills from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`, including skills installed from [skills.sh](https://skills.sh/).
+
 ## System Tabs
 
 | Tab | Exposed Functionality |
@@ -39,3 +41,5 @@ This page summarizes the implemented browser UI as it exists today.
 | Models | Searchable model catalog. |
 | Logs | Live runtime logs. |
 | Daemons | Running process inspection and restart actions. |
+
+The Skills view is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.

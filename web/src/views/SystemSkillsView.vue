@@ -15,15 +15,68 @@
             :disabled="loading"
             @click="loadPage"
           >
-            {{ loading ? "Refreshing…" : "Refresh" }}
+            {{ loading ? "Refreshing..." : "Refresh" }}
           </button>
         </div>
 
-        <div v-if="errorMessage" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+        <div
+          v-if="errorMessage"
+          class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+        >
           {{ errorMessage }}
         </div>
-        <div v-if="okMessage" class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300">
+        <div
+          v-if="okMessage"
+          class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300"
+        >
           {{ okMessage }}
+        </div>
+        <div
+          class="mb-6 rounded-3xl border border-slate-200 bg-white/90 p-4 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-300"
+        >
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)] lg:items-center">
+            <div>
+              <p class="font-medium text-slate-900 dark:text-white">Looking for more skills?</p>
+              <p class="mt-1 leading-6">
+                Aviary discovers disk-installed skills from
+                <code class="font-mono">~/.config/aviary/skills</code> and
+                <code class="font-mono">~/.agents/skills</code>. <br> You can search from the terminal with
+                <code class="font-mono">npx skills find</code>, or browse
+                <a
+                  href="https://skills.sh/"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="font-medium underline underline-offset-2"
+                  >skills.sh</a
+                >
+                as one option for discovering installable skills.
+              </p>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-slate-100 shadow-sm dark:border-white/10">
+              <div class="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="h-2.5 w-2.5 rounded-full bg-rose-400" />
+                  <span class="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                  <span class="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                </div>
+                <span class="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">skill install</span>
+              </div>
+              <div class="px-4 py-5">
+                <pre class="overflow-x-auto font-mono text-[13px] leading-6 text-emerald-300">{{ skillsSnippet }}</pre>
+                <div class="mt-5 flex justify-center">
+                  <a
+                    href="https://skills.sh/"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-slate-200 transition hover:bg-white/10"
+                  >
+                    Open skills.sh
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="mb-6 grid gap-3 sm:grid-cols-3">
@@ -84,7 +137,10 @@
           </div>
         </div>
 
-        <div v-if="!filteredSkills.length" class="rounded-2xl border border-dashed border-gray-300 bg-white/80 px-5 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-400">
+        <div
+          v-if="!filteredSkills.length"
+          class="rounded-2xl border border-dashed border-gray-300 bg-white/80 px-5 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-400"
+        >
           No skills match the current filters.
         </div>
 
@@ -116,13 +172,15 @@
               <button
                 type="button"
                 class="min-w-28 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
-                :class="isEnabled(skill.name)
-                  ? 'bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-500'"
+                :class="
+                  isEnabled(skill.name)
+                    ? 'bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                "
                 :disabled="Boolean(savingByName[skill.name])"
                 @click="toggleSkill(skill.name, !isEnabled(skill.name))"
               >
-                {{ savingByName[skill.name] ? "Saving…" : isEnabled(skill.name) ? "Disable" : "Enable" }}
+                {{ savingByName[skill.name] ? "Saving..." : isEnabled(skill.name) ? "Disable" : "Enable" }}
               </button>
             </div>
 
@@ -182,6 +240,8 @@ const sourceFilters: Array<{ label: string; value: SourceFilter }> = [
 
 const { callTool } = useMCP();
 const store = useSettingsStore();
+const skillsSnippet = `$ npx skills find notion
+$ npx skills add --global -a universal 4ier/notion-cli`;
 
 const loading = ref(false);
 const errorMessage = ref("");

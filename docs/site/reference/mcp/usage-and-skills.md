@@ -53,6 +53,12 @@ List all installed skills and whether each is currently enabled in configuration
 
 Skills are either built-in (shipped with Aviary) or installed from disk. Enable a skill in `aviary.yaml` under the `skills` key:
 
+Disk-installed skills are discovered from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`. Search for published skills with `npx skills find` or on [skills.sh](https://skills.sh/). Example global install:
+
+```bash
+npx skills add --global -a universal 4ier/notion-cli
+```
+
 ```yaml
 skills:
   my-skill:

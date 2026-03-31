@@ -248,6 +248,14 @@ agents:
 
 Skills extend the agent's tool surface with custom runtimes. Enable them by name and pass any skill-specific settings:
 
+Disk-installed skills are discovered from both `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`.
+
+You can browse community-published skills with `npx skills find` or on [skills.sh](https://skills.sh/). To install a universal skill globally for Aviary to detect, use:
+
+```bash
+npx skills add --global -a universal owner/skill-name
+```
+
 ```yaml
 skills:
   my-skill:

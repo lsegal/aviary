@@ -58,7 +58,9 @@ Manages API credentials and OAuth sessions:
 
 ### Skills
 
-Toggle individual skills on or off and edit per-skill settings. Skill changes take effect on the next agent run.
+Toggle individual skills on or off and edit per-skill settings. Skills are detected immediately when added or removed.
+
+Aviary detects built-in skills plus disk-installed skills from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`. You can search for installable skills with `npx skills find` or on [skills.sh](https://skills.sh/).
 
 ### Sessions
 
@@ -98,6 +100,8 @@ Browsable catalog of all registered MCP tools:
 ### Skills (`/system/skills`)
 
 Marketplace-style view of installed skills with descriptions and enablement toggles. Links to per-skill settings in the Settings → Skills panel.
+
+This is also the easiest place to confirm that a skill installed with a command like `npx skills add --global -a universal 4ier/notion-cli` has been detected by Aviary.
 
 ### Models (`/system/models`)
 

@@ -969,7 +969,12 @@ Select a task to edit.
 							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Installed
 								Skills</h3>
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bundled skills come from the Aviary binary.
-								Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code>.</p>
+								Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code> and
+								<code class="font-mono">~/.agents/skills</code>.</p>
+							<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Search with <code class="font-mono">npx skills find</code>
+								or browse <a href="https://skills.sh/" target="_blank" rel="noreferrer"
+									class="underline underline-offset-2">skills.sh</a>. Example install:
+								<code class="font-mono">npx skills add --global -a universal 4ier/notion-cli</code>.</p>
 						</div>
 						<button type="button"
 							class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
