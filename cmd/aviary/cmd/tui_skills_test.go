@@ -31,6 +31,15 @@ func TestSkillMgrSaveCurrentPersistsConfig(t *testing.T) {
 	m := newSkillMgrModel(&cfg, cfgPath)
 	m.refreshInstalled()
 	assert.NotEqual(t, 0, len(m.installed))
+	found := false
+	for i, sk := range m.installed {
+		if sk.Name == "gogcli" {
+			m.cursor = i
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 
 	gotModel, _ := m.toggleEnabled()
 	m = gotModel.(skillMgrModel)

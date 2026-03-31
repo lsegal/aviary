@@ -29,6 +29,7 @@ func TestWatcherTriggersOnSkillFileChanges(t *testing.T) {
 	go func() {
 		_ = w.Start()
 	}()
+	time.Sleep(50 * time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		return os.WriteFile(filepath.Join(root, "demo", "SKILL.md"), []byte("second"), 0o600) == nil
@@ -57,6 +58,7 @@ func TestWatcherTriggersWhenNewSkillDirectoryIsCreated(t *testing.T) {
 	go func() {
 		_ = w.Start()
 	}()
+	time.Sleep(50 * time.Millisecond)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "new-skill"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "new-skill", "SKILL.md"), []byte("content"), 0o600))
