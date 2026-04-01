@@ -36,8 +36,13 @@ func TestMain(m *testing.M) {
 // the shared testDataDir when the test finishes.
 func setTestDataDir(t *testing.T) {
 	t.Helper()
-	store.SetDataDir(t.TempDir())
-	t.Cleanup(func() { store.SetDataDir(testDataDir) })
+	isolatedDir := t.TempDir()
+	store.SetDataDir(isolatedDir)
+	store.SetWorkspaceDir(isolatedDir)
+	t.Cleanup(func() {
+		store.SetDataDir(testDataDir)
+		store.SetWorkspaceDir(testDataDir)
+	})
 }
 
 type mockProvider struct {
