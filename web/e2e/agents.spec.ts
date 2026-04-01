@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const CONFIG = {
@@ -14,12 +15,12 @@ const CONFIG = {
 					type: "signal",
 					id: "+15551234567",
 					primary: "+15551234567",
-					disabledTools: ["task_run"],
-					allowFrom: [
+					disabled_tools: ["task_run"],
+					allow_from: [
 						{
 							from: "*",
-							respondToMentions: true,
-							restrictTools: ["task_run", "browser_open", "usage_query"],
+							respond_to_mentions: true,
+							restrict_tools: ["task_run", "browser_open", "usage_query"],
 						},
 					],
 				},
@@ -128,8 +129,11 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		.first()
 		.click();
 	await expect(
-		page.locator('input[placeholder="e.g. +15551234567 or user ID"]').first(),
+		page.locator('input[placeholder="e.g. +15551234567"]').first(),
 	).toHaveValue("+15551234567");
+	await expect(
+		page.locator('input[placeholder="*, +15551234567"]').first(),
+	).toHaveValue("*");
 });
 
 test("tab switching does not blank content", async ({ page }) => {
@@ -160,6 +164,108 @@ test("tab switching does not blank content", async ({ page }) => {
 	}
 });
 
+test("switching agents preserves subtab and loads that agent file state", async ({
+	page,
+}) => {
+	const twoAgentConfig = {
+		...CONFIG,
+		agents: [
+			CONFIG.agents[0],
+			{
+				name: "coder",
+				model: "anthropic/claude-sonnet-4-5",
+				memory: "",
+				fallbacks: [],
+				channels: [],
+				tasks: [
+					{
+						name: "repo-check",
+						schedule: "0 */5 * * * *",
+						prompt: "Check repository health",
+					},
+				],
+			},
+		],
+	};
+	const agentFiles = new Map<string, Map<string, string>>([
+		[
+			"assistant",
+			new Map<string, string>([
+				["AGENTS.md", "# Agents"],
+				["RULES.md", "# Rules"],
+			]),
+		],
+		[
+			"coder",
+			new Map<string, string>([
+				["AGENTS.md", "# Coder Agent"],
+				["IDENTITY.md", "# Coder Identity"],
+			]),
+		],
+	]);
+	await mockMCP(page, {
+		config_get: twoAgentConfig,
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+			{
+				id: "a2",
+				name: "coder",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+		agent_file_list: (args?: AgentFileArgs) =>
+			Array.from(
+				agentFiles.get(String(args?.agent ?? ""))?.keys() ?? [],
+			).sort(),
+		agent_file_read: (args?: AgentFileArgs) =>
+			agentFiles
+				.get(String(args?.agent ?? ""))
+				?.get(String(args?.file ?? "")) ?? "",
+	});
+
+	await page.goto("/settings/agents/assistant/tasks");
+
+	await expect(
+		page.locator('input[placeholder="daily-briefing"]').first(),
+	).toHaveValue("daily-briefing");
+
+	await page.getByRole("button", { name: "coder", exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/agents\/coder\/tasks$/);
+	await expect(
+		page.locator('input[placeholder="daily-briefing"]').first(),
+	).toHaveValue("repo-check");
+
+	await page
+		.getByRole("button", { name: "General", exact: true })
+		.first()
+		.click();
+	await expect(page).toHaveURL(/\/settings\/agents\/coder\/general$/);
+	await expect(
+		page.getByRole("button", { name: "IDENTITY.md", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.locator(
+			'textarea[placeholder="Select or add a markdown file to edit."]',
+		),
+	).toHaveValue("# Coder Agent");
+});
+
 test("general tab shows web search settings", async ({ page }) => {
 	await page.goto("/settings");
 
@@ -176,7 +282,7 @@ test("model dropdown hides models from unauthenticated providers", async ({
 }) => {
 	await page.goto("/settings");
 
-	await page.locator('input[placeholder="Select a model…"]').first().click();
+	await page.locator('input[placeholder^="Select a model"]').first().click();
 
 	await expect(
 		page.getByText("anthropic/claude-3-5-haiku-latest", { exact: true }),

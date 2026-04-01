@@ -253,14 +253,18 @@ test("settings can disable browser tab reuse", async ({ page }) => {
 	const reuseTabs = page.getByRole("checkbox", {
 		name: /Reuse matching tabs/i,
 	});
+	const saveButton = page.getByRole("button", { name: "Save Changes" });
+	const cdpPortInput = page.getByPlaceholder("9222");
 	await expect(reuseTabs).toBeChecked();
 	await reuseTabs.uncheck();
-	await page.getByRole("button", { name: "Save Changes" }).click();
+	await cdpPortInput.fill("9333");
+	await expect(saveButton).toBeEnabled();
+	await saveButton.click();
 
-	expect(savedConfig).not.toBeNull();
+	await expect.poll(() => savedConfig).not.toBeNull();
 	expect(savedConfig).toMatchObject({
 		browser: {
-			cdp_port: 9222,
+			cdp_port: 9333,
 			reuse_tabs: false,
 		},
 	});

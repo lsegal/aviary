@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 /** Common argument shapes for MCP tool handlers used in tests. */
 export interface AgentFileArgs {
+	agent?: string;
 	file?: string;
 	content?: string;
 }
@@ -29,7 +30,7 @@ export interface ToolFixtures {
 	task_run?: ToolHandler<TaskRunArgs> | object | null;
 	tool_list?: object[] | string;
 
-	agent_file_list?: ToolHandler<void, string[]> | string[];
+	agent_file_list?: ToolHandler<AgentFileArgs, string[]> | string[];
 	agent_file_read?: ToolHandler<AgentFileArgs> | string;
 	agent_file_write?: ToolHandler<AgentFileArgs> | string;
 	agent_file_delete?: ToolHandler<AgentFileArgs> | string;
