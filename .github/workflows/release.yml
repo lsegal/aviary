@@ -20,11 +20,14 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
     name: Build and publish release assets
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     env:
       VERSION: ${{ inputs.level == 'version' && inputs.version || inputs.level }}
       GH_TOKEN: ${{ github.token }}
@@ -47,3 +50,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm package
       - run: pnpm release
+      - id: version
+        run: echo "tag=v$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+  docker:
+    name: Publish Docker image
+    needs: release
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.release.outputs.tag }}
+      aviary_version: ${{ needs.release.outputs.tag }}
+      docker_tag: ${{ needs.release.outputs.tag }}
+      push_image: true

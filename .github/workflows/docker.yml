@@ -4,9 +4,32 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      aviary_version:
+        required: false
+        type: string
+        default: ''
+      branch_name:
+        required: false
+        type: string
+        default: ''
+      docker_tag:
+        required: false
+        type: string
+        default: ''
+      publish_latest:
+        required: false
+        type: boolean
+        default: false
+      push_image:
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -16,30 +39,35 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0
-      - id: version
+          ref: ${{ github.event_name == 'workflow_call' && inputs.ref || github.sha }}
+      - id: prep
         shell: bash
+        env:
+          CALL_VERSION: ${{ github.event_name == 'workflow_call' && inputs.aviary_version || '' }}
+          CALL_BRANCH: ${{ github.event_name == 'workflow_call' && inputs.branch_name || '' }}
+          CALL_TAG: ${{ github.event_name == 'workflow_call' && inputs.docker_tag || '' }}
+          CALL_LATEST: ${{ github.event_name == 'workflow_call' && inputs.publish_latest || (github.event_name == 'push' && github.ref_name == 'main') }}
+          CALL_PUSH: ${{ github.event_name == 'workflow_call' && inputs.push_image || github.event_name != 'pull_request' }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            tag="$(git tag --points-at "${{ github.event.workflow_run.head_sha }}" | grep '^v' | head -n 1)"
-            if [[ -z "$tag" ]]; then
-              echo "No v* tag found for release commit ${{ github.event.workflow_run.head_sha }}" >&2
-              exit 1
-            fi
-            echo "aviary_version=$tag" >> "$GITHUB_OUTPUT"
-            echo "docker_tag=$tag" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "aviary_version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "docker_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$CALL_VERSION" ]]; then
+            aviary_version="$CALL_VERSION"
           else
-            echo "aviary_version=$(jq -r .version package.json).dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-            echo "docker_tag=" >> "$GITHUB_OUTPUT"
+            aviary_version="$(jq -r .version package.json).dev-$(git rev-parse --short HEAD)"
           fi
+
+          branch_name="$CALL_BRANCH"
+          if [[ -z "$branch_name" && "${{ github.event_name }}" == "push" ]]; then
+            branch_name="${{ github.ref_name }}"
+          fi
+
+          echo "aviary_version=$aviary_version" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$branch_name" >> "$GITHUB_OUTPUT"
+          echo "docker_tag=$CALL_TAG" >> "$GITHUB_OUTPUT"
+          echo "publish_latest=$CALL_LATEST" >> "$GITHUB_OUTPUT"
+          echo "push_image=$CALL_PUSH" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/metadata-action@v6
         id: meta
@@ -47,11 +75,11 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,prefix=sha-
-            type=ref,event=branch
-            type=raw,value=${{ steps.version.outputs.docker_tag }},enable=${{ steps.version.outputs.docker_tag != '' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_name == 'main' }}
+            type=raw,value=${{ steps.prep.outputs.branch_name }},enable=${{ steps.prep.outputs.branch_name != '' }}
+            type=raw,value=${{ steps.prep.outputs.docker_tag }},enable=${{ steps.prep.outputs.docker_tag != '' }}
+            type=raw,value=latest,enable=${{ steps.prep.outputs.publish_latest == 'true' }}
       - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
+        if: steps.prep.outputs.push_image == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -61,9 +89,9 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ steps.prep.outputs.push_image == 'true' }}
           build-args: |
-            AVIARY_VERSION=${{ steps.version.outputs.aviary_version }}
+            AVIARY_VERSION=${{ steps.prep.outputs.aviary_version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
