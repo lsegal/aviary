@@ -3,12 +3,18 @@ package mcp
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // RemoteClient calls an MCP server over HTTPS using the Streamable HTTP transport.
@@ -20,12 +26,11 @@ type RemoteClient struct {
 // NewRemoteClient connects to the Aviary server at serverURL using the given token.
 // The URL should be the base server URL (e.g. "https://localhost:16677"); /mcp is appended.
 func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClient, error) {
-	// Use an HTTP client that skips TLS verification for self-signed certs.
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-		},
+	httpTransport, err := newRemoteHTTPTransport(serverURL)
+	if err != nil {
+		return nil, err
 	}
+	httpClient := &http.Client{Transport: httpTransport}
 
 	// Attach bearer token to all requests.
 	transport := &bearerTransport{
@@ -58,6 +63,63 @@ func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClien
 		session: session,
 		cancel:  cancel,
 	}, nil
+}
+
+func newRemoteHTTPTransport(serverURL string) (*http.Transport, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(serverURL)), "https://") {
+		return transport, nil
+	}
+
+	rootCAs, err := loadRemoteServerCAPool()
+	if err != nil {
+		return nil, fmt.Errorf("loading TLS roots for %s: %w", serverURL, err)
+	}
+	if transport.TLSClientConfig != nil {
+		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	} else {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.RootCAs = rootCAs
+	return transport, nil
+}
+
+func loadRemoteServerCAPool() (*x509.CertPool, error) {
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+
+	certPath, err := remoteServerCertPath()
+	if err != nil {
+		return nil, err
+	}
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading certificate %q: %w", certPath, err)
+	}
+	if ok := rootCAs.AppendCertsFromPEM(certPEM); !ok {
+		return nil, fmt.Errorf("parsing certificate %q", certPath)
+	}
+	return rootCAs, nil
+}
+
+func remoteServerCertPath() (string, error) {
+	cfg, err := config.Load("")
+	if err != nil {
+		return "", fmt.Errorf("loading config: %w", err)
+	}
+	if cfg != nil && cfg.Server.TLS != nil && strings.TrimSpace(cfg.Server.TLS.Cert) != "" {
+		return resolveConfigPath(cfg.Server.TLS.Cert), nil
+	}
+	return filepath.Join(store.SubDir(store.DirCerts), "cert.pem"), nil
+}
+
+func resolveConfigPath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(config.BaseDir(), path)
 }
 
 // CallTool invokes the named tool on the remote server.

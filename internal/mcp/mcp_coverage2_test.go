@@ -3,9 +3,14 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,6 +73,65 @@ func TestNewRemoteClient_ConnectionError(t *testing.T) {
 
 }
 
+func TestNewRemoteClient_TrustsGeneratedCertLocation(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	srv := NewServer()
+	ts := httptest.NewTLSServer(HTTPHandler(srv))
+	defer ts.Close()
+
+	writeServerCertForClientTrust(t, filepath.Join(store.SubDir(store.DirCerts), "cert.pem"), ts.TLS.Certificates[0])
+
+	c, err := NewRemoteClient(context.Background(), ts.URL, "")
+	require.NoError(t, err)
+	defer c.Close() //nolint:errcheck
+
+	out, err := c.CallToolText(context.Background(), "ping", map[string]any{})
+	require.NoError(t, err)
+	assert.Equal(t, "pong", out)
+}
+
+func TestNewRemoteClient_TrustsConfiguredCertPath(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	require.NoError(t, store.EnsureDirs())
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	srv := NewServer()
+	ts := httptest.NewTLSServer(HTTPHandler(srv))
+	defer ts.Close()
+
+	relCert := filepath.Join("tls", "server-cert.pem")
+	relKey := filepath.Join("tls", "server-key.pem")
+	certPath := filepath.Join(config.BaseDir(), relCert)
+	keyPath := filepath.Join(config.BaseDir(), relKey)
+	require.NoError(t, os.MkdirAll(filepath.Dir(certPath), 0o750))
+	writeServerCertForClientTrust(t, certPath, ts.TLS.Certificates[0])
+	require.NoError(t, os.WriteFile(keyPath, []byte("unused"), 0o600))
+	require.NoError(t, config.Save("", &config.Config{
+		Server: config.ServerConfig{
+			TLS: &config.TLSConfig{Cert: relCert, Key: relKey},
+		},
+	}))
+
+	c, err := NewRemoteClient(context.Background(), ts.URL, "")
+	require.NoError(t, err)
+	defer c.Close() //nolint:errcheck
+
+	out, err := c.CallToolText(context.Background(), "ping", map[string]any{})
+	require.NoError(t, err)
+	assert.Equal(t, "pong", out)
+}
+
 // ── HTTPHandler POST path ─────────────────────────────────────────────────────
 
 func TestHTTPHandler_PostWithToolCallPayload(t *testing.T) {
@@ -93,6 +157,20 @@ func TestHTTPHandler_PostWithToolCallPayload(t *testing.T) {
 }
 
 // ── tool_logging.go ───────────────────────────────────────────────────────────
+
+func writeServerCertForClientTrust(t *testing.T, path string, cert tls.Certificate) {
+	t.Helper()
+
+	if len(cert.Certificate) == 0 {
+		t.Fatalf("test server did not expose a certificate chain")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: leaf.Raw,
+	}), 0o600))
+}
 
 func TestRedactValue_AdditionalTypes(t *testing.T) {
 	// map[string]string path
