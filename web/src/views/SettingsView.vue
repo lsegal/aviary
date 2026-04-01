@@ -791,7 +791,31 @@
 											{{ slackWorkspaceState(i, k).error }}
 										</p>
 										<p v-else-if="slackWorkspaceState(i, k).result" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-											Connected to {{ slackWorkspaceState(i, k).result?.team_name || "Slack" }} with {{ slackWorkspaceState(i, k).result?.channels.length || 0 }} visible channels.
+											Connected to {{ slackWorkspaceState(i, k).result?.team_name || "Slack" }} with {{ slackVisibleChannels(i, k).length }} visible channels.
+										</p>
+										<div v-if="slackVisibleChannels(i, k).length" class="mt-3 max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
+											<div
+												v-for="workspaceChannel in slackVisibleChannels(i, k)"
+												:key="workspaceChannel.id"
+												class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 px-3 py-2 dark:border-gray-800"
+											>
+												<div class="min-w-0">
+													<div class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+														#{{ workspaceChannel.name }}
+													</div>
+													<div class="font-mono text-[11px] text-gray-500 dark:text-gray-400">
+														{{ workspaceChannel.id }}
+													</div>
+												</div>
+												<div class="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+													<span v-if="workspaceChannel.is_private" class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">Private</span>
+													<span v-if="workspaceChannel.is_member" class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Joined</span>
+													<span v-if="workspaceChannel.num_members" class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{{ workspaceChannel.num_members }} members</span>
+												</div>
+											</div>
+										</div>
+										<p v-else-if="slackWorkspaceState(i, k).result" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+											No visible channels were returned for this bot token.
 										</p>
 									</div>
 								</div>
@@ -3082,6 +3106,13 @@ function slackChannelsForTask(
 ): SlackWorkspaceChannelOption[] {
 	const channelIndex = selectedConfiguredChannelIndex(agent, task);
 	if (channelIndex < 0) return [];
+	return slackVisibleChannels(agentIndex, channelIndex);
+}
+
+function slackVisibleChannels(
+	agentIndex: number,
+	channelIndex: number,
+): SlackWorkspaceChannelOption[] {
 	return (
 		slackWorkspaceState(agentIndex, channelIndex).result?.channels ?? []
 	).filter((channel) => !channel.is_archived);

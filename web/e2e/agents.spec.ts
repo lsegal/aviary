@@ -340,6 +340,89 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 	).toBeVisible();
 });
 
+test("Slack browse channels shows visible workspace channels", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			...CONFIG,
+			agents: [
+				{
+					...CONFIG.agents[0],
+					channels: [
+						{
+							type: "slack",
+							id: "workspace-bot",
+							url: "xapp-test-token",
+							token: "xoxb-test-token",
+							allow_from: [
+								{
+									from: "*",
+									respond_to_mentions: true,
+								},
+							],
+						},
+					],
+				},
+			],
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+			{ name: "browser_open", description: "Open a browser tab" },
+			{ name: "usage_query", description: "Read usage metrics" },
+		],
+		slack_channels_list: {
+			team_name: "Aviary",
+			channels: [
+				{
+					id: "C123",
+					name: "alerts",
+					is_member: true,
+					num_members: 8,
+				},
+				{
+					id: "C456",
+					name: "ops-private",
+					is_private: true,
+					num_members: 3,
+				},
+			],
+		},
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Channels", exact: true })
+		.first()
+		.click();
+	await page.getByRole("button", { name: "Browse Channels" }).click();
+
+	await expect(
+		page.getByText("Connected to Aviary with 2 visible channels.", {
+			exact: true,
+		}),
+	).toBeVisible();
+	await expect(page.getByText("#alerts", { exact: true })).toBeVisible();
+	await expect(page.getByText("C123", { exact: true })).toBeVisible();
+	await expect(page.getByText("#ops-private", { exact: true })).toBeVisible();
+	await expect(page.getByText("Private", { exact: true })).toBeVisible();
+	await expect(page.getByText("Joined", { exact: true })).toBeVisible();
+});
+
 test("permissions preset disables inaccessible tool groups and tools", async ({
 	page,
 }) => {
