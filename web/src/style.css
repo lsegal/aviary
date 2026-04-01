@@ -22,3 +22,15 @@ body {
 	margin: 0;
 	min-height: 100vh;
 }
+
+.field-input {
+	@apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500;
+}
+
+.field-label {
+	@apply mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400;
+}
+
+.danger-btn {
+	@apply rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
+}

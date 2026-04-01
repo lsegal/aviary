@@ -48,1324 +48,13 @@
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
 
-				<section v-show="activeTab === 'general'" class="space-y-6 pb-8">
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Server</h3>
-						<div class="grid gap-4 lg:grid-cols-3">
-							<div>
-								<label class="field-label">Port</label>
-								<input :value="serverPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input"
-									placeholder="16677" @input="updateServerPortInput" />
-							</div>
-							<div>
-								<label class="field-label">TLS Cert</label>
-								<input v-model="draft.server.tls.cert" type="text" class="field-input"
-									placeholder="/path/to/cert.pem" />
-							</div>
-							<div>
-								<label class="field-label">TLS Key</label>
-								<input v-model="draft.server.tls.key" type="text" class="field-input" placeholder="/path/to/key.pem" />
-							</div>
-						</div>
-						<div class="mt-4 flex flex-wrap gap-6">
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.server.external_access" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Expose service externally
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(bind to 0.0.0.0 instead of
-										127.0.0.1)</span>
-								</span>
-							</label>
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.server.no_tls" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Disable TLS
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(plain HTTP — not recommended)</span>
-								</span>
-							</label>
-						</div>
-						<p v-if="draft.server.external_access || draft.server.no_tls"
-							class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-							Changing server settings will restart the service.
-						</p>
-					</div>
 
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Models</h3>
-						<div class="grid gap-4 lg:grid-cols-2">
-							<div>
-								<label class="field-label">Default model</label>
-								<ModelSelector v-model="draft.models.defaults.model" :options="availableModelOptions"
-									placeholder="Select a model…" />
-							</div>
-							<div>
-								<label class="field-label">Default fallbacks</label>
-								<ModelSelector v-model="draft.models.defaults.fallbacks" :options="availableModelOptions" multiple
-									placeholder="Add fallbacks…" />
-							</div>
-						</div>
-					</div>
+				<SettingsGeneralTab />
+				<SettingsAgentsTab />
+				<SettingsSkillsTab />
+				<SettingsSessionsTab />
+				<SettingsProvidersTab />
 
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser</h3>
-						<div class="grid gap-4 lg:grid-cols-2">
-							<div>
-								<label class="field-label">Browser binary</label>
-								<input v-model="draft.browser.binary" type="text" class="field-input" placeholder="/usr/bin/chromium" />
-							</div>
-							<div>
-								<label class="field-label">CDP port</label>
-								<input :value="cdpPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input"
-									placeholder="9222" @input="updateCDPPortInput" />
-							</div>
-						</div>
-						<div class="mt-4 flex flex-wrap gap-6">
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.browser.headless" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Run headless
-									<span class="block text-xs text-gray-500 dark:text-gray-400">No visible browser window</span>
-								</span>
-							</label>
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.browser.reuse_tabs" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Reuse matching tabs
-									<span class="block text-xs text-gray-500 dark:text-gray-400">browser_open reuses an existing tab when the URL matches exactly</span>
-								</span>
-							</label>
-						</div>
-					</div>
-
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scheduler</h3>
-						<div class="grid gap-4 lg:grid-cols-2">
-							<div>
-								<label class="field-label">Concurrency</label>
-								<input v-model="concurrencyInput" type="text" class="field-input" placeholder="auto or number" />
-							</div>
-						</div>
-					</div>
-
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Web Search
-						</h3>
-						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Select the stored secret that holds your Brave
-							Search API key. This writes an <span class="font-mono">auth:&lt;name&gt;</span> reference into <span
-								class="font-mono">aviary.yaml</span>.</p>
-						<div class="flex flex-wrap items-center gap-2">
-							<select v-model="webSearchSecretSelection" class="field-input max-w-[320px]">
-								<option value="">Use browser fallback only</option>
-								<option v-for="name in webSearchSecretOptions" :key="name" :value="name">{{ name }}</option>
-							</select>
-							<span v-if="draft.search.web.brave_api_key"
-								class="rounded bg-gray-100 px-2 py-1 font-mono text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-								{{ draft.search.web.brave_api_key }}
-							</span>
-						</div>
-						<p v-if="!webSearchSecretOptions.length" class="mt-3 text-xs text-gray-400 dark:text-gray-500">No stored
-							secrets available yet. Add one in Providers & Auth, then select it here.</p>
-					</div>
-				</section>
-
-				<section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
-					<div class="flex items-center border-b border-gray-200 dark:border-gray-800">
-						<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
-							<button v-for="(a, idx) in draft.agents" :key="`tab-${idx}`" type="button"
-								class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
-								:class="selectedAgentIdx === idx
-									? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-									: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-								@click="selectedAgentIdx = idx">
-								{{ a.name || `Agent ${idx + 1}` }}
-							</button>
-							<button type="button" aria-label="Add Agent" title="Add agent"
-								class="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2.5 text-lg leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-								@click="addAgent">+</button>
-						</div>
-					</div>
-
-					<div v-if="!draft.agents.length"
-						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-						No agents configured.
-					</div>
-
-					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
-						class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-						<!-- Subtab nav -->
-						<div class="border-b border-gray-200 px-5 dark:border-gray-700">
-							<nav class="flex items-center justify-between gap-4">
-								<div class="flex items-center">
-									<button v-for="subtab in ([
-										{ key: 'general', label: 'General' },
-										{ key: 'permissions', label: 'Permissions' },
-										{ key: 'channels', label: 'Channels' },
-										{ key: 'tasks', label: 'Tasks' },
-									] as const)" :key="subtab.key" type="button" class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
-										:class="selectedAgentSubtab === subtab.key
-											? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-											: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-										@click="selectedAgentSubtab = subtab.key">
-										{{ subtab.label }}
-									</button>
-								</div>
-								<div class="flex items-center">
-									<button type="button"
-										class="-mb-px border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:border-red-200 hover:text-red-700 dark:text-red-400 dark:hover:border-red-900 dark:hover:text-red-300"
-										@click="removeAgent(i)">
-										Remove Agent
-									</button>
-								</div>
-							</nav>
-						</div>
-
-						<!-- General subtab -->
-						<div v-show="selectedAgentSubtab === 'general'" class="space-y-4 p-5">
-							<div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
-								<div>
-									<label class="field-label">Name</label>
-									<input v-model="agent.name" type="text" class="field-input" placeholder="assistant"
-										@change="onAgentNameChange(agent)" />
-								</div>
-								<div>
-									<label class="field-label">Model</label>
-									<ModelSelector v-model="agent.model" :options="availableModelOptions" placeholder="Select a model…" />
-								</div>
-								<div>
-									<label class="field-label">Fallbacks</label>
-									<ModelSelector v-model="agent.fallbacks" :options="availableModelOptions" multiple
-										placeholder="Add fallbacks…" />
-								</div>
-							</div>
-							<div>
-								<label class="field-label">Working directory</label>
-								<input v-model="agent.working_dir" type="text" class="field-input"
-									placeholder="Default: process working directory (e.g. /home/user/projects/myrepo)" />
-							</div>
-							<div class="mt-2">
-								<label class="flex cursor-pointer items-center gap-3">
-									<input v-model="agent.verbose" type="checkbox"
-										class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-									<span class="text-sm text-gray-700 dark:text-gray-300">
-										Verbose mode
-										<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(send live status updates before each tool call on channels that don't support streaming)</span>
-									</span>
-								</label>
-							</div>
-						</div>
-
-						<!-- Files content moved into General subtab -->
-						<div v-show="selectedAgentSubtab === 'general'" class="px-5 pb-5">
-							<div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-								<div class="flex items-center justify-between gap-2">
-									<div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files
-									</div>
-									<div class="flex flex-wrap items-center gap-1.5">
-										<transition name="save-indicator">
-											<div v-if="getAgentFileState(agent.name).saveFlash"
-												class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"
-													aria-hidden="true">
-													<path fill-rule="evenodd"
-														d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
-														clip-rule="evenodd" />
-												</svg>
-												<span class="text-[11px] font-medium">Saved</span>
-											</div>
-										</transition>
-										<button type="button"
-											class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-											:disabled="!agent.name || getAgentFileState(agent.name).loading"
-											@click="loadAgentFiles(agent.name)">
-											{{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
-										</button>
-										<button type="button"
-											class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-											:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving"
-											@click="saveAgentFile(agent.name)">
-											{{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
-										</button>
-										<button type="button"
-											class="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-											:disabled="!agent.name || !canDeleteAgentFile(getAgentFileState(agent.name).selectedFile) || getAgentFileState(agent.name).deleting"
-											@click="promptDeleteAgentFile(agent.name)">
-											{{ getAgentFileState(agent.name).deleting ? 'Deleting…' : 'Delete' }}
-										</button>
-									</div>
-								</div>
-								<div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-									<div class="space-y-2 self-start">
-										<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-											<div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
-												<button v-for="file in getAgentFileState(agent.name).files" :key="file" type="button"
-													class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
-													:class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
-													@click="selectAgentFile(agent.name, file)">
-													<span class="truncate">{{ file }}</span>
-													<span v-if="isProtectedAgentFile(file)"
-														class="ml-2 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
-												</button>
-											</div>
-											<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
-												{{ agent.name ? 'No root markdown files yet. Refresh or add one.' : 'Name the agent first to manage files.' }}
-											</p>
-										</div>
-										<div class="space-y-1">
-											<div class="flex gap-1.5">
-												<input v-model="getAgentFileState(agent.name).draftFileName" type="text"
-													class="field-input py-1 font-mono text-xs"
-													:disabled="!agent.name || getAgentFileState(agent.name).creating" placeholder="IDENTITY.md" />
-												<button type="button"
-													class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-													:disabled="!agent.name || getAgentFileState(agent.name).creating"
-													@click="createAgentFile(agent.name)">
-													{{ getAgentFileState(agent.name).creating ? '…' : '+' }}
-												</button>
-											</div>
-											<button type="button"
-												class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-												:disabled="!agent.name || getAgentFileState(agent.name).syncing"
-												@click="syncAgentTemplates(agent.name)">
-												{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
-											</button>
-											<p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span
-													class="font-mono">.md</span> only. <span class="font-mono">AGENTS.md</span>, <span class="font-mono">SYSTEM.md</span>, <span
-													class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.
-											</p>
-										</div>
-									</div>
-
-									<div class="relative flex flex-col">
-										<textarea :value="getAgentFileState(agent.name).content"
-											@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
-											@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
-											class="field-input min-h-[50vh] resize-y py-2 font-mono text-xs"
-											:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
-											:placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
-										<p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">
-											{{ getAgentFileState(agent.name).error }}
-										</p>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<!-- Permissions subtab -->
-						<div v-show="selectedAgentSubtab === 'permissions'" class="min-h-[60vh] space-y-4 p-5">
-							<div class="grid gap-3 lg:max-w-xl">
-								<div>
-									<label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
-									<FancySelect :id="`tool-preset-${agent.name || i}`" :model-value="agentPermissionsPreset(agent)"
-										:options="PERMISSION_PRESET_OPTIONS.map((option) => ({
-											value: option.value,
-											label: option.label,
-											caption: option.description,
-										}))
-											" @update:model-value="updateAgentPermissionsPreset(agent, $event)" />
-									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-										{{
-											PERMISSION_PRESET_OPTIONS.find(
-												(option) => option.value === agentPermissionsPreset(agent),
-											)?.description
-										}}
-									</p>
-								</div>
-							</div>
-
-							<div class="mt-4 space-y-1.5">
-								<label class="inline-flex cursor-pointer items-center gap-2">
-									<input type="checkbox" :checked="hasToolRestriction(agent)"
-										class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-										@change="setToolRestriction(agent, ($event.target as HTMLInputElement).checked)" />
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
-								</label>
-								<p class="pl-6 text-xs leading-5 text-gray-400 dark:text-gray-500">
-									When checked, only the selected tools are visible to this agent.
-								</p>
-							</div>
-
-							<div v-if="hasToolRestriction(agent) && toolGroupEntries.length" class="mt-3 space-y-2">
-								<div v-for="[cat, catTools] in toolGroupEntries" :key="cat"
-									class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-									:class="!isAgentCategoryAccessible(agent, cat) ? 'opacity-50' : ''"
-									:data-testid="`agent-tool-group-${agent.name || i}-${cat}`">
-									<label class="mb-2 flex cursor-pointer items-center gap-2">
-										<input type="checkbox" :checked="isCategoryFullyEnabled(agent, cat)"
-											:indeterminate="isCategoryPartiallyEnabled(agent, cat)"
-											:disabled="!isAgentCategoryAccessible(agent, cat)"
-											:data-testid="`agent-tool-group-checkbox-${agent.name || i}-${cat}`"
-											class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-											@change="toggleCategory(agent, cat, ($event.target as HTMLInputElement).checked)" />
-										<span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-											{{ toolCategoryLabel(cat) }}
-										</span>
-									</label>
-									<div class="flex flex-wrap gap-x-5 gap-y-1.5 pl-6">
-										<label v-for="tool in catTools" :key="tool.name" class="flex cursor-pointer items-center gap-1.5"
-											:class="!isAgentToolAccessible(agent, tool.name) ? 'opacity-50' : ''">
-											<input type="checkbox" :checked="isToolEnabled(agent, tool.name)"
-												:disabled="!isAgentToolAccessible(agent, tool.name)"
-												:data-testid="`agent-tool-checkbox-${agent.name || i}-${tool.name}`"
-												class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-												@change="toggleTool(agent, tool.name, ($event.target as HTMLInputElement).checked)" />
-											<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ tool.name }}</span>
-										</label>
-									</div>
-								</div>
-							</div>
-
-							<p v-if="hasToolRestriction(agent) && !toolGroupEntries.length"
-								class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-								No tools found. The server may not be reachable.
-							</p>
-
-							<div class="mt-4">
-								<label class="field-label">Disabled tools</label>
-								<ModelSelector :model-value="agent.permissions?.disabled_tools ?? []"
-									:options="availableToolNamesForAgent(agent)" multiple
-									placeholder="Exclude tools after restrict tools…" empty-text="No matching tools found"
-									@update:model-value="
-										agent.permissions = {
-											...(agent.permissions ?? {}),
-											disabled_tools: Array.isArray($event) ? $event : [],
-										}
-										" />
-								<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-									Applied after the inclusive tool list. Disabled tools always win.
-								</p>
-							</div>
-
-							<div class="mt-4">
-								<button type="button" :data-testid="`agent-tool-permissions-inspect-${agent.name || i}`"
-									class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									@click="openToolInspectionModal(agentInspectionTitle(agent, i), agentToolResolution(agent))">Inspect
-									tool permissions</button>
-							</div>
-
-							<div class="mt-4">
-								<label class="field-label">Filesystem Allowed Paths</label>
-								<textarea :value="agentFilesystemAllowedPaths(agent)" class="field-input min-h-24 font-mono text-xs"
-									placeholder="@/**&#10;!@/token&#10;./docs/**"
-									@change="setAgentFilesystemAllowedPaths(agent, $event)" />
-								<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-									One rule per line. Rules are ordered; prefix with <code>!</code> to deny. <code>~</code> means home,
-									<code>@</code> means Aviary config dir.
-								</p>
-							</div>
-
-							<div class="mt-4 space-y-3">
-								<div>
-									<label class="field-label">Allowed Exec Commands</label>
-									<textarea :value="agentExecAllowedCommands(agent)" class="field-input min-h-24 font-mono text-xs"
-										placeholder="git status&#10;npm test&#10;python *.py&#10;!rm *"
-										@change="setAgentExecAllowedCommands(agent, $event)" />
-									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-										One ordered glob rule per line. Prefix with <code>!</code> to deny. The exec tool is unavailable
-										unless at least one allow rule is configured.
-									</p>
-								</div>
-
-								<div class="space-y-3">
-									<div>
-										<label class="field-label">Exec Shell Override (optional)</label>
-										<input :value="agent.permissions?.exec?.shell ?? ''" type="text"
-											class="field-input font-mono text-xs" :placeholder="execShellPlaceholder"
-											@change="setAgentExecShell(agent, $event)" />
-										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-											Overrides the shell used by the exec tool when command execution is permitted.
-										</p>
-									</div>
-									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input :checked="Boolean(agent.permissions?.exec?.shell_interpolate)" type="checkbox"
-											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-											@change="setAgentExecShellInterpolate(agent, ($event.target as HTMLInputElement).checked)" />
-										Enable shell interpolation
-									</label>
-								</div>
-							</div>
-						</div>
-
-						<!-- Channels subtab -->
-						<div v-show="selectedAgentSubtab === 'channels'" class="min-h-[60vh] space-y-4 p-5">
-							<div class="flex items-center justify-between">
-								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h4>
-								<button type="button"
-									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									@click="addChannel(i)">+ Add Channel</button>
-							</div>
-
-							<div v-if="!agent.channels?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No channels configured for this agent.
-							</div>
-
-							<div v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`"
-								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
-								<div class="flex flex-wrap items-center justify-between gap-3">
-									<div class="flex items-center gap-2">
-										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ k + 1 }}</h5>
-										<span :class="statusBadgeClass(isChannelEnabled(ch))">
-											{{ isChannelEnabled(ch) ? "Enabled" : "Disabled" }}
-										</span>
-									</div>
-									<div class="flex items-center gap-2">
-										<SwitchRoot
-											:checked="isChannelEnabled(ch)"
-											@update:checked="(v) => setChannelEnabled(ch, v)"
-											aria-label="Toggle channel enabled"
-											class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-											:class="isChannelEnabled(ch) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
-										>
-											<SwitchThumb
-												class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-												:class="isChannelEnabled(ch) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
-											/>
-										</SwitchRoot>
-										<button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
-									</div>
-								</div>
-								<p v-if="!isChannelEnabled(ch)" class="text-xs text-gray-500 dark:text-gray-400">
-									Disabled channels are not started and will not receive or send messages until re-enabled.
-								</p>
-								<div class="grid gap-3 lg:grid-cols-[160px_1fr]">
-									<div>
-										<label class="field-label">Type</label>
-										<select v-model="ch.type" class="field-input">
-											<option value="slack">slack</option>
-											<option value="discord">discord</option>
-											<option value="signal">signal</option>
-										</select>
-									</div>
-									<div>
-										<label class="field-label">{{ channelPrimaryLabel(ch) }}</label>
-										<input
-											v-model="ch.primary"
-											type="text"
-											class="field-input"
-											:placeholder="channelPrimaryPlaceholder(ch)"
-										/>
-										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-											{{ channelPrimaryHelp(ch) }}
-										</p>
-									</div>
-								</div>
-
-								<div class="grid gap-3 lg:grid-cols-2">
-									<div>
-										<label class="field-label">Channel model override (optional)</label>
-										<ModelSelector :model-value="ch.model ?? ''" :options="availableModelOptions"
-											placeholder="Default agent model"
-											@update:model-value="ch.model = typeof $event === 'string' ? ($event || undefined) : undefined" />
-									</div>
-									<div>
-										<label class="field-label">Channel fallback overrides (optional)</label>
-										<ModelSelector :model-value="ch.fallbacks ?? []" :options="availableModelOptions" multiple
-											placeholder="Default agent fallbacks"
-											@update:model-value="ch.fallbacks = Array.isArray($event) ? $event : []" />
-									</div>
-								</div>
-
-								<div>
-									<label class="field-label">Channel disabled tools (optional)</label>
-									<ModelSelector :model-value="ch.disabled_tools ?? []" :options="availableToolNamesForAgent(agent)"
-										multiple placeholder="Exclude tools for this channel…" empty-text="No matching tools found"
-										@update:model-value="ch.disabled_tools = Array.isArray($event) ? $event : []" />
-									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-										Applied after any restrict-tools allow list for messages on this channel.
-									</p>
-									<div class="mt-3">
-										<button type="button" :data-testid="`channel-tool-permissions-inspect-${agent.name || i}-${k}`"
-											class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-											@click="openToolInspectionModal(channelInspectionTitle(agent, i, ch, k), channelToolResolution(agent, ch))">Inspect
-											tool permissions</button>
-									</div>
-								</div>
-
-								<!-- Allow From entries -->
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<span class="field-label">Allow From</span>
-										<button type="button"
-											class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-											@click="addAllowFrom(i, k)">+ Add Entry</button>
-									</div>
-									<div v-if="!ch.allow_from?.length"
-										class="rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-										No entries — all messages will be rejected.
-									</div>
-									<div v-for="(entry, ei) in ch.allow_from" :key="`af-${i}-${k}-${ei}`"
-										class="space-y-2 rounded border p-3 transition" :class="allowFromCardClass(entry)">
-										<div class="flex flex-wrap items-center justify-between gap-3">
-											<div class="flex items-center gap-2">
-												<span
-													class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Entry
-													{{ ei + 1 }}</span>
-												<span :class="statusBadgeClass(isAllowFromEnabled(entry))">
-													{{ isAllowFromEnabled(entry) ? "Enabled" : "Disabled" }}
-												</span>
-											</div>
-											<div class="flex items-center gap-2">
-												<SwitchRoot
-													:checked="isAllowFromEnabled(entry)"
-													@update:checked="(v) => setAllowFromEnabled(entry, v)"
-													aria-label="Toggle allow-from entry enabled"
-													class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-													:class="isAllowFromEnabled(entry) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
-												>
-													<SwitchThumb
-														class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-														:class="isAllowFromEnabled(entry) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
-													/>
-												</SwitchRoot>
-												<button type="button" class="danger-btn" @click="removeAllowFrom(i, k, ei)">Remove</button>
-											</div>
-										</div>
-										<p v-if="!isAllowFromEnabled(entry)" class="text-xs text-gray-500 dark:text-gray-400">
-											Disabled entries are ignored when Aviary checks who can message this agent.
-										</p>
-										<div class="grid gap-2 lg:grid-cols-[1fr_auto]">
-											<div>
-												<label class="field-label">From (*, user ID, phone number — comma-separated)</label>
-												<input v-model="entry.from" type="text" class="field-input" placeholder="*, +15551234567" />
-											</div>
-										</div>
-										<div class="grid gap-2 lg:grid-cols-2">
-											<div>
-												<label class="field-label">Allowed Groups (* or specific group IDs, comma-separated)</label>
-												<input v-model="entry.allowed_groups" type="text" class="field-input"
-													placeholder="Leave empty for DMs only, * for any group" />
-											</div>
-											<div></div>
-										</div>
-										<div class="grid gap-2 lg:grid-cols-2">
-											<div>
-												<label class="field-label">Mention Prefixes (comma-separated, case-insensitive)</label>
-												<input :value="entryMentionPrefixes(entry)" type="text" class="field-input"
-													placeholder="@bot, !help" @change="setEntryMentionPrefixes(entry, $event)" />
-											</div>
-											<div>
-												<label class="field-label">Exclude Prefixes (comma-separated, case-insensitive)</label>
-												<input :value="entryExcludePrefixes(entry)" type="text" class="field-input" placeholder="!, /"
-													@change="setEntryExcludePrefixes(entry, $event)" />
-											</div>
-										</div>
-										<div class="space-y-2 pt-1">
-											<label class="block cursor-pointer">
-												<div class="flex items-center gap-2">
-													<input type="checkbox" v-model="entry.respond_to_mentions"
-														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Respond to @mentions</span>
-												</div>
-												<p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Respond when the
-													bot is directly @mentioned in a group chat or DM.</p>
-											</label>
-											<label class="block cursor-pointer">
-												<div class="flex items-center gap-2">
-													<input type="checkbox" :checked="entry.mention_prefix_group_only !== false"
-														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-														@change="entry.mention_prefix_group_only = ($event.target as HTMLInputElement).checked ? undefined : false" />
-													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Group chats only</span>
-												</div>
-												<p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Mention prefix and
-													@mention filters only apply in group chats. DMs from allowed senders are always forwarded.</p>
-											</label>
-											<label class="block cursor-pointer">
-												<div class="flex items-center gap-2">
-													<input type="checkbox" :checked="entry.mention_prefix_group_only === false"
-														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-														@change="entry.mention_prefix_group_only = ($event.target as HTMLInputElement).checked ? false : undefined" />
-													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Require mention prefix in
-														DMs</span>
-												</div>
-												<p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Agent only
-													responds to direct messages if the message matches a mention prefix or @mention rule.</p>
-											</label>
-										</div>
-										<div class="grid gap-2 lg:grid-cols-2">
-											<div>
-												<label class="field-label">Model override (optional)</label>
-												<ModelSelector :model-value="entry.model ?? ''" :options="availableModelOptions"
-													placeholder="Default agent model"
-													@update:model-value="entry.model = typeof $event === 'string' ? ($event || undefined) : undefined" />
-											</div>
-											<div>
-												<label class="field-label">Fallback overrides (optional)</label>
-												<ModelSelector :model-value="entry.fallbacks ?? []" :options="availableModelOptions" multiple
-													placeholder="Default agent fallbacks"
-													@update:model-value="entry.fallbacks = Array.isArray($event) ? $event : []" />
-											</div>
-										</div>
-										<!-- Restrict Tools -->
-										<div>
-											<div class="mt-2 space-y-1.5">
-												<div class="flex flex-wrap items-center gap-3">
-													<label class="inline-flex cursor-pointer items-center gap-2">
-														<input type="checkbox" :checked="hasEntryToolRestriction(entry)"
-															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-															@change="setEntryToolRestriction(entry, ($event.target as HTMLInputElement).checked)" />
-														<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Restrict tools</span>
-													</label>
-													<button type="button"
-														:data-testid="`entry-tool-permissions-inspect-${agent.name || i}-${k}-${ei}`"
-														class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-														@click="openToolInspectionModal(entryInspectionTitle(agent, i, ch, k, entry, ei), entryToolResolution(agent, ch, entry))">Inspect
-														tool permissions</button>
-												</div>
-												<p class="pl-6 text-xs leading-5 text-gray-400 dark:text-gray-500">When checked, only the
-													selected tools are available for this entry (overrides agent defaults).</p>
-											</div>
-											<div v-if="hasEntryToolRestriction(entry) && toolGroupEntries.length" class="mt-3 space-y-2">
-												<div v-for="[cat, catTools] in toolGroupEntries" :key="cat"
-													class="rounded-lg border border-gray-200 p-3 dark:border-gray-700" :class="draft.agents[i] && !isAgentCategoryAccessible(draft.agents[i], cat)
-														? 'opacity-50'
-														: ''
-														">
-													<label class="mb-2 flex cursor-pointer items-center gap-2">
-														<input type="checkbox" :checked="isEntryCategoryFullyEnabled(entry, cat)"
-															:indeterminate="isEntryCategoryPartiallyEnabled(entry, cat)"
-															:disabled="draft.agents[i] && !isAgentCategoryAccessible(draft.agents[i], cat)"
-															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-															@change="toggleEntryCategory(entry, cat, ($event.target as HTMLInputElement).checked)" />
-														<span
-															class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-															{{ toolCategoryLabel(cat) }}
-														</span>
-													</label>
-													<div class="flex flex-wrap gap-x-5 gap-y-1.5 pl-6">
-														<label v-for="tool in catTools" :key="tool.name"
-															class="flex cursor-pointer items-center gap-1.5" :class="draft.agents[i] && !isAgentToolAccessible(draft.agents[i], tool.name)
-																? 'opacity-50'
-																: ''
-																">
-															<input type="checkbox" :checked="isEntryToolEnabled(entry, tool.name)"
-																:disabled="draft.agents[i] && !isAgentToolAccessible(draft.agents[i], tool.name)"
-																:data-testid="`entry-tool-checkbox-${agent.name || i}-${k}-${ei}-${tool.name}`"
-																class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-																@change="toggleEntryTool(entry, tool.name, ($event.target as HTMLInputElement).checked)" />
-															<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ tool.name }}</span>
-														</label>
-													</div>
-												</div>
-											</div>
-											<p v-if="hasEntryToolRestriction(entry) && !toolGroupEntries.length"
-												class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-												No tools found. The server may not be reachable.
-											</p>
-										</div>
-									</div>
-								</div>
-
-								<div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
-									<div>
-										<label class="field-label">Integration ID</label>
-										<input v-model="ch.id" type="text" class="field-input" placeholder="workspace-bot" />
-									</div>
-									<div>
-										<label class="field-label">App-Level Token (xapp-…)</label>
-										<input v-model="ch.url" type="text" class="field-input" placeholder="xapp-..." />
-									</div>
-									<div>
-										<label class="field-label">Bot Token (xoxb-…)</label>
-										<input v-model="ch.token" type="text" class="field-input" placeholder="xoxb-..." />
-									</div>
-									<div class="lg:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-950/40">
-										<div class="flex flex-wrap items-center justify-between gap-3">
-											<div>
-												<div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Workspace Channels</div>
-												<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use your bot token to validate the Slack workspace and load visible channels for task routing.</p>
-											</div>
-											<button
-												type="button"
-												class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-												:disabled="!ch.token || slackWorkspaceState(i, k).loading"
-												@click="browseSlackChannels(i, k, ch)"
-											>
-												{{ slackWorkspaceState(i, k).loading ? "Loading…" : "Browse Channels" }}
-											</button>
-										</div>
-										<p v-if="slackWorkspaceState(i, k).error" class="mt-3 text-xs text-red-600 dark:text-red-400">
-											{{ slackWorkspaceState(i, k).error }}
-										</p>
-										<p v-else-if="slackWorkspaceState(i, k).result" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-											Connected to {{ slackWorkspaceState(i, k).result?.team_name || "Slack" }} with {{ slackVisibleChannels(i, k).length }} visible channels.
-										</p>
-										<div v-if="slackVisibleChannels(i, k).length" class="mt-3 max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
-											<div
-												v-for="workspaceChannel in slackVisibleChannels(i, k)"
-												:key="workspaceChannel.id"
-												class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 px-3 py-2 dark:border-gray-800"
-											>
-												<div class="min-w-0">
-													<div class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
-														#{{ workspaceChannel.name }}
-													</div>
-													<div class="font-mono text-[11px] text-gray-500 dark:text-gray-400">
-														{{ workspaceChannel.id }}
-													</div>
-												</div>
-												<div class="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-													<span v-if="workspaceChannel.is_private" class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">Private</span>
-													<span v-if="workspaceChannel.is_member" class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Joined</span>
-													<span v-if="workspaceChannel.num_members" class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{{ workspaceChannel.num_members }} members</span>
-												</div>
-											</div>
-										</div>
-										<p v-else-if="slackWorkspaceState(i, k).result" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-											No visible channels were returned for this bot token.
-										</p>
-									</div>
-								</div>
-
-								<div v-if="ch.type === 'discord'" class="grid gap-3 lg:grid-cols-2">
-									<div>
-										<label class="field-label">Channel ID</label>
-										<input v-model="ch.id" type="text" class="field-input" placeholder="server-bot" />
-									</div>
-									<div>
-										<label class="field-label">Bot Token</label>
-										<input v-model="ch.token" type="text" class="field-input" placeholder="Discord bot token" />
-									</div>
-								</div>
-
-								<div v-if="ch.type === 'signal'" class="grid gap-3 lg:grid-cols-2">
-									<div>
-										<label class="field-label">Channel ID (E.164)</label>
-										<input v-model="ch.id" type="text" class="field-input" placeholder="+15551234567" />
-									</div>
-									<div>
-										<label class="field-label">signal-cli Daemon Address</label>
-										<input v-model="ch.url" type="text" class="field-input" placeholder="127.0.0.1:7583" />
-									</div>
-								</div>
-
-								<div class="flex flex-wrap gap-4 pt-1">
-									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.show_typing"
-											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-										Show typing indicator
-									</label>
-									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.reply_to_replies"
-											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-										Reply to replies
-									</label>
-									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.react_to_emoji"
-											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-										React to emojis
-									</label>
-									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.send_read_receipts"
-											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-										Send read receipts
-									</label>
-								</div>
-								<div class="flex items-center gap-2 pt-1">
-									<label class="text-xs text-gray-600 dark:text-gray-400">Group chat history:</label>
-									<input type="number" v-model.number="ch.group_chat_history" min="-1" step="1" placeholder="50"
-										class="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
-									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
-								</div>
-							</div>
-						</div>
-
-						<!-- Tasks subtab -->
-						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
-							<div class="flex items-center justify-between">
-								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
-							</div>
-
-
-							<div v-if="!agent.tasks?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No tasks configured for this agent.
-							</div>
-
-<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-<!-- Left: list of tasks -->
-<div class="min-w-0">
-<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-<div v-if="agent.tasks?.length" class="space-y-1">
-<div v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" class="flex items-center gap-1">
-<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
-<span class="truncate">{{ task.name || `Task ${j + 1}` }}</span>
-</button>
-
-<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete task" @click="promptDeleteTask(i, j, task.name)">
-<!-- Heroicons outline trash -->
-<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 6h18" />
-<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-<path d="M10 11v6" />
-<path d="M14 11v6" />
-<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-</svg>
-</button>
-
-</div>
-
-</div>
-<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
-
-<div class="flex gap-1.5 mt-2">
-<input v-model="newTaskNameMap[agent.name || i]" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" placeholder="task-name" />
-<button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!agent.name" @click="createTaskFromName(i)">+</button>
-</div>
-</div>
-<div class="mt-2"></div>
-</div>
-
-<!-- Right: single editor for selected task -->
-<div>
-<div v-if="selectedTask">
-								<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-									<div class="min-w-0">
-										<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-											<span v-if="!isTaskEnabled(selectedTask)" class="flex-shrink-0 rounded-full bg-red-50 px-3 py-1 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">disabled</span>
-											<span class="flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium"
-												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
-												{{ selectedTask.type }}</span>
-											<span class="min-w-0 max-w-full rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-												<span class="block truncate sm:inline">Defined in: {{ taskDefinedIn(selectedTask) }}</span>
-											</span>
-										</div>
-									</div>
-									<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
-										<label class="inline-flex min-w-0 items-center gap-2">
-	<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
-	<SwitchRoot
-		:checked="isTaskEnabled(selectedTask)"
-		@update:checked="setSelectedTaskEnabled"
-		aria-label="Toggle task enabled"
-		class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-		:class="isTaskEnabled(selectedTask) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
-	>
-		<SwitchThumb
-			class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-			:class="isTaskEnabled(selectedTask) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
-		/>
-	</SwitchRoot>
-</label>
-									</div>
-								</div>
-
-								<div class="grid gap-3 lg:grid-cols-3">
-<div>
-<label class="field-label">Task name</label>
-<input v-model="selectedTask.name" type="text" class="field-input font-mono" placeholder="daily-briefing"
-	@focus="onTaskNameFocus" @blur="onTaskNameBlur" :disabled="renamingTask" />
-</div>
-<div>
-<label class="field-label">Task type</label>
-<select v-model="selectedTask.type" class="field-input">
-<option value="prompt">Prompt</option>
-<option value="script">Script</option>
-</select>
-</div>
-<div>
-<label class="field-label">Schedule</label>
-<input v-model="selectedTask.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
-</div>
-</div>
-
-<div class="grid gap-3 lg:grid-cols-2 mt-3">
-<div>
-<label class="field-label">Watch</label>
-<input v-model="selectedTask.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
-</div>
-<div>
-<label class="field-label">Send Via</label>
-<select :value="taskChannelSelection(selectedTask)" class="field-input" @change="setTaskChannelSelection(selectedTask, $event)">
-<option value="">silent</option>
-<option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
-</select>
-</div>
-</div>
-
-<div v-if="taskChannelSelection(selectedTask)" class="grid gap-3 lg:grid-cols-2 mt-3">
-<div>
-<label class="field-label">{{ taskDeliveryTargetLabel(agent, selectedTask) }}</label>
-<select
-	v-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
-	:value="selectedTaskTarget(selectedTask)"
-	class="field-input"
-	@change="setSelectedTaskTarget(selectedTask, ($event.target as HTMLSelectElement).value)"
->
-<option value="">Select a Slack channel…</option>
-<option v-for="channel in slackChannelsForTask(i, agent, selectedTask)" :key="channel.id" :value="channel.id">
-	#{{ channel.name }} · {{ channel.id }}
-</option>
-</select>
-<input
-	v-else
-	:value="selectedTaskTarget(selectedTask)"
-	type="text"
-	class="field-input"
-	:placeholder="slackTargetPlaceholder(agent, selectedTask)"
-	@input="setSelectedTaskTarget(selectedTask, ($event.target as HTMLInputElement).value)"
-/>
-</div>
-</div>
-
-<div class="mt-4">
-<label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
-<textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
-<div class="flex gap-2 mt-3">
-<!-- Move task to file -->
-<button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
-</div>
-</div>
-</div>
-<div v-else class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-Select a task to edit.
-</div>
-</div>
-</div>
-<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-<label class="flex cursor-pointer items-start gap-3">
-<input v-model="draft.scheduler.precompute_tasks" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute tasks
-<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs</span>
-</span>
-</label>
-</div>
-
-						</div>
-					</div>
-				</section>
-
-				<section v-show="activeTab === 'skills'" class="space-y-5 pb-8">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Installed
-								Skills</h3>
-							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bundled skills come from the Aviary binary.
-								Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code> and
-								<code class="font-mono">~/.agents/skills</code>.</p>
-							<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Search with <code class="font-mono">npx skills find</code>
-								or browse <a href="https://skills.sh/" target="_blank" rel="noreferrer"
-									class="underline underline-offset-2">skills.sh</a>. Example install:
-								<code class="font-mono">npx skills add --global -a universal 4ier/notion-cli</code>.</p>
-						</div>
-						<button type="button"
-							class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-							:disabled="skillsLoading" @click="loadInstalledSkills">
-							{{ skillsLoading ? "Loading…" : "Refresh Skills" }}
-						</button>
-					</div>
-
-					<div v-if="!installedSkills.length"
-						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-						No installed skills found.
-					</div>
-
-					<div v-for="skill in installedSkills" :key="skill.name"
-						class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-							<div class="min-w-0">
-								<div class="flex flex-wrap items-center gap-2">
-									<h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ skill.name }}</h4>
-									<span
-										class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ skill.source }}</span>
-									<span
-										:class="skillConfig(skill.name).enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'"
-										class="rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide">
-										{{ skillConfig(skill.name).enabled ? "enabled" : "disabled" }}
-									</span>
-								</div>
-								<p v-if="skill.description" class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-									{{ skill.description }}
-								</p>
-								<p class="mt-1 font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ skill.path }}</p>
-							</div>
-
-							<label
-								class="inline-flex cursor-pointer items-center gap-2 self-start pt-0.5 text-sm text-gray-700 md:justify-self-end dark:text-gray-300">
-								<input v-model="skillConfig(skill.name).enabled" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								Enabled
-							</label>
-						</div>
-
-						<div v-if="skillSettingEntries(skill).length" class="grid gap-4 lg:grid-cols-2">
-							<div v-for="[key, schema] in skillSettingEntries(skill)" :key="`${skill.name}-${key}`">
-								<label class="field-label">{{ skillSettingLabel(key, schema) }}</label>
-								<input v-if="skillSettingInputKind(schema) === 'string'" :value="skillStringSetting(skill.name, key)"
-									type="text" class="field-input" :placeholder="skillSettingPlaceholder(schema)"
-									@input="setSkillStringSetting(skill.name, key, $event)" />
-								<input v-else :value="skillArraySetting(skill.name, key)" type="text" class="field-input"
-									:placeholder="skillSettingPlaceholder(schema)"
-									@input="setSkillArraySetting(skill.name, key, $event)" />
-								<p v-if="typeof schema.description === 'string' && schema.description"
-									class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-									{{ schema.description }}
-								</p>
-							</div>
-						</div>
-					</div>
-				</section>
-
-				<section v-show="activeTab === 'sessions'" class="space-y-5 pb-8">
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Sessions
-						</h3>
-						<div class="grid gap-3 lg:grid-cols-[280px_auto_auto]">
-							<div>
-								<label class="field-label">Agent</label>
-								<select v-model="sessionAgent" class="field-input">
-									<option value="">Select agent</option>
-									<option v-for="agent in draft.agents" :key="`sess-${agent.name}`" :value="agent.name">{{ agent.name }}
-									</option>
-								</select>
-							</div>
-							<div class="flex items-end">
-								<button type="button"
-									class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									:disabled="!sessionAgent || sessionLoading"
-									@click="loadSessions">{{ sessionLoading ? 'Loading…' : 'Refresh Sessions' }}</button>
-							</div>
-							<div class="flex items-end">
-								<button type="button"
-									class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-									:disabled="!sessionAgent || sessionLoading" @click="createSession">+ Create Session</button>
-							</div>
-						</div>
-
-						<div class="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-							<table v-if="sessions.length" class="w-full text-sm">
-								<thead>
-									<tr
-										class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
-										<th class="px-3 py-2">Name</th>
-										<th class="px-3 py-2">ID</th>
-										<th class="px-3 py-2">Updated</th>
-										<th class="px-3 py-2">Actions</th>
-									</tr>
-								</thead>
-								<tbody>
-									<tr v-for="s in sessions" :key="s.id"
-										class="border-b border-gray-100 text-gray-700 dark:border-gray-800 dark:text-gray-300">
-										<td class="px-3 py-2">{{ s.name || '—' }}</td>
-										<td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ s.id.slice(-10) }}</td>
-										<td class="px-3 py-2 text-xs">{{ formatDate(s.updated_at) }}</td>
-										<td class="px-3 py-2">
-											<div class="flex items-center gap-2">
-												<button type="button" class="danger-btn" :disabled="!s.is_processing"
-													:class="!s.is_processing ? 'opacity-40 cursor-not-allowed' : ''"
-													@click="stopSession(s.id)">Stop</button>
-												<button type="button" class="danger-btn"
-													@click="removeTarget = s; removeTargetOpen = true">Remove</button>
-											</div>
-										</td>
-									</tr>
-								</tbody>
-							</table>
-							<div v-else class="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">No sessions found.</div>
-						</div>
-					</div>
-				</section>
-
-				<section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
-					<!-- Provider Authentication -->
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials
-						</h3>
-						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Configure authentication for LLM providers. OAuth
-							tokens are stored securely and refreshed automatically.</p>
-
-						<!-- Existing provider credentials -->
-						<div v-if="configuredProviders.length"
-							class="mb-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-							<table class="w-full text-xs">
-								<thead>
-									<tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
-										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Provider</th>
-										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Auth Type</th>
-										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
-										<th class="w-36 px-3 py-2"></th>
-									</tr>
-								</thead>
-								<tbody>
-									<tr v-for="entry in configuredProviders" :key="entry.key"
-										class="border-b border-gray-100 last:border-0 dark:border-gray-800">
-										<td class="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{{ entry.providerLabel }}</td>
-										<td class="px-3 py-2">
-											<span
-												:class="entry.authType === 'oauth' ? 'inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'">
-												{{ entry.authType === 'oauth' ? 'OAuth' : 'API Key' }}
-											</span>
-										</td>
-										<td class="px-3 py-2">
-											<span v-if="entry.authType === 'oauth'"
-												class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
-													fill="currentColor">
-													<path fill-rule="evenodd"
-														d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-														clip-rule="evenodd" />
-												</svg>
-												Authorized
-											</span>
-											<span v-else class="tracking-widest text-gray-400 dark:text-gray-500">••••••••</span>
-										</td>
-										<td class="px-3 py-2 text-right">
-											<div class="flex items-center justify-end gap-2">
-												<button v-if="entry.authType === 'oauth'" type="button"
-													class="text-xs text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
-													:disabled="oauthBusy" @click="reauthorizeProvider(entry.provider)">Re-authorize</button>
-												<button type="button"
-													class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
-													:title="`Remove ${entry.key}`" @click="deleteProviderCredential(entry.key)">
-													<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
-														fill="currentColor">
-														<path fill-rule="evenodd"
-															d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-															clip-rule="evenodd" />
-													</svg>
-												</button>
-											</div>
-										</td>
-									</tr>
-								</tbody>
-							</table>
-						</div>
-
-						<!-- Add provider credential -->
-						<div v-if="availableProviderOptions.length" class="flex flex-wrap items-center gap-2">
-							<select v-model="providerAddSelection" class="field-input max-w-[220px]">
-								<option value="">Add provider…</option>
-								<option v-for="opt in availableProviderOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</option>
-							</select>
-							<template v-if="providerAddSelection">
-								<template v-if="providerAddSelection.endsWith(':apikey')">
-									<input v-model="providerApiKeyValue" type="password" class="field-input max-w-[260px]"
-										placeholder="API key…" />
-									<button type="button"
-										class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-										:disabled="!providerApiKeyValue.trim()" @click="addProviderApiKey">Add</button>
-								</template>
-								<button v-else type="button"
-									class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-									:disabled="oauthBusy" @click="addProviderOAuth">
-									{{ oauthBusy ? 'Authorizing…' : 'Authorize' }}
-								</button>
-							</template>
-						</div>
-						<p v-else-if="!configuredProviders.length" class="text-xs text-gray-400 dark:text-gray-500">No providers
-							configured yet.
-							Use the dropdown above to add one.</p>
-
-						<!-- Anthropic two-step OAuth inline form -->
-						<div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">Open the link below, sign in, and paste the code
-								shown:</p>
-							<a :href="anthropicUrl" target="_blank" rel="noreferrer"
-								class="block truncate text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ anthropicUrl }}</a>
-							<div class="flex gap-2">
-								<input v-model="anthropicCode" type="text" class="field-input" placeholder="Paste code here…" />
-								<button type="button"
-									class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-									:disabled="oauthBusy || !anthropicCode.trim()" @click="completeAnthropic">Complete</button>
-							</div>
-						</div>
-
-						<!-- GitHub Copilot device-flow inline form -->
-						<div v-if="copilotUserCode" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								Visit <a :href="copilotVerifyUrl" target="_blank" rel="noreferrer"
-									class="text-blue-600 hover:underline dark:text-blue-400">{{ copilotVerifyUrl }}</a>
-								and enter this code:
-							</p>
-							<div class="flex items-center justify-center rounded-md bg-gray-50 py-2 dark:bg-gray-800">
-								<span class="font-mono text-lg font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
-							</div>
-							<button type="button"
-								class="w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
-								:disabled="oauthBusy" @click="completeCopilot">
-								{{ oauthBusy ? 'Waiting for authorization…' : "I\'ve authorized — Complete" }}
-							</button>
-						</div>
-					</div>
-
-					<!-- Extra Secrets -->
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Extra
-							Secrets</h3>
-						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Store arbitrary secrets for use by tools and agents
-							(e.g. a
-							Brave API key or Twilio auth token).</p>
-						<div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-							<table class="w-full text-xs">
-								<thead>
-									<tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
-										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Name</th>
-										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Value</th>
-										<th class="w-8 px-3 py-2"></th>
-									</tr>
-								</thead>
-								<tbody>
-									<tr class="border-b border-gray-200 dark:border-gray-700">
-										<td class="px-2 py-1.5">
-											<input v-model="secretName" type="text" class="field-input py-1.5 font-mono text-xs"
-												placeholder="brave_api_key" />
-										</td>
-										<td class="px-2 py-1.5">
-											<input v-model="secretValue" type="password" class="field-input py-1.5 text-xs" placeholder="…" />
-										</td>
-										<td class="px-2 py-1.5">
-											<button type="button"
-												class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
-												@click="addSecret">Add</button>
-										</td>
-									</tr>
-									<tr v-for="name in extraSecrets" :key="name"
-										class="border-b border-gray-100 last:border-0 dark:border-gray-800">
-										<td class="px-3 py-2 font-mono text-gray-700 dark:text-gray-300">{{ name }}</td>
-										<td class="px-3 py-2 tracking-widest text-gray-400 dark:text-gray-500">••••••••</td>
-										<td class="px-3 py-2 text-right">
-											<button type="button"
-												class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
-												:title="`Delete ${name}`" @click="deleteSecret(name)">
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
-													fill="currentColor">
-													<path fill-rule="evenodd"
-														d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-														clip-rule="evenodd" />
-												</svg>
-											</button>
-										</td>
-									</tr>
-									<tr v-if="!extraSecrets.length">
-										<td colspan="3" class="px-3 py-3 text-center text-gray-400 dark:text-gray-500">No extra secrets
-											stored yet.
-										</td>
-									</tr>
-								</tbody>
-							</table>
-						</div>
-						<button type="button"
-							class="mt-2 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-							@click="refreshCredentials">↻ Refresh</button>
-					</div>
-
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Token</h3>
-						<p class="text-xs text-gray-500 dark:text-gray-400">
-							The Aviary token authenticates access to the web UI and API. To rotate it, run the command below in your
-							terminal.
-							Regenerating the token signs out existing sessions and clients using the old token.
-						</p>
-						<div
-							class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-200">
-							aviary token --new
-						</div>
-					</div>
-				</section>
 
 			</div>
 		</div>
@@ -1537,14 +226,25 @@ import {
 	AlertDialogPortal,
 	AlertDialogRoot,
 	AlertDialogTitle,
-	SwitchRoot,
-	SwitchThumb,
 } from "radix-vue";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+	computed,
+	nextTick,
+	onMounted,
+	onUnmounted,
+	provide,
+	proxyRefs,
+	ref,
+	watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import FancySelect from "../components/FancySelect.vue";
-import ModelSelector from "../components/ModelSelector.vue";
+import { settingsViewContextKey } from "../components/settings/context";
+import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
+import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
+import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
+import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
+import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
@@ -4179,22 +2879,167 @@ async function completeAnthropic() {
 		oauthBusy.value = false;
 	}
 }
+
+const settingsContext = proxyRefs({
+	activeTab,
+	addAgent,
+	addAllowFrom,
+	addChannel,
+	addProviderApiKey,
+	addProviderOAuth,
+	addSecret,
+	addTask,
+	agentExecAllowedCommands,
+	agentFileEditorState,
+	agentFilesystemAllowedPaths,
+	agentInspectionTitle,
+	agentPermissionsPreset,
+	agentToolResolution,
+	allowFromCardClass,
+	anthropicCode,
+	anthropicUrl,
+	availableModelOptions,
+	availableProviderOptions,
+	availableToolNamesForAgent,
+	availableToolsForAgent,
+	browseSlackChannels,
+	canDeleteAgentFile,
+	cdpPortInput,
+	channelCardClass,
+	channelInspectionTitle,
+	channelPrimaryHelp,
+	channelPrimaryLabel,
+	channelPrimaryPlaceholder,
+	channelToolResolution,
+	compileToastVisible,
+	completeAnthropic,
+	completeCopilot,
+	concurrencyInput,
+	configuredChannelLabel,
+	configuredProviders,
+	configuredTaskChannelOptions,
+	convertTaskToScript,
+	createAgentFile,
+	createSession,
+	createTaskFromName,
+	deleteProviderCredential,
+	deleteSecret,
+	draft,
+	entryExcludePrefixes,
+	entryInspectionTitle,
+	entryMentionPrefixes,
+	entryToolResolution,
+	execShellPlaceholder,
+	extraSecrets,
+	formatDate,
+	getAgentFileState,
+	hasEntryToolRestriction,
+	hasToolRestriction,
+	installedSkills,
+	isAgentCategoryAccessible,
+	isAgentToolAccessible,
+	isAllowFromEnabled,
+	isCategoryFullyEnabled,
+	isCategoryPartiallyEnabled,
+	isChannelEnabled,
+	isEntryCategoryFullyEnabled,
+	isEntryCategoryPartiallyEnabled,
+	isEntryToolEnabled,
+	isProtectedAgentFile,
+	isTaskEnabled,
+	isToolEnabled,
+	loadAgentFiles,
+	loadInstalledSkills,
+	loadSessions,
+	moveTaskToFile,
+	newTaskNameMap,
+	oauthBusy,
+	onAgentNameChange,
+	onTaskNameBlur,
+	onTaskNameFocus,
+	openToolInspectionModal,
+	PERMISSION_PRESET_OPTIONS,
+	promptDeleteAgentFile,
+	promptDeleteTask,
+	providerAddSelection,
+	providerApiKeyValue,
+	reauthorizeProvider,
+	refreshCredentials,
+	removeAgent,
+	removeAllowFrom,
+	removeChannel,
+	removeTarget,
+	removeTargetOpen,
+	removeTask,
+	renamingTask,
+	saveAgentFile,
+	secretName,
+	secretValue,
+	selectAgentFile,
+	selectedAgentAsSingletonList,
+	selectedAgentIdx,
+	selectedAgentSubtab,
+	selectedConfiguredChannel,
+	selectedConfiguredChannelIndex,
+	selectedTask,
+	selectedTaskIdx,
+	selectedTaskTarget,
+	serverPortInput,
+	sessionAgent,
+	sessionLoading,
+	sessions,
+	setAgentExecAllowedCommands,
+	setAgentExecShell,
+	setAgentExecShellInterpolate,
+	setAgentFilesystemAllowedPaths,
+	setAllowFromEnabled,
+	setChannelEnabled,
+	setEntryExcludePrefixes,
+	setEntryMentionPrefixes,
+	setEntryToolRestriction,
+	setSelectedTaskEnabled,
+	setSelectedTaskTarget,
+	setSkillArraySetting,
+	setSkillStringSetting,
+	setTaskChannelSelection,
+	setToolRestriction,
+	skillArraySetting,
+	skillConfig,
+	skillSettingEntries,
+	skillSettingInputKind,
+	skillSettingLabel,
+	skillSettingPlaceholder,
+	skillsLoading,
+	skillStringSetting,
+	slackChannelsForTask,
+	slackTargetPlaceholder,
+	slackVisibleChannels,
+	slackWorkspaceState,
+	startAnthropic,
+	statusBadgeClass,
+	stopSession,
+	syncAgentTemplates,
+	taskChannelSelection,
+	taskDefinedIn,
+	taskDeliveryTargetLabel,
+	toggleCategory,
+	toggleEntryCategory,
+	toggleEntryTool,
+	toggleTool,
+	toolCategoryLabel,
+	toolGroupEntries,
+	updateAgentPermissionsPreset,
+	updateCDPPortInput,
+	updateServerPortInput,
+	webSearchSecretOptions,
+	webSearchSecretSelection,
+});
+
+provide(settingsViewContextKey, settingsContext);
 </script>
 
 <style scoped>
 @reference "../style.css";
-
-.field-input {
-	@apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500;
-}
-
-.field-label {
-	@apply mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400;
-}
-
-.danger-btn {
-	@apply rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
-}
 
 .save-indicator-enter-active,
 .save-indicator-leave-active {
