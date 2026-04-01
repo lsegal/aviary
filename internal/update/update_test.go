@@ -2,7 +2,10 @@ package update
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
@@ -56,4 +59,64 @@ func TestInstallNoopWhenEmulated(t *testing.T) {
 	assert.True(t, result.Noop)
 	assert.True(t, result.Emulated)
 
+}
+
+func TestReplaceFileFallsBackToCopyOnCrossDeviceRename(t *testing.T) {
+	originalRename := renameFile
+	renameCalls := 0
+	renameFile = func(oldpath, newpath string) error {
+		renameCalls++
+		if renameCalls == 1 {
+			return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EXDEV}
+		}
+		return originalRename(oldpath, newpath)
+	}
+	t.Cleanup(func() { renameFile = originalRename })
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src-bin")
+	target := filepath.Join(dir, "target-bin")
+	assert.NoError(t, os.WriteFile(src, []byte("new binary"), 0o755))
+
+	err := replaceFile(src, target)
+	assert.NoError(t, err)
+
+	data, readErr := os.ReadFile(target)
+	assert.NoError(t, readErr)
+	assert.Equal(t, "new binary", string(data))
+	_, statErr := os.Stat(src)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestReplaceFileRestoresBackupWhenInstallFails(t *testing.T) {
+	originalRename := renameFile
+	renameCalls := 0
+	renameFile = func(oldpath, newpath string) error {
+		renameCalls++
+		switch renameCalls {
+		case 1:
+			return originalRename(oldpath, newpath)
+		case 2:
+			return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EXDEV}
+		case 3:
+			return errors.New("rename failed")
+		default:
+			return originalRename(oldpath, newpath)
+		}
+	}
+	t.Cleanup(func() { renameFile = originalRename })
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src-bin")
+	target := filepath.Join(dir, "target-bin")
+	assert.NoError(t, os.WriteFile(src, []byte("new binary"), 0o755))
+	assert.NoError(t, os.WriteFile(target, []byte("old binary"), 0o755))
+
+	err := replaceFile(src, target)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "rename failed")
+
+	data, readErr := os.ReadFile(target)
+	assert.NoError(t, readErr)
+	assert.Equal(t, "old binary", string(data))
 }

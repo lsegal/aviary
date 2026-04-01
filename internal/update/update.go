@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
@@ -78,6 +79,8 @@ var (
 	cacheMu     sync.RWMutex
 	cachedCheck CheckResult
 	cacheExpiry time.Time
+
+	renameFile = os.Rename
 )
 
 // ConfigureEmulation enables dev-only version emulation using <local>:<remote>.
@@ -400,18 +403,70 @@ func replaceFile(src, target string) error {
 	backup := target + ".bak"
 	_ = os.Remove(backup)
 	if _, err := os.Stat(target); err == nil {
-		if err := os.Rename(target, backup); err != nil {
+		if err := renameFile(target, backup); err != nil {
 			return fmt.Errorf("backing up existing binary: %w", err)
 		}
 	}
-	if err := os.Rename(src, target); err != nil {
+	if err := installBinary(src, target); err != nil {
 		if _, statErr := os.Stat(backup); statErr == nil {
-			_ = os.Rename(backup, target)
+			_ = renameFile(backup, target)
 		}
 		return fmt.Errorf("installing new binary: %w", err)
 	}
 	_ = os.Remove(backup)
 	return nil
+}
+
+func installBinary(src, target string) error {
+	if err := renameFile(src, target); err == nil {
+		return nil
+	} else if !isCrossDeviceRename(err) {
+		return err
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat source binary: %w", err)
+	}
+	tempTarget, err := os.CreateTemp(filepath.Dir(target), filepath.Base(target)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating staged binary: %w", err)
+	}
+	tempPath := tempTarget.Name()
+	defer os.Remove(tempPath) //nolint:errcheck
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		tempTarget.Close() //nolint:errcheck
+		return fmt.Errorf("opening source binary: %w", err)
+	}
+
+	if _, err := io.Copy(tempTarget, srcFile); err != nil {
+		srcFile.Close()    //nolint:errcheck
+		tempTarget.Close() //nolint:errcheck
+		return fmt.Errorf("copying source binary: %w", err)
+	}
+	if err := srcFile.Close(); err != nil {
+		tempTarget.Close() //nolint:errcheck
+		return fmt.Errorf("closing source binary: %w", err)
+	}
+	if err := tempTarget.Close(); err != nil {
+		return fmt.Errorf("closing staged binary: %w", err)
+	}
+	if err := os.Chmod(tempPath, info.Mode()); err != nil {
+		return fmt.Errorf("setting staged binary mode: %w", err)
+	}
+	if err := renameFile(tempPath, target); err != nil {
+		return err
+	}
+	if err := os.Remove(src); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing source binary: %w", err)
+	}
+	return nil
+}
+
+func isCrossDeviceRename(err error) bool {
+	return errors.Is(err, syscall.EXDEV)
 }
 
 func parseSemver(raw string) (parsedVersion, error) {
