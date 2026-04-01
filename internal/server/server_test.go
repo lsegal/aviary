@@ -850,6 +850,15 @@ func TestServerSettingsChanged(t *testing.T) {
 
 	})
 
+	t.Run("external_access env override suppresses yaml-only changes", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS", "true")
+		other := &config.Config{}
+		other.Server.Port = 16677
+		other.Server.ExternalAccess = true
+		assert.False(t, serverSettingsChanged(base, other))
+
+	})
+
 	t.Run("tls cert changed", func(t *testing.T) {
 		cfgA := &config.Config{}
 		cfgA.Server.TLS = &config.TLSConfig{Cert: "a.pem", Key: "a.key"}

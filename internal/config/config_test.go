@@ -25,6 +25,31 @@ func TestDefault(t *testing.T) {
 
 }
 
+func TestEffectiveServerExternalAccess(t *testing.T) {
+	t.Run("defaults to yaml value when env unset", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS", "")
+		assert.False(t, EffectiveServerExternalAccess(ServerConfig{}))
+		assert.True(t, EffectiveServerExternalAccess(ServerConfig{ExternalAccess: true}))
+	})
+
+	t.Run("env true overrides yaml false", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS", "true")
+		assert.True(t, EffectiveServerExternalAccess(ServerConfig{}))
+		assert.True(t, EffectiveServerExternalAccess(ServerConfig{ExternalAccess: false}))
+	})
+
+	t.Run("env false overrides yaml true", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS", "false")
+		assert.False(t, EffectiveServerExternalAccess(ServerConfig{ExternalAccess: true}))
+	})
+
+	t.Run("invalid env falls back to yaml", func(t *testing.T) {
+		t.Setenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS", "definitely-not-a-bool")
+		assert.True(t, EffectiveServerExternalAccess(ServerConfig{ExternalAccess: true}))
+		assert.False(t, EffectiveServerExternalAccess(ServerConfig{}))
+	})
+}
+
 func TestDefaultPath(t *testing.T) {
 	t.Run("xdg", func(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join("C:\\", "tmp", "cfg"))

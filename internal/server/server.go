@@ -408,7 +408,7 @@ func (s *Server) listen() (net.Listener, error) {
 	}
 
 	host := "127.0.0.1"
-	if s.cfg.Server.ExternalAccess {
+	if config.EffectiveServerExternalAccess(s.cfg.Server) {
 		host = "0.0.0.0"
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
@@ -480,7 +480,7 @@ func tlsConfigChanged(a, b *config.TLSConfig) bool {
 // settings that require a restart (port, TLS mode, bind address).
 func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
 	return oldCfg.Server.Port != newCfg.Server.Port ||
-		oldCfg.Server.ExternalAccess != newCfg.Server.ExternalAccess ||
+		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server) ||
 		oldCfg.Server.NoTLS != newCfg.Server.NoTLS ||
 		tlsConfigChanged(oldCfg.Server.TLS, newCfg.Server.TLS)
 }

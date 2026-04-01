@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -344,6 +345,20 @@ func (s ServerConfig) EffectiveFailedTaskTimeout() time.Duration {
 		return DefaultFailedTaskTimeout
 	}
 	return d
+}
+
+// EffectiveServerExternalAccess returns whether the server should bind to
+// 0.0.0.0 instead of localhost. Resolution order is:
+// 1. AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS environment variable
+// 2. server.external_access from aviary.yaml
+// 3. default false
+func EffectiveServerExternalAccess(s ServerConfig) bool {
+	if raw := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS")); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			return parsed
+		}
+	}
+	return s.ExternalAccess
 }
 
 // EffectiveAgentModel returns the runtime model for an agent, preferring the
