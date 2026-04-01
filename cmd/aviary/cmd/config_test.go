@@ -101,6 +101,14 @@ func TestConfigSetKey_BrowserReuseTabs(t *testing.T) {
 	}
 }
 
+func TestConfigSetKey_ServerExternalAccess(t *testing.T) {
+	cfg := config.Default()
+	err := configSetKey(&cfg, "server.external_access", "true")
+	assert.NoError(t, err)
+
+	assert.True(t, cfg.Server.ExternalAccess)
+}
+
 func TestConfigSetKey_NestedModel(t *testing.T) {
 	cfg := config.Default()
 	err := configSetKey(&cfg, "models.defaults.model", "anthropic/claude-sonnet-4-5")
@@ -118,6 +126,7 @@ func TestConfigRoundtrip(t *testing.T) {
 		{"browser.profile_directory", "/aviary/profile"},
 		{"browser.cdp_port", "9444"},
 		{"browser.reuse_tabs", "false"},
+		{"server.external_access", "true"},
 		{"server.port", "8080"},
 	}
 	for _, s := range sets {

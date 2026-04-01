@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -168,18 +167,17 @@ func getInMap(m map[string]any, parts []string) (any, error) {
 	return getInMap(sub, parts[1:])
 }
 
-// setInMap navigates parts into m and sets the leaf to value,
-// inferring numeric types where possible.
+// setInMap navigates parts into m and sets the leaf to value, decoding the
+// scalar using YAML semantics so booleans, numbers, nulls, and collections
+// round-trip as typed config values.
 func setInMap(m map[string]any, parts []string, value string) error {
 	p := parts[0]
 	if len(parts) == 1 {
-		if n, err := strconv.Atoi(value); err == nil {
-			m[p] = n
-		} else if b, err := strconv.ParseBool(value); err == nil {
-			m[p] = b
-		} else {
-			m[p] = value
+		var decoded any
+		if err := yaml.Unmarshal([]byte(value), &decoded); err != nil {
+			return fmt.Errorf("invalid config value %q: %w", value, err)
 		}
+		m[p] = decoded
 		return nil
 	}
 	sub := m[p]
