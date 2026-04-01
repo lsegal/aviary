@@ -8,7 +8,7 @@ Currently supported channel systems are:
 - Discord
 - Signal
 
-You can configure channels either in `aviary.yaml` or in the control panel at **Settings -> Agents -> Channels**.
+You can configure channels either in `aviary.yaml` or in the control panel at **Settings > Agents > Channels**.
 
 For the exact `agents[].channels` schema, see the [Configuration Reference](/reference/config#agents-channels).
 
@@ -122,7 +122,7 @@ Slack-specific notes:
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
 - Slack apps connected through Events API and Socket Mode cannot emit typing indicators, including in DMs. `show_typing` is not supported on Slack.
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
-- In the control panel, **Settings -> Agents -> Channels -> Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
+- In the control panel, **Settings > Agents > Channels > Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
 ### Common Confusions
 
@@ -139,8 +139,17 @@ To make Discord work end to end:
 1. Create a new Discord application and add a bot user.
 2. Copy the bot token and store it directly in `token` or via an auth reference.
 3. In the bot settings, enable the **Message Content Intent** so Aviary can read guild-channel message text.
-4. Invite the bot to your server with permission to view channels, read message history, and send messages.
+4. Invite the bot to your server:
+  - Open **OAuth2 > URL Generator** in the Discord Developer Portal.
+  - Under **Scopes**, enable `bot`.
+  - Under **Bot Permissions**, enable `View Channels`, `Read Message History`, and `Send Messages`.
+  - Copy the generated URL, open it, choose the target server, and authorize the bot.
+  - If you prefer to build the URL yourself, use `https://discord.com/oauth2/authorize?client_id=<application-client-id>&scope=bot&permissions=68608`.
 5. Turn on Developer Mode in Discord so you can copy user IDs, server IDs, and channel IDs.
+
+To complete the invite successfully, your Discord user must be allowed to add bots to that server, which usually means having **Manage Server** or equivalent admin rights.
+
+After the bot is installed, make sure it can access the specific channels you want Aviary to read or answer in. On private or restricted channels, you may need to open the channel's permissions and explicitly grant the bot `View Channel`, `Read Message History`, and `Send Messages` there too.
 
 Example:
 
