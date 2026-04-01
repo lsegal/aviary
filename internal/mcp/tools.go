@@ -54,6 +54,7 @@ var (
 // deleteAgentMarkdownFile is an indirection for deleting agent markdown files
 // so tests can simulate edge conditions (e.g. file-not-exist races).
 var deleteAgentMarkdownFile = store.DeleteAgentMarkdownFile
+var listSlackWorkspaceChannels = channels.ListSlackWorkspaceChannels
 
 const maxInlineSessionMediaBytes = 8 << 20
 
@@ -2619,6 +2620,21 @@ func registerAuthTools(s *sdkmcp.Server) {
 		}
 		reconcileAgents()
 		return text("GitHub Copilot login successful. Token stored as github-copilot:oauth.")
+	})
+
+	type slackChannelsListArgs struct {
+		BotToken string `json:"bot_token"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "slack_channels_list",
+		Description: "Validate a Slack bot token and list visible public/private channels in that workspace",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args slackChannelsListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		info, err := listSlackWorkspaceChannels(ctx, args.BotToken)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(info)
 	})
 }
 

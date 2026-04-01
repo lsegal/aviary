@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +66,54 @@ func (c *DiscordChannel) Send(channelID, text string) error {
 	return err
 }
 
+// SendAndGetID posts a message and returns the Discord message ID, which can
+// later be passed to EditMessage.
+func (c *DiscordChannel) SendAndGetID(channelID, text string) (string, error) {
+	if c.session == nil {
+		return "", fmt.Errorf("discord: not connected")
+	}
+	msg, err := c.session.ChannelMessageSend(channelID, text)
+	if err != nil {
+		return "", err
+	}
+	return msg.ID, nil
+}
+
+// EditMessage updates a previously posted Discord message in place.
+func (c *DiscordChannel) EditMessage(channelID, msgID, text string) error {
+	if c.session == nil {
+		return fmt.Errorf("discord: not connected")
+	}
+	_, err := c.session.ChannelMessageEditComplex(discordgo.NewMessageEdit(channelID, msgID).SetContent(text))
+	return err
+}
+
+// SendMedia sends a file attachment with an optional caption to a Discord channel.
+func (c *DiscordChannel) SendMedia(channelID, caption, filePath string) error {
+	if c.session == nil {
+		return fmt.Errorf("discord: not connected")
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return fmt.Errorf("discord: file path is required")
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close() //nolint:errcheck
+
+	name := filepath.Base(filePath)
+	_, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		Content: strings.TrimSpace(caption),
+		Files: []*discordgo.File{{
+			Name:   name,
+			Reader: file,
+		}},
+	})
+	return err
+}
+
 // Start opens the Discord WebSocket connection.
 func (c *DiscordChannel) Start(ctx context.Context) error {
 	s, err := discordgo.New("Bot " + c.token)
@@ -101,7 +151,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 		c.handleMessage(msg, c.discordBotUserID())
 	})
 
-	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
+	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
 	if err := s.Open(); err != nil {
 		return fmt.Errorf("discord: opening session: %w", err)
 	}

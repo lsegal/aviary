@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -456,6 +457,27 @@ func TestDiscordChannel_Send_NotConnected(t *testing.T) {
 
 }
 
+func TestDiscordChannel_SendAndGetID_NotConnected(t *testing.T) {
+	ch := NewDiscordChannel("t", nil, "m", nil)
+	_, err := ch.SendAndGetID("C123", "hello")
+	assert.Error(t, err)
+
+}
+
+func TestDiscordChannel_EditMessage_NotConnected(t *testing.T) {
+	ch := NewDiscordChannel("t", nil, "m", nil)
+	err := ch.EditMessage("C123", "M123", "hello")
+	assert.Error(t, err)
+
+}
+
+func TestDiscordChannel_SendMedia_NotConnected(t *testing.T) {
+	ch := NewDiscordChannel("t", nil, "m", nil)
+	err := ch.SendMedia("C123", "caption", "/tmp/file.png")
+	assert.Error(t, err)
+
+}
+
 func TestDiscordChannel_Stop_Idempotent(_ *testing.T) {
 	ch := NewDiscordChannel("t", nil, "m", nil)
 	ch.Stop()
@@ -518,6 +540,76 @@ func TestDiscordChannel_IngestsImageAttachment(t *testing.T) {
 	entries, err := os.ReadDir(store.IncomingMediaDir("discord"))
 	assert.NoError(t, err)
 	assert.Len(t, entries, 1)
+}
+
+func TestDiscordChannel_SendAndEditAndMedia(t *testing.T) {
+	var (
+		sendAuthHeader   string
+		sendBody         string
+		editBody         string
+		uploadAuthHeader string
+		uploadBody       string
+		uploadCT         string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v9/channels/C123/messages":
+			body, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			if strings.Contains(r.Header.Get("Content-Type"), "multipart/form-data") {
+				uploadAuthHeader = r.Header.Get("Authorization")
+				uploadBody = string(body)
+				uploadCT = r.Header.Get("Content-Type")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"M456"}`))
+				return
+			}
+			sendAuthHeader = r.Header.Get("Authorization")
+			sendBody = string(body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"M123"}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v9/channels/C123/messages/M123":
+			body, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			editBody = string(body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"M123"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	restore := overrideDiscordEndpointsForTest(srv.URL + "/")
+	defer restore()
+
+	session, err := discordgo.New("Bot test-token")
+	assert.NoError(t, err)
+	ch := NewDiscordChannel("token123", nil, "m", nil)
+	ch.session = session
+
+	msgID, err := ch.SendAndGetID("C123", "hello there")
+	assert.NoError(t, err)
+	assert.Equal(t, "M123", msgID)
+	assert.Equal(t, "Bot test-token", sendAuthHeader)
+	assert.Contains(t, sendBody, `"content":"hello there"`)
+
+	err = ch.EditMessage("C123", "M123", "updated text")
+	assert.NoError(t, err)
+	assert.Contains(t, editBody, `"content":"updated text"`)
+
+	filePath := filepath.Join(t.TempDir(), "image.png")
+	err = os.WriteFile(filePath, []byte("png-bytes"), 0o600)
+	assert.NoError(t, err)
+
+	err = ch.SendMedia("C123", "look at this", filePath)
+	assert.NoError(t, err)
+	assert.Equal(t, "Bot test-token", uploadAuthHeader)
+	assert.Contains(t, uploadCT, "multipart/form-data")
+	assert.Contains(t, uploadBody, "look at this")
+	assert.Contains(t, uploadBody, "image.png")
+	assert.Contains(t, uploadBody, "png-bytes")
 }
 
 func TestNewChannel_Discord(t *testing.T) {
@@ -625,6 +717,87 @@ func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
 	assert.Len(t, entries, 1)
 }
 
+func TestSlackChannel_AllowFromResolvesUserAndChannelNames(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From:          "@alice",
+		AllowedGroups: "#alerts",
+	}}, "m", nil)
+	ch.identityMu.Lock()
+	ch.userAliases = map[string]string{"@alice": "U123", "alice": "U123"}
+	ch.channelAliases = map[string]string{"alerts": "C123", "#alerts": "C123"}
+	ch.resolvedAllowFrom = ch.resolveAllowEntries(ch.allowFrom)
+	ch.identityMu.Unlock()
+
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User:    "U123",
+		Channel: "C123",
+		Text:    "hello",
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "U123", msg.From)
+	assert.Equal(t, "C123", msg.Channel)
+}
+
+func TestSlackChannel_SendResolvesChannelName(t *testing.T) {
+	var postedChannel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		switch r.URL.Path {
+		case "/chat.postMessage":
+			postedChannel = r.Form.Get("channel")
+			_, _ = w.Write([]byte(`{"ok":true,"channel":"C123","ts":"1710000000.000100","message":{"text":"hi"}}`))
+		default:
+			t.Fatalf("unexpected Slack API path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(server.URL+"/"))
+	ch.identityMu.Lock()
+	ch.channelAliases = map[string]string{"alerts": "C123"}
+	ch.identityMu.Unlock()
+
+	err := ch.Send("#alerts", "hi")
+	assert.NoError(t, err)
+	assert.Equal(t, "C123", postedChannel)
+}
+
+func TestSlackChannel_SendResolvesUsernameToDM(t *testing.T) {
+	var (
+		openUsers     string
+		postedChannel string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		switch r.URL.Path {
+		case "/conversations.open":
+			openUsers = r.Form.Get("users")
+			_, _ = w.Write([]byte(`{"ok":true,"channel":{"id":"D123"}}`))
+		case "/chat.postMessage":
+			postedChannel = r.Form.Get("channel")
+			_, _ = w.Write([]byte(`{"ok":true,"channel":"D123","ts":"1710000000.000100","message":{"text":"hi"}}`))
+		default:
+			t.Fatalf("unexpected Slack API path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(server.URL+"/"))
+	ch.identityMu.Lock()
+	ch.userAliases = map[string]string{"@alice": "U123", "alice": "U123"}
+	ch.identityMu.Unlock()
+
+	err := ch.Send("@alice", "hi")
+	assert.NoError(t, err)
+	assert.Equal(t, "U123", openUsers)
+	assert.Equal(t, "D123", postedChannel)
+}
+
 func TestNewChannel_Slack(t *testing.T) {
 	ch := newChannel(config.ChannelConfig{
 		Type:  "slack",
@@ -633,6 +806,34 @@ func TestNewChannel_Slack(t *testing.T) {
 	}, "model", nil)
 	assert.NotNil(t, ch)
 
+}
+
+func overrideDiscordEndpointsForTest(base string) func() {
+	origDiscord := discordgo.EndpointDiscord
+	origAPI := discordgo.EndpointAPI
+	origChannels := discordgo.EndpointChannels
+	origUsers := discordgo.EndpointUsers
+	origGateway := discordgo.EndpointGateway
+	origGatewayBot := discordgo.EndpointGatewayBot
+	origWebhooks := discordgo.EndpointWebhooks
+
+	discordgo.EndpointDiscord = base
+	discordgo.EndpointAPI = base + "api/v" + discordgo.APIVersion + "/"
+	discordgo.EndpointChannels = discordgo.EndpointAPI + "channels/"
+	discordgo.EndpointUsers = discordgo.EndpointAPI + "users/"
+	discordgo.EndpointGateway = discordgo.EndpointAPI + "gateway"
+	discordgo.EndpointGatewayBot = discordgo.EndpointGateway + "/bot"
+	discordgo.EndpointWebhooks = discordgo.EndpointAPI + "webhooks/"
+
+	return func() {
+		discordgo.EndpointDiscord = origDiscord
+		discordgo.EndpointAPI = origAPI
+		discordgo.EndpointChannels = origChannels
+		discordgo.EndpointUsers = origUsers
+		discordgo.EndpointGateway = origGateway
+		discordgo.EndpointGatewayBot = origGatewayBot
+		discordgo.EndpointWebhooks = origWebhooks
+	}
 }
 
 // ── Signal helper: single-request mock TCP server ────────────────────────────

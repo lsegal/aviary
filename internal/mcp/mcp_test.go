@@ -25,6 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -1465,6 +1466,30 @@ func TestAuthTools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, strings.Contains(out, "openai:default"))
 
+}
+
+func TestSlackChannelsListTool(t *testing.T) {
+	d, _ := setupMCPWithAuth(t)
+
+	prev := listSlackWorkspaceChannels
+	t.Cleanup(func() { listSlackWorkspaceChannels = prev })
+	listSlackWorkspaceChannels = func(_ context.Context, botToken string) (*channels.SlackWorkspaceInfo, error) {
+		assert.Equal(t, "xoxb-test", botToken)
+		return &channels.SlackWorkspaceInfo{
+			TeamID:    "T123",
+			TeamName:  "Aviary",
+			BotUserID: "U456",
+			Channels: []channels.SlackWorkspaceChannel{
+				{ID: "C111", Name: "alerts"},
+			},
+		}, nil
+	}
+
+	out, err := d.CallTool(context.Background(), "slack_channels_list", map[string]any{"bot_token": "xoxb-test"})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"team_name": "Aviary"`)
+	assert.Contains(t, out, `"id": "C111"`)
+	assert.Contains(t, out, `"name": "alerts"`)
 }
 
 func TestUsageQueryTool(t *testing.T) {

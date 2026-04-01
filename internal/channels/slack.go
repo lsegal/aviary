@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -24,13 +25,19 @@ type SlackChannel struct {
 	fallbacks     []string
 	disabledTools []string
 
-	botUserID string // populated on connect via auth.test
+	botUserID         string // populated on connect via auth.test
+	resolvedAllowFrom []config.AllowFromEntry
 
 	client          *slack.Client
 	sm              *socketmode.Client
 	handler         func(IncomingMessage)
 	groupLogHandler func(IncomingMessage)
 	handlerMu       sync.RWMutex
+	identityMu      sync.RWMutex
+	userAliases     map[string]string
+	userNames       map[string]string
+	channelAliases  map[string]string
+	channelNames    map[string]string
 	stopOnce        sync.Once
 	cancel          context.CancelFunc
 }
@@ -68,20 +75,32 @@ func (c *SlackChannel) OnGroupChatMessage(fn func(IncomingMessage)) {
 
 // Send posts a message to a Slack channel.
 func (c *SlackChannel) Send(channel, text string) error {
-	_, _, err := c.client.PostMessage(channel, slack.MsgOptionText(text, false))
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return err
+	}
+	_, _, err = c.client.PostMessage(resolvedChannel, slack.MsgOptionText(text, false))
 	return err
 }
 
 // SendAndGetID posts a message and returns the Slack message timestamp, which
 // serves as the message ID for EditMessage.
 func (c *SlackChannel) SendAndGetID(channel, text string) (string, error) {
-	_, timestamp, err := c.client.PostMessage(channel, slack.MsgOptionText(text, false))
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return "", err
+	}
+	_, timestamp, err := c.client.PostMessage(resolvedChannel, slack.MsgOptionText(text, false))
 	return timestamp, err
 }
 
 // EditMessage updates a previously posted Slack message in place.
 func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
-	_, _, _, err := c.client.UpdateMessage(channel, msgID, slack.MsgOptionText(text, false))
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return err
+	}
+	_, _, _, err = c.client.UpdateMessage(resolvedChannel, msgID, slack.MsgOptionText(text, false))
 	return err
 }
 
@@ -95,6 +114,9 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 		c.botUserID = resp.UserID
 	} else {
 		slog.Warn("slack: auth.test failed; direct-mention detection disabled", "err", err)
+	}
+	if err := c.refreshIdentityCache(ctx); err != nil {
+		slog.Warn("slack: failed to load users/channels; name-based routing disabled", "err", err)
 	}
 
 	go func() {
@@ -201,7 +223,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		}
 	}
 
-	result := checkAllowed(c.allowFrom, from, channelID, text, isGroup, c.botUserID, false)
+	result := checkAllowed(c.allowedEntries(), from, channelID, text, isGroup, c.botUserID, false)
 	if !result.allowed {
 		return
 	}
@@ -215,7 +237,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		im := IncomingMessage{
 			Type:          "slack",
 			From:          from,
-			SenderName:    from,
+			SenderName:    c.displayNameForUser(from),
 			Channel:       channelID,
 			Text:          text,
 			MediaURL:      mediaURL,
@@ -289,4 +311,198 @@ func parseSlackTimestamp(raw string) (time.Time, bool) {
 		}
 	}
 	return time.Unix(secVal, nsec).UTC(), true
+}
+
+func (c *SlackChannel) allowedEntries() []config.AllowFromEntry {
+	c.identityMu.RLock()
+	defer c.identityMu.RUnlock()
+	if len(c.resolvedAllowFrom) == 0 {
+		return c.allowFrom
+	}
+	return c.resolvedAllowFrom
+}
+
+func (c *SlackChannel) displayNameForUser(userID string) string {
+	c.identityMu.RLock()
+	defer c.identityMu.RUnlock()
+	if name := strings.TrimSpace(c.userNames[userID]); name != "" {
+		return name
+	}
+	return userID
+}
+
+func (c *SlackChannel) refreshIdentityCache(ctx context.Context) error {
+	users, err := c.client.GetUsersContext(ctx, slack.GetUsersOptionLimit(200))
+	if err != nil {
+		return fmt.Errorf("users.list: %w", err)
+	}
+	conversations, err := c.client.GetAllConversationsContext(
+		ctx,
+		slack.GetConversationsOptionTypes([]string{"public_channel", "private_channel"}),
+		slack.GetConversationsOptionExcludeArchived(true),
+		slack.GetConversationsOptionLimit(200),
+	)
+	if err != nil {
+		return fmt.Errorf("conversations.list: %w", err)
+	}
+
+	userAliases := map[string]string{}
+	userNames := map[string]string{}
+	for _, user := range users {
+		if strings.TrimSpace(user.ID) == "" || user.Deleted {
+			continue
+		}
+		userNames[user.ID] = firstNonEmpty(
+			strings.TrimSpace(user.Profile.DisplayName),
+			strings.TrimSpace(user.RealName),
+			strings.TrimSpace(user.Name),
+			user.ID,
+		)
+		for _, alias := range []string{
+			user.ID,
+			user.Name,
+			"@" + user.Name,
+			user.Profile.DisplayName,
+			"@" + user.Profile.DisplayName,
+			user.Profile.DisplayNameNormalized,
+			"@" + user.Profile.DisplayNameNormalized,
+			user.RealName,
+			user.Profile.RealNameNormalized,
+		} {
+			if normalized := normalizeSlackAlias(alias); normalized != "" {
+				userAliases[normalized] = user.ID
+			}
+		}
+	}
+
+	channelAliases := map[string]string{}
+	channelNames := map[string]string{}
+	for _, channel := range conversations {
+		if strings.TrimSpace(channel.ID) == "" {
+			continue
+		}
+		channelNames[channel.ID] = firstNonEmpty(
+			strings.TrimSpace(channel.Name),
+			strings.TrimSpace(channel.NameNormalized),
+			channel.ID,
+		)
+		for _, alias := range []string{
+			channel.ID,
+			channel.Name,
+			"#" + channel.Name,
+			channel.NameNormalized,
+			"#" + channel.NameNormalized,
+		} {
+			if normalized := normalizeSlackAlias(alias); normalized != "" {
+				channelAliases[normalized] = channel.ID
+			}
+		}
+	}
+
+	c.identityMu.Lock()
+	c.userAliases = userAliases
+	c.userNames = userNames
+	c.channelAliases = channelAliases
+	c.channelNames = channelNames
+	c.resolvedAllowFrom = c.resolveAllowEntries(c.allowFrom)
+	c.identityMu.Unlock()
+	return nil
+}
+
+func normalizeSlackAlias(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	return strings.TrimPrefix(value, "#")
+}
+
+func (c *SlackChannel) resolveAllowEntries(entries []config.AllowFromEntry) []config.AllowFromEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	resolved := make([]config.AllowFromEntry, 0, len(entries))
+	for _, entry := range entries {
+		entry.From = c.resolveAllowCSV(entry.From, true)
+		entry.AllowedGroups = c.resolveAllowCSV(entry.AllowedGroups, false)
+		resolved = append(resolved, entry)
+	}
+	return resolved
+}
+
+func (c *SlackChannel) resolveAllowCSV(raw string, allowUsers bool) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	seen := map[string]struct{}{}
+	values := make([]string, 0)
+	for _, part := range splitFrom(raw) {
+		for _, resolved := range c.expandSlackAlias(part, allowUsers) {
+			if _, ok := seen[resolved]; ok {
+				continue
+			}
+			seen[resolved] = struct{}{}
+			values = append(values, resolved)
+		}
+	}
+	return strings.Join(values, ",")
+}
+
+func (c *SlackChannel) expandSlackAlias(value string, allowUsers bool) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if value == "*" {
+		return []string{"*"}
+	}
+	out := []string{value}
+	normalized := normalizeSlackAlias(value)
+	if normalized == "" {
+		return out
+	}
+	if channelID, ok := c.channelAliases[normalized]; ok && channelID != value {
+		out = append(out, channelID)
+	}
+	if allowUsers {
+		if userID, ok := c.userAliases[normalized]; ok && userID != value {
+			out = append(out, userID)
+		}
+	}
+	return out
+}
+
+func (c *SlackChannel) resolveDeliveryTarget(ctx context.Context, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("slack delivery target is required")
+	}
+	c.identityMu.RLock()
+	channelID, hasChannel := c.channelAliases[normalizeSlackAlias(raw)]
+	userID, hasUser := c.userAliases[normalizeSlackAlias(raw)]
+	c.identityMu.RUnlock()
+
+	switch {
+	case hasChannel:
+		return channelID, nil
+	case strings.HasPrefix(raw, "C"), strings.HasPrefix(raw, "G"), strings.HasPrefix(raw, "D"):
+		return raw, nil
+	case hasUser:
+		return c.openDirectConversation(ctx, userID)
+	case strings.HasPrefix(raw, "U"), strings.HasPrefix(raw, "W"):
+		return c.openDirectConversation(ctx, raw)
+	default:
+		return raw, nil
+	}
+}
+
+func (c *SlackChannel) openDirectConversation(ctx context.Context, userID string) (string, error) {
+	channel, _, _, err := c.client.OpenConversationContext(ctx, &slack.OpenConversationParameters{
+		Users:    []string{userID},
+		ReturnIM: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("opening Slack DM with %s: %w", userID, err)
+	}
+	if channel == nil || strings.TrimSpace(channel.ID) == "" {
+		return "", fmt.Errorf("opening Slack DM with %s returned no channel", userID)
+	}
+	return channel.ID, nil
 }
