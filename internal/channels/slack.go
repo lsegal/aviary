@@ -40,6 +40,8 @@ type SlackChannel struct {
 	channelNames    map[string]string
 	stopOnce        sync.Once
 	cancel          context.CancelFunc
+	logSinkMu       sync.RWMutex
+	logSink         *LogSink
 }
 
 // NewSlackChannel creates a SlackChannel.
@@ -55,6 +57,23 @@ func NewSlackChannel(appToken, botToken string, allowFrom []config.AllowFromEntr
 		fallbacks: fallbacks,
 		client:    api,
 		sm:        sm,
+	}
+}
+
+// SetLogSink attaches a LogSink that receives Slack connection/runtime logs.
+func (c *SlackChannel) SetLogSink(s *LogSink) {
+	c.logSinkMu.Lock()
+	c.logSink = s
+	c.logSinkMu.Unlock()
+}
+
+func (c *SlackChannel) logf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	c.logSinkMu.RLock()
+	sink := c.logSink
+	c.logSinkMu.RUnlock()
+	if sink != nil {
+		sink.Write(time.Now().UTC().Format(time.RFC3339) + " " + line)
 	}
 }
 
@@ -108,15 +127,21 @@ func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
 func (c *SlackChannel) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	c.cancel = cancel
+	c.logf("slack: starting socket mode session")
 
 	// Fetch the bot's own user ID so we can detect direct @mentions in groups.
 	if resp, err := c.client.AuthTestContext(ctx); err == nil {
 		c.botUserID = resp.UserID
+		c.logf("slack: auth ok user_id=%s team=%s", resp.UserID, strings.TrimSpace(resp.Team))
 	} else {
+		c.logf("slack: auth.test failed: %v", err)
 		slog.Warn("slack: auth.test failed; direct-mention detection disabled", "err", err)
 	}
 	if err := c.refreshIdentityCache(ctx); err != nil {
+		c.logf("slack: failed to refresh users/channels: %v", err)
 		slog.Warn("slack: failed to load users/channels; name-based routing disabled", "err", err)
+	} else {
+		c.logf("slack: identity cache ready")
 	}
 
 	go func() {
@@ -126,6 +151,7 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 				return
 			case evt, ok := <-c.sm.Events:
 				if !ok {
+					c.logf("slack: event stream closed")
 					return
 				}
 				c.dispatch(evt)
@@ -133,12 +159,19 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 		}
 	}()
 
-	return c.sm.RunContext(ctx)
+	err := c.sm.RunContext(ctx)
+	if err != nil && ctx.Err() == nil {
+		c.logf("slack: socket mode exited with error: %v", err)
+	} else {
+		c.logf("slack: socket mode stopped")
+	}
+	return err
 }
 
 // Stop disconnects from Slack.
 func (c *SlackChannel) Stop() {
 	c.stopOnce.Do(func() {
+		c.logf("slack: stop requested")
 		if c.cancel != nil {
 			c.cancel()
 		}
@@ -146,6 +179,18 @@ func (c *SlackChannel) Stop() {
 }
 
 func (c *SlackChannel) dispatch(evt socketmode.Event) {
+	switch evt.Type {
+	case socketmode.EventTypeConnecting:
+		c.logf("slack: connecting")
+	case socketmode.EventTypeConnected:
+		c.logf("slack: connected")
+	case socketmode.EventTypeConnectionError:
+		c.logf("slack: connection error")
+	case socketmode.EventTypeInvalidAuth:
+		c.logf("slack: invalid auth")
+	case socketmode.EventTypeDisconnect:
+		c.logf("slack: disconnected")
+	}
 	if evt.Type != socketmode.EventTypeEventsAPI {
 		return
 	}
@@ -225,6 +270,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 
 	result := checkAllowed(c.allowedEntries(), from, channelID, text, isGroup, c.botUserID, false)
 	if !result.allowed {
+		c.logf("slack: ignored message from=%s channel=%s", from, channelID)
 		return
 	}
 
@@ -256,6 +302,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		}
 		fn(im)
 	} else {
+		c.logf("slack: no message handler registered for from=%s", from)
 		slog.Debug("slack: no handler registered", "from", from)
 	}
 }

@@ -121,8 +121,8 @@
               {{ d.error }}
             </div>
 
-            <!-- Log tail (for all channel daemons, not the aviary server itself) -->
-            <div v-if="d.type !== 'server'" class="mt-4">
+			<!-- Log tail (only for Aviary-managed subprocess daemons) -->
+			<div v-if="hasLogs(d)" class="mt-4">
               <button
                 class="flex w-full items-center gap-1.5 text-left text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 @click="toggleLogs(d.name)">
@@ -278,6 +278,10 @@ function restartTitle(d: Daemon): string {
 	return "Only Aviary-managed daemons can be restarted here";
 }
 
+function hasLogs(d: Daemon): boolean {
+	return d.type !== "server";
+}
+
 async function restartDaemon(d: Daemon) {
 	if (!canRestart(d) || restarting.value.has(d.name)) return;
 
@@ -309,10 +313,15 @@ async function restartDaemon(d: Daemon) {
 
 function displayName(d: Daemon): string {
 	if (d.type === "server") return "Aviary Server";
-	// key format: "agentName/type/index"
+	// key format: "agentName/type/configuredID"
 	const parts = d.name.split("/");
-	if (parts.length === 3)
-		return `${parts[0]} (${parts[1]} #${parseInt(parts[2], 10) + 1})`;
+	if (parts.length === 3) {
+		const configuredID = parts[2].trim();
+		if (configuredID) {
+			return `${parts[0]} (${parts[1]} ${configuredID})`;
+		}
+		return `${parts[0]} (${parts[1]})`;
+	}
 	return d.name;
 }
 

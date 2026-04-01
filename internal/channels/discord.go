@@ -29,6 +29,8 @@ type DiscordChannel struct {
 	handlerMu       sync.RWMutex
 	stopOnce        sync.Once
 	done            chan struct{}
+	logSinkMu       sync.RWMutex
+	logSink         *LogSink
 }
 
 // NewDiscordChannel creates a DiscordChannel with the given bot token.
@@ -39,6 +41,23 @@ func NewDiscordChannel(token string, allowFrom []config.AllowFromEntry, model st
 		model:     model,
 		fallbacks: fallbacks,
 		done:      make(chan struct{}),
+	}
+}
+
+// SetLogSink attaches a LogSink that receives Discord connection/runtime logs.
+func (c *DiscordChannel) SetLogSink(s *LogSink) {
+	c.logSinkMu.Lock()
+	c.logSink = s
+	c.logSinkMu.Unlock()
+}
+
+func (c *DiscordChannel) logf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	c.logSinkMu.RLock()
+	sink := c.logSink
+	c.logSinkMu.RUnlock()
+	if sink != nil {
+		sink.Write(time.Now().UTC().Format(time.RFC3339) + " " + line)
 	}
 }
 
@@ -116,8 +135,10 @@ func (c *DiscordChannel) SendMedia(channelID, caption, filePath string) error {
 
 // Start opens the Discord WebSocket connection.
 func (c *DiscordChannel) Start(ctx context.Context) error {
+	c.logf("discord: starting session")
 	s, err := discordgo.New("Bot " + c.token)
 	if err != nil {
+		c.logf("discord: creating session failed: %v", err)
 		return fmt.Errorf("discord: creating session: %w", err)
 	}
 	c.session = s
@@ -153,15 +174,25 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 
 	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
 	if err := s.Open(); err != nil {
+		c.logf("discord: opening session failed: %v", err)
 		return fmt.Errorf("discord: opening session: %w", err)
 	}
+	c.logf("discord: session connected")
 
 	// Block until context is done.
 	select {
 	case <-ctx.Done():
+		c.logf("discord: context cancelled")
 	case <-c.done:
+		c.logf("discord: stop requested")
 	}
-	return s.Close()
+	err = s.Close()
+	if err != nil {
+		c.logf("discord: close failed: %v", err)
+	} else {
+		c.logf("discord: session closed")
+	}
+	return err
 }
 
 // Stop disconnects from Discord.
@@ -213,6 +244,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 
 	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, false)
 	if !result.allowed {
+		c.logf("discord: ignored message from=%s channel=%s", msg.Author.ID, msg.ChannelID)
 		return false
 	}
 
@@ -241,6 +273,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		}
 		fn(im)
 	} else {
+		c.logf("discord: no message handler registered for from=%s", msg.Author.ID)
 		slog.Debug("discord: no handler registered", "from", msg.Author.ID)
 	}
 	return true

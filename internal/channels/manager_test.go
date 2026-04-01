@@ -645,10 +645,36 @@ func TestSlackChannel_Stop_NilCancel(_ *testing.T) {
 	ch.Stop() // idempotent
 }
 
+func TestSlackChannel_LogSinkWritesRuntimeMessages(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	sink := newLogSink()
+	ch.SetLogSink(sink)
+
+	ch.logf("slack: connected")
+
+	history, _, unsub := sink.Subscribe()
+	defer unsub()
+	assert.Len(t, history, 1)
+	assert.Contains(t, history[0], "slack: connected")
+}
+
 func TestSlackChannel_Dispatch_WrongType(_ *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
 	// Non-eventsAPI event type causes early return before Ack — no panic.
 	ch.dispatch(socketmode.Event{Type: socketmode.EventTypeHello})
+}
+
+func TestDiscordChannel_LogSinkWritesRuntimeMessages(t *testing.T) {
+	ch := NewDiscordChannel("token", nil, "m", nil)
+	sink := newLogSink()
+	ch.SetLogSink(sink)
+
+	ch.logf("discord: session connected")
+
+	history, _, unsub := sink.Subscribe()
+	defer unsub()
+	assert.Len(t, history, 1)
+	assert.Contains(t, history[0], "discord: session connected")
 }
 
 func TestSlackChannel_HandleEditedMention(t *testing.T) {

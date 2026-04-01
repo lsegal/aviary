@@ -56,6 +56,7 @@ test("daemon cards show restart controls and call restart API", async ({
 
 	const cards = page.locator(".grid > div.rounded-xl");
 	await expect(cards).toHaveCount(2);
+	await expect(cards.nth(1).getByText("bot (signal 0)")).toBeVisible();
 	await expect(
 		cards.nth(0).getByRole("button", { name: "Restart" }),
 	).toBeVisible();
@@ -65,6 +66,37 @@ test("daemon cards show restart controls and call restart API", async ({
 
 	await cards.nth(1).getByRole("button", { name: "Restart" }).click();
 	await expect.poll(() => restartCalls).toBe(1);
+});
+
+test("non-managed channels do not show empty logs panels or NaN labels", async ({
+	page,
+}) => {
+	await page.route("/api/daemons", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify([
+				{
+					name: "ony/slack/slack-main",
+					type: "slack",
+					started: "2026-03-11T00:00:00Z",
+					uptime: "5m",
+					cpu_percent: -1,
+					rss_bytes: 0,
+					status: "running",
+					managed: false,
+				},
+			]),
+		});
+	});
+
+	await page.goto("/daemons");
+
+	const card = page.locator(".grid > div.rounded-xl").first();
+	await expect(card.getByText("ony (slack slack-main)")).toBeVisible();
+	await expect(card.getByText("#NaN")).toHaveCount(0);
+	await expect(card.getByRole("button", { name: "Logs" })).toBeVisible();
+	await expect(card.getByText("No output yet…")).toHaveCount(0);
 });
 
 test("daemon list retries transient 500s before showing an error", async ({

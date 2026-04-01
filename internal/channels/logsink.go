@@ -5,8 +5,8 @@ import "sync"
 const logSinkCap = 500
 
 // LogSink is a thread-safe ring buffer of raw log lines that fans out to
-// live subscribers. It is used to capture stdout/stderr of managed daemon
-// subprocesses and stream them to the web UI.
+// live subscribers. It is used to capture managed daemon stdout/stderr plus
+// channel runtime logs and stream them to the web UI.
 type LogSink struct {
 	mu   sync.Mutex
 	ring []string
