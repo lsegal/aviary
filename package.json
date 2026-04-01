@@ -37,6 +37,7 @@
 		"release:patch": "cross-env VERSION=patch pnpm release:prepare && pnpm release"
 	},
 	"dependencies": {
+		"@heroicons/vue": "^2.2.0",
 		"marked": "^17.0.5",
 		"pinia": "^3.0.4",
 		"radix-vue": "^1.9.17",
