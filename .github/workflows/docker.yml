@@ -46,11 +46,13 @@ jobs:
       - id: prep
         shell: bash
         env:
-          CALL_VERSION: ${{ github.event_name == 'workflow_call' && inputs.aviary_version || '' }}
-          CALL_BRANCH: ${{ github.event_name == 'workflow_call' && inputs.branch_name || '' }}
-          CALL_TAG: ${{ github.event_name == 'workflow_call' && inputs.docker_tag || '' }}
-          CALL_LATEST: ${{ github.event_name == 'workflow_call' && inputs.publish_latest || (github.event_name == 'push' && github.ref_name == 'main') }}
-          CALL_PUSH: ${{ github.event_name == 'workflow_call' && inputs.push_image || github.event_name != 'pull_request' }}
+          CALL_VERSION: ${{ inputs.aviary_version }}
+          CALL_BRANCH: ${{ inputs.branch_name }}
+          CALL_TAG: ${{ inputs.docker_tag }}
+          INPUT_PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          INPUT_PUSH_IMAGE: ${{ inputs.push_image }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ -n "$CALL_VERSION" ]]; then
             aviary_version="$CALL_VERSION"
@@ -59,15 +61,25 @@ jobs:
           fi
 
           branch_name="$CALL_BRANCH"
-          if [[ -z "$branch_name" && "${{ github.event_name }}" == "push" ]]; then
-            branch_name="${{ github.ref_name }}"
+          if [[ -z "$branch_name" && "$GITHUB_EVENT_NAME" == "push" ]]; then
+            branch_name="$GITHUB_REF_NAME"
+          fi
+
+          publish_latest="$INPUT_PUBLISH_LATEST"
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "main" ]]; then
+            publish_latest="true"
+          fi
+
+          push_image="$INPUT_PUSH_IMAGE"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            push_image="false"
           fi
 
           echo "aviary_version=$aviary_version" >> "$GITHUB_OUTPUT"
           echo "branch_name=$branch_name" >> "$GITHUB_OUTPUT"
           echo "docker_tag=$CALL_TAG" >> "$GITHUB_OUTPUT"
-          echo "publish_latest=$CALL_LATEST" >> "$GITHUB_OUTPUT"
-          echo "push_image=$CALL_PUSH" >> "$GITHUB_OUTPUT"
+          echo "publish_latest=$publish_latest" >> "$GITHUB_OUTPUT"
+          echo "push_image=$push_image" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/metadata-action@v6
         id: meta
