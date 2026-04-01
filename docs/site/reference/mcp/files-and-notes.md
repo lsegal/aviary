@@ -2,7 +2,7 @@
 
 These tools provide agents with access to the filesystem and their own workspace directory.
 
-**File tools** (`file_*`) operate on the host filesystem, constrained to paths permitted by the agent's `permissions.filesystem.allowedPaths` rules. They require either the `full` permissions preset or explicit allowlist inclusion.
+**File tools** (`file_*`) operate on the host filesystem, constrained to paths permitted by the agent's `permissions.filesystem.allowed_paths` rules. They require either the `full` permissions preset or explicit allowlist inclusion.
 
 **Agent file tools** (`agent_file_*`) provide full read/write/delete access to the agent's own data directory. They operate on the calling agent's session context — no `agent` argument is needed (or used). Available under the `standard` preset.
 
@@ -81,7 +81,7 @@ Read a file within the current agent's filesystem allowlist. Returns UTF-8 text 
 }
 ```
 
-**Constraint:** The path must be within the agent's configured `allowedPaths`. Requires `full` preset or explicit allowlist entry.
+**Constraint:** The path must be within the agent's configured `allowed_paths`. Requires `full` preset or explicit allowlist entry.
 
 ---
 
@@ -178,7 +178,7 @@ Move or rename a file. Both paths must be within the agent's allowlist.
 
 ## exec
 
-Execute a host OS command. Only available when the agent's `permissions.exec.allowedCommands` is configured and the command matches an allow rule.
+Execute a host OS command. Only available when the agent's `permissions.exec.allowed_commands` is configured and the command matches an allow rule.
 
 **Arguments:**
 
@@ -200,4 +200,4 @@ Execute a host OS command. Only available when the agent's `permissions.exec.all
 }
 ```
 
-**Constraint:** The command must match an `allowedCommands` pattern. Shell interpolation is disabled unless `exec.shellInterpolate: true` is set in config.
+**Constraint:** The command must match an `allowed_commands` pattern. Shell interpolation is disabled unless `exec.shell_interpolate: true` is set in config.

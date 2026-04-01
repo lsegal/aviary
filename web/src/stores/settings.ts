@@ -18,12 +18,12 @@ export interface ServerConfig {
 export interface AllowFromEntry {
 	enabled?: boolean;
 	from: string;
-	allowedGroups?: string;
-	mentionPrefixes?: string[];
-	excludePrefixes?: string[];
-	respondToMentions?: boolean;
-	mentionPrefixGroupOnly?: boolean;
-	restrictTools?: string[];
+	allowed_groups?: string;
+	mention_prefixes?: string[];
+	exclude_prefixes?: string[];
+	respond_to_mentions?: boolean;
+	mention_prefix_group_only?: boolean;
+	restrict_tools?: string[];
 	model?: string;
 	fallbacks?: string[];
 }
@@ -34,12 +34,12 @@ export interface AgentChannel {
 	token?: string;
 	id?: string;
 	url?: string;
-	disabledTools?: string[];
-	allowFrom?: AllowFromEntry[];
-	showTyping?: boolean;
-	replyToReplies?: boolean;
-	reactToEmoji?: boolean;
-	sendReadReceipts?: boolean;
+	disabled_tools?: string[];
+	allow_from?: AllowFromEntry[];
+	show_typing?: boolean;
+	reply_to_replies?: boolean;
+	react_to_emoji?: boolean;
+	send_read_receipts?: boolean;
 	group_chat_history?: number;
 	primary?: string;
 	model?: string;
@@ -49,13 +49,13 @@ export interface AgentChannel {
 export interface AgentPermissions {
 	preset?: PermissionsPreset;
 	tools?: string[];
-	disabledTools?: string[];
+	disabled_tools?: string[];
 	filesystem?: {
-		allowedPaths?: string[];
+		allowed_paths?: string[];
 	};
 	exec?: {
-		allowedCommands?: string[];
-		shellInterpolate?: boolean;
+		allowed_commands?: string[];
+		shell_interpolate?: boolean;
 		shell?: string;
 	};
 }
@@ -197,15 +197,15 @@ export const useSettingsStore = defineStore("settings", () => {
 						...ch,
 						enabled: ch.enabled !== false,
 						// Default these to true when absent.
-						showTyping: ch.showTyping !== false,
-						replyToReplies: ch.replyToReplies !== false,
-						reactToEmoji: ch.reactToEmoji !== false,
-						sendReadReceipts: ch.sendReadReceipts !== false,
-						allowFrom: (ch.allowFrom ?? []).map((entry) => ({
+						show_typing: ch.show_typing !== false,
+						reply_to_replies: ch.reply_to_replies !== false,
+						react_to_emoji: ch.react_to_emoji !== false,
+						send_read_receipts: ch.send_read_receipts !== false,
+						allow_from: (ch.allow_from ?? []).map((entry) => ({
 							...entry,
 							enabled: entry.enabled !== false,
 							// Default respondToMentions to true when absent (omitempty hides false).
-							respondToMentions: entry.respondToMentions !== false,
+							respond_to_mentions: entry.respond_to_mentions !== false,
 						})),
 					})),
 					tasks: (agent.tasks ?? []).map((task) => ({

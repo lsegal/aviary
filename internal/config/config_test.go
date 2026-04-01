@@ -705,7 +705,7 @@ func TestAllowFromEntry_UnmarshalYAML(t *testing.T) {
 	})
 
 	t.Run("full struct", func(t *testing.T) {
-		src := "from: \"+1\"\nallowedGroups: \"group1\"\nrespondToMentions: true\n"
+		src := "from: \"+1\"\nallowed_groups: \"group1\"\nrespond_to_mentions: true\n"
 		var entry AllowFromEntry
 		err := yaml.Unmarshal([]byte(src), &entry)
 		assert.NoError(t, err)
@@ -729,7 +729,7 @@ func TestAllowFromEntry_UnmarshalJSON(t *testing.T) {
 	})
 
 	t.Run("full struct", func(t *testing.T) {
-		data := []byte(`{"from":"+2","allowedGroups":"ch1","respondToMentions":true}`)
+		data := []byte(`{"from":"+2","allowed_groups":"ch1","respond_to_mentions":true}`)
 		var entry AllowFromEntry
 		err := json.Unmarshal(data, &entry)
 		assert.NoError(t, err)

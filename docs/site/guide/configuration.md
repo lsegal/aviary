@@ -81,18 +81,18 @@ permissions:
 
 ### Allowlists and Blocklists
 
-On top of a preset you can add individual tools with `tools` (an allowlist) or remove them with `disabledTools`:
+On top of a preset you can add individual tools with `tools` (an allowlist) or remove them with `disabled_tools`:
 
 ```yaml
 permissions:
   preset: standard
   tools:
     - file_read       # add file_read even though standard blocks file_*
-  disabledTools:
+  disabled_tools:
     - browser_navigate  # remove browser_navigate from what standard allows
 ```
 
-`tools` is additive relative to the preset. `disabledTools` is subtractive. Both are filtered to the tools actually accessible under the preset, so listing a tool blocked by the preset in `tools` has no effect.
+`tools` is additive relative to the preset. `disabled_tools` is subtractive. Both are filtered to the tools actually accessible under the preset, so listing a tool blocked by the preset in `tools` has no effect.
 
 ### Filesystem Access
 
@@ -102,7 +102,7 @@ When an agent has access to `file_*` tools (either through `full` preset or via 
 permissions:
   preset: full
   filesystem:
-    allowedPaths:
+    allowed_paths:
       - "~/projects/my-app/**"
       - "!~/projects/my-app/.env"
 ```
@@ -117,29 +117,29 @@ Command execution is blocked by all presets except `full`. To enable it selectiv
 permissions:
   preset: full
   exec:
-    allowedCommands:
+    allowed_commands:
       - "go test *"
       - "go build *"
       - "!go build -ldflags *"   # deny flag injection
-    shellInterpolate: false
+    shell_interpolate: false
     shell: /bin/bash
 ```
 
-`allowedCommands` patterns are matched against the raw command string. Deny rules (prefix `!`) are processed in order with allow rules. `shellInterpolate: false` prevents the agent from using shell variables or subshells in commands, even when a shell is configured.
+`allowed_commands` patterns are matched against the raw command string. Deny rules (prefix `!`) are processed in order with allow rules. `shell_interpolate: false` prevents the agent from using shell variables or subshells in commands, even when a shell is configured.
 
 ### Channel and Sender Overrides
 
-Permissions can be narrowed further at the channel level via `disabledTools`, and at the sender level via `restrictTools`. These only restrict — they cannot grant tools the agent-level preset does not allow.
+Permissions can be narrowed further at the channel level via `disabled_tools`, and at the sender level via `restrict_tools`. These only restrict - they cannot grant tools the agent-level preset does not allow.
 
 ```yaml
 channels:
   - type: slack
     token: xoxb-...
-    disabledTools:
+    disabled_tools:
       - memory_append   # disable memory writes from Slack
-    allowFrom:
-      - from: "U0123456789"
-        restrictTools:
+    allow_from:
+      - from: "@alice"
+        restrict_tools:
           - session_send    # this specific user can only send messages
 ```
 
@@ -167,14 +167,78 @@ agents:
     model: anthropic/claude-sonnet-4-6
     channels:
       - type: slack
-        token: xoxb-your-token
-        id: T0123456789         # workspace ID
+        id: workspace-bot       # configured integration ID
+        url: xapp-your-app-level-token
+        token: xoxb-your-bot-token
         show_typing: true
-        allowFrom:
+        allow_from:
           - from: "*"
-            allowedGroups: "C0123456789"   # only this channel
-            respondToMentions: true         # forward @bot mentions
+            allowed_groups: "#alerts"   # only this channel
+            respond_to_mentions: true         # forward @bot mentions
 ```
+
+### Slack Setup
+
+Slack uses two tokens:
+
+- `url`: the Slack App-Level token (`xapp-...`) used for Socket Mode
+- `token`: the Slack Bot token (`xoxb-...`) used for posting messages and listing channels
+
+The channel `id` is Aviary's configured integration name, not a Slack conversation ID. Use a stable name such as `workspace-bot`, `alerts-bot`, or `main-workspace`.
+
+To make Slack work end to end, your Slack app should have:
+
+- Socket Mode enabled
+- Event subscriptions for message events
+- Bot scopes that allow posting and reading channel metadata, such as `chat:write`, `channels:history`, `groups:history`, `channels:read`, and `groups:read`
+- The app installed to the workspace and invited to any channels you want it to access
+
+In the control panel, Settings -> Agents -> Channels -> Slack now includes a **Browse Channels** action. That uses the bot token to validate the workspace and load visible channels, which is especially helpful when configuring scheduled task delivery.
+
+For Slack-specific fields you can now use either raw Slack IDs or human-friendly names, but the examples below prefer names:
+
+- `allow_from[].from`: `alice` or `@alice`
+- `allow_from[].allowed_groups`: `alerts` or `#alerts`
+- task `target`: `slack:workspace-bot:#alerts`
+
+### Discord Setup
+
+Discord uses a single bot token from the [Discord Developer Portal](https://discord.com/developers/applications).
+
+To make Discord work end to end:
+
+1. Create a new Discord application and add a bot user.
+2. Copy the bot token and store it directly in `token` or via an auth reference.
+3. In the bot settings, enable the **Message Content Intent** so Aviary can read guild-channel message text.
+4. Invite the bot to your server with permission to view channels, read message history, and send messages.
+5. Turn on Developer Mode in Discord so you can copy user IDs, server IDs, and channel IDs.
+
+Example:
+
+```yaml
+agents:
+  - name: discord-lobby
+    model: anthropic/claude-sonnet-4-6
+    verbose: true
+    channels:
+      - type: discord
+        token: auth:discord:default
+        id: ops-guild          # Aviary configured integration ID
+        disabled_tools:
+          - exec
+        allow_from:
+          - from: "*"
+            allowed_groups: "234567890123456789"   # Discord text channel ID
+            respond_to_mentions: true
+```
+
+For Discord:
+
+- `token` is the bot token.
+- `id` is Aviary's configured channel ID for this integration. Use any stable unique name such as `ops-guild` or `main-discord`.
+- `from` is a Discord user ID.
+- `allowed_groups` is a comma-separated list of Discord channel IDs, or `*` to allow any guild channel matched by the rule.
+- Direct messages do not need `allowed_groups`; server channels do.
 
 ### Signal
 
@@ -197,7 +261,7 @@ agents:
     channels:
       - type: signal
         id: "+15551234567"      # your registered Signal number
-        allowFrom:
+        allow_from:
           - from: "+19995550100"  # only respond to this contact
 ```
 
@@ -214,20 +278,20 @@ If you are already running signal-cli as a daemon on a known TCP port, point Avi
 **Sender filtering** controls who the agent responds to:
 
 - `from: "*"` matches any sender; a specific user/phone ID matches only that sender.
-- `allowedGroups` restricts to specific group/channel IDs. Without it, only direct messages match.
-- `mentionPrefixes` filters group messages by text pattern. At least one pattern must match (unless `respondToMentions` catches an @mention).
-- `excludePrefixes` silently drops matching messages before any other rule applies.
+- `allowed_groups` restricts to specific group/channel IDs. Without it, only direct messages match.
+- `mention_prefixes` filters group messages by text pattern. At least one pattern must match (unless `respond_to_mentions` catches an @mention).
+- `exclude_prefixes` silently drops matching messages before any other rule applies.
 
-By default, group-chat filtering (mention prefixes, respond-to-mentions) applies only to group messages. Direct messages from allowed senders are always forwarded. Set `mentionPrefixGroupOnly: false` on an entry to also require a prefix match in direct messages.
+By default, group-chat filtering (mention prefixes, respond-to-mentions) applies only to group messages. Direct messages from allowed senders are always forwarded. Set `mention_prefix_group_only: false` on an entry to also require a prefix match in direct messages.
 
-A plain string in `allowFrom` is shorthand for `{ from: "<string>" }`:
+A plain string in `allow_from` is shorthand for `{ from: "<string>" }`:
 
 ```yaml
-allowFrom:
+allow_from:
   - "+15551234567"          # shorthand
   - from: "U9876543210"     # explicit form
-    allowedGroups: "*"
-    respondToMentions: true
+    allowed_groups: "*"
+    respond_to_mentions: true
 ```
 
 ## Scheduled Tasks
@@ -241,8 +305,10 @@ agents:
       - name: daily-summary
         schedule: "0 9 * * 1-5"   # weekdays at 9 AM
         prompt: "Summarize open issues and post to Slack."
-        target: slack:#team-updates
+        target: slack:workspace-bot:#team-updates
 ```
+
+Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`. For Slack, the final segment can be a channel name like `#team-updates` or a raw Slack channel ID.
 
 ## Skills
 
@@ -294,12 +360,12 @@ agents:
     permissions:
       preset: full
       filesystem:
-        allowedPaths:
+        allowed_paths:
           - "~/projects/my-app/**"
           - "!~/projects/my-app/.env"
           - "!~/projects/my-app/secrets/**"
       exec:
-        allowedCommands:
+        allowed_commands:
           - "go *"
           - "make *"
           - "!make deploy *"
@@ -310,16 +376,17 @@ agents:
     verbose: true
     channels:
       - type: slack
-        token: xoxb-your-token
-        id: T0123456789
+        id: workspace-bot
+        url: xapp-your-app-level-token
+        token: xoxb-your-bot-token
         show_typing: true
-        disabledTools:
+        disabled_tools:
           - exec
-        allowFrom:
+        allow_from:
           - from: "*"
-            allowedGroups: "C0123456789"
-            respondToMentions: true
-          - from: "U0123456789"           # admin: DMs always forwarded
+            allowed_groups: "#alerts"
+            respond_to_mentions: true
+          - from: "@alice"           # admin: DMs always forwarded
     tasks:
       - name: morning-standup
         schedule: "0 9 * * 1-5"

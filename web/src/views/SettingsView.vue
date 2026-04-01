@@ -425,13 +425,13 @@
 
 							<div class="mt-4">
 								<label class="field-label">Disabled tools</label>
-								<ModelSelector :model-value="agent.permissions?.disabledTools ?? []"
+								<ModelSelector :model-value="agent.permissions?.disabled_tools ?? []"
 									:options="availableToolNamesForAgent(agent)" multiple
 									placeholder="Exclude tools after restrict tools…" empty-text="No matching tools found"
 									@update:model-value="
 										agent.permissions = {
 											...(agent.permissions ?? {}),
-											disabledTools: Array.isArray($event) ? $event : [],
+											disabled_tools: Array.isArray($event) ? $event : [],
 										}
 										" />
 								<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -480,7 +480,7 @@
 										</p>
 									</div>
 									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input :checked="Boolean(agent.permissions?.exec?.shellInterpolate)" type="checkbox"
+										<input :checked="Boolean(agent.permissions?.exec?.shell_interpolate)" type="checkbox"
 											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
 											@change="setAgentExecShellInterpolate(agent, ($event.target as HTMLInputElement).checked)" />
 										Enable shell interpolation
@@ -541,10 +541,15 @@
 										</select>
 									</div>
 									<div>
-										<label class="field-label">Primary User ID (optional)</label>
-										<input v-model="ch.primary" type="text" class="field-input" placeholder="e.g. +15551234567 or user ID" />
+										<label class="field-label">{{ channelPrimaryLabel(ch) }}</label>
+										<input
+											v-model="ch.primary"
+											type="text"
+											class="field-input"
+											:placeholder="channelPrimaryPlaceholder(ch)"
+										/>
 										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-											Messages from this ID will be marked as the primary user in history/context.
+											{{ channelPrimaryHelp(ch) }}
 										</p>
 									</div>
 								</div>
@@ -566,9 +571,9 @@
 
 								<div>
 									<label class="field-label">Channel disabled tools (optional)</label>
-									<ModelSelector :model-value="ch.disabledTools ?? []" :options="availableToolNamesForAgent(agent)"
+									<ModelSelector :model-value="ch.disabled_tools ?? []" :options="availableToolNamesForAgent(agent)"
 										multiple placeholder="Exclude tools for this channel…" empty-text="No matching tools found"
-										@update:model-value="ch.disabledTools = Array.isArray($event) ? $event : []" />
+										@update:model-value="ch.disabled_tools = Array.isArray($event) ? $event : []" />
 									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 										Applied after any restrict-tools allow list for messages on this channel.
 									</p>
@@ -588,11 +593,11 @@
 											class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
 											@click="addAllowFrom(i, k)">+ Add Entry</button>
 									</div>
-									<div v-if="!ch.allowFrom?.length"
+									<div v-if="!ch.allow_from?.length"
 										class="rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
 										No entries — all messages will be rejected.
 									</div>
-									<div v-for="(entry, ei) in ch.allowFrom" :key="`af-${i}-${k}-${ei}`"
+									<div v-for="(entry, ei) in ch.allow_from" :key="`af-${i}-${k}-${ei}`"
 										class="space-y-2 rounded border p-3 transition" :class="allowFromCardClass(entry)">
 										<div class="flex flex-wrap items-center justify-between gap-3">
 											<div class="flex items-center gap-2">
@@ -631,7 +636,7 @@
 										<div class="grid gap-2 lg:grid-cols-2">
 											<div>
 												<label class="field-label">Allowed Groups (* or specific group IDs, comma-separated)</label>
-												<input v-model="entry.allowedGroups" type="text" class="field-input"
+												<input v-model="entry.allowed_groups" type="text" class="field-input"
 													placeholder="Leave empty for DMs only, * for any group" />
 											</div>
 											<div></div>
@@ -651,7 +656,7 @@
 										<div class="space-y-2 pt-1">
 											<label class="block cursor-pointer">
 												<div class="flex items-center gap-2">
-													<input type="checkbox" v-model="entry.respondToMentions"
+													<input type="checkbox" v-model="entry.respond_to_mentions"
 														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Respond to @mentions</span>
 												</div>
@@ -660,9 +665,9 @@
 											</label>
 											<label class="block cursor-pointer">
 												<div class="flex items-center gap-2">
-													<input type="checkbox" :checked="entry.mentionPrefixGroupOnly !== false"
+													<input type="checkbox" :checked="entry.mention_prefix_group_only !== false"
 														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-														@change="entry.mentionPrefixGroupOnly = ($event.target as HTMLInputElement).checked ? undefined : false" />
+														@change="entry.mention_prefix_group_only = ($event.target as HTMLInputElement).checked ? undefined : false" />
 													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Group chats only</span>
 												</div>
 												<p class="mt-0.5 pl-5 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Mention prefix and
@@ -670,9 +675,9 @@
 											</label>
 											<label class="block cursor-pointer">
 												<div class="flex items-center gap-2">
-													<input type="checkbox" :checked="entry.mentionPrefixGroupOnly === false"
+													<input type="checkbox" :checked="entry.mention_prefix_group_only === false"
 														class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
-														@change="entry.mentionPrefixGroupOnly = ($event.target as HTMLInputElement).checked ? false : undefined" />
+														@change="entry.mention_prefix_group_only = ($event.target as HTMLInputElement).checked ? false : undefined" />
 													<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Require mention prefix in
 														DMs</span>
 												</div>
@@ -756,7 +761,7 @@
 
 								<div v-if="ch.type === 'slack'" class="grid gap-3 lg:grid-cols-2">
 									<div>
-										<label class="field-label">Channel ID</label>
+										<label class="field-label">Integration ID</label>
 										<input v-model="ch.id" type="text" class="field-input" placeholder="workspace-bot" />
 									</div>
 									<div>
@@ -766,6 +771,28 @@
 									<div>
 										<label class="field-label">Bot Token (xoxb-…)</label>
 										<input v-model="ch.token" type="text" class="field-input" placeholder="xoxb-..." />
+									</div>
+									<div class="lg:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-950/40">
+										<div class="flex flex-wrap items-center justify-between gap-3">
+											<div>
+												<div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Workspace Channels</div>
+												<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use your bot token to validate the Slack workspace and load visible channels for task routing.</p>
+											</div>
+											<button
+												type="button"
+												class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+												:disabled="!ch.token || slackWorkspaceState(i, k).loading"
+												@click="browseSlackChannels(i, k, ch)"
+											>
+												{{ slackWorkspaceState(i, k).loading ? "Loading…" : "Browse Channels" }}
+											</button>
+										</div>
+										<p v-if="slackWorkspaceState(i, k).error" class="mt-3 text-xs text-red-600 dark:text-red-400">
+											{{ slackWorkspaceState(i, k).error }}
+										</p>
+										<p v-else-if="slackWorkspaceState(i, k).result" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+											Connected to {{ slackWorkspaceState(i, k).result?.team_name || "Slack" }} with {{ slackWorkspaceState(i, k).result?.channels.length || 0 }} visible channels.
+										</p>
 									</div>
 								</div>
 
@@ -793,22 +820,22 @@
 
 								<div class="flex flex-wrap gap-4 pt-1">
 									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.showTyping"
+										<input type="checkbox" v-model="ch.show_typing"
 											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 										Show typing indicator
 									</label>
 									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.replyToReplies"
+										<input type="checkbox" v-model="ch.reply_to_replies"
 											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 										Reply to replies
 									</label>
 									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.reactToEmoji"
+										<input type="checkbox" v-model="ch.react_to_emoji"
 											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 										React to emojis
 									</label>
 									<label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-										<input type="checkbox" v-model="ch.sendReadReceipts"
+										<input type="checkbox" v-model="ch.send_read_receipts"
 											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 										Send read receipts
 									</label>
@@ -933,6 +960,31 @@
 <option value="">silent</option>
 <option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
 </select>
+</div>
+</div>
+
+<div v-if="taskChannelSelection(selectedTask)" class="grid gap-3 lg:grid-cols-2 mt-3">
+<div>
+<label class="field-label">{{ taskDeliveryTargetLabel(agent, selectedTask) }}</label>
+<select
+	v-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
+	:value="selectedTaskTarget(selectedTask)"
+	class="field-input"
+	@change="setSelectedTaskTarget(selectedTask, ($event.target as HTMLSelectElement).value)"
+>
+<option value="">Select a Slack channel…</option>
+<option v-for="channel in slackChannelsForTask(i, agent, selectedTask)" :key="channel.id" :value="channel.id">
+	#{{ channel.name }} · {{ channel.id }}
+</option>
+</select>
+<input
+	v-else
+	:value="selectedTaskTarget(selectedTask)"
+	type="text"
+	class="field-input"
+	:placeholder="slackTargetPlaceholder(agent, selectedTask)"
+	@input="setSelectedTaskTarget(selectedTask, ($event.target as HTMLInputElement).value)"
+/>
 </div>
 </div>
 
@@ -1539,6 +1591,23 @@ interface TaskChannelOption {
 	type: string;
 }
 
+interface SlackWorkspaceChannelOption {
+	id: string;
+	name: string;
+	name_normalized?: string;
+	is_private?: boolean;
+	is_member?: boolean;
+	is_archived?: boolean;
+	num_members?: number;
+}
+
+interface SlackWorkspaceBrowseResult {
+	team_id?: string;
+	team_name?: string;
+	bot_user_id?: string;
+	channels: SlackWorkspaceChannelOption[];
+}
+
 interface ToolInspectionModalState {
 	title: string;
 	resolution: ResolvedToolPermissions;
@@ -1638,6 +1707,32 @@ const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
 const compileToastVisible = ref(false);
+const slackWorkspaceBrowsers = ref<
+	Record<
+		string,
+		{
+			loading: boolean;
+			error: string;
+			result: SlackWorkspaceBrowseResult | null;
+		}
+	>
+>({});
+
+function slackWorkspaceKey(agentIndex: number, channelIndex: number): string {
+	return `${agentIndex}:${channelIndex}`;
+}
+
+function slackWorkspaceState(agentIndex: number, channelIndex: number) {
+	const key = slackWorkspaceKey(agentIndex, channelIndex);
+	if (!slackWorkspaceBrowsers.value[key]) {
+		slackWorkspaceBrowsers.value[key] = {
+			loading: false,
+			error: "",
+			result: null,
+		};
+	}
+	return slackWorkspaceBrowsers.value[key];
+}
 const hostGoos = ref("");
 const saveSuccessVisible = ref(false);
 const headerNoticeText = ref("Settings saved");
@@ -1697,8 +1792,7 @@ const selectedTask = computed((): AgentTask | null => {
 
 // Agent tab click → push new route (also resets subtab) and reset selectedTaskIdx for the new agent.
 watch(selectedAgentIdx, (idx) => {
-	selectedAgentSubtab.value = "general";
-	const target = agentRoutePath(idx, "general");
+	const target = agentRoutePath(idx, selectedAgentSubtab.value);
 	if (route.path !== target) void router.push(target);
 	// Reset selectedTaskIdx for the newly-selected agent so a task is shown if available.
 	const tasks = draft.value.agents[idx]?.tasks ?? [];
@@ -1997,20 +2091,20 @@ function sanitizeAgentToolSelections(agent: AgentEntry) {
 			preset,
 			agent.permissions.tools,
 		);
-		agent.permissions.disabledTools = clampToolNamesForPreset(
+		agent.permissions.disabled_tools = clampToolNamesForPreset(
 			preset,
-			agent.permissions.disabledTools,
+			agent.permissions.disabled_tools,
 		);
 	}
 	for (const channel of agent.channels ?? []) {
-		channel.disabledTools = clampToolNamesForPreset(
+		channel.disabled_tools = clampToolNamesForPreset(
 			preset,
-			channel.disabledTools,
+			channel.disabled_tools,
 		);
-		for (const entry of channel.allowFrom ?? []) {
-			entry.restrictTools = clampToolNamesForPreset(
+		for (const entry of channel.allow_from ?? []) {
+			entry.restrict_tools = clampToolNamesForPreset(
 				preset,
-				entry.restrictTools,
+				entry.restrict_tools,
 			);
 		}
 	}
@@ -2062,7 +2156,7 @@ function agentToolResolution(agent: AgentEntry): ResolvedToolPermissions {
 		preset: agentPermissionsPreset(agent),
 		availableTools: availableToolNamesForResolution(),
 		agentTools: agent.permissions?.tools,
-		agentDisabledTools: agent.permissions?.disabledTools,
+		agentDisabledTools: agent.permissions?.disabled_tools,
 	});
 }
 
@@ -2074,8 +2168,8 @@ function channelToolResolution(
 		preset: agentPermissionsPreset(agent),
 		availableTools: availableToolNamesForResolution(),
 		agentTools: agent.permissions?.tools,
-		agentDisabledTools: agent.permissions?.disabledTools,
-		overrideDisabledTools: channel.disabledTools,
+		agentDisabledTools: agent.permissions?.disabled_tools,
+		overrideDisabledTools: channel.disabled_tools,
 	});
 }
 
@@ -2088,9 +2182,9 @@ function entryToolResolution(
 		preset: agentPermissionsPreset(agent),
 		availableTools: availableToolNamesForResolution(),
 		agentTools: agent.permissions?.tools,
-		agentDisabledTools: agent.permissions?.disabledTools,
-		overrideRestrictTools: entry.restrictTools,
-		overrideDisabledTools: channel.disabledTools,
+		agentDisabledTools: agent.permissions?.disabled_tools,
+		overrideRestrictTools: entry.restrict_tools,
+		overrideDisabledTools: channel.disabled_tools,
 	});
 }
 
@@ -2161,6 +2255,7 @@ interface AgentFileEditorState {
 	selectedFile: string;
 	content: string;
 	draftFileName: string;
+	loaded: boolean;
 	loading: boolean;
 	saving: boolean;
 	deleting: boolean;
@@ -2180,6 +2275,7 @@ function getAgentFileState(agentName: string): AgentFileEditorState {
 			selectedFile: "",
 			content: "",
 			draftFileName: "",
+			loaded: false,
 			loading: false,
 			saving: false,
 			deleting: false,
@@ -2253,12 +2349,61 @@ async function loadAgentFiles(agentName: string) {
 			state.selectedFile = "";
 			state.content = "";
 		}
+		state.loaded = true;
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
 		state.loading = false;
 	}
 }
+
+function moveAgentFileState(previousName: string, nextName: string) {
+	if (!previousName || !nextName || previousName === nextName) return;
+	const previousState = agentFileEditorState.value[previousName];
+	if (!previousState || agentFileEditorState.value[nextName]) return;
+	agentFileEditorState.value[nextName] = {
+		...previousState,
+		loaded: false,
+	};
+	delete agentFileEditorState.value[previousName];
+}
+
+async function ensureSelectedAgentFilesLoaded() {
+	if (activeTab.value !== "agents" || selectedAgentSubtab.value !== "general") {
+		return;
+	}
+	const agentName =
+		draft.value.agents[selectedAgentIdx.value]?.name?.trim() ?? "";
+	if (!agentName) return;
+	const state = getAgentFileState(agentName);
+	if (state.loading || state.loaded) return;
+	await loadAgentFiles(agentName);
+}
+
+watch(
+	() => draft.value.agents.map((agent) => agent.name),
+	(nextNames, previousNames = []) => {
+		for (let i = 0; i < nextNames.length; i += 1) {
+			const nextName = nextNames[i]?.trim() ?? "";
+			const previousName = previousNames[i]?.trim() ?? "";
+			if (nextName && previousName && nextName !== previousName) {
+				moveAgentFileState(previousName, nextName);
+			}
+		}
+	},
+);
+
+watch(
+	[
+		activeTab,
+		selectedAgentSubtab,
+		selectedAgentIdx,
+		() => draft.value.agents[selectedAgentIdx.value]?.name,
+	],
+	() => {
+		void ensureSelectedAgentFilesLoaded();
+	},
+);
 
 async function selectAgentFile(agentName: string, file: string) {
 	if (!agentName) return;
@@ -2447,14 +2592,14 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 		sanitizeAgentToolSelections(agent);
 		(agent.channels ?? []).forEach((ch) => {
 			if (ch.enabled === undefined) ch.enabled = true;
-			if (ch.showTyping === undefined) ch.showTyping = true;
-			if (ch.replyToReplies === undefined) ch.replyToReplies = true;
-			if (ch.reactToEmoji === undefined) ch.reactToEmoji = true;
-			if (ch.sendReadReceipts === undefined) ch.sendReadReceipts = true;
-			(ch.allowFrom ?? []).forEach((entry) => {
+			if (ch.show_typing === undefined) ch.show_typing = true;
+			if (ch.reply_to_replies === undefined) ch.reply_to_replies = true;
+			if (ch.react_to_emoji === undefined) ch.react_to_emoji = true;
+			if (ch.send_read_receipts === undefined) ch.send_read_receipts = true;
+			(ch.allow_from ?? []).forEach((entry) => {
 				if (entry.enabled === undefined) entry.enabled = true;
-				if (entry.respondToMentions === undefined) {
-					entry.respondToMentions = true;
+				if (entry.respond_to_mentions === undefined) {
+					entry.respond_to_mentions = true;
 				}
 			});
 		});
@@ -2505,6 +2650,7 @@ async function loadConfig() {
 		await store.fetchConfig();
 		const cfg = hydrateDraftConfig(store.config ?? emptyConfig());
 		draft.value = cfg;
+		slackWorkspaceBrowsers.value = {};
 		serverPortInput.value = cfg.server.port > 0 ? String(cfg.server.port) : "";
 		cdpPortInput.value =
 			cfg.browser.cdp_port > 0 ? String(cfg.browser.cdp_port) : "";
@@ -2830,6 +2976,125 @@ function configuredChannelLabel(ch: AgentChannel, index: number): string {
 	return `${ch.type} via #${index + 1}`;
 }
 
+function channelPrimaryLabel(ch: AgentChannel): string {
+	switch (ch.type) {
+		case "slack":
+			return "Primary Slack Sender ID (optional)";
+		case "signal":
+			return "Primary Signal Sender ID (optional)";
+		case "discord":
+			return "Primary Discord Sender ID (optional)";
+		default:
+			return "Primary Sender ID (optional)";
+	}
+}
+
+function channelPrimaryPlaceholder(ch: AgentChannel): string {
+	switch (ch.type) {
+		case "slack":
+			return "e.g. U0123456789";
+		case "signal":
+			return "e.g. +15551234567";
+		case "discord":
+			return "e.g. 123456789012345678";
+		default:
+			return "Enter a user ID";
+	}
+}
+
+function channelPrimaryHelp(ch: AgentChannel): string {
+	switch (ch.type) {
+		case "slack":
+			return "Messages from this Slack sender ID will be marked as coming from the primary person in history/context.";
+		case "signal":
+			return "Messages from this Signal sender ID will be marked as coming from the primary person in history/context.";
+		case "discord":
+			return "Messages from this Discord sender ID will be marked as coming from the primary person in history/context.";
+		default:
+			return "Messages from this sender ID will be marked as coming from the primary person in history/context.";
+	}
+}
+
+function selectedTaskTarget(task: AgentTask): string {
+	return parseTaskChannelValue(task.target).target;
+}
+
+function setSelectedTaskTarget(task: AgentTask, value: string) {
+	const parsed = parseTaskChannelValue(task.target);
+	const trimmed = value.trim();
+	if (!parsed.selection) {
+		task.target = "";
+		return;
+	}
+	if (parsed.type === "session") {
+		task.target = `session:${trimmed}`;
+		return;
+	}
+	task.target = `${parsed.selection}:${trimmed}`;
+}
+
+function selectedConfiguredChannel(
+	agent: AgentEntry,
+	task: AgentTask,
+): AgentChannel | null {
+	const selection = taskChannelSelection(task);
+	if (!selection || selection === "session") return null;
+	const [type, configuredID] = selection.split(":", 2);
+	return (
+		(agent.channels ?? []).find(
+			(ch) => (ch.type ?? "") === type && (ch.id ?? "") === configuredID,
+		) ?? null
+	);
+}
+
+function selectedConfiguredChannelIndex(
+	agent: AgentEntry,
+	task: AgentTask,
+): number {
+	const selection = taskChannelSelection(task);
+	if (!selection || selection === "session") return -1;
+	const [type, configuredID] = selection.split(":", 2);
+	return (agent.channels ?? []).findIndex(
+		(ch) => (ch.type ?? "") === type && (ch.id ?? "") === configuredID,
+	);
+}
+
+function taskDeliveryTargetLabel(agent: AgentEntry, task: AgentTask): string {
+	const parsed = parseTaskChannelValue(task.target);
+	if (parsed.type === "session") return "Session name";
+	const channel = selectedConfiguredChannel(agent, task);
+	switch (channel?.type) {
+		case "slack":
+			return "Slack channel ID";
+		case "discord":
+			return "Discord channel ID";
+		case "signal":
+			return "Signal recipient or group ID";
+		default:
+			return "Delivery ID";
+	}
+}
+
+function slackChannelsForTask(
+	agentIndex: number,
+	agent: AgentEntry,
+	task: AgentTask,
+): SlackWorkspaceChannelOption[] {
+	const channelIndex = selectedConfiguredChannelIndex(agent, task);
+	if (channelIndex < 0) return [];
+	return (
+		slackWorkspaceState(agentIndex, channelIndex).result?.channels ?? []
+	).filter((channel) => !channel.is_archived);
+}
+
+function slackTargetPlaceholder(agent: AgentEntry, task: AgentTask): string {
+	const channel = selectedConfiguredChannel(agent, task);
+	if (channel?.type === "slack") return "C1234567890";
+	if (channel?.type === "discord") return "123456789012345678";
+	if (channel?.type === "signal") return "+15551234567 or group ID";
+	return "Target ID";
+}
+
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
 	return [
 		{ value: "session", label: "session", type: "session" },
@@ -2952,10 +3217,10 @@ function addChannel(agentIndex: number) {
 	const ch: AgentChannel = {
 		enabled: true,
 		type: "signal",
-		showTyping: true,
-		replyToReplies: true,
-		reactToEmoji: true,
-		sendReadReceipts: true,
+		show_typing: true,
+		reply_to_replies: true,
+		react_to_emoji: true,
+		send_read_receipts: true,
 	};
 	if (!Array.isArray(draft.value.agents[agentIndex].channels)) {
 		draft.value.agents[agentIndex].channels = [];
@@ -2967,12 +3232,38 @@ function removeChannel(agentIndex: number, chIndex: number) {
 	draft.value.agents[agentIndex].channels.splice(chIndex, 1);
 }
 
+async function browseSlackChannels(
+	agentIndex: number,
+	channelIndex: number,
+	channel: AgentChannel,
+) {
+	const state = slackWorkspaceState(agentIndex, channelIndex);
+	state.loading = true;
+	state.error = "";
+	try {
+		const raw = await callTool("slack_channels_list", {
+			bot_token: channel.token ?? "",
+		});
+		state.result = safeJsonParse<SlackWorkspaceBrowseResult>(raw, {
+			channels: [],
+		});
+		if (!Array.isArray(state.result.channels)) {
+			state.result.channels = [];
+		}
+	} catch (error) {
+		state.result = null;
+		state.error = error instanceof Error ? error.message : String(error);
+	} finally {
+		state.loading = false;
+	}
+}
+
 function addAllowFrom(agentIndex: number, chIndex: number) {
 	const ch = draft.value.agents[agentIndex].channels[chIndex];
-	if (!Array.isArray(ch.allowFrom)) {
-		ch.allowFrom = [];
+	if (!Array.isArray(ch.allow_from)) {
+		ch.allow_from = [];
 	}
-	ch.allowFrom.push({ enabled: true, from: "", respondToMentions: true });
+	ch.allow_from.push({ enabled: true, from: "", respond_to_mentions: true });
 }
 
 function removeAllowFrom(
@@ -2980,58 +3271,60 @@ function removeAllowFrom(
 	chIndex: number,
 	entryIndex: number,
 ) {
-	draft.value.agents[agentIndex].channels[chIndex].allowFrom?.splice(
+	draft.value.agents[agentIndex].channels[chIndex].allow_from?.splice(
 		entryIndex,
 		1,
 	);
 }
 
 function entryMentionPrefixes(entry: AllowFromEntry): string {
-	return (entry.mentionPrefixes ?? []).join(", ");
+	return (entry.mention_prefixes ?? []).join(", ");
 }
 
 function setEntryMentionPrefixes(entry: AllowFromEntry, event: Event) {
-	entry.mentionPrefixes = (event.target as HTMLInputElement).value
+	entry.mention_prefixes = (event.target as HTMLInputElement).value
 		.split(",")
 		.map((v) => v.trim())
 		.filter(Boolean);
 }
 
 function entryExcludePrefixes(entry: AllowFromEntry): string {
-	return (entry.excludePrefixes ?? []).join(", ");
+	return (entry.exclude_prefixes ?? []).join(", ");
 }
 
 function setEntryExcludePrefixes(entry: AllowFromEntry, event: Event) {
-	entry.excludePrefixes = (event.target as HTMLInputElement).value
+	entry.exclude_prefixes = (event.target as HTMLInputElement).value
 		.split(",")
 		.map((v) => v.trim())
 		.filter(Boolean);
 }
 
 function hasEntryToolRestriction(entry: AllowFromEntry): boolean {
-	return (entry.restrictTools?.length ?? 0) > 0;
+	return (entry.restrict_tools?.length ?? 0) > 0;
 }
 
 function setEntryToolRestriction(entry: AllowFromEntry, restricted: boolean) {
 	if (restricted) {
 		const agent = draft.value.agents.find((candidate) =>
-			candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+			candidate.channels?.some((channel) =>
+				channel.allow_from?.includes(entry),
+			),
 		);
-		entry.restrictTools = agent
+		entry.restrict_tools = agent
 			? availableToolsForAgent(agent).map((t) => t.name)
 			: availableTools.value.map((t) => t.name);
 	} else {
-		entry.restrictTools = undefined;
+		entry.restrict_tools = undefined;
 	}
 }
 
 function isEntryToolEnabled(entry: AllowFromEntry, toolName: string): boolean {
 	if (!hasEntryToolRestriction(entry)) return true;
 	const agent = draft.value.agents.find((candidate) =>
-		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		candidate.channels?.some((channel) => channel.allow_from?.includes(entry)),
 	);
 	if (agent && !isAgentToolAccessible(agent, toolName)) return false;
-	return entry.restrictTools?.includes(toolName) ?? false;
+	return entry.restrict_tools?.includes(toolName) ?? false;
 }
 
 function toggleEntryTool(
@@ -3040,15 +3333,15 @@ function toggleEntryTool(
 	enabled: boolean,
 ) {
 	const agent = draft.value.agents.find((candidate) =>
-		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		candidate.channels?.some((channel) => channel.allow_from?.includes(entry)),
 	);
 	if (agent && !isAgentToolAccessible(agent, toolName)) return;
-	if (!entry.restrictTools) entry.restrictTools = [];
-	const idx = entry.restrictTools.indexOf(toolName);
+	if (!entry.restrict_tools) entry.restrict_tools = [];
+	const idx = entry.restrict_tools.indexOf(toolName);
 	if (enabled && idx === -1) {
-		entry.restrictTools.push(toolName);
+		entry.restrict_tools.push(toolName);
 	} else if (!enabled && idx !== -1) {
-		entry.restrictTools.splice(idx, 1);
+		entry.restrict_tools.splice(idx, 1);
 	}
 }
 
@@ -3060,7 +3353,7 @@ function isEntryCategoryFullyEnabled(
 		(t) => toolCategory(t.name) === cat,
 	);
 	const agent = draft.value.agents.find((candidate) =>
-		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		candidate.channels?.some((channel) => channel.allow_from?.includes(entry)),
 	);
 	const accessibleTools = agent
 		? catTools.filter((tool) => isAgentToolAccessible(agent, tool.name))
@@ -3077,7 +3370,7 @@ function isEntryCategoryPartiallyEnabled(
 		(t) => toolCategory(t.name) === cat,
 	);
 	const agent = draft.value.agents.find((candidate) =>
-		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		candidate.channels?.some((channel) => channel.allow_from?.includes(entry)),
 	);
 	const accessibleTools = agent
 		? catTools.filter((tool) => isAgentToolAccessible(agent, tool.name))
@@ -3097,7 +3390,7 @@ function toggleEntryCategory(
 		(t) => toolCategory(t.name) === cat,
 	);
 	const agent = draft.value.agents.find((candidate) =>
-		candidate.channels?.some((channel) => channel.allowFrom?.includes(entry)),
+		candidate.channels?.some((channel) => channel.allow_from?.includes(entry)),
 	);
 	for (const t of catTools) {
 		if (agent && !isAgentToolAccessible(agent, t.name)) continue;
@@ -3110,39 +3403,41 @@ function hasToolRestriction(agent: AgentEntry): boolean {
 }
 
 function agentFilesystemAllowedPaths(agent: AgentEntry): string {
-	return (agent.permissions?.filesystem?.allowedPaths ?? []).join("\n");
+	return (agent.permissions?.filesystem?.allowed_paths ?? []).join("\n");
 }
 
 function setAgentFilesystemAllowedPaths(agent: AgentEntry, event: Event) {
 	const value = (event.target as HTMLTextAreaElement).value;
-	const allowedPaths = value
+	const allowed_paths = value
 		.split(/\r?\n/)
 		.map((v) => v.trim())
 		.filter(Boolean);
 	agent.permissions = {
 		...(agent.permissions ?? {}),
-		filesystem: allowedPaths.length ? { allowedPaths } : undefined,
+		filesystem: allowed_paths.length ? { allowed_paths } : undefined,
 	};
 }
 
 function agentExecAllowedCommands(agent: AgentEntry): string {
-	return (agent.permissions?.exec?.allowedCommands ?? []).join("\n");
+	return (agent.permissions?.exec?.allowed_commands ?? []).join("\n");
 }
 
 function setAgentExecAllowedCommands(agent: AgentEntry, event: Event) {
 	const value = (event.target as HTMLTextAreaElement).value;
-	const allowedCommands = value
+	const allowed_commands = value
 		.split(/\r?\n/)
 		.map((v) => v.trim())
 		.filter(Boolean);
 	const currentExec = agent.permissions?.exec;
 	const nextExec =
-		allowedCommands.length ||
-		currentExec?.shellInterpolate ||
+		allowed_commands.length ||
+		currentExec?.shell_interpolate ||
 		(currentExec?.shell ?? "").trim()
 			? {
-					allowedCommands: allowedCommands.length ? allowedCommands : undefined,
-					shellInterpolate: currentExec?.shellInterpolate ? true : undefined,
+					allowed_commands: allowed_commands.length
+						? allowed_commands
+						: undefined,
+					shell_interpolate: currentExec?.shell_interpolate ? true : undefined,
 					shell: (currentExec?.shell ?? "").trim() || undefined,
 				}
 			: undefined;
@@ -3155,12 +3450,12 @@ function setAgentExecAllowedCommands(agent: AgentEntry, event: Event) {
 function setAgentExecShellInterpolate(agent: AgentEntry, enabled: boolean) {
 	const currentExec = agent.permissions?.exec;
 	const nextExec =
-		(currentExec?.allowedCommands?.length ?? 0) > 0 ||
+		(currentExec?.allowed_commands?.length ?? 0) > 0 ||
 		enabled ||
 		(currentExec?.shell ?? "").trim()
 			? {
-					allowedCommands: currentExec?.allowedCommands,
-					shellInterpolate: enabled ? true : undefined,
+					allowed_commands: currentExec?.allowed_commands,
+					shell_interpolate: enabled ? true : undefined,
 					shell: (currentExec?.shell ?? "").trim() || undefined,
 				}
 			: undefined;
@@ -3174,12 +3469,12 @@ function setAgentExecShell(agent: AgentEntry, event: Event) {
 	const shell = (event.target as HTMLInputElement).value.trim();
 	const currentExec = agent.permissions?.exec;
 	const nextExec =
-		(currentExec?.allowedCommands?.length ?? 0) > 0 ||
-		currentExec?.shellInterpolate ||
+		(currentExec?.allowed_commands?.length ?? 0) > 0 ||
+		currentExec?.shell_interpolate ||
 		shell
 			? {
-					allowedCommands: currentExec?.allowedCommands,
-					shellInterpolate: currentExec?.shellInterpolate ? true : undefined,
+					allowed_commands: currentExec?.allowed_commands,
+					shell_interpolate: currentExec?.shell_interpolate ? true : undefined,
 					shell: shell || undefined,
 				}
 			: undefined;
@@ -3379,38 +3674,38 @@ function normalizedDraftConfig(): AppConfig {
 			url: (ch.url ?? "").trim() || undefined,
 			model: (ch.model ?? "").trim() || undefined,
 			fallbacks: (ch.fallbacks ?? []).map((v) => v.trim()).filter(Boolean),
-			disabledTools: (ch.disabledTools ?? [])
+			disabled_tools: (ch.disabled_tools ?? [])
 				.map((v) => v.trim())
 				.filter(Boolean),
-			showTyping: ch.showTyping === false ? false : undefined,
-			replyToReplies: ch.replyToReplies === false ? false : undefined,
-			reactToEmoji: ch.reactToEmoji === false ? false : undefined,
-			sendReadReceipts: ch.sendReadReceipts === false ? false : undefined,
+			show_typing: ch.show_typing === false ? false : undefined,
+			reply_to_replies: ch.reply_to_replies === false ? false : undefined,
+			react_to_emoji: ch.react_to_emoji === false ? false : undefined,
+			send_read_receipts: ch.send_read_receipts === false ? false : undefined,
 			group_chat_history:
 				ch.group_chat_history && ch.group_chat_history !== 0
 					? ch.group_chat_history
 					: undefined,
-			allowFrom: (ch.allowFrom ?? [])
+			allow_from: (ch.allow_from ?? [])
 				.map((entry) => ({
 					...entry,
 					enabled: entry.enabled === false ? false : undefined,
 					from: (entry.from ?? "").trim(),
-					allowedGroups: (entry.allowedGroups ?? "").trim() || undefined,
+					allowed_groups: (entry.allowed_groups ?? "").trim() || undefined,
 					model: (entry.model ?? "").trim() || undefined,
 					fallbacks: (entry.fallbacks ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
-					mentionPrefixes: (entry.mentionPrefixes ?? [])
+					mention_prefixes: (entry.mention_prefixes ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
-					excludePrefixes: (entry.excludePrefixes ?? [])
+					exclude_prefixes: (entry.exclude_prefixes ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
-					restrictTools: (entry.restrictTools ?? [])
+					restrict_tools: (entry.restrict_tools ?? [])
 						.map((v) => v.trim())
 						.filter(Boolean),
-					mentionPrefixGroupOnly:
-						entry.mentionPrefixGroupOnly === false ? false : undefined,
+					mention_prefix_group_only:
+						entry.mention_prefix_group_only === false ? false : undefined,
 				}))
 				.filter((entry) => entry.from),
 		})),
@@ -3428,10 +3723,10 @@ function normalizedDraftConfig(): AppConfig {
 		})),
 		permissions:
 			(agent.permissions?.tools?.length ?? 0) > 0 ||
-			(agent.permissions?.disabledTools?.length ?? 0) > 0 ||
-			(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0 ||
-			(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
-			Boolean(agent.permissions?.exec?.shellInterpolate) ||
+			(agent.permissions?.disabled_tools?.length ?? 0) > 0 ||
+			(agent.permissions?.filesystem?.allowed_paths?.length ?? 0) > 0 ||
+			(agent.permissions?.exec?.allowed_commands?.length ?? 0) > 0 ||
+			Boolean(agent.permissions?.exec?.shell_interpolate) ||
 			Boolean((agent.permissions?.exec?.shell ?? "").trim()) ||
 			agentPermissionsPreset(agent) !== "standard"
 				? {
@@ -3440,31 +3735,31 @@ function normalizedDraftConfig(): AppConfig {
 								? undefined
 								: agentPermissionsPreset(agent),
 						tools: (agent.permissions?.tools ?? []).filter(Boolean),
-						disabledTools: (agent.permissions?.disabledTools ?? [])
+						disabled_tools: (agent.permissions?.disabled_tools ?? [])
 							.map((v) => v.trim())
 							.filter(Boolean),
 						filesystem:
-							(agent.permissions?.filesystem?.allowedPaths?.length ?? 0) > 0
+							(agent.permissions?.filesystem?.allowed_paths?.length ?? 0) > 0
 								? {
-										allowedPaths: (
-											agent.permissions?.filesystem?.allowedPaths ?? []
+										allowed_paths: (
+											agent.permissions?.filesystem?.allowed_paths ?? []
 										)
 											.map((v) => v.trim())
 											.filter(Boolean),
 									}
 								: undefined,
 						exec:
-							(agent.permissions?.exec?.allowedCommands?.length ?? 0) > 0 ||
-							Boolean(agent.permissions?.exec?.shellInterpolate) ||
+							(agent.permissions?.exec?.allowed_commands?.length ?? 0) > 0 ||
+							Boolean(agent.permissions?.exec?.shell_interpolate) ||
 							Boolean((agent.permissions?.exec?.shell ?? "").trim())
 								? {
-										allowedCommands: (
-											agent.permissions?.exec?.allowedCommands ?? []
+										allowed_commands: (
+											agent.permissions?.exec?.allowed_commands ?? []
 										)
 											.map((v) => v.trim())
 											.filter(Boolean),
-										shellInterpolate:
-											agent.permissions?.exec?.shellInterpolate === true
+										shell_interpolate:
+											agent.permissions?.exec?.shell_interpolate === true
 												? true
 												: undefined,
 										shell:

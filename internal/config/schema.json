@@ -95,7 +95,7 @@
                 "type": "array",
                 "items": { "type": "string" }
               },
-              "disabledTools": {
+              "disabled_tools": {
                 "type": "array",
                 "items": { "type": "string" }
               },
@@ -103,7 +103,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "allowedPaths": {
+                  "allowed_paths": {
                     "type": "array",
                     "items": { "type": "string" }
                   }
@@ -113,11 +113,11 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "allowedCommands": {
+                  "allowed_commands": {
                     "type": "array",
                     "items": { "type": "string" }
                   },
-                  "shellInterpolate": { "type": "boolean", "default": false },
+                  "shell_interpolate": { "type": "boolean", "default": false },
                   "shell": { "type": "string" }
                 }
               }
@@ -141,20 +141,20 @@
                   "type": "string",
                   "description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
                 },
-                "showTyping": { "type": "boolean" },
-                "replyToReplies": { "type": "boolean" },
-                "reactToEmoji": { "type": "boolean" },
-                "sendReadReceipts": { "type": "boolean" },
+                "show_typing": { "type": "boolean" },
+                "reply_to_replies": { "type": "boolean" },
+                "react_to_emoji": { "type": "boolean" },
+                "send_read_receipts": { "type": "boolean" },
                 "model": { "type": "string" },
                 "fallbacks": {
                   "type": "array",
                   "items": { "type": "string" }
                 },
-                "disabledTools": {
+                "disabled_tools": {
                   "type": "array",
                   "items": { "type": "string" }
                 },
-                "allowFrom": {
+                "allow_from": {
                   "type": "array",
                   "items": {
                     "oneOf": [
@@ -165,17 +165,17 @@
                         "properties": {
                           "enabled": { "type": "boolean" },
                           "from": { "type": "string" },
-                          "allowedGroups": {
+                          "allowed_groups": {
                             "type": "string",
                             "description": "Comma-separated group/channel IDs. Use '*' to allow any group. When empty, only matches direct messages."
                           },
-                          "mentionPrefixes": {
+                          "mention_prefixes": {
                             "type": "array",
                             "items": { "type": "string" },
                             "description": "Glob patterns matched against group message text. At least one must match to forward the message."
                           },
-                          "respondToMentions": { "type": "boolean" },
-                          "restrictTools": {
+                          "respond_to_mentions": { "type": "boolean" },
+                          "restrict_tools": {
                             "type": "array",
                             "items": { "type": "string" }
                           },

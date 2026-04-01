@@ -32,7 +32,7 @@ Semantics:
 - no separate `restrictSkills`
 - agent/channel access is controlled through existing tool permissions:
   - `agents[].permissions.tools`
-  - `agents[].channels[].allowFrom[].restrictTools`
+  - `agents[].channels[].allow_from[].restrict_tools`
 
 ## Runtime Model
 
@@ -79,7 +79,7 @@ Each skill needs:
 
 - Feed dynamic skill tools into existing tool listing
 - Ensure web permission UI shows `skill_<name>` alongside built-in tools
-- Reuse `permissions.tools` and `restrictTools` unchanged
+- Reuse `permissions.tools` and `restrict_tools` unchanged
 
 ### Phase 5
 

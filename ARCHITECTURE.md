@@ -46,6 +46,7 @@ The architecture of the orchestrator is made up of 11 major components:
 #### Configuration Format
 
 - Configuration should use YAML
+- Configuration keys should use snake_case consistently. Do not introduce new camelCase keys in `aviary.yaml` or related JSON payloads/schema.
 - Errors should provide full validation and context for what went wrong, syntactically or semantically. We should have a JSON schema (yes, even though it's yaml, see gerald1248/validate-yaml)
 - Need configuration for server, agents, scheduler, channels (where messages are checked / read from), models to use, and permissions.
 - Configuration should be able to be updated on the fly and should be reflected in the system without needing to restart. For example, if I add a new agent or update an existing agent's configuration, that should be reflected in the system immediately without needing to restart.

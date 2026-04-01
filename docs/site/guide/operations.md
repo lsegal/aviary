@@ -175,7 +175,7 @@ Or use the upgrade prompt that appears in the control panel header when a new ve
 
 1. Confirm the channel daemon shows as running in **Daemons** (`/daemons`).
 2. Check that the bot token and workspace/server ID are correct.
-3. Verify the `allowFrom` rules match the sender — an overly restrictive filter silently drops messages.
+3. Verify the `allow_from` rules match the sender - an overly restrictive filter silently drops messages.
 4. Check **Logs** for channel-component errors.
 
 ### Task not running on schedule

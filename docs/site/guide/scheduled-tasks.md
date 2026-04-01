@@ -21,7 +21,7 @@ Each file is named `<task-name>.md` and contains an optional YAML frontmatter bl
 ```markdown
 ---
 schedule: "*/5 * * * *"
-target: slack:#alerts
+target: slack:workspace-bot:#alerts
 ---
 
 Check the weather forecast and alert me if rain is likely today.
@@ -36,7 +36,7 @@ Supported frontmatter fields mirror the `aviary.yaml` task fields:
 | `name` | Override the task name (defaults to filename stem) |
 | `schedule` | Cron expression (5-field or 6-field with leading seconds) |
 | `watch` | Glob pattern to watch for file changes |
-| `target` | Output delivery route (e.g. `slack:#channel`) |
+| `target` | Output delivery route (for example `slack:workspace-bot:#alerts`) |
 | `type` | `prompt` (default) or `script` |
 | `start_at` | ISO-8601 timestamp for deferred start |
 | `run_once` | `true` to disarm after the first execution |
@@ -48,7 +48,7 @@ For script tasks, the Lua source goes in the file body — the same position as 
 ---
 type: script
 schedule: "0 * * * *"
-target: slack:#ops-alerts
+target: slack:workspace-bot:#ops-alerts
 ---
 
 local result = tool.bash({ command = "df -h /" })
@@ -151,8 +151,14 @@ tasks:
   - name: weather-monitor
     schedule: "*/5 * * * *"
     prompt: "…"
-    target: slack:#weather-alerts
+    target: slack:workspace-bot:#weather-alerts
 ```
+
+Channel delivery targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`.
+
+- For Slack, `configured-channel-id` is the Slack integration name from `agents[].channels[].id`
+- For Slack, `delivery-id` is usually a channel name like `#weather-alerts` and may also be a raw Slack channel ID if needed
+- For sessions, use `session:<session-name>`
 
 Any text printed from a script — or returned from a prompt run — is delivered to that route. If the output is `SKIP` or empty, delivery is suppressed. This lets scripts opt out of noisy no-op notifications cheaply.
 
@@ -198,7 +204,7 @@ agents:
           Check the weather forecast for the next 7 days. If any day has a
           precipitation probability above 30%, send me an alert listing those
           days and their percentages. Otherwise, do nothing.
-        target: slack:#weather-alerts
+        target: slack:workspace-bot:#weather-alerts
 ```
 
 At task creation, the precompiler analyzes the prompt. It identifies three deterministic steps: fetch the forecast with a fixed tool call, filter by a fixed threshold, and print a message or skip. Because all three steps are deterministic, it compiles the task to a Lua script and rewrites the task definition:
@@ -210,7 +216,7 @@ agents:
       - name: rain-alert
         type: script
         schedule: "*/5 * * * *"
-        target: slack:#weather-alerts
+        target: slack:workspace-bot:#weather-alerts
         script: |
           local result = tool.web_fetch({
             url = "https://api.open-meteo.com/v1/forecast"
@@ -264,7 +270,7 @@ tasks:
   - name: disk-check
     type: script
     schedule: "0 * * * *"
-    target: slack:#ops-alerts
+    target: slack:workspace-bot:#ops-alerts
     script: |
       local result = tool.bash({ command = "df -h /" })
       local pct = tonumber(result:match("(%d+)%%"))

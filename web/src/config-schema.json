@@ -75,7 +75,7 @@
 								"type": "array",
 								"items": { "type": "string" }
 							},
-							"disabledTools": {
+							"disabled_tools": {
 								"type": "array",
 								"items": { "type": "string" }
 							},
@@ -83,7 +83,7 @@
 								"type": "object",
 								"additionalProperties": false,
 								"properties": {
-									"allowedPaths": {
+									"allowed_paths": {
 										"type": "array",
 										"items": { "type": "string" }
 									}
@@ -93,11 +93,11 @@
 								"type": "object",
 								"additionalProperties": false,
 								"properties": {
-									"allowedCommands": {
+									"allowed_commands": {
 										"type": "array",
 										"items": { "type": "string" }
 									},
-									"shellInterpolate": { "type": "boolean", "default": false },
+									"shell_interpolate": { "type": "boolean", "default": false },
 									"shell": { "type": "string" }
 								}
 							}
@@ -121,10 +121,10 @@
 									"type": "string",
 									"description": "TCP address of an existing signal-cli JSON-RPC daemon (e.g. 127.0.0.1:7583). If omitted for Signal channels, signal-cli is launched and managed automatically."
 								},
-								"showTyping": { "type": "boolean" },
-								"replyToReplies": { "type": "boolean" },
-								"reactToEmoji": { "type": "boolean" },
-								"sendReadReceipts": { "type": "boolean" },
+								"show_typing": { "type": "boolean" },
+								"reply_to_replies": { "type": "boolean" },
+								"react_to_emoji": { "type": "boolean" },
+								"send_read_receipts": { "type": "boolean" },
 								"group_chat_history": {
 									"type": "integer",
 									"description": "Number of recent group chat messages to log and provide as context to the agent. 0 means use the default (50). Set to -1 to disable."
@@ -134,11 +134,11 @@
 									"type": "array",
 									"items": { "type": "string" }
 								},
-								"disabledTools": {
+								"disabled_tools": {
 									"type": "array",
 									"items": { "type": "string" }
 								},
-								"allowFrom": {
+								"allow_from": {
 									"type": "array",
 									"items": {
 										"oneOf": [
@@ -149,13 +149,13 @@
 												"properties": {
 													"enabled": { "type": "boolean" },
 													"from": { "type": "string" },
-													"allowedGroups": { "type": "string" },
-													"mentionPrefixes": {
+													"allowed_groups": { "type": "string" },
+													"mention_prefixes": {
 														"type": "array",
 														"items": { "type": "string" }
 													},
-													"respondToMentions": { "type": "boolean" },
-													"restrictTools": {
+													"respond_to_mentions": { "type": "boolean" },
+													"restrict_tools": {
 														"type": "array",
 														"items": { "type": "string" }
 													},

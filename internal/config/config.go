@@ -54,15 +54,15 @@ type TLSConfig struct {
 // FilesystemPermissionsConfig restricts file tool access to ordered allow/deny
 // path rules. Rules use gitignore-style globbing and are processed in order.
 type FilesystemPermissionsConfig struct {
-	AllowedPaths []string `yaml:"allowedPaths,omitempty" json:"allowedPaths,omitempty"`
+	AllowedPaths []string `yaml:"allowed_paths,omitempty" json:"allowed_paths,omitempty"`
 }
 
 // ExecPermissionsConfig restricts host command execution for an agent.
 // Rules are ordered glob patterns matched against the raw command string.
 // A leading "!" negates a match. Rules are processed in order.
 type ExecPermissionsConfig struct {
-	AllowedCommands  []string `yaml:"allowedCommands,omitempty"  json:"allowedCommands,omitempty"`
-	ShellInterpolate bool     `yaml:"shellInterpolate,omitempty" json:"shellInterpolate,omitempty"`
+	AllowedCommands  []string `yaml:"allowed_commands,omitempty"  json:"allowed_commands,omitempty"`
+	ShellInterpolate bool     `yaml:"shell_interpolate,omitempty" json:"shell_interpolate,omitempty"`
 	Shell            string   `yaml:"shell,omitempty"            json:"shell,omitempty"`
 }
 
@@ -73,7 +73,7 @@ type ExecPermissionsConfig struct {
 type PermissionsConfig struct {
 	Preset        PermissionsPreset            `yaml:"preset,omitempty"        json:"preset,omitempty"`
 	Tools         []string                     `yaml:"tools,omitempty"         json:"tools,omitempty"`
-	DisabledTools []string                     `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
+	DisabledTools []string                     `yaml:"disabled_tools,omitempty" json:"disabled_tools,omitempty"`
 	Filesystem    *FilesystemPermissionsConfig `yaml:"filesystem,omitempty"    json:"filesystem,omitempty"`
 	Exec          *ExecPermissionsConfig       `yaml:"exec,omitempty"          json:"exec,omitempty"`
 }
@@ -134,30 +134,30 @@ type AllowFromEntry struct {
 	// AllowedGroups is a comma-separated list of group/channel IDs that this
 	// entry permits.  Use "*" to allow any group.  When empty (the default) the
 	// entry only matches direct messages.
-	AllowedGroups string `yaml:"allowedGroups,omitempty" json:"allowedGroups,omitempty"`
+	AllowedGroups string `yaml:"allowed_groups,omitempty" json:"allowed_groups,omitempty"`
 	// MentionPrefixes is a list of glob patterns matched against the message
 	// text in group chats.  At least one must match for the message to be
 	// forwarded (unless RespondToMentions is true and the bot is mentioned).
-	MentionPrefixes []string `yaml:"mentionPrefixes,omitempty" json:"mentionPrefixes,omitempty"`
+	MentionPrefixes []string `yaml:"mention_prefixes,omitempty" json:"mention_prefixes,omitempty"`
 	// ExcludePrefixes is a list of glob patterns matched against the message
 	// text.  If any pattern matches, the message is silently dropped regardless
 	// of other rules.  Applies to both direct messages and group messages.
-	ExcludePrefixes []string `yaml:"excludePrefixes,omitempty" json:"excludePrefixes,omitempty"`
+	ExcludePrefixes []string `yaml:"exclude_prefixes,omitempty" json:"exclude_prefixes,omitempty"`
 	// RespondToMentions, when true, also forwards group messages that directly
 	// mention the bot.  On Slack and Discord this checks for platform @mention
 	// syntax (e.g. <@BOTID>).  On Signal this uses the envelope's wasMentioned
 	// field provided by signal-cli.
-	RespondToMentions bool `yaml:"respondToMentions,omitempty" json:"respondToMentions,omitempty"`
+	RespondToMentions bool `yaml:"respond_to_mentions,omitempty" json:"respond_to_mentions,omitempty"`
 	// MentionPrefixGroupOnly controls whether MentionPrefixes and
 	// RespondToMentions filtering is restricted to group chats only.
 	// Defaults to true (current behaviour). Set to false to also require a
 	// mention prefix in direct messages; DMs without a matching prefix are
 	// then silently dropped even when the sender is in the allow-list.
-	MentionPrefixGroupOnly *bool `yaml:"mentionPrefixGroupOnly,omitempty" json:"mentionPrefixGroupOnly,omitempty"`
+	MentionPrefixGroupOnly *bool `yaml:"mention_prefix_group_only,omitempty" json:"mention_prefix_group_only,omitempty"`
 	// RestrictTools overrides the agent's tool allow-list for messages that
 	// match this entry.  When non-empty only the listed tools are available;
 	// an absent or empty slice falls back to the agent-level permissions.
-	RestrictTools []string `yaml:"restrictTools,omitempty" json:"restrictTools,omitempty"`
+	RestrictTools []string `yaml:"restrict_tools,omitempty" json:"restrict_tools,omitempty"`
 	// Model overrides the agent's default model for messages matching this entry.
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// Fallbacks overrides the agent's default fallbacks for messages matching this entry.
@@ -193,32 +193,33 @@ type ChannelConfig struct {
 	Type    string `yaml:"type"                    json:"type"`
 	Token   string `yaml:"token,omitempty"         json:"token,omitempty"`
 	ID      string `yaml:"id,omitempty"            json:"id,omitempty"`
-	// Primary optionally identifies the configured ID of the "primary" user
-	// for this channel (e.g. a phone number for Signal). When set, messages
-	// originating from this ID will be annotated as coming from the primary
-	// user in historical context displays.
+	// Primary optionally identifies the configured sender ID of the "primary"
+	// person for this channel (for example a Signal phone number or a Slack/
+	// Discord user ID). When set, messages originating from this ID will be
+	// annotated as coming from the primary person in historical context
+	// displays.
 	Primary       string           `yaml:"primary,omitempty"       json:"primary,omitempty"`
 	URL           string           `yaml:"url,omitempty"           json:"url,omitempty"`
-	AllowFrom     []AllowFromEntry `yaml:"allowFrom,omitempty"     json:"allowFrom,omitempty"`
-	DisabledTools []string         `yaml:"disabledTools,omitempty" json:"disabledTools,omitempty"`
+	AllowFrom     []AllowFromEntry `yaml:"allow_from,omitempty"     json:"allow_from,omitempty"`
+	DisabledTools []string         `yaml:"disabled_tools,omitempty" json:"disabled_tools,omitempty"`
 	// ShowTyping controls whether a typing indicator is shown while the agent
 	// processes a message. Defaults to true for channels that support it.
-	ShowTyping *bool `yaml:"showTyping,omitempty"     json:"showTyping,omitempty"`
+	ShowTyping *bool `yaml:"show_typing,omitempty"     json:"show_typing,omitempty"`
 	// ReactToEmoji controls whether the agent reacts to emoji reactions placed
 	// on its own messages. On Signal, this treats the emoji as a prompt and
 	// mirrors the same reaction back. Defaults to true for supported channels.
-	ReactToEmoji *bool `yaml:"reactToEmoji,omitempty"   json:"reactToEmoji,omitempty"`
+	ReactToEmoji *bool `yaml:"react_to_emoji,omitempty"   json:"react_to_emoji,omitempty"`
 	// ReplyToReplies controls whether the agent responds when someone replies
 	// to one of its own messages. Replies still have to match the entry's
 	// sender/group allowFrom scope, but can continue the conversation without
 	// re-satisfying mention-based group gating.
 	// Defaults to true for channels that support it.
-	ReplyToReplies *bool `yaml:"replyToReplies,omitempty" json:"replyToReplies,omitempty"`
+	ReplyToReplies *bool `yaml:"reply_to_replies,omitempty" json:"reply_to_replies,omitempty"`
 	// SendReadReceipts controls whether the agent sends read receipts for
 	// messages it will respond to. Read receipts are only sent for messages
 	// that pass the allowFrom filter (i.e. messages the agent will act on).
 	// Defaults to true for channels that support it.
-	SendReadReceipts *bool `yaml:"sendReadReceipts,omitempty" json:"sendReadReceipts,omitempty"`
+	SendReadReceipts *bool `yaml:"send_read_receipts,omitempty" json:"send_read_receipts,omitempty"`
 	// Model overrides the agent's default model for all messages on this channel.
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// Fallbacks overrides the agent's default fallbacks for all messages on this channel.

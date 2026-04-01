@@ -86,17 +86,17 @@ permissions:
   tools:
     - agent_run
     - file_read
-  disabledTools:
+  disabled_tools:
     - exec
   filesystem:
-    allowedPaths:
+    allowed_paths:
       - "./workspace/**"
       - "!./workspace/private/**"
   exec:
-    allowedCommands:
+    allowed_commands:
       - "git *"
       - "!git push *"
-    shellInterpolate: false
+    shell_interpolate: false
     shell: /bin/bash
 ```
 
@@ -104,10 +104,10 @@ permissions:
 | --- | --- | --- | --- |
 | `preset` | string | `"standard"` | Base tool surface: `"full"`, `"standard"`, or `"minimal"` |
 | `tools` | []string | | Explicit tool allowlist. When non-empty, only the listed tools are offered. |
-| `disabledTools` | []string | | Tools to remove from the available set regardless of preset |
-| `filesystem.allowedPaths` | []string | | Ordered allow/deny glob rules for `file_*` tools. Rules use gitignore-style globbing; prefix with `!` to deny. Relative paths resolve to the agent's data directory. |
-| `exec.allowedCommands` | []string | | Ordered glob rules matched against the raw command string. Prefix with `!` to deny. |
-| `exec.shellInterpolate` | bool | `false` | Allow shell variable interpolation in commands |
+| `disabled_tools` | []string | | Tools to remove from the available set regardless of preset |
+| `filesystem.allowed_paths` | []string | | Ordered allow/deny glob rules for `file_*` tools. Rules use gitignore-style globbing; prefix with `!` to deny. Relative paths resolve to the agent's data directory. |
+| `exec.allowed_commands` | []string | | Ordered glob rules matched against the raw command string. Prefix with `!` to deny. |
+| `exec.shell_interpolate` | bool | `false` | Allow shell variable interpolation in commands |
 | `exec.shell` | string | | Shell binary to use for command execution |
 
 **Preset levels:**
@@ -118,7 +118,7 @@ permissions:
 | `"full"` | All tools available |
 | `"minimal"` | Only the smallest safe subset of tools |
 
-**Path prefix shortcuts** for `allowedPaths`:
+**Path prefix shortcuts** for `allowed_paths`:
 
 | Prefix | Resolves to |
 | --- | --- |
@@ -133,31 +133,32 @@ A list of messaging channel connections for this agent.
 ```yaml
 channels:
   - type: slack
+    id: workspace-bot
+    url: xapp-...
     token: xoxb-...
-    id: T0123456789
     model: anthropic/claude-haiku-4-5-20251001
     show_typing: true
     react_to_emoji: true
     reply_to_replies: true
     send_read_receipts: true
     group_chat_history: 50
-    disabledTools:
+    disabled_tools:
       - exec
-    allowFrom:
-      - from: U0123456789
-        allowedGroups: "C0123456789,C9876543210"
-        mentionPrefixes:
+    allow_from:
+      - from: "@alice"
+        allowed_groups: "#alerts,#engineering"
+        mention_prefixes:
           - "hey bot*"
-        respondToMentions: true
+        respond_to_mentions: true
 ```
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `type` | string | _(required)_ | Channel type: `"slack"`, `"discord"`, or `"signal"` |
 | `enabled` | bool | `true` | Whether this channel connection is active |
-| `token` | string | | Bot token for the channel |
-| `id` | string | | Workspace or server ID |
-| `url` | string | | Webhook URL (Signal/signal-cli) |
+| `token` | string | | Bot token for the channel. For Slack this is the `xoxb-...` token. For Discord this is the bot token from the Discord Developer Portal. |
+| `id` | string | | Aviary's configured channel/integration ID. Used when routing task output, e.g. `slack:workspace-bot:#alerts`. |
+| `url` | string | | Channel transport address. For Slack this is the App-Level token (`xapp-...`) used by Socket Mode. For Signal this is the `signal-cli` daemon address. Discord does not use `url`. |
 | `model` | string | | Override model for all messages on this channel |
 | `fallbacks` | []string | | Override fallbacks for all messages on this channel |
 | `show_typing` | bool | `true` | Show a typing indicator while processing |
@@ -165,10 +166,28 @@ channels:
 | `reply_to_replies` | bool | `true` | Respond when someone replies to one of the agent's messages |
 | `send_read_receipts` | bool | `true` | Send read receipts for messages the agent will act on |
 | `group_chat_history` | int | `50` | Number of recent group chat messages retained as context. Set to `-1` to disable. |
-| `disabledTools` | []string | | Tools disabled for messages arriving on this channel |
-| `allowFrom` | []AllowFromEntry | | Sender and group filtering rules (see below) |
+| `disabled_tools` | []string | | Tools disabled for messages arriving on this channel |
+| `allow_from` | []AllowFromEntry | | Sender and group filtering rules (see below) |
 
-**allowFrom entries:**
+### Slack-specific Notes
+
+- `id` is not a Slack workspace ID or channel ID. It is your Aviary integration name for that Slack connection.
+- `url` must contain the Slack App-Level token (`xapp-...`) when `type: slack`.
+- `token` must contain the Slack Bot token (`xoxb-...`) when `type: slack`.
+- Slack scheduled task delivery routes use the form `slack:<configured-id>:<slack-channel-id>`.
+- For Slack, Aviary accepts either raw IDs or friendly names in many places:
+  `@alice` for users, and `#alerts` for channels in the common case. Raw Slack IDs still work when needed.
+
+### Discord-specific Notes
+
+- Enable the **Message Content Intent** for the bot in the Discord Developer Portal.
+- `token` must contain the Discord bot token when `type: discord`.
+- `id` is Aviary's configured integration name for that Discord connection, not a Discord channel ID.
+- `allow_from[].from` should contain Discord user IDs.
+- `allow_from[].allowed_groups` should contain Discord channel IDs.
+- Discord scheduled task delivery routes use the form `discord:<configured-id>:<discord-channel-id>`.
+
+**allow_from entries:**
 
 Each entry controls which senders and groups can trigger the agent.
 
@@ -176,16 +195,16 @@ Each entry controls which senders and groups can trigger the agent.
 | --- | --- | --- | --- |
 | `from` | string | _(required)_ | Sender ID (phone number, user ID) or `"*"` for any sender |
 | `enabled` | bool | `true` | Whether this entry is active |
-| `allowedGroups` | string | | Comma-separated group/channel IDs or `"*"` for any group. When empty, only direct messages match. |
-| `mentionPrefixes` | []string | | Glob patterns matched against group message text. At least one must match (unless `respondToMentions` triggers). |
-| `excludePrefixes` | []string | | Glob patterns; messages matching any pattern are silently dropped |
-| `respondToMentions` | bool | `false` | Also forward group messages that directly @mention the bot |
-| `mentionPrefixGroupOnly` | bool | `true` | When `true`, prefix/mention filtering applies only to group messages; direct messages from allowed senders are always forwarded. |
-| `restrictTools` | []string | | Override the tool allowlist for messages matching this entry |
+| `allowed_groups` | string | | Comma-separated group/channel IDs or `"*"` for any group. When empty, only direct messages match. |
+| `mention_prefixes` | []string | | Glob patterns matched against group message text. At least one must match (unless `respond_to_mentions` triggers). |
+| `exclude_prefixes` | []string | | Glob patterns; messages matching any pattern are silently dropped |
+| `respond_to_mentions` | bool | `false` | Also forward group messages that directly @mention the bot |
+| `mention_prefix_group_only` | bool | `true` | When `true`, prefix/mention filtering applies only to group messages; direct messages from allowed senders are always forwarded. |
+| `restrict_tools` | []string | | Override the tool allowlist for messages matching this entry |
 | `model` | string | | Override model for messages matching this entry |
 | `fallbacks` | []string | | Override fallbacks for messages matching this entry |
 
-A plain string in `allowFrom` is equivalent to `{ from: "<string>" }`.
+A plain string in `allow_from` is equivalent to `{ from: "<string>" }`.
 
 ### agents[].tasks
 
@@ -196,7 +215,7 @@ tasks:
   - name: daily-summary
     schedule: "0 9 * * *"
     prompt: "Summarize what happened yesterday and post to Slack."
-    target: slack-channel
+    target: slack:workspace-bot:#alerts
 
   - name: process-new-files
     watch: "./inbox/*.csv"
@@ -219,7 +238,7 @@ tasks:
 | `watch` | string | | File glob pattern; the task runs when matching files change |
 | `prompt` | string | | Prompt text sent to the agent (for `type: prompt`) |
 | `script` | string | | Lua script executed directly (for `type: script`) |
-| `target` | string | | Target session or output destination |
+| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `<channel-type>:<configured-channel-id>:<delivery-id>` for channel delivery. |
 
 ---
 
@@ -358,11 +377,11 @@ agents:
     permissions:
       preset: standard
       filesystem:
-        allowedPaths:
+        allowed_paths:
           - "./src/**"
           - "./tests/**"
       exec:
-        allowedCommands:
+        allowed_commands:
           - "go test *"
           - "go build *"
 
@@ -371,12 +390,13 @@ agents:
     memory: shared
     channels:
       - type: slack
-        token: xoxb-your-token
-        id: T0123456789
-        allowFrom:
+        id: workspace-bot
+        url: xapp-your-app-level-token
+        token: xoxb-your-bot-token
+        allow_from:
           - from: "*"
-            allowedGroups: "C0123456789"
-            respondToMentions: true
+            allowed_groups: "#alerts"
+            respond_to_mentions: true
     tasks:
       - name: morning-standup
         schedule: "0 9 * * 1-5"
