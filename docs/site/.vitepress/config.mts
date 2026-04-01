@@ -59,9 +59,14 @@ export default defineConfig({
 					items: [
 						{ text: "Overview", link: "/guide/" },
 						{ text: "Getting Started", link: "/guide/getting-started" },
-						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Configuration", link: "/guide/configuration" },
+						{ text: "Channels", link: "/guide/channels" },
+						{
+							text: "Security & Permissions",
+							link: "/guide/security-permissions",
+						},
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
+						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Operations", link: "/guide/operations" },
 					],
 				},

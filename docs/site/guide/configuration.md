@@ -159,140 +159,9 @@ agents:
 
 ## Channels
 
-Channels connect an agent to a messaging platform. Multiple channels can be attached to one agent; each channel can have its own model, disabled tools, and sender rules.
+Channels connect an agent to a messaging system. Aviary supports Slack, Discord, and Signal, and each channel can carry its own model overrides, tool restrictions, and sender rules.
 
-```yaml
-agents:
-  - name: lobby
-    model: anthropic/claude-sonnet-4-6
-    channels:
-      - type: slack
-        id: workspace-bot       # configured integration ID
-        url: xapp-your-app-level-token
-        token: xoxb-your-bot-token
-        show_typing: true
-        allow_from:
-          - from: "*"
-            allowed_groups: "#alerts"   # only this channel
-            respond_to_mentions: true         # forward @bot mentions
-```
-
-### Slack Setup
-
-Slack uses two tokens:
-
-- `url`: the Slack App-Level token (`xapp-...`) used for Socket Mode
-- `token`: the Slack Bot token (`xoxb-...`) used for posting messages and listing channels
-
-The channel `id` is Aviary's configured integration name, not a Slack conversation ID. Use a stable name such as `workspace-bot`, `alerts-bot`, or `main-workspace`.
-
-To make Slack work end to end, your Slack app should have:
-
-- Socket Mode enabled
-- Event subscriptions for message events
-- Bot scopes that allow posting and reading channel metadata, such as `chat:write`, `channels:history`, `groups:history`, `channels:read`, and `groups:read`
-- The app installed to the workspace and invited to any channels you want it to access
-
-In the control panel, Settings -> Agents -> Channels -> Slack now includes a **Browse Channels** action. That uses the bot token to validate the workspace and load visible channels, which is especially helpful when configuring scheduled task delivery.
-
-For Slack-specific fields you can now use either raw Slack IDs or human-friendly names, but the examples below prefer names:
-
-- `allow_from[].from`: `alice` or `@alice`
-- `allow_from[].allowed_groups`: `alerts` or `#alerts`
-- task `target`: `slack:workspace-bot:#alerts`
-
-### Discord Setup
-
-Discord uses a single bot token from the [Discord Developer Portal](https://discord.com/developers/applications).
-
-To make Discord work end to end:
-
-1. Create a new Discord application and add a bot user.
-2. Copy the bot token and store it directly in `token` or via an auth reference.
-3. In the bot settings, enable the **Message Content Intent** so Aviary can read guild-channel message text.
-4. Invite the bot to your server with permission to view channels, read message history, and send messages.
-5. Turn on Developer Mode in Discord so you can copy user IDs, server IDs, and channel IDs.
-
-Example:
-
-```yaml
-agents:
-  - name: discord-lobby
-    model: anthropic/claude-sonnet-4-6
-    verbose: true
-    channels:
-      - type: discord
-        token: auth:discord:default
-        id: ops-guild          # Aviary configured integration ID
-        disabled_tools:
-          - exec
-        allow_from:
-          - from: "*"
-            allowed_groups: "234567890123456789"   # Discord text channel ID
-            respond_to_mentions: true
-```
-
-For Discord:
-
-- `token` is the bot token.
-- `id` is Aviary's configured channel ID for this integration. Use any stable unique name such as `ops-guild` or `main-discord`.
-- `from` is a Discord user ID.
-- `allowed_groups` is a comma-separated list of Discord channel IDs, or `*` to allow any guild channel matched by the rule.
-- Direct messages do not need `allowed_groups`; server channels do.
-
-### Signal
-
-Aviary connects to Signal via [signal-cli](https://github.com/AsamK/signal-cli). Install signal-cli and register (or link) your account before configuring this channel.
-
-```bash
-# Register a new number with Signal
-signal-cli -a +15551234567 register
-signal-cli -a +15551234567 verify <code>
-
-# Or link to an existing Signal account as a secondary device
-signal-cli link -n "Aviary"
-```
-
-Once registered, add the channel using the phone number as the `id`:
-
-```yaml
-agents:
-  - name: assistant
-    channels:
-      - type: signal
-        id: "+15551234567"      # your registered Signal number
-        allow_from:
-          - from: "+19995550100"  # only respond to this contact
-```
-
-Aviary launches and manages `signal-cli` automatically. The `signal-cli` binary must be on your `$PATH`.
-
-If you are already running signal-cli as a daemon on a known TCP port, point Aviary at it with `url` to avoid a second process:
-
-```yaml
-      - type: signal
-        id: "+15551234567"
-        url: "127.0.0.1:7583"   # existing signal-cli --tcp daemon address
-```
-
-**Sender filtering** controls who the agent responds to:
-
-- `from: "*"` matches any sender; a specific user/phone ID matches only that sender.
-- `allowed_groups` restricts to specific group/channel IDs. Without it, only direct messages match.
-- `mention_prefixes` filters group messages by text pattern. At least one pattern must match (unless `respond_to_mentions` catches an @mention).
-- `exclude_prefixes` silently drops matching messages before any other rule applies.
-
-By default, group-chat filtering (mention prefixes, respond-to-mentions) applies only to group messages. Direct messages from allowed senders are always forwarded. Set `mention_prefix_group_only: false` on an entry to also require a prefix match in direct messages.
-
-A plain string in `allow_from` is shorthand for `{ from: "<string>" }`:
-
-```yaml
-allow_from:
-  - "+15551234567"          # shorthand
-  - from: "U9876543210"     # explicit form
-    allowed_groups: "*"
-    respond_to_mentions: true
-```
+Use the dedicated [Channels guide](/guide/channels) for setup steps, platform-specific requirements, and delivery-routing examples.
 
 ## Scheduled Tasks
 
@@ -308,7 +177,7 @@ agents:
         target: slack:workspace-bot:#team-updates
 ```
 
-Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`. For Slack, the final segment can be a channel name like `#team-updates` or a raw Slack channel ID.
+Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`. See the [Channels guide](/guide/channels#delivery-targets) for channel-specific routing examples.
 
 ## Skills
 

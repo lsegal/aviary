@@ -212,7 +212,15 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
   </a>
   <a class="detail-card detail-link" href="./guide/configuration">
     <h3>Configuration</h3>
-    <p>Learn how to change how Aviary behaves — models, permissions, channels, and everything else in <code>aviary.yaml</code>.</p>
+    <p>Learn how to change how Aviary behaves — models, permissions, agents, and everything else in <code>aviary.yaml</code>.</p>
+  </a>
+  <a class="detail-card detail-link" href="./guide/channels">
+    <h3>Channels</h3>
+    <p>Connect Aviary to Slack, Discord, or Signal and set up sender rules, mentions, and delivery targets.</p>
+  </a>
+  <a class="detail-card detail-link" href="./guide/security-permissions">
+    <h3>Security &amp; Permissions</h3>
+    <p>Lock down agent access, harden the server, and choose sensible host-level isolation for safer deployments.</p>
   </a>
   <a class="detail-card detail-link" href="./guide/scheduled-tasks">
     <h3>Scheduled Tasks</h3>

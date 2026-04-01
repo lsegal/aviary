@@ -155,6 +155,8 @@ The server picks up config changes automatically — no restart needed.
 
 The agent responds in real time. Sessions are persisted automatically; they appear in the session list the next time you open the chat.
 
+If you want to talk to the agent over Slack, Discord, or Signal instead of the built-in chat view, skip ahead to the [Channels guide](/guide/channels).
+
 ## Connect via MCP
 
 Any MCP-compatible client can connect directly to the Aviary server:
@@ -167,5 +169,7 @@ In Claude Code, add a remote MCP server pointing to that endpoint. Once connecte
 ## Next Steps
 
 - [Configuration](/guide/configuration) — full `aviary.yaml` reference walkthrough
+- [Channels](/guide/channels) — skip here for Slack, Discord, and Signal setup
+- [Security & Permissions](/guide/security-permissions) — hardening guidance for agents, the server, and the host machine
 - [Scheduled Tasks](/guide/scheduled-tasks) — automate recurring agent work
 - [MCP Tool Reference](/reference/mcp/) — all available tools
