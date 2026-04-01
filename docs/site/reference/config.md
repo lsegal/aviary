@@ -174,6 +174,7 @@ channels:
 - `id` is not a Slack workspace ID or channel ID. It is your Aviary integration name for that Slack connection.
 - `url` must contain the Slack App-Level token (`xapp-...`) when `type: slack`.
 - `token` must contain the Slack Bot token (`xoxb-...`) when `type: slack`.
+- `users:read` is required on the Slack bot token if you want Aviary to resolve Slack user names for name-based routing.
 - Slack scheduled task delivery routes use the form `slack:<configured-id>:<slack-channel-id>`.
 - For Slack, Aviary accepts either raw IDs or friendly names in many places:
   `@alice` for users, and `#alerts` for channels in the common case. Raw Slack IDs still work when needed.

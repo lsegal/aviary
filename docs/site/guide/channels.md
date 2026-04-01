@@ -69,7 +69,7 @@ You usually need to be a workspace admin, app manager, or someone allowed to ins
 3. Choose **From scratch**.
 4. Give the app a name like `Aviary` and choose the Slack workspace where you want the bot to live.
 5. Open **OAuth & Permissions**.
-6. Under **Bot Token Scopes**, add the permissions Aviary needs. A practical starting set is `chat:write`, `channels:history`, `groups:history`, `channels:read`, `groups:read`, and `app_mentions:read`.
+6. Under **Bot Token Scopes**, add the permissions Aviary needs. A practical starting set is `chat:write`, `channels:history`, `groups:history`, `channels:read`, `groups:read`, `users:read`, and `app_mentions:read`.
 7. Still on **OAuth & Permissions**, click **Install to Workspace** or **Reinstall to Workspace**.
 8. After installation, copy the **Bot User OAuth Token**. This is the value that starts with `xoxb-`. Put that into Aviary's `token` field.
 9. Open **Socket Mode** in the Slack app settings and turn on **Enable Socket Mode**.
@@ -119,6 +119,7 @@ Slack-specific notes:
 
 - `allow_from[].from` accepts raw Slack user IDs or human-friendly names such as `alice` or `@alice`.
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
+- `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
 - In the control panel, **Settings -> Agents -> Channels -> Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
 ### Common Confusions
