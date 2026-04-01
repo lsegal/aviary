@@ -781,6 +781,7 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 		for _, ch := range chCfg.Channels {
 			fmt.Fprintf(&sb, "- type: %s, configured: %s, id: %s\n", ch.Type, ch.ConfiguredID, ch.ID)
 		}
+		sb.WriteString("The final user message is the live inbound message from the sender shown below. Reply directly to that sender in second person. Do not describe them in the third person or say you are replying on someone else's behalf.\n")
 		// List known participant members (if any)
 		members := make(map[string]struct{})
 		for _, m := range msgs {
@@ -816,16 +817,9 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 			}
 		}
 	}
-	// For Signal channels the ID format encodes group vs private:
-	// phone-format IDs ("+1234…") are private DMs; anything else is a base64 group ID.
-	// This lets us label ALL messages in the session consistently, including the triggering
-	// message whose Sender.Participant==true even in group chats.
-	isSignalGroupSession := false
+	var primaryChannel *store.SessionChannel
 	if sessionChCfg != nil && len(sessionChCfg.Channels) > 0 {
-		c := sessionChCfg.Channels[0]
-		if c.Type == "signal" {
-			isSignalGroupSession = c.ID != "" && !strings.HasPrefix(c.ID, "+")
-		}
+		primaryChannel = &sessionChCfg.Channels[0]
 	}
 	for _, msg := range prior {
 		ts := msg.Timestamp.Format("2006-01-02 15:04:05")
@@ -844,10 +838,7 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 			c := sessionChCfg.Channels[0]
 			sourceSimple = fmt.Sprintf("%s:%s", c.Type, c.ID)
 		}
-		privacy := "private"
-		if isSignalGroupSession || (msg.Sender != nil && !msg.Sender.Participant) {
-			privacy = "group"
-		}
+		privacy := inferSessionPrivacy(primaryChannel, msg.Sender)
 		// Primary match when configured for this channel.
 		primaryMatch := msg.Sender != nil && primaryID != "" && strings.TrimSpace(msg.Sender.ID) == primaryID
 		// Build metadata: privacy, source, optional primary flag. Place before name.
@@ -871,10 +862,7 @@ func (r *AgentRunner) loadSessionConversation(sessionID string, maxMessages int)
 		_ = lastSourceSimple
 		// overwrite lastSourceSimple usage below via primary lookup
 	}
-	lastPrivacy := "private"
-	if isSignalGroupSession || (last.Sender != nil && !last.Sender.Participant) {
-		lastPrivacy = "group"
-	}
+	lastPrivacy := inferSessionPrivacy(primaryChannel, last.Sender)
 	if last.Sender != nil {
 		label := senderLabel(last.Sender)
 		primaryMatch := last.Sender != nil && primaryID != "" && strings.TrimSpace(last.Sender.ID) == primaryID
@@ -942,6 +930,27 @@ func senderLabel(s *domain.MessageSender) string {
 		return name
 	}
 	return fmt.Sprintf("%s (%s)", name, id)
+}
+
+func inferSessionPrivacy(channel *store.SessionChannel, sender *domain.MessageSender) string {
+	if channel != nil {
+		switch channel.Type {
+		case "signal":
+			if channel.ID != "" && !strings.HasPrefix(channel.ID, "+") {
+				return "group"
+			}
+			return "private"
+		case "slack":
+			if strings.HasPrefix(channel.ID, "D") {
+				return "private"
+			}
+			return "group"
+		}
+	}
+	if sender != nil && !sender.Participant {
+		return "group"
+	}
+	return "private"
 }
 
 func annotateHistoricalMedia(content, mediaURL, marker string) string {

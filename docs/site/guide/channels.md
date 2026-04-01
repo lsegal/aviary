@@ -25,7 +25,6 @@ agents:
         id: workspace-bot
         url: xapp-your-app-level-token
         token: xoxb-your-bot-token
-        show_typing: true
         disabled_tools:
           - exec
         allow_from:
@@ -40,6 +39,7 @@ Shared channel behavior:
 - `disabled_tools` can only restrict what the agent already has permission to use.
 - `allow_from` controls which senders and group contexts are allowed to reach the agent.
 - Channel-level `model` and `fallbacks` override the agent defaults for messages arriving through that channel.
+- `show_typing` currently applies to Signal only. Slack and Discord do not support it.
 
 ## Slack
 
@@ -85,9 +85,11 @@ At that point you have the two Slack secrets Aviary needs.
 Your Slack app should also have:
 
 - Socket Mode enabled
-- Event subscriptions enabled for message events and mentions
+- Event Subscriptions enabled, including both channel/direct message events and the `app_mention` event
 - The app installed to the workspace
 - The bot invited to any channels you want it to read or answer in
+
+If the bot should respond when you type something like `@Aviary hi` in a channel, Slack must be configured to deliver `app_mention` events to the app.
 
 If you want the bot to work in a channel like `#alerts`, invite it there in Slack the same way you would invite a teammate.
 
@@ -108,7 +110,6 @@ agents:
         id: workspace-bot
         url: xapp-your-app-level-token
         token: xoxb-your-bot-token
-        show_typing: true
         allow_from:
           - from: "*"
             allowed_groups: "#alerts"
@@ -119,6 +120,7 @@ Slack-specific notes:
 
 - `allow_from[].from` accepts raw Slack user IDs or human-friendly names such as `alice` or `@alice`.
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
+- Slack apps connected through Events API and Socket Mode cannot emit typing indicators, including in DMs. `show_typing` is not supported on Slack.
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
 - In the control panel, **Settings -> Agents -> Channels -> Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 

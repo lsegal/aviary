@@ -248,7 +248,6 @@ agents:
         id: workspace-bot
         url: xapp-your-app-level-token
         token: xoxb-your-bot-token
-        show_typing: true
         disabled_tools:
           - exec
         allow_from:

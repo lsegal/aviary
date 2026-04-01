@@ -205,6 +205,7 @@ type ChannelConfig struct {
 	DisabledTools []string         `yaml:"disabled_tools,omitempty" json:"disabled_tools,omitempty"`
 	// ShowTyping controls whether a typing indicator is shown while the agent
 	// processes a message. Defaults to true for channels that support it.
+	// Currently this is implemented for Signal only.
 	ShowTyping *bool `yaml:"show_typing,omitempty"     json:"show_typing,omitempty"`
 	// ReactToEmoji controls whether the agent reacts to emoji reactions placed
 	// on its own messages. On Signal, this treats the emoji as a prompt and

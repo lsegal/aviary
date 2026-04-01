@@ -508,6 +508,33 @@ func TestDiscordChannel_HandleEditedMention(t *testing.T) {
 	assert.Equal(t, "hi <@BOT123>", msg.Text)
 }
 
+func TestDiscordChannel_HandleStructuredMention(t *testing.T) {
+	ch := NewDiscordChannel("t", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ok := ch.handleMessage(&discordgo.Message{
+		Author:    &discordgo.User{ID: "U123"},
+		ChannelID: "C123",
+		GuildID:   "G123",
+		Content:   "hi aviary",
+		Mentions: []*discordgo.User{{
+			ID: "BOT123",
+		}},
+	}, "BOT123")
+	assert.True(t, ok)
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "discord", msg.Type)
+	assert.Equal(t, "U123", msg.From)
+	assert.Equal(t, "C123", msg.Channel)
+	assert.Equal(t, "hi aviary", msg.Text)
+}
+
 func TestDiscordChannel_IngestsImageAttachment(t *testing.T) {
 	base := t.TempDir()
 	store.SetDataDir(base)
@@ -706,6 +733,32 @@ func TestSlackChannel_HandleEditedMention(t *testing.T) {
 	assert.Equal(t, "hi <@UBOT>", msg.Text)
 }
 
+func TestSlackChannel_HandleAppMention(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From:              "*",
+		AllowedGroups:     "*",
+		RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ch.handleAppMentionEvent(&slackevents.AppMentionEvent{
+		Type:      "app_mention",
+		User:      "U123",
+		Channel:   "C123",
+		Text:      "<@UBOT> hi",
+		TimeStamp: "1710000000.123456",
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "slack", msg.Type)
+	assert.Equal(t, "U123", msg.From)
+	assert.Equal(t, "C123", msg.Channel)
+	assert.Equal(t, "<@UBOT> hi", msg.Text)
+	assert.Equal(t, time.Unix(1710000000, 123456000).UTC(), msg.ReceivedAt)
+}
+
 func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
 	base := t.TempDir()
 	store.SetDataDir(base)
@@ -832,6 +885,19 @@ func TestNewChannel_Slack(t *testing.T) {
 	}, "model", nil)
 	assert.NotNil(t, ch)
 
+}
+
+func TestNewChannel_Slack_IgnoresShowTyping(t *testing.T) {
+	enabled := true
+	ch := newChannel(config.ChannelConfig{
+		Type:       "slack",
+		Token:      "xoxb-token",
+		URL:        "xapp-token",
+		ShowTyping: &enabled,
+	}, "model", nil)
+	assert.NotNil(t, ch)
+	_, ok := ch.(TypingSender)
+	assert.False(t, ok)
 }
 
 func overrideDiscordEndpointsForTest(base string) func() {

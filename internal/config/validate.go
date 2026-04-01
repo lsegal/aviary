@@ -311,6 +311,10 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 		return
 	}
 
+	if ch.ShowTyping != nil && ch.Type != "" && ch.Type != "signal" {
+		v.errorf(field+".show_typing", "show_typing is only supported for signal; %s apps cannot send typing indicators, including in direct messages", ch.Type)
+	}
+
 	enabledEntries := 0
 	for i, entry := range ch.AllowFrom {
 		if !BoolOr(entry.Enabled, true) {

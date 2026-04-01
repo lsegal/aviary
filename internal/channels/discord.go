@@ -220,6 +220,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		receivedAt = msg.Timestamp.UTC()
 	}
 	mediaURL := firstDiscordImageDataURL(msg.Attachments)
+	wasMentioned := discordMentionsUser(msg.Mentions, botUserID)
 	senderName := strings.TrimSpace(msg.Author.GlobalName)
 	if senderName == "" {
 		senderName = strings.TrimSpace(msg.Author.Username)
@@ -242,7 +243,7 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		}
 	}
 
-	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, false)
+	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, wasMentioned)
 	if !result.allowed {
 		c.logf("discord: ignored message from=%s channel=%s", msg.Author.ID, msg.ChannelID)
 		return false
@@ -298,4 +299,16 @@ func firstDiscordImageDataURL(attachments []*discordgo.MessageAttachment) string
 		slog.Warn("discord: failed to ingest image attachment", "file", attachment.Filename, "err", err)
 	}
 	return ""
+}
+
+func discordMentionsUser(mentions []*discordgo.User, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	for _, mention := range mentions {
+		if mention != nil && mention.ID == userID {
+			return true
+		}
+	}
+	return false
 }

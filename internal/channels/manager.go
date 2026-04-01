@@ -376,11 +376,17 @@ func newChannel(cc config.ChannelConfig, agentModel string, agentFallbacks []str
 
 	switch cc.Type {
 	case "slack":
+		if cc.ShowTyping != nil {
+			slog.Warn("channel config field ignored", "type", cc.Type, "id", cc.ID, "field", "show_typing", "reason", "Slack Socket Mode apps cannot send typing indicators")
+		}
 		// Token = bot token (xoxb-…), URL = app-level token (xapp-…) for Socket Mode.
 		ch := NewSlackChannel(cc.URL, cc.Token, cc.AllowFrom, model, fallbacks)
 		ch.disabledTools = cc.DisabledTools
 		return ch
 	case "discord":
+		if cc.ShowTyping != nil {
+			slog.Warn("channel config field ignored", "type", cc.Type, "id", cc.ID, "field", "show_typing", "reason", "Discord channel typing indicators are not implemented")
+		}
 		ch := NewDiscordChannel(cc.Token, cc.AllowFrom, model, fallbacks)
 		ch.disabledTools = cc.DisabledTools
 		return ch

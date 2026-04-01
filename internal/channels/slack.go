@@ -200,11 +200,12 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 	if !ok {
 		return
 	}
-	inner, ok := eventsAPI.InnerEvent.Data.(*slackevents.MessageEvent)
-	if !ok {
-		return
+	switch inner := eventsAPI.InnerEvent.Data.(type) {
+	case *slackevents.MessageEvent:
+		c.handleMessageEvent(inner)
+	case *slackevents.AppMentionEvent:
+		c.handleAppMentionEvent(inner)
 	}
-	c.handleMessageEvent(inner)
 }
 
 func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
@@ -305,6 +306,20 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		c.logf("slack: no message handler registered for from=%s", from)
 		slog.Debug("slack: no handler registered", "from", from)
 	}
+}
+
+func (c *SlackChannel) handleAppMentionEvent(event *slackevents.AppMentionEvent) {
+	if event == nil {
+		return
+	}
+	c.handleMessageEvent(&slackevents.MessageEvent{
+		Type:      "message",
+		User:      event.User,
+		Text:      event.Text,
+		TimeStamp: event.TimeStamp,
+		Channel:   event.Channel,
+		BotID:     event.BotID,
+	})
 }
 
 func (c *SlackChannel) firstImageDataURL(files []slack.File) string {

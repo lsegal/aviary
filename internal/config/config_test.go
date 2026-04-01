@@ -838,6 +838,41 @@ func TestValidate_DisabledChannelSkipsAllowFromWarning(t *testing.T) {
 
 }
 
+func TestValidate_ShowTypingUnsupportedOnSlack(t *testing.T) {
+	enabled := true
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Channels: []ChannelConfig{{
+				Type:       "slack",
+				ID:         "workspace-bot",
+				ShowTyping: &enabled,
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "show_typing is only supported for signal"))
+	assert.True(t, hasIssue(issues, "including in direct messages"))
+
+}
+
+func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
+	enabled := true
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name: "bot",
+			Channels: []ChannelConfig{{
+				Type:       "signal",
+				ID:         "+15551234567",
+				ShowTyping: &enabled,
+			}},
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "show_typing is only supported for signal"))
+
+}
+
 func TestValidate_StdioModelMissingCommand(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{

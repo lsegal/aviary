@@ -164,6 +164,10 @@ func TestCheckAllowed_RespondToMentions(t *testing.T) {
 	result = checkAllowed(entries, "user1", "groupX", "<@BOTID> help", true, "BOTID", false)
 	assert.True(t, result.allowed)
 
+	// Discord nickname @mention syntax.
+	result = checkAllowed(entries, "user1", "groupX", "<@!BOTID> help", true, "BOTID", false)
+	assert.True(t, result.allowed)
+
 	// Not mentioned.
 	result = checkAllowed(entries, "user1", "groupX", "no mention", true, "BOTID", false)
 	assert.False(t, result.allowed)

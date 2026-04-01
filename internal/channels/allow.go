@@ -190,5 +190,6 @@ func isDirectMention(text, botUserID string) bool {
 	if botUserID == "" {
 		return false
 	}
-	return strings.Contains(text, "<@"+botUserID+">")
+	return strings.Contains(text, "<@"+botUserID+">") ||
+		strings.Contains(text, "<@!"+botUserID+">")
 }

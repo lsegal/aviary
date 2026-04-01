@@ -1728,11 +1728,49 @@ func TestLoadSessionConversation_PrimaryAnnotationApplied(t *testing.T) {
 		assert.Contains(t, conv[0].Content, "source=slack:C123")
 		assert.Contains(t, conv[0].Content, "primary")
 		assert.Contains(t, conv[0].Content, "Bob")
+		assert.Contains(t, conv[0].Content, "Reply directly to that sender in second person")
 
 		// Last user message should have metadata before the name and include source
 		assert.Contains(t, conv[1].Content, "[2026-03-23 12:34:56]")
-		assert.Contains(t, conv[1].Content, "(private, source=slack:C123)")
+		assert.Contains(t, conv[1].Content, "(group, source=slack:C123)")
 		assert.Contains(t, conv[1].Content, "<Charlie")
+	}
+}
+
+func TestLoadSessionConversation_SlackChannelLabeledCorrectly(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_slack_group_label", Name: "slack-group-label"},
+		&config.AgentConfig{Name: "slack-group-label"},
+		&mockProvider{}, nil,
+	)
+
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_slack_group_label", "main")
+	assert.NoError(t, err)
+
+	chCfg := &store.SessionChannelsConfig{
+		SessionID: sess.ID,
+		AgentID:   "agent_slack_group_label",
+		Channels:  []store.SessionChannel{{Type: "slack", ConfiguredID: "alerts", ID: "C123"}},
+	}
+	assert.NoError(t, store.WriteSessionChannels(chCfg))
+
+	t1 := time.Date(2026, 3, 23, 22, 10, 16, 0, time.UTC)
+	t2 := time.Date(2026, 3, 23, 23, 3, 2, 0, time.UTC)
+
+	msg1 := domain.Message{ID: "ctx1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("u-other", "Other", false), Content: "background context", Timestamp: t1}
+	msg2 := domain.Message{ID: "trig1", Role: domain.MessageRoleUser, Sender: domain.NewMessageSender("u-loren", "Loren", true), Content: "hi", Timestamp: t2}
+
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_slack_group_label", sess.ID), msg1))
+	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_slack_group_label", sess.ID), msg2))
+
+	conv := runner.loadSessionConversation(sess.ID, 24)
+	if assert.Len(t, conv, 2) {
+		assert.Contains(t, conv[0].Content, "Reply directly to that sender in second person")
+		assert.Contains(t, conv[0].Content, "(group, source=slack:C123)")
+		assert.NotContains(t, conv[0].Content, "(private, source=slack:C123)")
+		assert.Contains(t, conv[1].Content, "(group, source=slack:C123)")
+		assert.NotContains(t, conv[1].Content, "(private, source=slack:C123)")
 	}
 }
 
