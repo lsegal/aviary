@@ -2630,7 +2630,18 @@ func registerAuthTools(s *sdkmcp.Server) {
 		Name:        "slack_channels_list",
 		Description: "Validate a Slack bot token and list visible public/private channels in that workspace",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args slackChannelsListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		info, err := listSlackWorkspaceChannels(ctx, args.BotToken)
+		botToken := args.BotToken
+		if strings.HasPrefix(botToken, "auth:") {
+			st, err := authStore()
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			botToken, err = auth.Resolve(st, botToken)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+		}
+		info, err := listSlackWorkspaceChannels(ctx, botToken)
 		if err != nil {
 			return nil, struct{}{}, err
 		}

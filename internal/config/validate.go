@@ -28,7 +28,7 @@ type Issue struct {
 
 // Validate checks cfg for errors and warnings and returns all findings.
 // authGet, if non-nil, is called to look up credentials from the auth store
-// (key is the part after "auth:", e.g. "anthropic:default").
+// (key is the part after "auth:", e.g. "anthropic:default" or "slack_bot_token").
 func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v := &validator{
 		authGet:     authGet,
@@ -332,12 +332,23 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 
 	if ch.Token != "" && strings.HasPrefix(ch.Token, "auth:") {
 		if !validAuthRef(ch.Token) {
-			v.errorf(field+".token", "malformed auth reference %q; expected format auth:<provider>:<name>", ch.Token)
+			v.errorf(field+".token", "malformed auth reference %q; expected format auth:<key>", ch.Token)
 		} else if v.authGet != nil {
 			key := strings.TrimPrefix(ch.Token, "auth:")
 			val, err := v.authGet(key)
 			if err != nil || val == "" {
 				v.warnf(field+".token", "auth reference %q not found in credential store — run 'aviary auth set %s <token>'", ch.Token, key)
+			}
+		}
+	}
+	if ch.URL != "" && strings.HasPrefix(ch.URL, "auth:") {
+		if !validAuthRef(ch.URL) {
+			v.errorf(field+".url", "malformed auth reference %q; expected format auth:<key>", ch.URL)
+		} else if v.authGet != nil {
+			key := strings.TrimPrefix(ch.URL, "auth:")
+			val, err := v.authGet(key)
+			if err != nil || val == "" {
+				v.warnf(field+".url", "auth reference %q not found in credential store — run 'aviary auth set %s <token>'", ch.URL, key)
 			}
 		}
 	}
@@ -370,7 +381,7 @@ func (v *validator) checkModels(m ModelsConfig) {
 			continue // literal value — no format check needed
 		}
 		if !validAuthRef(p.Auth) {
-			v.errorf(pf, "malformed auth reference %q; expected format auth:<provider>:<name>", p.Auth)
+			v.errorf(pf, "malformed auth reference %q; expected format auth:<key>", p.Auth)
 			continue
 		}
 		if v.authGet != nil {
@@ -415,15 +426,13 @@ func (v *validator) checkScheduler(s SchedulerConfig) {
 	}
 }
 
-// validAuthRef reports whether ref has the form "auth:<provider>:<name>"
-// with both provider and name non-empty.
+// validAuthRef reports whether ref has the form "auth:<key>" with a non-empty key.
+// The key may itself contain ":" characters.
 func validAuthRef(ref string) bool {
 	if !strings.HasPrefix(ref, "auth:") {
 		return false
 	}
-	rest := strings.TrimPrefix(ref, "auth:")
-	parts := strings.SplitN(rest, ":", 2)
-	return len(parts) == 2 && parts[0] != "" && parts[1] != ""
+	return strings.TrimSpace(strings.TrimPrefix(ref, "auth:")) != ""
 }
 
 // UniqueProviderModels returns a map of provider name → one representative

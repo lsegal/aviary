@@ -37,7 +37,7 @@ agents:
     memory: private
 ```
 
-The `auth` value is a credential reference of the form `auth:<provider>:<name>`, where the provider and name match the key stored via `aviary auth set`. The model can be specified per-agent or inherited from `models.defaults`.
+The `auth` value is a credential reference of the form `auth:<key>`, where `<key>` is the credential name stored via `aviary auth set` (for example `anthropic:default` or `slack_bot_token`). The model can be specified per-agent or inherited from `models.defaults`.
 
 For browser automation, `browser.reuse_tabs` defaults to `true`, so `browser_open` reuses an existing page tab when the requested URL already matches exactly. Set it to `false` if you always want a fresh tab.
 

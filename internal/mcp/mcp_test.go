@@ -1470,6 +1470,8 @@ func TestAuthTools(t *testing.T) {
 
 func TestSlackChannelsListTool(t *testing.T) {
 	d, _ := setupMCPWithAuth(t)
+	_, err := d.CallTool(context.Background(), "auth_set", map[string]any{"name": "slack_bot_token", "value": "xoxb-test"})
+	require.NoError(t, err)
 
 	prev := listSlackWorkspaceChannels
 	t.Cleanup(func() { listSlackWorkspaceChannels = prev })
@@ -1485,7 +1487,9 @@ func TestSlackChannelsListTool(t *testing.T) {
 		}, nil
 	}
 
-	out, err := d.CallTool(context.Background(), "slack_channels_list", map[string]any{"bot_token": "xoxb-test"})
+	_, err = d.CallTool(context.Background(), "slack_channels_list", map[string]any{"bot_token": "xoxb-test"})
+	require.NoError(t, err)
+	out, err := d.CallTool(context.Background(), "slack_channels_list", map[string]any{"bot_token": "auth:slack_bot_token"})
 	require.NoError(t, err)
 	assert.Contains(t, out, `"team_name": "Aviary"`)
 	assert.Contains(t, out, `"id": "C111"`)

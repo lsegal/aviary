@@ -21,6 +21,7 @@ import (
 	"github.com/slack-go/slack/socketmode"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -129,6 +130,26 @@ func TestManager_List(t *testing.T) {
 	assert.Equal(t, "slack", s.Type)
 	assert.Equal(t, "2", s.ID)
 
+}
+
+func TestResolveChannelAuthRefs(t *testing.T) {
+	dataDir := t.TempDir()
+	store.SetDataDir(dataDir)
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	authStore, err := auth.NewFileStore(filepath.Join(store.SubDir(store.DirAuth), "credentials.json"))
+	assert.NoError(t, err)
+	assert.NoError(t, authStore.Set("slack_app_token", "xapp-test"))
+	assert.NoError(t, authStore.Set("slack_bot_token", "xoxb-test"))
+
+	resolved, err := resolveChannelAuthRefs(config.ChannelConfig{
+		Type:  "slack",
+		URL:   "auth:slack_app_token",
+		Token: "auth:slack_bot_token",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "xapp-test", resolved.URL)
+	assert.Equal(t, "xoxb-test", resolved.Token)
 }
 
 // TestManager_SubscribeLogs verifies SubscribeLogs returns history for known keys.

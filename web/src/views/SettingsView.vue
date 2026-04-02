@@ -850,7 +850,6 @@ const webSearchSecretOptions = computed(() =>
 	extraSecrets.value.filter((cred) => !cred.endsWith(":oauth")),
 );
 
-const WEB_SEARCH_ADD_SECRET_OPTION = "__add_new_secret__";
 const webSearchSecretModalOpen = ref(false);
 const webSearchSecretModalName = ref("");
 const webSearchSecretModalValue = ref("");
@@ -876,11 +875,6 @@ function generatedWebSearchSecretName(): string {
 		suffix += 1;
 	}
 	return `${base}_${suffix}`;
-}
-
-function secretSelectionValue(ref: string | undefined): string {
-	const trimmed = ref?.trim() ?? "";
-	return trimmed.startsWith("auth:") ? trimmed.slice(5) : "";
 }
 
 function generatedChannelSecretName(
@@ -932,7 +926,7 @@ function openWebSearchSecretModal() {
 		valueLabel: "API key",
 		valuePlaceholder: "BSA...",
 		onSave: (name: string) => {
-			webSearchSecretSelection.value = name;
+			webSearchSecretRef.value = `auth:${name}`;
 		},
 	});
 }
@@ -944,26 +938,14 @@ function closeWebSearchSecretModal() {
 	secretModalOnSave = null;
 }
 
-const webSearchSecretSelection = computed({
+const webSearchSecretRef = computed({
 	get(): string {
-		const ref = draft.value.search.web.brave_api_key?.trim() ?? "";
-		return ref.startsWith("auth:") ? ref.slice(5) : "";
+		return draft.value.search.web.brave_api_key?.trim() ?? "";
 	},
-	set(name: string) {
-		if (name === WEB_SEARCH_ADD_SECRET_OPTION) {
-			openWebSearchSecretModal();
-			return;
-		}
-		draft.value.search.web.brave_api_key = name ? `auth:${name}` : "";
+	set(value: string) {
+		draft.value.search.web.brave_api_key = value;
 	},
 });
-
-function channelTokenSecretSelection(
-	channel: AgentChannel,
-	field: "token" | "url",
-): string {
-	return secretSelectionValue(field === "url" ? channel.url : channel.token);
-}
 
 function openChannelTokenSecretModal(
 	channel: AgentChannel,
@@ -971,7 +953,6 @@ function openChannelTokenSecretModal(
 ) {
 	const isSlackAppToken = channel.type === "slack" && field === "url";
 	const isSlackBotToken = channel.type === "slack" && field === "token";
-	const channelLabel = channel.type === "slack" ? "Slack" : "Discord";
 	openSecretModal({
 		name: generatedChannelSecretName(channel.type, field),
 		title: "Add New Secret",
@@ -994,22 +975,6 @@ function openChannelTokenSecretModal(
 			channel.token = `auth:${name}`;
 		},
 	});
-}
-
-function setChannelTokenSecretSelection(
-	channel: AgentChannel,
-	field: "token" | "url",
-	name: string,
-) {
-	if (name === WEB_SEARCH_ADD_SECRET_OPTION) {
-		openChannelTokenSecretModal(channel, field);
-		return;
-	}
-	if (field === "url") {
-		channel.url = name ? `auth:${name}` : "";
-		return;
-	}
-	channel.token = name ? `auth:${name}` : "";
 }
 
 const availableTools = ref<MCPToolInfo[]>([]);
@@ -3240,7 +3205,6 @@ const settingsContext = proxyRefs({
 	channelPrimaryHelp,
 	channelPrimaryLabel,
 	channelPrimaryPlaceholder,
-	channelTokenSecretSelection,
 	channelTypeChipClass,
 	channelTypeLabel,
 	channelToolResolution,
@@ -3323,7 +3287,6 @@ const settingsContext = proxyRefs({
 	sessionAgent,
 	sessionLoading,
 	sessions,
-	setChannelTokenSecretSelection,
 	setAgentExecAllowedCommands,
 	setAgentExecShell,
 	setAgentExecShellInterpolate,
@@ -3367,8 +3330,8 @@ const settingsContext = proxyRefs({
 	updateAgentPermissionsPreset,
 	updateCDPPortInput,
 	updateServerPortInput,
-	WEB_SEARCH_ADD_SECRET_OPTION,
 	closeWebSearchSecretModal,
+	openChannelTokenSecretModal,
 	openWebSearchSecretModal,
 	saveWebSearchSecret,
 	webSearchSecretModalError,
@@ -3377,7 +3340,7 @@ const settingsContext = proxyRefs({
 	webSearchSecretModalSaving,
 	webSearchSecretModalValue,
 	webSearchSecretOptions,
-	webSearchSecretSelection,
+	webSearchSecretRef,
 	secretModalDescription,
 	secretModalNamePlaceholder,
 	secretModalTitle,

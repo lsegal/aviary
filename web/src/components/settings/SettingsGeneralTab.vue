@@ -108,16 +108,14 @@
 						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Select the stored secret that holds your Brave
 							Search API key. This writes an <span class="font-mono">auth:&lt;name&gt;</span> reference into <span
 								class="font-mono">aviary.yaml</span>.</p>
-						<div class="flex flex-wrap items-center gap-2">
-							<select v-model="webSearchSecretSelection" class="field-input max-w-[320px]">
-								<option value="">Use browser fallback only</option>
-								<option v-for="name in webSearchSecretOptions" :key="name" :value="name">{{ name }}</option>
-								<option :value="WEB_SEARCH_ADD_SECRET_OPTION">Add new secret</option>
-							</select>
-							<span v-if="draft.search.web.brave_api_key"
-								class="rounded bg-gray-100 px-2 py-1 font-mono text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-								{{ draft.search.web.brave_api_key }}
-							</span>
+						<div class="w-full max-w-[50%] min-w-[280px]">
+							<SecretSelect
+								v-model="webSearchSecretRef"
+								:secrets="webSearchSecretOptions"
+								empty-label="Use browser fallback only"
+								data-testid="web-search-secret"
+								@add-secret="openWebSearchSecretModal"
+							/>
 						</div>
 						<p v-if="!webSearchSecretOptions.length" class="mt-3 text-xs text-gray-400 dark:text-gray-500">No stored
 							secrets available yet. Choose <span class="font-medium text-gray-500 dark:text-gray-400">Add new
@@ -129,11 +127,12 @@
 <script lang="ts">
 import { defineComponent, inject } from "vue";
 import ModelSelector from "../ModelSelector.vue";
+import SecretSelect from "../SecretSelect.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
 	name: "SettingsGeneralTab",
-	components: { ModelSelector },
+	components: { ModelSelector, SecretSelect },
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

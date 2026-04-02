@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Resolve resolves an auth reference string of the form "auth:<provider>:<name>"
+// Resolve resolves an auth reference string of the form "auth:<key>"
 // using the provided Store. If ref does not start with "auth:", it is returned as-is
 // (treated as a literal value).
 func Resolve(store Store, ref string) (string, error) {
@@ -26,8 +26,9 @@ func Resolve(store Store, ref string) (string, error) {
 	return val, nil
 }
 
-// ParseRef parses "auth:<provider>:<name>" into its components.
-// Returns provider="", name="" if ref is not an auth reference.
+// ParseRef parses "auth:<key>" into provider and name when the key itself uses
+// the conventional "<provider>:<name>" shape. Returns provider="", name="" if
+// ref is not an auth reference.
 func ParseRef(ref string) (provider, name string, ok bool) {
 	if !strings.HasPrefix(ref, "auth:") {
 		return "", "", false

@@ -105,7 +105,7 @@ Select a provider, then choose between API key entry or OAuth login. The wizard 
 aviary auth set anthropic:default sk-ant-...
 ```
 
-Then reference the credential in `aviary.yaml` using the `auth:<provider>:<name>` format:
+Then reference the credential in `aviary.yaml` using the `auth:<key>` format:
 
 ```yaml
 models:

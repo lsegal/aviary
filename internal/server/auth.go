@@ -141,7 +141,7 @@ func LoginHandler(token string) http.HandlerFunc {
 	}
 }
 
-// makeAuthResolver returns a function that resolves "auth:<provider>:<name>"
+// makeAuthResolver returns a function that resolves "auth:<key>"
 // references by looking them up in the file-backed credential store.
 func makeAuthResolver() func(string) (string, error) {
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")

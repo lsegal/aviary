@@ -1099,6 +1099,37 @@ func TestValidate_ChannelAuthRef(t *testing.T) {
 
 	})
 
+	t.Run("single-key auth ref is valid", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name: "bot",
+				Channels: []ChannelConfig{{
+					Type:      "slack",
+					Token:     "auth:slack_bot_token",
+					AllowFrom: []AllowFromEntry{{From: "*"}},
+				}},
+			}},
+		}
+		issues := Validate(cfg, func(string) (string, error) { return "", os.ErrNotExist })
+		assert.False(t, hasIssue(issues, "malformed auth reference"))
+		assert.True(t, hasIssue(issues, "not found in credential store"))
+	})
+
+	t.Run("valid auth ref not found in url", func(t *testing.T) {
+		cfg := &Config{
+			Agents: []AgentConfig{{
+				Name: "bot",
+				Channels: []ChannelConfig{{
+					Type:      "slack",
+					URL:       "auth:slack_app:default",
+					AllowFrom: []AllowFromEntry{{From: "*"}},
+				}},
+			}},
+		}
+		issues := Validate(cfg, func(string) (string, error) { return "", os.ErrNotExist })
+		assert.True(t, hasIssue(issues, "not found in credential store"))
+	})
+
 	t.Run("signal id without + prefix", func(t *testing.T) {
 		cfg := &Config{
 			Agents: []AgentConfig{{

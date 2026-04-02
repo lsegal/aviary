@@ -322,14 +322,47 @@
 								No channels configured for this agent.
 							</div>
 
-							<div v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`"
+							<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
+								<div class="min-w-0">
+									<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+										<div v-if="agent.channels?.length" class="space-y-1">
+											<div v-for="(ch, k) in agent.channels" :key="`ch-button-${i}-${k}`" class="flex items-center gap-1">
+												<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium"
+													:class="channelListButtonClass(ch, selectedChannelIdx === k)"
+													@click="selectedChannelIdx = k">
+													<div class="flex items-center gap-2">
+														<span :class="channelTypeChipClass(ch, selectedChannelIdx === k)">
+															<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
+															<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
+														</span>
+														<span class="truncate">{{ ch.id || `${ch.type} channel ${Number(k) + 1}` }}</span>
+													</div>
+												</button>
+												<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete channel" @click="removeChannel(i, k)">
+													<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+														<path d="M3 6h18" />
+														<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+														<path d="M10 11v6" />
+														<path d="M14 11v6" />
+														<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+													</svg>
+												</button>
+											</div>
+										</div>
+										<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No channels configured for this agent.</p>
+									</div>
+								</div>
+
+								<div>
+							<div v-for="(ch, k) in agent.channels" v-show="selectedChannelIdx === k" :key="`ch-${i}-${k}`"
 								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
-										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ Number(k) + 1 }}</h5>
-										<span :class="statusBadgeClass(isChannelEnabled(ch))">
-											{{ isChannelEnabled(ch) ? "Enabled" : "Disabled" }}
+										<span :class="channelTypeChipClass(ch)">
+											<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
+											<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
 										</span>
+										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ Number(k) + 1 }}</h5>
 									</div>
 									<div class="flex items-center gap-2">
 										<SwitchRoot
@@ -585,11 +618,21 @@
 									</div>
 									<div>
 										<label class="field-label">App-Level Token (xapp-…)</label>
-										<input v-model="ch.url" type="text" class="field-input" placeholder="xapp-..." />
+										<SecretSelect
+											v-model="ch.url"
+											:secrets="webSearchSecretOptions"
+											:data-testid="`channel-secret-${agent.name || i}-${k}-url`"
+											@add-secret="openChannelTokenSecretModal(ch, 'url')"
+										/>
 									</div>
 									<div>
 										<label class="field-label">Bot Token (xoxb-…)</label>
-										<input v-model="ch.token" type="text" class="field-input" placeholder="xoxb-..." />
+										<SecretSelect
+											v-model="ch.token"
+											:secrets="webSearchSecretOptions"
+											:data-testid="`channel-secret-${agent.name || i}-${k}-token`"
+											@add-secret="openChannelTokenSecretModal(ch, 'token')"
+										/>
 									</div>
 									<div class="lg:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-950/40">
 										<div class="flex flex-wrap items-center justify-between gap-3">
@@ -646,7 +689,12 @@
 									</div>
 									<div>
 										<label class="field-label">Bot Token</label>
-										<input v-model="ch.token" type="text" class="field-input" placeholder="Discord bot token" />
+										<SecretSelect
+											v-model="ch.token"
+											:secrets="webSearchSecretOptions"
+											:data-testid="`channel-secret-${agent.name || i}-${k}-token`"
+											@add-secret="openChannelTokenSecretModal(ch, 'token')"
+										/>
 									</div>
 								</div>
 
@@ -688,6 +736,11 @@
 									<input type="number" v-model.number="ch.group_chat_history" min="-1" step="1" placeholder="50"
 										class="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
 									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
+								</div>
+							</div>
+								<div v-if="agent.channels?.length && selectedChannelIdx === null" class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+									Select a channel to edit.
+								</div>
 								</div>
 							</div>
 						</div>
@@ -863,12 +916,21 @@ Select a task to edit.
 import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { defineComponent, inject } from "vue";
 import FancySelect from "../FancySelect.vue";
+import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
+import SecretSelect from "../SecretSelect.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
 	name: "SettingsAgentsTab",
-	components: { FancySelect, ModelSelector, SwitchRoot, SwitchThumb },
+	components: {
+		FancySelect,
+		MessagingLogo,
+		ModelSelector,
+		SecretSelect,
+		SwitchRoot,
+		SwitchThumb,
+	},
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

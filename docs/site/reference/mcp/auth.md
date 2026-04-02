@@ -8,7 +8,7 @@ The `auth_*` tools are blocked by the `standard` and `minimal` presets. They req
 
 ## Credential Names
 
-Credentials are stored by name. The `auth` field in `models.providers.<name>` must reference the stored key using the form `auth:<provider>:<name>`.
+Credentials are stored by name. The `auth` field in `models.providers.<name>` must reference the stored key using the form `auth:<key>`.
 
 ```yaml
 models:

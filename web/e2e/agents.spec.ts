@@ -272,9 +272,11 @@ test("general tab shows web search settings", async ({ page }) => {
 	await expect(
 		page.getByRole("heading", { name: "Web Search", exact: true }),
 	).toBeVisible();
-	await expect(
-		page.getByText("auth:brave_api_key", { exact: true }),
-	).toBeVisible();
+	await expect(page.getByTestId("web-search-secret")).toBeVisible();
+	await expect(page.getByTestId("web-search-secret")).toContainText(
+		"brave_api_key",
+	);
+	await expect(page.getByTestId("web-search-secret")).toContainText("Secret");
 });
 
 test("model dropdown hides models from unauthenticated providers", async ({
@@ -421,6 +423,278 @@ test("Slack browse channels shows visible workspace channels", async ({
 	await expect(page.getByText("#ops-private", { exact: true })).toBeVisible();
 	await expect(page.getByText("Private", { exact: true })).toBeVisible();
 	await expect(page.getByText("Joined", { exact: true })).toBeVisible();
+});
+
+test("channels use a left list with a reusable right-side editor", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			...CONFIG,
+			agents: [
+				{
+					...CONFIG.agents[0],
+					channels: [
+						{
+							type: "signal",
+							id: "+15551234567",
+							url: "127.0.0.1:7583",
+							allow_from: [{ from: "*" }],
+						},
+						{
+							type: "discord",
+							id: "server-bot",
+							token: "auth:discord_bot_token",
+							allow_from: [{ from: "user-1" }],
+						},
+						{
+							type: "slack",
+							id: "workspace-bot",
+							url: "auth:slack_app_token",
+							token: "auth:slack_bot_token",
+							allow_from: [{ from: "*" }],
+						},
+					],
+				},
+			],
+		},
+		auth_list: [
+			"anthropic:default",
+			"brave_api_key",
+			"discord_bot_token",
+			"slack_app_token",
+			"slack_bot_token",
+		],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+		],
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Channels", exact: true })
+		.first()
+		.click();
+
+	await expect(
+		page.getByRole("button", { name: "Signal +15551234567" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Discord server-bot" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Slack workspace-bot" }),
+	).toBeVisible();
+	await expect(page.getByLabel("Delete channel")).toHaveCount(3);
+	await expect(
+		page.locator('input[placeholder="+15551234567"]').first(),
+	).toBeVisible();
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toBeHidden();
+
+	await page.getByRole("button", { name: "Discord server-bot" }).click();
+
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toBeVisible();
+	await expect(
+		page.locator('input[placeholder="+15551234567"]').first(),
+	).toBeHidden();
+	await expect(
+		page.locator('input[placeholder="server-bot"]').first(),
+	).toHaveValue("server-bot");
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toContainText("discord_bot_token");
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toContainText("Secret");
+	await expect(
+		page.getByText("auth:discord_bot_token", { exact: true }),
+	).toHaveCount(0);
+
+	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await expect(
+		page.getByTestId("channel-secret-assistant-2-url"),
+	).toContainText("slack_app_token");
+	await expect(
+		page.getByTestId("channel-secret-assistant-2-token"),
+	).toContainText("slack_bot_token");
+	await expect(
+		page.getByTestId("channel-secret-assistant-2-url"),
+	).toContainText("Secret");
+	await expect(
+		page.getByTestId("channel-secret-assistant-2-token"),
+	).toContainText("Secret");
+	await expect(
+		page.getByText("auth:slack_app_token", { exact: true }),
+	).toHaveCount(0);
+	await expect(
+		page.getByText("auth:slack_bot_token", { exact: true }),
+	).toHaveCount(0);
+});
+
+test("raw configured channel tokens are masked in dropdowns", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			...CONFIG,
+			agents: [
+				{
+					...CONFIG.agents[0],
+					channels: [
+						{
+							type: "discord",
+							id: "server-bot",
+							token: "discord-plaintext-token",
+							allow_from: [{ from: "*" }],
+						},
+						{
+							type: "slack",
+							id: "workspace-bot",
+							url: "xapp-plaintext-token",
+							token: "xoxb-plaintext-token",
+							allow_from: [{ from: "*" }],
+						},
+					],
+				},
+			],
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+		],
+	});
+
+	await page.goto("/settings");
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Channels", exact: true })
+		.first()
+		.click();
+
+	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await expect(
+		page.getByTestId("channel-secret-assistant-0-token"),
+	).toContainText("discord****");
+	await expect(
+		page.getByTestId("channel-secret-assistant-0-token"),
+	).toContainText("Inline");
+	await expect(
+		page.getByText("discord-plaintext-token", { exact: true }),
+	).toHaveCount(0);
+
+	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-url"),
+	).toContainText("xapp-pl****");
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toContainText("xoxb-pl****");
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-url"),
+	).toContainText("Inline");
+	await expect(
+		page.getByTestId("channel-secret-assistant-1-token"),
+	).toContainText("Inline");
+	await expect(
+		page.getByText("xapp-plaintext-token", { exact: true }),
+	).toHaveCount(0);
+	await expect(
+		page.getByText("xoxb-plaintext-token", { exact: true }),
+	).toHaveCount(0);
+});
+
+test("missing auth secrets are highlighted in secret dropdowns", async ({
+	page,
+}) => {
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			...CONFIG,
+			search: { web: { brave_api_key: "auth:missing_brave_key" } },
+			agents: [
+				{
+					...CONFIG.agents[0],
+					channels: [
+						{
+							type: "discord",
+							id: "server-bot",
+							token: "auth:missing_discord_token",
+							allow_from: [{ from: "*" }],
+						},
+					],
+				},
+			],
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		tool_list: [
+			{ name: "task_run", description: "Run a task immediately" },
+			{ name: "auth_set", description: "Store a secret" },
+		],
+	});
+
+	await page.goto("/settings");
+	await expect(page.getByTestId("web-search-secret")).toContainText(
+		"missing_brave_key",
+	);
+	await expect(page.getByTestId("web-search-secret")).toContainText(
+		"Missing Secret",
+	);
+	await expect(page.getByTestId("web-search-secret")).toHaveClass(/border-red-300/);
+
+	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await page
+		.getByRole("button", { name: "Channels", exact: true })
+		.first()
+		.click();
+	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await expect(
+		page.getByTestId("channel-secret-assistant-0-token"),
+	).toContainText("missing_discord_token");
+	await expect(
+		page.getByTestId("channel-secret-assistant-0-token"),
+	).toContainText("Missing Secret");
+	await expect(
+		page.getByTestId("channel-secret-assistant-0-token"),
+	).toHaveClass(/border-red-300/);
 });
 
 test("permissions preset disables inaccessible tool groups and tools", async ({

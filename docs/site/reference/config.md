@@ -267,7 +267,7 @@ models:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `providers.<name>.auth` | string | Credential reference in the form `auth:<provider>:<name>` (see `aviary auth set`) |
+| `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
 

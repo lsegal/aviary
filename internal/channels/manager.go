@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
@@ -175,7 +177,11 @@ func (m *Manager) Restart(ctx context.Context, key string, msgFn func(agentName,
 }
 
 func (m *Manager) startChannelLocked(ctx context.Context, key string, spec channelSpec, msgFn func(agentName, channelType, configuredID string, ch Channel, msg IncomingMessage)) error {
-	ch := newChannel(spec.channelConfig, spec.agentModel, spec.agentFallbacks)
+	resolvedConfig, err := resolveChannelAuthRefs(spec.channelConfig)
+	if err != nil {
+		return fmt.Errorf("resolve channel auth refs: %w", err)
+	}
+	ch := newChannel(resolvedConfig, spec.agentModel, spec.agentFallbacks)
 	if ch == nil {
 		return fmt.Errorf("channel %q could not be created", key)
 	}
@@ -239,6 +245,33 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 
 	slog.Info("channel started", "key", key, "type", spec.channelConfig.Type)
 	return nil
+}
+
+func resolveChannelAuthRefs(cc config.ChannelConfig) (config.ChannelConfig, error) {
+	if !strings.HasPrefix(cc.Token, "auth:") && !strings.HasPrefix(cc.URL, "auth:") {
+		return cc, nil
+	}
+
+	authStore, err := auth.NewFileStore(filepath.Join(store.SubDir(store.DirAuth), "credentials.json"))
+	if err != nil {
+		return cc, err
+	}
+
+	if strings.HasPrefix(cc.Token, "auth:") {
+		resolvedToken, err := auth.Resolve(authStore, cc.Token)
+		if err != nil {
+			return cc, fmt.Errorf("token %q: %w", cc.Token, err)
+		}
+		cc.Token = resolvedToken
+	}
+	if strings.HasPrefix(cc.URL, "auth:") {
+		resolvedURL, err := auth.Resolve(authStore, cc.URL)
+		if err != nil {
+			return cc, fmt.Errorf("url %q: %w", cc.URL, err)
+		}
+		cc.URL = resolvedURL
+	}
+	return cc, nil
 }
 
 func (m *Manager) stopChannelLocked(key string) {
