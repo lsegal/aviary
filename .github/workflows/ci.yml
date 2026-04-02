@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   go-lint:
-    name: Lint: Go
+    name: "Lint: Go"
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
       - run: go tool golangci-lint run ./...
 
   go-tests:
-    name: Test: Go (${{ matrix.os }})
+    name: "Test: Go (${{ matrix.os }})"
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}
@@ -47,7 +47,7 @@ jobs:
       - run: go test ./...
 
   installer:
-    name: Test: Installer (${{ matrix.name }})
+    name: "Test: Installer (${{ matrix.name }})"
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}
@@ -114,7 +114,7 @@ jobs:
         run: ${{ matrix.run_command }}
 
   release-smoke:
-    name: Test: Release Build
+    name: "Test: Release Build"
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -141,7 +141,7 @@ jobs:
       - run: test -f dist/release/checksums.txt
 
   web-lint:
-    name: Lint: Web
+    name: "Lint: Web"
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -160,7 +160,7 @@ jobs:
       - run: pnpm lint:web
 
   web-e2e:
-    name: Test: Web E2E
+    name: "Test: Web E2E"
     permissions:
       contents: read
     runs-on: ubuntu-latest
