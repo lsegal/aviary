@@ -1,13 +1,6 @@
 name: Docker
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
   workflow_call:
     inputs:
       ref:
@@ -70,7 +63,7 @@ jobs:
           fi
 
           publish_latest="$INPUT_PUBLISH_LATEST"
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "main" ]]; then
+          if [[ "$publish_latest" != "true" && "$CALL_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             publish_latest="true"
           fi
 
