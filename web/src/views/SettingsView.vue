@@ -214,6 +214,74 @@
 			</AlertDialogContent>
 		</AlertDialogPortal>
 	</AlertDialogRoot>
+
+	<Teleport to="body">
+		<div
+			v-if="webSearchSecretModalOpen"
+			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+			@click.self="closeWebSearchSecretModal"
+		>
+			<form
+				class="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+				@submit.prevent="saveWebSearchSecret"
+			>
+				<div class="flex items-start justify-between gap-4">
+					<div>
+						<h3 class="text-base font-bold text-gray-900 dark:text-white">{{ secretModalTitle }}</h3>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							{{ secretModalDescription }}
+						</p>
+					</div>
+					<button
+						type="button"
+						class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+						@click="closeWebSearchSecretModal"
+					>
+						Cancel
+					</button>
+				</div>
+				<div class="mt-5 space-y-4">
+					<div>
+						<label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Secret name</label>
+						<input
+							v-model="webSearchSecretModalName"
+							type="text"
+							class="field-input font-mono text-sm"
+							:placeholder="secretModalNamePlaceholder"
+						/>
+					</div>
+					<div>
+						<label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ secretModalValueLabel }}</label>
+						<input
+							v-model="webSearchSecretModalValue"
+							type="password"
+							class="field-input text-sm"
+							:placeholder="secretModalValuePlaceholder"
+						/>
+					</div>
+				</div>
+				<p v-if="webSearchSecretModalError" class="mt-3 text-xs text-red-500 dark:text-red-400">
+					{{ webSearchSecretModalError }}
+				</p>
+				<div class="mt-6 flex justify-end gap-3">
+					<button
+						type="button"
+						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+						@click="closeWebSearchSecretModal"
+					>
+						Cancel
+					</button>
+					<button
+						type="submit"
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+						:disabled="webSearchSecretModalSaving || !webSearchSecretModalName.trim() || !webSearchSecretModalValue.trim()"
+					>
+						{{ webSearchSecretModalSaving ? "Saving..." : "Save Secret" }}
+					</button>
+				</div>
+			</form>
+		</div>
+	</Teleport>
 </template>
 
 <script setup lang="ts">
@@ -514,6 +582,18 @@ const selectedTask = computed((): AgentTask | null => {
 	return agent.tasks[idx] ?? null;
 });
 
+const selectedChannelIdx = ref<number | null>(
+	draft.value.agents[selectedAgentIdx.value]?.channels?.length ? 0 : null,
+);
+
+const selectedChannel = computed((): AgentChannel | null => {
+	const agent = draft.value.agents[selectedAgentIdx.value];
+	if (!agent?.channels?.length) return null;
+	const idx = selectedChannelIdx.value ?? 0;
+	if (idx < 0 || idx >= agent.channels.length) return agent.channels[0] ?? null;
+	return agent.channels[idx] ?? null;
+});
+
 // Agent tab click → push new route (also resets subtab) and reset selectedTaskIdx for the new agent.
 watch(selectedAgentIdx, (idx) => {
 	const target = agentRoutePath(idx, selectedAgentSubtab.value);
@@ -521,6 +601,8 @@ watch(selectedAgentIdx, (idx) => {
 	// Reset selectedTaskIdx for the newly-selected agent so a task is shown if available.
 	const tasks = draft.value.agents[idx]?.tasks ?? [];
 	selectedTaskIdx.value = tasks.length ? 0 : null;
+	const channels = draft.value.agents[idx]?.channels ?? [];
+	selectedChannelIdx.value = channels.length ? 0 : null;
 });
 
 // Subtab click → replace current URL segment.
@@ -554,6 +636,23 @@ watch(
 			selectedTaskIdx.value = 0;
 		} else if (!len) {
 			selectedTaskIdx.value = null;
+		}
+	},
+);
+
+watch(
+	() => draft.value.agents[selectedAgentIdx.value]?.channels?.length,
+	(len) => {
+		if (
+			len &&
+			(selectedChannelIdx.value === null ||
+				selectedChannelIdx.value === undefined)
+		) {
+			selectedChannelIdx.value = 0;
+		} else if (!len) {
+			selectedChannelIdx.value = null;
+		} else if ((selectedChannelIdx.value ?? 0) >= len) {
+			selectedChannelIdx.value = len - 1;
 		}
 	},
 );
@@ -751,15 +850,167 @@ const webSearchSecretOptions = computed(() =>
 	extraSecrets.value.filter((cred) => !cred.endsWith(":oauth")),
 );
 
+const WEB_SEARCH_ADD_SECRET_OPTION = "__add_new_secret__";
+const webSearchSecretModalOpen = ref(false);
+const webSearchSecretModalName = ref("");
+const webSearchSecretModalValue = ref("");
+const webSearchSecretModalError = ref("");
+const webSearchSecretModalSaving = ref(false);
+const secretModalTitle = ref("Add New Secret");
+const secretModalDescription = ref(
+	"Store a Brave Search API key and select it for web search.",
+);
+const secretModalNamePlaceholder = ref("brave_search_api_key");
+const secretModalValueLabel = ref("API key");
+const secretModalValuePlaceholder = ref("BSA...");
+let secretModalOnSave: ((name: string) => void) | null = null;
+
+function generatedWebSearchSecretName(): string {
+	const base = "brave_search_api_key";
+	const existing = new Set(webSearchSecretOptions.value);
+	if (!existing.has(base)) {
+		return base;
+	}
+	let suffix = 2;
+	while (existing.has(`${base}_${suffix}`)) {
+		suffix += 1;
+	}
+	return `${base}_${suffix}`;
+}
+
+function secretSelectionValue(ref: string | undefined): string {
+	const trimmed = ref?.trim() ?? "";
+	return trimmed.startsWith("auth:") ? trimmed.slice(5) : "";
+}
+
+function generatedChannelSecretName(
+	channelType: string,
+	field: "token" | "url",
+): string {
+	const base =
+		channelType === "slack"
+			? field === "url"
+				? "slack_app_token"
+				: "slack_bot_token"
+			: "discord_bot_token";
+	const existing = new Set(webSearchSecretOptions.value);
+	if (!existing.has(base)) {
+		return base;
+	}
+	let suffix = 2;
+	while (existing.has(`${base}_${suffix}`)) {
+		suffix += 1;
+	}
+	return `${base}_${suffix}`;
+}
+
+function openSecretModal(options: {
+	name: string;
+	title: string;
+	description: string;
+	valueLabel: string;
+	valuePlaceholder: string;
+	onSave: (name: string) => void;
+}) {
+	webSearchSecretModalName.value = options.name;
+	webSearchSecretModalValue.value = "";
+	webSearchSecretModalError.value = "";
+	secretModalTitle.value = options.title;
+	secretModalDescription.value = options.description;
+	secretModalNamePlaceholder.value = options.name;
+	secretModalValueLabel.value = options.valueLabel;
+	secretModalValuePlaceholder.value = options.valuePlaceholder;
+	secretModalOnSave = options.onSave;
+	webSearchSecretModalOpen.value = true;
+}
+
+function openWebSearchSecretModal() {
+	openSecretModal({
+		name: generatedWebSearchSecretName(),
+		title: "Add New Secret",
+		description: "Store a Brave Search API key and select it for web search.",
+		valueLabel: "API key",
+		valuePlaceholder: "BSA...",
+		onSave: (name: string) => {
+			webSearchSecretSelection.value = name;
+		},
+	});
+}
+
+function closeWebSearchSecretModal() {
+	webSearchSecretModalOpen.value = false;
+	webSearchSecretModalValue.value = "";
+	webSearchSecretModalError.value = "";
+	secretModalOnSave = null;
+}
+
 const webSearchSecretSelection = computed({
 	get(): string {
 		const ref = draft.value.search.web.brave_api_key?.trim() ?? "";
 		return ref.startsWith("auth:") ? ref.slice(5) : "";
 	},
 	set(name: string) {
+		if (name === WEB_SEARCH_ADD_SECRET_OPTION) {
+			openWebSearchSecretModal();
+			return;
+		}
 		draft.value.search.web.brave_api_key = name ? `auth:${name}` : "";
 	},
 });
+
+function channelTokenSecretSelection(
+	channel: AgentChannel,
+	field: "token" | "url",
+): string {
+	return secretSelectionValue(field === "url" ? channel.url : channel.token);
+}
+
+function openChannelTokenSecretModal(
+	channel: AgentChannel,
+	field: "token" | "url",
+) {
+	const isSlackAppToken = channel.type === "slack" && field === "url";
+	const isSlackBotToken = channel.type === "slack" && field === "token";
+	const channelLabel = channel.type === "slack" ? "Slack" : "Discord";
+	openSecretModal({
+		name: generatedChannelSecretName(channel.type, field),
+		title: "Add New Secret",
+		description: isSlackAppToken
+			? "Store a Slack app-level Socket Mode token and select it for this channel."
+			: isSlackBotToken
+				? "Store a Slack bot token and select it for this channel."
+				: "Store a Discord bot token and select it for this channel.",
+		valueLabel: isSlackAppToken ? "App-level token" : "Bot token",
+		valuePlaceholder: isSlackAppToken
+			? "xapp-..."
+			: channel.type === "slack"
+				? "xoxb-..."
+				: "Discord bot token",
+		onSave: (name: string) => {
+			if (field === "url") {
+				channel.url = `auth:${name}`;
+				return;
+			}
+			channel.token = `auth:${name}`;
+		},
+	});
+}
+
+function setChannelTokenSecretSelection(
+	channel: AgentChannel,
+	field: "token" | "url",
+	name: string,
+) {
+	if (name === WEB_SEARCH_ADD_SECRET_OPTION) {
+		openChannelTokenSecretModal(channel, field);
+		return;
+	}
+	if (field === "url") {
+		channel.url = name ? `auth:${name}` : "";
+		return;
+	}
+	channel.token = name ? `auth:${name}` : "";
+}
 
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
@@ -1918,6 +2169,45 @@ function statusBadgeClass(enabled: boolean): string {
 		: "rounded-full bg-gray-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300";
 }
 
+function channelTypeLabel(channel: AgentChannel): string {
+	switch ((channel.type || "").toLowerCase()) {
+		case "slack":
+			return "Slack";
+		case "discord":
+			return "Discord";
+		case "signal":
+			return "Signal";
+		default:
+			return channel.type || "Channel";
+	}
+}
+
+function channelTypeChipClass(channel: AgentChannel, selected = false): string {
+	const enabled = isChannelEnabled(channel);
+	if (selected) {
+		return enabled
+			? "inline-flex items-center justify-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white ring-1 ring-inset ring-white/20 dark:bg-gray-900 dark:text-gray-100 dark:ring-white/10"
+			: "inline-flex items-center justify-center rounded-full bg-black/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 ring-1 ring-inset ring-gray-300 dark:bg-white/5 dark:text-gray-400 dark:ring-gray-700";
+	}
+	return enabled
+		? "inline-flex items-center justify-center rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+		: "inline-flex items-center justify-center rounded-full bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400";
+}
+
+function channelListButtonClass(
+	channel: AgentChannel,
+	selected: boolean,
+): string {
+	if (selected) {
+		return isChannelEnabled(channel)
+			? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+			: "bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-700";
+	}
+	return isChannelEnabled(channel)
+		? "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+		: "text-gray-400 hover:bg-gray-50 dark:text-gray-500 dark:hover:bg-gray-900";
+}
+
 function channelCardClass(channel: AgentChannel): string {
 	return isChannelEnabled(channel)
 		? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
@@ -1957,10 +2247,27 @@ function addChannel(agentIndex: number) {
 		draft.value.agents[agentIndex].channels = [];
 	}
 	draft.value.agents[agentIndex].channels.push(ch);
+	if (agentIndex === selectedAgentIdx.value) {
+		selectedChannelIdx.value =
+			draft.value.agents[agentIndex].channels.length - 1;
+	}
 }
 
 function removeChannel(agentIndex: number, chIndex: number) {
 	draft.value.agents[agentIndex].channels.splice(chIndex, 1);
+	if (agentIndex !== selectedAgentIdx.value) return;
+	const channels = draft.value.agents[agentIndex].channels ?? [];
+	if (!channels.length) {
+		selectedChannelIdx.value = null;
+		return;
+	}
+	if ((selectedChannelIdx.value ?? 0) > chIndex) {
+		selectedChannelIdx.value = (selectedChannelIdx.value ?? 0) - 1;
+		return;
+	}
+	if ((selectedChannelIdx.value ?? 0) >= channels.length) {
+		selectedChannelIdx.value = channels.length - 1;
+	}
 }
 
 async function browseSlackChannels(
@@ -2760,6 +3067,28 @@ async function addSecret() {
 	}
 }
 
+async function saveWebSearchSecret() {
+	const name = webSearchSecretModalName.value.trim().replace(/^auth:/, "");
+	const value = webSearchSecretModalValue.value.trim();
+	if (!name || !value) return;
+	webSearchSecretModalSaving.value = true;
+	webSearchSecretModalError.value = "";
+	errorMessage.value = "";
+	try {
+		await callTool("auth_set", { name, value });
+		await refreshCredentials();
+		secretModalOnSave?.(name);
+		closeWebSearchSecretModal();
+		okMessage.value = `Secret stored: ${name}`;
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		webSearchSecretModalError.value = message;
+		errorMessage.value = message;
+	} finally {
+		webSearchSecretModalSaving.value = false;
+	}
+}
+
 async function deleteSecret(name: string) {
 	errorMessage.value = "";
 	try {
@@ -2906,10 +3235,14 @@ const settingsContext = proxyRefs({
 	canDeleteAgentFile,
 	cdpPortInput,
 	channelCardClass,
+	channelListButtonClass,
 	channelInspectionTitle,
 	channelPrimaryHelp,
 	channelPrimaryLabel,
 	channelPrimaryPlaceholder,
+	channelTokenSecretSelection,
+	channelTypeChipClass,
+	channelTypeLabel,
 	channelToolResolution,
 	compileToastVisible,
 	completeAnthropic,
@@ -2979,6 +3312,8 @@ const settingsContext = proxyRefs({
 	selectedAgentAsSingletonList,
 	selectedAgentIdx,
 	selectedAgentSubtab,
+	selectedChannel,
+	selectedChannelIdx,
 	selectedConfiguredChannel,
 	selectedConfiguredChannelIndex,
 	selectedTask,
@@ -2988,6 +3323,7 @@ const settingsContext = proxyRefs({
 	sessionAgent,
 	sessionLoading,
 	sessions,
+	setChannelTokenSecretSelection,
 	setAgentExecAllowedCommands,
 	setAgentExecShell,
 	setAgentExecShellInterpolate,
@@ -3031,8 +3367,22 @@ const settingsContext = proxyRefs({
 	updateAgentPermissionsPreset,
 	updateCDPPortInput,
 	updateServerPortInput,
+	WEB_SEARCH_ADD_SECRET_OPTION,
+	closeWebSearchSecretModal,
+	openWebSearchSecretModal,
+	saveWebSearchSecret,
+	webSearchSecretModalError,
+	webSearchSecretModalName,
+	webSearchSecretModalOpen,
+	webSearchSecretModalSaving,
+	webSearchSecretModalValue,
 	webSearchSecretOptions,
 	webSearchSecretSelection,
+	secretModalDescription,
+	secretModalNamePlaceholder,
+	secretModalTitle,
+	secretModalValueLabel,
+	secretModalValuePlaceholder,
 });
 
 provide(settingsViewContextKey, settingsContext);

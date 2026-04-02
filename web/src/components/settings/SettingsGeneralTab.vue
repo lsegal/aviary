@@ -112,6 +112,7 @@
 							<select v-model="webSearchSecretSelection" class="field-input max-w-[320px]">
 								<option value="">Use browser fallback only</option>
 								<option v-for="name in webSearchSecretOptions" :key="name" :value="name">{{ name }}</option>
+								<option :value="WEB_SEARCH_ADD_SECRET_OPTION">Add new secret</option>
 							</select>
 							<span v-if="draft.search.web.brave_api_key"
 								class="rounded bg-gray-100 px-2 py-1 font-mono text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
@@ -119,7 +120,8 @@
 							</span>
 						</div>
 						<p v-if="!webSearchSecretOptions.length" class="mt-3 text-xs text-gray-400 dark:text-gray-500">No stored
-							secrets available yet. Add one in Providers & Auth, then select it here.</p>
+							secrets available yet. Choose <span class="font-medium text-gray-500 dark:text-gray-400">Add new
+								secret</span> to create one here.</p>
 					</div>
 				</section>
 </template>
