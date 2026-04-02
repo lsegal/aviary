@@ -19,7 +19,7 @@ export function useAvailableModels() {
 	const credentials = ref<string[]>([]);
 	const { callTool } = useMCP();
 
-	function parseStringArrayPayload(raw: string): string[] {
+	function parseStringArrayPayload(raw: string): string[] | null {
 		const trimmed = raw.trim();
 		if (!trimmed) {
 			return [];
@@ -29,10 +29,14 @@ export function useAvailableModels() {
 			return parsed ?? [];
 		} catch (error) {
 			if (error instanceof SyntaxError) {
-				return [];
+				return null;
 			}
 			throw error;
 		}
+	}
+
+	async function delay(ms: number): Promise<void> {
+		await new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
 	const authenticatedProviders = computed(() => {
@@ -54,12 +58,27 @@ export function useAvailableModels() {
 	);
 
 	async function refreshCredentials() {
-		try {
-			const raw = await callTool("auth_list");
-			credentials.value = parseStringArrayPayload(raw);
-		} catch {
-			credentials.value = [];
+		let lastError: unknown = null;
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			try {
+				const raw = await callTool("auth_list");
+				const parsed = parseStringArrayPayload(raw);
+				if (parsed !== null) {
+					credentials.value = parsed;
+					return;
+				}
+				lastError = new Error("auth_list returned invalid JSON");
+			} catch (error) {
+				lastError = error;
+			}
+			if (attempt < 2) {
+				await delay(150 * (attempt + 1));
+			}
 		}
+		console.warn(
+			"Failed to refresh credentials; keeping previous state.",
+			lastError,
+		);
 	}
 
 	return {
