@@ -65,6 +65,10 @@ export default defineConfig({
 							text: "Security & Permissions",
 							link: "/guide/security-permissions",
 						},
+						{
+							text: "Sessions & Conversations",
+							link: "/guide/sessions-conversations",
+						},
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
 						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Operations", link: "/guide/operations" },

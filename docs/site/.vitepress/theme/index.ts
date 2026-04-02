@@ -1,5 +1,6 @@
 import DefaultTheme from "vitepress/theme";
 import { h } from "vue";
+import ConversationStopDemo from "./components/ConversationStopDemo.vue";
 import FeatureIcon from "./components/FeatureIcon.vue";
 import HeaderReleaseBadge from "./components/HeaderReleaseBadge.vue";
 import HeroActions from "./components/HeroActions.vue";
@@ -19,6 +20,7 @@ export default {
 	},
 	enhanceApp({ app }) {
 		DefaultTheme.enhanceApp?.({ app });
+		app.component("ConversationStopDemo", ConversationStopDemo);
 		app.component("FeatureIcon", FeatureIcon);
 		app.component("MessagingLogo", MessagingLogo);
 		app.component("ScreenshotGallery", ScreenshotGallery);
