@@ -737,6 +737,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		setTestDataDir(t)
 		err := store.EnsureDirs()
 		assert.NoError(t, err)
+		sessionID := "sess-zero-token-throttle"
 
 		runner := NewAgentRunner(
 			&domain.Agent{ID: "a1", Model: "google/gemini-3-flash-preview"},
@@ -746,7 +747,7 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 		)
 
 		errCh := make(chan error, 1)
-		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
+		runner.Prompt(WithSessionID(context.Background(), sessionID), "hi", func(e StreamEvent) {
 			if e.Type == StreamEventError {
 				errCh <- e.Err
 			}
@@ -763,13 +764,17 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
 			assert.NoError(t, err)
 
-			if len(records) == 1 {
-				assert.True(t, records[0].HasThrottle)
-				assert.False(t, records[0].HasError)
-				assert.Equal(t, 0, records[0].InputTokens)
-				assert.Equal(t, 0, records[0].OutputTokens)
+			for _, rec := range records {
+				if rec.SessionID != sessionID {
+					continue
+				}
 
-				break
+				assert.True(t, rec.HasThrottle)
+				assert.False(t, rec.HasError)
+				assert.Equal(t, 0, rec.InputTokens)
+				assert.Equal(t, 0, rec.OutputTokens)
+
+				return
 			}
 			assert.False(t, time.Now().After(deadline))
 
