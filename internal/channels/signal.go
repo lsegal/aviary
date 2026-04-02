@@ -990,6 +990,10 @@ func (c *SignalChannel) fetchUUID(ctx context.Context) {
 		Number string `json:"number"`
 		UUID   string `json:"uuid"`
 	}
+	if len(resp.Result) == 0 || string(resp.Result) == "null" {
+		slog.Debug("signal: listAccounts returned no accounts", "phone", c.phone)
+		return
+	}
 	if err := json.Unmarshal(resp.Result, &accounts); err != nil {
 		slog.Debug("signal: listAccounts parse failed", "err", err)
 		return

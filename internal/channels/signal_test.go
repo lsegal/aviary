@@ -141,13 +141,14 @@ func init() {
 // fakeDaemon is a minimal in-process signal-cli TCP JSON-RPC server.
 // It accepts TCP connections and handles newline-delimited JSON-RPC messages.
 type fakeDaemon struct {
-	listener net.Listener
-	mu       sync.Mutex
-	conns    []net.Conn
-	sent     []map[string]interface{} // captured send requests
-	rpc      []map[string]interface{} // captured all rpc requests
-	results  map[string]any
-	stopCh   chan struct{}
+	listener          net.Listener
+	mu                sync.Mutex
+	conns             []net.Conn
+	sent              []map[string]interface{} // captured send requests
+	rpc               []map[string]interface{} // captured all rpc requests
+	results           map[string]any
+	omitResultMethods map[string]bool
+	stopCh            chan struct{}
 }
 
 func newFakeDaemon(t *testing.T) *fakeDaemon {
@@ -156,9 +157,10 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 	assert.NoError(t, err)
 
 	fd := &fakeDaemon{
-		listener: ln,
-		results:  map[string]any{},
-		stopCh:   make(chan struct{}),
+		listener:          ln,
+		results:           map[string]any{},
+		omitResultMethods: map[string]bool{},
+		stopCh:            make(chan struct{}),
 	}
 	go fd.acceptLoop()
 	return fd
@@ -221,6 +223,9 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 			"result":  map[string]interface{}{},
 		}
 		fd.mu.Lock()
+		if fd.omitResultMethods[method] {
+			delete(resp, "result")
+		}
 		if result, ok := fd.results[method]; ok {
 			resp["result"] = result
 		}
@@ -282,6 +287,12 @@ func (fd *fakeDaemon) SetResult(method string, result any) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	fd.results[method] = result
+}
+
+func (fd *fakeDaemon) SetOmitResult(method string, omit bool) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	fd.omitResultMethods[method] = omit
 }
 
 // Close closes all connections and the listener.
@@ -707,6 +718,21 @@ func TestDispatch_GroupMentionUUIDOnly_RespondToMentions(t *testing.T) {
 	ch.dispatch([]byte(otherUUID))
 	_, ok = waitMsgTimeout(msgs, 50*time.Millisecond)
 	assert.False(t, ok, "mention of different UUID should be blocked")
+}
+
+func TestFetchUUID_IgnoresMissingListAccountsResult(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+	fd.SetOmitResult("listAccounts", true)
+
+	ch := NewSignalChannel("+12130000000", fd.Addr(), nil, true, true, true, true, "test", nil)
+	ch.fetchUUID(context.Background())
+
+	assert.Empty(t, ch.uuid)
+
+	reqs := fd.Requests()
+	assert.Len(t, reqs, 1)
+	assert.Equal(t, "listAccounts", reqs[0]["method"])
 }
 
 func TestDispatch_EditedGroupMention_RespondToMentions(t *testing.T) {
