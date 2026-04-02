@@ -7,7 +7,7 @@ ARG TARGETARCH
 ENV GOROOT=/usr/local/go
 ENV GOPATH=/home/dev/go
 ENV PNPM_HOME=/pnpm
-ENV PATH="/home/dev/.config/aviary/bin:/home/dev/.local/bin:/home/linuxbrew/.linuxbrew/bin:${GOROOT}/bin:${GOPATH}/bin:${PNPM_HOME}:${PATH}"
+ENV PATH="/home/dev/.local/bin:/home/linuxbrew/.linuxbrew/bin:${GOROOT}/bin:${GOPATH}/bin:${PNPM_HOME}:${PATH}"
 
 WORKDIR /src
 

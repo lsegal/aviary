@@ -96,7 +96,7 @@ RUN useradd -m bot -d /home/bot -s /bin/bash \
 COPY --from=go-builder /out/aviary /usr/local/bin/aviary
 
 USER bot
-ENV PATH="/home/bot/.config/aviary/bin:/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
+ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
 ENV AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS=true
 WORKDIR /home/bot
 

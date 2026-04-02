@@ -87,8 +87,7 @@ if [ -z "$ASSET_URL" ]; then
 	ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
 fi
 
-CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/aviary"
-BIN_DIR="$CONFIG_ROOT/bin"
+BIN_DIR="${HOME}/.local/bin"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {

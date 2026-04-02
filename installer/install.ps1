@@ -7,19 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Global headers for diagnostics and API calls
 $headers = @{ Accept = "application/vnd.github+json" }
-function Get-ConfigRoot {
-	if ($env:XDG_CONFIG_HOME) {
-		return Join-Path $env:XDG_CONFIG_HOME "aviary"
-	}
-	if ($env:AVIARY_HOME) {
-		return Join-Path $env:AVIARY_HOME ".config\aviary"
-	}
+function Get-BinDir {
 	if ($env:HOME) {
-		return Join-Path $env:HOME ".config\aviary"
+		return Join-Path $env:HOME ".local\bin"
 	}
-	return Join-Path $HOME ".config\aviary"
+	return Join-Path $HOME ".local\bin"
 }
 
 function Get-Release {
@@ -69,8 +62,7 @@ if (-not $asset) {
 	$assetUrl = $asset.browser_download_url
 }
 
-$configRoot = Get-ConfigRoot
-$binDir = Join-Path $configRoot "bin"
+$binDir = Get-BinDir
 $null = New-Item -ItemType Directory -Path $binDir -Force
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("aviary-install-" + [guid]::NewGuid().ToString("N"))

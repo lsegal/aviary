@@ -21,7 +21,7 @@ curl -fsSL https://aviary.bot/install.sh | sh
 iwr https://aviary.bot/install.ps1 | iex
 ```
 
-Both scripts download the latest release binary to `~/.config/aviary/bin/` and add it to your `PATH`.
+Both scripts download the latest release binary to `~/.local/bin/` and add it to your `PATH`.
 
 **Docker**
 
