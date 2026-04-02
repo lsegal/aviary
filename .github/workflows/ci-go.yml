@@ -1,0 +1,92 @@
+name: CI Go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'skills/**'
+      - 'support/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - '.github/workflows/ci-go.yml'
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'skills/**'
+      - 'support/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - '.github/workflows/ci-go.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    name: Go tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+
+  go-lint:
+    name: Go lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go tool golangci-lint run ./...
+
+  go-coverage:
+    name: Go coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+      - name: Measure current Go coverage
+        run: go test -covermode=atomic -coverprofile coverage.out ./...
+      - name: Measure base Go coverage
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          git worktree add .worktrees/base "$base_sha"
+          (
+            cd .worktrees/base
+            go test -covermode=atomic -coverprofile coverage-base.out ./...
+          )
+      - name: Enforce Go coverage threshold
+        if: github.event_name == 'pull_request'
+        run: node scripts/go-coverage.mjs --current coverage.out --base .worktrees/base/coverage-base.out --threshold 5

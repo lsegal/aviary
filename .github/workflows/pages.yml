@@ -3,6 +3,10 @@ name: Pages
 on:
   push:
     branches: [main]
+    paths:
+      - 'docs/**'
+      - 'installer/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
