@@ -6,6 +6,16 @@ export interface KnownProvider {
 	authId: string;
 	hasOAuth: boolean;
 	hasApiKey: boolean;
+	emoji?: string;
+	description?: string;
+	keyPlaceholder?: string;
+	keyHelp?: string;
+	apiAuthKey?: string;
+	defaultModel?: string;
+	oauthModel?: string;
+	defaultProviders?: string[];
+	oauthProviders?: string[];
+	authKeys?: string[];
 }
 
 export const KNOWN_PROVIDERS: KnownProvider[] = [
@@ -15,6 +25,16 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		authId: "anthropic",
 		hasOAuth: true,
 		hasApiKey: true,
+		emoji: "🤖",
+		description: "Claude - great for coding and reasoning",
+		keyPlaceholder: "sk-ant-...",
+		keyHelp: "Find your key at console.anthropic.com -> API Keys.",
+		apiAuthKey: "anthropic:default",
+		defaultModel: "anthropic/claude-sonnet-4-6",
+		oauthModel: "anthropic/claude-sonnet-4-6",
+		defaultProviders: ["anthropic"],
+		oauthProviders: ["anthropic"],
+		authKeys: ["anthropic:oauth", "anthropic:default"],
 	},
 	{
 		id: "openai",
@@ -29,6 +49,16 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		authId: "openai",
 		hasOAuth: true,
 		hasApiKey: false,
+		emoji: "🧠",
+		description: "GPT-5.4 via OpenAI OAuth",
+		keyPlaceholder: "sk-...",
+		keyHelp: "Find your key at platform.openai.com -> API keys.",
+		apiAuthKey: "openai:default",
+		defaultModel: "openai/gpt-5.4",
+		oauthModel: "openai-codex/gpt-5.4",
+		defaultProviders: ["openai"],
+		oauthProviders: ["openai-codex"],
+		authKeys: ["openai:oauth", "openai:default"],
 	},
 	{
 		id: "google",
@@ -36,6 +66,16 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		authId: "gemini",
 		hasOAuth: true,
 		hasApiKey: true,
+		emoji: "✨",
+		description: "Google Gemini - fast and multimodal",
+		keyPlaceholder: "AIza...",
+		keyHelp: "Find your key at aistudio.google.com -> Get API key.",
+		apiAuthKey: "gemini:default",
+		defaultModel: "google-gemini/gemini-2.0-flash",
+		oauthModel: "google-gemini/gemini-2.0-flash",
+		defaultProviders: ["google-gemini", "google"],
+		oauthProviders: ["google-gemini", "google"],
+		authKeys: ["gemini:oauth", "gemini:default"],
 	},
 	{
 		id: "github-copilot",
@@ -43,6 +83,17 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		authId: "github-copilot",
 		hasOAuth: true,
 		hasApiKey: true,
+		emoji: "🐦",
+		description: "GitHub Copilot - code-specialized models",
+		keyPlaceholder: "ghp_... or personal access token",
+		keyHelp:
+			"Use a GitHub Personal Access Token (repo scope) or sign in via OAuth.",
+		apiAuthKey: "github-copilot:default",
+		defaultModel: "github-copilot/gpt-5.4",
+		oauthModel: "github-copilot/gpt-5.4",
+		oauthProviders: ["github-copilot"],
+		defaultProviders: ["github-copilot"],
+		authKeys: ["github-copilot:oauth", "github-copilot:default"],
 	},
 ];
 

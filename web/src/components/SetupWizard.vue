@@ -49,7 +49,7 @@
 				>
 					<span class="text-3xl">{{ p.emoji }}</span>
 					<div>
-						<p class="font-semibold text-gray-900 dark:text-white">{{ p.name }}</p>
+						<p class="font-semibold text-gray-900 dark:text-white">{{ p.label }}</p>
 						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ p.description }}</p>
 					</div>
 					<span
@@ -91,11 +91,11 @@
 
 			<div class="mb-6 text-center">
 				<span class="mb-3 inline-block text-4xl">{{ currentProvider?.emoji }}</span>
-				<h2 class="text-xl font-bold text-gray-900 dark:text-white">Connect {{ currentProvider?.name }}</h2>
+				<h2 class="text-xl font-bold text-gray-900 dark:text-white">Connect {{ currentProvider?.label }}</h2>
 			</div>
 
 			<div
-				v-if="currentProvider?.oauth"
+				v-if="currentProvider?.hasOAuth"
 				class="mb-5 flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/50"
 			>
 				<button
@@ -108,7 +108,7 @@
 					]"
 					@click="credMethod = 'oauth'"
 				>
-					Sign in with {{ currentProvider.name }}
+					Sign in with {{ currentProvider.label }}
 				</button>
 				<button
 					type="button"
@@ -391,22 +391,11 @@
 				</div>
 				<div>
 					<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
-					<div class="flex items-center gap-3">
-						<select
-							v-if="currentProvider"
-							v-model="agentModelInput"
-							class="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						>
-							<option :value="currentProvider.defaultModel">Default - {{ currentProvider.defaultModel }}</option>
-							<option v-if="currentProvider.oauthModel" :value="currentProvider.oauthModel">OAuth - {{ currentProvider.oauthModel }}</option>
-						</select>
-						<input
-							v-model="agentModelInput"
-							type="text"
-							placeholder="provider/model-name"
-							class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						/>
-					</div>
+					<ModelSelector
+						v-model="agentModelInput"
+						:options="currentProviderModelOptions"
+						placeholder="Select a model..."
+					/>
 					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Format: <code class="font-mono">provider/model-name</code></p>
 				</div>
 				<div v-if="agentError" class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-400">
@@ -456,85 +445,31 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useAvailableModels } from "../composables/useAvailableModels";
 import { useMCP } from "../composables/useMCP";
-import { useProviderAuth } from "../composables/useProviderAuth";
+import {
+	KNOWN_PROVIDERS,
+	type KnownProvider,
+	useProviderAuth,
+} from "../composables/useProviderAuth";
 import { type AppConfig, useSettingsStore } from "../stores/settings";
+import ModelSelector from "./ModelSelector.vue";
 
 defineEmits<{ skip: [] }>();
 
-interface Provider {
-	id: string;
-	name: string;
-	emoji: string;
-	description: string;
-	oauth?: boolean;
-	keyPlaceholder?: string;
-	keyHelp?: string;
-	apiAuthKey?: string;
-	defaultModel: string;
-	oauthModel?: string;
-	authKeys: string[];
-}
+type Provider = KnownProvider;
 
-const providers: Provider[] = [
-	{
-		id: "anthropic",
-		name: "Anthropic",
-		emoji: "🤖",
-		description: "Claude - great for coding and reasoning",
-		oauth: true,
-		keyPlaceholder: "sk-ant-...",
-		keyHelp: "Find your key at console.anthropic.com -> API Keys.",
-		apiAuthKey: "anthropic:default",
-		defaultModel: "anthropic/claude-sonnet-4-5",
-		oauthModel: "anthropic/claude-sonnet-4-5",
-		authKeys: ["anthropic:oauth", "anthropic:default"],
-	},
-	{
-		id: "openai",
-		name: "OpenAI Codex",
-		emoji: "🧠",
-		description: "GPT-4o - versatile and capable",
-		oauth: true,
-		keyPlaceholder: "sk-...",
-		keyHelp: "Find your key at platform.openai.com -> API keys.",
-		apiAuthKey: "openai:default",
-		defaultModel: "openai/gpt-4o",
-		oauthModel: "openai-codex/gpt-5.2",
-		authKeys: ["openai:oauth", "openai:default"],
-	},
-	{
-		id: "gemini",
-		name: "Gemini",
-		emoji: "✨",
-		description: "Google Gemini - fast and multimodal",
-		oauth: true,
-		keyPlaceholder: "AIza...",
-		keyHelp: "Find your key at aistudio.google.com -> Get API key.",
-		apiAuthKey: "gemini:default",
-		defaultModel: "gemini/gemini-2.0-flash",
-		oauthModel: "gemini/gemini-2.0-flash",
-		authKeys: ["gemini:oauth", "gemini:default"],
-	},
-	{
-		id: "github-copilot",
-		name: "GitHub Copilot",
-		emoji: "🐦",
-		description: "GitHub Copilot - code-specialized models",
-		oauth: true,
-		keyPlaceholder: "ghp_... or personal access token",
-		keyHelp:
-			"Use a GitHub Personal Access Token (repo scope) or sign in via OAuth.",
-		apiAuthKey: "github-copilot:default",
-		defaultModel: "github-copilot/gpt-5",
-		authKeys: ["github-copilot:oauth", "github-copilot:default"],
-	},
-];
+const providers: Provider[] = KNOWN_PROVIDERS.filter((provider) =>
+	["anthropic", "openai-codex", "google", "github-copilot"].includes(
+		provider.id,
+	),
+);
 
 type Step = "provider" | "credentials" | "agent" | "done";
 const steps: Step[] = ["provider", "credentials", "agent", "done"];
 
 const { callTool } = useMCP();
+const { availableModelOptions, refreshCredentials } = useAvailableModels();
 const settingsStore = useSettingsStore();
 const {
 	anthropicUrl: oauthUrl,
@@ -566,6 +501,22 @@ const selectedProvider = ref("");
 const currentProvider = computed(
 	() => providers.find((p) => p.id === selectedProvider.value) ?? null,
 );
+const currentProviderModelOptions = computed(() => {
+	const provider = currentProvider.value;
+	if (!provider) return [];
+	const allowedProviders =
+		(credMethod.value === "oauth"
+			? (provider.oauthProviders ?? provider.defaultProviders)
+			: provider.defaultProviders) ?? [];
+	const options = availableModelOptions.value.filter((model) =>
+		allowedProviders.some((prefix) => model.startsWith(`${prefix}/`)),
+	);
+	return options.length
+		? options
+		: [provider.defaultModel, provider.oauthModel].filter(
+				(model): model is string => Boolean(model),
+			);
+});
 const credMethod = ref<"oauth" | "apikey">("oauth");
 const apiKey = ref("");
 const credSaving = ref(false);
@@ -585,6 +536,7 @@ function formatCountdown(seconds: number | null): string {
 
 onMounted(async () => {
 	await refreshStoredKeys();
+	await refreshCredentials();
 });
 
 async function refreshStoredKeys() {
@@ -598,9 +550,16 @@ async function refreshStoredKeys() {
 
 function detectedAuth(p: Provider | undefined): "oauth" | "apikey" | null {
 	if (!p) return null;
-	if (p.oauth && storedKeys.value.includes(p.authKeys[0])) return "oauth";
+	if (p.hasOAuth && p.authKeys?.[0] && storedKeys.value.includes(p.authKeys[0]))
+		return "oauth";
 	if (p.apiAuthKey && storedKeys.value.includes(p.apiAuthKey)) return "apikey";
 	return null;
+}
+
+function defaultModelFor(p: Provider, method: "oauth" | "apikey"): string {
+	return method === "oauth" && p.oauthModel
+		? p.oauthModel
+		: (p.defaultModel ?? "");
 }
 
 function selectProvider(id: string) {
@@ -610,12 +569,11 @@ function selectProvider(id: string) {
 	const existing = detectedAuth(p);
 	if (existing) {
 		credMethod.value = existing;
-		agentModelInput.value =
-			existing === "oauth" && p.oauthModel ? p.oauthModel : p.defaultModel;
+		agentModelInput.value = defaultModelFor(p, existing);
 		step.value = "agent";
 		return;
 	}
-	credMethod.value = p.oauth ? "oauth" : "apikey";
+	credMethod.value = p.hasOAuth ? "oauth" : "apikey";
 	apiKey.value = "";
 	clearOAuthState();
 	credError.value = "";
@@ -624,8 +582,7 @@ function selectProvider(id: string) {
 
 watch([currentProvider, credMethod], ([p, method]) => {
 	if (!p) return;
-	agentModelInput.value =
-		method === "oauth" && p.oauthModel ? p.oauthModel : p.defaultModel;
+	agentModelInput.value = defaultModelFor(p, method);
 });
 
 async function saveApiKey() {
@@ -638,6 +595,7 @@ async function saveApiKey() {
 			value: apiKey.value.trim(),
 		});
 		await refreshStoredKeys();
+		await refreshCredentials();
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
@@ -666,6 +624,7 @@ async function completeAnthropicOAuth() {
 		await completeAnthropic();
 		clearOAuthState();
 		await refreshStoredKeys();
+		await refreshCredentials();
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
@@ -693,6 +652,7 @@ async function completeOpenAIOAuth() {
 		await completeOpenAI();
 		clearOAuthState();
 		await refreshStoredKeys();
+		await refreshCredentials();
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
@@ -720,6 +680,7 @@ async function completeGeminiOAuth() {
 		await completeGemini();
 		clearOAuthState();
 		await refreshStoredKeys();
+		await refreshCredentials();
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
@@ -747,6 +708,7 @@ async function completeCopilotOAuth() {
 		await completeCopilot();
 		clearOAuthState();
 		await refreshStoredKeys();
+		await refreshCredentials();
 		step.value = "agent";
 	} catch (e) {
 		credError.value = e instanceof Error ? e.message : String(e);
