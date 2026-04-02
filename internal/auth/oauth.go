@@ -47,6 +47,10 @@ const (
 	openAIOriginator = "codex_cli_rs"
 )
 
+// BrowserLoginTimeout is how long browser-based OAuth callback listeners stay
+// open before Aviary automatically tears them down.
+const BrowserLoginTimeout = 2 * time.Minute
+
 // GitHub OAuth endpoints used for PKCE login. The client ID must be supplied
 // by setting the GITHUB_OAUTH_CLIENT_ID environment variable.
 const (
@@ -68,6 +72,16 @@ type OAuthToken struct {
 	ExpiresAt    int64  `json:"expires_at"` // Unix milliseconds
 }
 
+// BrowserLoginStart describes a browser-based OAuth flow that has been prepared
+// and is waiting for the user to complete it in the browser.
+type BrowserLoginStart struct {
+	AuthorizeURL   string
+	CallbackURL    string
+	BrowserOpened  bool
+	BrowserOpenErr string
+	ExpiresAt      time.Time
+}
+
 // IsExpired reports whether the token has expired (within a 30-second buffer).
 func (t *OAuthToken) IsExpired() bool {
 	return time.Now().UnixMilli() >= t.ExpiresAt-30_000
@@ -77,6 +91,31 @@ func (t *OAuthToken) IsExpired() bool {
 var (
 	pendingMu   sync.Mutex
 	pendingPKCE = map[string]PKCEParams{}
+)
+
+type pendingBrowserLogin struct {
+	authorizeURL string
+	callbackURL  string
+	expiresAt    time.Time
+	done         chan struct{}
+
+	mu       sync.Mutex
+	token    *OAuthToken
+	err      error
+	stopOnce sync.Once
+	stop     func()
+}
+
+func browserLoginListenHost() string {
+	if os.Getenv("AVIARY_SANDBOX") == "true" {
+		return "0.0.0.0"
+	}
+	return "127.0.0.1"
+}
+
+var (
+	pendingBrowserMu     sync.Mutex
+	pendingBrowserLogins = map[string]*pendingBrowserLogin{}
 )
 
 // StorePendingPKCE saves a PKCE state for a named login flow.
@@ -96,6 +135,78 @@ func LoadPendingPKCE(provider string) (PKCEParams, bool) {
 		delete(pendingPKCE, provider)
 	}
 	return p, ok
+}
+
+func storePendingBrowserLogin(provider string, flow *pendingBrowserLogin) {
+	pendingBrowserMu.Lock()
+	defer pendingBrowserMu.Unlock()
+	if existing, ok := pendingBrowserLogins[provider]; ok && existing != nil {
+		existing.setResult(nil, fmt.Errorf("%s login was replaced by a new attempt", provider))
+	}
+	pendingBrowserLogins[provider] = flow
+}
+
+func getPendingBrowserLogin(provider string) (*pendingBrowserLogin, bool) {
+	pendingBrowserMu.Lock()
+	defer pendingBrowserMu.Unlock()
+	flow, ok := pendingBrowserLogins[provider]
+	return flow, ok
+}
+
+func clearPendingBrowserLogin(provider string, flow *pendingBrowserLogin) {
+	pendingBrowserMu.Lock()
+	defer pendingBrowserMu.Unlock()
+	if pendingBrowserLogins[provider] == flow {
+		delete(pendingBrowserLogins, provider)
+	}
+}
+
+func cancelPendingBrowserLogin(provider string) {
+	pendingBrowserMu.Lock()
+	existing := pendingBrowserLogins[provider]
+	delete(pendingBrowserLogins, provider)
+	pendingBrowserMu.Unlock()
+	if existing != nil {
+		existing.setResult(nil, fmt.Errorf("%s login was replaced by a new attempt", provider))
+		existing.shutdown()
+	}
+}
+
+func (p *pendingBrowserLogin) setResult(token *OAuthToken, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case <-p.done:
+		return
+	default:
+		p.token = token
+		p.err = err
+		close(p.done)
+	}
+}
+
+func (p *pendingBrowserLogin) wait(ctx context.Context) (*OAuthToken, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.done:
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.err != nil {
+			return nil, p.err
+		}
+		if p.token == nil {
+			return nil, fmt.Errorf("login finished without a token")
+		}
+		return p.token, nil
+	}
+}
+
+func (p *pendingBrowserLogin) shutdown() {
+	if p == nil || p.stop == nil {
+		return
+	}
+	p.stopOnce.Do(p.stop)
 }
 
 // GeneratePKCE creates new random PKCE parameters.
@@ -217,16 +328,18 @@ func AnthropicRefresh(ctx context.Context, refreshToken string) (*OAuthToken, er
 	}, nil
 }
 
-// OpenAILogin starts a local HTTP callback server on port 1455, opens the browser
-// to the OpenAI/Codex OAuth consent screen, and returns tokens after the user
-// approves. Blocks until ctx is cancelled or the callback is received.
+// StartOpenAILogin starts a local HTTP callback server on port 1455, opens the
+// browser to the OpenAI/Codex OAuth consent screen, and returns the URLs needed
+// to complete the flow. The token exchange is finished by CompleteOpenAILogin.
 //
 // The flow matches the official openai/codex CLI (codex-rs/login/src/server.rs):
 //   - redirect_uri uses "localhost" (not 127.0.0.1) and path "/auth/callback"
 //   - authorize URL includes id_token_add_organizations, codex_cli_simplified_flow, originator
 //   - state is a separate random value independent of the PKCE verifier
 //   - after code exchange the id_token is swapped for a real OpenAI API key
-func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
+func StartOpenAILogin() (*BrowserLoginStart, error) {
+	cancelPendingBrowserLogin("openai")
+
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, err
@@ -242,9 +355,9 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 	// Codex uses "localhost" (not 127.0.0.1) and the path "/auth/callback".
 	redirectURI := fmt.Sprintf("http://localhost:%d/auth/callback", OpenAICallbackPort)
 
-	// Listen on all loopback interfaces so both 127.0.0.1 and ::1 work, but
-	// bind only to the loopback to avoid exposing the callback server.
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OpenAICallbackPort))
+	// In sandboxed/containerized environments we bind to 0.0.0.0 so published
+	// ports can reach the callback listener from outside the container.
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", browserLoginListenHost(), OpenAICallbackPort))
 	if err != nil {
 		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", OpenAICallbackPort, err)
 	}
@@ -255,9 +368,18 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 	}
 	codeCh := make(chan callbackResult, 1)
 	errCh := make(chan error, 1)
+	flow := &pendingBrowserLogin{
+		callbackURL: redirectURI,
+		expiresAt:   time.Now().Add(BrowserLoginTimeout),
+		done:        make(chan struct{}),
+	}
 
 	mux := http.NewServeMux()
 	srv := &http.Server{Handler: mux}
+	flow.stop = func() {
+		_ = srv.Shutdown(context.Background())
+		_ = ln.Close()
+	}
 	// Codex registers the callback at /auth/callback.
 	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
 		if errParam := r.URL.Query().Get("error"); errParam != "" {
@@ -294,7 +416,6 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 			}
 		}
 	}()
-	defer srv.Shutdown(context.Background()) //nolint:errcheck
 
 	// Build the authorize URL exactly as Codex does (server.rs build_authorize_url).
 	u, _ := url.Parse(OpenAIAuthorizeURL)
@@ -310,19 +431,55 @@ func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
 	q.Set("state", state)
 	q.Set("originator", openAIOriginator)
 	u.RawQuery = q.Encode()
+	flow.authorizeURL = u.String()
+	storePendingBrowserLogin("openai", flow)
 
-	if err := OpenBrowser(u.String()); err != nil {
-		return nil, fmt.Errorf("opening browser: %w", err)
+	go func() {
+		defer flow.shutdown()
+
+		select {
+		case <-flow.done:
+			return
+		case <-time.After(time.Until(flow.expiresAt)):
+			flow.setResult(nil, fmt.Errorf("openai OAuth login timed out after %s", BrowserLoginTimeout))
+		case err := <-errCh:
+			flow.setResult(nil, err)
+		case cb := <-codeCh:
+			token, err := openAIExchange(context.Background(), cb.code, pkce.Verifier, redirectURI)
+			flow.setResult(token, err)
+		}
+	}()
+
+	openErr := OpenBrowser(flow.authorizeURL)
+	start := &BrowserLoginStart{
+		AuthorizeURL:  flow.authorizeURL,
+		CallbackURL:   redirectURI,
+		BrowserOpened: openErr == nil,
+		ExpiresAt:     flow.expiresAt,
 	}
+	if openErr != nil {
+		start.BrowserOpenErr = openErr.Error()
+	}
+	return start, nil
+}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case err := <-errCh:
+// CompleteOpenAILogin waits for a previously started OpenAI OAuth flow to
+// finish and then exchanges the callback for tokens.
+func CompleteOpenAILogin(ctx context.Context) (*OAuthToken, error) {
+	flow, ok := getPendingBrowserLogin("openai")
+	if !ok {
+		return nil, fmt.Errorf("no pending OpenAI login; call auth_login_openai first")
+	}
+	defer clearPendingBrowserLogin("openai", flow)
+	return flow.wait(ctx)
+}
+
+// OpenAILogin starts and completes the OpenAI OAuth flow in one blocking call.
+func OpenAILogin(ctx context.Context) (*OAuthToken, error) {
+	if _, err := StartOpenAILogin(); err != nil {
 		return nil, err
-	case cb := <-codeCh:
-		return openAIExchange(ctx, cb.code, pkce.Verifier, redirectURI)
 	}
+	return CompleteOpenAILogin(ctx)
 }
 
 func openAIExchange(ctx context.Context, code, verifier, redirectURI string) (*OAuthToken, error) {
@@ -602,10 +759,13 @@ const (
 	GeminiCallbackPort = 45289
 )
 
-// GeminiLogin starts a local HTTP callback server on port 45289, opens the browser
-// to Google's OAuth consent screen, and returns tokens after the user approves.
+// StartGeminiLogin starts a local HTTP callback server on port 45289, opens the
+// browser to Google's OAuth consent screen, and returns the URLs needed to
+// complete the flow. The token exchange is finished by CompleteGeminiLogin.
 // Matches the google-gemini/gemini-cli authentication flow.
-func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
+func StartGeminiLogin() (*BrowserLoginStart, error) {
+	cancelPendingBrowserLogin("gemini")
+
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, err
@@ -619,7 +779,7 @@ func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
 
 	redirectURI := fmt.Sprintf("http://localhost:%d", GeminiCallbackPort)
 
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GeminiCallbackPort))
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", browserLoginListenHost(), GeminiCallbackPort))
 	if err != nil {
 		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", GeminiCallbackPort, err)
 	}
@@ -630,9 +790,18 @@ func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
 	}
 	codeCh := make(chan callbackResult, 1)
 	errCh := make(chan error, 1)
+	flow := &pendingBrowserLogin{
+		callbackURL: redirectURI,
+		expiresAt:   time.Now().Add(BrowserLoginTimeout),
+		done:        make(chan struct{}),
+	}
 
 	mux := http.NewServeMux()
 	srv := &http.Server{Handler: mux}
+	flow.stop = func() {
+		_ = srv.Shutdown(context.Background())
+		_ = ln.Close()
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if errParam := r.URL.Query().Get("error"); errParam != "" {
 			desc := r.URL.Query().Get("error_description")
@@ -668,7 +837,6 @@ func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
 			}
 		}
 	}()
-	defer srv.Shutdown(context.Background()) //nolint:errcheck
 
 	u, _ := url.Parse(GeminiAuthorizeURL)
 	q := u.Query()
@@ -682,19 +850,55 @@ func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
 	q.Set("access_type", "offline") // request refresh token
 	q.Set("prompt", "consent")      // force consent to always get refresh token
 	u.RawQuery = q.Encode()
+	flow.authorizeURL = u.String()
+	storePendingBrowserLogin("gemini", flow)
 
-	if err := OpenBrowser(u.String()); err != nil {
-		return nil, fmt.Errorf("opening browser: %w", err)
+	go func() {
+		defer flow.shutdown()
+
+		select {
+		case <-flow.done:
+			return
+		case <-time.After(time.Until(flow.expiresAt)):
+			flow.setResult(nil, fmt.Errorf("gemini OAuth login timed out after %s", BrowserLoginTimeout))
+		case err := <-errCh:
+			flow.setResult(nil, err)
+		case cb := <-codeCh:
+			token, err := geminiExchange(context.Background(), cb.code, pkce.Verifier, redirectURI)
+			flow.setResult(token, err)
+		}
+	}()
+
+	openErr := OpenBrowser(flow.authorizeURL)
+	start := &BrowserLoginStart{
+		AuthorizeURL:  flow.authorizeURL,
+		CallbackURL:   redirectURI,
+		BrowserOpened: openErr == nil,
+		ExpiresAt:     flow.expiresAt,
 	}
+	if openErr != nil {
+		start.BrowserOpenErr = openErr.Error()
+	}
+	return start, nil
+}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case err := <-errCh:
+// CompleteGeminiLogin waits for a previously started Gemini OAuth flow to
+// finish and then exchanges the callback for tokens.
+func CompleteGeminiLogin(ctx context.Context) (*OAuthToken, error) {
+	flow, ok := getPendingBrowserLogin("gemini")
+	if !ok {
+		return nil, fmt.Errorf("no pending Gemini login; call auth_login_gemini first")
+	}
+	defer clearPendingBrowserLogin("gemini", flow)
+	return flow.wait(ctx)
+}
+
+// GeminiLogin starts and completes the Gemini OAuth flow in one blocking call.
+func GeminiLogin(ctx context.Context) (*OAuthToken, error) {
+	if _, err := StartGeminiLogin(); err != nil {
 		return nil, err
-	case cb := <-codeCh:
-		return geminiExchange(ctx, cb.code, pkce.Verifier, redirectURI)
 	}
+	return CompleteGeminiLogin(ctx)
 }
 
 func geminiExchange(ctx context.Context, code, verifier, redirectURI string) (*OAuthToken, error) {

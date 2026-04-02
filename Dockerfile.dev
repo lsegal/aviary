@@ -7,6 +7,7 @@ ARG TARGETARCH
 ENV GOROOT=/usr/local/go
 ENV GOPATH=/home/dev/go
 ENV PNPM_HOME=/pnpm
+ENV AVIARY_SANDBOX=true
 ENV PATH="/home/dev/.local/bin:/home/linuxbrew/.linuxbrew/bin:${GOROOT}/bin:${GOPATH}/bin:${PNPM_HOME}:${PATH}"
 
 WORKDIR /src
@@ -96,7 +97,7 @@ COPY . .
 RUN mkdir -p /home/dev/.local/bin \
   && chown -R dev:dev /src /home/dev/.local
 
-EXPOSE 5173 5174 16677
+EXPOSE 1455 45289 5173 5174 16677
 
 USER dev
 

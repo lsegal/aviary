@@ -316,6 +316,10 @@ import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
+	KNOWN_PROVIDERS,
+	useProviderAuth,
+} from "../composables/useProviderAuth";
+import {
 	clampToolNamesForPreset,
 	groupTools,
 	isToolAccessibleForPreset,
@@ -738,53 +742,34 @@ watch(removeTargetOpen, (v) => {
 		});
 });
 
-const oauthBusy = ref(false);
-const anthropicUrl = ref("");
-const anthropicCode = ref("");
-const copilotUserCode = ref("");
-const copilotVerifyUrl = ref("");
+const {
+	oauthBusy,
+	anthropicUrl,
+	anthropicCode,
+	openAIUrl,
+	openAICallbackUrl,
+	openAIRemainingSeconds,
+	openAITimedOut,
+	geminiUrl,
+	geminiCallbackUrl,
+	geminiRemainingSeconds,
+	geminiTimedOut,
+	copilotUserCode,
+	copilotVerifyUrl,
+	clearOAuthState,
+	startAnthropic: authStartAnthropic,
+	completeAnthropic: authCompleteAnthropic,
+	startOpenAI: authStartOpenAI,
+	completeOpenAI: authCompleteOpenAI,
+	startGemini: authStartGemini,
+	completeGemini: authCompleteGemini,
+	startCopilot: authStartCopilot,
+	completeCopilot: authCompleteCopilot,
+} = useProviderAuth(callTool);
 const providerAddSelection = ref("");
 const providerApiKeyValue = ref("");
 const secretName = ref("");
 const secretValue = ref("");
-
-const KNOWN_PROVIDERS = [
-	{
-		id: "anthropic",
-		label: "Anthropic",
-		authId: "anthropic",
-		hasOAuth: true,
-		hasApiKey: true,
-	},
-	{
-		id: "openai",
-		label: "OpenAI",
-		authId: "openai",
-		hasOAuth: false,
-		hasApiKey: true,
-	},
-	{
-		id: "openai-codex",
-		label: "OpenAI Codex",
-		authId: "openai",
-		hasOAuth: true,
-		hasApiKey: false,
-	},
-	{
-		id: "google",
-		label: "Google (Gemini)",
-		authId: "gemini",
-		hasOAuth: true,
-		hasApiKey: true,
-	},
-	{
-		id: "github-copilot",
-		label: "GitHub Copilot",
-		authId: "github-copilot",
-		hasOAuth: true,
-		hasApiKey: true,
-	},
-];
 
 const configuredProviders = computed(() => {
 	const entries: Array<{
@@ -2934,6 +2919,13 @@ function formatDate(value: string): string {
 	return date.toLocaleString();
 }
 
+function formatCountdown(seconds: number | null): string {
+	if (seconds == null) return "";
+	const mins = Math.floor(seconds / 60);
+	const secs = seconds % 60;
+	return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
 async function addProviderApiKey() {
 	const provider = providerAddSelection.value.replace(/:apikey$/, "");
 	const key = `${provider}:default`;
@@ -2956,25 +2948,26 @@ async function addProviderOAuth() {
 	const authId = providerAddSelection.value.replace(/:oauth$/, "");
 	const p = KNOWN_PROVIDERS.find((p) => p.authId === authId && p.hasOAuth);
 	if (!p) return;
-	// Show busy state and surface errors/success to the user.
 	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
 		if (p.id === "anthropic") {
 			await startAnthropic();
+			okMessage.value =
+				"Anthropic authorization started. Open the link below, then paste the code to complete it.";
 		} else if (p.id === "openai-codex") {
 			await loginOpenAI();
-			providerAddSelection.value = "";
+			okMessage.value =
+				"OpenAI Codex authorization started. Complete it using the URL shown below, then click Complete.";
 		} else if (p.id === "google") {
 			await loginGemini();
-			providerAddSelection.value = "";
+			okMessage.value =
+				"Gemini authorization started. Complete it using the URL shown below, then click Complete.";
 		} else if (p.id === "github-copilot") {
 			await startCopilot();
-			return; // startCopilot handles its own state
+			return;
 		}
-		await refreshCredentials();
-		okMessage.value = `${p.label} OAuth completed.`;
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -2989,16 +2982,20 @@ async function reauthorizeProvider(provider: string) {
 	try {
 		if (provider === "anthropic") {
 			await startAnthropic();
+			okMessage.value =
+				"Anthropic re-authorization started. Open the link below, then paste the code to complete it.";
 		} else if (provider === "openai" || provider === "openai-codex") {
 			await loginOpenAI();
+			okMessage.value =
+				"OpenAI Codex re-authorization started. Complete it using the URL shown below, then click Complete.";
 		} else if (provider === "google") {
 			await loginGemini();
+			okMessage.value =
+				"Gemini re-authorization started. Complete it using the URL shown below, then click Complete.";
 		} else if (provider === "github-copilot") {
 			await startCopilot();
-			return; // startCopilot handles its own state
+			return;
 		}
-		await refreshCredentials();
-		okMessage.value = "Re-authorization completed.";
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -3066,64 +3063,82 @@ async function deleteSecret(name: string) {
 }
 
 async function loginOpenAI() {
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const text = await callTool("auth_login_openai");
-		okMessage.value = text || "OpenAI OAuth completed.";
-		await refreshCredentials();
+		const parsed = await authStartOpenAI();
+		okMessage.value = parsed.browser_opened
+			? "OpenAI Codex authorization page opened. This callback stays available for 2 minutes."
+			: parsed.browser_open_error ||
+				"OpenAI Codex authorization started. This callback stays available for 2 minutes.";
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
 async function loginGemini() {
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const text = await callTool("auth_login_gemini");
+		const parsed = await authStartGemini();
+		okMessage.value = parsed.browser_opened
+			? "Gemini authorization page opened. This callback stays available for 2 minutes."
+			: parsed.browser_open_error ||
+				"Gemini authorization started. This callback stays available for 2 minutes.";
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function completeOpenAI() {
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const text = await authCompleteOpenAI();
+		clearOAuthState();
+		providerAddSelection.value = "";
+		okMessage.value = text || "OpenAI Codex OAuth completed.";
+		await refreshCredentials();
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function completeGemini() {
+	errorMessage.value = "";
+	okMessage.value = "";
+	try {
+		const text = await authCompleteGemini();
+		clearOAuthState();
+		providerAddSelection.value = "";
 		okMessage.value = text || "Gemini OAuth completed.";
 		await refreshCredentials();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
 async function startCopilot() {
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
-	copilotUserCode.value = "";
-	copilotVerifyUrl.value = "";
 	try {
-		const raw = await callTool("auth_login_github_copilot");
-		const parsed = JSON.parse(raw) as {
-			user_code?: string;
-			verification_uri?: string;
-		};
-		copilotUserCode.value = parsed.user_code ?? "";
-		copilotVerifyUrl.value = parsed.verification_uri ?? "";
+		await authStartCopilot();
 		okMessage.value =
-			"Enter the code shown on GitHub's device authorization page.";
+			"GitHub Copilot step 2 is ready below. Open GitHub's device page, enter the one-time code there, then come back and click Complete.";
+		await nextTick();
+		document
+			.getElementById("copilot-device-flow")
+			?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
 async function completeCopilot() {
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const text = await callTool("auth_login_github_copilot_complete");
+		const text = await authCompleteCopilot();
 		copilotUserCode.value = "";
 		copilotVerifyUrl.value = "";
 		providerAddSelection.value = "";
@@ -3131,37 +3146,25 @@ async function completeCopilot() {
 		await refreshCredentials();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
 async function startAnthropic() {
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
-	anthropicUrl.value = "";
 	try {
-		const raw = await callTool("auth_login_anthropic");
-		const parsed = JSON.parse(raw) as { url?: string; instructions?: string };
-		anthropicUrl.value = parsed.url ?? "";
-		okMessage.value = parsed.instructions ?? "Anthropic OAuth started.";
+		okMessage.value = await authStartAnthropic();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
 async function completeAnthropic() {
 	if (!anthropicCode.value.trim()) return;
-	oauthBusy.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
 	try {
-		const text = await callTool("auth_login_anthropic_complete", {
-			code: anthropicCode.value.trim(),
-		});
+		const text = await authCompleteAnthropic();
 		anthropicCode.value = "";
 		anthropicUrl.value = "";
 		providerAddSelection.value = "";
@@ -3169,8 +3172,6 @@ async function completeAnthropic() {
 		await refreshCredentials();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		oauthBusy.value = false;
 	}
 }
 
@@ -3210,6 +3211,8 @@ const settingsContext = proxyRefs({
 	channelToolResolution,
 	compileToastVisible,
 	completeAnthropic,
+	completeGemini,
+	completeOpenAI,
 	completeCopilot,
 	concurrencyInput,
 	configuredChannelLabel,
@@ -3228,7 +3231,12 @@ const settingsContext = proxyRefs({
 	entryToolResolution,
 	execShellPlaceholder,
 	extraSecrets,
+	geminiCallbackUrl,
+	geminiUrl,
+	geminiRemainingSeconds,
+	geminiTimedOut,
 	formatDate,
+	formatCountdown,
 	getAgentFileState,
 	hasEntryToolRestriction,
 	hasToolRestriction,
@@ -3251,6 +3259,10 @@ const settingsContext = proxyRefs({
 	moveTaskToFile,
 	newTaskNameMap,
 	oauthBusy,
+	openAICallbackUrl,
+	openAIUrl,
+	openAIRemainingSeconds,
+	openAITimedOut,
 	onAgentNameChange,
 	onTaskNameBlur,
 	onTaskNameFocus,

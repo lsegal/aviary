@@ -103,20 +103,62 @@
 							</div>
 						</div>
 
-						<!-- GitHub Copilot device-flow inline form -->
-						<div v-if="copilotUserCode" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								Visit <a :href="copilotVerifyUrl" target="_blank" rel="noreferrer"
-									class="text-blue-600 hover:underline dark:text-blue-400">{{ copilotVerifyUrl }}</a>
-								and enter this code:
+						<div v-if="openAIUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+							<p class="text-xs text-gray-500 dark:text-gray-400">Open the link below and complete OpenAI Codex sign-in on a machine that can receive the callback:</p>
+							<a :href="openAIUrl" target="_blank" rel="noreferrer"
+								class="block break-all text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ openAIUrl }}</a>
+							<p class="text-xs text-gray-500 dark:text-gray-400">Callback URL: <span class="font-mono">{{ openAICallbackUrl }}</span></p>
+							<p
+								:class="openAITimedOut ? 'text-xs font-medium text-red-600 dark:text-red-400' : 'text-xs text-gray-500 dark:text-gray-400'">
+								{{ openAITimedOut ? 'This OpenAI Codex callback timed out. Start the flow again.' : `Callback expires in ${formatCountdown(openAIRemainingSeconds)}.` }}
 							</p>
-							<div class="flex items-center justify-center rounded-md bg-gray-50 py-2 dark:bg-gray-800">
-								<span class="font-mono text-lg font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
+							<button type="button"
+								class="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+								:disabled="oauthBusy || openAITimedOut" @click="completeOpenAI">
+								{{ openAITimedOut ? 'Timed out' : oauthBusy ? 'Waiting for authorization…' : "I've authorized — Complete" }}
+							</button>
+						</div>
+
+						<div v-if="geminiUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+							<p class="text-xs text-gray-500 dark:text-gray-400">Open the link below and complete Gemini sign-in on a machine that can receive the callback:</p>
+							<a :href="geminiUrl" target="_blank" rel="noreferrer"
+								class="block break-all text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400">{{ geminiUrl }}</a>
+							<p class="text-xs text-gray-500 dark:text-gray-400">Callback URL: <span class="font-mono">{{ geminiCallbackUrl }}</span></p>
+							<p
+								:class="geminiTimedOut ? 'text-xs font-medium text-red-600 dark:text-red-400' : 'text-xs text-gray-500 dark:text-gray-400'">
+								{{ geminiTimedOut ? 'This Gemini callback timed out. Start the flow again.' : `Callback expires in ${formatCountdown(geminiRemainingSeconds)}.` }}
+							</p>
+							<button type="button"
+								class="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+								:disabled="oauthBusy || geminiTimedOut" @click="completeGemini">
+								{{ geminiTimedOut ? 'Timed out' : oauthBusy ? 'Waiting for authorization…' : "I've authorized — Complete" }}
+							</button>
+						</div>
+
+						<!-- GitHub Copilot device-flow inline form -->
+						<div
+							v-if="copilotUserCode"
+							id="copilot-device-flow"
+							class="mt-3 space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+						>
+							<div class="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+								Enter the code on GitHub's page, not in Aviary. After GitHub confirms authorization, come back here and click Complete.
+							</div>
+							<div class="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+								<p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Open GitHub device page</p>
+								<a :href="copilotVerifyUrl" target="_blank" rel="noreferrer"
+									class="mt-1 block break-all text-xs text-blue-600 hover:underline dark:text-blue-400">{{ copilotVerifyUrl }}</a>
+							</div>
+							<div class="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+								<p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">One-time code to enter on GitHub</p>
+								<div class="mt-2 flex items-center justify-center rounded-md bg-white py-2 dark:bg-gray-900">
+									<span class="font-mono text-lg font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
+								</div>
 							</div>
 							<button type="button"
 								class="w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
 								:disabled="oauthBusy" @click="completeCopilot">
-								{{ oauthBusy ? 'Waiting for authorization…' : "I\'ve authorized — Complete" }}
+								{{ oauthBusy ? 'Waiting for authorization…' : "I\'ve authorized on GitHub — Complete" }}
 							</button>
 						</div>
 					</div>

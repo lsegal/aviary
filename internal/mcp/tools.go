@@ -2537,13 +2537,30 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_gemini",
-		Description: "Start Google Gemini OAuth login (gemini-cli style). Opens the browser to Google's consent screen, " +
-			"listens on localhost:45289 for the callback, exchanges the code for tokens, and stores them. " +
-			"This enables use of Gemini models via your Google account without an API key.",
+		Description: "Start Google Gemini OAuth login (gemini-cli style). Returns the full authorization URL and callback URL, " +
+			"and attempts to open the browser automatically. Call auth_login_gemini_complete after authorization succeeds.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		start, err := auth.StartGeminiLogin()
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
+		}
+		return jsonResult(map[string]any{
+			"url":                start.AuthorizeURL,
+			"callback_url":       start.CallbackURL,
+			"browser_opened":     start.BrowserOpened,
+			"browser_open_error": start.BrowserOpenErr,
+			"expires_at":         start.ExpiresAt.UTC().Format(time.RFC3339),
+			"timeout_seconds":    int(auth.BrowserLoginTimeout / time.Second),
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "auth_login_gemini_complete",
+		Description: "Wait for the Google Gemini OAuth callback, exchange the authorization code for tokens, and store them.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		token, err := auth.GeminiLogin(loginCtx)
+		token, err := auth.CompleteGeminiLogin(loginCtx)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
 		}
@@ -2561,13 +2578,30 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name: "auth_login_openai",
-		Description: "Start OpenAI/Codex OAuth login. Opens the browser to the OpenAI consent screen, " +
-			"listens on localhost:1455 for the callback, exchanges the code for tokens, and stores them. " +
-			"This enables use of ChatGPT Pro/Plus (Codex) models without an API key.",
+		Description: "Start OpenAI Codex OAuth login. Returns the full authorization URL and callback URL, " +
+			"and attempts to open the browser automatically. Call auth_login_openai_complete after authorization succeeds.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
+		start, err := auth.StartOpenAILogin()
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
+		}
+		return jsonResult(map[string]any{
+			"url":                start.AuthorizeURL,
+			"callback_url":       start.CallbackURL,
+			"browser_opened":     start.BrowserOpened,
+			"browser_open_error": start.BrowserOpenErr,
+			"expires_at":         start.ExpiresAt.UTC().Format(time.RFC3339),
+			"timeout_seconds":    int(auth.BrowserLoginTimeout / time.Second),
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "auth_login_openai_complete",
+		Description: "Wait for the OpenAI Codex OAuth callback, exchange the authorization code for tokens, and store them.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		token, err := auth.OpenAILogin(loginCtx)
+		token, err := auth.CompleteOpenAILogin(loginCtx)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
 		}

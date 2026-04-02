@@ -29,11 +29,17 @@ Both scripts download the latest release binary to `~/.local/bin/` and add it to
 mkdir -p ~/.config/aviary
 docker run --rm -it \
   -p 16677:16677 \
+  -p 1455:1455 \
+  -p 45289:45289 \
   -v ~/.config/aviary:/home/bot/.config/aviary \
   ghcr.io/lsegal/aviary:latest
 ```
 
 The image runs `aviary serve` by default. The bind mount keeps your config, TLS certs, and login token on the host in `~/.config/aviary/`.
+
+::: tip
+`-p 1455:1455` is only needed for OpenAI Codex OAuth, and `-p 45289:45289` is only needed for Gemini OAuth. If you are using API keys or other providers, you can omit those extra port mappings.
+:::
 
 **Binary release**
 

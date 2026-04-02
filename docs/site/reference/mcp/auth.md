@@ -123,25 +123,71 @@ Complete the Anthropic OAuth login by exchanging the authorization code.
 
 ## auth_login_gemini
 
-Start a Google Gemini OAuth login. Opens the browser to the Google consent screen, listens on `localhost:45289` for the callback, and exchanges the code automatically. No separate complete step is needed.
+Start a Google Gemini OAuth login. Returns the full authorization URL and callback URL, attempts to open the browser automatically, and starts a temporary callback listener on `localhost:45289`.
 
 **Arguments:** none
 
-**Returns:** Text confirmation with the token expiry.
+**Returns:** JSON with the authorization URL, callback URL, browser-open status, and timeout metadata.
 
-**Side effects:** Opens browser, starts a 5-minute local callback listener, stores the token on success.
+```json
+{
+  "url": "https://accounts.google.com/o/oauth2/v2/auth?...",
+  "callback_url": "http://localhost:45289",
+  "browser_opened": true,
+  "browser_open_error": "",
+  "expires_at": "2026-04-02T20:00:00Z",
+  "timeout_seconds": 120
+}
+```
+
+**Side effects:** Attempts to open the browser and starts a 2-minute local callback listener. Call `auth_login_gemini_complete` after you finish authorization in the browser.
+
+---
+
+## auth_login_gemini_complete
+
+Wait for the Google Gemini OAuth callback, exchange the authorization code for tokens, and store them.
+
+**Arguments:** none
+
+**Returns:** Text confirmation including the token expiry.
+
+**Side effects:** Waits for the pending Gemini callback, stores the token on success, and fails if the pending callback has timed out.
 
 ---
 
 ## auth_login_openai
 
-Start an OpenAI/Codex OAuth login. Opens the browser to the OpenAI consent screen, listens on `localhost:1455` for the callback, and exchanges the code automatically.
+Start an OpenAI/Codex OAuth login. Returns the full authorization URL and callback URL, attempts to open the browser automatically, and starts a temporary callback listener on `localhost:1455`.
+
+**Arguments:** none
+
+**Returns:** JSON with the authorization URL, callback URL, browser-open status, and timeout metadata.
+
+```json
+{
+  "url": "https://auth.openai.com/oauth/authorize?...",
+  "callback_url": "http://localhost:1455/auth/callback",
+  "browser_opened": true,
+  "browser_open_error": "",
+  "expires_at": "2026-04-02T20:00:00Z",
+  "timeout_seconds": 120
+}
+```
+
+**Side effects:** Attempts to open the browser and starts a 2-minute local callback listener. Call `auth_login_openai_complete` after you finish authorization in the browser.
+
+---
+
+## auth_login_openai_complete
+
+Wait for the OpenAI Codex OAuth callback, exchange the authorization code for tokens, and store them.
 
 **Arguments:** none
 
 **Returns:** Text confirmation with the token expiry.
 
-**Side effects:** Opens browser, starts a 5-minute local callback listener, stores the token on success.
+**Side effects:** Waits for the pending OpenAI callback, stores the token on success, and fails if the pending callback has timed out.
 
 ---
 

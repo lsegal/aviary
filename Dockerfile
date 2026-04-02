@@ -97,7 +97,9 @@ COPY --from=go-builder /out/aviary /usr/local/bin/aviary
 
 USER bot
 ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
+ENV AVIARY_SANDBOX=true
 ENV AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS=true
 WORKDIR /home/bot
+EXPOSE 1455 45289 16677
 
 CMD ["aviary", "serve"]
