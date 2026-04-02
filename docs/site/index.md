@@ -81,26 +81,30 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
 <ScreenshotGallery
   :items="[
     {
-      src: '/screenshots/chat-workspace.png',
+      lightSrc: '/screenshots/chat-workspace-light.png',
+      darkSrc: '/screenshots/chat-workspace-dark.png',
       alt: 'Aviary chat workspace focused on web search, calendar checks, and email triage',
       title: 'Plan The Morning',
       description: 'Work through search results, today’s calendar, and unread email in a single agent thread.',
       featured: true,
     },
     {
-      src: '/screenshots/configure-everything.png',
+      lightSrc: '/screenshots/configure-everything-light.png',
+      darkSrc: '/screenshots/configure-everything-dark.png',
       alt: 'Aviary agent channel configuration screen showing Slack channel settings, allowed senders, and per-channel model overrides',
       title: 'Configure Everything',
       description: 'Set up channels, sender rules, model overrides, and day-to-day routing from one agent config screen.',
     },
     {
-      src: '/screenshots/usage-analytics.png',
+      lightSrc: '/screenshots/usage-analytics-light.png',
+      darkSrc: '/screenshots/usage-analytics-dark.png',
       alt: 'Aviary usage page with token charts, provider breakdowns, and session analytics',
       title: 'Usage Analytics',
       description: 'Track token spend, provider mix, and session activity from one live reporting view.',
     },
     {
-      src: '/screenshots/security-minded.png',
+      lightSrc: '/screenshots/security-minded-light.png',
+      darkSrc: '/screenshots/security-minded-dark.png',
       alt: 'Aviary agent permissions page showing a low-privilege preset, tool restrictions, filesystem rules, and exec command allowlists',
       title: 'Security Minded',
       description: 'Keep agents on a low-privilege setup with tight tool access, path rules, and explicit command allowlists.',
@@ -120,25 +124,29 @@ Aviary is a full AI assistant platform. It goes beyond a chat window — it conn
   compact
   :items="[
     {
-      src: '/screenshots/system-jobs.png',
+      lightSrc: '/screenshots/system-jobs-light.png',
+      darkSrc: '/screenshots/system-jobs-dark.png',
       alt: 'Aviary jobs page showing queue health, scheduled tasks, compile attempts, and a detail panel',
       title: 'Jobs',
       description: 'Review scheduled runs, compile attempts, and live job state with detail panes for follow-up.',
     },
     {
-      src: '/screenshots/system-skills.png',
+      lightSrc: '/screenshots/system-skills-light.png',
+      darkSrc: '/screenshots/system-skills-dark.png',
       alt: 'Aviary skill marketplace showing installed and enabled skills',
       title: 'Skills',
       description: 'Browse installed skills, filter by source, and toggle what is available to your agents.',
     },
     {
-      src: '/screenshots/system-tools.png',
+      lightSrc: '/screenshots/system-tools-light.png',
+      darkSrc: '/screenshots/system-tools-dark.png',
       alt: 'Aviary system tools page with the run tool modal open and a completed tool output',
       title: 'Tools',
       description: 'Inspect the MCP tool catalog and run a real tool call from the browser when you want to test quickly.',
     },
     {
-      src: '/screenshots/system-models.png',
+      lightSrc: '/screenshots/system-models-light.png',
+      darkSrc: '/screenshots/system-models-dark.png',
       alt: 'Aviary models page showing searchable provider and model cards',
       title: 'Models',
       description: 'Search the built-in model catalog by provider and capability before assigning defaults or fallbacks.',

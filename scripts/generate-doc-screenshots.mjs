@@ -12,6 +12,13 @@ const outputDir = path.join(
 	"screenshots",
 );
 const baseURL = "http://127.0.0.1:5173";
+const themes = ["light", "dark"];
+
+function themedOutputName(outputName, theme) {
+	const extensionIndex = outputName.lastIndexOf(".");
+	if (extensionIndex === -1) return `${outputName}-${theme}`;
+	return `${outputName.slice(0, extensionIndex)}-${theme}${outputName.slice(extensionIndex)}`;
+}
 
 function iso(daysAgo, hour, minute = 0) {
 	const date = new Date();
@@ -858,13 +865,14 @@ async function captureSimple({
 	readySelector,
 	outputName,
 	viewport,
+	theme,
 }) {
-	const page = await browser.newPage({ viewport, colorScheme: "light" });
+	const page = await browser.newPage({ viewport, colorScheme: theme });
 	try {
 		await configurePage(page, fixtures);
 		await openPage(page, pathname, readySelector);
 		await page.screenshot({
-			path: path.join(outputDir, outputName),
+			path: path.join(outputDir, themedOutputName(outputName, theme)),
 			fullPage: false,
 		});
 	} finally {
@@ -872,10 +880,10 @@ async function captureSimple({
 	}
 }
 
-async function captureTools(browser) {
+async function captureTools(browser, theme) {
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
-		colorScheme: "light",
+		colorScheme: theme,
 	});
 	try {
 		await configurePage(page, systemToolsFixtures);
@@ -884,7 +892,7 @@ async function captureTools(browser) {
 		await page.getByRole("button", { name: "Run Tool" }).click();
 		await page.getByTestId("tool-run-output").getByText("Docs review").waitFor();
 		await page.screenshot({
-			path: path.join(outputDir, "system-tools.png"),
+			path: path.join(outputDir, themedOutputName("system-tools.png", theme)),
 			fullPage: false,
 		});
 	} finally {
@@ -892,10 +900,10 @@ async function captureTools(browser) {
 	}
 }
 
-async function captureJobs(browser) {
+async function captureJobs(browser, theme) {
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
-		colorScheme: "light",
+		colorScheme: theme,
 	});
 	try {
 		await configurePage(page, jobsFixtures);
@@ -907,7 +915,7 @@ async function captureJobs(browser) {
 			.click();
 		await page.getByText("Generated Script").waitFor();
 		await page.screenshot({
-			path: path.join(outputDir, "system-jobs.png"),
+			path: path.join(outputDir, themedOutputName("system-jobs.png", theme)),
 			fullPage: false,
 		});
 	} finally {
@@ -920,16 +928,17 @@ async function captureSettingsPage({
 	pathname,
 	outputName,
 	readySelector,
+	theme,
 }) {
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
-		colorScheme: "light",
+		colorScheme: theme,
 	});
 	try {
 		await configurePage(page, settingsFixtures);
 		await openPage(page, pathname, readySelector);
 		await page.screenshot({
-			path: path.join(outputDir, outputName),
+			path: path.join(outputDir, themedOutputName(outputName, theme)),
 			fullPage: false,
 		});
 	} finally {
@@ -943,67 +952,76 @@ async function main() {
 
 	const browser = await chromium.launch();
 	try {
-		await captureSimple({
-			browser,
-			fixtures: overviewFixtures,
-			pathname: "/overview",
-			readySelector: 'h2:has-text("Overview")',
-			outputName: "control-panel-overview.png",
-			viewport: { width: 1040, height: 980 },
-		});
+		for (const theme of themes) {
+			await captureSimple({
+				browser,
+				fixtures: overviewFixtures,
+				pathname: "/overview",
+				readySelector: 'h2:has-text("Overview")',
+				outputName: "control-panel-overview.png",
+				viewport: { width: 1040, height: 980 },
+				theme,
+			});
 
-		await captureSimple({
-			browser,
-			fixtures: chatFixtures,
-			pathname: "/chat",
-			readySelector: "text=I took a quick pass through everything.",
-			outputName: "chat-workspace.png",
-			viewport: { width: 1040, height: 980 },
-		});
+			await captureSimple({
+				browser,
+				fixtures: chatFixtures,
+				pathname: "/chat",
+				readySelector: "text=I took a quick pass through everything.",
+				outputName: "chat-workspace.png",
+				viewport: { width: 1040, height: 980 },
+				theme,
+			});
 
-		await captureSimple({
-			browser,
-			fixtures: usageFixtures,
-			pathname: "/usage",
-			readySelector: 'h2:has-text("Usage")',
-			outputName: "usage-analytics.png",
-			viewport: { width: 1040, height: 1120 },
-		});
+			await captureSimple({
+				browser,
+				fixtures: usageFixtures,
+				pathname: "/usage",
+				readySelector: 'h2:has-text("Usage")',
+				outputName: "usage-analytics.png",
+				viewport: { width: 1040, height: 1120 },
+				theme,
+			});
 
-		await captureSettingsPage({
-			browser,
-			pathname: "/settings/agents/assistant/channels",
-			outputName: "configure-everything.png",
-			readySelector: 'h5:has-text("Channel 1")',
-		});
+			await captureSettingsPage({
+				browser,
+				pathname: "/settings/agents/assistant/channels",
+				outputName: "configure-everything.png",
+				readySelector: 'h5:has-text("Channel 1")',
+				theme,
+			});
 
-		await captureSettingsPage({
-			browser,
-			pathname: "/settings/agents/assistant/permissions",
-			outputName: "security-minded.png",
-			readySelector: 'label:has-text("Filesystem Allowed Paths")',
-		});
+			await captureSettingsPage({
+				browser,
+				pathname: "/settings/agents/assistant/permissions",
+				outputName: "security-minded.png",
+				readySelector: 'label:has-text("Filesystem Allowed Paths")',
+				theme,
+			});
 
-		await captureSimple({
-			browser,
-			fixtures: systemSkillsFixtures,
-			pathname: "/system/skills",
-			readySelector: 'h2:has-text("Skill Marketplace")',
-			outputName: "system-skills.png",
-			viewport: { width: 1040, height: 1120 },
-		});
+			await captureSimple({
+				browser,
+				fixtures: systemSkillsFixtures,
+				pathname: "/system/skills",
+				readySelector: 'h2:has-text("Skill Marketplace")',
+				outputName: "system-skills.png",
+				viewport: { width: 1040, height: 1120 },
+				theme,
+			});
 
-		await captureSimple({
-			browser,
-			fixtures: {},
-			pathname: "/system/models",
-			readySelector: 'h2:has-text("Supported Models")',
-			outputName: "system-models.png",
-			viewport: { width: 1040, height: 1120 },
-		});
+			await captureSimple({
+				browser,
+				fixtures: {},
+				pathname: "/system/models",
+				readySelector: 'h2:has-text("Supported Models")',
+				outputName: "system-models.png",
+				viewport: { width: 1040, height: 1120 },
+				theme,
+			});
 
-		await captureTools(browser);
-		await captureJobs(browser);
+			await captureTools(browser, theme);
+			await captureJobs(browser, theme);
+		}
 	} finally {
 		await browser.close();
 	}

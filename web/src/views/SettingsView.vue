@@ -116,7 +116,7 @@
 		<AlertDialogPortal>
 			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<AlertDialogContent
-				class="fixed left-1\2 top-1\2 z-50 w-full max-w-lg -translate-x-1\2 -translate-y-1\2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
 					Remove agent?
 				</AlertDialogTitle>
@@ -146,7 +146,7 @@
 		<AlertDialogPortal>
 			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<AlertDialogContent
-				class="fixed left-1\2 top-1\2 z-50 w-full max-w-lg -translate-x-1\2 -translate-y-1\2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
 					Delete file?
 				</AlertDialogTitle>
@@ -2132,16 +2132,16 @@ function channelTypeLabel(channel: AgentChannel): string {
 	}
 }
 
-function channelTypeChipClass(channel: AgentChannel, selected = false): string {
+function channelTypeIconClass(channel: AgentChannel, selected = false): string {
 	const enabled = isChannelEnabled(channel);
 	if (selected) {
 		return enabled
-			? "inline-flex items-center justify-center rounded-full bg-white/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white ring-1 ring-inset ring-white/20 dark:bg-gray-900 dark:text-gray-100 dark:ring-white/10"
-			: "inline-flex items-center justify-center rounded-full bg-black/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 ring-1 ring-inset ring-gray-300 dark:bg-white/5 dark:text-gray-400 dark:ring-gray-700";
+			? "inline-flex items-center justify-center text-white dark:text-white"
+			: "inline-flex items-center justify-center text-gray-500 dark:text-gray-400";
 	}
 	return enabled
-		? "inline-flex items-center justify-center rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-		: "inline-flex items-center justify-center rounded-full bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400";
+		? "inline-flex items-center justify-center text-blue-700 dark:text-blue-300"
+		: "inline-flex items-center justify-center text-gray-500 dark:text-gray-400";
 }
 
 function channelListButtonClass(
@@ -2150,7 +2150,7 @@ function channelListButtonClass(
 ): string {
 	if (selected) {
 		return isChannelEnabled(channel)
-			? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+			? "bg-gray-900 text-white dark:bg-gray-700 dark:text-white"
 			: "bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-700";
 	}
 	return isChannelEnabled(channel)
@@ -3206,7 +3206,7 @@ const settingsContext = proxyRefs({
 	channelPrimaryHelp,
 	channelPrimaryLabel,
 	channelPrimaryPlaceholder,
-	channelTypeChipClass,
+	channelTypeIconClass,
 	channelTypeLabel,
 	channelToolResolution,
 	compileToastVisible,

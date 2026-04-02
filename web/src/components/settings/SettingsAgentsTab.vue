@@ -130,7 +130,7 @@
 											<div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
 												<button v-for="file in getAgentFileState(agent.name).files" :key="file" type="button"
 													class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
-													:class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+													:class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-gray-700 dark:text-white' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
 													@click="selectAgentFile(agent.name, file)">
 													<span class="truncate">{{ file }}</span>
 													<span v-if="isProtectedAgentFile(file)"
@@ -331,7 +331,7 @@
 													:class="channelListButtonClass(ch, selectedChannelIdx === k)"
 													@click="selectedChannelIdx = k">
 													<div class="flex items-center gap-2">
-														<span :class="channelTypeChipClass(ch, selectedChannelIdx === k)">
+														<span :class="channelTypeIconClass(ch, selectedChannelIdx === k)">
 															<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
 															<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
 														</span>
@@ -358,7 +358,7 @@
 								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
-										<span :class="channelTypeChipClass(ch)">
+										<span :class="channelTypeIconClass(ch)">
 											<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
 											<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
 										</span>
@@ -377,7 +377,20 @@
 												:class="isChannelEnabled(ch) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
 											/>
 										</SwitchRoot>
-										<button type="button" class="danger-btn" @click="removeChannel(i, k)">Remove</button>
+										<button
+											type="button"
+											class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
+											aria-label="Remove channel"
+											title="Remove channel"
+											@click="removeChannel(i, k)">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+												<path d="M3 6h18" />
+												<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+												<path d="M10 11v6" />
+												<path d="M14 11v6" />
+												<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+											</svg>
+										</button>
 									</div>
 								</div>
 								<p v-if="!isChannelEnabled(ch)" class="text-xs text-gray-500 dark:text-gray-400">
@@ -763,7 +776,7 @@
 <div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
 <div v-if="agent.tasks?.length" class="space-y-1">
 <div v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" class="flex items-center gap-1">
-<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
+<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-gray-700 dark:text-white' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
 <span class="truncate">{{ task.name || `Task ${Number(j) + 1}` }}</span>
 </button>
 

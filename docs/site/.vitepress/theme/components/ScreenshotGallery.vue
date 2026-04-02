@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useData } from "vitepress";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 interface ScreenshotItem {
-	src: string;
+	src?: string;
+	lightSrc?: string;
+	darkSrc?: string;
 	alt: string;
 	title: string;
 	description: string;
@@ -20,10 +23,27 @@ const props = withDefaults(
 );
 
 const activeIndex = ref<number | null>(null);
+const { isDark } = useData();
 
-const activeItem = computed(() =>
-	activeIndex.value === null ? null : (props.items[activeIndex.value] ?? null),
-);
+const activeItem = computed(() => {
+	if (activeIndex.value === null) return null;
+	const item = props.items[activeIndex.value] ?? null;
+	return item ? withResolvedSrc(item) : null;
+});
+
+function resolveSrc(item: ScreenshotItem) {
+	if (isDark.value) {
+		return item.darkSrc ?? item.lightSrc ?? item.src ?? "";
+	}
+	return item.lightSrc ?? item.darkSrc ?? item.src ?? "";
+}
+
+function withResolvedSrc(item: ScreenshotItem) {
+	return {
+		...item,
+		resolvedSrc: resolveSrc(item),
+	};
+}
 
 function open(index: number) {
 	activeIndex.value = index;
@@ -60,14 +80,14 @@ onBeforeUnmount(() => {
 	<div class="docs-shot-grid" :class="{ 'docs-shot-grid-compact': compact }">
 		<button
 			v-for="(item, index) in items"
-			:key="item.src"
+			:key="item.lightSrc ?? item.darkSrc ?? item.src ?? `${item.title}-${index}`"
 			type="button"
 			class="docs-shot-card"
 			:class="{ 'docs-shot-featured': item.featured }"
 			@click="open(index)"
 		>
 			<div class="docs-shot-frame">
-				<img :src="item.src" :alt="item.alt" loading="lazy" />
+				<img :src="resolveSrc(item)" :alt="item.alt" loading="lazy" />
 			</div>
 			<div class="docs-shot-copy">
 				<h3>{{ item.title }}</h3>
@@ -95,7 +115,7 @@ onBeforeUnmount(() => {
 				Close
 			</button>
 			<figure class="docs-shot-modal" @click.stop>
-				<img :src="activeItem.src" :alt="activeItem.alt" />
+				<img :src="activeItem.resolvedSrc" :alt="activeItem.alt" />
 				<figcaption>
 					<h3>{{ activeItem.title }}</h3>
 					<p>{{ activeItem.description }}</p>
