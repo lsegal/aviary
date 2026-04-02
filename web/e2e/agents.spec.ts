@@ -678,7 +678,9 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 	await expect(page.getByTestId("web-search-secret")).toContainText(
 		"Missing Secret",
 	);
-	await expect(page.getByTestId("web-search-secret")).toHaveClass(/border-red-300/);
+	await expect(page.getByTestId("web-search-secret")).toHaveClass(
+		/border-red-300/,
+	);
 
 	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
 	await page
