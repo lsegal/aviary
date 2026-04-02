@@ -286,24 +286,24 @@
 
 <script setup lang="ts">
 import {
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogOverlay,
+    AlertDialogPortal,
+    AlertDialogRoot,
+    AlertDialogTitle,
 } from "radix-vue";
 import {
-	computed,
-	nextTick,
-	onMounted,
-	onUnmounted,
-	provide,
-	proxyRefs,
-	ref,
-	watch,
+    computed,
+    nextTick,
+    onMounted,
+    onUnmounted,
+    provide,
+    proxyRefs,
+    ref,
+    watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
@@ -316,30 +316,30 @@ import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
-	KNOWN_PROVIDERS,
-	useProviderAuth,
+    KNOWN_PROVIDERS,
+    useProviderAuth,
 } from "../composables/useProviderAuth";
 import {
-	clampToolNamesForPreset,
-	groupTools,
-	isToolAccessibleForPreset,
-	isToolGroupAccessibleForPreset,
-	normalizePermissionsPreset,
-	type PermissionsPreset,
-	type ResolvedToolPermissions,
-	resolveToolPermissions,
-	toolCategory,
-	toolCategoryLabel,
+    clampToolNamesForPreset,
+    groupTools,
+    isToolAccessibleForPreset,
+    isToolGroupAccessibleForPreset,
+    normalizePermissionsPreset,
+    type PermissionsPreset,
+    type ResolvedToolPermissions,
+    resolveToolPermissions,
+    toolCategory,
+    toolCategoryLabel,
 } from "../lib/toolPermissions";
 import { useAuthStore } from "../stores/auth";
 import {
-	type AgentChannel,
-	type AgentEntry,
-	type AgentTask,
-	type AllowFromEntry,
-	type AppConfig,
-	type SkillConfig,
-	useSettingsStore,
+    type AgentChannel,
+    type AgentEntry,
+    type AgentTask,
+    type AllowFromEntry,
+    type AppConfig,
+    type SkillConfig,
+    useSettingsStore,
 } from "../stores/settings";
 
 type Tab = "general" | "agents" | "skills" | "sessions" | "providers";
