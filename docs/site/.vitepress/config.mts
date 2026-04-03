@@ -50,7 +50,6 @@ export default defineConfig({
 		nav: [
 			{ text: "Guide", link: "/guide/" },
 			{ text: "Reference", link: "/reference/" },
-			{ text: "GitHub", link: "https://github.com/lsegal/aviary" },
 		],
 		sidebar: {
 			"/guide/": [

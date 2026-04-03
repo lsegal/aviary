@@ -1208,6 +1208,12 @@ a.detail-card:focus-visible {
 }
 .install-command.typing-done .install-caret { display: none; }
 
+@media (max-width: 449px) {
+	.install-block {
+		display: none;
+	}
+}
+
 @keyframes blink {
 	0% { opacity: 1 }
 	50% { opacity: 0 }
