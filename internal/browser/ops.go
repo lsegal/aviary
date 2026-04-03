@@ -84,9 +84,25 @@ func (s *Session) Screenshot() ([]byte, error) {
 	return buf, err
 }
 
-// EvalJS evaluates JavaScript and returns the result as a string.
+func formatEvalJSResult(result any) (string, error) {
+	if result == nil {
+		return "null", nil
+	}
+	if text, ok := result.(string); ok {
+		return text, nil
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("encoding javascript result: %w", err)
+	}
+	return string(data), nil
+}
+
+// EvalJS evaluates JavaScript and returns a text representation of the result.
 func (s *Session) EvalJS(expr string) (string, error) {
-	var result string
-	err := s.Run(chromedp.Evaluate(expr, &result))
-	return result, err
+	var result any
+	if err := s.Run(chromedp.Evaluate(expr, &result)); err != nil {
+		return "", err
+	}
+	return formatEvalJSResult(result)
 }

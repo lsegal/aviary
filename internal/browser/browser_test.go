@@ -546,6 +546,44 @@ func TestSession_EvalJS_Error(t *testing.T) {
 
 }
 
+func TestFormatEvalJSResult(t *testing.T) {
+	t.Run("string stays unquoted", func(t *testing.T) {
+		result, err := formatEvalJSResult("hello")
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", result)
+	})
+
+	t.Run("number is serialized", func(t *testing.T) {
+		result, err := formatEvalJSResult(float64(2))
+		assert.NoError(t, err)
+		assert.Equal(t, "2", result)
+	})
+
+	t.Run("boolean is serialized", func(t *testing.T) {
+		result, err := formatEvalJSResult(true)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", result)
+	})
+
+	t.Run("null is serialized", func(t *testing.T) {
+		result, err := formatEvalJSResult(nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "null", result)
+	})
+
+	t.Run("object is serialized as json", func(t *testing.T) {
+		result, err := formatEvalJSResult(map[string]any{"count": float64(2), "ok": true})
+		assert.NoError(t, err)
+		assert.JSONEq(t, `{"count":2,"ok":true}`, result)
+	})
+
+	t.Run("array is serialized as json", func(t *testing.T) {
+		result, err := formatEvalJSResult([]any{"a", float64(2), true})
+		assert.NoError(t, err)
+		assert.JSONEq(t, `["a",2,true]`, result)
+	})
+}
+
 func TestSession_Click_Error(t *testing.T) {
 	s := makeTestSession()
 	err := s.Click("#btn")
