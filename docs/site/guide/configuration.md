@@ -12,7 +12,7 @@ The config file path is resolved in this order:
 2. `~/.config/aviary/aviary.yaml` — the default
 3. `--config` flag — overrides the path for a single server run
 
-The directory containing `aviary.yaml` is the **config base directory**. Agent data directories, skill files, and relative filesystem paths in the config resolve under this root. You can override the base directory independently with `AVIARY_CONFIG_BASE_DIR`.
+The directory containing `aviary.yaml` is the **config base directory**. By default this is `~/.config/aviary`. Agent data directories, skill files, and relative filesystem paths in the config resolve under this root.
 
 Every time the file is saved, Aviary rotates up to five timestamped backups in `~/.config/aviary/backups/`. The settings UI triggers the same rotation before writing changes.
 
@@ -183,7 +183,7 @@ Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`
 
 Skills extend the agent's tool surface with custom runtimes. Enable them by name and pass any skill-specific settings:
 
-Disk-installed skills are discovered from both `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`.
+Disk-installed skills are discovered from both `~/.config/aviary/skills` and `~/.agents/skill`.
 
 You can browse community-published skills with `npx skills find` or on [skills.sh](https://skills.sh/). To install a universal skill globally for Aviary to detect, use:
 

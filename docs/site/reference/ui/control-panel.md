@@ -28,7 +28,7 @@ This page summarizes the implemented browser UI as it exists today.
 | Sessions | Session list, stop, create, and remove operations. |
 | Providers | API keys, OAuth flows, and secret management. |
 
-Settings detects built-in skills plus disk-installed skills from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`, including skills installed from [skills.sh](https://skills.sh/).
+Settings detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skill`, including skills installed from [skills.sh](https://skills.sh/).
 
 ## System Tabs
 

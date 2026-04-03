@@ -60,7 +60,7 @@ Manages API credentials and OAuth sessions:
 
 Toggle individual skills on or off and edit per-skill settings. Skills are detected immediately when added or removed.
 
-Aviary detects built-in skills plus disk-installed skills from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`. You can search for installable skills with `npx skills find` or on [skills.sh](https://skills.sh/).
+Aviary detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skill`. You can search for installable skills with `npx skills find` or on [skills.sh](https://skills.sh/).
 
 ### Sessions
 

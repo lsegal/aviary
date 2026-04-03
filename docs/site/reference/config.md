@@ -1,6 +1,6 @@
 # Configuration Reference
 
-All configuration lives in `aviary.yaml`, located at `~/.config/aviary/aviary.yaml` by default. The path can be overridden with the `--config` flag or the `AVIARY_CONFIG_BASE_DIR` environment variable.
+All configuration lives in `aviary.yaml`, located at `~/.config/aviary/aviary.yaml` by default. The path can be overridden with the `--config` flag.
 
 ## Top-Level Structure
 
@@ -335,7 +335,7 @@ scheduler:
 
 Enables and configures installed skill runtimes. Keys are skill names.
 
-Installed disk skills are loaded from `AVIARY_CONFIG_BASE_DIR/skills` and `~/.agents/skill`. Search for published skills with `npx skills find` or on [skills.sh](https://skills.sh/), then install one globally with a command like `npx skills add --global -a universal owner/skill-name`.
+Installed disk skills are loaded from `~/.config/aviary/skills` and `~/.agents/skill`. Search for published skills with `npx skills find` or on [skills.sh](https://skills.sh/), then install one globally with a command like `npx skills add --global -a universal owner/skill-name`.
 
 ```yaml
 skills:
