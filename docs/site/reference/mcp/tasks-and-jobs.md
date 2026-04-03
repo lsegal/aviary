@@ -72,11 +72,12 @@ Schedule a one-time or recurring task.
 | `name` | string | | Task name (required to persist as a recurring task in config) |
 | `target` | string | | Output delivery target |
 | `trigger_type` | string | | `"cron"` or `"watch"` |
+| `precompile` | bool | | Override automatic prompt-task precompilation for this task. Set to `false` to keep it as a prompt task. |
 | `run_discovery` | bool | | Run the task immediately to discover its compiled form |
 
 **Returns:** JSON job object (for one-time tasks) or compilation result (for recurring tasks with precompute enabled).
 
-**Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script.
+**Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script unless `precompile=false` is provided for that task.
 
 **Notes:** For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
 

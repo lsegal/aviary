@@ -1226,6 +1226,7 @@ type taskScheduleArgs struct {
 	Schedule     string   `json:"schedule,omitempty"`
 	Target       string   `json:"target,omitempty"`
 	TriggerType  string   `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
+	Precompile   *bool    `json:"precompile,omitempty"`
 	RunDiscovery bool     `json:"run_discovery,omitempty"`
 	Schema       struct{} `json:"-" schema:"atmostone=in|schedule"`
 }
@@ -1261,7 +1262,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1313,6 +1314,10 @@ func registerTaskTools(s *sdkmcp.Server) {
 			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
 		}
 		precomputeEnabled := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
+		shouldPrecompute := precomputeEnabled
+		if args.Precompile != nil {
+			shouldPrecompute = *args.Precompile
+		}
 		if taskType == "prompt" && promptText != "" && scriptText == "" {
 			trigger := "immediate"
 			if strings.TrimSpace(args.In) != "" {
@@ -1328,9 +1333,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 				"agent", args.Agent,
 				"target", effectiveTarget,
 				"precompute_enabled", precomputeEnabled,
+				"precompile_requested", args.Precompile,
+				"should_precompute", shouldPrecompute,
 				"run_discovery", args.RunDiscovery,
 			)
-			if precomputeEnabled {
+			if shouldPrecompute {
 				compiled, compileErr := resolveTryCompileTaskPrompt()(withTaskCompileTracker(ctx, tracker), args.Agent, promptText, effectiveTarget, args.RunDiscovery)
 				if compileErr != nil {
 					tracker.record.Status = domain.TaskCompileStatusFailed
@@ -1374,7 +1381,13 @@ func registerTaskTools(s *sdkmcp.Server) {
 					slog.Warn("task_compile: failed to persist compile record", "component", "task_compile", "agent", args.Agent, "error", persistErr)
 				}
 			} else {
-				slog.Info("task_compile: skipped precompute because scheduler setting is disabled", "component", "task_compile", "agent", args.Agent)
+				slog.Info(
+					"task_compile: skipped precompute",
+					"component", "task_compile",
+					"agent", args.Agent,
+					"precompute_enabled", precomputeEnabled,
+					"precompile_requested", args.Precompile,
+				)
 			}
 		}
 		triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))

@@ -64,6 +64,8 @@ The agent's tasks directory is `<data-dir>/agents/<name>/tasks/`, regardless of 
 
 When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
 
+If you want a prompt task to stay as a prompt even when global precompilation is enabled, call `task_schedule` with `precompile=false`.
+
 ## Converting Existing Prompt Tasks to Scripts
 
 Prompt tasks that were already created can be compiled to Lua scripts at any time. This is useful when a task was created before the precompiler ran, when precompilation was disabled at the time, or when you want to retry compilation after improving the prompt.

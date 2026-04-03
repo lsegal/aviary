@@ -1056,6 +1056,72 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 
 }
 
+func TestTaskSchedule_PrecompileFalseSkipsCompilation(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	store.SetDataDir(filepath.Join(base, "aviary"))
+	t.Cleanup(func() { store.SetDataDir("") })
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
+	err := store.EnsureDirs()
+	assert.NoError(t, err)
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	called := false
+	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
+		called = true
+		return &compiledTaskResult{
+			Type:   "script",
+			Script: "print('compiled')\n",
+		}, nil
+	}
+
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:  "bot",
+			Model: "test/x",
+		}},
+	}
+	err = config.Save("", cfg)
+	assert.NoError(t, err)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := scheduler.New(mgr, 1)
+	assert.NoError(t, err)
+
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent":      "bot",
+		"name":       "manual-only",
+		"content":    "check subscript uptime",
+		"schedule":   "0 */10 * * * *",
+		"precompile": false,
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Recurring task")
+	assert.False(t, called)
+
+	loaded, err := config.Load("")
+	assert.NoError(t, err)
+	require.Len(t, loaded.Agents, 1)
+	require.Len(t, loaded.Agents[0].Tasks, 1)
+
+	got := loaded.Agents[0].Tasks[0]
+	assert.Equal(t, "prompt", got.Type)
+	assert.Equal(t, "check subscript uptime", got.Prompt)
+}
+
 func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -1652,6 +1718,8 @@ func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
 		if tool.Name == "task_schedule" {
 			assert.Contains(t, tool.Description, "Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them.")
 			assert.Contains(t, tool.Description, "Use content for the task body.")
+			assert.Contains(t, tool.Description, "Set precompile=false to opt out")
+			assert.Contains(t, tool.Description, "not direct keyword extraction")
 			raw = tool.InputSchema
 			break
 		}
@@ -1672,6 +1740,7 @@ func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
 	assert.Contains(t, props, "schedule")
 	assert.Contains(t, props, "in")
 	assert.Contains(t, props, "content")
+	assert.Contains(t, props, "precompile")
 	assert.NotContains(t, props, "task")
 	assert.NotContains(t, props, "prompt")
 	assert.NotContains(t, props, "script")
