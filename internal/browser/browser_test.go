@@ -804,6 +804,57 @@ func TestManager_Open_DoesNotReuseWhenDisabled(t *testing.T) {
 	assert.Equal(t, 1, newTabCalls)
 }
 
+func TestManager_Open_ReusesRedirectedURLAfterOpen(t *testing.T) {
+	newTabCalls := 0
+	closedTabID := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/json/version":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
+			})
+		case r.URL.Path == "/json/list":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+				{ID: "existing-tab", Type: "page", URL: "https://www.google.com/"},
+				{ID: "new-tab", Type: "page", URL: "https://www.google.com/"},
+			})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
+			newTabCalls++
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
+				ID: "new-tab", Type: "page", URL: "https://google.com",
+			})
+		case strings.HasPrefix(r.URL.Path, "/json/close/"):
+			closedTabID = strings.TrimPrefix(r.URL.Path, "/json/close/")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Target is closing")) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := parseCDPPort(t, srv.URL)
+	m := NewManager("", port, "", false, true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	tabID, err := m.Open(ctx, "https://google.com")
+	assert.NoError(t, err)
+	assert.Equal(t, "existing-tab", tabID)
+	assert.Equal(t, 1, newTabCalls)
+	assert.Equal(t, "new-tab", closedTabID)
+}
+
+func TestURLsEquivalent_NormalizesDefaultSlashAndHostCase(t *testing.T) {
+	assert.True(t, urlsEquivalent("https://EXAMPLE.com", "https://example.com/"))
+	assert.True(t, urlsEquivalent("https://example.com:443", "https://example.com/"))
+	assert.False(t, urlsEquivalent("https://example.com/a", "https://example.com/b"))
+}
+
 func TestManager_Open_WithoutChrome(t *testing.T) {
 	m := NewManager("", 19876, "", false)
 	_, err := m.Open(cancelledCtx(), "https://example.com")

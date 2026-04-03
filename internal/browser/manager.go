@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,14 +61,9 @@ func (m *Manager) Open(ctx context.Context, url string) (string, error) {
 	}
 
 	if m.reuseTabs {
-		tabs, err := m.Tabs()
-		if err == nil {
-			for _, tab := range tabs {
-				if tab.URL == url {
-					slog.Info("browser: reused tab", "url", url, "tab", tab.ID)
-					return tab.ID, nil
-				}
-			}
+		if tabID, ok := m.findReusableTab(url); ok {
+			slog.Info("browser: reused tab", "url", url, "tab", tabID)
+			return tabID, nil
 		}
 	}
 
@@ -76,8 +73,82 @@ func (m *Manager) Open(ctx context.Context, url string) (string, error) {
 		return "", err
 	}
 
+	if m.reuseTabs {
+		if tabID, ok := m.findReusableTabAfterOpen(tab.ID, url); ok {
+			if err := m.CloseTab(tab.ID); err != nil {
+				slog.Warn("browser: failed to close duplicate tab", "tab", tab.ID, "err", err)
+			}
+			slog.Info("browser: reused redirected tab", "requested_url", url, "resolved_tab", tab.ID, "tab", tabID)
+			return tabID, nil
+		}
+	}
+
 	slog.Info("browser: tab opened", "url", url, "tab", tab.ID)
 	return tab.ID, nil
+}
+
+func (m *Manager) findReusableTab(requestedURL string) (string, bool) {
+	tabs, err := m.Tabs()
+	if err != nil {
+		return "", false
+	}
+	for _, tab := range tabs {
+		if urlsEquivalent(tab.URL, requestedURL) {
+			return tab.ID, true
+		}
+	}
+	return "", false
+}
+
+func (m *Manager) findReusableTabAfterOpen(newTabID, requestedURL string) (string, bool) {
+	tabs, err := m.Tabs()
+	if err != nil {
+		return "", false
+	}
+
+	resolvedURL := requestedURL
+	for _, tab := range tabs {
+		if tab.ID == newTabID && strings.TrimSpace(tab.URL) != "" {
+			resolvedURL = tab.URL
+			break
+		}
+	}
+
+	for _, tab := range tabs {
+		if tab.ID == newTabID {
+			continue
+		}
+		if urlsEquivalent(tab.URL, requestedURL) || urlsEquivalent(tab.URL, resolvedURL) {
+			return tab.ID, true
+		}
+	}
+	return "", false
+}
+
+func urlsEquivalent(a, b string) bool {
+	return normalizeBrowserURL(a) == normalizeBrowserURL(b)
+}
+
+func normalizeBrowserURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return trimmed
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	if (parsed.Scheme == "http" && parsed.Port() == "80") || (parsed.Scheme == "https" && parsed.Port() == "443") {
+		parsed.Host = parsed.Hostname()
+	}
+	if parsed.Path == "" {
+		parsed.Path = "/"
+	}
+	return parsed.String()
 }
 
 // Tabs returns all currently open page tabs in the browser.
