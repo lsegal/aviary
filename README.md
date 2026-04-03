@@ -44,6 +44,8 @@ docker run --rm -it \
 
 The image runs `aviary serve` by default. With the bind mount above, Aviary stores its config, TLS certs, and login token in your host `~/.config/aviary/` directory.
 
+The Docker image also includes a working Chrome/Chromium browser, so browser tasks run in headless mode out of the box without extra setup.
+
 > Tip: `-p 1455:1455` is only needed for OpenAI Codex OAuth, and `-p 45289:45289` is only needed for Gemini OAuth. If you are using API keys or other providers, you can omit those extra port mappings.
 
 **Binary release**
