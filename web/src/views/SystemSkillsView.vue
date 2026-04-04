@@ -31,6 +31,59 @@
         >
           {{ okMessage }}
         </div>
+        <div v-if="loading && !installedSkills.length" class="space-y-6 pb-8">
+          <div class="mb-6 rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)] lg:items-center">
+              <div class="space-y-3">
+                <Skeleton class="h-5 w-44" />
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-5/6" />
+                <Skeleton class="h-4 w-2/3" />
+              </div>
+              <Skeleton class="h-48 w-full rounded-2xl" />
+            </div>
+          </div>
+
+          <div class="mb-6 grid gap-3 sm:grid-cols-3">
+            <div v-for="i in 3" :key="i" class="rounded-2xl border border-gray-200 bg-white/90 p-4 dark:border-gray-800 dark:bg-gray-900/90">
+              <Skeleton class="h-3 w-20" />
+              <Skeleton class="mt-3 h-9 w-16" />
+            </div>
+          </div>
+
+          <div class="mb-6 rounded-3xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900/90">
+            <div class="space-y-4">
+              <Skeleton class="h-11 w-full rounded-xl" />
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Skeleton class="h-10 w-56 rounded-full" />
+                <Skeleton class="h-10 w-56 rounded-full" />
+              </div>
+            </div>
+          </div>
+
+          <section class="grid gap-4 xl:grid-cols-2">
+            <article v-for="i in 4" :key="i" class="rounded-3xl border border-gray-200 bg-white/95 p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900/95">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1 space-y-3">
+                  <div class="flex gap-2">
+                    <Skeleton class="h-6 w-28" />
+                    <Skeleton class="h-6 w-16 rounded-full" />
+                    <Skeleton class="h-6 w-20 rounded-full" />
+                  </div>
+                  <Skeleton class="h-4 w-full" />
+                  <Skeleton class="h-4 w-5/6" />
+                </div>
+                <Skeleton class="h-10 w-24 rounded-xl" />
+              </div>
+              <div class="mt-4 space-y-3 rounded-2xl border border-gray-100 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-3/4" />
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <template v-else>
         <div
           class="mb-6 rounded-3xl border border-slate-200 bg-white/90 p-4 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-300"
         >
@@ -198,6 +251,7 @@
             </div>
           </article>
         </section>
+        </template>
       </div>
     </div>
   </AppLayout>
@@ -206,6 +260,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { useMCP } from "../composables/useMCP";
 import type { AppConfig, SkillConfig } from "../stores/settings";
 import { useSettingsStore } from "../stores/settings";

@@ -34,7 +34,33 @@
         </div>
 
         <!-- Daemon cards -->
-        <div class="grid gap-4 xl:grid-cols-2">
+        <div v-if="loading && !daemons.length" class="grid gap-4 xl:grid-cols-2">
+          <div v-for="i in 4" :key="i" class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <div class="mb-4 flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <Skeleton class="h-8 w-8 rounded-lg" />
+                <div class="space-y-2">
+                  <div class="flex items-center gap-2">
+                    <Skeleton class="h-5 w-32" />
+                    <Skeleton class="h-5 w-16 rounded-full" />
+                  </div>
+                  <Skeleton class="h-4 w-40" />
+                </div>
+              </div>
+              <Skeleton class="h-8 w-20 rounded-lg" />
+            </div>
+            <div class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-10 w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="grid gap-4 xl:grid-cols-2">
           <div v-for="d in daemons" :key="d.name"
             class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 
@@ -150,6 +176,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { useAuthStore } from "../stores/auth";
 
 interface Daemon {

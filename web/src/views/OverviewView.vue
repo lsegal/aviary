@@ -1,12 +1,32 @@
 <template>
   <AppLayout>
     <!-- Initial load -->
-    <div v-if="!store.fetched" class="flex h-full items-center justify-center">
-      <svg class="h-6 w-6 animate-spin text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24"
-        stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      </svg>
+    <div v-if="!store.fetched" class="px-6 py-6">
+      <div class="mb-8 flex items-center justify-between">
+        <Skeleton class="h-7 w-32" />
+        <Skeleton class="h-10 w-24 rounded-lg" />
+      </div>
+      <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div v-for="i in 4" :key="i" class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+          <Skeleton class="mb-3 h-3 w-16" />
+          <Skeleton class="h-9 w-14" />
+          <div class="mt-3 space-y-2">
+            <Skeleton class="h-4 w-full" />
+            <Skeleton class="h-4 w-3/4" />
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+          <Skeleton class="h-5 w-40" />
+          <Skeleton class="h-8 w-24 rounded-lg" />
+        </div>
+        <div class="space-y-4 px-5 py-5">
+          <Skeleton class="h-16 w-full rounded-lg" />
+          <Skeleton class="h-16 w-full rounded-lg" />
+          <Skeleton class="h-16 w-full rounded-lg" />
+        </div>
+      </div>
     </div>
 
     <!-- Setup wizard: shown until at least one agent exists -->
@@ -196,6 +216,7 @@
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SetupWizard from "../components/SetupWizard.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { useOverviewStore } from "../stores/overview";
 
 const store = useOverviewStore();

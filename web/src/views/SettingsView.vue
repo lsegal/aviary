@@ -48,12 +48,60 @@
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
 
-
-				<SettingsGeneralTab />
-				<SettingsAgentsTab />
-				<SettingsSkillsTab />
-				<SettingsSessionsTab />
-				<SettingsProvidersTab />
+				<div
+					v-if="loading"
+					class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+				>
+					<div class="mb-6 flex items-center gap-3">
+						<Skeleton class="h-4 w-16" />
+						<Skeleton class="h-4 w-20" />
+						<Skeleton class="h-4 w-16" />
+					</div>
+					<div class="space-y-5 rounded-xl border border-gray-200 p-5 dark:border-gray-800">
+						<div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
+							<div class="space-y-2">
+								<Skeleton class="h-4 w-14" />
+								<Skeleton class="h-10 w-full rounded-lg" />
+							</div>
+							<div class="space-y-2">
+								<Skeleton class="h-4 w-14" />
+								<Skeleton class="h-10 w-full rounded-lg" />
+							</div>
+							<div class="space-y-2">
+								<Skeleton class="h-4 w-20" />
+								<Skeleton class="h-10 w-full rounded-lg" />
+							</div>
+						</div>
+						<div class="space-y-2">
+							<Skeleton class="h-4 w-28" />
+							<Skeleton class="h-10 w-full rounded-lg" />
+						</div>
+						<div class="flex items-center gap-3">
+							<Skeleton class="h-4 w-4 rounded-sm" />
+							<Skeleton class="h-4 w-72" />
+						</div>
+						<div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+							<div class="mb-4 flex items-center justify-between">
+								<Skeleton class="h-4 w-10" />
+								<div class="flex gap-2">
+									<Skeleton class="h-8 w-16 rounded-lg" />
+									<Skeleton class="h-8 w-14 rounded-lg" />
+								</div>
+							</div>
+							<div class="grid grid-cols-[180px_minmax(0,1fr)] gap-3">
+								<Skeleton class="h-72 w-full rounded-xl" />
+								<Skeleton class="h-72 w-full rounded-xl" />
+							</div>
+						</div>
+					</div>
+				</div>
+				<template v-else>
+					<SettingsGeneralTab />
+					<SettingsAgentsTab />
+					<SettingsSkillsTab />
+					<SettingsSessionsTab />
+					<SettingsProvidersTab />
+				</template>
 
 
 			</div>
@@ -313,6 +361,7 @@ import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
@@ -497,7 +546,7 @@ function connectWs() {
 	};
 }
 
-const loading = ref(false);
+const loading = ref(true);
 const saving = ref(false);
 const reverting = ref(false);
 const errorMessage = ref("");

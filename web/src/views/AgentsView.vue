@@ -1,7 +1,6 @@
 <template>
   <AppLayout>
     <div class="px-6 py-6">
-      <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">Agents</h2>
         <div class="flex gap-2">
@@ -13,28 +12,40 @@
         </div>
       </div>
 
-      <!-- States -->
-      <div v-if="store.loading" class="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+      <div v-if="store.loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-for="i in 6" :key="i"
+          class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+          <div class="mb-4 flex items-center gap-2">
+            <Skeleton class="h-5 w-24" />
+            <Skeleton class="h-5 w-16 rounded-full" />
+          </div>
+          <div class="space-y-2">
+            <Skeleton class="h-4 w-full" />
+            <Skeleton class="h-4 w-4/5" />
+            <Skeleton class="h-4 w-2/3" />
+          </div>
+          <div class="mt-6 flex gap-2">
+            <Skeleton class="h-8 flex-1 rounded-lg" />
+            <Skeleton class="h-8 flex-1 rounded-lg" />
+          </div>
+        </div>
+      </div>
       <div v-else-if="store.error" class="text-sm text-red-500 dark:text-red-400">Error: {{ store.error }}</div>
 
-      <!-- Empty -->
       <div v-else-if="!store.agents.length" class="flex flex-col items-center gap-4 py-16 text-center">
         <p class="text-gray-500 dark:text-gray-400">No agents configured.</p>
         <button class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           @click="openAdd()">Add your first agent</button>
       </div>
 
-      <!-- Agent cards -->
       <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div v-for="agent in store.agents" :key="agent.id"
           class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <!-- Name + state -->
           <div class="mb-2 flex items-center gap-2">
             <span class="font-semibold text-gray-900 dark:text-white">{{ agent.name }}</span>
             <span :class="stateBadge(agent.state)"
               class="rounded-full px-2 py-0.5 text-xs font-medium">{{ agent.state }}</span>
           </div>
-          <!-- Fields -->
           <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             <dt class="font-medium text-gray-500 dark:text-gray-400">Model</dt>
             <dd class="truncate text-gray-800 dark:text-gray-200">{{ agent.model || '—' }}</dd>
@@ -51,7 +62,6 @@
               {{ task.schedule ? `schedule: ${task.schedule}` : task.watch ? `watch: ${task.watch}` : 'trigger unset' }}
             </li>
           </ul>
-          <!-- Actions -->
           <div class="mt-auto flex gap-2">
             <button
               class="flex-1 rounded-lg border border-gray-200 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -72,7 +82,6 @@
       </div>
     </div>
 
-    <!-- Add / Edit modal -->
     <Teleport to="body">
       <div v-if="modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
         @click.self="closeModal()">
@@ -115,6 +124,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import ModelSelector from "../components/ModelSelector.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type Agent, useAgentsStore } from "../stores/agents";
 import { useSettingsStore } from "../stores/settings";

@@ -23,6 +23,38 @@
           {{ errorMessage }}
         </div>
 
+        <div v-if="loading && !availableTools.length" class="space-y-6 pb-8">
+          <div class="mb-6 grid gap-3 sm:grid-cols-3">
+            <div v-for="i in 3" :key="i" class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <Skeleton class="h-3 w-20" />
+              <Skeleton class="mt-3 h-9 w-16" />
+            </div>
+          </div>
+          <div class="space-y-5">
+            <div v-for="i in 3" :key="`group-${i}`" class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <div class="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+                <div class="flex items-center gap-3">
+                  <Skeleton class="h-4 w-28" />
+                  <Skeleton class="h-6 w-16 rounded-full" />
+                </div>
+              </div>
+              <div class="space-y-4 px-5 py-4">
+                <div v-for="j in 3" :key="`row-${i}-${j}`" class="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]">
+                  <div class="space-y-2">
+                    <Skeleton class="h-4 w-36" />
+                    <Skeleton class="h-3 w-20" />
+                  </div>
+                  <Skeleton class="h-12 w-full" />
+                  <div class="flex justify-end">
+                    <Skeleton class="h-8 w-16 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <template v-else>
         <div class="mb-6 grid gap-3 sm:grid-cols-3">
           <div class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Tool Groups</p>
@@ -107,6 +139,7 @@
             </div>
           </div>
         </section>
+        </template>
       </div>
     </div>
 
@@ -246,6 +279,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";
 
