@@ -7,8 +7,10 @@ export interface MCPResult {
 	[key: string]: unknown;
 }
 
+type JsonRpcID = string | number | null;
+
 type JsonRpcResponse = {
-	id?: number;
+	id?: JsonRpcID;
 	result?: MCPResult;
 	error?: { message: string };
 	method?: string;
@@ -44,6 +46,7 @@ export interface MCPToolInfo {
 // Module-level session state — one session shared across all useMCP() calls.
 let sessionId: string | null = null;
 let initPromise: Promise<void> | null = null;
+let nextRequestId = 2;
 const RETRYABLE_HTTP_STATUSES = new Set([500, 502, 503, 504]);
 const TRANSIENT_RETRY_DELAYS_MS = [250, 750, 1_500, 3_000];
 
@@ -63,6 +66,13 @@ export function useMCP() {
 	function resetSession() {
 		sessionId = null;
 		initPromise = null;
+		nextRequestId = 2;
+	}
+
+	function allocateRequestId(): number {
+		const id = nextRequestId;
+		nextRequestId += 1;
+		return id;
 	}
 
 	function isRecoverableSessionError(error: unknown): error is MCPHTTPError {
@@ -139,7 +149,10 @@ export function useMCP() {
 
 	async function readResponse(
 		res: Response,
-		onEvent?: (evt: JsonRpcResponse) => void,
+		options?: {
+			expectedId?: JsonRpcID;
+			onEvent?: (evt: JsonRpcResponse) => void;
+		},
 	): Promise<JsonRpcResponse> {
 		const ct = res.headers.get("Content-Type") ?? "";
 		if (ct.includes("text/event-stream")) {
@@ -150,6 +163,7 @@ export function useMCP() {
 			let buffer = "";
 			let eventData: string[] = [];
 			let finalMessage: JsonRpcResponse | null = null;
+			let terminalMessage: JsonRpcResponse | null = null;
 
 			const processLine = (line: string) => {
 				const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
@@ -168,8 +182,23 @@ export function useMCP() {
 							console.debug("SSE payload:", payload);
 						}
 						const parsed = JSON.parse(payload) as JsonRpcResponse;
-						onEvent?.(parsed);
-						if (parsed.id !== undefined || parsed.result || parsed.error) {
+						options?.onEvent?.(parsed);
+						const isTerminalMessage =
+							parsed.result !== undefined || parsed.error !== undefined;
+						if (isTerminalMessage) {
+							terminalMessage = parsed;
+						}
+						if (options?.expectedId === undefined) {
+							if (isTerminalMessage) {
+								finalMessage = parsed;
+							}
+							return;
+						}
+						if (
+							parsed.id !== undefined &&
+							parsed.id !== null &&
+							String(parsed.id) === String(options.expectedId)
+						) {
 							finalMessage = parsed;
 						}
 					} catch {
@@ -202,8 +231,9 @@ export function useMCP() {
 			if (buffer.length > 0) processLine(buffer);
 			processLine("");
 
-			if (!finalMessage) throw new Error("No data in SSE response");
-			return finalMessage;
+			if (finalMessage) return finalMessage;
+			if (terminalMessage) return terminalMessage;
+			throw new Error("No data in SSE response");
 		}
 		return res.json() as Promise<JsonRpcResponse>;
 	}
@@ -225,7 +255,7 @@ export function useMCP() {
 		const sid = res.headers.get("Mcp-Session-Id");
 		if (sid) sessionId = sid;
 
-		await readResponse(res);
+		await readResponse(res, { expectedId: 1 });
 
 		// Send initialized notification (no response expected).
 		const notifyRes = await post({
@@ -258,11 +288,12 @@ export function useMCP() {
 	): Promise<string> {
 		return withRetry(async () => {
 			await ensureInitialized();
+			const requestId = allocateRequestId();
 			const progressToken =
 				options?.onProgress && typeof crypto?.randomUUID === "function"
 					? crypto.randomUUID()
 					: options?.onProgress
-						? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+						? `${requestId}-${Math.random().toString(36).slice(2)}`
 						: undefined;
 
 			const agentHeaders = options?.agentId
@@ -271,7 +302,7 @@ export function useMCP() {
 			const res = await post(
 				{
 					jsonrpc: "2.0",
-					id: Date.now(),
+					id: requestId,
 					method: "tools/call",
 					params: {
 						name,
@@ -284,12 +315,15 @@ export function useMCP() {
 
 			if (!res.ok) throw httpError("MCP error", res);
 
-			const data = await readResponse(res, (evt) => {
-				if (evt.method !== "notifications/progress") return;
-				const msg = evt.params?.message;
-				if (typeof msg === "string" && msg.length > 0) {
-					options?.onProgress?.(msg);
-				}
+			const data = await readResponse(res, {
+				expectedId: requestId,
+				onEvent: (evt) => {
+					if (evt.method !== "notifications/progress") return;
+					const msg = evt.params?.message;
+					if (typeof msg === "string" && msg.length > 0) {
+						options?.onProgress?.(msg);
+					}
+				},
 			});
 			if (data.error) throw new Error(data.error.message);
 
@@ -306,14 +340,15 @@ export function useMCP() {
 	async function listTools(): Promise<MCPToolInfo[]> {
 		return withRetry(async () => {
 			await ensureInitialized();
+			const requestId = allocateRequestId();
 			const res = await post({
 				jsonrpc: "2.0",
-				id: Date.now(),
+				id: requestId,
 				method: "tools/list",
 				params: {},
 			});
 			if (!res.ok) throw httpError("MCP error", res);
-			const data = await readResponse(res);
+			const data = await readResponse(res, { expectedId: requestId });
 			if (data.error) throw new Error(data.error.message);
 			return (data.result?.tools as MCPToolInfo[] | undefined) ?? [];
 		});
