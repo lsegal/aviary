@@ -49,12 +49,12 @@
 							<div>
 								<label class="field-label">Default model</label>
 								<ModelSelector v-model="draft.models.defaults.model" :options="availableModelOptions"
-									placeholder="Select a model…" />
+									placeholder="Select a model…" data-testid="default-model-selector" />
 							</div>
 							<div>
 								<label class="field-label">Default fallbacks</label>
 								<ModelSelector v-model="draft.models.defaults.fallbacks" :options="availableModelOptions" multiple
-									placeholder="Add fallbacks…" />
+									placeholder="Add fallbacks…" data-testid="default-fallbacks-selector" />
 							</div>
 						</div>
 					</div>

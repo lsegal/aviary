@@ -284,7 +284,7 @@ test("model dropdown hides models from unauthenticated providers", async ({
 }) => {
 	await page.goto("/settings");
 
-	await page.locator('input[placeholder^="Select a model"]').first().click();
+	await page.getByTestId("default-model-selector").locator("input").click();
 
 	await expect(
 		page.getByText("anthropic/claude-3-5-haiku-latest", { exact: true }),
