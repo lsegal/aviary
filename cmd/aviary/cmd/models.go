@@ -43,8 +43,8 @@ func init() {
 
 func runModelsList(w io.Writer, provider string) error {
 	provider = strings.TrimSpace(provider)
-	if provider != "" && provider != "vllm" && !models.HasProvider(provider) {
-		supported := append(models.Providers(), "vllm")
+	if provider != "" && provider != "vllm" && provider != "ollama" && !models.HasProvider(provider) {
+		supported := append(models.Providers(), "vllm", "ollama")
 		return fmt.Errorf("unknown provider %q; supported providers: %s", provider, strings.Join(supported, ", "))
 	}
 
@@ -52,7 +52,7 @@ func runModelsList(w io.Writer, provider string) error {
 	if _, err := fmt.Fprintln(tw, "MODEL\tINPUT\tOUTPUT\tTYPE"); err != nil {
 		return err
 	}
-	if provider != "vllm" {
+	if provider != "vllm" && provider != "ollama" {
 		for _, model := range models.EntriesByProvider(provider) {
 			modelType := "text only"
 			if model.SupportsImageInput {
@@ -70,31 +70,37 @@ func runModelsList(w io.Writer, provider string) error {
 			}
 		}
 	}
-	vllmModels, err := listDynamicVLLMModels(provider)
-	if err != nil {
-		return err
+	dynamicProviders := []string{}
+	switch provider {
+	case "":
+		dynamicProviders = []string{"vllm", "ollama"}
+	case "vllm", "ollama":
+		dynamicProviders = []string{provider}
 	}
-	for _, modelID := range vllmModels {
-		if _, err := fmt.Fprintf(tw, "%s\t-\t-\t\n", modelID); err != nil {
+	for _, dynamicProvider := range dynamicProviders {
+		dynamicModels, err := listDynamicModels(dynamicProvider, provider != "")
+		if err != nil {
 			return err
+		}
+		for _, modelID := range dynamicModels {
+			if _, err := fmt.Fprintf(tw, "%s\t-\t-\t\n", modelID); err != nil {
+				return err
+			}
 		}
 	}
 	return tw.Flush()
 }
 
-func listDynamicVLLMModels(provider string) ([]string, error) {
-	if provider != "" && provider != "vllm" {
+func listDynamicModels(provider string, allowDefault bool) ([]string, error) {
+	if provider != "vllm" && provider != "ollama" {
 		return nil, nil
 	}
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return nil, err
 	}
-	pc, ok := cfg.Models.Providers["vllm"]
-	if !ok || strings.TrimSpace(pc.BaseURI) == "" {
-		if provider == "vllm" {
-			return nil, fmt.Errorf("vllm provider requires models.providers.vllm.base_uri")
-		}
+	pc, ok := cfg.Models.Providers[provider]
+	if !ok && !allowDefault {
 		return nil, nil
 	}
 	st := authStore()
@@ -102,28 +108,32 @@ func listDynamicVLLMModels(provider string) ([]string, error) {
 		return auth.Resolve(st, ref)
 	}
 	factory := llm.NewFactory(resolveAuth).WithProviderOptionsResolver(func(name string) (llm.ProviderOptions, bool) {
-		if strings.TrimSpace(name) != "vllm" {
+		if strings.TrimSpace(name) != provider {
 			return llm.ProviderOptions{}, false
 		}
 		return llm.ProviderOptions{Auth: pc.Auth, BaseURI: pc.BaseURI}, true
 	})
-	providerInst, err := factory.ForModel("vllm/_")
+	providerInst, err := factory.ForModel(provider + "/_")
 	if err != nil {
 		return nil, err
 	}
-	vllmProvider, ok := providerInst.(*llm.VLLMProvider)
-	if !ok {
-		return nil, fmt.Errorf("unexpected provider type for vllm")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	names, err := vllmProvider.ListModels(ctx)
+	var names []string
+	switch p := providerInst.(type) {
+	case *llm.VLLMProvider:
+		names, err = p.ListModels(ctx)
+	case *llm.OllamaProvider:
+		names, err = p.ListModels(ctx)
+	default:
+		return nil, fmt.Errorf("unexpected provider type for %s", provider)
+	}
 	if err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(names))
 	for _, name := range names {
-		out = append(out, "vllm/"+name)
+		out = append(out, provider+"/"+name)
 	}
 	return out, nil
 }

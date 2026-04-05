@@ -817,6 +817,7 @@ const {
 } = useProviderAuth(callTool);
 const providerAddSelection = ref("");
 const providerApiKeyValue = ref("");
+const providerBaseURIValue = ref("");
 const secretName = ref("");
 const secretValue = ref("");
 
@@ -825,42 +826,65 @@ const configuredProviders = computed(() => {
 		key: string;
 		provider: string;
 		providerLabel: string;
-		authType: "oauth" | "apikey";
+		authType: "oauth" | "apikey" | "endpoint";
+		baseURI?: string;
+		hasAPIKey?: boolean;
 	}> = [];
-	for (const cred of credentials.value) {
-		for (const p of KNOWN_PROVIDERS) {
-			if (p.hasOAuth && cred === `${p.authId}:oauth`) {
-				entries.push({
-					key: cred,
-					provider: p.id,
-					providerLabel: p.label,
-					authType: "oauth",
-				});
-			} else if (p.hasApiKey && cred === `${p.authId}:default`) {
-				entries.push({
-					key: cred,
-					provider: p.id,
-					providerLabel: p.label,
-					authType: "apikey",
-				});
-			}
+	for (const p of KNOWN_PROVIDERS) {
+		const hasOAuth = credentials.value.includes(`${p.authId}:oauth`);
+		const hasAPIKey = credentials.value.includes(`${p.authId}:default`);
+		const baseURI =
+			draft.value.models.providers?.[p.id]?.base_uri?.trim() ?? "";
+		if (p.requiresBaseURI && baseURI) {
+			entries.push({
+				key: `${p.id}:endpoint`,
+				provider: p.id,
+				providerLabel: p.label,
+				authType: "endpoint",
+				baseURI,
+				hasAPIKey,
+			});
+			continue;
+		}
+		if (p.hasOAuth && hasOAuth) {
+			entries.push({
+				key: `${p.authId}:oauth`,
+				provider: p.id,
+				providerLabel: p.label,
+				authType: "oauth",
+			});
+		}
+		if (p.hasApiKey && hasAPIKey) {
+			entries.push({
+				key: `${p.authId}:default`,
+				provider: p.id,
+				providerLabel: p.label,
+				authType: "apikey",
+			});
 		}
 	}
 	return entries;
 });
 
 const availableProviderOptions = computed(() => {
-	const configured = new Set(configuredProviders.value.map((e) => e.key));
 	const options: Array<{ key: string; label: string; provider: string }> = [];
 	for (const p of KNOWN_PROVIDERS) {
-		if (p.hasOAuth && !configured.has(`${p.authId}:oauth`)) {
+		if (p.requiresBaseURI) {
+			options.push({
+				key: `${p.id}:endpoint`,
+				label: `${p.label} (Endpoint)`,
+				provider: p.id,
+			});
+			continue;
+		}
+		if (p.hasOAuth && !credentials.value.includes(`${p.authId}:oauth`)) {
 			options.push({
 				key: `${p.authId}:oauth`,
 				label: `${p.label} (OAuth)`,
 				provider: p.id,
 			});
 		}
-		if (p.hasApiKey && !configured.has(`${p.authId}:default`)) {
+		if (p.hasApiKey && !credentials.value.includes(`${p.authId}:default`)) {
 			options.push({
 				key: `${p.authId}:apikey`,
 				label: `${p.label} (API Key)`,
@@ -869,6 +893,22 @@ const availableProviderOptions = computed(() => {
 		}
 	}
 	return options;
+});
+
+watch(providerAddSelection, (selection) => {
+	const provider = selection.replace(/:(apikey|oauth|endpoint)$/, "");
+	const meta = KNOWN_PROVIDERS.find(
+		(p) => p.id === provider || p.authId === provider,
+	);
+	providerApiKeyValue.value = "";
+	if (!selection.endsWith(":endpoint") || !meta) {
+		providerBaseURIValue.value = "";
+		return;
+	}
+	providerBaseURIValue.value =
+		draft.value.models.providers?.[meta.id]?.base_uri?.trim() ??
+		meta.baseURIPlaceholder ??
+		"";
 });
 
 const extraSecrets = computed(() => {
@@ -2992,6 +3032,56 @@ async function addProviderApiKey() {
 	}
 }
 
+async function addProviderEndpoint() {
+	const provider = providerAddSelection.value.replace(/:endpoint$/, "");
+	const meta = KNOWN_PROVIDERS.find(
+		(p) => p.id === provider && p.requiresBaseURI,
+	);
+	const baseURI = providerBaseURIValue.value.trim();
+	if (!meta) return;
+	errorMessage.value = "";
+	try {
+		const next = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+		next.models.providers ??= {};
+		if (baseURI || providerApiKeyValue.value.trim()) {
+			next.models.providers[provider] = {
+				...(next.models.providers[provider] ?? { auth: "" }),
+				auth:
+					providerApiKeyValue.value.trim() && meta.apiAuthKey
+						? `auth:${meta.apiAuthKey}`
+						: "",
+				base_uri: baseURI || undefined,
+			};
+		} else {
+			delete next.models.providers[provider];
+		}
+		await store.saveConfig(next);
+		draft.value = hydrateDraftConfig(next);
+		lastSavedSnapshot = normalizedDraftSnapshot();
+		if (meta.apiAuthKey) {
+			if (providerApiKeyValue.value.trim()) {
+				await callTool("auth_set", {
+					name: meta.apiAuthKey,
+					value: providerApiKeyValue.value.trim(),
+				});
+			} else {
+				try {
+					await callTool("auth_delete", { name: meta.apiAuthKey });
+				} catch {
+					// best effort; endpoint config still saved
+				}
+			}
+		}
+		providerAddSelection.value = "";
+		providerApiKeyValue.value = "";
+		providerBaseURIValue.value = "";
+		await refreshCredentials();
+		okMessage.value = `${meta.label} endpoint settings saved.`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
 async function addProviderOAuth() {
 	if (!providerAddSelection.value) return;
 	const authId = providerAddSelection.value.replace(/:oauth$/, "");
@@ -3058,6 +3148,31 @@ async function deleteProviderCredential(key: string) {
 		await callTool("auth_delete", { name: key });
 		await refreshCredentials();
 		okMessage.value = "Provider credential removed.";
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
+async function deleteProviderConnection(provider: string) {
+	errorMessage.value = "";
+	try {
+		const next = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+		if (next.models.providers?.[provider]) {
+			delete next.models.providers[provider];
+		}
+		const meta = KNOWN_PROVIDERS.find((p) => p.id === provider);
+		await store.saveConfig(next);
+		draft.value = hydrateDraftConfig(next);
+		lastSavedSnapshot = normalizedDraftSnapshot();
+		if (meta?.apiAuthKey && credentials.value.includes(meta.apiAuthKey)) {
+			try {
+				await callTool("auth_delete", { name: meta.apiAuthKey });
+			} catch {
+				// best effort; config removal is the primary action
+			}
+		}
+		await refreshCredentials();
+		okMessage.value = "Provider connection removed.";
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	}
@@ -3230,6 +3345,7 @@ const settingsContext = proxyRefs({
 	addAllowFrom,
 	addChannel,
 	addProviderApiKey,
+	addProviderEndpoint,
 	addProviderOAuth,
 	addSecret,
 	addTask,
@@ -3272,6 +3388,7 @@ const settingsContext = proxyRefs({
 	createSession,
 	createTaskFromName,
 	deleteProviderCredential,
+	deleteProviderConnection,
 	deleteSecret,
 	draft,
 	entryExcludePrefixes,
@@ -3321,6 +3438,7 @@ const settingsContext = proxyRefs({
 	promptDeleteTask,
 	providerAddSelection,
 	providerApiKeyValue,
+	providerBaseURIValue,
 	reauthorizeProvider,
 	refreshCredentials,
 	removeAgent,

@@ -28,7 +28,7 @@ func TestConstants_NonEmpty(t *testing.T) {
 		assert.NotEqual(t, "", typ)
 
 	}
-	for _, provider := range []Provider{ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderVLLM, ProviderStdio} {
+	for _, provider := range []Provider{ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderVLLM, ProviderOllama, ProviderStdio} {
 		assert.NotEqual(t, "", provider)
 
 	}

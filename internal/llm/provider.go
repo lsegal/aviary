@@ -281,14 +281,19 @@ func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 
 	case "vllm":
 		opts, _ := f.providerOptions("vllm")
-		if strings.TrimSpace(opts.BaseURI) == "" {
-			return nil, fmt.Errorf("vllm: missing models.providers.vllm.base_uri")
-		}
 		apiKey, err := f.resolveOptionalAuth(opts.Auth)
 		if err != nil {
 			return nil, fmt.Errorf("vllm auth: %w", err)
 		}
 		return NewVLLMProvider(apiKey, name, opts.BaseURI), nil
+
+	case "ollama":
+		opts, _ := f.providerOptions("ollama")
+		apiKey, err := f.resolveOptionalAuth(opts.Auth)
+		if err != nil {
+			return nil, fmt.Errorf("ollama auth: %w", err)
+		}
+		return NewOllamaProvider(apiKey, name, opts.BaseURI), nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)

@@ -24,6 +24,7 @@ var tuiProviders = []providerOption{
 	{name: "OpenAI", id: "openai", apiKey: "openai:default", oauthKey: "openai:oauth", supportsOAuth: true},
 	{name: "Gemini", id: "gemini", apiKey: "gemini:default", oauthKey: "gemini:oauth", supportsOAuth: true},
 	{name: "vLLM", id: "vllm", apiKey: "vllm:default", requiresBase: true},
+	{name: "Ollama", id: "ollama", apiKey: "ollama:default", requiresBase: true},
 }
 
 type providerMgrModel struct {
@@ -61,8 +62,8 @@ func (m providerMgrModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAPIKey(msg)
 		case "oauth":
 			return m.updateOAuth(msg)
-		case "vllm":
-			return m.updateVLLM(msg)
+		case "endpoint":
+			return m.updateEndpoint(msg)
 		}
 	}
 	return m, nil
@@ -82,8 +83,8 @@ func (m providerMgrModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		if tuiProviders[m.cursor].requiresBase {
-			m.mode = "vllm"
-			m.baseInput.SetValue(strings.TrimSpace(m.currentBaseURI()))
+			m.mode = "endpoint"
+			m.baseInput.SetValue(strings.TrimSpace(m.currentBaseURI(tuiProviders[m.cursor].id)))
 			m.keyInput.SetValue("")
 			m.baseInput.Focus()
 			return m, textinput.Blink
@@ -184,7 +185,7 @@ func (m providerMgrModel) updateOAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m providerMgrModel) updateVLLM(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m providerMgrModel) updateEndpoint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -202,23 +203,20 @@ func (m providerMgrModel) updateVLLM(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		provider := tuiProviders[m.cursor]
 		baseURI := strings.TrimSpace(m.baseInput.Value())
-		if baseURI == "" {
-			m.err = "Base URI cannot be empty"
-			return m, nil
-		}
-		if err := m.saveProviderBaseURI("vllm", baseURI); err != nil {
+		if err := m.saveProviderBaseURI(provider.id, baseURI); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
 		if apiKey := strings.TrimSpace(m.keyInput.Value()); apiKey != "" {
-			if err := m.store.Set(tuiProviders[m.cursor].apiKey, apiKey); err != nil {
+			if err := m.store.Set(provider.apiKey, apiKey); err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
 		}
 		m.err = ""
-		m.message = "vLLM endpoint saved."
+		m.message = provider.name + " endpoint saved."
 		m.mode = ""
 		return m, nil
 	}
@@ -242,7 +240,7 @@ func (m providerMgrModel) View() string {
 	case "":
 		for i, p := range tuiProviders {
 			state := "not connected"
-			if p.requiresBase && strings.TrimSpace(m.currentBaseURI()) != "" {
+			if p.requiresBase && strings.TrimSpace(m.currentBaseURI(p.id)) != "" {
 				state = "endpoint"
 				if _, err := m.store.Get(p.apiKey); err == nil {
 					state = "endpoint + api key"
@@ -284,9 +282,9 @@ func (m providerMgrModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.codeInput.View())
 		b.WriteString("\n\n" + tuiHelpStyle.Render("Enter save · Esc back"))
-	case "vllm":
-		b.WriteString(tuiLabelStyle.Render("Configure vLLM") + "\n")
-		b.WriteString(tuiDimStyle.Render("Set the OpenAI-compatible base URI. API key is optional."))
+	case "endpoint":
+		b.WriteString(tuiLabelStyle.Render("Configure "+tuiProviders[m.cursor].name) + "\n")
+		b.WriteString(tuiDimStyle.Render("Set an optional OpenAI-compatible base URI. Leave it blank to use the local default. API key is optional."))
 		b.WriteString("\n\n")
 		b.WriteString(m.baseInput.View())
 		b.WriteString("\n\n")
@@ -312,11 +310,11 @@ func runProviderMgr(st authpkg.Store) error {
 	return err
 }
 
-func (m providerMgrModel) currentBaseURI() string {
+func (m providerMgrModel) currentBaseURI(provider string) string {
 	if m.cfg == nil || m.cfg.Models.Providers == nil {
 		return ""
 	}
-	return m.cfg.Models.Providers["vllm"].BaseURI
+	return m.cfg.Models.Providers[provider].BaseURI
 }
 
 func (m providerMgrModel) saveProviderBaseURI(provider, baseURI string) error {
@@ -329,8 +327,8 @@ func (m providerMgrModel) saveProviderBaseURI(provider, baseURI string) error {
 	}
 	pc := m.cfg.Models.Providers[provider]
 	pc.BaseURI = strings.TrimSpace(baseURI)
-	if provider == "vllm" && strings.TrimSpace(pc.Auth) == "" {
-		pc.Auth = "auth:vllm:default"
+	if strings.TrimSpace(pc.Auth) == "" {
+		pc.Auth = "auth:" + provider + ":default"
 	}
 	m.cfg.Models.Providers[provider] = pc
 	return config.Save(m.cfgPath, m.cfg)

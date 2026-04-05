@@ -2883,13 +2883,13 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "models_list",
-		Description: "List available models for a provider. Uses the built-in catalog for standard providers and introspects a vLLM OpenAI-compatible endpoint for provider=vllm.",
+		Description: "List available models for a provider. Uses the built-in catalog for standard providers and introspects endpoint providers such as vllm and ollama over their OpenAI-compatible /models endpoint.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args modelsListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		provider := strings.TrimSpace(args.Provider)
 		if provider == "" {
 			return jsonResult(models.List())
 		}
-		if provider != "vllm" {
+		if provider != "vllm" && provider != "ollama" {
 			if !models.HasProvider(provider) {
 				return nil, struct{}{}, fmt.Errorf("unknown provider %q", provider)
 			}
@@ -2900,18 +2900,15 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err != nil {
 			cfg = &config.Config{}
 		}
-		vllmCfg := cfg.Models.Providers["vllm"]
+		endpointCfg := cfg.Models.Providers[provider]
 		baseURI := strings.TrimSpace(args.BaseURI)
 		if baseURI == "" {
-			baseURI = strings.TrimSpace(vllmCfg.BaseURI)
-		}
-		if baseURI == "" {
-			return nil, struct{}{}, fmt.Errorf("vllm requires base_uri")
+			baseURI = strings.TrimSpace(endpointCfg.BaseURI)
 		}
 
 		authValue := strings.TrimSpace(args.Auth)
 		if authValue == "" {
-			authValue = strings.TrimSpace(vllmCfg.Auth)
+			authValue = strings.TrimSpace(endpointCfg.Auth)
 		}
 		if strings.HasPrefix(authValue, "auth:") {
 			st, err := authStore()
@@ -2924,14 +2921,21 @@ func registerServerTools(s *sdkmcp.Server) {
 			}
 		}
 
-		p := llm.NewVLLMProvider(authValue, "", baseURI)
-		list, err := p.ListModels(ctx)
+		var list []string
+		switch provider {
+		case "vllm":
+			p := llm.NewVLLMProvider(authValue, "", baseURI)
+			list, err = p.ListModels(ctx)
+		case "ollama":
+			p := llm.NewOllamaProvider(authValue, "", baseURI)
+			list, err = p.ListModels(ctx)
+		}
 		if err != nil {
 			return nil, struct{}{}, err
 		}
 		out := make([]string, 0, len(list))
 		for _, id := range list {
-			out = append(out, "vllm/"+id)
+			out = append(out, provider+"/"+id)
 		}
 		return jsonResult(out)
 	})

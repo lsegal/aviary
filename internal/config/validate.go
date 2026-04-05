@@ -256,17 +256,13 @@ func (v *validator) checkModel(field, model string) {
 	case "github-copilot":
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
-	case "vllm":
-		pc, ok := v.models.Providers["vllm"]
-		if !ok || strings.TrimSpace(pc.BaseURI) == "" {
-			v.errorf(field, "vllm models require models.providers.vllm.base_uri to be configured")
-		}
+	case "vllm", "ollama":
 	case "stdio":
 		if _, err := exec.LookPath(name); err != nil {
 			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
 		}
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, ollama, or stdio", provider, model)
 	}
 }
 

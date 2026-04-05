@@ -25,8 +25,12 @@
 										<td class="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{{ entry.providerLabel }}</td>
 										<td class="px-3 py-2">
 											<span
-												:class="entry.authType === 'oauth' ? 'inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'">
-												{{ entry.authType === 'oauth' ? 'OAuth' : 'API Key' }}
+												:class="entry.authType === 'oauth'
+													? 'inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+													: entry.authType === 'endpoint'
+														? 'inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+														: 'inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'">
+												{{ entry.authType === 'oauth' ? 'OAuth' : entry.authType === 'endpoint' ? 'Endpoint' : 'API Key' }}
 											</span>
 										</td>
 										<td class="px-3 py-2">
@@ -40,6 +44,12 @@
 												</svg>
 												Authorized
 											</span>
+											<div v-else-if="entry.authType === 'endpoint'" class="space-y-1">
+												<div class="font-mono text-[11px] text-gray-500 dark:text-gray-400">{{ entry.baseURI }}</div>
+												<div class="text-[11px] text-gray-400 dark:text-gray-500">
+													{{ entry.hasAPIKey ? "Bearer token configured" : "No bearer token" }}
+												</div>
+											</div>
 											<span v-else class="tracking-widest text-gray-400 dark:text-gray-500">••••••••</span>
 										</td>
 										<td class="px-3 py-2 text-right">
@@ -47,9 +57,13 @@
 												<button v-if="entry.authType === 'oauth'" type="button"
 													class="text-xs text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
 													:disabled="oauthBusy" @click="reauthorizeProvider(entry.provider)">Re-authorize</button>
+												<button v-if="entry.authType === 'endpoint'" type="button"
+													class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+													@click="providerAddSelection = `${entry.provider}:endpoint`">Edit</button>
 												<button type="button"
 													class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
-													:title="`Remove ${entry.key}`" @click="deleteProviderCredential(entry.key)">
+													:title="`Remove ${entry.key}`"
+													@click="entry.authType === 'endpoint' ? deleteProviderConnection(entry.provider) : deleteProviderCredential(entry.key)">
 													<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
 														fill="currentColor">
 														<path fill-rule="evenodd"
@@ -71,6 +85,17 @@
 								<option v-for="opt in availableProviderOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</option>
 							</select>
 							<template v-if="providerAddSelection">
+								<template v-if="providerAddSelection.endsWith(':endpoint')">
+									<input v-model="providerBaseURIValue" type="text" class="field-input min-w-[260px] max-w-[320px]"
+										placeholder="Base URI (optional)" />
+									<input v-model="providerApiKeyValue" type="password" class="field-input max-w-[240px]"
+										placeholder="Bearer token (optional)" />
+									<button type="button"
+										class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+										@click="addProviderEndpoint">
+										Save
+									</button>
+								</template>
 								<template v-if="providerAddSelection.endsWith(':apikey')">
 									<input v-model="providerApiKeyValue" type="password" class="field-input max-w-[260px]"
 										placeholder="API key…" />
@@ -78,7 +103,7 @@
 										class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
 										:disabled="!providerApiKeyValue.trim()" @click="addProviderApiKey">Add</button>
 								</template>
-								<button v-else type="button"
+								<button v-else-if="providerAddSelection.endsWith(':oauth')" type="button"
 									class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
 									:disabled="oauthBusy" @click="addProviderOAuth">
 									{{ oauthBusy ? 'Authorizing…' : 'Authorize' }}

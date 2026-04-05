@@ -897,7 +897,7 @@ func TestValidate_UnknownProvider(t *testing.T) {
 
 }
 
-func TestValidate_VLLMRequiresBaseURI(t *testing.T) {
+func TestValidate_VLLMAcceptsDefaultBaseURI(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{
 			Name:  "bot",
@@ -905,7 +905,8 @@ func TestValidate_VLLMRequiresBaseURI(t *testing.T) {
 		}},
 	}
 	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "vllm models require"))
+	assert.False(t, hasIssue(issues, "vllm models require"))
+	assert.False(t, hasIssue(issues, "unknown provider"))
 }
 
 func TestValidate_VLLMAcceptsConfiguredBaseURI(t *testing.T) {
@@ -922,6 +923,35 @@ func TestValidate_VLLMAcceptsConfiguredBaseURI(t *testing.T) {
 	}
 	issues := Validate(cfg, nil)
 	assert.False(t, hasIssue(issues, "vllm models require"))
+	assert.False(t, hasIssue(issues, "unknown provider"))
+}
+
+func TestValidate_OllamaAcceptsDefaultBaseURI(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "ollama/llama3.2",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "ollama models require"))
+	assert.False(t, hasIssue(issues, "unknown provider"))
+}
+
+func TestValidate_OllamaAcceptsConfiguredBaseURI(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "ollama/llama3.2",
+		}},
+		Models: ModelsConfig{
+			Providers: map[string]ProviderConfig{
+				"ollama": {BaseURI: "http://127.0.0.1:11434"},
+			},
+		},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "ollama models require"))
 	assert.False(t, hasIssue(issues, "unknown provider"))
 }
 

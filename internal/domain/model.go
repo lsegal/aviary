@@ -9,6 +9,7 @@ const (
 	ProviderOpenAI    Provider = "openai"
 	ProviderGoogle    Provider = "google"
 	ProviderVLLM      Provider = "vllm"
+	ProviderOllama    Provider = "ollama"
 	ProviderStdio     Provider = "stdio" // subprocess: claude CLI, codex, etc.
 )
 

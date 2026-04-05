@@ -265,14 +265,41 @@
 
 					<div v-else class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 						<div v-if="currentProvider?.requiresBaseURI" class="mb-4">
-							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Base URI</label>
-							<input v-model="baseURI" type="text" autocomplete="off" :placeholder="currentProvider?.baseURIPlaceholder"
-								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-								@keyup.enter="saveApiKey" />
-							<p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-								Point this at your vLLM host and port. Aviary will use its OpenAI-compatible API and append <code
-									class="font-mono">/v1</code> automatically when needed.
+							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Base URI (optional)</label>
+							<div class="relative">
+								<input v-model="baseURI" type="text" autocomplete="off" :placeholder="currentProvider?.baseURIPlaceholder"
+									class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+									@blur="testDynamicProvider" @keyup.enter="saveApiKey" />
+								<button type="button"
+									class="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+									:title="dynamicModelsValidationState === 'success' ? 'Endpoint OK' : dynamicModelsValidationState === 'error' ? 'Endpoint check failed' : 'Test endpoint'"
+									:disabled="dynamicModelsLoading" @click="testDynamicProvider">
+									<svg v-if="dynamicModelsLoading" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
+										<path class="opacity-75" fill="currentColor"
+											d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+									</svg>
+									<svg v-else class="h-4 w-4"
+										:class="dynamicModelsValidationState === 'success' ? 'text-green-600 dark:text-green-400' : dynamicModelsValidationState === 'error' ? 'text-red-600 dark:text-red-400' : ''"
+										fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+									</svg>
+								</button>
+							</div>
+						<p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+							Point this at your {{ currentProvider?.label }} host and port if you're not using the local default. Aviary will use its OpenAI-compatible API and append <code
+								class="font-mono">/v1</code> automatically when needed.
 							</p>
+						<p v-if="dynamicModelsValidationMessage" :class="[
+							'mt-2 text-xs',
+							dynamicModelsValidationState === 'error'
+								? 'text-red-600 dark:text-red-400'
+								: dynamicModelsValidationState === 'success'
+									? 'text-green-600 dark:text-green-400'
+									: 'text-gray-400 dark:text-gray-500',
+						]">
+							{{ dynamicModelsValidationMessage }}
+						</p>
 						</div>
 						<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">API Key</label>
 						<input v-model="apiKey" type="password" autocomplete="off" :placeholder="currentProvider?.keyPlaceholder"
@@ -321,15 +348,15 @@
 							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
 							<ModelSelector v-model="agentModelInput" :options="currentProviderModelOptions"
 								placeholder="Select a model..." />
-							<div v-if="currentProvider?.id === 'vllm'" class="mt-2 space-y-2">
+							<div v-if="currentProvider?.requiresBaseURI" class="mt-2 space-y-2">
 								<div class="flex items-center justify-between gap-3">
 									<p class="text-xs text-gray-400 dark:text-gray-500">
-										{{ vllmModelsLoading ? "Loading models from vLLM..." : "Select a model discovered from the endpoint." }}
+										{{ dynamicModelsLoading ? `Loading models from ${currentProvider?.label}...` : "Select a model discovered from the endpoint." }}
 									</p>
 									<button type="button"
 										class="text-xs font-medium text-blue-600 hover:text-blue-500 disabled:opacity-40 dark:text-blue-400"
-										:disabled="vllmModelsLoading || !baseURI.trim()" @click="refreshVLLMModels">
-										{{ vllmModelsLoading ? "Refreshing..." : "Refresh models" }}
+										:disabled="dynamicModelsLoading" @click="() => refreshDynamicModels(true)">
+										{{ dynamicModelsLoading ? "Refreshing..." : "Refresh models" }}
 									</button>
 								</div>
 							</div>
@@ -404,9 +431,14 @@ defineEmits<{ skip: [] }>();
 type Provider = KnownProvider;
 
 const providers: Provider[] = KNOWN_PROVIDERS.filter((provider) =>
-	["anthropic", "openai-codex", "google", "github-copilot", "vllm"].includes(
-		provider.id,
-	),
+	[
+		"anthropic",
+		"openai-codex",
+		"google",
+		"github-copilot",
+		"vllm",
+		"ollama",
+	].includes(provider.id),
 );
 
 type Step = "provider" | "credentials" | "agent" | "done";
@@ -448,8 +480,8 @@ const currentProvider = computed(
 const currentProviderModelOptions = computed(() => {
 	const provider = currentProvider.value;
 	if (!provider) return [];
-	if (provider.id === "vllm") {
-		return vllmModelOptions.value;
+	if (provider.requiresBaseURI) {
+		return dynamicModelOptions.value;
 	}
 	const allowedProviders =
 		(credMethod.value === "oauth"
@@ -461,8 +493,8 @@ const currentProviderModelOptions = computed(() => {
 	return options.length
 		? options
 		: [provider.defaultModel, provider.oauthModel].filter(
-			(model): model is string => Boolean(model),
-		);
+				(model): model is string => Boolean(model),
+			);
 });
 const fallbackModelOptions = computed(() =>
 	currentProviderModelOptions.value.filter(
@@ -475,9 +507,7 @@ const baseURI = ref("");
 const credentialsContinueDisabled = computed(() => {
 	if (credSaving.value) return true;
 	if (!currentProvider.value) return true;
-	if (currentProvider.value.requiresBaseURI) {
-		return !baseURI.value.trim();
-	}
+	if (currentProvider.value.requiresBaseURI) return false;
 	return !apiKey.value.trim();
 });
 const credSaving = ref(false);
@@ -485,8 +515,10 @@ const credError = ref("");
 const agentName = ref("Aviary");
 const agentModelInput = ref("");
 const agentFallbacks = ref<string[]>([]);
-const vllmModelOptions = ref<string[]>([]);
-const vllmModelsLoading = ref(false);
+const dynamicModelOptions = ref<string[]>([]);
+const dynamicModelsLoading = ref(false);
+const dynamicModelsValidationState = ref<"idle" | "success" | "error">("idle");
+const dynamicModelsValidationMessage = ref("");
 const agentSaving = ref(false);
 const agentError = ref("");
 const storedKeys = ref<string[]>([]);
@@ -501,7 +533,7 @@ function formatCountdown(seconds: number | null): string {
 onMounted(async () => {
 	await refreshStoredKeys();
 	await refreshCredentials();
-	await loadVLLMProviderConfig();
+	await loadDynamicProviderConfig();
 });
 
 async function refreshStoredKeys() {
@@ -527,59 +559,83 @@ function defaultModelFor(p: Provider, method: "oauth" | "apikey"): string {
 		: (p.defaultModel ?? "");
 }
 
-async function loadVLLMProviderConfig() {
+async function loadDynamicProviderConfig() {
 	try {
 		await settingsStore.fetchConfig();
+		const providerID = currentProvider.value?.id;
+		if (!providerID) return;
 		baseURI.value =
-			settingsStore.config?.models.providers?.vllm?.base_uri?.trim() ?? "";
+			settingsStore.config?.models.providers?.[providerID]?.base_uri?.trim() ??
+			"";
+		if (currentProvider.value?.requiresBaseURI) {
+			await refreshDynamicModels(true);
+		}
 	} catch {
 		// best effort
 	}
 }
 
-async function refreshVLLMModels() {
-	if (!baseURI.value.trim()) return;
-	vllmModelsLoading.value = true;
-	credError.value = "";
+async function refreshDynamicModels(updateValidationMessage = true) {
+	if (!currentProvider.value?.requiresBaseURI) return;
+	dynamicModelsLoading.value = true;
+	if (updateValidationMessage) {
+		dynamicModelsValidationMessage.value = "";
+	}
 	try {
 		const raw = await callTool("models_list", {
-			provider: "vllm",
-			base_uri: baseURI.value.trim(),
+			provider: currentProvider.value.id,
+			base_uri: baseURI.value.trim() || undefined,
 			auth: apiKey.value.trim() || undefined,
 		});
-		vllmModelOptions.value = (JSON.parse(raw) as string[]) ?? [];
-		if (!agentModelInput.value.trim() && vllmModelOptions.value.length > 0) {
-			agentModelInput.value = vllmModelOptions.value[0];
+		dynamicModelOptions.value = (JSON.parse(raw) as string[]) ?? [];
+		dynamicModelsValidationState.value = "success";
+		if (updateValidationMessage) {
+			dynamicModelsValidationMessage.value = `Connected to ${currentProvider.value.label}.`;
+		}
+		if (!agentModelInput.value.trim() && dynamicModelOptions.value.length > 0) {
+			agentModelInput.value = dynamicModelOptions.value[0];
 		}
 	} catch (e) {
-		credError.value = e instanceof Error ? e.message : String(e);
+		dynamicModelsValidationState.value = "error";
+		if (updateValidationMessage) {
+			dynamicModelsValidationMessage.value =
+				e instanceof Error ? e.message : String(e);
+		}
 	} finally {
-		vllmModelsLoading.value = false;
+		dynamicModelsLoading.value = false;
 	}
+}
+
+async function testDynamicProvider() {
+	if (!currentProvider.value?.requiresBaseURI || dynamicModelsLoading.value) {
+		return;
+	}
+	await refreshDynamicModels(true);
 }
 
 function selectProvider(id: string) {
 	selectedProvider.value = id;
 	const p = providers.find((x) => x.id === id);
 	if (!p) return;
-	if (p.id === "vllm") {
-		void loadVLLMProviderConfig();
+	if (p.requiresBaseURI) {
+		void loadDynamicProviderConfig();
 	}
 	const existing = detectedAuth(p);
-	if (existing && (!p.requiresBaseURI || baseURI.value.trim())) {
-		credMethod.value = existing;
-		agentModelInput.value = defaultModelFor(p, existing);
-		if (p.id === "vllm") {
-			void refreshVLLMModels();
-		}
+	if (existing && !p.requiresBaseURI) {
+		const method = existing ?? (p.hasOAuth ? "oauth" : "apikey");
+		credMethod.value = method;
+		agentModelInput.value = defaultModelFor(p, method);
 		step.value = "agent";
 		return;
 	}
 	credMethod.value = p.hasOAuth ? "oauth" : "apikey";
 	apiKey.value = "";
-	if (p.id !== "vllm") {
+	if (!p.requiresBaseURI) {
 		baseURI.value = "";
 	}
+	dynamicModelOptions.value = [];
+	dynamicModelsValidationState.value = "idle";
+	dynamicModelsValidationMessage.value = "";
 	clearOAuthState();
 	credError.value = "";
 	agentModelInput.value = "";
@@ -591,8 +647,10 @@ watch([currentProvider, credMethod], ([p, method]) => {
 });
 
 watch(baseURI, () => {
-	if (currentProvider.value?.id === "vllm") {
-		vllmModelOptions.value = [];
+	if (currentProvider.value?.requiresBaseURI) {
+		dynamicModelOptions.value = [];
+		dynamicModelsValidationState.value = "idle";
+		dynamicModelsValidationMessage.value = "";
 	}
 });
 
@@ -603,10 +661,6 @@ watch(agentModelInput, (model) => {
 
 async function saveApiKey() {
 	if (!currentProvider.value) return;
-	if (currentProvider.value.requiresBaseURI && !baseURI.value.trim()) {
-		credError.value = "base URI is required";
-		return;
-	}
 	if (
 		!currentProvider.value.requiresBaseURI &&
 		(!apiKey.value.trim() || !currentProvider.value.apiAuthKey)
@@ -620,14 +674,14 @@ async function saveApiKey() {
 		const base = settingsStore.config
 			? (JSON.parse(JSON.stringify(settingsStore.config)) as AppConfig)
 			: emptyConfig();
-		if (currentProvider.value.id === "vllm") {
-			base.models.providers.vllm = {
-				...(base.models.providers.vllm ?? { auth: "" }),
+		if (currentProvider.value.requiresBaseURI) {
+			base.models.providers[currentProvider.value.id] = {
+				...(base.models.providers[currentProvider.value.id] ?? { auth: "" }),
 				auth:
 					apiKey.value.trim() && currentProvider.value.apiAuthKey
 						? `auth:${currentProvider.value.apiAuthKey}`
 						: "",
-				base_uri: baseURI.value.trim(),
+				base_uri: baseURI.value.trim() || undefined,
 			};
 			await settingsStore.saveConfig(base);
 			if (apiKey.value.trim() && currentProvider.value.apiAuthKey) {
@@ -636,7 +690,6 @@ async function saveApiKey() {
 					value: apiKey.value.trim(),
 				});
 			}
-			await refreshVLLMModels();
 		} else if (currentProvider.value.apiAuthKey) {
 			await callTool("auth_set", {
 				name: currentProvider.value.apiAuthKey,
