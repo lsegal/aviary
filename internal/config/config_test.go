@@ -1348,6 +1348,13 @@ func TestNormalize_PermissionsPresetClampsInaccessibleTools(t *testing.T) {
 	assert.Equal(t, []string{"task_run"}, cfg.Agents[0].Channels[0].AllowFrom[0].RestrictTools)
 }
 
+func TestIsToolAllowedByPreset_StandardAllowsAgentAndMemoryTools(t *testing.T) {
+	assert.True(t, IsToolAllowedByPreset(PermissionsPresetStandard, "agent_file_write"))
+	assert.True(t, IsToolAllowedByPreset(PermissionsPresetStandard, "memory_append"))
+	assert.False(t, IsToolAllowedByPreset(PermissionsPresetStandard, "file_write"))
+	assert.False(t, IsToolAllowedByPreset(PermissionsPresetStandard, "auth_set"))
+}
+
 func TestValidate_BrowserBinaryNotFound(t *testing.T) {
 	cfg := &Config{Browser: BrowserConfig{Binary: "/nonexistent/path/to/chrome-xyz-notreal"}}
 	issues := Validate(cfg, nil)

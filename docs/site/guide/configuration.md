@@ -68,7 +68,7 @@ Every agent has a **permissions preset** that determines its base tool surface, 
 
 | Preset | What it allows |
 | --- | --- |
-| `standard` _(default)_ | Memory, sessions, scheduler, browser, search, and skills. Blocks exec, filesystem writes, agent management, auth, and server config. |
+| `standard` _(default)_ | Memory, sessions, scheduler, browser, search, skills, and agent workspace tools. Blocks exec, filesystem writes, auth, and server config. |
 | `full` | Every available tool |
 | `minimal` | Only session and memory tools — no browser, exec, file, agent, auth, or skills |
 

@@ -78,7 +78,7 @@ func IsToolAllowedByPreset(preset PermissionsPreset, toolName string) bool {
 		}
 	case "", PermissionsPresetStandard:
 		switch group {
-		case "agent", "auth", "exec", "file", "server":
+		case "auth", "exec", "file", "server":
 			return false
 		default:
 			return true
