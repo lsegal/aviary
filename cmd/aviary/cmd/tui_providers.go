@@ -7,37 +7,45 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	authpkg "github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/config"
 )
 
 type providerOption struct {
 	name          string
+	id            string
 	apiKey        string
 	oauthKey      string
 	supportsOAuth bool
+	requiresBase  bool
 }
 
 var tuiProviders = []providerOption{
-	{name: "Anthropic", apiKey: "anthropic:default", oauthKey: "anthropic:oauth", supportsOAuth: true},
-	{name: "OpenAI", apiKey: "openai:default", oauthKey: "openai:oauth", supportsOAuth: true},
-	{name: "Gemini", apiKey: "gemini:default", oauthKey: "gemini:oauth", supportsOAuth: true},
+	{name: "Anthropic", id: "anthropic", apiKey: "anthropic:default", oauthKey: "anthropic:oauth", supportsOAuth: true},
+	{name: "OpenAI", id: "openai", apiKey: "openai:default", oauthKey: "openai:oauth", supportsOAuth: true},
+	{name: "Gemini", id: "gemini", apiKey: "gemini:default", oauthKey: "gemini:oauth", supportsOAuth: true},
+	{name: "vLLM", id: "vllm", apiKey: "vllm:default", requiresBase: true},
 }
 
 type providerMgrModel struct {
 	store     authpkg.Store
+	cfg       *config.Config
+	cfgPath   string
 	cursor    int
 	mode      string
 	method    int
 	keyInput  textinput.Model
 	codeInput textinput.Model
+	baseInput textinput.Model
 	message   string
 	err       string
 }
 
-func newProviderMgrModel(st authpkg.Store) providerMgrModel {
+func newProviderMgrModel(cfg *config.Config, cfgPath string, st authpkg.Store) providerMgrModel {
 	key := newInput("API key", "")
 	key.EchoMode = textinput.EchoPassword
 	code := newInput("Authorization code", "")
-	return providerMgrModel{store: st, keyInput: key, codeInput: code}
+	base := newInput("Base URI", "")
+	return providerMgrModel{store: st, cfg: cfg, cfgPath: cfgPath, keyInput: key, codeInput: code, baseInput: base}
 }
 
 func (m providerMgrModel) Init() tea.Cmd { return nil }
@@ -53,6 +61,8 @@ func (m providerMgrModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAPIKey(msg)
 		case "oauth":
 			return m.updateOAuth(msg)
+		case "vllm":
+			return m.updateVLLM(msg)
 		}
 	}
 	return m, nil
@@ -71,6 +81,13 @@ func (m providerMgrModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 	case "enter", " ":
+		if tuiProviders[m.cursor].requiresBase {
+			m.mode = "vllm"
+			m.baseInput.SetValue(strings.TrimSpace(m.currentBaseURI()))
+			m.keyInput.SetValue("")
+			m.baseInput.Focus()
+			return m, textinput.Blink
+		}
 		m.mode = "method"
 		m.method = 0
 	}
@@ -167,6 +184,54 @@ func (m providerMgrModel) updateOAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m providerMgrModel) updateVLLM(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.baseInput.Blur()
+		m.keyInput.Blur()
+		m.mode = ""
+	case "tab", "shift+tab":
+		if m.baseInput.Focused() {
+			m.baseInput.Blur()
+			m.keyInput.Focus()
+		} else {
+			m.keyInput.Blur()
+			m.baseInput.Focus()
+		}
+		return m, nil
+	case "enter":
+		baseURI := strings.TrimSpace(m.baseInput.Value())
+		if baseURI == "" {
+			m.err = "Base URI cannot be empty"
+			return m, nil
+		}
+		if err := m.saveProviderBaseURI("vllm", baseURI); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if apiKey := strings.TrimSpace(m.keyInput.Value()); apiKey != "" {
+			if err := m.store.Set(tuiProviders[m.cursor].apiKey, apiKey); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+		}
+		m.err = ""
+		m.message = "vLLM endpoint saved."
+		m.mode = ""
+		return m, nil
+	}
+	if m.baseInput.Focused() {
+		var cmd tea.Cmd
+		m.baseInput, cmd = m.baseInput.Update(msg)
+		return m, cmd
+	}
+	var cmd tea.Cmd
+	m.keyInput, cmd = m.keyInput.Update(msg)
+	return m, cmd
+}
+
 func (m providerMgrModel) View() string {
 	var b strings.Builder
 	b.WriteString(tuiTitleStyle.Render("Provider Authentication"))
@@ -177,7 +242,12 @@ func (m providerMgrModel) View() string {
 	case "":
 		for i, p := range tuiProviders {
 			state := "not connected"
-			if _, err := m.store.Get(p.oauthKey); err == nil {
+			if p.requiresBase && strings.TrimSpace(m.currentBaseURI()) != "" {
+				state = "endpoint"
+				if _, err := m.store.Get(p.apiKey); err == nil {
+					state = "endpoint + api key"
+				}
+			} else if _, err := m.store.Get(p.oauthKey); err == nil {
 				state = "oauth"
 			} else if _, err := m.store.Get(p.apiKey); err == nil {
 				state = "api key"
@@ -214,6 +284,14 @@ func (m providerMgrModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.codeInput.View())
 		b.WriteString("\n\n" + tuiHelpStyle.Render("Enter save · Esc back"))
+	case "vllm":
+		b.WriteString(tuiLabelStyle.Render("Configure vLLM") + "\n")
+		b.WriteString(tuiDimStyle.Render("Set the OpenAI-compatible base URI. API key is optional."))
+		b.WriteString("\n\n")
+		b.WriteString(m.baseInput.View())
+		b.WriteString("\n\n")
+		b.WriteString(m.keyInput.View())
+		b.WriteString("\n\n" + tuiHelpStyle.Render("Tab switch field · Enter save · Esc back"))
 	}
 	if m.message != "" {
 		b.WriteString("\n" + tuiSuccessStyle.Render(m.message))
@@ -225,8 +303,37 @@ func (m providerMgrModel) View() string {
 }
 
 func runProviderMgr(st authpkg.Store) error {
-	_, err := tea.NewProgram(newProviderMgrModel(st), tea.WithAltScreen()).Run()
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		d := config.Default()
+		cfg = &d
+	}
+	_, err = tea.NewProgram(newProviderMgrModel(cfg, cfgFile, st), tea.WithAltScreen()).Run()
 	return err
+}
+
+func (m providerMgrModel) currentBaseURI() string {
+	if m.cfg == nil || m.cfg.Models.Providers == nil {
+		return ""
+	}
+	return m.cfg.Models.Providers["vllm"].BaseURI
+}
+
+func (m providerMgrModel) saveProviderBaseURI(provider, baseURI string) error {
+	if m.cfg == nil {
+		d := config.Default()
+		m.cfg = &d
+	}
+	if m.cfg.Models.Providers == nil {
+		m.cfg.Models.Providers = map[string]config.ProviderConfig{}
+	}
+	pc := m.cfg.Models.Providers[provider]
+	pc.BaseURI = strings.TrimSpace(baseURI)
+	if provider == "vllm" && strings.TrimSpace(pc.Auth) == "" {
+		pc.Auth = "auth:vllm:default"
+	}
+	m.cfg.Models.Providers[provider] = pc
+	return config.Save(m.cfgPath, m.cfg)
 }
 
 func fmtPadRight(v string, width int) string {

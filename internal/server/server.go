@@ -55,24 +55,36 @@ type Server struct {
 
 // New creates a new Server with the given config and auth token.
 func New(cfg *config.Config, token string) *Server {
+	s := &Server{
+		cfg:               cfg,
+		token:             token,
+		mux:               http.NewServeMux(),
+		listenerRestartCh: make(chan struct{}, 1),
+		hardRestartCh:     make(chan struct{}, 1),
+		upgradeCh:         make(chan struct{}, 1),
+	}
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
 	authStore, _ := auth.NewFileStore(authPath)
 
 	authResolver := makeAuthResolver()
-	factory := llm.NewFactory(authResolver)
+	factory := llm.NewFactory(authResolver).WithProviderOptionsResolver(func(provider string) (llm.ProviderOptions, bool) {
+		if s.cfg == nil || s.cfg.Models.Providers == nil {
+			return llm.ProviderOptions{}, false
+		}
+		pc, ok := s.cfg.Models.Providers[strings.TrimSpace(provider)]
+		if !ok {
+			return llm.ProviderOptions{}, false
+		}
+		return llm.ProviderOptions{
+			Auth:    pc.Auth,
+			BaseURI: pc.BaseURI,
+		}, true
+	})
 	if authStore != nil {
 		factory.WithTokenSetter(authStore.Set)
 	}
-	s := &Server{
-		cfg:               cfg,
-		token:             token,
-		mux:               http.NewServeMux(),
-		agents:            agent.NewManager(factory),
-		listenerRestartCh: make(chan struct{}, 1),
-		hardRestartCh:     make(chan struct{}, 1),
-		upgradeCh:         make(chan struct{}, 1),
-	}
+	s.agents = agent.NewManager(factory)
 
 	// Initial reconcile from loaded config.
 	s.agents.Reconcile(cfg)

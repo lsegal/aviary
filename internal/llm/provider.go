@@ -12,6 +12,12 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 )
 
+// ProviderOptions carries provider-specific configuration loaded from config.
+type ProviderOptions struct {
+	Auth    string
+	BaseURI string
+}
+
 // Role identifies who authored a message.
 type Role string
 
@@ -106,8 +112,9 @@ type Provider interface {
 
 // Factory creates a Provider from a model string of the form "<provider>/<name>".
 type Factory struct {
-	authResolver func(ref string) (string, error)
-	tokenSetter  func(key, value string) error // optional: persists refreshed tokens
+	authResolver          func(ref string) (string, error)
+	providerOptionsLookup func(provider string) (ProviderOptions, bool)
+	tokenSetter           func(key, value string) error // optional: persists refreshed tokens
 }
 
 // NewFactory creates a Factory. authResolver resolves "auth:<x>:<y>" references.
@@ -119,6 +126,13 @@ func NewFactory(authResolver func(string) (string, error)) *Factory {
 // key is the bare credential key without the "auth:" prefix (e.g. "anthropic:oauth").
 func (f *Factory) WithTokenSetter(setter func(key, value string) error) *Factory {
 	f.tokenSetter = setter
+	return f
+}
+
+// WithProviderOptionsResolver sets a callback that returns provider-specific
+// config for a provider name such as "vllm".
+func (f *Factory) WithProviderOptionsResolver(lookup func(provider string) (ProviderOptions, bool)) *Factory {
+	f.providerOptionsLookup = lookup
 	return f
 }
 
@@ -265,6 +279,17 @@ func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 		}
 		return nil, fmt.Errorf("gemini-code-assist: missing Google (Gemini) OAuth token; run 'aviary auth login gemini'")
 
+	case "vllm":
+		opts, _ := f.providerOptions("vllm")
+		if strings.TrimSpace(opts.BaseURI) == "" {
+			return nil, fmt.Errorf("vllm: missing models.providers.vllm.base_uri")
+		}
+		apiKey, err := f.resolveOptionalAuth(opts.Auth)
+		if err != nil {
+			return nil, fmt.Errorf("vllm auth: %w", err)
+		}
+		return NewVLLMProvider(apiKey, name, opts.BaseURI), nil
+
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)
 	}
@@ -313,4 +338,22 @@ func (f *Factory) resolveAuth(ref string) (string, error) {
 		return "", nil
 	}
 	return f.authResolver(ref)
+}
+
+func (f *Factory) providerOptions(provider string) (ProviderOptions, bool) {
+	if f.providerOptionsLookup == nil {
+		return ProviderOptions{}, false
+	}
+	return f.providerOptionsLookup(strings.TrimSpace(provider))
+}
+
+func (f *Factory) resolveOptionalAuth(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "auth:") {
+		return f.resolveAuth(value)
+	}
+	return value, nil
 }

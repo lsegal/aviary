@@ -897,6 +897,34 @@ func TestValidate_UnknownProvider(t *testing.T) {
 
 }
 
+func TestValidate_VLLMRequiresBaseURI(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "vllm/qwen2.5-coder",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "vllm models require"))
+}
+
+func TestValidate_VLLMAcceptsConfiguredBaseURI(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "vllm/qwen2.5-coder",
+		}},
+		Models: ModelsConfig{
+			Providers: map[string]ProviderConfig{
+				"vllm": {BaseURI: "http://127.0.0.1:8000"},
+			},
+		},
+	}
+	issues := Validate(cfg, nil)
+	assert.False(t, hasIssue(issues, "vllm models require"))
+	assert.False(t, hasIssue(issues, "unknown provider"))
+}
+
 func TestValidate_InvalidModel(t *testing.T) {
 	// Model without slash is invalid.
 	cfg := &Config{

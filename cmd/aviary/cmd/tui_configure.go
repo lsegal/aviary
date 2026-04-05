@@ -174,7 +174,11 @@ func configureProvidersSummary(st authpkg.Store) string {
 			connected++
 		}
 	}
-	total := 3
+	cfg, err := config.Load(cfgFile)
+	if err == nil && strings.TrimSpace(cfg.Models.Providers["vllm"].BaseURI) != "" {
+		connected++
+	}
+	total := 4
 	if connected > total {
 		connected = total
 	}

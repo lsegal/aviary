@@ -232,7 +232,8 @@
 						"type": "object",
 						"additionalProperties": false,
 						"properties": {
-							"auth": { "type": "string" }
+							"auth": { "type": "string" },
+							"base_uri": { "type": "string" }
 						}
 					}
 				},

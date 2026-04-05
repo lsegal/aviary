@@ -281,7 +281,8 @@ type ModelsConfig struct {
 
 // ProviderConfig holds auth for a model provider.
 type ProviderConfig struct {
-	Auth string `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Auth    string `yaml:"auth,omitempty" json:"auth,omitempty"`
+	BaseURI string `yaml:"base_uri,omitempty" json:"base_uri,omitempty"`
 }
 
 // ModelDefaults holds default model settings.

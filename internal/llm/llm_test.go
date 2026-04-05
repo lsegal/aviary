@@ -56,6 +56,7 @@ func TestFactoryForModel(t *testing.T) {
 		{model: "openai/gpt-4o", wantErr: false},
 		{model: "openai-codex/gpt-5.2", wantErr: false},
 		{model: "google-gemini/gemini-2.0-flash", wantErr: false},
+		{model: "vllm/qwen2.5-coder", wantErr: true},
 		{model: "invalid", wantErr: true},
 		{model: "unknown/model", wantErr: true},
 	}
@@ -73,6 +74,20 @@ func TestFactoryForModel(t *testing.T) {
 
 		})
 	}
+}
+
+func TestFactoryForModel_VLLM(t *testing.T) {
+	f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
+		if provider != "vllm" {
+			return ProviderOptions{}, false
+		}
+		return ProviderOptions{BaseURI: "http://127.0.0.1:8000"}, true
+	})
+
+	p, err := f.ForModel("vllm/qwen2.5-coder")
+	assert.NoError(t, err)
+	_, ok := p.(*VLLMProvider)
+	assert.True(t, ok)
 }
 
 func TestFactoryResolverError(t *testing.T) {
@@ -958,6 +973,44 @@ func TestNewOpenAIProvider_EmptyKey(t *testing.T) {
 	p := NewOpenAIProvider("", "gpt-4o", "")
 	assert.NotNil(t, p)
 
+}
+
+func TestNormalizeVLLMBaseURI(t *testing.T) {
+	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000"))
+	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/"))
+	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/v1"))
+}
+
+func TestVLLMProvider_ListModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/models", r.URL.Path)
+		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"qwen2.5-coder"},{"id":"llama-3.1-8b"}]}`)
+	}))
+	defer srv.Close()
+
+	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
+	models, err := p.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"qwen2.5-coder", "llama-3.1-8b"}, models)
+}
+
+func TestVLLMProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+		openAISSEResponse(w, "Hello from vllm")
+	}))
+	defer srv.Close()
+
+	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
+	ch, err := p.Stream(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+	})
+	require.NoError(t, err)
+
+	events := collectEvents(t, ch)
+	assert.NotEmpty(t, events)
 }
 
 // ---------------------------------------------------------------------------

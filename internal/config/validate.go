@@ -33,6 +33,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v := &validator{
 		authGet:     authGet,
 		checkedAuth: map[string]bool{},
+		models:      cfg.Models,
 	}
 	v.checkServer(cfg.Server)
 	v.checkAgents(cfg.Agents, cfg.Models)
@@ -46,6 +47,7 @@ type validator struct {
 	issues      []Issue
 	authGet     func(string) (string, error)
 	checkedAuth map[string]bool // tracks auth keys already reported to avoid duplicate errors
+	models      ModelsConfig
 }
 
 func (v *validator) errorf(field, format string, args ...any) {
@@ -254,12 +256,17 @@ func (v *validator) checkModel(field, model string) {
 	case "github-copilot":
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
+	case "vllm":
+		pc, ok := v.models.Providers["vllm"]
+		if !ok || strings.TrimSpace(pc.BaseURI) == "" {
+			v.errorf(field, "vllm models require models.providers.vllm.base_uri to be configured")
+		}
 	case "stdio":
 		if _, err := exec.LookPath(name); err != nil {
 			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
 		}
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, or stdio", provider, model)
 	}
 }
 

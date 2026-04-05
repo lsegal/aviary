@@ -27,6 +27,7 @@ import (
 	"github.com/lsegal/aviary/internal/cronutil"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/models"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -2761,6 +2762,12 @@ func registerServerTools(s *sdkmcp.Server) {
 		Config string `json:"config"`
 	}
 
+	type modelsListArgs struct {
+		Provider string `json:"provider,omitempty"`
+		BaseURI  string `json:"base_uri,omitempty"`
+		Auth     string `json:"auth,omitempty"`
+	}
+
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_save",
 		Description: "Save an updated server configuration (full JSON-encoded config object)",
@@ -2872,6 +2879,61 @@ func registerServerTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return text("config saved")
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "models_list",
+		Description: "List available models for a provider. Uses the built-in catalog for standard providers and introspects a vLLM OpenAI-compatible endpoint for provider=vllm.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args modelsListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		provider := strings.TrimSpace(args.Provider)
+		if provider == "" {
+			return jsonResult(models.List())
+		}
+		if provider != "vllm" {
+			if !models.HasProvider(provider) {
+				return nil, struct{}{}, fmt.Errorf("unknown provider %q", provider)
+			}
+			return jsonResult(models.FilterByProvider(provider))
+		}
+
+		cfg, err := config.Load("")
+		if err != nil {
+			cfg = &config.Config{}
+		}
+		vllmCfg := cfg.Models.Providers["vllm"]
+		baseURI := strings.TrimSpace(args.BaseURI)
+		if baseURI == "" {
+			baseURI = strings.TrimSpace(vllmCfg.BaseURI)
+		}
+		if baseURI == "" {
+			return nil, struct{}{}, fmt.Errorf("vllm requires base_uri")
+		}
+
+		authValue := strings.TrimSpace(args.Auth)
+		if authValue == "" {
+			authValue = strings.TrimSpace(vllmCfg.Auth)
+		}
+		if strings.HasPrefix(authValue, "auth:") {
+			st, err := authStore()
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			authValue, err = auth.Resolve(st, authValue)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+		}
+
+		p := llm.NewVLLMProvider(authValue, "", baseURI)
+		list, err := p.ListModels(ctx)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		out := make([]string, 0, len(list))
+		for _, id := range list {
+			out = append(out, "vllm/"+id)
+		}
+		return jsonResult(out)
 	})
 
 	type configTaskRenameArgs struct {

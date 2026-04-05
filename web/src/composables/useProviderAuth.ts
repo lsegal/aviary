@@ -16,6 +16,8 @@ export interface KnownProvider {
 	defaultProviders?: string[];
 	oauthProviders?: string[];
 	authKeys?: string[];
+	requiresBaseURI?: boolean;
+	baseURIPlaceholder?: string;
 }
 
 export const KNOWN_PROVIDERS: KnownProvider[] = [
@@ -76,6 +78,22 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		defaultProviders: ["google-gemini", "google"],
 		oauthProviders: ["google-gemini", "google"],
 		authKeys: ["gemini:oauth", "gemini:default"],
+	},
+	{
+		id: "vllm",
+		label: "vLLM",
+		authId: "vllm",
+		hasOAuth: false,
+		hasApiKey: true,
+		emoji: "🛠️",
+		description: "Self-hosted OpenAI-compatible inference via vLLM",
+		keyPlaceholder: "Bearer token (optional)",
+		keyHelp: "Leave empty if your vLLM server does not require authentication.",
+		apiAuthKey: "vllm:default",
+		defaultProviders: ["vllm"],
+		authKeys: ["vllm:default"],
+		requiresBaseURI: true,
+		baseURIPlaceholder: "http://127.0.0.1:8000",
 	},
 	{
 		id: "github-copilot",

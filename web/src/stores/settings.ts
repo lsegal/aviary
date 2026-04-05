@@ -89,6 +89,7 @@ export interface AgentTask {
 
 export interface ProviderConfig {
 	auth: string;
+	base_uri?: string;
 }
 
 export interface ModelDefaults {
