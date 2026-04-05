@@ -176,8 +176,21 @@
 							</div>
 							<div class="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
 								<p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">One-time code to enter on GitHub</p>
-								<div class="mt-2 flex items-center justify-center rounded-md bg-white py-2 dark:bg-gray-900">
-									<span class="font-mono text-lg font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
+								<div class="mt-2 flex items-center gap-2">
+									<input
+										:value="copilotUserCode"
+										readonly
+										type="text"
+										class="field-input flex-1 bg-white py-2 text-center font-mono text-lg font-bold tracking-widest text-gray-900 dark:bg-gray-900 dark:text-white"
+										@click="selectCode"
+									/>
+									<button
+										type="button"
+										class="rounded-md border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+										@click="copyCode"
+									>
+										{{ copyLabel }}
+									</button>
 								</div>
 							</div>
 							<button type="button"
@@ -265,7 +278,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, inject } from "vue";
+import { computed, defineComponent, inject, ref } from "vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -275,7 +288,46 @@ export default defineComponent({
 		if (!settings) {
 			throw new Error("Settings view context is not available.");
 		}
-		return settings;
+		const copiedCode = ref(false);
+
+		async function copyText(text: string) {
+			if (!text) return;
+			try {
+				await navigator.clipboard.writeText(text);
+				return;
+			} catch {
+				const input = document.createElement("input");
+				input.value = text;
+				input.setAttribute("readonly", "true");
+				input.style.position = "absolute";
+				input.style.left = "-9999px";
+				document.body.appendChild(input);
+				input.select();
+				document.execCommand("copy");
+				document.body.removeChild(input);
+			}
+		}
+
+		async function copyCode() {
+			await copyText(settings.copilotUserCode);
+			copiedCode.value = true;
+			window.setTimeout(() => {
+				copiedCode.value = false;
+			}, 1500);
+		}
+
+		function selectCode(event: Event) {
+			(event.target as HTMLInputElement | null)?.select();
+		}
+
+		const copyLabel = computed(() => (copiedCode.value ? "Copied" : "Copy"));
+
+		return {
+			...settings,
+			copyCode,
+			copyLabel,
+			selectCode,
+		};
 	},
 });
 </script>

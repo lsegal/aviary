@@ -3376,6 +3376,8 @@ const settingsContext = proxyRefs({
 	channelToolResolution,
 	compileToastVisible,
 	completeAnthropic,
+	copilotUserCode,
+	copilotVerifyUrl,
 	completeGemini,
 	completeOpenAI,
 	completeCopilot,
@@ -3525,6 +3527,7 @@ const settingsContext = proxyRefs({
 	secretModalTitle,
 	secretModalValueLabel,
 	secretModalValuePlaceholder,
+	startCopilot,
 });
 
 provide(settingsViewContextKey, settingsContext);

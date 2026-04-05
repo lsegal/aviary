@@ -250,9 +250,21 @@
 									</a>
 								</div>
 								<div
-									class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 py-4 dark:border-gray-700 dark:bg-gray-800">
-									<span
-										class="font-mono text-2xl font-bold tracking-widest text-gray-900 dark:text-white">{{ copilotUserCode }}</span>
+									class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+									<input
+										:value="copilotUserCode"
+										readonly
+										type="text"
+										class="field-input flex-1 bg-white py-2 text-center font-mono text-2xl font-bold tracking-widest text-gray-900 dark:bg-gray-900 dark:text-white"
+										@click="selectCopilotCode"
+									/>
+									<button
+										type="button"
+										class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+										@click="copyCopilotCode"
+									>
+										{{ copilotCopyLabel }}
+									</button>
 								</div>
 								<button type="button" :disabled="credSaving"
 									class="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40 dark:bg-gray-700 dark:hover:bg-gray-600"
@@ -522,6 +534,41 @@ const dynamicModelsValidationMessage = ref("");
 const agentSaving = ref(false);
 const agentError = ref("");
 const storedKeys = ref<string[]>([]);
+const copiedCopilotCode = ref(false);
+
+const copilotCopyLabel = computed(() =>
+	copiedCopilotCode.value ? "Copied" : "Copy",
+);
+
+async function copyText(text: string) {
+	if (!text) return;
+	try {
+		await navigator.clipboard.writeText(text);
+		return;
+	} catch {
+		const input = document.createElement("input");
+		input.value = text;
+		input.setAttribute("readonly", "true");
+		input.style.position = "absolute";
+		input.style.left = "-9999px";
+		document.body.appendChild(input);
+		input.select();
+		document.execCommand("copy");
+		document.body.removeChild(input);
+	}
+}
+
+async function copyCopilotCode() {
+	await copyText(copilotUserCode.value);
+	copiedCopilotCode.value = true;
+	window.setTimeout(() => {
+		copiedCopilotCode.value = false;
+	}, 1500);
+}
+
+function selectCopilotCode(event: Event) {
+	(event.target as HTMLInputElement | null)?.select();
+}
 
 function formatCountdown(seconds: number | null): string {
 	if (seconds == null) return "";
