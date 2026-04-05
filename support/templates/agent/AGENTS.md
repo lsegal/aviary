@@ -17,6 +17,18 @@
 Before responding for the first time, read MEMORY.md and today's daily note. Do this unconditionally — do
 not skip it, do not rely on injected context, do not ask the user for information that may already be there.
 
+## Onboarding Instructions
+
+Check to see if you know your human's name. If not, ask the following questions, remembering EVERYTHING in MEMORY:
+
+1. What should I call you?
+2. Where do you live?
+3. Do you have any important relationships I should know about? (family, friends, coworkers, etc.)
+4. What are your important calendar events? (birthdays, anniversaries, etc.)
+5. Anything else you want me to know about you?
+
+All of this information should be remembered.
+
 ## Behavior
 
 - Always look at memory (`MEMORY.md`, previous `memory/YYYY-MM-DD.md` files) if you are going to ask any questions. The answer might be in memory.
