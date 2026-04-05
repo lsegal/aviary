@@ -278,16 +278,71 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, inject, ref } from "vue";
+import { computed, defineComponent, inject, ref, toRefs } from "vue";
 import { settingsViewContextKey } from "./context";
+
+interface ConfiguredProviderEntry {
+	key: string;
+	provider: string;
+	providerLabel: string;
+	authType: "oauth" | "endpoint" | "apikey";
+	baseURI?: string;
+	hasAPIKey?: boolean;
+}
+
+interface AvailableProviderOption {
+	key: string;
+	label: string;
+}
+
+interface SettingsProvidersContext {
+	activeTab: string;
+	configuredProviders: ConfiguredProviderEntry[];
+	oauthBusy: boolean;
+	reauthorizeProvider: (provider: string) => unknown;
+	providerAddSelection: string;
+	deleteProviderConnection: (provider: string) => unknown;
+	deleteProviderCredential: (key: string) => unknown;
+	availableProviderOptions: AvailableProviderOption[];
+	providerBaseURIValue: string;
+	providerApiKeyValue: string;
+	addProviderEndpoint: () => unknown;
+	addProviderApiKey: () => unknown;
+	addProviderOAuth: () => unknown;
+	anthropicUrl: string;
+	anthropicCode: string;
+	completeAnthropic: () => unknown;
+	openAIUrl: string;
+	openAICallbackUrl: string;
+	openAITimedOut: boolean;
+	openAIRemainingSeconds: number | null;
+	formatCountdown: (seconds: number | null) => string;
+	completeOpenAI: () => unknown;
+	geminiUrl: string;
+	geminiCallbackUrl: string;
+	geminiTimedOut: boolean;
+	geminiRemainingSeconds: number | null;
+	completeGemini: () => unknown;
+	copilotUserCode: string;
+	copilotVerifyUrl: string;
+	completeCopilot: () => unknown;
+	secretName: string;
+	secretValue: string;
+	addSecret: () => unknown;
+	extraSecrets: string[];
+	deleteSecret: (name: string) => unknown;
+	refreshCredentials: () => unknown;
+}
 
 export default defineComponent({
 	name: "SettingsProvidersTab",
 	setup() {
-		const settings = inject(settingsViewContextKey);
+		const settings = inject<SettingsProvidersContext>(settingsViewContextKey);
 		if (!settings) {
 			throw new Error("Settings view context is not available.");
 		}
+		const resolvedSettings = settings;
+		const context = toRefs(resolvedSettings);
 		const copiedCode = ref(false);
 
 		async function copyText(text: string) {
@@ -309,7 +364,7 @@ export default defineComponent({
 		}
 
 		async function copyCode() {
-			await copyText(settings.copilotUserCode);
+			await copyText(resolvedSettings.copilotUserCode);
 			copiedCode.value = true;
 			window.setTimeout(() => {
 				copiedCode.value = false;
@@ -322,12 +377,13 @@ export default defineComponent({
 
 		const copyLabel = computed(() => (copiedCode.value ? "Copied" : "Copy"));
 
-		return {
-			...settings,
+		const exposed = {
+			...context,
 			copyCode,
 			copyLabel,
 			selectCode,
 		};
+		return exposed;
 	},
 });
 </script>
