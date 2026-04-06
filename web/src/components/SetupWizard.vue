@@ -503,8 +503,8 @@ const currentProviderModelOptions = computed(() => {
 	return options.length
 		? options
 		: [provider.defaultModel, provider.oauthModel].filter(
-				(model): model is string => Boolean(model),
-			);
+			(model): model is string => Boolean(model),
+		);
 });
 const fallbackModelOptions = computed(() =>
 	currentProviderModelOptions.value.filter(
