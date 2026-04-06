@@ -12,6 +12,11 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
+			path: "/onboarding",
+			component: () => import("../views/OverviewView.vue"),
+			meta: { requiresAuth: true, forceOnboarding: true },
+		},
+		{
 			path: "/chat/:agent?/:sessionId?",
 			component: () => import("../views/ChatView.vue"),
 			meta: { requiresAuth: true },

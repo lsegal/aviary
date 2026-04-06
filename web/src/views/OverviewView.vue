@@ -214,20 +214,22 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import SetupWizard from "../components/SetupWizard.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useOverviewStore } from "../stores/overview";
 
 const store = useOverviewStore();
+const route = useRoute();
 onMounted(() => store.fetchAll());
 
 const dismissed = ref(false);
+const forceOnboarding = computed(() => route.path === "/onboarding");
 const showWizard = computed(
 	() =>
 		store.fetched &&
-		!store.error &&
-		store.agents.length === 0 &&
+		(forceOnboarding.value || (!store.error && store.agents.length === 0)) &&
 		!dismissed.value,
 );
 
