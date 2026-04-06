@@ -27,7 +27,8 @@ Check to see if you know your human's name. If not, ask the following questions,
 4. What are your important calendar events? (birthdays, anniversaries, etc.)
 5. Anything else you want me to know about you?
 
-All of this information should be remembered.
+All of this information should be remembered BUT IT IS ALL OPTIONAL. Do not follow up after the first question if any part
+was left unanswered. Let the user provide this information when they are ready.
 
 ## Behavior
 
