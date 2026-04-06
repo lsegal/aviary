@@ -163,7 +163,8 @@
 									class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left dark:border-gray-700 dark:bg-gray-800">
 									<p class="text-xs font-medium text-gray-700 dark:text-gray-300">Callback URL</p>
 									<p class="mt-1 break-all font-mono text-[11px] text-gray-700 dark:text-gray-300">
-										{{ openAICallbackUrl }}</p>
+										{{ openAICallbackUrl }}
+									</p>
 								</div>
 								<p
 									:class="openAITimedOut ? 'text-xs font-medium text-red-600 dark:text-red-400' : 'text-xs text-gray-500 dark:text-gray-400'">
@@ -206,7 +207,8 @@
 									class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left dark:border-gray-700 dark:bg-gray-800">
 									<p class="text-xs font-medium text-gray-700 dark:text-gray-300">Callback URL</p>
 									<p class="mt-1 break-all font-mono text-[11px] text-gray-700 dark:text-gray-300">
-										{{ geminiCallbackUrl }}</p>
+										{{ geminiCallbackUrl }}
+									</p>
 								</div>
 								<p
 									:class="geminiTimedOut ? 'text-xs font-medium text-red-600 dark:text-red-400' : 'text-xs text-gray-500 dark:text-gray-400'">
@@ -251,18 +253,12 @@
 								</div>
 								<div
 									class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-									<input
-										:value="copilotUserCode"
-										readonly
-										type="text"
+									<input :value="copilotUserCode" readonly type="text"
 										class="field-input flex-1 bg-white py-2 text-center font-mono text-2xl font-bold tracking-widest text-gray-900 dark:bg-gray-900 dark:text-white"
-										@click="selectCopilotCode"
-									/>
-									<button
-										type="button"
+										@click="selectCopilotCode" />
+									<button type="button"
 										class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-										@click="copyCopilotCode"
-									>
+										@click="copyCopilotCode">
 										{{ copilotCopyLabel }}
 									</button>
 								</div>
@@ -277,9 +273,11 @@
 
 					<div v-else class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 						<div v-if="currentProvider?.requiresBaseURI" class="mb-4">
-							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Base URI (optional)</label>
+							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Base URI
+								(optional)</label>
 							<div class="relative">
-								<input v-model="baseURI" type="text" autocomplete="off" :placeholder="currentProvider?.baseURIPlaceholder"
+								<input v-model="baseURI" type="text" autocomplete="off"
+									:placeholder="currentProvider?.baseURIPlaceholder"
 									class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
 									@blur="testDynamicProvider" @keyup.enter="saveApiKey" />
 								<button type="button"
@@ -288,8 +286,7 @@
 									:disabled="dynamicModelsLoading" @click="testDynamicProvider">
 									<svg v-if="dynamicModelsLoading" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
 										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-										<path class="opacity-75" fill="currentColor"
-											d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
 									</svg>
 									<svg v-else class="h-4 w-4"
 										:class="dynamicModelsValidationState === 'success' ? 'text-green-600 dark:text-green-400' : dynamicModelsValidationState === 'error' ? 'text-red-600 dark:text-red-400' : ''"
@@ -298,20 +295,21 @@
 									</svg>
 								</button>
 							</div>
-						<p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-							Point this at your {{ currentProvider?.label }} host and port if you're not using the local default. Aviary will use its OpenAI-compatible API and append <code
-								class="font-mono">/v1</code> automatically when needed.
+							<p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+								Point this at your {{ currentProvider?.label }} host and port if you're not using the local default.
+								Aviary will
+								use its OpenAI-compatible API and append <code class="font-mono">/v1</code> automatically when needed.
 							</p>
-						<p v-if="dynamicModelsValidationMessage" :class="[
-							'mt-2 text-xs',
-							dynamicModelsValidationState === 'error'
-								? 'text-red-600 dark:text-red-400'
-								: dynamicModelsValidationState === 'success'
-									? 'text-green-600 dark:text-green-400'
-									: 'text-gray-400 dark:text-gray-500',
-						]">
-							{{ dynamicModelsValidationMessage }}
-						</p>
+							<p v-if="dynamicModelsValidationMessage" :class="[
+								'mt-2 text-xs',
+								dynamicModelsValidationState === 'error'
+									? 'text-red-600 dark:text-red-400'
+									: dynamicModelsValidationState === 'success'
+										? 'text-green-600 dark:text-green-400'
+										: 'text-gray-400 dark:text-gray-500',
+							]">
+								{{ dynamicModelsValidationMessage }}
+							</p>
 						</div>
 						<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">API Key</label>
 						<input v-model="apiKey" type="password" autocomplete="off" :placeholder="currentProvider?.keyPlaceholder"
@@ -505,8 +503,8 @@ const currentProviderModelOptions = computed(() => {
 	return options.length
 		? options
 		: [provider.defaultModel, provider.oauthModel].filter(
-				(model): model is string => Boolean(model),
-			);
+			(model): model is string => Boolean(model),
+		);
 });
 const fallbackModelOptions = computed(() =>
 	currentProviderModelOptions.value.filter(
