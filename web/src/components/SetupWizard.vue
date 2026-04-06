@@ -606,6 +606,17 @@ function defaultModelFor(p: Provider, method: "oauth" | "apikey"): string {
 		: (p.defaultModel ?? "");
 }
 
+function resolvedProviderBaseURI(p: Provider): string | undefined {
+	const trimmed = baseURI.value.trim();
+	if (trimmed) {
+		return trimmed;
+	}
+	if (!p.requiresBaseURI) {
+		return undefined;
+	}
+	return p.baseURIPlaceholder?.trim() || undefined;
+}
+
 async function loadDynamicProviderConfig() {
 	try {
 		await settingsStore.fetchConfig();
@@ -613,6 +624,7 @@ async function loadDynamicProviderConfig() {
 		if (!providerID) return;
 		baseURI.value =
 			settingsStore.config?.models.providers?.[providerID]?.base_uri?.trim() ??
+			currentProvider.value?.baseURIPlaceholder ??
 			"";
 		if (currentProvider.value?.requiresBaseURI) {
 			await refreshDynamicModels(true);
@@ -629,9 +641,10 @@ async function refreshDynamicModels(updateValidationMessage = true) {
 		dynamicModelsValidationMessage.value = "";
 	}
 	try {
+		const providerBaseURI = resolvedProviderBaseURI(currentProvider.value);
 		const raw = await callTool("models_list", {
 			provider: currentProvider.value.id,
-			base_uri: baseURI.value.trim() || undefined,
+			base_uri: providerBaseURI,
 			auth: apiKey.value.trim() || undefined,
 		});
 		dynamicModelOptions.value = (JSON.parse(raw) as string[]) ?? [];
@@ -722,13 +735,14 @@ async function saveApiKey() {
 			? (JSON.parse(JSON.stringify(settingsStore.config)) as AppConfig)
 			: emptyConfig();
 		if (currentProvider.value.requiresBaseURI) {
+			const providerBaseURI = resolvedProviderBaseURI(currentProvider.value);
 			base.models.providers[currentProvider.value.id] = {
 				...(base.models.providers[currentProvider.value.id] ?? { auth: "" }),
 				auth:
 					apiKey.value.trim() && currentProvider.value.apiAuthKey
 						? `auth:${currentProvider.value.apiAuthKey}`
 						: "",
-				base_uri: baseURI.value.trim() || undefined,
+				base_uri: providerBaseURI,
 			};
 			await settingsStore.saveConfig(base);
 			if (apiKey.value.trim() && currentProvider.value.apiAuthKey) {
