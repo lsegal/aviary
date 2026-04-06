@@ -228,83 +228,83 @@ onMounted(() => store.fetchAll());
 const dismissed = ref(false);
 const forceOnboarding = computed(() => route.path === "/onboarding");
 const showWizard = computed(
-  () =>
-    store.fetched &&
-    (forceOnboarding.value || (!store.error && store.agents.length === 0)) &&
-    !dismissed.value,
+	() =>
+		store.fetched &&
+		(forceOnboarding.value || (!store.error && store.agents.length === 0)) &&
+		!dismissed.value,
 );
 
 // --- Agents ---
 const agentStateCounts = computed(() => {
-  const counts: Record<string, number> = {};
-  for (const a of store.agents) {
-    counts[a.state] = (counts[a.state] ?? 0) + 1;
-  }
-  return counts;
+	const counts: Record<string, number> = {};
+	for (const a of store.agents) {
+		counts[a.state] = (counts[a.state] ?? 0) + 1;
+	}
+	return counts;
 });
 
 function agentStateBadge(state: string) {
-  if (state === "idle")
-    return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
-  if (state === "running")
-    return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
-  return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+	if (state === "idle")
+		return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
+	if (state === "running")
+		return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
+	return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
 }
 
 // --- Jobs ---
 const inProgressJobs = computed(
-  () => store.jobs.filter((j) => j.status === "in_progress").length,
+	() => store.jobs.filter((j) => j.status === "in_progress").length,
 );
 const failedJobs = computed(
-  () => store.jobs.filter((j) => j.status === "failed").length,
+	() => store.jobs.filter((j) => j.status === "failed").length,
 );
 
 // --- Doctor ---
 const errorCount = computed(
-  () => store.issues.filter((i) => i.level === "ERROR").length,
+	() => store.issues.filter((i) => i.level === "ERROR").length,
 );
 const warnCount = computed(
-  () => store.issues.filter((i) => i.level === "WARN").length,
+	() => store.issues.filter((i) => i.level === "WARN").length,
 );
 
 const healthLabel = computed(() => {
-  if (errorCount.value > 0) return "Errors";
-  if (warnCount.value > 0) return "Warnings";
-  return "Healthy";
+	if (errorCount.value > 0) return "Errors";
+	if (warnCount.value > 0) return "Warnings";
+	return "Healthy";
 });
 
 const healthCardClass = computed(() => {
-  if (errorCount.value > 0)
-    return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
-  if (warnCount.value > 0)
-    return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
-  return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+	if (errorCount.value > 0)
+		return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
+	if (warnCount.value > 0)
+		return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
+	return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
 });
 
 const healthLabelClass = computed(() => {
-  if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
-  if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
-  return "text-green-600 dark:text-green-400";
+	if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
+	if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
+	return "text-green-600 dark:text-green-400";
 });
 
 const healthTextClass = computed(() => {
-  if (errorCount.value > 0) return "text-red-700 dark:text-red-300";
-  if (warnCount.value > 0) return "text-yellow-700 dark:text-yellow-300";
-  return "text-green-700 dark:text-green-300";
+	if (errorCount.value > 0) return "text-red-700 dark:text-red-300";
+	if (warnCount.value > 0) return "text-yellow-700 dark:text-yellow-300";
+	return "text-green-700 dark:text-green-300";
 });
 
 const healthSubClass = computed(() => {
-  if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
-  if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
-  return "text-green-600 dark:text-green-500";
+	if (errorCount.value > 0) return "text-red-500 dark:text-red-400";
+	if (warnCount.value > 0) return "text-yellow-600 dark:text-yellow-400";
+	return "text-green-600 dark:text-green-500";
 });
 
 // --- Time ago ---
 function timeAgo(date: Date): string {
-  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
+	const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+	if (secs < 60) return `${secs}s ago`;
+	const mins = Math.floor(secs / 60);
+	if (mins < 60) return `${mins}m ago`;
+	return `${Math.floor(mins / 60)}h ago`;
 }
 </script>
