@@ -42,6 +42,11 @@
 						class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
 						{{ detectedAuth(p) === "oauth" ? "signed in" : "key set" }}
 					</span>
+					<p v-if="p.onboardingChip"
+						class="inline-flex rounded-full border px-4 py-1.5 text-center text-[11px] font-semibold leading-4"
+						:class="p.onboardingChipClass">
+						{{ p.onboardingChip }}
+					</p>
 				</button>
 			</div>
 
@@ -92,6 +97,12 @@
 					<div v-if="credMethod === 'oauth'"
 						class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
 						<template v-if="currentProvider?.id === 'anthropic'">
+							<div class="mb-4">
+								<span
+									class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-center text-[11px] font-semibold leading-4 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+									Supports Pro/Max Subscription plans!
+								</span>
+							</div>
 							<div v-if="!oauthUrl">
 								<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
 									Sign in with your Claude Pro or Claude Max account - no API key needed.
@@ -130,20 +141,22 @@
 							</div>
 						</template>
 
-						<template v-else-if="currentProvider?.id === 'openai'">
+						<template v-else-if="currentProvider?.id === 'openai-codex'">
+							<div class="mb-4">
+								<span
+									class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-center text-[11px] font-semibold leading-4 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+									Supports Plus/Pro Subscription plans!
+								</span>
+							</div>
 							<div v-if="!openAIUrl">
 								<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
 									Sign in with your ChatGPT Plus or Pro account. We'll open OpenAI's consent page and also show the full
 									URL here in case the browser opens on a different machine.
 								</p>
-								<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
-									This uses the <code class="font-mono">openai-codex</code> provider and requires a ChatGPT Plus or Pro
-									subscription.
-								</p>
 								<button type="button" :disabled="credSaving"
 									class="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-40"
 									@click="startOpenAIOAuth">
-									{{ credSaving ? "Opening..." : "Sign in with OpenAI Codex" }}
+									{{ credSaving ? "Opening..." : "Sign in with OpenAI" }}
 								</button>
 							</div>
 							<div v-else class="space-y-4">
@@ -168,7 +181,7 @@
 								</div>
 								<p
 									:class="openAITimedOut ? 'text-xs font-medium text-red-600 dark:text-red-400' : 'text-xs text-gray-500 dark:text-gray-400'">
-									{{ openAITimedOut ? "This OpenAI Codex callback timed out. Start over to reopen port 1455." : `Callback expires in ${formatCountdown(openAIRemainingSeconds)}.` }}
+									{{ openAITimedOut ? "This OpenAI callback timed out. Start over to reopen port 1455." : `Callback expires in ${formatCountdown(openAIRemainingSeconds)}.` }}
 								</p>
 								<button type="button" :disabled="credSaving || openAITimedOut"
 									class="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-40"
@@ -440,7 +453,12 @@ defineEmits<{ skip: [] }>();
 
 type Provider = KnownProvider;
 
-const providers: Provider[] = KNOWN_PROVIDERS.filter((provider) =>
+type OnboardingProvider = Provider & {
+	onboardingChip?: string;
+	onboardingChipClass?: string;
+};
+
+const providers: OnboardingProvider[] = KNOWN_PROVIDERS.filter((provider) =>
 	[
 		"anthropic",
 		"openai-codex",
@@ -449,7 +467,27 @@ const providers: Provider[] = KNOWN_PROVIDERS.filter((provider) =>
 		"vllm",
 		"ollama",
 	].includes(provider.id),
-);
+).map((provider) => {
+	if (provider.id === "anthropic") {
+		return {
+			...provider,
+			onboardingChip: "Supports Pro/Max Subscription plans!",
+			onboardingChipClass:
+				"border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300",
+		};
+	}
+	if (provider.id === "openai-codex") {
+		return {
+			...provider,
+			label: "OpenAI",
+			description: "GPT models via API key or ChatGPT sign-in",
+			onboardingChip: "Supports Plus/Pro Subscription plans!",
+			onboardingChipClass:
+				"border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300",
+		};
+	}
+	return provider;
+});
 
 type Step = "provider" | "credentials" | "agent" | "done";
 const steps: Step[] = ["provider", "credentials", "agent", "done"];
