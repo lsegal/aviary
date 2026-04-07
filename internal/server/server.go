@@ -79,6 +79,8 @@ func New(cfg *config.Config, token string) *Server {
 		return llm.ProviderOptions{
 			Auth:    pc.Auth,
 			BaseURI: pc.BaseURI,
+			Region:  pc.Region,
+			Profile: pc.Profile,
 		}, true
 	})
 	if authStore != nil {

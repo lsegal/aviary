@@ -283,6 +283,8 @@ type ModelsConfig struct {
 type ProviderConfig struct {
 	Auth    string `yaml:"auth,omitempty" json:"auth,omitempty"`
 	BaseURI string `yaml:"base_uri,omitempty" json:"base_uri,omitempty"`
+	Region  string `yaml:"region,omitempty" json:"region,omitempty"`
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 }
 
 // ModelDefaults holds default model settings.

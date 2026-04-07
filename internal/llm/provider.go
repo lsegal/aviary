@@ -16,6 +16,8 @@ import (
 type ProviderOptions struct {
 	Auth    string
 	BaseURI string
+	Region  string
+	Profile string
 }
 
 // Role identifies who authored a message.
@@ -294,6 +296,28 @@ func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 			return nil, fmt.Errorf("ollama auth: %w", err)
 		}
 		return NewOllamaProvider(apiKey, name, opts.BaseURI), nil
+
+	case "bedrock":
+		opts, _ := f.providerOptions("bedrock")
+		region := opts.Region
+		if region == "" {
+			region = opts.BaseURI // allow region via base_uri for backwards compat
+		}
+		var accessKey, secretKey string
+		if opts.Auth != "" {
+			raw, err := f.resolveOptionalAuth(opts.Auth)
+			if err != nil {
+				return nil, fmt.Errorf("bedrock auth: %w", err)
+			}
+			if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 && parts[0] != "" {
+				accessKey, secretKey = parts[0], parts[1]
+			}
+		}
+		p, err := NewBedrockProvider(context.Background(), name, region, opts.Profile, accessKey, secretKey)
+		if err != nil {
+			return nil, fmt.Errorf("bedrock: %w", err)
+		}
+		return p, nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)

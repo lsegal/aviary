@@ -17,28 +17,33 @@ type providerOption struct {
 	oauthKey      string
 	supportsOAuth bool
 	requiresBase  bool
+	isBedrock     bool
 }
 
 var tuiProviders = []providerOption{
 	{name: "Anthropic", id: "anthropic", apiKey: "anthropic:default", oauthKey: "anthropic:oauth", supportsOAuth: true},
 	{name: "OpenAI", id: "openai", apiKey: "openai:default", oauthKey: "openai:oauth", supportsOAuth: true},
 	{name: "Gemini", id: "gemini", apiKey: "gemini:default", oauthKey: "gemini:oauth", supportsOAuth: true},
+	{name: "Bedrock", id: "bedrock", apiKey: "bedrock:default", isBedrock: true},
 	{name: "vLLM", id: "vllm", apiKey: "vllm:default", requiresBase: true},
 	{name: "Ollama", id: "ollama", apiKey: "ollama:default", requiresBase: true},
 }
 
 type providerMgrModel struct {
-	store     authpkg.Store
-	cfg       *config.Config
-	cfgPath   string
-	cursor    int
-	mode      string
-	method    int
-	keyInput  textinput.Model
-	codeInput textinput.Model
-	baseInput textinput.Model
-	message   string
-	err       string
+	store       authpkg.Store
+	cfg         *config.Config
+	cfgPath     string
+	cursor      int
+	mode        string
+	method      int
+	keyInput    textinput.Model
+	codeInput   textinput.Model
+	baseInput   textinput.Model
+	regionInput  textinput.Model
+	profileInput textinput.Model
+	secretInput  textinput.Model
+	message     string
+	err         string
 }
 
 func newProviderMgrModel(cfg *config.Config, cfgPath string, st authpkg.Store) providerMgrModel {
@@ -46,7 +51,11 @@ func newProviderMgrModel(cfg *config.Config, cfgPath string, st authpkg.Store) p
 	key.EchoMode = textinput.EchoPassword
 	code := newInput("Authorization code", "")
 	base := newInput("Base URI", "")
-	return providerMgrModel{store: st, cfg: cfg, cfgPath: cfgPath, keyInput: key, codeInput: code, baseInput: base}
+	region := newInput("AWS region (e.g. us-east-1)", "")
+	profile := newInput("AWS profile (optional)", "")
+	secret := newInput("Secret access key", "")
+	secret.EchoMode = textinput.EchoPassword
+	return providerMgrModel{store: st, cfg: cfg, cfgPath: cfgPath, keyInput: key, codeInput: code, baseInput: base, regionInput: region, profileInput: profile, secretInput: secret}
 }
 
 func (m providerMgrModel) Init() tea.Cmd { return nil }
@@ -64,6 +73,8 @@ func (m providerMgrModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateOAuth(msg)
 		case "endpoint":
 			return m.updateEndpoint(msg)
+		case "bedrock":
+			return m.updateBedrock(msg)
 		}
 	}
 	return m, nil
@@ -82,7 +93,17 @@ func (m providerMgrModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 	case "enter", " ":
-		if tuiProviders[m.cursor].requiresBase {
+		p := tuiProviders[m.cursor]
+		if p.isBedrock {
+			m.mode = "bedrock"
+			m.regionInput.SetValue(strings.TrimSpace(m.currentRegion(p.id)))
+			m.profileInput.SetValue(strings.TrimSpace(m.currentProfile(p.id)))
+			m.keyInput.SetValue("")
+			m.secretInput.SetValue("")
+			m.regionInput.Focus()
+			return m, textinput.Blink
+		}
+		if p.requiresBase {
 			m.mode = "endpoint"
 			m.baseInput.SetValue(strings.TrimSpace(m.currentBaseURI(tuiProviders[m.cursor].id)))
 			m.keyInput.SetValue("")
@@ -240,7 +261,17 @@ func (m providerMgrModel) View() string {
 	case "":
 		for i, p := range tuiProviders {
 			state := "not connected"
-			if p.requiresBase && strings.TrimSpace(m.currentBaseURI(p.id)) != "" {
+		if p.isBedrock {
+			if r := strings.TrimSpace(m.currentRegion(p.id)); r != "" {
+				state = "region: " + r
+				if pr := strings.TrimSpace(m.currentProfile(p.id)); pr != "" {
+					state += " (profile: " + pr + ")"
+				}
+				if _, err := m.store.Get(p.apiKey); err == nil {
+					state += " + credentials"
+				}
+			}
+			} else if p.requiresBase && strings.TrimSpace(m.currentBaseURI(p.id)) != "" {
 				state = "endpoint"
 				if _, err := m.store.Get(p.apiKey); err == nil {
 					state = "endpoint + api key"
@@ -290,6 +321,22 @@ func (m providerMgrModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.keyInput.View())
 		b.WriteString("\n\n" + tuiHelpStyle.Render("Tab switch field · Enter save · Esc back"))
+	case "bedrock":
+		b.WriteString(tuiLabelStyle.Render("Configure Bedrock") + "\n")
+		b.WriteString(tuiDimStyle.Render("Set the AWS region. Credentials are resolved via the standard AWS chain (env vars, shared config, SSO, instance roles). Optionally provide explicit access key + secret key."))
+		b.WriteString("\n\n")
+		b.WriteString("Region:\n")
+		b.WriteString(m.regionInput.View())
+		b.WriteString("\n\n")
+		b.WriteString("AWS profile " + tuiDimStyle.Render("(optional)") + ":\n")
+		b.WriteString(m.profileInput.View())
+		b.WriteString("\n\n")
+		b.WriteString("Access key " + tuiDimStyle.Render("(optional)") + ":\n")
+		b.WriteString(m.keyInput.View())
+		b.WriteString("\n\n")
+		b.WriteString("Secret access key " + tuiDimStyle.Render("(optional)") + ":\n")
+		b.WriteString(m.secretInput.View())
+		b.WriteString("\n\n" + tuiHelpStyle.Render("Tab switch field · Enter save · Esc back"))
 	}
 	if m.message != "" {
 		b.WriteString("\n" + tuiSuccessStyle.Render(m.message))
@@ -332,6 +379,113 @@ func (m providerMgrModel) saveProviderBaseURI(provider, baseURI string) error {
 	}
 	m.cfg.Models.Providers[provider] = pc
 	return config.Save(m.cfgPath, m.cfg)
+}
+
+func (m providerMgrModel) currentRegion(provider string) string {
+	if m.cfg == nil || m.cfg.Models.Providers == nil {
+		return ""
+	}
+	return m.cfg.Models.Providers[provider].Region
+}
+
+func (m providerMgrModel) currentProfile(provider string) string {
+	if m.cfg == nil || m.cfg.Models.Providers == nil {
+		return ""
+	}
+	return m.cfg.Models.Providers[provider].Profile
+}
+
+func (m providerMgrModel) saveProviderRegion(provider, region string) error {
+	return m.saveProviderRegionAndProfile(provider, region, "")
+}
+
+func (m providerMgrModel) saveProviderRegionAndProfile(provider, region, profile string) error {
+	if m.cfg == nil {
+		d := config.Default()
+		m.cfg = &d
+	}
+	if m.cfg.Models.Providers == nil {
+		m.cfg.Models.Providers = map[string]config.ProviderConfig{}
+	}
+	pc := m.cfg.Models.Providers[provider]
+	pc.Region = strings.TrimSpace(region)
+	pc.Profile = strings.TrimSpace(profile)
+	if strings.TrimSpace(pc.Auth) == "" {
+		pc.Auth = "auth:" + provider + ":default"
+	}
+	m.cfg.Models.Providers[provider] = pc
+	return config.Save(m.cfgPath, m.cfg)
+}
+
+func (m providerMgrModel) updateBedrock(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.regionInput.Blur()
+		m.profileInput.Blur()
+		m.keyInput.Blur()
+		m.secretInput.Blur()
+		m.mode = ""
+	case "tab", "shift+tab":
+		switch {
+		case m.regionInput.Focused():
+			m.regionInput.Blur()
+			m.profileInput.Focus()
+		case m.profileInput.Focused():
+			m.profileInput.Blur()
+			m.keyInput.Focus()
+		case m.keyInput.Focused():
+			m.keyInput.Blur()
+			m.secretInput.Focus()
+		default:
+			m.secretInput.Blur()
+			m.regionInput.Focus()
+		}
+		return m, nil
+	case "enter":
+		provider := tuiProviders[m.cursor]
+		region := strings.TrimSpace(m.regionInput.Value())
+		if region == "" {
+			m.err = "AWS region cannot be empty"
+			return m, nil
+		}
+		profile := strings.TrimSpace(m.profileInput.Value())
+		if err := m.saveProviderRegionAndProfile(provider.id, region, profile); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		accessKey := strings.TrimSpace(m.keyInput.Value())
+		secretKey := strings.TrimSpace(m.secretInput.Value())
+		if accessKey != "" && secretKey != "" {
+			if err := m.store.Set(provider.apiKey, accessKey+":"+secretKey); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+		}
+		m.err = ""
+		m.message = "Bedrock configuration saved."
+		m.mode = ""
+		return m, nil
+	}
+	if m.regionInput.Focused() {
+		var cmd tea.Cmd
+		m.regionInput, cmd = m.regionInput.Update(msg)
+		return m, cmd
+	}
+	if m.profileInput.Focused() {
+		var cmd tea.Cmd
+		m.profileInput, cmd = m.profileInput.Update(msg)
+		return m, cmd
+	}
+	if m.keyInput.Focused() {
+		var cmd tea.Cmd
+		m.keyInput, cmd = m.keyInput.Update(msg)
+		return m, cmd
+	}
+	var cmd tea.Cmd
+	m.secretInput, cmd = m.secretInput.Update(msg)
+	return m, cmd
 }
 
 func fmtPadRight(v string, width int) string {

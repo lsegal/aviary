@@ -43,8 +43,8 @@ func init() {
 
 func runModelsList(w io.Writer, provider string) error {
 	provider = strings.TrimSpace(provider)
-	if provider != "" && provider != "vllm" && provider != "ollama" && !models.HasProvider(provider) {
-		supported := append(models.Providers(), "vllm", "ollama")
+	if provider != "" && provider != "vllm" && provider != "ollama" && provider != "bedrock" && !models.HasProvider(provider) {
+		supported := append(models.Providers(), "vllm", "ollama", "bedrock")
 		return fmt.Errorf("unknown provider %q; supported providers: %s", provider, strings.Join(supported, ", "))
 	}
 
@@ -111,7 +111,7 @@ func listDynamicModels(provider string, allowDefault bool) ([]string, error) {
 		if strings.TrimSpace(name) != provider {
 			return llm.ProviderOptions{}, false
 		}
-		return llm.ProviderOptions{Auth: pc.Auth, BaseURI: pc.BaseURI}, true
+		return llm.ProviderOptions{Auth: pc.Auth, BaseURI: pc.BaseURI, Region: pc.Region}, true
 	})
 	providerInst, err := factory.ForModel(provider + "/_")
 	if err != nil {

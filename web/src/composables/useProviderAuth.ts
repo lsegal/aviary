@@ -18,6 +18,8 @@ export interface KnownProvider {
 	authKeys?: string[];
 	requiresBaseURI?: boolean;
 	baseURIPlaceholder?: string;
+	requiresRegion?: boolean;
+	regionPlaceholder?: string;
 }
 
 export const KNOWN_PROVIDERS: KnownProvider[] = [
@@ -78,6 +80,25 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		defaultProviders: ["google-gemini", "google"],
 		oauthProviders: ["google-gemini", "google"],
 		authKeys: ["gemini:oauth", "gemini:default"],
+	},
+	{
+		id: "bedrock",
+		label: "AWS Bedrock",
+		authId: "bedrock",
+		hasOAuth: false,
+		hasApiKey: true,
+		emoji: "☁️",
+		description:
+			"AWS Bedrock - Claude, Llama, Mistral, and more via AWS",
+		keyPlaceholder: "ACCESS_KEY:SECRET_KEY (optional)",
+		keyHelp:
+			"Leave empty to use the default AWS credential chain (env vars, shared config, SSO, instance roles). Or provide ACCESS_KEY:SECRET_KEY.",
+		apiAuthKey: "bedrock:default",
+		defaultModel: "bedrock/us.anthropic.claude-sonnet-4-6",
+		defaultProviders: ["bedrock"],
+		authKeys: ["bedrock:default"],
+		requiresRegion: true,
+		regionPlaceholder: "us-east-1",
 	},
 	{
 		id: "vllm",

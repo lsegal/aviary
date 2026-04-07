@@ -285,6 +285,25 @@
 					</div>
 
 					<div v-else class="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+					<div v-if="currentProvider?.requiresRegion" class="mb-4">
+						<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">AWS Region</label>
+						<input v-model="regionValue" type="text" autocomplete="off"
+							:placeholder="currentProvider?.regionPlaceholder"
+							class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+							@keyup.enter="saveApiKey" />
+						<p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+							The AWS region where your Bedrock models are enabled.
+						</p>
+					</div>
+					<div v-if="currentProvider?.requiresRegion" class="mb-4">
+						<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">AWS Profile (optional)</label>
+						<input v-model="profileValue" type="text" autocomplete="off"
+							class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+							@keyup.enter="saveApiKey" />
+						<p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+							Named AWS profile from ~/.aws/config. Leave empty for the default credential chain.
+						</p>
+					</div>
 						<div v-if="currentProvider?.requiresBaseURI" class="mb-4">
 							<label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Base URI
 								(optional)</label>
@@ -440,6 +459,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
+import { SUPPORTED_MODELS } from "../constants/models";
 import { useMCP } from "../composables/useMCP";
 import {
 	KNOWN_PROVIDERS,
@@ -463,6 +483,7 @@ const providers: OnboardingProvider[] = KNOWN_PROVIDERS.filter((provider) =>
 		"anthropic",
 		"openai-codex",
 		"google",
+		"bedrock",
 		"github-copilot",
 		"vllm",
 		"ollama",
@@ -531,6 +552,16 @@ const currentProviderModelOptions = computed(() => {
 	if (provider.requiresBaseURI) {
 		return dynamicModelOptions.value;
 	}
+	if (provider.requiresRegion) {
+		const allowedProviders = provider.defaultProviders ?? [];
+		const options = availableModelOptions.value.filter((model) =>
+			allowedProviders.some((prefix) => model.startsWith(`${prefix}/`)),
+		);
+		if (options.length) return options;
+		return SUPPORTED_MODELS.filter((model) =>
+			allowedProviders.some((prefix) => model.startsWith(`${prefix}/`)),
+		);
+	}
 	const allowedProviders =
 		(credMethod.value === "oauth"
 			? (provider.oauthProviders ?? provider.defaultProviders)
@@ -552,9 +583,12 @@ const fallbackModelOptions = computed(() =>
 const credMethod = ref<"oauth" | "apikey">("oauth");
 const apiKey = ref("");
 const baseURI = ref("");
+const regionValue = ref("");
+const profileValue = ref("");
 const credentialsContinueDisabled = computed(() => {
 	if (credSaving.value) return true;
 	if (!currentProvider.value) return true;
+	if (currentProvider.value.requiresRegion) return !regionValue.value.trim();
 	if (currentProvider.value.requiresBaseURI) return false;
 	return !apiKey.value.trim();
 });
@@ -717,7 +751,7 @@ function selectProvider(id: string) {
 		void loadDynamicProviderConfig();
 	}
 	const existing = detectedAuth(p);
-	if (existing && !p.requiresBaseURI) {
+	if (existing && !p.requiresBaseURI && !p.requiresRegion) {
 		const method = existing ?? (p.hasOAuth ? "oauth" : "apikey");
 		credMethod.value = method;
 		agentModelInput.value = defaultModelFor(p, method);
@@ -726,6 +760,7 @@ function selectProvider(id: string) {
 	}
 	credMethod.value = p.hasOAuth ? "oauth" : "apikey";
 	apiKey.value = "";
+	regionValue.value = p.regionPlaceholder ?? "";
 	if (!p.requiresBaseURI) {
 		baseURI.value = "";
 	}
@@ -759,6 +794,7 @@ async function saveApiKey() {
 	if (!currentProvider.value) return;
 	if (
 		!currentProvider.value.requiresBaseURI &&
+		!currentProvider.value.requiresRegion &&
 		(!apiKey.value.trim() || !currentProvider.value.apiAuthKey)
 	) {
 		return;
@@ -770,7 +806,27 @@ async function saveApiKey() {
 		const base = settingsStore.config
 			? (JSON.parse(JSON.stringify(settingsStore.config)) as AppConfig)
 			: emptyConfig();
-		if (currentProvider.value.requiresBaseURI) {
+		if (currentProvider.value.requiresRegion) {
+			const providerCfg: Record<string, string> = {
+				...(base.models.providers[currentProvider.value.id] ?? { auth: "" }),
+				auth:
+					apiKey.value.trim() && currentProvider.value.apiAuthKey
+						? `auth:${currentProvider.value.apiAuthKey}`
+						: "",
+				region: regionValue.value.trim(),
+			};
+			if (profileValue.value.trim()) {
+				providerCfg.profile = profileValue.value.trim();
+			}
+			base.models.providers[currentProvider.value.id] = providerCfg as any;
+			await settingsStore.saveConfig(base);
+			if (apiKey.value.trim() && currentProvider.value.apiAuthKey) {
+				await callTool("auth_set", {
+					name: currentProvider.value.apiAuthKey,
+					value: apiKey.value.trim(),
+				});
+			}
+		} else if (currentProvider.value.requiresBaseURI) {
 			const providerBaseURI = resolvedProviderBaseURI(currentProvider.value);
 			base.models.providers[currentProvider.value.id] = {
 				...(base.models.providers[currentProvider.value.id] ?? { auth: "" }),
