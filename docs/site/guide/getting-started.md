@@ -5,7 +5,7 @@ This guide walks you through installing Aviary, starting the server, and creatin
 ## Prerequisites
 
 - **macOS or Linux** — native support. **Windows** — supported via WSL2 or natively with Go 1.22+.
-- A model provider API key (Anthropic, OpenAI, Gemini, or GitHub Copilot) _or_ an account eligible for OAuth login.
+- A model provider API key (Anthropic, OpenAI, Gemini, or GitHub Copilot), an AWS account with Bedrock model access, _or_ an account eligible for OAuth login.
 
 ## Install
 
@@ -123,6 +123,20 @@ models:
 ```
 
 Credentials stored via OAuth use the name `<provider>:oauth`; those set manually use whatever name you give them (e.g. `anthropic:default`). The `auth:` prefix in the YAML value tells Aviary to look up the credential by name rather than treating the string as a literal key.
+
+**Option 4 — AWS Bedrock (no API key needed)**
+
+Bedrock uses the standard AWS credential chain. Configure it with a region and optional AWS profile:
+
+```yaml
+models:
+  providers:
+    bedrock:
+      region: us-west-2
+      profile: my-bedrock-profile   # optional — uses ~/.aws/config
+```
+
+No `auth` field is required unless you want to store explicit `ACCESS_KEY:SECRET_KEY` credentials in the auth store. Cross-region inference profile model IDs (e.g. `us.anthropic.claude-sonnet-4-6`) are resolved to full ARNs automatically.
 
 ## Create Your First Agent
 

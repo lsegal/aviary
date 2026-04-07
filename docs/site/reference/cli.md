@@ -104,7 +104,7 @@ Running `aviary configure` with no subcommand runs the full onboarding wizard.
 
 ### aviary configure providers
 
-Authenticate with AI providers via OAuth or API key. Alias: `auth`.
+Authenticate with AI providers via OAuth or API key, or configure AWS Bedrock with region and profile. Alias: `auth`.
 
 ```
 aviary configure providers
@@ -283,6 +283,8 @@ aviary auth <subcommand>
 ### aviary auth login
 
 Authorize with an AI provider. Supported providers: `anthropic`, `openai`, `gemini`, `github-copilot`.
+
+Bedrock does not use `auth login` — it authenticates via the AWS credential chain. Configure it in `aviary.yaml` with `region` and optionally `profile`. See the [Configuration Reference](/reference/config#bedrock-notes).
 
 ```
 aviary auth login <provider> [flags]

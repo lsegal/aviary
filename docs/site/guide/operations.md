@@ -136,6 +136,15 @@ If a provider shows as unreachable:
 2. Check network connectivity from the server host.
 3. Re-run `config_validate` after ~30 seconds for a fresh ping result.
 
+### Bedrock-specific checks
+
+Bedrock does not require a credential in the auth store. If Bedrock shows as unreachable:
+
+1. Verify the AWS region in your config is correct.
+2. If using a named profile, confirm it exists in `~/.aws/config` and has valid credentials (check with `aws sts get-caller-identity --profile <profile>`).
+3. Confirm the IAM principal has `bedrock:InvokeModelWithResponseStream` permission on the inference profile or model.
+4. If using SSO credentials, ensure the session is active (`aws sso login --profile <profile>`).
+
 ---
 
 ## Upgrades
@@ -184,3 +193,12 @@ Or use the upgrade prompt that appears in the control panel header when a new ve
 2. Check the cron expression with a cron validator — Aviary accepts 5-field and 6-field (leading seconds) expressions plus shortcuts like `@daily`.
 3. Check the Jobs dashboard for `failed` status — the job may have run but errored.
 4. If `precompute_tasks` is enabled, check for a pending or failed compile attempt for the task.
+
+### Bedrock `AccessDeniedException`
+
+A 403 error from Bedrock typically means the IAM principal lacks permission for the requested model:
+
+1. Confirm the model ID is correct. Cross-region inference profiles (e.g. `us.anthropic.claude-sonnet-4-6`) require the `bedrock:InvokeModelWithResponseStream` action on the inference profile ARN, not just the foundation model ARN.
+2. Verify the AWS profile and region in your provider config match the working configuration (compare with `aws bedrock-runtime invoke-model --region <region> --profile <profile> --model-id <arn>`).
+3. If using instance roles or SSO, check that the session has not expired.
+4. Bedrock model access must be explicitly enabled per-region in the AWS console under **Bedrock → Model access**.

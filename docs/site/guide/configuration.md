@@ -58,6 +58,36 @@ models:
       - openai/gpt-4o
 ```
 
+### AWS Bedrock
+
+Bedrock uses the standard AWS credential chain instead of API keys. Configure it with a `region` and optional `profile`:
+
+```yaml
+models:
+  providers:
+    bedrock:
+      region: us-west-2
+      profile: my-bedrock-profile   # optional — named profile from ~/.aws/config
+
+agents:
+  - name: assistant
+    model: bedrock/us.anthropic.claude-sonnet-4-6
+```
+
+Cross-region inference profile model IDs (prefixed with `us.`, `eu.`, `ap.`, or `global.`) are automatically resolved to full ARNs using your AWS account ID via STS. You can also store explicit credentials:
+
+```bash
+aviary auth set bedrock:default "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+```
+
+```yaml
+models:
+  providers:
+    bedrock:
+      auth: auth:bedrock:default
+      region: us-east-1
+```
+
 An agent's `fallbacks` list is tried in order when the primary model is unavailable. Individual agents can override both `model` and `fallbacks`; a channel within an agent can override them again; and a specific sender rule within a channel can override them a final time. Each level narrows the scope of the override.
 
 ## The Permission Model
@@ -214,6 +244,9 @@ models:
       auth: auth:anthropic:default
     openai:
       auth: auth:openai:default
+    bedrock:
+      region: us-west-2
+      profile: your-aws-profile-name-goes-here
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:

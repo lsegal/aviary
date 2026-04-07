@@ -259,6 +259,9 @@ models:
       auth: auth:gemini:default
     github-copilot:
       auth: auth:github-copilot:default
+    bedrock:
+      region: us-west-2
+      profile: your-aws-profile-name-goes-here  # optional AWS profile
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
@@ -268,10 +271,20 @@ models:
 | Field | Type | Description |
 | --- | --- | --- |
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
+| `providers.<name>.region` | string | AWS region for Bedrock (e.g. `us-west-2`). Only used by the `bedrock` provider. |
+| `providers.<name>.profile` | string | AWS named profile from `~/.aws/config`. Only used by the `bedrock` provider. |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
 
-**Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`
+**Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`, `bedrock`, `vllm`, `ollama`
+
+### Bedrock Notes
+
+- Bedrock uses the standard AWS credential chain (env vars, shared config, SSO, instance roles). The `auth` field is optional.
+- The `region` field is required. If omitted, Bedrock defaults to `us-east-1`.
+- The `profile` field selects a named AWS profile from `~/.aws/config` (equivalent to `AWS_PROFILE`).
+- Cross-region inference profile model IDs (prefixed with `us.`, `eu.`, `ap.`, `global.`) are automatically resolved to full Bedrock ARNs via STS.
+- Model IDs follow the format `bedrock/<model-id>`, e.g. `bedrock/us.anthropic.claude-sonnet-4-6` or `bedrock/amazon.nova-pro-v1:0`.
 
 ---
 
@@ -365,6 +378,9 @@ models:
   providers:
     anthropic:
       auth: auth:anthropic:default
+    bedrock:
+      region: us-west-2
+      profile: your-aws-profile-name-goes-here
   defaults:
     model: anthropic/claude-sonnet-4-6
 

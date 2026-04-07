@@ -54,6 +54,7 @@ Manages API credentials and OAuth sessions:
 
 - **Stored keys** — list, add, and delete named credentials.
 - **OAuth login** — one-click flows for Anthropic, Gemini, OpenAI, and GitHub Copilot.
+- **AWS Bedrock** — configure with an AWS region and optional named profile. Bedrock uses the standard AWS credential chain rather than API keys or OAuth.
 - Provider connectivity status is shown alongside each entry (cached for 30 seconds).
 
 ### Skills
