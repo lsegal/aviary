@@ -459,28 +459,54 @@ a.detail-card:focus-visible {
 }
 
 /* Align hero action buttons with left edge of hero subheading */
-.VPHome .home-hero {
+.VPHome .VPHomeHero {
 	--aviary-hero-content-pad: 1.25rem;
 }
-.VPHome .home-hero .hero-actions,
-.VPHome .home-hero .actions,
-.VPHome .home-hero .vp-home-hero-ctas {
+.VPHome .VPHomeHero .hero-actions,
+.VPHome .VPHomeHero .actions,
+.VPHome .VPHomeHero .vp-home-hero-ctas {
 	display: flex;
 	justify-content: flex-start;
 	margin: 0;
 	padding-left: var(--aviary-hero-content-pad);
 	gap: 0.75rem;
 }
-.VPHome .home-hero .hero-subheading,
-.VPHome .home-hero .subtitle,
-.VPHome .home-hero .tagline {
+.VPHome .VPHomeHero .hero-subheading,
+.VPHome .VPHomeHero .subtitle,
+.VPHome .VPHomeHero .tagline {
 	margin-left: var(--aviary-hero-content-pad);
 }
 
+.VPHome .VPHomeHero .hero-open-source-chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: fit-content;
+	max-width: 100%;
+	margin-bottom: 1rem;
+	gap: 0.45rem;
+	background-color: var(--vp-c-bg-alt);
+	border: 1px solid var(--vp-c-text-2);
+	border-radius: 999px;
+	padding: 0.42rem 0.9rem 0.46rem;
+	color: var(--vp-c-text-2);
+	font-size: 0.76rem;
+	font-weight: 700;
+	letter-spacing: 0.025em;
+	line-height: 1.1;
+	white-space: nowrap;
+	-webkit-backdrop-filter: blur(10px);
+	backdrop-filter: blur(10px);
+}
+
+.VPHome .VPHomeHero .hero-open-source-chip-separator {
+	opacity: 0.55;
+}
+
 /* Tweak button sizing to sit neatly under the subheading */
-.VPHome .home-hero .vp-btn,
-.VPHome .home-hero .actions .vp-btn,
-.VPHome .home-hero .hero-actions .vp-btn {
+.VPHome .VPHomeHero .vp-btn,
+.VPHome .VPHomeHero .actions .vp-btn,
+.VPHome .VPHomeHero .hero-actions .vp-btn {
 	font-size: 0.95rem;
 	padding: 0.5rem 0.9rem;
 }
@@ -554,6 +580,14 @@ a.detail-card:focus-visible {
 
 @media (max-width: 1024px) {
 		.hero-actions { display: flex; justify-content: center; max-width: 640px; }
+}
+
+@media (max-width: 640px) {
+	.VPHome .VPHomeHero .hero-open-source-chip {
+		margin-bottom: 0.85rem;
+		padding: 0.4rem 0.82rem 0.44rem;
+		font-size: 0.72rem;
+	}
 }
 
 .hero-btn {

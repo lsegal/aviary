@@ -4,6 +4,7 @@ import ConversationStopDemo from "./components/ConversationStopDemo.vue";
 import FeatureIcon from "./components/FeatureIcon.vue";
 import HeaderReleaseBadge from "./components/HeaderReleaseBadge.vue";
 import HeroActions from "./components/HeroActions.vue";
+import HeroOpenSourceChip from "./components/HeroOpenSourceChip.vue";
 import MessagingLogo from "./components/MessagingLogo.vue";
 import ScreenshotGallery from "./components/ScreenshotGallery.vue";
 import SiteEffects from "./components/SiteEffects.vue";
@@ -13,6 +14,7 @@ export default {
 	...DefaultTheme,
 	Layout() {
 		return h(DefaultTheme.Layout, null, {
+			"home-hero-info-before": () => h(HeroOpenSourceChip),
 			"home-hero-after": () => h(HeroActions),
 			"nav-bar-content-after": () => h(HeaderReleaseBadge),
 			"layout-bottom": () => h(SiteEffects),
