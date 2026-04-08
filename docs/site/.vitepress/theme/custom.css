@@ -485,6 +485,9 @@ a.detail-card:focus-visible {
 	padding: 0.5rem 0.9rem;
 }
 
+.VPHome {
+	margin-bottom: 0 !important;
+}
 
 .content-section-alt::after {
 	background:
@@ -502,6 +505,10 @@ a.detail-card:focus-visible {
 	background:
 		linear-gradient(180deg, rgba(24, 17, 15, 0.96), rgba(16, 12, 10, 0.92)),
 		radial-gradient(circle at center top, rgba(180, 95, 42, 0.08), transparent 60%);
+}
+
+.content-section-last {
+	padding-bottom: 6rem;
 }
 
 .content-section-last::after {
