@@ -100,7 +100,7 @@ func isSensitiveKey(key string) bool {
 	}
 
 	switch k {
-	case "authorization", "api_key", "apikey", "key", "client_key", "client_secret", "access_key", "private_key":
+	case "authorization", "api_key", "apikey", "key", "client_key", "client_secret", "access_key", "private_key", "value", "code":
 		return true
 	default:
 		return false

@@ -319,13 +319,28 @@ const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const { streamAgent } = useStream();
+const markdownRenderer = new marked.Renderer();
+
+markdownRenderer.html = (token) => escapeHTML(token.text);
+
+function escapeHTML(text: string): string {
+	return text
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;");
+}
 
 function chatPath(agent: string, sessionId?: string): string {
 	return sessionId ? `/chat/${agent}/${sessionId}` : `/chat/${agent}`;
 }
 
 function renderMarkdown(text: string): string {
-	return marked.parse(text, { async: false }) as string;
+	return marked.parse(text, {
+		async: false,
+		renderer: markdownRenderer,
+	}) as string;
 }
 
 /** Returns true if an assistant message text looks like an error. */
