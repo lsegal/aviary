@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1326,7 +1327,7 @@ func keywordTerms(query string) []string {
 
 // loadRules returns the agent's rules text.
 // Resolution order:
-//  1. If cfg.Rules is a file path, read that file.
+//  1. If cfg.Rules is a file path, read that file (must be within the agent's data directory).
 //  2. If cfg.Rules is inline text, return it directly.
 //  3. If cfg.Rules is empty, check the per-agent data directory
 //     (<datadir>/agents/<name>/RULES.md) and return its content if present.
@@ -1335,7 +1336,20 @@ func (r *AgentRunner) loadRules() string {
 		rules := r.cfg.Rules
 		// Treat as file path when it looks like one.
 		if strings.HasPrefix(rules, "/") || strings.HasPrefix(rules, "./") || strings.HasPrefix(rules, ".\\") || strings.HasSuffix(rules, ".md") {
-			if data, err := os.ReadFile(rules); err == nil {
+			agentDir := store.AgentDir(r.agent.ID)
+			resolved, err := filepath.Abs(rules)
+			if err != nil {
+				slog.Warn("agent: could not resolve rules file path; treating as inline", "agent", r.agent.Name, "file", rules)
+				return strings.TrimSpace(store.StripMarkdownCommentLines(rules))
+			}
+			resolvedAgent, err := filepath.Abs(agentDir)
+			resolvedSlash := strings.ToLower(filepath.ToSlash(resolved))
+			agentSlash := strings.ToLower(filepath.ToSlash(resolvedAgent)) + "/"
+			if err != nil || !strings.HasPrefix(resolvedSlash, agentSlash) {
+				slog.Warn("agent: rules file path is outside the agent directory; ignoring", "agent", r.agent.Name, "file", rules, "agentDir", agentDir)
+				return ""
+			}
+			if data, err := os.ReadFile(resolved); err == nil {
 				return strings.TrimSpace(store.StripMarkdownCommentLines(string(data)))
 			}
 			slog.Warn("agent: rules file not found; treating as inline", "agent", r.agent.Name, "file", rules)

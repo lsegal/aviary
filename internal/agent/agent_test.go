@@ -1154,9 +1154,34 @@ func TestLoadRules_InlineText(t *testing.T) {
 func TestLoadRules_FilePath(t *testing.T) {
 	setTestDataDir(t)
 
+	agentID := "agent_bot"
+	agentDir := store.AgentDir(agentID)
+	err := os.MkdirAll(agentDir, 0o700)
+	assert.NoError(t, err)
+
+	rulesFile := filepath.Join(agentDir, "RULES.md")
+	err = os.WriteFile(rulesFile, []byte("# Rules\nBe safe."), 0o600)
+	assert.NoError(t, err)
+
+	runner := NewAgentRunner(
+		&domain.Agent{ID: agentID, Name: "bot"},
+		&config.AgentConfig{Name: "bot", Rules: rulesFile},
+		&mockProvider{},
+		nil,
+	)
+
+	rules := runner.loadRules()
+	assert.True(t, strings.Contains(rules, "Be safe."))
+
+}
+
+func TestLoadRules_FilePathOutsideAgentDir(t *testing.T) {
+	setTestDataDir(t)
+
+	// Write a file outside the agent's data directory.
 	dir := t.TempDir()
 	rulesFile := filepath.Join(dir, "RULES.md")
-	err := os.WriteFile(rulesFile, []byte("# Rules\nBe safe."), 0o600)
+	err := os.WriteFile(rulesFile, []byte("sensitive content"), 0o600)
 	assert.NoError(t, err)
 
 	runner := NewAgentRunner(
@@ -1166,9 +1191,9 @@ func TestLoadRules_FilePath(t *testing.T) {
 		nil,
 	)
 
+	// Path traversal outside the agent dir must be blocked.
 	rules := runner.loadRules()
-	assert.True(t, strings.Contains(rules, "Be safe."))
-
+	assert.Equal(t, "", rules)
 }
 
 func TestLoadRules_FallbackToDataDir(t *testing.T) {
