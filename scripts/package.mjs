@@ -10,7 +10,7 @@ await $(opts)`npm version ${
 const pkgData = await readFile("package.json");
 const pkg = JSON.parse(pkgData.toString());
 const ver = pkg.version;
-await $(opts)`git add . && git status`;
 await $(opts)`pnpm build:release -- --version v${ver}`;
+await $(opts)`git add . && git status`;
 await $(opts)`pnpm exec vpr release-commit ${ver}`;
 await $(opts)`git --no-pager show`;
