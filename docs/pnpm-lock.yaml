@@ -12,8 +12,8 @@ devDependencies:
     specifier: ^10.4.27
     version: 10.4.27(postcss@8.5.9)
   simple-icons:
-    specifier: ^16.12.0
-    version: 16.12.0
+    specifier: ^16.13.0
+    version: 16.13.0
   vitepress:
     specifier: ^1.6.4
     version: 1.6.4(@algolia/client-search@5.50.1)(postcss@8.5.9)(search-insights@2.17.3)
@@ -1314,6 +1314,15 @@ packages:
       source-map-js: 1.2.1
     dev: true
 
+  /postcss@8.5.9:
+    resolution: {integrity: sha512-7a70Nsot+EMX9fFU3064K/kdHWZqGVY+BADLyXc8Dfv+mTLLVl6JzJpPaCZ2kQL9gIJvKXSLMHhqdRRjwQeFtw==}
+    engines: {node: ^10 || ^12 || >=14}
+    dependencies:
+      nanoid: 3.3.11
+      picocolors: 1.1.1
+      source-map-js: 1.2.1
+    dev: true
+
   /preact@10.29.0:
     resolution: {integrity: sha512-wSAGyk2bYR1c7t3SZ3jHcM6xy0lcBcDel6lODcs9ME6Th++Dx2KU+6D3HD8wMMKGA8Wpw7OMd3/4RGzYRpzwRg==}
     dev: true
@@ -1394,8 +1403,8 @@ packages:
       '@types/hast': 3.0.4
     dev: true
 
-  /simple-icons@16.12.0:
-    resolution: {integrity: sha512-fDJDqXUpkb2twqH+eBQpJsCYUE6jEH7VkuuPL9dH16sbLf6KKnwyijULmcx7SCoy3c2L6pl8WCzt+4rpYjoWfw==}
+  /simple-icons@16.13.0:
+    resolution: {integrity: sha512-N4AMZvFERU5YLEtUudtUesiM2H4O5xQ9qfS3K0oOV5II5KVtxOUAlmZ7KqBgiTSGBgCVkuLD/Z9dJKBtnI3kKQ==}
     engines: {node: '>=0.12.18'}
     dev: true
 
