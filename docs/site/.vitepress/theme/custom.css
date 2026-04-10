@@ -466,15 +466,68 @@ a.detail-card:focus-visible {
 .VPHome .VPHomeHero .actions,
 .VPHome .VPHomeHero .vp-home-hero-ctas {
 	display: flex;
-	justify-content: flex-start;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
 	margin: 0;
-	padding-left: var(--aviary-hero-content-pad);
+	padding-left: 0;
 	gap: 0.75rem;
 }
 .VPHome .VPHomeHero .hero-subheading,
 .VPHome .VPHomeHero .subtitle,
 .VPHome .VPHomeHero .tagline {
-	margin-left: var(--aviary-hero-content-pad);
+	margin-left: 0;
+	margin-right: 0;
+	text-align: center;
+}
+
+.VPHome .VPHomeHero .container {
+	justify-content: center;
+	text-align: center;
+}
+
+.VPHome .VPHomeHero .main {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex: 1 1 auto;
+	width: 100% !important;
+	max-width: 64rem;
+	margin: 0 auto;
+	text-align: center;
+}
+
+.VPHome .VPHomeHero .heading {
+	align-items: center;
+	width: min(100%, 62rem);
+	max-width: none;
+	text-align: center;
+}
+
+.VPHome .VPHomeHero .name,
+.VPHome .VPHomeHero .text {
+	display: block;
+	width: 100%;
+	max-width: none;
+	font-size: clamp(3.35rem, 7vw, 5.75rem);
+	line-height: 1.02;
+}
+
+.VPHome .VPHomeHero .name {
+	padding-bottom: 0.08em;
+}
+
+.VPHome .VPHomeHero .text {
+	font-size: clamp(2.9rem, 5.9vw, 4.9rem);
+	line-height: 0.98;
+}
+
+.VPHome .VPHomeHero .tagline {
+	width: 80%;
+	max-width: 80%;
+	padding-top: 1.4rem;
+	font-size: clamp(0.92rem, 1.35vw, 1.02rem);
+	line-height: 1.42;
 }
 
 .VPHome .VPHomeHero .hero-open-source-chip {
@@ -562,6 +615,10 @@ a.detail-card:focus-visible {
 	padding-bottom: 1rem;
 }
 
+.VPHomeHero .image {
+	display: none;
+}
+
 .VPHomeHero {
 	padding-bottom: 0 !important;
 }
@@ -569,13 +626,21 @@ a.detail-card:focus-visible {
 /* Hero actions bar — below the title|image row, full width */
 .hero-actions {
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
 	align-items: center;
-	gap: 12px;
+	gap: 1rem;
 	padding: 1.2rem 0px 2.5rem;
 	max-width: 900px;
+	width: 100%;
 	margin: 0 auto;
 	box-sizing: border-box;
+}
+
+.hero-links {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 12px;
 }
 
 @media (max-width: 1024px) {
@@ -627,8 +692,9 @@ a.detail-card:focus-visible {
 	border-color: var(--vp-button-alt-hover-border);
 }
 
-.hero-actions .install-block {
-	margin: 0;
+.hero-actions .install-shell {
+	width: fit-content;
+	max-width: 100%;
 }
 
 .header-release-badge {
@@ -668,6 +734,22 @@ a.detail-card:focus-visible {
 
 	.VPHomeHero .image-container {
 		transform: none !important;
+	}
+}
+
+@media (max-width: 640px) {
+	.VPHome .VPHomeHero .name,
+	.VPHome .VPHomeHero .text {
+		font-size: clamp(2.75rem, 12vw, 3.8rem);
+	}
+
+	.VPHome .VPHomeHero .text {
+		font-size: clamp(2.2rem, 9.5vw, 3rem);
+	}
+
+	.VPHome .VPHomeHero .tagline {
+		font-size: 0.92rem;
+		line-height: 1.4;
 	}
 }
 
@@ -1178,8 +1260,81 @@ a.detail-card:focus-visible {
 }
 
 /* Install block */
-.install-block {
+.install-shell {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.6rem;
+	width: fit-content;
+	max-width: 100%;
+}
+
+.install-tabs {
 	display: inline-flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.35rem;
+	padding: 0.22rem;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.42);
+	border: 1px solid rgba(93, 74, 66, 0.12);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(8px);
+}
+
+.install-tab {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	color: var(--vp-c-text-2);
+	padding: 0.45rem 0.8rem;
+	border-radius: 10px;
+	font-size: 0.81rem;
+	font-weight: 700;
+	line-height: 1;
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.install-tab:hover {
+	background: rgba(255, 255, 255, 0.5);
+	color: var(--vp-c-text-1);
+}
+
+.install-tab.active {
+	background: rgba(255, 255, 255, 0.92);
+	color: var(--vp-c-text-1);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.dark .install-tabs {
+	background: rgba(28, 19, 16, 0.82);
+	border-color: rgba(255, 255, 255, 0.08);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.dark .install-tab {
+	color: rgba(249, 233, 215, 0.68);
+}
+
+.dark .install-tab:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: #f9e9d7;
+}
+
+.dark .install-tab.active {
+	background: #f2dac8;
+	color: #241814;
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.22),
+		inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.install-block {
+	display: flex;
 	align-items: center;
 	gap: 0.5em;
 	padding: 0.55em 1em 0.55em 0.9em;
@@ -1192,9 +1347,11 @@ a.detail-card:focus-visible {
 	font-family: var(--vp-font-family-mono);
 	font-size: 0.88rem;
 	color: #f2dac8;
-	margin: 1.25rem 0;
+	margin: 0;
+	width: fit-content;
 	max-width: 100%;
 	user-select: none;
+	transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .install-prompt {
@@ -1204,6 +1361,8 @@ a.detail-card:focus-visible {
 }
 
 .install-command {
+	flex: 1 1 auto;
+	min-width: 0;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1249,8 +1408,8 @@ a.detail-card:focus-visible {
 }
 .install-command.typing-done .install-caret { display: none; }
 
-@media (max-width: 449px) {
-	.install-block {
+@media (max-width: 500px) {
+	.install-shell {
 		display: none;
 	}
 }

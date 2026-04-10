@@ -5,9 +5,6 @@ hero:
   name: Aviary
   text: The AI Agent Nest
   tagline: Give your AI a home. Connect it to Slack, Signal, or Discord, chat with it, put it to work on a schedule, and manage everything from a simple web dashboard or the terminal.
-  image:
-    src: /logo.png
-    alt: Aviary logo
 
 features:
   - title: Connected Assistants

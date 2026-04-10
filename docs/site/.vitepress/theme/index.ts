@@ -29,6 +29,7 @@ export default {
 
 		if (typeof window !== "undefined") {
 			function typeInstallCommand(el: Element) {
+				if (el.getAttribute("data-no-typing") === "true") return;
 				if (
 					el.classList.contains("typing-done") ||
 					el.classList.contains("typing-in-progress")
@@ -104,6 +105,7 @@ export default {
 				// but lacks the caret, clear it so typing can restart.
 				for (const el of els) {
 					try {
+						if (el.getAttribute("data-no-typing") === "true") continue;
 						const hasDone = el.classList.contains("typing-done");
 						const hasCaret = !!el.querySelector(".install-caret");
 						const dataText = el.getAttribute("data-install-text") || "";
@@ -119,6 +121,7 @@ export default {
 
 				const pending = els.filter(
 					(el) =>
+						el.getAttribute("data-no-typing") !== "true" &&
 						!el.classList.contains("typing-done") &&
 						!el.classList.contains("typing-in-progress"),
 				);

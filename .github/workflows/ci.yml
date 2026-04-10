@@ -136,11 +136,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:release -- --version v0.0.0-ci --targets linux/amd64,windows/amd64,darwin/arm64
+      - run: pnpm build:release -- --version v0.0.0-ci --targets linux/amd64,linux/arm64,windows/amd64,darwin/amd64,darwin/arm64
       - run: test -f dist/release/aviary_v0.0.0-ci_linux_amd64.tar.gz
+      - run: test -f dist/release/aviary_v0.0.0-ci_linux_arm64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_windows_amd64.tar.gz
+      - run: test -f dist/release/aviary_v0.0.0-ci_darwin_amd64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_darwin_arm64.tar.gz
       - run: test -f dist/release/checksums.txt
+      - run: test -f bucket/aviary.json
+      - run: test -f Formula/aviary.rb
+      - run: node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync('bucket/aviary.json', 'utf8')); if (manifest.version !== '0.0.0-ci') throw new Error('unexpected scoop version'); if (manifest.bin !== 'aviary.exe') throw new Error('unexpected scoop bin'); if (!manifest.architecture?.['64bit']?.hash) throw new Error('missing scoop hash');"
+      - run: node -e "const fs=require('node:fs'); const formula=fs.readFileSync('Formula/aviary.rb', 'utf8'); for (const expected of ['version \"0.0.0-ci\"','aviary_v0.0.0-ci_linux_amd64.tar.gz','aviary_v0.0.0-ci_linux_arm64.tar.gz','aviary_v0.0.0-ci_darwin_amd64.tar.gz','aviary_v0.0.0-ci_darwin_arm64.tar.gz']) { if (!formula.includes(expected)) throw new Error(`missing ${expected}`); }"
 
   web-lint:
     name: "Lint: Web"

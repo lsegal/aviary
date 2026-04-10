@@ -9,21 +9,45 @@ This guide walks you through installing Aviary, starting the server, and creatin
 
 ## Install
 
-**macOS / Linux**
+### macOS / Linux
+
+#### Homebrew
+
+```bash
+brew tap lsegal/aviary https://github.com/lsegal/aviary
+brew install aviary
+```
+
+This tap works with Homebrew on macOS and Linux.
+
+#### Manual (cURL)
 
 ```bash
 curl -fsSL https://aviary.bot/install.sh | sh
 ```
 
-**Windows (PowerShell)**
+The install script downloads the latest release binary to `~/.local/bin/` and adds it to your `PATH`.
+
+### Windows
+
+#### Scoop
+
+```powershell
+scoop bucket add aviary https://github.com/lsegal/aviary
+scoop install aviary/aviary
+```
+
+Scoop installs Aviary into Scoop's managed package directory and shims `aviary.exe` onto your `PATH`.
+
+#### Manual (PowerShell)
 
 ```powershell
 iwr https://aviary.bot/install.ps1 | iex
 ```
 
-Both scripts download the latest release binary to `~/.local/bin/` and add it to your `PATH`.
+The install script downloads the latest release binary to `~/.local/bin/` and adds it to your `PATH`.
 
-**Docker**
+### Docker
 
 ```bash
 mkdir -p ~/.config/aviary
@@ -43,11 +67,11 @@ The Docker image also bundles a working Chrome/Chromium browser, so Aviary can r
 `-p 1455:1455` is only needed for OpenAI Codex OAuth, and `-p 45289:45289` is only needed for Gemini OAuth. If you are using API keys or other providers, you can omit those extra port mappings.
 :::
 
-**Binary release**
+### Binary Release
 
 Download the latest release for your platform from the [Releases page](https://github.com/lsegal/aviary/releases), place the binary in your `$PATH`, and make it executable.
 
-**Go install**
+### Go Install
 
 ```bash
 go install github.com/lsegal/aviary/cmd/aviary@latest
