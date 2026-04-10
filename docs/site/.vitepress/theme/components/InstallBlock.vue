@@ -28,15 +28,44 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+	computed,
+	nextTick,
+	onBeforeUnmount,
+	onMounted,
+	ref,
+	watch,
+} from "vue";
 
 type InstallOptionKey = "curl" | "pwsh" | "brew" | "scoop";
 
 const installOptions = [
-	{ key: "curl", label: "Bash", prompt: "$", command: "curl -fsSL https://aviary.bot/install.sh | sh" },
-	{ key: "pwsh", label: "Powershell", prompt: ">", command: "iwr https://aviary.bot/install.ps1 | iex" },
-	{ key: "brew", label: "Homebrew", prompt: "$", command: "brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary" },
-	{ key: "scoop", label: "Scoop", prompt: ">", command: "scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/aviary" },
+	{
+		key: "curl",
+		label: "Bash",
+		prompt: "$",
+		command: "curl -fsSL https://aviary.bot/install.sh | sh",
+	},
+	{
+		key: "pwsh",
+		label: "Powershell",
+		prompt: ">",
+		command: "iwr https://aviary.bot/install.ps1 | iex",
+	},
+	{
+		key: "brew",
+		label: "Homebrew",
+		prompt: "$",
+		command:
+			"brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary",
+	},
+	{
+		key: "scoop",
+		label: "Scoop",
+		prompt: ">",
+		command:
+			"scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/aviary",
+	},
 ] as const satisfies ReadonlyArray<{
 	key: InstallOptionKey;
 	label: string;
@@ -81,7 +110,10 @@ function copy() {
 }
 
 function isCompactViewport() {
-	return typeof window !== "undefined" && window.matchMedia("(max-width: 449px)").matches;
+	return (
+		typeof window !== "undefined" &&
+		window.matchMedia("(max-width: 449px)").matches
+	);
 }
 
 function clearTypingTimer() {
@@ -123,7 +155,10 @@ function measureTargetWidth(command: string) {
 	return width;
 }
 
-async function syncInstallWidth(animate: boolean, targetCommand = activeOption.value.command) {
+async function syncInstallWidth(
+	animate: boolean,
+	targetCommand = activeOption.value.command,
+) {
 	const el = blockEl.value;
 	const shell = shellEl.value;
 	if (!el || !shell || typeof window === "undefined") return;
@@ -140,8 +175,10 @@ async function syncInstallWidth(animate: boolean, targetCommand = activeOption.v
 
 	await nextTick();
 
-	const shellParentWidth = shell.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
-	const naturalWidth = measureTargetWidth(targetCommand) || measureNaturalWidth(el);
+	const shellParentWidth =
+		shell.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+	const naturalWidth =
+		measureTargetWidth(targetCommand) || measureNaturalWidth(el);
 	const targetWidth = Math.min(naturalWidth, shellParentWidth);
 
 	if (!animate || !hasMounted.value) {
