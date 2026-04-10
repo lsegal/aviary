@@ -128,7 +128,7 @@ jobs:
 
           echo "Container did not start serving on port 16677" >&2
           exit 1
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         if: steps.prep.outputs.push_image == 'true'
         with:
           registry: ghcr.io
