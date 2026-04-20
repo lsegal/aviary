@@ -29,15 +29,15 @@ const installOptions = [
 		key: "brew",
 		label: "Homebrew",
 		prompt: "$",
-		command: "brew tap lsegal/aviary && brew install aviary",
+		command: "brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary",
 	},
 	{
 		key: "scoop",
 		label: "Scoop",
 		prompt: ">",
-		command: "scoop bucket add aviary && scoop install aviary",
+		command: "scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/ aviary",
 	},
-] as const satisfies ReadonlyArray<{
+] satisfies ReadonlyArray<{
 	key: InstallKey;
 	label: string;
 	prompt: string;
@@ -127,22 +127,10 @@ watch(activeKey, (_value, oldValue) => {
 
 <template>
 	<div class="landing-install" :class="{ 'landing-install-minimal': minimal }">
-		<div
-			v-if="!minimal"
-			class="landing-install-tabs"
-			role="tablist"
-			aria-label="Install methods"
-		>
-			<button
-				v-for="option in installOptions"
-				:key="option.key"
-				type="button"
-				class="landing-install-tab"
-				:class="{ active: option.key === activeKey }"
-				role="tab"
-				:aria-selected="option.key === activeKey"
-				@click="activeKey = option.key"
-			>
+		<div v-if="!minimal" class="landing-install-tabs" role="tablist" aria-label="Install methods">
+			<button v-for="option in installOptions" :key="option.key" type="button" class="landing-install-tab"
+				:class="{ active: option.key === activeKey }" role="tab" :aria-selected="option.key === activeKey"
+				@click="activeKey = option.key">
 				{{ option.label }}
 			</button>
 		</div>
@@ -153,42 +141,15 @@ watch(activeKey, (_value, oldValue) => {
 				{{ displayedCommand }}
 				<span v-if="showCaret" class="caret" aria-hidden="true"></span>
 			</span>
-			<button
-				type="button"
-				class="landing-install-copy"
-				:class="{ copied }"
-				:aria-label="copied ? 'Copied install command' : 'Copy install command'"
-				@click="copyCommand"
-			>
-				<svg
-					v-if="!copied"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
+			<button type="button" class="landing-install-copy" :class="{ copied }"
+				:aria-label="copied ? 'Copied install command' : 'Copy install command'" @click="copyCommand">
+				<svg v-if="!copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+					stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 					<rect x="9" y="9" width="13" height="13" rx="2" />
-					<path
-						d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-					/>
+					<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 				</svg>
-				<svg
-					v-else
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
+				<svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+					stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 					<polyline points="20 6 9 17 4 12" />
 				</svg>
 			</button>
