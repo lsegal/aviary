@@ -203,13 +203,13 @@ onBeforeUnmount(() => {
 					</div>
 
 					<h1 class="landing-hero-title reveal">
-						Give your AI<br />
-						a place to <span class="accent">roost.</span>
+						<span class="brand">Aviary</span><br />
+						<span class="subtitle">the AI agent <span class="accent">nest.</span></span>
 					</h1>
 					<p class="landing-hero-lede reveal">
-						Aviary is the nest for your agents. Connect them to Slack,
-						Signal, and Discord, hold long conversations, schedule repeat
-						work, and run it all from a single binary with a built-in dashboard.
+						Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, and more. Have
+						conversations, set up scheduled tasks, and let your agents work for you, all managed from a CLI or a
+						web-based control panel.
 					</p>
 
 					<div class="reveal">
@@ -853,6 +853,15 @@ onBeforeUnmount(() => {
 	font-weight: 400;
 	line-height: 0.98;
 	letter-spacing: -0.03em;
+}
+
+.landing-hero-title .brand {
+	color: var(--brand);
+	letter-spacing: 0.1rem;
+}
+
+.landing-hero-title .subtitle {
+	letter-spacing: -0.15rem;
 }
 
 .landing-hero-title .accent,
@@ -2423,6 +2432,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 540px) {
+
 	.landing-bento,
 	.landing-docs-grid {
 		grid-template-columns: 1fr;
