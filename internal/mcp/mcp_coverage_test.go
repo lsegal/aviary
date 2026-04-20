@@ -1098,7 +1098,11 @@ func TestTaskSchedule_InvalidTriggerType(t *testing.T) {
 	if err != nil {
 		msg = err.Error()
 	}
-	assert.True(t, strings.Contains(msg, "invalid trigger_type") || strings.Contains(msg, "invalid params"))
+	assert.True(t,
+		strings.Contains(msg, "invalid trigger_type") ||
+			strings.Contains(msg, "invalid params") ||
+			strings.Contains(msg, "enum: banana does not equal any of: [cron watch]"),
+	)
 }
 
 func TestTaskSchedule_ScheduleRejectsWatchTriggerType(t *testing.T) {

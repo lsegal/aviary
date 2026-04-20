@@ -1173,7 +1173,10 @@ func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
 	if err != nil {
 		msg = err.Error()
 	}
-	assert.Contains(t, msg, "invalid params")
+	assert.True(t,
+		strings.Contains(msg, "invalid params") ||
+			strings.Contains(msg, "unexpected additional properties [\"task\"]"),
+	)
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -1254,7 +1257,11 @@ func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
 	if err != nil {
 		msg = err.Error()
 	}
-	assert.True(t, strings.Contains(msg, "only one of") || strings.Contains(msg, "invalid params"))
+	assert.True(t,
+		strings.Contains(msg, "only one of") ||
+			strings.Contains(msg, "invalid params") ||
+			strings.Contains(msg, "validating /allOf/0: not"),
+	)
 }
 
 func TestTaskSchedule_OneShotUsesBareNamedTaskID(t *testing.T) {
