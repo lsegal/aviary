@@ -29,13 +29,15 @@ const installOptions = [
 		key: "brew",
 		label: "Homebrew",
 		prompt: "$",
-		command: "brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary",
+		command:
+			"brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary",
 	},
 	{
 		key: "scoop",
 		label: "Scoop",
 		prompt: ">",
-		command: "scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/ aviary",
+		command:
+			"scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/ aviary",
 	},
 ] satisfies ReadonlyArray<{
 	key: InstallKey;
