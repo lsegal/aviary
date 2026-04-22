@@ -83,7 +83,7 @@
         </div>
       </div>
       <div v-else class="px-4 py-2 text-sm text-gray-400 italic">
-        {{ props.emptyText ?? "No matching options found" }}
+        {{ query.trim() ? 'Press Enter to use "' + query.trim() + '"' : (props.emptyText ?? "No matching options found") }}
       </div>
     </div>
   </div>
@@ -155,6 +155,8 @@ function move(delta: number) {
 function selectActive() {
 	if (filteredOptions.value[activeIndex.value]) {
 		select(filteredOptions.value[activeIndex.value]);
+	} else if (query.value.trim()) {
+		select(query.value.trim());
 	}
 }
 

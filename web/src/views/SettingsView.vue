@@ -818,6 +818,8 @@ const {
 const providerAddSelection = ref("");
 const providerApiKeyValue = ref("");
 const providerBaseURIValue = ref("");
+const providerRegionValue = ref("");
+const providerProfileValue = ref("");
 const secretName = ref("");
 const secretValue = ref("");
 
@@ -826,8 +828,10 @@ const configuredProviders = computed(() => {
 		key: string;
 		provider: string;
 		providerLabel: string;
-		authType: "oauth" | "apikey" | "endpoint";
+		authType: "oauth" | "apikey" | "endpoint" | "region";
 		baseURI?: string;
+		region?: string;
+		profile?: string;
 		hasAPIKey?: boolean;
 	}> = [];
 	for (const p of KNOWN_PROVIDERS) {
@@ -835,6 +839,22 @@ const configuredProviders = computed(() => {
 		const hasAPIKey = credentials.value.includes(`${p.authId}:default`);
 		const baseURI =
 			draft.value.models.providers?.[p.id]?.base_uri?.trim() ?? "";
+		const region =
+			draft.value.models.providers?.[p.id]?.region?.trim() ?? "";
+		const profile =
+			draft.value.models.providers?.[p.id]?.profile?.trim() ?? "";
+		if (p.requiresRegion && region) {
+			entries.push({
+				key: `${p.id}:region`,
+				provider: p.id,
+				providerLabel: p.label,
+				authType: "region",
+				region,
+				profile: profile || undefined,
+				hasAPIKey,
+			});
+			continue;
+		}
 		if (p.requiresBaseURI && baseURI) {
 			entries.push({
 				key: `${p.id}:endpoint`,
@@ -869,6 +889,14 @@ const configuredProviders = computed(() => {
 const availableProviderOptions = computed(() => {
 	const options: Array<{ key: string; label: string; provider: string }> = [];
 	for (const p of KNOWN_PROVIDERS) {
+		if (p.requiresRegion) {
+			options.push({
+				key: `${p.id}:region`,
+				label: `${p.label} (Region)`,
+				provider: p.id,
+			});
+			continue;
+		}
 		if (p.requiresBaseURI) {
 			options.push({
 				key: `${p.id}:endpoint`,
@@ -896,11 +924,23 @@ const availableProviderOptions = computed(() => {
 });
 
 watch(providerAddSelection, (selection) => {
-	const provider = selection.replace(/:(apikey|oauth|endpoint)$/, "");
+	const provider = selection.replace(/:(apikey|oauth|endpoint|region)$/, "");
 	const meta = KNOWN_PROVIDERS.find(
 		(p) => p.id === provider || p.authId === provider,
 	);
 	providerApiKeyValue.value = "";
+	if (selection.endsWith(":region") && meta) {
+		providerRegionValue.value =
+			draft.value.models.providers?.[meta.id]?.region?.trim() ??
+			meta.regionPlaceholder ??
+			"";
+		providerProfileValue.value =
+			draft.value.models.providers?.[meta.id]?.profile?.trim() ?? "";
+		providerBaseURIValue.value = "";
+		return;
+	}
+	providerRegionValue.value = "";
+	providerProfileValue.value = "";
 	if (!selection.endsWith(":endpoint") || !meta) {
 		providerBaseURIValue.value = "";
 		return;
@@ -3082,6 +3122,50 @@ async function addProviderEndpoint() {
 	}
 }
 
+async function addProviderBedrock() {
+	const provider = providerAddSelection.value.replace(/:region$/, "");
+	const meta = KNOWN_PROVIDERS.find(
+		(p) => p.id === provider && p.requiresRegion,
+	);
+	const region = providerRegionValue.value.trim();
+	const profile = providerProfileValue.value.trim();
+	if (!meta || !region) return;
+	errorMessage.value = "";
+	try {
+		const next = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
+		next.models.providers ??= {};
+		const providerCfg: Record<string, string> = {
+			...(next.models.providers[provider] ?? { auth: "" }),
+			auth:
+				providerApiKeyValue.value.trim() && meta.apiAuthKey
+					? `auth:${meta.apiAuthKey}`
+					: "",
+			region,
+		};
+		if (profile) {
+			providerCfg.profile = profile;
+		}
+		next.models.providers[provider] = providerCfg as any;
+		await store.saveConfig(next);
+		draft.value = hydrateDraftConfig(next);
+		lastSavedSnapshot = normalizedDraftSnapshot();
+		if (meta.apiAuthKey && providerApiKeyValue.value.trim()) {
+			await callTool("auth_set", {
+				name: meta.apiAuthKey,
+				value: providerApiKeyValue.value.trim(),
+			});
+		}
+		providerAddSelection.value = "";
+		providerApiKeyValue.value = "";
+		providerRegionValue.value = "";
+		providerProfileValue.value = "";
+		await refreshCredentials();
+		okMessage.value = `${meta.label} configuration saved.`;
+	} catch (e) {
+		errorMessage.value = e instanceof Error ? e.message : String(e);
+	}
+}
+
 async function addProviderOAuth() {
 	if (!providerAddSelection.value) return;
 	const authId = providerAddSelection.value.replace(/:oauth$/, "");
@@ -3346,6 +3430,7 @@ const settingsContext = proxyRefs({
 	addChannel,
 	addProviderApiKey,
 	addProviderEndpoint,
+	addProviderBedrock,
 	addProviderOAuth,
 	addSecret,
 	addTask,
@@ -3441,6 +3526,8 @@ const settingsContext = proxyRefs({
 	providerAddSelection,
 	providerApiKeyValue,
 	providerBaseURIValue,
+	providerRegionValue,
+	providerProfileValue,
 	reauthorizeProvider,
 	refreshCredentials,
 	removeAgent,

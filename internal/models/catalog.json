@@ -487,5 +487,59 @@
     "input_tokens": 1048576,
     "output_tokens": 65536,
     "supports_image_input": true
+  },
+  {
+    "id": "bedrock/global.anthropic.claude-opus-4-6-v1",
+    "input_tokens": 200000,
+    "output_tokens": 32000,
+    "supports_image_input": true
+  },
+  {
+    "id": "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "bedrock/us.anthropic.claude-sonnet-4-6",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "input_tokens": 200000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "bedrock/us.meta.llama3-1-8b-instruct-v1:0",
+    "input_tokens": 128000,
+    "output_tokens": 8192,
+    "supports_image_input": false
+  },
+  {
+    "id": "bedrock/us.meta.llama3-1-70b-instruct-v1:0",
+    "input_tokens": 128000,
+    "output_tokens": 8192,
+    "supports_image_input": false
+  },
+  {
+    "id": "bedrock/mistral.mistral-large-2407-v1:0",
+    "input_tokens": 128000,
+    "output_tokens": 8192,
+    "supports_image_input": false
+  },
+  {
+    "id": "bedrock/amazon.nova-pro-v1:0",
+    "input_tokens": 300000,
+    "output_tokens": 5120,
+    "supports_image_input": true
   }
 ]

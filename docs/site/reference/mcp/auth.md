@@ -84,6 +84,14 @@ Remove a stored credential.
 
 OAuth tools let you authenticate with providers using your existing account, without managing raw API keys. The typical pattern is a two-step flow: call the start tool, follow the instructions, then call the complete tool.
 
+::: info Bedrock Authentication
+AWS Bedrock does not use the OAuth flow or `auth_set`. It authenticates via the standard AWS credential chain (environment variables, `~/.aws/config` profiles, SSO, instance roles). Configure it in `aviary.yaml` with `region` and optionally `profile`. If you need explicit credentials, store them as `ACCESS_KEY:SECRET_KEY` via `auth_set`:
+
+```bash
+auth_set { name: "bedrock:default", value: "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" }
+```
+:::
+
 ---
 
 ## auth_login_anthropic

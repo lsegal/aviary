@@ -5,6 +5,8 @@ import { useMCP } from "./useMCP";
 type ProviderConfig = {
 	auth?: string;
 	base_uri?: string;
+	region?: string;
+	profile?: string;
 };
 
 type AppConfigLike = {
@@ -60,6 +62,8 @@ export function useAvailableModels() {
 		await new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
+	const regionProviders = ref<Set<string>>(new Set());
+
 	const authenticatedProviders = computed(() => {
 		const providers = new Set<string>();
 		for (const cred of credentials.value) {
@@ -67,6 +71,9 @@ export function useAvailableModels() {
 			if (provider) {
 				providers.add(provider);
 			}
+		}
+		for (const rp of regionProviders.value) {
+			providers.add(rp);
 		}
 		return providers;
 	});
@@ -125,6 +132,15 @@ export function useAvailableModels() {
 
 	async function refreshEndpointModels(cfg: AppConfigLike | null) {
 		const providers = cfg?.models?.providers ?? {};
+
+		const rp = new Set<string>();
+		for (const [name, providerCfg] of Object.entries(providers)) {
+			if (providerCfg?.region?.trim()) {
+				rp.add(name);
+			}
+		}
+		regionProviders.value = rp;
+
 		const endpointProviders = Object.entries(providers).filter(
 			([name, providerCfg]) =>
 				(name === "vllm" || name === "ollama") &&

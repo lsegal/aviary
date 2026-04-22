@@ -19,6 +19,7 @@ Start with separation of duties between the host, the Aviary server, and the age
 - Prefer a dedicated VM, small server, or container host over a laptop that also contains unrelated personal or production secrets.
 - Give each high-trust agent its own `working_dir` instead of pointing multiple agents at a broad shared tree.
 - Store model and channel credentials via `auth:<key>` references rather than embedding raw secrets directly in `aviary.yaml`.
+- For AWS Bedrock, prefer using the standard AWS credential chain (SSO, instance roles, shared config profiles) instead of storing access keys. If you must use explicit keys, store them via `auth:<key>` references.
 
 ::: info Note
 Even when agents do not have `file_*` or `exec` tools, the Aviary process itself still runs with the privileges of its host user. Host-level separation matters.

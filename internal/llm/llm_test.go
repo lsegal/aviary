@@ -58,6 +58,7 @@ func TestFactoryForModel(t *testing.T) {
 		{model: "google-gemini/gemini-2.0-flash", wantErr: false},
 		{model: "vllm/qwen2.5-coder", wantErr: false},
 		{model: "ollama/llama3.2", wantErr: false},
+		{model: "bedrock/us.anthropic.claude-sonnet-4-6", wantErr: false},
 		{model: "invalid", wantErr: true},
 		{model: "unknown/model", wantErr: true},
 	}

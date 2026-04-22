@@ -27,10 +27,10 @@
 											<span
 												:class="entry.authType === 'oauth'
 													? 'inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-													: entry.authType === 'endpoint'
+													: entry.authType === 'endpoint' || entry.authType === 'region'
 														? 'inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
 														: 'inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'">
-												{{ entry.authType === 'oauth' ? 'OAuth' : entry.authType === 'endpoint' ? 'Endpoint' : 'API Key' }}
+												{{ entry.authType === 'oauth' ? 'OAuth' : entry.authType === 'endpoint' ? 'Endpoint' : entry.authType === 'region' ? 'Region' : 'API Key' }}
 											</span>
 										</td>
 										<td class="px-3 py-2">
@@ -50,6 +50,12 @@
 													{{ entry.hasAPIKey ? "Bearer token configured" : "No bearer token" }}
 												</div>
 											</div>
+										<div v-else-if="entry.authType === 'region'" class="space-y-1">
+											<div class="font-mono text-[11px] text-gray-500 dark:text-gray-400">{{ entry.region }}{{ entry.profile ? ` (profile: ${entry.profile})` : '' }}</div>
+											<div class="text-[11px] text-gray-400 dark:text-gray-500">
+												{{ entry.hasAPIKey ? "Explicit credentials" : "AWS credential chain" }}
+											</div>
+										</div>
 											<span v-else class="tracking-widest text-gray-400 dark:text-gray-500">••••••••</span>
 										</td>
 										<td class="px-3 py-2 text-right">
@@ -60,10 +66,13 @@
 												<button v-if="entry.authType === 'endpoint'" type="button"
 													class="text-xs text-blue-600 hover:underline dark:text-blue-400"
 													@click="providerAddSelection = `${entry.provider}:endpoint`">Edit</button>
+												<button v-if="entry.authType === 'region'" type="button"
+													class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+													@click="providerAddSelection = `${entry.provider}:region`">Edit</button>
 												<button type="button"
 													class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
 													:title="`Remove ${entry.key}`"
-													@click="entry.authType === 'endpoint' ? deleteProviderConnection(entry.provider) : deleteProviderCredential(entry.key)">
+													@click="(entry.authType === 'endpoint' || entry.authType === 'region') ? deleteProviderConnection(entry.provider) : deleteProviderCredential(entry.key)">
 													<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
 														fill="currentColor">
 														<path fill-rule="evenodd"
@@ -85,7 +94,21 @@
 								<option v-for="opt in availableProviderOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</option>
 							</select>
 							<template v-if="providerAddSelection">
-								<template v-if="providerAddSelection.endsWith(':endpoint')">
+							<template v-if="providerAddSelection.endsWith(':region')">
+								<input v-model="providerRegionValue" type="text" class="field-input max-w-[180px]"
+									placeholder="AWS region (e.g. us-east-1)" />
+								<input v-model="providerProfileValue" type="text" class="field-input max-w-[180px]"
+									placeholder="AWS profile (optional)" />
+								<input v-model="providerApiKeyValue" type="password" class="field-input max-w-[280px]"
+									placeholder="ACCESS_KEY:SECRET_KEY (optional)" />
+									<button type="button"
+										class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+										:disabled="!providerRegionValue.trim()"
+										@click="addProviderBedrock">
+										Save
+									</button>
+								</template>
+								<template v-else-if="providerAddSelection.endsWith(':endpoint')">
 									<input v-model="providerBaseURIValue" type="text" class="field-input min-w-[260px] max-w-[320px]"
 										placeholder="Base URI (optional)" />
 									<input v-model="providerApiKeyValue" type="password" class="field-input max-w-[240px]"
@@ -285,8 +308,10 @@ interface ConfiguredProviderEntry {
 	key: string;
 	provider: string;
 	providerLabel: string;
-	authType: "oauth" | "endpoint" | "apikey";
+	authType: "oauth" | "endpoint" | "apikey" | "region";
 	baseURI?: string;
+	region?: string;
+	profile?: string;
 	hasAPIKey?: boolean;
 }
 
@@ -305,8 +330,11 @@ interface SettingsProvidersContext {
 	deleteProviderCredential: (key: string) => unknown;
 	availableProviderOptions: AvailableProviderOption[];
 	providerBaseURIValue: string;
+	providerRegionValue: string;
+	providerProfileValue: string;
 	providerApiKeyValue: string;
 	addProviderEndpoint: () => unknown;
+	addProviderBedrock: () => unknown;
 	addProviderApiKey: () => unknown;
 	addProviderOAuth: () => unknown;
 	anthropicUrl: string;

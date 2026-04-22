@@ -80,7 +80,10 @@ Return the current server configuration as a JSON object. This is the same struc
     { "name": "assistant", "model": "anthropic/claude-sonnet-4-6" }
   ],
   "models": {
-    "providers": { "anthropic": { "auth": "ANTHROPIC_API_KEY" } },
+    "providers": {
+      "anthropic": { "auth": "ANTHROPIC_API_KEY" },
+      "bedrock": { "region": "us-west-2", "profile": "your-aws-profile-name-goes-here" }
+    },
     "defaults": { "model": "anthropic/claude-sonnet-4-6" }
   }
 }

@@ -67,6 +67,13 @@ Install web dependencies:
 pnpm install
 ```
 
+First time requires building docs
+```shell
+cd docs
+pnpm install
+cd ..
+```
+
 Start the development server (runs Vite + Go backend concurrently):
 
 ```shell
