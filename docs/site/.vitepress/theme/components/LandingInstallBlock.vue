@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-type InstallKey = "curl" | "pwsh" | "brew" | "scoop";
+type InstallKey = "curl" | "pwsh" | "docker";
 
 const props = withDefaults(
 	defineProps<{
@@ -26,18 +26,10 @@ const installOptions = [
 		command: "iwr https://aviary.bot/install.ps1 | iex",
 	},
 	{
-		key: "brew",
-		label: "Homebrew",
+		key: "docker",
+		label: "Docker",
 		prompt: "$",
-		command:
-			"brew tap lsegal/aviary https://github.com/lsegal/aviary && brew install aviary",
-	},
-	{
-		key: "scoop",
-		label: "Scoop",
-		prompt: ">",
-		command:
-			"scoop bucket add aviary https://github.com/lsegal/aviary && scoop install aviary/ aviary",
+		command: "docker run -p 16677:16677 gchcr.io/lsegal/aviary",
 	},
 ] satisfies ReadonlyArray<{
 	key: InstallKey;
