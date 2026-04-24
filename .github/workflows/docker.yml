@@ -90,7 +90,7 @@ jobs:
             type=raw,value=${{ steps.prep.outputs.docker_tag }},enable=${{ steps.prep.outputs.docker_tag != '' }}
             type=raw,value=latest,enable=${{ steps.prep.outputs.publish_latest == 'true' }}
       - name: Build smoke-test image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -136,7 +136,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push image
         if: steps.prep.outputs.push_image == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
