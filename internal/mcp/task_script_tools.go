@@ -439,11 +439,12 @@ func completeLLMText(
 		stageIndex = tracker.addStage(stageName, system, user)
 	}
 	ch, err := provider.Stream(ctx, llm.Request{
-		Model:    model,
-		System:   system,
-		Messages: []llm.Message{{Role: llm.RoleUser, Content: user}},
-		Stream:   true,
-		Tools:    tools,
+		Model:        model,
+		System:       system,
+		Messages:     []llm.Message{{Role: llm.RoleUser, Content: user}},
+		Stream:       true,
+		CacheControl: llm.DefaultPromptCacheControl(),
+		Tools:        tools,
 	})
 	if err != nil {
 		if tracker != nil && stageIndex >= 0 {

@@ -383,11 +383,12 @@ func (r *AgentRunner) promptCore(
 				return
 			}
 			req := llm.Request{
-				Model:    effectiveModel,
-				Messages: conversation,
-				System:   systemPrompt,
-				Stream:   true,
-				Tools:    llmTools,
+				Model:        effectiveModel,
+				Messages:     conversation,
+				System:       systemPrompt,
+				Stream:       true,
+				CacheControl: llm.DefaultPromptCacheControl(),
+				Tools:        llmTools,
 			}
 			// On the first round, pass the conversation ID so the provider can
 			// resume server-side history without replaying all prior messages.

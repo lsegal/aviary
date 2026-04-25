@@ -45,7 +45,18 @@ type Request struct {
 	MaxToks            int    // 0 = provider default
 	Stream             bool   // whether to stream
 	PreviousResponseID string // provider-native conversation ID; when set, Messages should contain only the new user turn
+	CacheControl       *CacheControl
 	Tools              []ToolDefinition
+}
+
+// CacheControl describes provider-native prompt caching behavior.
+type CacheControl struct {
+	Type string
+}
+
+// DefaultPromptCacheControl enables the standard short-lived prompt cache mode.
+func DefaultPromptCacheControl() *CacheControl {
+	return &CacheControl{Type: "ephemeral"}
 }
 
 // ToolDefinition describes a callable function/tool for provider-native tool APIs.

@@ -145,6 +145,9 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		Messages:  messages,
 		MaxTokens: maxToks,
 	}
+	if req.CacheControl != nil && strings.EqualFold(strings.TrimSpace(req.CacheControl.Type), "ephemeral") {
+		params.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
 	if len(req.Tools) > 0 {
 		useStrictTools := len(req.Tools) <= anthropicStrictToolLimit
 		params.Tools = make([]anthropic.ToolUnionParam, 0, len(req.Tools))

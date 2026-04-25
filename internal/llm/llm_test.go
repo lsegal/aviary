@@ -536,7 +536,11 @@ func TestAnthropicProvider_Stream_TextAndUsage(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
 		anthropicSSEResponse(w, "Hi there!")
 	}))
 	defer srv.Close()
@@ -558,6 +562,54 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 	}
 	assert.True(t, gotDone)
 
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(requestBody, &payload))
+	systemBlocks, ok := payload["system"].([]any)
+	require.True(t, ok)
+	require.Len(t, systemBlocks, 1)
+	block, ok := systemBlocks[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "You are a helpful assistant.", block["text"])
+	_, hasCacheControl := block["cache_control"]
+	assert.False(t, hasCacheControl)
+
+}
+
+func TestAnthropicProvider_Stream_WithPromptCacheControl(t *testing.T) {
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		anthropicSSEResponse(w, "cached")
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	ch, err := p.Stream(context.Background(), Request{
+		System:       "You are a helpful assistant.",
+		Messages:     []Message{{Role: RoleUser, Content: "Hello"}},
+		CacheControl: &CacheControl{Type: "ephemeral"},
+	})
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(requestBody, &payload))
+	cacheControl, ok := payload["cache_control"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "ephemeral", cacheControl["type"])
+	_, hasTTL := cacheControl["ttl"]
+	assert.False(t, hasTTL)
+	if systemBlocks, ok := payload["system"].([]any); ok {
+		require.Len(t, systemBlocks, 1)
+		block, ok := systemBlocks[0].(map[string]any)
+		require.True(t, ok)
+		_, hasBlockCacheControl := block["cache_control"]
+		assert.False(t, hasBlockCacheControl)
+	} else {
+		t.Fatalf("expected system blocks in request payload")
+	}
 }
 
 func TestAnthropicProvider_Stream_StrictToolsDisabledAboveLimit(t *testing.T) {
