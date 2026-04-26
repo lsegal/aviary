@@ -576,6 +576,8 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 }
 
 func TestAnthropicProvider_Stream_WithPromptCacheControl(t *testing.T) {
+	t.Setenv(anthropicPromptCacheEnv, "1")
+
 	var requestBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
@@ -610,6 +612,31 @@ func TestAnthropicProvider_Stream_WithPromptCacheControl(t *testing.T) {
 	} else {
 		t.Fatalf("expected system blocks in request payload")
 	}
+}
+
+func TestAnthropicProvider_Stream_PromptCacheControlDisabledByDefault(t *testing.T) {
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		anthropicSSEResponse(w, "uncached")
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	ch, err := p.Stream(context.Background(), Request{
+		System:       "You are a helpful assistant.",
+		Messages:     []Message{{Role: RoleUser, Content: "Hello"}},
+		CacheControl: &CacheControl{Type: "ephemeral"},
+	})
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(requestBody, &payload))
+	_, hasCacheControl := payload["cache_control"]
+	assert.False(t, hasCacheControl)
 }
 
 func TestAnthropicProvider_Stream_StrictToolsDisabledAboveLimit(t *testing.T) {

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -10,6 +11,7 @@ import (
 )
 
 const anthropicStrictToolLimit = 20
+const anthropicPromptCacheEnv = "AVIARY_ANTHROPIC_ENABLE_PROMPT_CACHE"
 
 // AnthropicProvider streams responses from Anthropic's Claude models.
 type AnthropicProvider struct {
@@ -145,7 +147,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		Messages:  messages,
 		MaxTokens: maxToks,
 	}
-	if req.CacheControl != nil && strings.EqualFold(strings.TrimSpace(req.CacheControl.Type), "ephemeral") {
+	if anthropicPromptCacheEnabled() && req.CacheControl != nil && strings.EqualFold(strings.TrimSpace(req.CacheControl.Type), "ephemeral") {
 		params.CacheControl = anthropic.NewCacheControlEphemeralParam()
 	}
 	if len(req.Tools) > 0 {
@@ -262,6 +264,10 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	}()
 
 	return ch, nil
+}
+
+func anthropicPromptCacheEnabled() bool {
+	return os.Getenv(anthropicPromptCacheEnv) == "1"
 }
 
 func anthropicToolSchema(schema any) anthropic.ToolInputSchemaParam {

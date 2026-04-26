@@ -1716,6 +1716,35 @@ func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
 	assert.Contains(t, history[1].Content, "Alice (u1)")
 }
 
+func TestLoadSessionConversationWithinBudget_PrioritizesCurrentThenRecentHistory(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_hist_budget", Name: "hist-budget"},
+		&config.AgentConfig{Name: "hist-budget"},
+		&mockProvider{}, nil,
+	)
+	sess, err := NewSessionManager().Create(runner.agent.ID)
+	assert.NoError(t, err)
+
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("old bulky context ", 80), "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "old answer", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "recent useful context", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "recent answer", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("current quoted signal text ", 18), "", "")
+
+	history := runner.loadSessionConversationWithinBudget(sess.ID, 10, 220, "")
+	assert.Len(t, history, 2)
+	if len(history) != 2 {
+		return
+	}
+	assert.Equal(t, llm.RoleAssistant, history[0].Role)
+	assert.Contains(t, history[0].Content, "recent useful context")
+	assert.NotContains(t, history[0].Content, "old bulky context")
+	assert.Equal(t, llm.RoleUser, history[1].Role)
+	assert.Contains(t, history[1].Content, "current quoted signal text")
+	assert.LessOrEqual(t, llm.EstimateRequestTokens(llm.Request{Messages: history}), 220)
+}
+
 func TestLoadSessionConversation_PrimaryAnnotationApplied(t *testing.T) {
 	setTestDataDir(t)
 
