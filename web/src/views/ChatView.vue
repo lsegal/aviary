@@ -100,7 +100,7 @@
 					</div>
 					<template v-else>
 						<template v-for="item in displayItems"
-							:key="item.type === 'message' ? (item.msg.id || item.key) : item.key">
+							:key="item.type === 'message' ? messageKey(item.msg, item.key) : item.key">
 							<!-- Date divider -->
 							<div v-if="item.type === 'date-divider'" class="flex justify-center my-4">
 								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
@@ -291,6 +291,7 @@ interface ToolData {
 
 interface Message {
 	id?: string;
+	localKey?: string;
 	role: "user" | "assistant" | "tool";
 	text: string;
 	mediaURL?: string;
@@ -529,6 +530,8 @@ const hasScrollOverflow = ref(false);
 const historyIndex = ref(-1);
 const historyDraft = ref("");
 let ws: WebSocket | null = null;
+let nextMessageKey = 0;
+let loadMessagesSeq = 0;
 
 const showBelowScroller = computed(
 	() => hasScrollOverflow.value && !isAtBottom.value,
@@ -560,6 +563,15 @@ const displayItems = computed((): DisplayItem[] => {
 	}
 	return items;
 });
+
+function newMessageKey(): string {
+	nextMessageKey += 1;
+	return `local-${nextMessageKey}`;
+}
+
+function messageKey(msg: Message, fallback: string): string {
+	return msg.id || msg.localKey || fallback;
+}
 const currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
@@ -573,7 +585,11 @@ const userMessageHistory = computed(() =>
 );
 
 const onVisible = async () => {
-	if (document.visibilityState === "visible" && !hasInlineError.value) {
+	if (
+		document.visibilityState === "visible" &&
+		!isStreaming.value &&
+		!hasInlineError.value
+	) {
 		await loadSessionMessages();
 	}
 };
@@ -704,6 +720,7 @@ async function loadSessions(preferredSessionId = "") {
 
 async function selectAgent(name: string) {
 	if (selectedAgent.value === name) return;
+	loadMessagesSeq += 1;
 	selectedAgent.value = name;
 	selectedSessionId.value = "";
 	sessions.value = [];
@@ -714,6 +731,7 @@ async function selectAgent(name: string) {
 
 async function selectSession(id: string) {
 	if (selectedSessionId.value === id) return;
+	loadMessagesSeq += 1;
 	selectedSessionId.value = id;
 	resetHistoryNavigation();
 	router.push(chatPath(selectedAgent.value, id));
@@ -732,6 +750,7 @@ async function createSession() {
 		sessions.value.push(sess);
 		selectedSessionId.value = sess.id;
 		router.push(chatPath(selectedAgent.value, sess.id));
+		loadMessagesSeq += 1;
 		messages.value = [];
 		resetHistoryNavigation();
 	} catch (e) {
@@ -739,18 +758,32 @@ async function createSession() {
 	}
 }
 
-async function loadSessionMessages() {
+async function loadSessionMessages(force = false) {
+	if (isStreaming.value && !force) return;
 	if (!selectedSessionId.value) {
+		loadMessagesSeq += 1;
 		messages.value = [];
 		resetHistoryNavigation();
 		updateScrollState();
 		return;
 	}
+	loadMessagesSeq += 1;
+	const requestSeq = loadMessagesSeq;
+	const requestSessionId = selectedSessionId.value;
+	const requestAgent = selectedAgent.value;
 	try {
 		const raw = await callTool("session_messages", {
-			session_id: selectedSessionId.value,
-			agent: selectedAgent.value,
+			session_id: requestSessionId,
+			agent: requestAgent,
 		});
+		if (
+			requestSeq !== loadMessagesSeq ||
+			requestSessionId !== selectedSessionId.value ||
+			requestAgent !== selectedAgent.value ||
+			(isStreaming.value && !force)
+		) {
+			return;
+		}
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = persisted
 			.filter(
@@ -759,12 +792,14 @@ async function loadSessionMessages() {
 			)
 			.map((m) => {
 				if (m.role === "tool") {
-					return parseToolMessage(
-						`[tool] ${m.content}`,
-						m.timestamp,
-						m.model,
-						m.id,
-					);
+					return {
+						...parseToolMessage(
+							`[tool] ${m.content}`,
+							m.timestamp,
+							m.model,
+							m.id,
+						),
+					};
 				}
 				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
 					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
@@ -908,6 +943,7 @@ async function send() {
 		[selectedSessionId.value]: true,
 	};
 	messages.value.push({
+		localKey: newMessageKey(),
 		role: "user",
 		text,
 		mediaURL: mediaURL || undefined,
@@ -915,6 +951,7 @@ async function send() {
 	});
 	await scrollBottom(true);
 
+	loadMessagesSeq += 1;
 	isStreaming.value = true;
 	let streamError = false;
 	hasInlineError.value = false;
@@ -925,6 +962,7 @@ async function send() {
 			if (!chunk) return;
 			if (assistantIndex === -1) {
 				messages.value.push({
+					localKey: newMessageKey(),
 					role: "assistant",
 					text: "",
 					timestamp: now,
@@ -932,12 +970,17 @@ async function send() {
 				});
 				assistantIndex = messages.value.length - 1;
 			}
-			messages.value[assistantIndex].text += chunk;
+			const current = messages.value[assistantIndex];
+			messages.value.splice(assistantIndex, 1, {
+				...current,
+				text: current.text + chunk,
+			});
 		};
 		const appendToolMessage = (payload: string) => {
-			messages.value.push(
-				parseToolMessage(`[tool] ${payload}`, now, agentModel),
-			);
+			messages.value.push({
+				...parseToolMessage(`[tool] ${payload}`, now, agentModel),
+				localKey: newMessageKey(),
+			});
 			assistantIndex = -1;
 		};
 		const flushPendingChunks = () => {
@@ -964,6 +1007,7 @@ async function send() {
 			(chunk, type) => {
 				if (type === "media" && chunk) {
 					messages.value.push({
+						localKey: newMessageKey(),
 						role: "assistant",
 						text: "",
 						mediaURL: chunk,
@@ -972,7 +1016,10 @@ async function send() {
 					});
 					scrollBottom();
 				} else if (type === "tool" && chunk) {
-					messages.value.push(parseToolChunk(chunk, now));
+					messages.value.push({
+						...parseToolChunk(chunk, now),
+						localKey: newMessageKey(),
+					});
 					scrollBottom();
 				} else if (chunk) {
 					pendingText += chunk;
@@ -993,7 +1040,7 @@ async function send() {
 			normalized.includes("cancelled")
 		) {
 			isStreaming.value = false;
-			await loadSessionMessages();
+			await loadSessionMessages(true);
 			await refreshSessionProcessing();
 			await scrollBottom();
 			return;
@@ -1001,6 +1048,7 @@ async function send() {
 		streamError = true;
 		hasInlineError.value = true;
 		messages.value.push({
+			localKey: newMessageKey(),
 			role: "assistant",
 			text: `Error: ${msg}`,
 			isError: true,
@@ -1013,7 +1061,7 @@ async function send() {
 	// Reload canonical messages from server after streaming completes.
 	// Skip if we showed an inline error so the error bubble stays visible.
 	if (!streamError) {
-		await loadSessionMessages();
+		await loadSessionMessages(true);
 	}
 	await refreshSessionProcessing();
 	await scrollBottom();

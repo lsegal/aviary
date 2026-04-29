@@ -20,6 +20,11 @@ export type ToolHandler<P = Record<string, unknown>, R = unknown> = (
 	args?: P,
 ) => R | Promise<R>;
 
+export interface MCPStreamFixture {
+	stream: string[];
+	result?: unknown;
+}
+
 /** Fixture data keyed by MCP tool name. */
 export interface ToolFixtures {
 	agent_list?: object[] | string;
@@ -39,9 +44,32 @@ export interface ToolFixtures {
 
 	[key: string]:
 		| unknown
+		| MCPStreamFixture
 		| ToolHandler<Record<string, unknown>, unknown>
 		| ((args?: Record<string, unknown>) => unknown | Promise<unknown>);
 }
+
+function isMCPStreamFixture(value: unknown): value is MCPStreamFixture {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		Array.isArray((value as MCPStreamFixture).stream)
+	);
+}
+
+type MCPStreamEvent =
+	| {
+			jsonrpc: string;
+			method: string;
+			params: { message: string };
+	  }
+	| {
+			jsonrpc: string;
+			id: number | undefined;
+			result: {
+				content: Array<{ type: string; text: string }>;
+			};
+	  };
 
 /**
  * Intercepts /api/login and /mcp so tests run without a real server.
@@ -94,6 +122,35 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 				typeof fixture === "function"
 					? await fixture(body.params?.arguments)
 					: fixture;
+			if (isMCPStreamFixture(data)) {
+				const events: MCPStreamEvent[] = data.stream.map((message) => ({
+					jsonrpc: "2.0",
+					method: "notifications/progress",
+					params: { message },
+				}));
+				events.push({
+					jsonrpc: "2.0",
+					id: body.id,
+					result: {
+						content: [
+							{
+								type: "text",
+								text:
+									typeof data.result === "string"
+										? data.result
+										: JSON.stringify(data.result ?? ""),
+							},
+						],
+					},
+				});
+				return route.fulfill({
+					status: 200,
+					contentType: "text/event-stream",
+					body: events
+						.map((event) => `data: ${JSON.stringify(event)}\n\n`)
+						.join(""),
+				});
+			}
 			const text = typeof data === "string" ? data : JSON.stringify(data);
 			return route.fulfill({
 				status: 200,
