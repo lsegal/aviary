@@ -17,7 +17,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/slack-go/slack v0.20.0
+	github.com/slack-go/slack v0.22.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/yuin/gopher-lua v1.1.1
