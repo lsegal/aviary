@@ -57,7 +57,7 @@
 		"cross-env": "^10.1.0",
 		"execa": "^9.6.1",
 		"postcss": "^8.5.10",
-		"tailwindcss": "^4.2.2",
+		"tailwindcss": "^4.2.4",
 		"typescript": "^5.9.3",
 		"vite": "^8.0.10",
 		"vpr": "^1.4.5",
