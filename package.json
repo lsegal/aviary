@@ -2,8 +2,24 @@
 	"name": "aviary",
 	"version": "0.4.8",
 	"private": true,
-	"packageManager": "pnpm@8.6.0",
+	"packageManager": "pnpm@8.15.9",
 	"type": "module",
+	"pnpm": {
+		"supportedArchitectures": {
+			"os": [
+				"current",
+				"linux"
+			],
+			"cpu": [
+				"current",
+				"x64"
+			],
+			"libc": [
+				"current",
+				"glibc"
+			]
+		}
+	},
 	"scripts": {
 		"claude": "claude --dangerously-skip-permissions",
 		"codex": "codex --dangerously-bypass-approvals-and-sandbox",
