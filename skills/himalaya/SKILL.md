@@ -1,36 +1,43 @@
 ---
 name: himalaya
-description: Manage email accounts and mailboxes through the local Himalaya CLI. Use for reading mail, searching folders, flagging messages, moving or deleting messages, downloading attachments, composing or sending messages/templates, and diagnosing Himalaya email account configuration once the skill runtime is enabled.
+description: "Manage email accounts and mailboxes through the local Himalaya CLI. Use for reading mail, searching folders, flagging messages, moving or deleting messages, downloading attachments, composing or sending messages/templates, and diagnosing Himalaya email account configuration once the skill runtime is enabled."
 ---
 
 Use this skill to perform email operations through the local `himalaya` binary.
 
-Prefer structured commands over vague requests.
+## Read-Only Commands
 
-Use read-only commands first when inspecting mailbox state:
-- `account list`
-- `account doctor`
-- `folder list`
-- `envelope list`
-- `envelope thread`
-- `message read`
-- `message export`
+Inspect mailbox state before making changes:
 
-Treat state-changing commands as explicit actions:
-- `flag add`, `flag set`, `flag remove`
-- `message copy`, `message move`, `message delete`
-- `folder add`, `folder delete`, `folder purge`, `folder expunge`
-- `message send`, `template send`, `template save`
+- `himalaya account list` — show configured accounts
+- `himalaya account doctor` — diagnose account configuration
+- `himalaya folder list` — list mailbox folders
+- `himalaya envelope list --folder INBOX` — list messages in a folder
+- `himalaya envelope list --folder INBOX --query "subject:invoice"` — search by query
+- `himalaya envelope thread <envelope-id>` — show a message thread
+- `himalaya message read <envelope-id>` — read a message body
+- `himalaya message export <envelope-id>` — export raw message (EML)
 
-Preserve envelope IDs, folder names, and account names exactly as returned by Himalaya.
+## State-Changing Commands
 
-Respect the configured `allowed_commands` list and do not attempt commands outside it.
+Treat these as explicit user-requested actions:
 
-Return machine-readable output when possible.
+- **Flags**: `himalaya flag add <id> seen`, `flag set`, `flag remove`
+- **Messages**: `himalaya message copy <id> --to Archive`, `message move`, `message delete`
+- **Folders**: `himalaya folder add <name>`, `folder delete`, `folder purge`, `folder expunge`
+- **Send**: `himalaya message send --from personal --to user@example.com --subject "Re: meeting"`, `template send`, `template save`
 
-Always read from INBOX by default unless another mailbox is specified.
+## Workflow
 
-Tips:
+1. List envelopes: `himalaya envelope list --folder INBOX`
+2. Read target message: `himalaya message read <envelope-id>`
+3. Act on it (flag, move, reply, delete) only when the user confirms
 
-- Search with `envelope list`
-- Read with `message read`
+Confirm before destructive operations (`delete`, `purge`, `expunge`).
+
+## Rules
+
+- Preserve envelope IDs, folder names, and account names exactly as returned
+- Respect the configured `allowed_commands` list
+- Default to INBOX unless another folder is specified
+- Use `--output json` for machine-readable output (appended automatically)
