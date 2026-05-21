@@ -94,14 +94,14 @@ var protectedAgentRootMarkdownFiles = map[string]struct{}{
 	"SYSTEM.MD": {},
 }
 
-func isProtectedAgentRootMarkdownFile(file string) bool {
+func isProtectedAgentRootFile(file string) bool {
 	_, ok := protectedAgentRootMarkdownFiles[strings.ToUpper(file)]
 	return ok
 }
 
-// normalizeAgentMarkdownFile validates and cleans a relative markdown file path,
-// allowing subdirectories. Returns the cleaned path.
-func normalizeAgentMarkdownFile(file string) (string, error) {
+// normalizeAgentFile validates and cleans a relative file path, allowing
+// subdirectories. Returns the cleaned path.
+func normalizeAgentFile(file string) (string, error) {
 	file = strings.TrimSpace(file)
 	if file == "" {
 		return "", fmt.Errorf("file is required")
@@ -116,16 +116,13 @@ func normalizeAgentMarkdownFile(file string) (string, error) {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("file must stay within the agent directory")
 	}
-	if !strings.EqualFold(filepath.Ext(clean), ".md") {
-		return "", fmt.Errorf("file must be a markdown file")
-	}
 	return clean, nil
 }
 
-// WriteAgentMarkdownFile creates or replaces a markdown file under an agent
-// directory. file may be a relative path including subdirectories (e.g. notes/foo.md).
-func WriteAgentMarkdownFile(agentID, file, content string) error {
-	clean, err := normalizeAgentMarkdownFile(file)
+// WriteAgentFile creates or replaces a file under an agent directory. file may
+// be a relative path including subdirectories (e.g. notes/foo.txt).
+func WriteAgentFile(agentID, file, content string) error {
+	clean, err := normalizeAgentFile(file)
 	if err != nil {
 		return err
 	}
@@ -136,24 +133,24 @@ func WriteAgentMarkdownFile(agentID, file, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }
 
-// DeleteAgentMarkdownFile deletes a markdown file from an agent directory.
+// DeleteAgentFile deletes a file from an agent directory.
 // Root-level protected files (AGENTS.md, MEMORY.md, RULES.md, SYSTEM.md) cannot be deleted.
-func DeleteAgentMarkdownFile(agentID, file string) error {
-	clean, err := normalizeAgentMarkdownFile(file)
+func DeleteAgentFile(agentID, file string) error {
+	clean, err := normalizeAgentFile(file)
 	if err != nil {
 		return err
 	}
 	// Only protect root-level built-ins.
-	if filepath.Base(clean) == clean && isProtectedAgentRootMarkdownFile(clean) {
+	if filepath.Base(clean) == clean && isProtectedAgentRootFile(clean) {
 		return fmt.Errorf("%s is protected and cannot be deleted", clean)
 	}
 	return os.Remove(filepath.Join(AgentDir(agentID), clean))
 }
 
-// ListAgentMarkdownFiles returns all markdown files under an agent directory,
-// recursively including subdirectories. Returned paths are slash-delimited
-// and relative to the agent dir.
-func ListAgentMarkdownFiles(agentID string) ([]string, error) {
+// ListAgentFiles returns all files under an agent directory, recursively
+// including subdirectories. Returned paths are slash-delimited and relative to
+// the agent dir.
+func ListAgentFiles(agentID string) ([]string, error) {
 	root := AgentDir(agentID)
 	entries := []string{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -161,10 +158,6 @@ func ListAgentMarkdownFiles(agentID string) ([]string, error) {
 			return walkErr
 		}
 		if d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.EqualFold(filepath.Ext(name), ".md") {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
@@ -183,27 +176,13 @@ func ListAgentMarkdownFiles(agentID string) ([]string, error) {
 	return entries, nil
 }
 
-// ReadAgentMarkdownFile reads a markdown file from an agent directory.
+// ReadAgentFile reads a file from an agent directory.
 // file must be a relative path beneath the agent directory.
-func ReadAgentMarkdownFile(agentID, file string) (string, error) {
-	file = strings.TrimSpace(file)
-	if file == "" {
-		return "", fmt.Errorf("file is required")
-	}
-	if !strings.EqualFold(filepath.Ext(file), ".md") {
-		return "", fmt.Errorf("file must be a markdown file")
-	}
-	if filepath.IsAbs(file) {
-		return "", fmt.Errorf("file must be relative to the agent directory")
-	}
-
+func ReadAgentFile(agentID, file string) (string, error) {
 	root := AgentDir(agentID)
-	clean := filepath.Clean(file)
-	if clean == "." || clean == "" {
-		return "", fmt.Errorf("file is required")
-	}
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("file must stay within the agent directory")
+	clean, err := normalizeAgentFile(file)
+	if err != nil {
+		return "", err
 	}
 
 	path := filepath.Join(root, clean)
@@ -219,7 +198,11 @@ func ReadAgentMarkdownFile(agentID, file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return StripMarkdownCommentLines(string(data)), nil
+	content := string(data)
+	if strings.EqualFold(filepath.Ext(clean), ".md") {
+		content = StripMarkdownCommentLines(content)
+	}
+	return content, nil
 }
 
 // StripMarkdownCommentLines removes HTML comment blocks from markdown when the

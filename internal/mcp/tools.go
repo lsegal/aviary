@@ -52,9 +52,9 @@ var (
 	providerPingActive sync.Map // provider → struct{} while in flight
 )
 
-// deleteAgentMarkdownFile is an indirection for deleting agent markdown files
+// deleteAgentFile is an indirection for deleting agent files
 // so tests can simulate edge conditions (e.g. file-not-exist races).
-var deleteAgentMarkdownFile = store.DeleteAgentMarkdownFile
+var deleteAgentFile = store.DeleteAgentFile
 var listSlackWorkspaceChannels = channels.ListSlackWorkspaceChannels
 
 const maxInlineSessionMediaBytes = 8 << 20
@@ -762,13 +762,13 @@ func resolveAgentID(ctx context.Context, argAgent string) (string, bool) {
 func registerAgentContextTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_list",
-		Description: "List all markdown files under the current agent's data directory, including subdirectories and built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
+		Description: "List all files under the current agent's data directory, including subdirectories and built-in files such as AGENTS.md, RULES.md, and MEMORY.md.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		agentID, ok := resolveAgentID(ctx, args.Agent)
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent_file_list requires an agent session context")
 		}
-		files, err := store.ListAgentMarkdownFiles(agentID)
+		files, err := store.ListAgentFiles(agentID)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("listing agent files: %w", err)
 		}
@@ -777,13 +777,13 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_read",
-		Description: "Read a markdown file from the current agent's data directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
+		Description: "Read a file from the current agent's data directory. Use agent_file_list first when you need extra context and are not sure which file is relevant.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		agentID, ok := resolveAgentID(ctx, args.Agent)
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent_file_read requires an agent session context")
 		}
-		content, err := store.ReadAgentMarkdownFile(agentID, args.File)
+		content, err := store.ReadAgentFile(agentID, args.File)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("reading agent file: %w", err)
 		}
@@ -792,13 +792,13 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_write",
-		Description: "Create or replace a markdown file in the current agent's data directory. Use paths like notes/foo.md for notes or MEMORY.md for memory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted but can be written.",
+		Description: "Create or replace a file in the current agent's data directory. Use paths like notes/foo.txt for notes or MEMORY.md for memory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted but can be written.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileWriteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		agentID, ok := resolveAgentID(ctx, args.Agent)
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent_file_write requires an agent session context")
 		}
-		if err := store.WriteAgentMarkdownFile(agentID, args.File, args.Content); err != nil {
+		if err := store.WriteAgentFile(agentID, args.File, args.Content); err != nil {
 			return nil, struct{}{}, fmt.Errorf("writing agent file: %w", err)
 		}
 		return text(fmt.Sprintf("%s written", strings.TrimSpace(args.File)))
@@ -806,13 +806,13 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_file_delete",
-		Description: "Delete a markdown file from the current agent's data directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
+		Description: "Delete a file from the current agent's data directory. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be deleted.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		agentID, ok := resolveAgentID(ctx, args.Agent)
 		if !ok {
 			return nil, struct{}{}, fmt.Errorf("agent_file_delete requires an agent session context")
 		}
-		if err := deleteAgentMarkdownFile(agentID, args.File); err != nil {
+		if err := deleteAgentFile(agentID, args.File); err != nil {
 			return nil, struct{}{}, fmt.Errorf("deleting agent file: %w", err)
 		}
 		return text(fmt.Sprintf("%s deleted", strings.TrimSpace(args.File)))
@@ -2836,7 +2836,7 @@ func registerServerTools(s *sdkmcp.Server) {
 							if rerr != nil {
 								return nil, struct{}{}, fmt.Errorf("computing relative task file path: %w", rerr)
 							}
-							if derr := deleteAgentMarkdownFile(cfg.Agents[i].Name, rel); derr != nil {
+							if derr := deleteAgentFile(cfg.Agents[i].Name, rel); derr != nil {
 								if os.IsNotExist(derr) {
 									// Ignore missing files (race or already-removed).
 									continue

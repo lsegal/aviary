@@ -1423,7 +1423,7 @@ func (r *AgentRunner) loadRules() string {
 // loadAgentsMD reads AGENTS.md from the agent's data directory, bypassing
 // filesystem permission checks. Returns an empty string if the file does not exist.
 func (r *AgentRunner) loadAgentsMD() string {
-	data, err := store.ReadAgentMarkdownFile(r.agent.ID, "AGENTS.md")
+	data, err := store.ReadAgentFile(r.agent.ID, "AGENTS.md")
 	if err != nil {
 		return ""
 	}

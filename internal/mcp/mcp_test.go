@@ -2056,6 +2056,17 @@ func TestAgentFileWriteTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "# Project Kickoff")
 	assert.Contains(t, string(data), "Confirm owners")
+
+	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{
+		"file":    "state/settings.json",
+		"content": `{"enabled":true}`,
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "state/settings.json written")
+
+	data, err = os.ReadFile(filepath.Join(store.AgentDir("bot"), "state", "settings.json"))
+	assert.NoError(t, err)
+	assert.Equal(t, `{"enabled":true}`, string(data))
 }
 
 func setupMCPWithFilesystemAgent(t *testing.T, allowedPaths []string) (*Dispatcher, context.Context, string) {
@@ -3282,6 +3293,7 @@ func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "MEMORY.md"), []byte("memory"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "state.json"), []byte(`{"ok":true}`), 0o600))
 
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
@@ -3308,6 +3320,7 @@ func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	assert.Contains(t, out, "notes/USER.md")
 	assert.Contains(t, out, "RULES.md")
 	assert.Contains(t, out, "MEMORY.md")
+	assert.Contains(t, out, "state.json")
 
 	// Read a regular file.
 	out, err = d.CallTool(ctx, "agent_file_read", map[string]any{"file": "IDENTITY.md"})
@@ -3319,20 +3332,25 @@ func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "rules")
 
-	// Write a new file (root level).
-	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "PROFILE.md", "content": "profile"})
+	// Read a non-markdown file.
+	out, err = d.CallTool(ctx, "agent_file_read", map[string]any{"file": "state.json"})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "PROFILE.md written")
+	assert.Contains(t, out, `{"ok":true}`)
+
+	// Write a new file (root level).
+	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "PROFILE.txt", "content": "profile"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "PROFILE.txt written")
 
 	// Write a note (subdir).
-	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "notes/project.md", "content": "project notes"})
+	out, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "notes/project.json", "content": `{"project":"notes"}`})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "notes/project.md written")
+	assert.Contains(t, out, "notes/project.json written")
 
 	// Delete a regular file.
-	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "PROFILE.md"})
+	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "PROFILE.txt"})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "PROFILE.md deleted")
+	assert.Contains(t, out, "PROFILE.txt deleted")
 
 	// Protected files cannot be deleted.
 	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "RULES.md"})

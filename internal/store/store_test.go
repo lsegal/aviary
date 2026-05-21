@@ -313,7 +313,7 @@ func TestNotesPath(t *testing.T) {
 	assert.Equal(t, filepath.Join(tmp, "MEMORY.md"), got2)
 }
 
-func TestAgentMarkdownFiles(t *testing.T) {
+func TestAgentFiles(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -326,25 +326,27 @@ func TestAgentMarkdownFiles(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "RULES.md"), []byte("rules"), 0o600))
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "plain.txt"), []byte("txt"), 0o600))
 
-	files, err := ListAgentMarkdownFiles("assistant")
+	files, err := ListAgentFiles("assistant")
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "RULES.md", "notes/USER.md"}, files)
+	assert.Equal(t, []string{"IDENTITY.md", "MEMORY.md", "RULES.md", "notes/USER.md", "plain.txt"}, files)
 
-	content, err := ReadAgentMarkdownFile("assistant", "notes/USER.md")
+	content, err := ReadAgentFile("assistant", "notes/USER.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "user", content)
 
-	content, err = ReadAgentMarkdownFile("assistant", "RULES.md")
+	content, err = ReadAgentFile("assistant", "RULES.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "rules", content)
 
-	_, err = ReadAgentMarkdownFile("assistant", "../outside.md")
+	content, err = ReadAgentFile("assistant", "plain.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, "txt", content)
+
+	_, err = ReadAgentFile("assistant", "../outside.md")
 	assert.ErrorContains(t, err, "stay within")
-	_, err = ReadAgentMarkdownFile("assistant", "plain.txt")
-	assert.ErrorContains(t, err, "markdown")
 }
 
-func TestAgentMarkdownFilesWriteDelete(t *testing.T) {
+func TestAgentFilesWriteDelete(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -355,30 +357,30 @@ func TestAgentMarkdownFilesWriteDelete(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), []byte("agents"), 0o600))
 
 	// Write a root-level file.
-	assert.NoError(t, WriteAgentMarkdownFile("assistant", "PROFILE.md", "profile"))
-	content, err := ReadAgentMarkdownFile("assistant", "PROFILE.md")
+	assert.NoError(t, WriteAgentFile("assistant", "PROFILE.txt", "profile"))
+	content, err := ReadAgentFile("assistant", "PROFILE.txt")
 	assert.NoError(t, err)
 	assert.Equal(t, "profile", content)
 
 	// Write a subdir file.
-	assert.NoError(t, WriteAgentMarkdownFile("assistant", "notes/summary.md", "summary"))
-	content, err = ReadAgentMarkdownFile("assistant", "notes/summary.md")
+	assert.NoError(t, WriteAgentFile("assistant", "notes/summary.json", `{"summary":true}`))
+	content, err = ReadAgentFile("assistant", "notes/summary.json")
 	assert.NoError(t, err)
-	assert.Equal(t, "summary", content)
+	assert.Equal(t, `{"summary":true}`, content)
 
 	// Delete a regular file.
-	assert.NoError(t, DeleteAgentMarkdownFile("assistant", "PROFILE.md"))
-	_, err = ReadAgentMarkdownFile("assistant", "PROFILE.md")
+	assert.NoError(t, DeleteAgentFile("assistant", "PROFILE.txt"))
+	_, err = ReadAgentFile("assistant", "PROFILE.txt")
 	assert.Error(t, err)
 
 	// Protected files cannot be deleted.
-	err = DeleteAgentMarkdownFile("assistant", "RULES.md")
+	err = DeleteAgentFile("assistant", "RULES.md")
 	assert.ErrorContains(t, err, "protected")
-	err = DeleteAgentMarkdownFile("assistant", "AGENTS.md")
+	err = DeleteAgentFile("assistant", "AGENTS.md")
 	assert.ErrorContains(t, err, "protected")
 
 	// Traversal is rejected.
-	err = WriteAgentMarkdownFile("assistant", "../outside.md", "x")
+	err = WriteAgentFile("assistant", "../outside.txt", "x")
 	assert.ErrorContains(t, err, "stay within")
 }
 
@@ -615,7 +617,7 @@ func TestStripMarkdownCommentLines(t *testing.T) {
 	}, "\n"), got)
 }
 
-func TestReadAgentMarkdownFile_StripsCommentLines(t *testing.T) {
+func TestReadAgentFile_StripsCommentLinesForMarkdown(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -624,7 +626,7 @@ func TestReadAgentMarkdownFile_StripsCommentLines(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, os.WriteFile(filepath.Join(agentDir, "IDENTITY.md"), []byte("visible\n<!-- hidden -->\nstill here\n"), 0o600))
 
-	content, err := ReadAgentMarkdownFile("assistant", "IDENTITY.md")
+	content, err := ReadAgentFile("assistant", "IDENTITY.md")
 	assert.NoError(t, err)
 	assert.Equal(t, "visible\nstill here\n", content)
 }

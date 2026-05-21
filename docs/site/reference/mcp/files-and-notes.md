@@ -4,15 +4,15 @@ These tools provide agents with access to the filesystem and their own workspace
 
 **File tools** (`file_*`) operate on the host filesystem, constrained to paths permitted by the agent's `permissions.filesystem.allowed_paths` rules. They require either the `full` permissions preset or explicit allowlist inclusion.
 
-**Agent file tools** (`agent_file_*`) provide full read/write/delete access to the agent's own data directory. They operate on the calling agent's session context — no `agent` argument is needed (or used). Available under the `standard` preset.
+**Agent file tools** (`agent_file_*`) provide full read/write/delete access to the agent's own data directory. They operate on the calling agent's session context; an explicit `agent` argument is also accepted for callers without session context, such as the web UI. Available under the `standard` preset.
 
 ---
 
 ## agent_file_list
 
-List all markdown files in the current agent's data directory, including subdirectories and built-in files such as `AGENTS.md`, `RULES.md`, and `MEMORY.md`.
+List all files in the current agent's data directory, including subdirectories and built-in files such as `AGENTS.md`, `RULES.md`, and `MEMORY.md`.
 
-**Arguments:** none (accepts `agent` for backwards compatibility but ignores it)
+**Arguments:** none when called from an agent session; accepts optional `agent` for callers without session context.
 
 **Returns:** JSON array of relative file paths.
 
@@ -20,13 +20,13 @@ List all markdown files in the current agent's data directory, including subdire
 
 ## agent_file_read
 
-Read a markdown file from the current agent's data directory. Use `agent_file_list` first when you need extra context and are unsure which file is relevant.
+Read a file from the current agent's data directory. Use `agent_file_list` first when you need extra context and are unsure which file is relevant.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `file` | string | yes | Path relative to the agent's data directory (e.g. `"MEMORY.md"`, `"notes/foo.md"`) |
+| `file` | string | yes | Path relative to the agent's data directory (e.g. `"MEMORY.md"`, `"notes/foo.json"`) |
 
 **Returns:** Text content of the file.
 
@@ -34,14 +34,14 @@ Read a markdown file from the current agent's data directory. Use `agent_file_li
 
 ## agent_file_write
 
-Create or replace a markdown file in the current agent's data directory. Supports both root-level files (e.g. `MEMORY.md`) and subdirectories (e.g. `notes/summary.md`). This is the primary way for agents to persist information.
+Create or replace a file in the current agent's data directory. Supports both root-level files (e.g. `MEMORY.md`) and subdirectories (e.g. `notes/summary.json`). This is the primary way for agents to persist information.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `file` | string | yes | Path relative to the agent's data directory |
-| `content` | string | yes | Markdown content to write |
+| `content` | string | yes | Text content to write |
 
 **Returns:** Text confirmation.
 
@@ -49,7 +49,7 @@ Create or replace a markdown file in the current agent's data directory. Support
 
 ## agent_file_delete
 
-Delete a markdown file from the current agent's data directory. Protected built-in files (`AGENTS.md`, `SYSTEM.md`, `MEMORY.md`, `RULES.md`) cannot be deleted.
+Delete a file from the current agent's data directory. Protected built-in files (`AGENTS.md`, `SYSTEM.md`, `MEMORY.md`, `RULES.md`) cannot be deleted.
 
 **Arguments:**
 

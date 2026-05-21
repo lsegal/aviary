@@ -462,7 +462,7 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	assert.NoError(t, err)
 	err = os.WriteFile(rulesPath, []byte("Follow local rules."), 0o600)
 	assert.NoError(t, err)
-	err = store.WriteAgentMarkdownFile("agent_default", "AGENTS.md", "Agent workspace instructions.")
+	err = store.WriteAgentFile("agent_default", "AGENTS.md", "Agent workspace instructions.")
 	assert.NoError(t, err)
 
 	runner := NewAgentRunner(
