@@ -194,7 +194,9 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 	if evt.Type != socketmode.EventTypeEventsAPI {
 		return
 	}
-	c.sm.Ack(*evt.Request)
+	if err := c.sm.Ack(*evt.Request); err != nil {
+		c.logf("slack: failed to ack event: %v", err)
+	}
 
 	eventsAPI, ok := evt.Data.(slackevents.EventsAPIEvent)
 	if !ok {
