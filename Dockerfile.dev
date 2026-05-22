@@ -1,6 +1,6 @@
 FROM golang:1.26-bookworm AS go-toolchain
 
-FROM node:25-bookworm
+FROM node:26-bookworm
 
 ARG TARGETARCH
 
