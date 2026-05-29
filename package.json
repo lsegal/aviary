@@ -57,7 +57,7 @@
 		"marked": "^18.0.3",
 		"pinia": "^3.0.4",
 		"radix-vue": "^1.9.17",
-		"simple-icons": "^16.18.1",
+		"simple-icons": "^16.19.0",
 		"vue": "^3.5.30",
 		"vue-router": "^5.0.6"
 	},
