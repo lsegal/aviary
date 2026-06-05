@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build:web
 
-FROM golang:1.26-bookworm AS go-builder
+FROM golang:1.26.4-bookworm AS go-builder
 
 ARG AVIARY_VERSION=dev
 
