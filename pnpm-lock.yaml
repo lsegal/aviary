@@ -48,7 +48,7 @@ devDependencies:
     version: 6.0.5(vite@8.0.10)(vue@3.5.30)
   autoprefixer:
     specifier: ^10.4.27
-    version: 10.4.27(postcss@8.5.14)
+    version: 10.4.27(postcss@8.5.15)
   concurrently:
     specifier: ^9.2.1
     version: 9.2.1
@@ -59,8 +59,8 @@ devDependencies:
     specifier: ^9.6.1
     version: 9.6.1
   postcss:
-    specifier: ^8.5.14
-    version: 8.5.14
+    specifier: ^8.5.15
+    version: 8.5.15
   tailwindcss:
     specifier: ^4.2.4
     version: 4.2.4
@@ -999,7 +999,7 @@ packages:
       '@vue/shared': 3.5.30
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.14
+      postcss: 8.5.15
       source-map-js: 1.2.1
 
   /@vue/compiler-sfc@3.5.34:
@@ -1224,7 +1224,7 @@ packages:
       ast-kit: 2.2.0
     dev: false
 
-  /autoprefixer@10.4.27(postcss@8.5.14):
+  /autoprefixer@10.4.27(postcss@8.5.15):
     resolution: {integrity: sha512-NP9APE+tO+LuJGn7/9+cohklunJsXWiaWEfV3si4Gi/XHDwVNgkwr1J3RQYFIvPy76GmJ9/bW8vyoU1LcxwKHA==}
     engines: {node: ^10 || ^12 || >=14}
     hasBin: true
@@ -1235,7 +1235,7 @@ packages:
       caniuse-lite: 1.0.30001781
       fraction.js: 5.3.4
       picocolors: 1.1.1
-      postcss: 8.5.14
+      postcss: 8.5.15
       postcss-value-parser: 4.2.0
     dev: true
 
@@ -2149,14 +2149,6 @@ packages:
     resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
     dev: true
 
-  /postcss@8.5.14:
-    resolution: {integrity: sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}
-    engines: {node: ^10 || ^12 || >=14}
-    dependencies:
-      nanoid: 3.3.12
-      picocolors: 1.1.1
-      source-map-js: 1.2.1
-
   /postcss@8.5.15:
     resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
     engines: {node: ^10 || ^12 || >=14}
@@ -2164,7 +2156,6 @@ packages:
       nanoid: 3.3.12
       picocolors: 1.1.1
       source-map-js: 1.2.1
-    dev: false
 
   /pretty-ms@9.3.0:
     resolution: {integrity: sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==}
@@ -2536,7 +2527,7 @@ packages:
       '@types/node': 25.6.0
       lightningcss: 1.32.0
       picomatch: 4.0.4
-      postcss: 8.5.14
+      postcss: 8.5.15
       rolldown: 1.0.0-rc.17
       tinyglobby: 0.2.16
     optionalDependencies:
