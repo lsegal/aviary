@@ -39,7 +39,7 @@ jobs:
     env:
       SMOKE_IMAGE: aviary-smoke:${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
         with:
           ref: ${{ github.event_name == 'workflow_call' && inputs.ref || github.sha }}
       - id: prep
