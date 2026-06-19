@@ -62,7 +62,7 @@
 		"vue-router": "^5.0.6"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.11",
+		"@biomejs/biome": "^2.4.16",
 		"@playwright/test": "^1.60.0",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.0",
