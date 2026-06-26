@@ -363,6 +363,19 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		}()
 	}
 
+	var clearAssistantStatus func()
+	if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
+		sendAssistantStatus := func(status string) {
+			if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, slackAssistantStatusText(status)); err != nil {
+				slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
+			}
+		}
+		sendAssistantStatus("thinking")
+		clearAssistantStatus = func() {
+			sendAssistantStatus("")
+		}
+	}
+
 	rOpts := agent.RunOverrides{
 		Model:         msg.Model,
 		Fallbacks:     msg.Fallbacks,
@@ -405,12 +418,37 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		switch e.Type {
 		case agent.StreamEventStatus:
 			sendOrEditStatus(e.Text)
+			if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
+				if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, slackAssistantStatusText(e.Text)); err != nil {
+					slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
+				}
+			}
 		case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
 			if stopTyping != nil {
 				stopTyping()
 			}
+			if clearAssistantStatus != nil {
+				clearAssistantStatus()
+				clearAssistantStatus = nil
+			}
 		}
 	})
+}
+
+func slackAssistantStatusText(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return ""
+	}
+	status = strings.TrimPrefix(status, "I am ")
+	status = strings.TrimPrefix(status, "I'm ")
+	if status == "thinking" {
+		return "is thinking"
+	}
+	if strings.HasPrefix(status, "is ") {
+		return status
+	}
+	return "is " + status
 }
 
 func (s *Server) listen() (net.Listener, error) {

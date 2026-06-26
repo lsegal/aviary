@@ -24,6 +24,7 @@ type SlackChannel struct {
 	model         string
 	fallbacks     []string
 	disabledTools []string
+	showStatus    bool
 
 	botUserID         string // populated on connect via auth.test
 	resolvedAllowFrom []config.AllowFromEntry
@@ -50,13 +51,14 @@ func NewSlackChannel(appToken, botToken string, allowFrom []config.AllowFromEntr
 	api := slack.New(botToken, slack.OptionAppLevelToken(appToken))
 	sm := socketmode.New(api)
 	return &SlackChannel{
-		appToken:  appToken,
-		botToken:  botToken,
-		allowFrom: allowFrom,
-		model:     model,
-		fallbacks: fallbacks,
-		client:    api,
-		sm:        sm,
+		appToken:   appToken,
+		botToken:   botToken,
+		allowFrom:  allowFrom,
+		model:      model,
+		fallbacks:  fallbacks,
+		showStatus: true,
+		client:     api,
+		sm:         sm,
 	}
 }
 
@@ -121,6 +123,30 @@ func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
 	}
 	_, _, _, err = c.client.UpdateMessage(resolvedChannel, msgID, slack.MsgOptionText(text, false))
 	return err
+}
+
+// ShowAssistantStatus reports whether Slack assistant status updates are
+// enabled for this channel.
+func (c *SlackChannel) ShowAssistantStatus() bool {
+	return c.showStatus
+}
+
+// SendAssistantStatus updates Slack's native assistant thread status. Passing
+// an empty status clears any existing indicator.
+func (c *SlackChannel) SendAssistantStatus(channel, threadTS, status string) error {
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return err
+	}
+	threadTS = strings.TrimSpace(threadTS)
+	if threadTS == "" {
+		return fmt.Errorf("slack assistant status requires a thread timestamp")
+	}
+	return c.client.SetAssistantThreadsStatusContext(context.Background(), slack.AssistantThreadsSetStatusParameters{
+		ChannelID: resolvedChannel,
+		ThreadTS:  threadTS,
+		Status:    strings.TrimSpace(status),
+	})
 }
 
 // Start connects via Socket Mode and blocks until ctx is cancelled.
@@ -247,8 +273,15 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 
 	receivedAt := time.Now().UTC()
 	rawTimestamp := event.TimeStamp
+	threadTS := strings.TrimSpace(event.ThreadTimeStamp)
 	if isEdited && event.Message != nil && event.Message.Timestamp != "" {
 		rawTimestamp = event.Message.Timestamp
+	}
+	if isEdited && event.Message != nil && event.Message.ThreadTimestamp != "" {
+		threadTS = strings.TrimSpace(event.Message.ThreadTimestamp)
+	}
+	if threadTS == "" {
+		threadTS = rawTimestamp
 	}
 	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
 		receivedAt = ts
@@ -265,6 +298,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 				From:       from,
 				SenderName: from,
 				Channel:    channelID,
+				ThreadTS:   threadTS,
 				Text:       text,
 				ReceivedAt: receivedAt,
 			})
@@ -288,6 +322,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			From:          from,
 			SenderName:    c.displayNameForUser(from),
 			Channel:       channelID,
+			ThreadTS:      threadTS,
 			Text:          text,
 			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,
@@ -315,12 +350,13 @@ func (c *SlackChannel) handleAppMentionEvent(event *slackevents.AppMentionEvent)
 		return
 	}
 	c.handleMessageEvent(&slackevents.MessageEvent{
-		Type:      "message",
-		User:      event.User,
-		Text:      event.Text,
-		TimeStamp: event.TimeStamp,
-		Channel:   event.Channel,
-		BotID:     event.BotID,
+		Type:            "message",
+		User:            event.User,
+		Text:            event.Text,
+		TimeStamp:       event.TimeStamp,
+		ThreadTimeStamp: event.ThreadTimeStamp,
+		Channel:         event.Channel,
+		BotID:           event.BotID,
 	})
 }
 

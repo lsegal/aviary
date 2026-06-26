@@ -12,6 +12,7 @@ type IncomingMessage struct {
 	From          string // sender ID
 	SenderName    string // optional human-readable sender name
 	Channel       string // channel ID or name
+	ThreadTS      string // optional platform thread timestamp/root ID
 	Text          string
 	MediaURL      string // optional inline media for the LLM (typically a data URL)
 	ReceivedAt    time.Time
@@ -66,6 +67,13 @@ type LogSinkSetter interface {
 type TypingSender interface {
 	ShowTyping() bool
 	SendTyping(channel string, stop bool) error
+}
+
+// AssistantStatusSender is an optional interface implemented by channels that
+// support native assistant progress/status indicators.
+type AssistantStatusSender interface {
+	ShowAssistantStatus() bool
+	SendAssistantStatus(channel, threadTS, status string) error
 }
 
 // MediaSender is an optional interface implemented by channels that support

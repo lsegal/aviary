@@ -314,8 +314,8 @@ func (v *validator) checkChannel(field string, ch ChannelConfig) {
 		return
 	}
 
-	if ch.ShowTyping != nil && ch.Type != "" && ch.Type != "signal" {
-		v.errorf(field+".show_typing", "show_typing is only supported for signal; %s apps cannot send typing indicators, including in direct messages", ch.Type)
+	if ch.ShowTyping != nil && ch.Type != "" && ch.Type != "signal" && ch.Type != "slack" {
+		v.errorf(field+".show_typing", "show_typing is only supported for signal and Slack; %s apps cannot send typing indicators, including in direct messages", ch.Type)
 	}
 
 	enabledEntries := 0
