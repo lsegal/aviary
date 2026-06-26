@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -246,6 +248,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	text := event.Text
 	botID := event.BotID
 	var files []slack.File
+	var attachments []slack.Attachment
 	isEdited := event.IsEdited() || (event.SubType == "message_changed" && event.Message != nil)
 	if isEdited && event.Message != nil {
 		if event.Message.Channel != "" {
@@ -261,10 +264,12 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			botID = event.Message.BotID
 		}
 		files = event.Message.Files
+		attachments = event.Message.Attachments
 	} else if event.Message != nil {
 		files = event.Message.Files
+		attachments = event.Message.Attachments
 	}
-	if botID != "" || (strings.TrimSpace(text) == "" && len(files) == 0) || from == "" || channelID == "" {
+	if botID != "" || (strings.TrimSpace(text) == "" && len(files) == 0 && len(attachments) == 0) || from == "" || channelID == "" {
 		return
 	}
 
@@ -286,6 +291,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
 		receivedAt = ts
 	}
+	enrichedText := c.enrichSlackMessageText(context.Background(), text, channelID, rawTimestamp, threadTS, attachments)
 
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
@@ -299,7 +305,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 				SenderName: from,
 				Channel:    channelID,
 				ThreadTS:   threadTS,
-				Text:       text,
+				Text:       enrichedText,
 				ReceivedAt: receivedAt,
 			})
 		}
@@ -323,7 +329,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			SenderName:    c.displayNameForUser(from),
 			Channel:       channelID,
 			ThreadTS:      threadTS,
-			Text:          text,
+			Text:          enrichedText,
 			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
@@ -385,6 +391,247 @@ func (c *SlackChannel) firstImageDataURL(files []slack.File) string {
 		slog.Warn("slack: failed to ingest image attachment", "file", file.Name, "err", err)
 	}
 	return ""
+}
+
+func (c *SlackChannel) enrichSlackMessageText(parent context.Context, text, channelID, timestamp, threadTS string, attachments []slack.Attachment) string {
+	parts := []string{strings.TrimSpace(text)}
+	for _, attachment := range attachments {
+		if formatted := formatSlackAttachment(attachment); formatted != "" {
+			parts = append(parts, formatted)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+
+	refs := extractSlackMessageReferences(text, attachments)
+	if strings.TrimSpace(threadTS) != "" && strings.TrimSpace(timestamp) != "" && threadTS != timestamp {
+		refs = append(refs, slackMessageReference{
+			ChannelID: channelID,
+			Timestamp: threadTS,
+			ThreadTS:  threadTS,
+			Kind:      "current thread",
+		})
+	}
+
+	seen := map[string]struct{}{}
+	for _, ref := range refs {
+		if ref.ChannelID == "" || ref.Timestamp == "" {
+			continue
+		}
+		key := ref.ChannelID + "/" + ref.Timestamp + "/" + ref.ThreadTS
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		formatted, err := c.fetchSlackReference(ctx, ref)
+		if err != nil {
+			c.logf("slack: failed to fetch referenced message channel=%s ts=%s: %v", ref.ChannelID, ref.Timestamp, err)
+			continue
+		}
+		if formatted != "" {
+			parts = append(parts, formatted)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(nonEmptyStrings(parts), "\n\n"))
+}
+
+type slackMessageReference struct {
+	ChannelID string
+	Timestamp string
+	ThreadTS  string
+	Kind      string
+}
+
+func extractSlackMessageReferences(text string, attachments []slack.Attachment) []slackMessageReference {
+	candidates := []string{text}
+	for _, attachment := range attachments {
+		candidates = append(candidates, attachment.FromURL, attachment.OriginalURL, attachment.TitleLink, attachment.AuthorLink)
+	}
+	refs := make([]slackMessageReference, 0)
+	for _, candidate := range candidates {
+		for _, rawURL := range extractSlackURLs(candidate) {
+			ref, ok := parseSlackMessageURL(rawURL)
+			if ok {
+				refs = append(refs, ref)
+			}
+		}
+	}
+	return refs
+}
+
+var slackMessageURLPattern = regexp.MustCompile(`https://[^\s>|]+\.slack\.com/archives/[A-Z0-9]+/p[0-9]{10,}[^\s>|]*`)
+
+func extractSlackURLs(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	matches := slackMessageURLPattern.FindAllString(value, -1)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, strings.TrimRight(match, ".,);]"))
+	}
+	return out
+}
+
+func parseSlackMessageURL(raw string) (slackMessageReference, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || !strings.HasSuffix(strings.ToLower(u.Hostname()), ".slack.com") {
+		return slackMessageReference{}, false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 3 || parts[0] != "archives" || !strings.HasPrefix(parts[2], "p") {
+		return slackMessageReference{}, false
+	}
+	ts, ok := timestampFromSlackPermalink(parts[2])
+	if !ok {
+		return slackMessageReference{}, false
+	}
+	ref := slackMessageReference{
+		ChannelID: parts[1],
+		Timestamp: ts,
+		Kind:      "linked message",
+	}
+	if threadTS := strings.TrimSpace(u.Query().Get("thread_ts")); threadTS != "" {
+		ref.ThreadTS = threadTS
+	}
+	if cid := strings.TrimSpace(u.Query().Get("cid")); cid != "" {
+		ref.ChannelID = cid
+	}
+	return ref, true
+}
+
+func timestampFromSlackPermalink(raw string) (string, bool) {
+	raw = strings.TrimPrefix(strings.TrimSpace(raw), "p")
+	if len(raw) < 11 {
+		return "", false
+	}
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	sec := raw[:10]
+	frac := raw[10:]
+	for len(frac) < 6 {
+		frac += "0"
+	}
+	return sec + "." + frac[:6], true
+}
+
+func (c *SlackChannel) fetchSlackReference(ctx context.Context, ref slackMessageReference) (string, error) {
+	threadTS := strings.TrimSpace(ref.ThreadTS)
+	if threadTS != "" {
+		msgs, _, _, err := c.client.GetConversationRepliesContext(ctx, &slack.GetConversationRepliesParameters{
+			ChannelID: ref.ChannelID,
+			Timestamp: threadTS,
+			Inclusive: true,
+			Limit:     50,
+		})
+		if err != nil {
+			return "", err
+		}
+		return c.formatSlackMessages(ref, msgs), nil
+	}
+
+	resp, err := c.client.GetConversationHistoryContext(ctx, &slack.GetConversationHistoryParameters{
+		ChannelID: ref.ChannelID,
+		Oldest:    ref.Timestamp,
+		Latest:    ref.Timestamp,
+		Inclusive: true,
+		Limit:     1,
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || len(resp.Messages) == 0 {
+		return "", nil
+	}
+	msg := resp.Messages[0]
+	if msg.ReplyCount > 0 {
+		msgs, _, _, err := c.client.GetConversationRepliesContext(ctx, &slack.GetConversationRepliesParameters{
+			ChannelID: ref.ChannelID,
+			Timestamp: ref.Timestamp,
+			Inclusive: true,
+			Limit:     50,
+		})
+		if err != nil {
+			return c.formatSlackMessages(ref, []slack.Message{msg}), nil
+		}
+		return c.formatSlackMessages(ref, msgs), nil
+	}
+	return c.formatSlackMessages(ref, []slack.Message{msg}), nil
+}
+
+func (c *SlackChannel) formatSlackMessages(ref slackMessageReference, msgs []slack.Message) string {
+	if len(msgs) == 0 {
+		return ""
+	}
+	title := strings.TrimSpace(ref.Kind)
+	if title == "" {
+		title = "Slack message"
+	}
+	lines := []string{fmt.Sprintf("[%s: %s %s]", title, ref.ChannelID, firstNonEmpty(ref.ThreadTS, ref.Timestamp))}
+	for _, msg := range msgs {
+		content := formatSlackMessage(msg.Msg)
+		if content == "" {
+			continue
+		}
+		user := firstNonEmpty(c.displayNameForUser(msg.User), msg.Username, msg.BotID, "unknown")
+		lines = append(lines, fmt.Sprintf("%s: %s", user, content))
+	}
+	if len(lines) == 1 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatSlackMessage(msg slack.Msg) string {
+	parts := []string{strings.TrimSpace(msg.Text)}
+	for _, attachment := range msg.Attachments {
+		if formatted := formatSlackAttachment(attachment); formatted != "" {
+			parts = append(parts, formatted)
+		}
+	}
+	return strings.Join(nonEmptyStrings(parts), "\n")
+}
+
+func formatSlackAttachment(attachment slack.Attachment) string {
+	parts := []string{}
+	for _, value := range []string{
+		attachment.Pretext,
+		attachment.AuthorName,
+		attachment.Title,
+		attachment.Text,
+		attachment.Fallback,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			parts = append(parts, value)
+		}
+	}
+	for _, field := range attachment.Fields {
+		title := strings.TrimSpace(field.Title)
+		value := strings.TrimSpace(field.Value)
+		switch {
+		case title != "" && value != "":
+			parts = append(parts, title+": "+value)
+		case value != "":
+			parts = append(parts, value)
+		}
+	}
+	return strings.Join(nonEmptyStrings(parts), "\n")
+}
+
+func nonEmptyStrings(values []string) []string {
+	out := values[:0]
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func parseSlackTimestamp(raw string) (time.Time, bool) {

@@ -798,6 +798,112 @@ func TestSlackChannel_HandleMessageUsesTimestampAsThreadFallback(t *testing.T) {
 	assert.Equal(t, "1710000000.123456", msg.ThreadTS)
 }
 
+func TestParseSlackMessageURL(t *testing.T) {
+	ref, ok := parseSlackMessageURL("https://aviary.slack.com/archives/C123/p1710000000123456?thread_ts=1710000000.000100&cid=C999")
+
+	assert.True(t, ok)
+	assert.Equal(t, "C999", ref.ChannelID)
+	assert.Equal(t, "1710000000.123456", ref.Timestamp)
+	assert.Equal(t, "1710000000.000100", ref.ThreadTS)
+}
+
+func TestSlackChannel_EnrichesCopiedSlackMessageURL(t *testing.T) {
+	var sawReplies bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/conversations.replies", r.URL.Path)
+		assert.Equal(t, "C123", r.FormValue("channel"))
+		assert.Equal(t, "1710000000.000100", r.FormValue("ts"))
+		sawReplies = true
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"messages": []map[string]any{
+				{"type": "message", "user": "U1", "text": "root message", "ts": "1710000000.000100"},
+				{"type": "message", "user": "U2", "text": "thread reply", "ts": "1710000001.000200"},
+			},
+		})
+	}))
+	defer api.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(api.URL+"/"))
+	ch.identityMu.Lock()
+	ch.userNames = map[string]string{"U1": "Alice", "U2": "Bob"}
+	ch.identityMu.Unlock()
+
+	text := ch.enrichSlackMessageText(
+		context.Background(),
+		"look at <https://aviary.slack.com/archives/C123/p1710000000123456?thread_ts=1710000000.000100&cid=C123|this>",
+		"D123",
+		"1710000100.000000",
+		"1710000100.000000",
+		nil,
+	)
+
+	assert.True(t, sawReplies)
+	assert.Contains(t, text, "look at")
+	assert.Contains(t, text, "[linked message: C123 1710000000.000100]")
+	assert.Contains(t, text, "Alice: root message")
+	assert.Contains(t, text, "Bob: thread reply")
+}
+
+func TestSlackChannel_EnrichesCurrentThreadReply(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/conversations.replies", r.URL.Path)
+		assert.Equal(t, "C123", r.FormValue("channel"))
+		assert.Equal(t, "1710000000.000100", r.FormValue("ts"))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"messages": []map[string]any{
+				{"type": "message", "user": "U1", "text": "root context", "ts": "1710000000.000100"},
+				{"type": "message", "user": "U2", "text": "earlier reply", "ts": "1710000001.000200"},
+			},
+		})
+	}))
+	defer api.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(api.URL+"/"))
+
+	text := ch.enrichSlackMessageText(
+		context.Background(),
+		"latest reply",
+		"C123",
+		"1710000002.000300",
+		"1710000000.000100",
+		nil,
+	)
+
+	assert.Contains(t, text, "latest reply")
+	assert.Contains(t, text, "[current thread: C123 1710000000.000100]")
+	assert.Contains(t, text, "U1: root context")
+	assert.Contains(t, text, "U2: earlier reply")
+}
+
+func TestSlackChannel_HandlesForwardedAttachmentText(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{From: "*"}}, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User:    "U123",
+		Channel: "D123",
+		Message: &slack.Msg{
+			User:    "U123",
+			Channel: "D123",
+			Attachments: []slack.Attachment{{
+				AuthorName: "Alice",
+				Text:       "forwarded body",
+				Fallback:   "forwarded fallback",
+			}},
+		},
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Contains(t, msg.Text, "Alice")
+	assert.Contains(t, msg.Text, "forwarded body")
+	assert.Contains(t, msg.Text, "forwarded fallback")
+}
+
 func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
 	base := t.TempDir()
 	store.SetDataDir(base)
