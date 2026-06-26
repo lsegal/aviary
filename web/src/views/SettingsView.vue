@@ -2803,8 +2803,8 @@ function normalizedDraftConfig(): AppConfig {
 			(agent.permissions?.disabled_tools?.length ?? 0) > 0 ||
 			(agent.permissions?.filesystem?.allowed_paths?.length ?? 0) > 0 ||
 			(agent.permissions?.exec?.allowed_commands?.length ?? 0) > 0 ||
-			Boolean(agent.permissions?.exec?.shell_interpolate) ||
-			Boolean((agent.permissions?.exec?.shell ?? "").trim()) ||
+			agent.permissions?.exec?.shell_interpolate ||
+			(agent.permissions?.exec?.shell ?? "").trim() ||
 			agentPermissionsPreset(agent) !== "standard"
 				? {
 						preset:
@@ -2827,8 +2827,8 @@ function normalizedDraftConfig(): AppConfig {
 								: undefined,
 						exec:
 							(agent.permissions?.exec?.allowed_commands?.length ?? 0) > 0 ||
-							Boolean(agent.permissions?.exec?.shell_interpolate) ||
-							Boolean((agent.permissions?.exec?.shell ?? "").trim())
+							agent.permissions?.exec?.shell_interpolate ||
+							(agent.permissions?.exec?.shell ?? "").trim()
 								? {
 										allowed_commands: (
 											agent.permissions?.exec?.allowed_commands ?? []
