@@ -972,6 +972,94 @@ func TestNewChannel_Slack_IgnoresShowTyping(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRoutedSlackMessage_SharedConnectionRoutesMatchingSpec(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.botUserID = "U0APX2B3ZJB"
+	msg := IncomingMessage{
+		Type:    "slack",
+		From:    "U0AQFSYBQ84",
+		Channel: "C0AQ5TNJ151",
+		Text:    "<@U0APX2B3ZJB> hi",
+	}
+
+	ony := channelSpec{
+		agentName: "Ony",
+		channelConfig: config.ChannelConfig{
+			Type: "slack",
+			ID:   "U0APX2B3ZJB",
+			AllowFrom: []config.AllowFromEntry{{
+				From:              "*",
+				AllowedGroups:     "C0AQ5TNJ151",
+				RespondToMentions: true,
+			}},
+		},
+		agentModel: "model/ony",
+	}
+	coder := channelSpec{
+		agentName: "Coder",
+		channelConfig: config.ChannelConfig{
+			Type: "slack",
+			ID:   "U0APX2B3ZJB",
+			AllowFrom: []config.AllowFromEntry{{
+				From:              "*",
+				AllowedGroups:     "C0BDCC8G5T3",
+				RespondToMentions: true,
+			}},
+		},
+		agentModel: "model/coder",
+	}
+
+	routed, ok := routedSlackMessage(ch, ony, msg)
+	assert.True(t, ok)
+	assert.Equal(t, "model/ony", routed.Model)
+
+	_, ok = routedSlackMessage(ch, coder, msg)
+	assert.False(t, ok)
+}
+
+func TestManager_ReconcileSharesSlackConnection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{Agents: []config.AgentConfig{
+		{
+			Name: "Ony",
+			Channels: []config.ChannelConfig{{
+				Type:  "slack",
+				ID:    "U0APX2B3ZJB",
+				Token: "xoxb-token",
+				URL:   "xapp-token",
+				AllowFrom: []config.AllowFromEntry{{
+					From:              "*",
+					AllowedGroups:     "C0AQ5TNJ151",
+					RespondToMentions: true,
+				}},
+			}},
+		},
+		{
+			Name: "Coder",
+			Channels: []config.ChannelConfig{{
+				Type:  "slack",
+				ID:    "U0APX2B3ZJB",
+				Token: "xoxb-token",
+				URL:   "xapp-token",
+				AllowFrom: []config.AllowFromEntry{{
+					From:              "*",
+					AllowedGroups:     "C0BDCC8G5T3",
+					RespondToMentions: true,
+				}},
+			}},
+		},
+	}}
+
+	mgr := NewManager()
+	mgr.Reconcile(ctx, cfg, func(string, string, string, Channel, IncomingMessage) {})
+
+	assert.Len(t, mgr.slack, 1)
+	assert.Len(t, mgr.channels, 2)
+	assert.Same(t, mgr.channels[channelKey("Ony", "slack", "U0APX2B3ZJB")], mgr.channels[channelKey("Coder", "slack", "U0APX2B3ZJB")])
+}
+
 func overrideDiscordEndpointsForTest(base string) func() {
 	origDiscord := discordgo.EndpointDiscord
 	origAPI := discordgo.EndpointAPI
