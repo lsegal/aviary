@@ -765,19 +765,37 @@ func TestSlackChannel_HandleAppMention(t *testing.T) {
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
 
 	ch.handleAppMentionEvent(&slackevents.AppMentionEvent{
-		Type:      "app_mention",
-		User:      "U123",
-		Channel:   "C123",
-		Text:      "<@UBOT> hi",
-		TimeStamp: "1710000000.123456",
+		Type:            "app_mention",
+		User:            "U123",
+		Channel:         "C123",
+		Text:            "<@UBOT> hi",
+		TimeStamp:       "1710000000.123456",
+		ThreadTimeStamp: "1710000000.000001",
 	})
 
 	msg := waitMsg(t, msgs, time.Second)
 	assert.Equal(t, "slack", msg.Type)
 	assert.Equal(t, "U123", msg.From)
 	assert.Equal(t, "C123", msg.Channel)
+	assert.Equal(t, "1710000000.000001", msg.ThreadTS)
 	assert.Equal(t, "<@UBOT> hi", msg.Text)
 	assert.Equal(t, time.Unix(1710000000, 123456000).UTC(), msg.ReceivedAt)
+}
+
+func TestSlackChannel_HandleMessageUsesTimestampAsThreadFallback(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{From: "*"}}, "m", nil)
+	msgs := make(chan IncomingMessage, 1)
+	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User:      "U123",
+		Channel:   "D123",
+		Text:      "hello",
+		TimeStamp: "1710000000.123456",
+	})
+
+	msg := waitMsg(t, msgs, time.Second)
+	assert.Equal(t, "1710000000.123456", msg.ThreadTS)
 }
 
 func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
@@ -896,6 +914,39 @@ func TestSlackChannel_SendResolvesUsernameToDM(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "U123", openUsers)
 	assert.Equal(t, "D123", postedChannel)
+}
+
+func TestSlackChannel_SendAssistantStatus(t *testing.T) {
+	var (
+		gotChannel string
+		gotThread  string
+		gotStatus  string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		switch r.URL.Path {
+		case "/assistant.threads.setStatus":
+			gotChannel = r.Form.Get("channel_id")
+			gotThread = r.Form.Get("thread_ts")
+			gotStatus = r.Form.Get("status")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected Slack API path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(server.URL+"/"))
+	ch.identityMu.Lock()
+	ch.channelAliases = map[string]string{"alerts": "C123"}
+	ch.identityMu.Unlock()
+
+	err := ch.SendAssistantStatus("#alerts", "1710000000.123456", "is thinking")
+	assert.NoError(t, err)
+	assert.Equal(t, "C123", gotChannel)
+	assert.Equal(t, "1710000000.123456", gotThread)
+	assert.Equal(t, "is thinking", gotStatus)
 }
 
 func TestNewChannel_Slack(t *testing.T) {

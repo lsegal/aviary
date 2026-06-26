@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,27 @@ func (stubChannel) Start(context.Context) error              { return nil }
 func (stubChannel) Stop()                                    {}
 func (stubChannel) Send(string, string) error                { return nil }
 func (stubChannel) OnMessage(func(channels.IncomingMessage)) {}
+
+type statusStubChannel struct {
+	stubChannel
+	mu       sync.Mutex
+	statuses []string
+}
+
+func (c *statusStubChannel) ShowAssistantStatus() bool { return true }
+
+func (c *statusStubChannel) SendAssistantStatus(_, _, status string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statuses = append(c.statuses, status)
+	return nil
+}
+
+func (c *statusStubChannel) snapshotStatuses() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.statuses...)
+}
 
 func setupServerDataDir(t *testing.T) {
 	t.Helper()
@@ -1486,6 +1508,34 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	if runner, ok := srv.agents.Get("bot"); ok {
 		runner.Wait()
 	}
+}
+
+func TestHandleIncomingChannelMessage_SendsAssistantStatus(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "stub"}}}
+	srv := New(cfg, "tok")
+	srv.agents.Reconcile(cfg)
+	t.Cleanup(func() {
+		if runner, ok := srv.agents.Get("bot"); ok {
+			runner.Wait()
+		}
+	})
+
+	ch := &statusStubChannel{}
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", ch, channels.IncomingMessage{
+		Type:     "slack",
+		Channel:  "D123",
+		ThreadTS: "1710000000.123456",
+		From:     "U123",
+		Text:     "hello",
+	})
+
+	assert.Eventually(t, func() bool {
+		statuses := ch.snapshotStatuses()
+		return len(statuses) >= 2 && statuses[0] == "is thinking" && statuses[len(statuses)-1] == ""
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {

@@ -838,7 +838,7 @@ func TestValidate_DisabledChannelSkipsAllowFromWarning(t *testing.T) {
 
 }
 
-func TestValidate_ShowTypingUnsupportedOnSlack(t *testing.T) {
+func TestValidate_ShowTypingAllowedOnSlack(t *testing.T) {
 	enabled := true
 	cfg := &Config{
 		Agents: []AgentConfig{{
@@ -851,8 +851,7 @@ func TestValidate_ShowTypingUnsupportedOnSlack(t *testing.T) {
 		}},
 	}
 	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "show_typing is only supported for signal"))
-	assert.True(t, hasIssue(issues, "including in direct messages"))
+	assert.False(t, hasIssue(issues, "show_typing is only supported"))
 
 }
 
@@ -869,7 +868,7 @@ func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
 		}},
 	}
 	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "show_typing is only supported for signal"))
+	assert.False(t, hasIssue(issues, "show_typing is only supported"))
 
 }
 

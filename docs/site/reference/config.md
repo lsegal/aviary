@@ -160,7 +160,7 @@ channels:
 | `url` | string | | Channel transport address. For Slack this is the App-Level token (`xapp-...`) used by Socket Mode. For Signal this is the `signal-cli` daemon address. Discord does not use `url`. |
 | `model` | string | | Override model for all messages on this channel |
 | `fallbacks` | []string | | Override fallbacks for all messages on this channel |
-| `show_typing` | bool | `true` | Show a typing indicator while processing on supported channels (currently Signal only; Slack and Discord do not support it) |
+| `show_typing` | bool | `true` | Show a typing or progress indicator while processing on supported channels (Signal typing notifications and Slack assistant status indicators) |
 | `react_to_emoji` | bool | `true` | Treat emoji reactions on the agent's own messages as prompts |
 | `reply_to_replies` | bool | `true` | Respond when someone replies to one of the agent's messages |
 | `send_read_receipts` | bool | `true` | Send read receipts for messages the agent will act on |
@@ -173,7 +173,7 @@ channels:
 - `id` is not a Slack workspace ID or channel ID. It is your Aviary integration name for that Slack connection.
 - `url` must contain the Slack App-Level token (`xapp-...`) when `type: slack`.
 - `token` must contain the Slack Bot token (`xoxb-...`) when `type: slack`.
-- `show_typing` is not supported on Slack because Slack apps using Events API and Socket Mode cannot send typing indicators, including in DMs.
+- Slack apps using Events API and Socket Mode cannot send classic typing indicators, but `show_typing` enables Slack assistant thread status updates while Aviary is working.
 - `users:read` is required on the Slack bot token if you want Aviary to resolve Slack user names for name-based routing.
 - Slack Event Subscriptions should include both message events and the `app_mention` event if you want the bot to answer `@bot` mentions in channels.
 - Slack scheduled task delivery routes use the form `slack:<configured-id>:<slack-channel-id>`.

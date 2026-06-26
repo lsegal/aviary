@@ -39,7 +39,7 @@ Shared channel behavior:
 - `disabled_tools` can only restrict what the agent already has permission to use.
 - `allow_from` controls which senders and group contexts are allowed to reach the agent.
 - Channel-level `model` and `fallbacks` override the agent defaults for messages arriving through that channel.
-- `show_typing` currently applies to Signal only. Slack and Discord do not support it.
+- `show_typing` applies to Signal typing notifications and Slack assistant status indicators. Discord does not support it.
 
 ## Slack
 
@@ -120,7 +120,7 @@ Slack-specific notes:
 
 - `allow_from[].from` accepts raw Slack user IDs or human-friendly names such as `alice` or `@alice`.
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
-- Slack apps connected through Events API and Socket Mode cannot emit typing indicators, including in DMs. `show_typing` is not supported on Slack.
+- Slack apps connected through Events API and Socket Mode cannot emit classic typing notifications, but Aviary uses Slack assistant thread status indicators when `show_typing` is enabled.
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
 - In the control panel, **Settings > Agents > Channels > Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
