@@ -36,12 +36,11 @@ func checkAllowed(
 	return checkAllowedWithOptions(entries, from, channelID, text, isGroup, botUserID, wasMentioned, false)
 }
 
-// checkAllowedReplyToSelf applies allowFrom rules for replies to the agent's
-// own messages. Sender and group/channel checks remain mandatory, but
-// mention-prefix and respondToMentions gates are skipped so a direct reply in
-// an already-allowed conversation continues the thread without requiring a
-// fresh mention.
-func checkAllowedReplyToSelf(
+// checkAllowedReplyContinuation applies allowFrom rules for message replies.
+// Sender and group/channel checks remain mandatory, but mention-prefix and
+// respondToMentions gates are skipped so an already-allowed conversation
+// continues without requiring a fresh mention.
+func checkAllowedReplyContinuation(
 	entries []config.AllowFromEntry,
 	from, channelID string,
 	isGroup bool,
@@ -170,6 +169,9 @@ func matchesMentionPrefixes(text string, prefixes []string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	for _, p := range prefixes {
 		pl := strings.ToLower(p)
+		if strings.TrimSpace(pl) == "*" {
+			return true
+		}
 		if strings.ContainsAny(pl, "*?[") {
 			matched, _ := path.Match(pl, lower)
 			if matched {

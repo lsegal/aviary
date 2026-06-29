@@ -117,6 +117,25 @@ func (c *SlackChannel) SendAndGetID(channel, text string) (string, error) {
 	return timestamp, err
 }
 
+// SendThreadMessageAndGetID posts a reply to a Slack thread and returns the
+// message timestamp, which can later be passed to EditMessage.
+func (c *SlackChannel) SendThreadMessageAndGetID(channel, threadTS, text string) (string, error) {
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return "", err
+	}
+	threadTS = strings.TrimSpace(threadTS)
+	if threadTS == "" {
+		return "", fmt.Errorf("slack thread timestamp is required")
+	}
+	_, timestamp, err := c.client.PostMessage(
+		resolvedChannel,
+		slack.MsgOptionText(text, false),
+		slack.MsgOptionTS(threadTS),
+	)
+	return timestamp, err
+}
+
 // EditMessage updates a previously posted Slack message in place.
 func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
 	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
@@ -288,6 +307,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	if threadTS == "" {
 		threadTS = rawTimestamp
 	}
+	isThreadReply := strings.TrimSpace(threadTS) != "" && strings.TrimSpace(rawTimestamp) != "" && threadTS != rawTimestamp
 	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
 		receivedAt = ts
 	}
@@ -300,18 +320,22 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		c.handlerMu.RUnlock()
 		if logFn != nil {
 			logFn(IncomingMessage{
-				Type:       "slack",
-				From:       from,
-				SenderName: from,
-				Channel:    channelID,
-				ThreadTS:   threadTS,
-				Text:       enrichedText,
-				ReceivedAt: receivedAt,
+				Type:          "slack",
+				From:          from,
+				SenderName:    from,
+				Channel:       channelID,
+				ThreadTS:      threadTS,
+				IsThreadReply: isThreadReply,
+				Text:          enrichedText,
+				ReceivedAt:    receivedAt,
 			})
 		}
 	}
 
 	result := checkAllowed(c.allowedEntries(), from, channelID, text, isGroup, c.botUserID, false)
+	if !result.allowed && isThreadReply {
+		result = checkAllowedReplyContinuation(c.allowedEntries(), from, channelID, isGroup)
+	}
 	if !result.allowed {
 		c.logf("slack: ignored message from=%s channel=%s", from, channelID)
 		return
@@ -329,6 +353,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			SenderName:    c.displayNameForUser(from),
 			Channel:       channelID,
 			ThreadTS:      threadTS,
+			IsThreadReply: isThreadReply,
 			Text:          enrichedText,
 			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,

@@ -647,6 +647,11 @@
 											@add-secret="openChannelTokenSecretModal(ch, 'token')"
 										/>
 									</div>
+									<label class="lg:col-span-2 flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+										<input type="checkbox" v-model="ch.separate_top_level_sessions"
+											class="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+										Separate top-level Slack messages into thread sessions
+									</label>
 									<div class="lg:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-950/40">
 										<div class="flex flex-wrap items-center justify-between gap-3">
 											<div>

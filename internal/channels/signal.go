@@ -1071,7 +1071,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	// user can continue the same allowed conversation without re-mentioning.
 	result := checkAllowed(c.allowFrom, source, channelID, msgText, isGroup, "", wasMentioned)
 	if isReplyToSelf {
-		result = checkAllowedReplyToSelf(c.allowFrom, source, channelID, isGroup)
+		result = checkAllowedReplyContinuation(c.allowFrom, source, channelID, isGroup)
 	}
 	if !result.allowed {
 		return

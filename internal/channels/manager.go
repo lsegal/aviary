@@ -366,7 +366,7 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 				if !shouldProcessIncomingMessage(spec.metadata, msg) {
 					continue
 				}
-				sessionName := msg.Type + ":" + msg.Channel
+				sessionName := channelSessionName(spec.channelConfig, msg)
 				sess, err := agent.NewSessionManager().GetOrCreateNamed(spec.agentName, sessionName)
 				if err != nil || sess == nil {
 					slog.Warn("channel: failed to get session for chat history", "err", err)
@@ -439,6 +439,9 @@ func routedSlackMessage(ch *SlackChannel, spec channelSpec, msg IncomingMessage)
 		botUserID = spec.channelConfig.ID
 	}
 	result := checkAllowed(spec.channelConfig.AllowFrom, msg.From, msg.Channel, msg.Text, isGroup, botUserID, false)
+	if !result.allowed && msg.IsThreadReply {
+		result = checkAllowedReplyContinuation(spec.channelConfig.AllowFrom, msg.From, msg.Channel, isGroup)
+	}
 	if !result.allowed {
 		return IncomingMessage{}, false
 	}
@@ -486,6 +489,21 @@ func anySlackStatusEnabled(specs []channelSpec) bool {
 		}
 	}
 	return false
+}
+
+func channelSessionName(cc config.ChannelConfig, msg IncomingMessage) string {
+	base := msg.Type + ":" + msg.Channel
+	if msg.Type != "slack" {
+		return base
+	}
+	threadTS := strings.TrimSpace(msg.ThreadTS)
+	if threadTS == "" {
+		return base
+	}
+	if config.BoolOr(cc.SeparateTopLevelSessions, false) {
+		return base + ":" + threadTS
+	}
+	return base
 }
 
 func resolveChannelAuthRefs(cc config.ChannelConfig) (config.ChannelConfig, error) {

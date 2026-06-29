@@ -55,12 +55,13 @@ func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provi
 
 // RunOverrides defines per-run overrides for model, fallbacks, and tools.
 type RunOverrides struct {
-	Model         string
-	Fallbacks     []string
-	RestrictTools []string
-	DisabledTools []string
-	Bare          bool
-	History       *bool
+	Model            string
+	Fallbacks        []string
+	RestrictTools    []string
+	DisabledTools    []string
+	Bare             bool
+	History          *bool
+	SuppressDelivery bool
 }
 
 // Prompt sends a message to the agent and fans out stream events to consumers.
@@ -266,6 +267,11 @@ func (r *AgentRunner) promptCore(
 				c(e)
 			}
 		}
+		deliver := func(text string) {
+			if !overrides.SuppressDelivery {
+				deliverToSession(r.agent.ID, sessionID, text)
+			}
+		}
 
 		// Guard: if this message was already successfully answered (e.g. by a
 		// concurrent run or on a retry), do not process it again.
@@ -285,7 +291,7 @@ func (r *AgentRunner) promptCore(
 			msg := fmt.Sprintf("Error: %v", err)
 			// Do NOT persist API errors as assistant messages — they would be
 			// re-sent in subsequent requests and perpetuate the failure loop.
-			deliverToSession(r.agent.ID, sessionID, msg)
+			deliver(msg)
 		}
 
 		if currentProvider == nil {
@@ -298,7 +304,7 @@ func (r *AgentRunner) promptCore(
 			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", effectiveModel)
 			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "", effectiveModel)
 			emit(StreamEvent{Type: StreamEventText, Text: msg})
-			deliverToSession(r.agent.ID, sessionID, msg)
+			deliver(msg)
 			emit(StreamEvent{Type: StreamEventDone})
 			return
 		}
@@ -455,14 +461,10 @@ func (r *AgentRunner) promptCore(
 			var mediaURLs []string
 			var nativeCalls []llm.ToolCall
 			var fallbackTriggered bool
-			streamingSuppressed := len(llmTools) > 0
 			for event := range ch {
 				switch event.Type {
 				case llm.EventTypeText:
 					modelOut.WriteString(event.Text)
-					if streamingSuppressed {
-						continue
-					}
 					streamedText.WriteString(event.Text)
 					emit(StreamEvent{Type: StreamEventText, Text: event.Text})
 				case llm.EventTypeMedia:
@@ -595,7 +597,7 @@ func (r *AgentRunner) promptCore(
 					slog.Warn("agent: failed to save session meta", "session", sessionID, "err", err)
 				}
 			}
-			deliverToSession(r.agent.ID, sessionID, answer)
+			deliver(answer)
 			emit(StreamEvent{Type: StreamEventDone})
 			return
 		}
@@ -603,7 +605,7 @@ func (r *AgentRunner) promptCore(
 		errMsg := fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds)
 		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "", effectiveModel)
 		usageRec.HasError = true
-		deliverToSession(r.agent.ID, sessionID, errMsg)
+		deliver(errMsg)
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
 	}()
 }

@@ -2755,6 +2755,8 @@ function normalizedDraftConfig(): AppConfig {
 				.map((v) => v.trim())
 				.filter(Boolean),
 			show_typing: ch.show_typing === false ? false : undefined,
+			separate_top_level_sessions:
+				ch.separate_top_level_sessions === true ? true : undefined,
 			reply_to_replies: ch.reply_to_replies === false ? false : undefined,
 			react_to_emoji: ch.react_to_emoji === false ? false : undefined,
 			send_read_receipts: ch.send_read_receipts === false ? false : undefined,

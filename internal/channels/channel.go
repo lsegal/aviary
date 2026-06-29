@@ -13,6 +13,7 @@ type IncomingMessage struct {
 	SenderName    string // optional human-readable sender name
 	Channel       string // channel ID or name
 	ThreadTS      string // optional platform thread timestamp/root ID
+	IsThreadReply bool   // true when the message is a reply inside a platform thread
 	Text          string
 	MediaURL      string // optional inline media for the LLM (typically a data URL)
 	ReceivedAt    time.Time
@@ -104,4 +105,10 @@ type MessageSenderWithID interface {
 // previously posted messages in place.
 type MessageEditor interface {
 	EditMessage(channel, msgID, text string) error
+}
+
+// ThreadMessageSender posts a message into an existing platform thread and
+// returns an opaque message ID that can later be edited.
+type ThreadMessageSender interface {
+	SendThreadMessageAndGetID(channel, threadTS, text string) (msgID string, err error)
 }

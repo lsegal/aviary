@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -335,7 +336,10 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 	msgCtx = agent.WithSessionSender(msgCtx, domain.NewMessageSender(msg.From, msg.SenderName, true))
 
 	agentID := agentName
-	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, msg.Type+":"+msg.Channel); err == nil && sess != nil {
+	channelCfg, _ := s.findChannelConfig(agentName, channelType, configuredID)
+	sessionName := channelSessionName(channelCfg, msg)
+	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName); err == nil && sess != nil {
+		msgCtx = agent.WithSessionID(msgCtx, sess.ID)
 		target := store.SessionChannel{Type: msg.Type, ConfiguredID: configuredID, ID: msg.Channel}
 		sessiontarget.Register(agentID, agentName, sess.ID, target, s.channels)
 		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, configuredID, msg.Channel); err != nil {
@@ -413,17 +417,58 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			_ = ch.Send(msg.Channel, newLine)
 		}
 	}
+	slackStreamer := newSlackThreadStreamer(channelType, ch, msg)
+	if slackStreamer != nil {
+		rOpts.SuppressDelivery = true
+	}
 
 	runner.PromptMediaWithOverrides(msgCtx, msg.Text, msg.MediaURL, rOpts, func(e agent.StreamEvent) {
 		switch e.Type {
+		case agent.StreamEventText:
+			if slackStreamer != nil {
+				slackStreamer.Append(e.Text)
+			}
+		case agent.StreamEventTool:
+			if slackStreamer != nil && e.Tool != nil {
+				slackStreamer.AppendDisclosure(formatToolDisclosure(e.Tool))
+			}
 		case agent.StreamEventStatus:
-			sendOrEditStatus(e.Text)
+			if slackStreamer == nil {
+				sendOrEditStatus(e.Text)
+			}
 			if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
 				if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, slackAssistantStatusText(e.Text)); err != nil {
 					slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
 				}
 			}
-		case agent.StreamEventDone, agent.StreamEventError, agent.StreamEventStop:
+		case agent.StreamEventError:
+			if slackStreamer != nil && e.Err != nil {
+				slackStreamer.Append("\nError: " + e.Err.Error())
+				slackStreamer.Flush()
+			}
+			if stopTyping != nil {
+				stopTyping()
+			}
+			if clearAssistantStatus != nil {
+				clearAssistantStatus()
+				clearAssistantStatus = nil
+			}
+		case agent.StreamEventStop:
+			if slackStreamer != nil {
+				slackStreamer.Append("\nStopped.")
+				slackStreamer.Flush()
+			}
+			if stopTyping != nil {
+				stopTyping()
+			}
+			if clearAssistantStatus != nil {
+				clearAssistantStatus()
+				clearAssistantStatus = nil
+			}
+		case agent.StreamEventDone:
+			if slackStreamer != nil {
+				slackStreamer.Flush()
+			}
 			if stopTyping != nil {
 				stopTyping()
 			}
@@ -433,6 +478,127 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			}
 		}
 	})
+}
+
+func (s *Server) findChannelConfig(agentName, channelType, configuredID string) (config.ChannelConfig, bool) {
+	if s.cfg == nil {
+		return config.ChannelConfig{}, false
+	}
+	for _, ac := range s.cfg.Agents {
+		if ac.Name != agentName {
+			continue
+		}
+		for _, cc := range ac.Channels {
+			if cc.Type == channelType && cc.ID == configuredID {
+				return cc, true
+			}
+		}
+	}
+	return config.ChannelConfig{}, false
+}
+
+func channelSessionName(cc config.ChannelConfig, msg channels.IncomingMessage) string {
+	base := msg.Type + ":" + msg.Channel
+	if msg.Type != "slack" {
+		return base
+	}
+	threadTS := strings.TrimSpace(msg.ThreadTS)
+	if threadTS == "" {
+		return base
+	}
+	if config.BoolOr(cc.SeparateTopLevelSessions, false) {
+		return base + ":" + threadTS
+	}
+	return base
+}
+
+type slackThreadStreamer struct {
+	thread   channels.ThreadMessageSender
+	editor   channels.MessageEditor
+	channel  string
+	threadTS string
+	msgID    string
+	text     strings.Builder
+}
+
+func newSlackThreadStreamer(channelType string, ch channels.Channel, msg channels.IncomingMessage) *slackThreadStreamer {
+	if channelType != "slack" || strings.TrimSpace(msg.ThreadTS) == "" {
+		return nil
+	}
+	thread, ok := ch.(channels.ThreadMessageSender)
+	if !ok {
+		return nil
+	}
+	streamer := &slackThreadStreamer{
+		thread:   thread,
+		channel:  msg.Channel,
+		threadTS: strings.TrimSpace(msg.ThreadTS),
+	}
+	if editor, ok := ch.(channels.MessageEditor); ok {
+		streamer.editor = editor
+	}
+	return streamer
+}
+
+func (s *slackThreadStreamer) Append(text string) {
+	if s == nil || text == "" {
+		return
+	}
+	s.text.WriteString(text)
+	s.Flush()
+}
+
+func (s *slackThreadStreamer) AppendDisclosure(text string) {
+	if s == nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	if s.text.Len() > 0 {
+		s.text.WriteString("\n\n")
+	}
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		s.text.WriteString("> ")
+		s.text.WriteString(line)
+		s.text.WriteString("\n")
+	}
+	s.Flush()
+}
+
+func (s *slackThreadStreamer) Flush() {
+	if s == nil {
+		return
+	}
+	text := strings.TrimSpace(s.text.String())
+	if text == "" {
+		return
+	}
+	if s.msgID == "" {
+		id, err := s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, text)
+		if err == nil {
+			s.msgID = id
+		} else {
+			slog.Debug("server: failed to send Slack stream message", "channel", s.channel, "thread", s.threadTS, "err", err)
+		}
+		return
+	}
+	if s.editor != nil {
+		if err := s.editor.EditMessage(s.channel, s.msgID, text); err != nil {
+			slog.Debug("server: failed to edit Slack stream message", "channel", s.channel, "thread", s.threadTS, "err", err)
+		}
+	}
+}
+
+func formatToolDisclosure(tool *agent.ToolEvent) string {
+	if tool == nil {
+		return ""
+	}
+	if len(tool.Args) == 0 {
+		return fmt.Sprintf("Tool call: `%s`", tool.Name)
+	}
+	data, err := json.Marshal(tool.Args)
+	if err != nil {
+		return fmt.Sprintf("Tool call: `%s`", tool.Name)
+	}
+	return fmt.Sprintf("Tool call: `%s` `%s`", tool.Name, string(data))
 }
 
 func slackAssistantStatusText(status string) string {

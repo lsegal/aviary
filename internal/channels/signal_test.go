@@ -860,7 +860,7 @@ func TestDispatch_ReplyToReplyStillRequiresAllowFrom(t *testing.T) {
 }
 
 func TestCheckAllowedReplyToSelf_GroupIgnoresMentionFilters(t *testing.T) {
-	result := checkAllowedReplyToSelf([]config.AllowFromEntry{{
+	result := checkAllowedReplyContinuation([]config.AllowFromEntry{{
 		From:              "*",
 		AllowedGroups:     "group-1",
 		RespondToMentions: true,
@@ -875,8 +875,8 @@ func TestCheckAllowedReplyToSelf_GroupStillRequiresSenderAndChannel(t *testing.T
 		AllowedGroups:     "group-1",
 		RespondToMentions: true,
 	}}
-	assert.False(t, checkAllowedReplyToSelf(entries, "+15559999999", "group-1", true).allowed)
-	assert.False(t, checkAllowedReplyToSelf(entries, "+15550001111", "group-2", true).allowed)
+	assert.False(t, checkAllowedReplyContinuation(entries, "+15559999999", "group-1", true).allowed)
+	assert.False(t, checkAllowedReplyContinuation(entries, "+15550001111", "group-2", true).allowed)
 }
 
 // ── checkAllowed tests ────────────────────────────────────────────────────────

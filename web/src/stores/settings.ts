@@ -37,6 +37,7 @@ export interface AgentChannel {
 	disabled_tools?: string[];
 	allow_from?: AllowFromEntry[];
 	show_typing?: boolean;
+	separate_top_level_sessions?: boolean;
 	reply_to_replies?: boolean;
 	react_to_emoji?: boolean;
 	send_read_receipts?: boolean;

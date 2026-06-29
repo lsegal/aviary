@@ -51,6 +51,8 @@ func TestMatchesMentionPrefixes(t *testing.T) {
 		{"msg", []string{}, false},
 		{"aviary help", []string{"bot*", "aviary*"}, true}, // multiple patterns
 		{"bot do it", []string{"bot*", "aviary*"}, true},
+		{"anything at all", []string{"*"}, true},
+		{"", []string{"*"}, true},
 	}
 	for _, tc := range tests {
 		got := matchesMentionPrefixes(tc.text, tc.prefixes)
@@ -256,7 +258,7 @@ func TestCheckAllowed_MentionPrefixGroupOnly_FalseReplyToSelfBypasses(t *testing
 	entries := []config.AllowFromEntry{
 		{From: "*", MentionPrefixes: []string{"aviary"}, MentionPrefixGroupOnly: &f},
 	}
-	result := checkAllowedReplyToSelf(entries, "+1", "+1", false)
+	result := checkAllowedReplyContinuation(entries, "+1", "+1", false)
 	assert.True(t, result.allowed)
 }
 

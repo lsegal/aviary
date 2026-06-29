@@ -207,6 +207,10 @@ type ChannelConfig struct {
 	// processes a message. Defaults to true for channels that support it.
 	// Currently this is implemented for Signal only.
 	ShowTyping *bool `yaml:"show_typing,omitempty"     json:"show_typing,omitempty"`
+	// SeparateTopLevelSessions controls Slack channel session naming. When true,
+	// every top-level Slack message gets its own session keyed by the Slack
+	// thread/root timestamp, so all replies in that Slack thread share a session.
+	SeparateTopLevelSessions *bool `yaml:"separate_top_level_sessions,omitempty" json:"separate_top_level_sessions,omitempty"`
 	// ReactToEmoji controls whether the agent reacts to emoji reactions placed
 	// on its own messages. On Signal, this treats the emoji as a prompt and
 	// mirrors the same reaction back. Defaults to true for supported channels.
