@@ -639,6 +639,24 @@ func TestAnthropicProvider_Stream_PromptCacheControlDisabledByDefault(t *testing
 	assert.False(t, hasCacheControl)
 }
 
+func TestStrictSchemaObjectRequiresEveryProperty(t *testing.T) {
+	input := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":      map[string]any{"type": "string"},
+			"model":     map[string]any{"type": "string"},
+			"fallbacks": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+		"required": []any{"name"},
+	}
+
+	schema := strictSchemaObject(input)
+
+	assert.Equal(t, []any{"fallbacks", "model", "name"}, schema["required"])
+	assert.Equal(t, false, schema["additionalProperties"])
+	assert.Equal(t, []any{"name"}, input["required"])
+}
+
 func TestAnthropicProvider_Stream_StrictToolsDisabledAboveLimit(t *testing.T) {
 	var requestBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

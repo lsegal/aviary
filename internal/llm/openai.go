@@ -183,7 +183,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				Type:        "function",
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  schemaObject(t.InputSchema),
+				Parameters:  strictSchemaObject(t.InputSchema),
 				Strict:      true,
 			})
 		}
@@ -459,7 +459,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 			}
 			fn := shared.FunctionDefinitionParam{
 				Name:        tool.Name,
-				Parameters:  shared.FunctionParameters(schemaObject(tool.InputSchema)),
+				Parameters:  shared.FunctionParameters(strictSchemaObject(tool.InputSchema)),
 				Description: openai.String(desc),
 				Strict:      openai.Bool(true),
 			}
@@ -564,7 +564,13 @@ func schemaObject(schema any) map[string]any {
 	}
 	var obj map[string]any
 	if m, ok := schema.(map[string]any); ok {
-		obj = m
+		data, err := json.Marshal(m)
+		if err != nil {
+			return empty
+		}
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return empty
+		}
 	} else {
 		data, err := json.Marshal(schema)
 		if err != nil {
@@ -590,6 +596,49 @@ func schemaObject(schema any) map[string]any {
 	delete(obj, "allOf")
 	delete(obj, "not")
 	return obj
+}
+
+func strictSchemaObject(schema any) map[string]any {
+	obj := schemaObject(schema)
+	applyStrictSchemaRules(obj)
+	return obj
+}
+
+func applyStrictSchemaRules(value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		delete(v, "oneOf")
+		delete(v, "anyOf")
+		delete(v, "allOf")
+		delete(v, "not")
+
+		props, hasProps := v["properties"].(map[string]any)
+		if t, _ := v["type"].(string); t == "object" || hasProps {
+			if !hasProps {
+				props = map[string]any{}
+				v["properties"] = props
+			}
+			names := make([]string, 0, len(props))
+			for name, prop := range props {
+				names = append(names, name)
+				applyStrictSchemaRules(prop)
+			}
+			sortStrings(names)
+			required := make([]any, 0, len(names))
+			for _, name := range names {
+				required = append(required, name)
+			}
+			v["required"] = required
+			v["additionalProperties"] = false
+		}
+		if items, ok := v["items"]; ok {
+			applyStrictSchemaRules(items)
+		}
+	case []any:
+		for _, item := range v {
+			applyStrictSchemaRules(item)
+		}
+	}
 }
 
 func formatToolExamples(examples []map[string]any) string {
@@ -626,6 +675,16 @@ func parseToolArguments(raw string) (map[string]any, error) {
 }
 
 func sortInts(values []int) {
+	for i := 0; i < len(values); i++ {
+		for j := i + 1; j < len(values); j++ {
+			if values[j] < values[i] {
+				values[i], values[j] = values[j], values[i]
+			}
+		}
+	}
+}
+
+func sortStrings(values []string) {
 	for i := 0; i < len(values); i++ {
 		for j := i + 1; j < len(values); j++ {
 			if values[j] < values[i] {
