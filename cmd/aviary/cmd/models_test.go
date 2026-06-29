@@ -18,7 +18,7 @@ func TestRunModelsList_All(t *testing.T) {
 	assert.Contains(t, text, "OUTPUT")
 	assert.Contains(t, text, "TYPE")
 	assert.Contains(t, text, "anthropic/claude-sonnet-4-5")
-	assert.Contains(t, text, "openai-codex/gpt-5.2")
+	assert.Contains(t, text, "openai-codex/gpt-5.5")
 	assert.Contains(t, text, "text only")
 }
 

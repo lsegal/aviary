@@ -26,10 +26,10 @@ func TestListReturnsCopy(t *testing.T) {
 }
 
 func TestEntriesExposeMetadata(t *testing.T) {
-	entry, ok := Lookup("openai/gpt-4o")
+	entry, ok := Lookup("openai/gpt-5.5")
 	assert.True(t, ok)
-	assert.Equal(t, 128000, entry.InputTokens)
-	assert.Equal(t, 16384, entry.OutputTokens)
+	assert.Equal(t, 1050000, entry.InputTokens)
+	assert.Equal(t, 128000, entry.OutputTokens)
 	assert.True(t, entry.SupportsImageInput)
 }
 

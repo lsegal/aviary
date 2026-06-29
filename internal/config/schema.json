@@ -264,7 +264,7 @@
             "model": {
               "type": "string",
               "x-label": "Default model",
-              "x-placeholder": "claude-opus-4-6",
+              "x-placeholder": "claude-opus-4-8",
               "x-order": 1,
               "description": "Fallback model used when an agent does not specify one."
             },

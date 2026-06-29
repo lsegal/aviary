@@ -287,9 +287,11 @@ test("model dropdown hides models from unauthenticated providers", async ({
 	await page.getByTestId("default-model-selector").locator("input").click();
 
 	await expect(
-		page.getByText("anthropic/claude-3-5-haiku-latest", { exact: true }),
+		page.getByText("anthropic/claude-sonnet-4-6", { exact: true }),
 	).toBeVisible();
-	await expect(page.getByText("openai/gpt-4o", { exact: true })).toHaveCount(0);
+	await expect(page.getByText("openai/gpt-5.5", { exact: true })).toHaveCount(
+		0,
+	);
 	await expect(
 		page.getByText("google/gemini-2.5-flash", { exact: true }),
 	).toHaveCount(0);

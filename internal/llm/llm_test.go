@@ -54,8 +54,8 @@ func TestFactoryForModel(t *testing.T) {
 	}{
 		{model: "anthropic/claude-sonnet-4.5", wantErr: false},
 		{model: "openai/gpt-4o", wantErr: false},
-		{model: "openai-codex/gpt-5.2", wantErr: false},
-		{model: "google-gemini/gemini-2.0-flash", wantErr: false},
+		{model: "openai-codex/gpt-5.5", wantErr: false},
+		{model: "google-gemini/gemini-3.5-flash", wantErr: false},
 		{model: "vllm/qwen2.5-coder", wantErr: false},
 		{model: "ollama/llama3.2", wantErr: false},
 		{model: "invalid", wantErr: true},
@@ -124,7 +124,7 @@ func TestFactoryOpenAICodexRequiresOAuth(t *testing.T) {
 		}
 		return "key", nil
 	})
-	_, err := f.ForModel("openai-codex/gpt-5.2")
+	_, err := f.ForModel("openai-codex/gpt-5.5")
 	assert.Error(t, err)
 
 }
@@ -141,7 +141,7 @@ func TestIntegration_AllProviderKinds(t *testing.T) {
 	models := []string{
 		"anthropic/claude-sonnet-4.5",
 		"openai/gpt-4o-mini",
-		"openai-codex/gpt-5.2",
+		"openai-codex/gpt-5.5",
 		"google-gemini/gemini-pro",
 	}
 	for _, model := range models {

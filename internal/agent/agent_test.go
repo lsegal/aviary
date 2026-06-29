@@ -835,8 +835,8 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},
 		Models: config.ModelsConfig{
 			Defaults: &config.ModelDefaults{
-				Model:     "google/gemini-2.0-flash",
-				Fallbacks: []string{"openai-codex/gpt-5.2"},
+				Model:     "google/gemini-3.5-flash",
+				Fallbacks: []string{"openai-codex/gpt-5.5"},
 			},
 		},
 	}
@@ -846,11 +846,11 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 	runner, ok := mgr.Get("bot")
 	assert.True(t, ok)
 	got := runner.Agent().Model
-	assert.Equal(t, "google/gemini-2.0-flash", got)
+	assert.Equal(t, "google/gemini-3.5-flash", got)
 
 	fallbacks := runner.Agent().Fallbacks
 	assert.Len(t, fallbacks, 1)
-	assert.Equal(t, "openai-codex/gpt-5.2", fallbacks[0])
+	assert.Equal(t, "openai-codex/gpt-5.5", fallbacks[0])
 
 	mgr.Reconcile(&config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},

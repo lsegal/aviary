@@ -386,8 +386,8 @@ func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 		Agents: []config.AgentConfig{{Name: "assistant", Model: ""}},
 		Models: config.ModelsConfig{
 			Defaults: &config.ModelDefaults{
-				Model:     "google/gemini-2.0-flash",
-				Fallbacks: []string{"openai-codex/gpt-5.2"},
+				Model:     "google/gemini-3.5-flash",
+				Fallbacks: []string{"openai-codex/gpt-5.5"},
 			},
 		},
 	}
@@ -402,8 +402,8 @@ func TestAgentList_UsesGlobalDefaultsForEffectiveModel(t *testing.T) {
 
 	out, err := d.CallTool(context.Background(), "agent_list", map[string]any{})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "google/gemini-2.0-flash"))
-	assert.True(t, strings.Contains(out, "openai-codex/gpt-5.2"))
+	assert.True(t, strings.Contains(out, "google/gemini-3.5-flash"))
+	assert.True(t, strings.Contains(out, "openai-codex/gpt-5.5"))
 
 }
 
