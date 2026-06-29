@@ -18,7 +18,9 @@ func Register(agentID, agentName, sessionID string, target store.SessionChannel,
 
 	agent.RegisterSessionDelivery(agentID, sessionID, target.Type, target.ID, func(text string) {
 		var err error
-		if target.ConfiguredID != "" {
+		if target.Type == "slack" && target.ThreadTS != "" && target.ConfiguredID != "" {
+			err = mgr.SendThreadOnConfiguredChannel(agentName, target.Type, target.ConfiguredID, target.ID, target.ThreadTS, text)
+		} else if target.ConfiguredID != "" {
 			err = mgr.SendOnConfiguredChannel(agentName, target.Type, target.ConfiguredID, target.ID, text)
 		} else {
 			err = mgr.RouteDelivery(target.Type, target.ID, text)
@@ -51,7 +53,7 @@ func Register(agentID, agentName, sessionID string, target store.SessionChannel,
 // Set persists a single target in the session sidecar and registers it with
 // the live channel manager when available.
 func Set(agentID, agentName, sessionID string, target store.SessionChannel, mgr *channels.Manager) error {
-	if err := store.SetSessionChannel(agentID, sessionID, target.Type, target.ConfiguredID, target.ID); err != nil {
+	if err := store.SetSessionChannelTarget(agentID, sessionID, target); err != nil {
 		return err
 	}
 	Register(agentID, agentName, sessionID, target, mgr)

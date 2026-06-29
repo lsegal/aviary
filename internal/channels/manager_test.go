@@ -798,6 +798,34 @@ func TestSlackChannel_HandleMessageUsesTimestampAsThreadFallback(t *testing.T) {
 	assert.Equal(t, "1710000000.123456", msg.ThreadTS)
 }
 
+func TestSlackChannel_SendThreadMessageAndGetIDDoesNotBroadcast(t *testing.T) {
+	var sawPost bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/chat.postMessage", r.URL.Path)
+		assert.NoError(t, r.ParseForm())
+		assert.Equal(t, "C123", r.FormValue("channel"))
+		assert.Equal(t, "1710000000.123456", r.FormValue("thread_ts"))
+		assert.Empty(t, r.FormValue("reply_broadcast"))
+		assert.Equal(t, "hello", r.FormValue("text"))
+		sawPost = true
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"channel": "C123",
+			"ts":      "1710000001.000001",
+		})
+	}))
+	defer api.Close()
+
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(api.URL+"/"))
+
+	msgID, err := ch.SendThreadMessageAndGetID("C123", "1710000000.123456", "hello")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "1710000001.000001", msgID)
+	assert.True(t, sawPost)
+}
+
 func TestParseSlackMessageURL(t *testing.T) {
 	ref, ok := parseSlackMessageURL("https://aviary.slack.com/archives/C123/p1710000000123456?thread_ts=1710000000.000100&cid=C999")
 

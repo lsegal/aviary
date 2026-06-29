@@ -1187,12 +1187,14 @@ func (r *AgentRunner) executeToolCall(
 			emit(StreamEvent{Type: StreamEventStop})
 			return "", true
 		}
+		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error()}})
 		errRec := toolEventRecord{Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
 		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), "", "")
 		return "error: " + callErr.Error(), false
 	}
 
+	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Result: resultText}})
 	histRec := toolEventRecord{Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
 	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), "", "")

@@ -128,11 +128,34 @@ func (c *SlackChannel) SendThreadMessageAndGetID(channel, threadTS, text string)
 	if threadTS == "" {
 		return "", fmt.Errorf("slack thread timestamp is required")
 	}
-	_, timestamp, err := c.client.PostMessage(
-		resolvedChannel,
+	opts := []slack.MsgOption{
 		slack.MsgOptionText(text, false),
 		slack.MsgOptionTS(threadTS),
+	}
+	_, timestamp, err := c.client.PostMessage(
+		resolvedChannel,
+		opts...,
 	)
+	return timestamp, err
+}
+
+// SendThreadBlocksAndGetID posts a reply with Block Kit content to a Slack
+// thread and returns the message timestamp.
+func (c *SlackChannel) SendThreadBlocksAndGetID(channel, threadTS, fallbackText string, blocks ...slack.Block) (string, error) {
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return "", err
+	}
+	threadTS = strings.TrimSpace(threadTS)
+	if threadTS == "" {
+		return "", fmt.Errorf("slack thread timestamp is required")
+	}
+	opts := []slack.MsgOption{
+		slack.MsgOptionText(fallbackText, false),
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionTS(threadTS),
+	}
+	_, timestamp, err := c.client.PostMessage(resolvedChannel, opts...)
 	return timestamp, err
 }
 
@@ -143,6 +166,22 @@ func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
 		return err
 	}
 	_, _, _, err = c.client.UpdateMessage(resolvedChannel, msgID, slack.MsgOptionText(text, false))
+	return err
+}
+
+// EditMessageBlocks updates a previously posted Slack message with Block Kit
+// content.
+func (c *SlackChannel) EditMessageBlocks(channel, msgID, fallbackText string, blocks ...slack.Block) error {
+	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
+	if err != nil {
+		return err
+	}
+	_, _, _, err = c.client.UpdateMessage(
+		resolvedChannel,
+		msgID,
+		slack.MsgOptionText(fallbackText, false),
+		slack.MsgOptionBlocks(blocks...),
+	)
 	return err
 }
 
@@ -261,6 +300,9 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	if event == nil {
 		return
 	}
+	if normalized, ok := c.normalizeMessageRepliedEvent(context.Background(), event); ok {
+		event = normalized
+	}
 
 	channelID := event.Channel
 	from := event.User
@@ -374,6 +416,53 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		c.logf("slack: no message handler registered for from=%s", from)
 		slog.Debug("slack: no handler registered", "from", from)
 	}
+}
+
+func (c *SlackChannel) normalizeMessageRepliedEvent(ctx context.Context, event *slackevents.MessageEvent) (*slackevents.MessageEvent, bool) {
+	if event == nil || event.SubType != slack.MsgSubTypeMessageReplied || event.Message == nil {
+		return event, false
+	}
+	channelID := firstNonEmpty(event.Channel, event.Message.Channel)
+	threadTS := firstNonEmpty(event.ThreadTimeStamp, event.Message.ThreadTimestamp, event.Message.Timestamp, event.TimeStamp)
+	latestReply := strings.TrimSpace(event.Message.LatestReply)
+	if latestReply == "" && len(event.Message.Replies) > 0 {
+		latestReply = strings.TrimSpace(event.Message.Replies[len(event.Message.Replies)-1].Timestamp)
+	}
+	if channelID == "" || threadTS == "" || latestReply == "" {
+		c.logf("slack: ignored message_replied event with missing channel/thread/reply channel=%s thread=%s reply=%s", channelID, threadTS, latestReply)
+		return event, false
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	msgs, _, _, err := c.client.GetConversationRepliesContext(fetchCtx, &slack.GetConversationRepliesParameters{
+		ChannelID: channelID,
+		Timestamp: threadTS,
+		Inclusive: true,
+		Oldest:    latestReply,
+		Limit:     1,
+	})
+	if err != nil || len(msgs) == 0 {
+		c.logf("slack: failed to fetch latest thread reply channel=%s thread=%s reply=%s: %v", channelID, threadTS, latestReply, err)
+		return event, false
+	}
+	reply := msgs[len(msgs)-1]
+	if reply.Timestamp != latestReply {
+		c.logf("slack: latest thread reply fetch returned ts=%s expected=%s", reply.Timestamp, latestReply)
+	}
+
+	return &slackevents.MessageEvent{
+		Type:            "message",
+		User:            reply.User,
+		Text:            reply.Text,
+		TimeStamp:       firstNonEmpty(reply.Timestamp, latestReply),
+		ThreadTimeStamp: firstNonEmpty(reply.ThreadTimestamp, threadTS),
+		Channel:         channelID,
+		ChannelType:     event.ChannelType,
+		EventTimeStamp:  event.EventTimeStamp,
+		BotID:           reply.BotID,
+		Message:         &reply.Msg,
+	}, true
 }
 
 func (c *SlackChannel) handleAppMentionEvent(event *slackevents.AppMentionEvent) {

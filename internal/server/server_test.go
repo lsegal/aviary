@@ -16,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/slack-go/slack"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/channels"
@@ -23,9 +27,6 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type stubChannel struct{}
@@ -54,6 +55,30 @@ func (c *statusStubChannel) snapshotStatuses() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]string{}, c.statuses...)
+}
+
+type threadStubChannel struct{}
+
+func (threadStubChannel) SendThreadMessageAndGetID(_, _, _ string) (string, error) {
+	return "msg-1", nil
+}
+
+type recordingThreadChannel struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (c *recordingThreadChannel) SendThreadMessageAndGetID(_, _, text string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lines = append(c.lines, text)
+	return fmt.Sprintf("msg-%d", len(c.lines)), nil
+}
+
+func (c *recordingThreadChannel) snapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.lines...)
 }
 
 func setupServerDataDir(t *testing.T) {
@@ -1536,6 +1561,68 @@ func TestHandleIncomingChannelMessage_SendsAssistantStatus(t *testing.T) {
 		statuses := ch.snapshotStatuses()
 		return len(statuses) >= 2 && statuses[0] == "is thinking" && statuses[len(statuses)-1] == ""
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestSlackThreadStreamer_GroupsCompletedToolCallsInCollapsedBlock(t *testing.T) {
+	streamer := &slackThreadStreamer{thread: threadStubChannel{}}
+	streamer.UpsertToolOutput(&agent.ToolEvent{Name: "pending_tool", Args: map[string]any{"query": "work"}})
+	streamer.UpsertToolOutput(&agent.ToolEvent{Name: "agent_file_read", Args: map[string]any{"file": "README.md"}})
+	streamer.UpsertToolOutput(&agent.ToolEvent{Name: "agent_file_read", Args: map[string]any{"file": "README.md"}, Result: "contents"})
+	streamer.UpsertToolOutput(&agent.ToolEvent{Name: "shell_command", Args: map[string]any{"command": "go test ./..."}, Error: "failed"})
+	streamer.UpsertToolOutput(&agent.ToolEvent{Name: "agent_task", Args: map[string]any{"id": "abc"}, Result: "done\nwith details"})
+
+	blocks := streamer.toolBlocks()
+
+	assert.Len(t, blocks, 1)
+	tools, ok := blocks[0].(*slack.SectionBlock)
+	require.True(t, ok)
+	assert.False(t, tools.Expand)
+	require.NotNil(t, tools.Text)
+	text := tools.Text.Text
+	assert.Contains(t, text, ":hammer_and_wrench: *Tool Calls*")
+	assert.NotContains(t, text, ":hammer_and_wrench: *Tool Calls*\n\n")
+	assert.Contains(t, text, ":thinking_face: `pending_tool` :arrow_right: `{\"query\":\"work\"}`")
+	assert.NotContains(t, text, "agent_file_read")
+	assert.NotContains(t, text, "README.md")
+	assert.Contains(t, text, ":warning: `shell_command` :arrow_right: `{\"command\":\"go test ./...\"}`\n\nError:\n```failed```")
+	assert.Contains(t, text, ":white_check_mark: `agent_task` :arrow_right: `{\"id\":\"abc\"}`\n\nOutput:\n```done\nwith details```")
+	assert.NotContains(t, text, "\n\nDetails\n")
+	assert.NotContains(t, text, "Input:")
+	assert.NotContains(t, text, "contents")
+	assert.NotContains(t, text, "Running")
+
+	_, err := json.Marshal(blocks)
+	assert.NoError(t, err)
+	assert.LessOrEqual(t, len(text), 3000)
+}
+
+func TestCompactToolInput_TruncatesLongInputsOnOneLine(t *testing.T) {
+	input := compactToolInput(map[string]any{"command": "echo " + strings.Repeat("x", 300)}, 80)
+
+	assert.LessOrEqual(t, len(input), 80)
+	assert.True(t, strings.HasSuffix(input, "..."))
+	assert.NotContains(t, input, "\n")
+}
+
+func TestSlackThreadStreamer_SendsCompletedLinesAsMessages(t *testing.T) {
+	ch := &recordingThreadChannel{}
+	streamer := &slackThreadStreamer{thread: ch}
+
+	streamer.Append("first")
+	streamer.Append(" line\n  second line\nthird")
+	streamer.Flush()
+
+	assert.Equal(t, []string{"first line\n", "  second line\n", "third\n"}, ch.snapshot())
+}
+
+func TestSlackToolStatusText_FileRead(t *testing.T) {
+	status := slackToolStatusText(&agent.ToolEvent{
+		Name: "agent_file_read",
+		Args: map[string]any{"file": "README.md"},
+	})
+
+	assert.Equal(t, "is reading README.md", status)
+	assert.Equal(t, "", slackToolStatusText(&agent.ToolEvent{Name: "agent_file_read", Result: "contents"}))
 }
 
 func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {

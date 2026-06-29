@@ -12,6 +12,7 @@ type SessionChannel struct {
 	Type         string `json:"type"`                    // e.g. "signal", "slack"
 	ConfiguredID string `json:"configured_id,omitempty"` // configured channel instance ID from agent config
 	ID           string `json:"id"`                      // channel/conversation target ID (phone number, Slack channel ID, etc.)
+	ThreadTS     string `json:"thread_ts,omitempty"`     // optional platform thread/root timestamp for threaded delivery
 }
 
 // SessionChannelsConfig is the content of a session's .channels.json sidecar file.
@@ -55,14 +56,20 @@ func WriteSessionChannels(cfg *SessionChannelsConfig) error {
 
 // SetSessionChannel replaces the session's delivery config with a single target.
 func SetSessionChannel(agentID, sessionID, channelType, configuredID, channelID string) error {
+	return SetSessionChannelTarget(agentID, sessionID, SessionChannel{
+		Type:         channelType,
+		ConfiguredID: configuredID,
+		ID:           channelID,
+	})
+}
+
+// SetSessionChannelTarget replaces the session's delivery config with a single
+// target.
+func SetSessionChannelTarget(agentID, sessionID string, target SessionChannel) error {
 	return WriteSessionChannels(&SessionChannelsConfig{
 		SessionID: sessionID,
 		AgentID:   agentID,
-		Channels: []SessionChannel{{
-			Type:         channelType,
-			ConfiguredID: configuredID,
-			ID:           channelID,
-		}},
+		Channels:  []SessionChannel{target},
 	})
 }
 
@@ -70,20 +77,31 @@ func SetSessionChannel(agentID, sessionID, channelType, configuredID, channelID 
 // channel config if it is not already present, then writes the file. It is a
 // no-op when the channel target is already listed.
 func EnsureSessionChannel(agentID, sessionID, channelType, configuredID, channelID string) error {
-	cfg, err := ReadSessionChannels(agentID, sessionID)
-	if err != nil {
-		return err
-	}
-	for _, ch := range cfg.Channels {
-		if ch.Type == channelType && ch.ConfiguredID == configuredID && ch.ID == channelID {
-			return nil // already present
-		}
-	}
-	cfg.Channels = append(cfg.Channels, SessionChannel{
+	return EnsureSessionChannelTarget(agentID, sessionID, SessionChannel{
 		Type:         channelType,
 		ConfiguredID: configuredID,
 		ID:           channelID,
 	})
+}
+
+// EnsureSessionChannelTarget adds target to the session's channel config if it
+// is not already present, or updates the existing target when thread metadata
+// changes.
+func EnsureSessionChannelTarget(agentID, sessionID string, target SessionChannel) error {
+	cfg, err := ReadSessionChannels(agentID, sessionID)
+	if err != nil {
+		return err
+	}
+	for i, ch := range cfg.Channels {
+		if ch.Type == target.Type && ch.ConfiguredID == target.ConfiguredID && ch.ID == target.ID {
+			if ch.ThreadTS == target.ThreadTS {
+				return nil // already present
+			}
+			cfg.Channels[i] = target
+			return WriteSessionChannels(cfg)
+		}
+	}
+	cfg.Channels = append(cfg.Channels, target)
 	return WriteSessionChannels(cfg)
 }
 

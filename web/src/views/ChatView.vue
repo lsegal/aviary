@@ -107,7 +107,7 @@
 							</div>
 							<!-- Tool-use indicator -->
 							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
-								<details class="group inline-block">
+								<details class="group inline-block max-w-full">
 									<summary
 										class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
 										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
@@ -116,7 +116,7 @@
 												d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z"
 												clip-rule="evenodd" />
 										</svg>
-										<span>{{ toolSummary(item.msg) }}</span>
+										<span>{{ toolName(item.msg) }}</span>
 										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
 											class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
 											<path fill-rule="evenodd"
@@ -440,18 +440,9 @@ function extractCompleteToolPayload(
 	return null;
 }
 
-/** Condensed one-line summary shown in the pill. */
-function toolSummary(msg: Message): string {
-	const d = msg.toolData;
-	if (!d) return msg.text;
-	const entries = Object.entries(d.args ?? {});
-	if (entries.length === 0) return d.name;
-	const parts = entries.slice(0, 2).map(([k, v]) => {
-		const s = typeof v === "string" ? v : JSON.stringify(v);
-		return `${k}=${s.length > 32 ? `${s.slice(0, 32)}…` : s}`;
-	});
-	if (entries.length > 2) parts.push("…");
-	return `${d.name}(${parts.join(", ")})`;
+/** Tool name shown in the collapsed pill; details stay inside the expansion. */
+function toolName(msg: Message): string {
+	return msg.toolData?.name || msg.text;
 }
 
 function formatJSON(v: unknown): string {

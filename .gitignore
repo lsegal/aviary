@@ -22,6 +22,7 @@
 /internal/server/webdist/*
 !/internal/server/webdist/.gitkeep
 /dist/release/
+rel-archive.zip
 
 # Data directory
 ~/.config/aviary/

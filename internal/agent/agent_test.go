@@ -171,14 +171,16 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	assert.NoError(t, err)
 
 	var gotText strings.Builder
-	toolEvents := 0
+	var toolEvents []ToolEvent
 	done := make(chan struct{}, 1)
 	runner.Prompt(WithSessionID(context.Background(), sess.ID), "search", func(e StreamEvent) {
 		switch e.Type {
 		case StreamEventText:
 			gotText.WriteString(e.Text)
 		case StreamEventTool:
-			toolEvents++
+			if e.Tool != nil {
+				toolEvents = append(toolEvents, *e.Tool)
+			}
 		case StreamEventDone, StreamEventError, StreamEventStop:
 			select {
 			case done <- struct{}{}:
@@ -193,7 +195,11 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 		assert.FailNow(t, "timeout")
 	}
 
-	assert.Equal(t, 1, toolEvents)
+	assert.Len(t, toolEvents, 2)
+	assert.Equal(t, "web_search", toolEvents[0].Name)
+	assert.Empty(t, toolEvents[0].Result)
+	assert.Equal(t, "web_search", toolEvents[1].Name)
+	assert.Equal(t, "result payload", toolEvents[1].Result)
 	assert.Equal(t, "final answer", gotText.String())
 
 	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_tool_history", sess.ID))

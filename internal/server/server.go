@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/slack-go/slack"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
@@ -337,12 +339,17 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 
 	agentID := agentName
 	channelCfg, _ := s.findChannelConfig(agentName, channelType, configuredID)
-	sessionName := channelSessionName(channelCfg, msg)
+	sessionName := channelSessionNameForIncoming(agentID, channelCfg, msg)
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName); err == nil && sess != nil {
 		msgCtx = agent.WithSessionID(msgCtx, sess.ID)
-		target := store.SessionChannel{Type: msg.Type, ConfiguredID: configuredID, ID: msg.Channel}
+		target := store.SessionChannel{
+			Type:         msg.Type,
+			ConfiguredID: configuredID,
+			ID:           msg.Channel,
+			ThreadTS:     strings.TrimSpace(msg.ThreadTS),
+		}
 		sessiontarget.Register(agentID, agentName, sess.ID, target, s.channels)
-		if err := store.EnsureSessionChannel(agentID, sess.ID, msg.Type, configuredID, msg.Channel); err != nil {
+		if err := store.EnsureSessionChannelTarget(agentID, sess.ID, target); err != nil {
 			slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
 		}
 	}
@@ -430,7 +437,14 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			}
 		case agent.StreamEventTool:
 			if slackStreamer != nil && e.Tool != nil {
-				slackStreamer.AppendDisclosure(formatToolDisclosure(e.Tool))
+				if status := slackToolStatusText(e.Tool); status != "" {
+					if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
+						if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, status); err != nil {
+							slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
+						}
+					}
+				}
+				slackStreamer.UpsertToolOutput(e.Tool)
 			}
 		case agent.StreamEventStatus:
 			if slackStreamer == nil {
@@ -512,13 +526,42 @@ func channelSessionName(cc config.ChannelConfig, msg channels.IncomingMessage) s
 	return base
 }
 
+func channelSessionNameForIncoming(agentID string, cc config.ChannelConfig, msg channels.IncomingMessage) string {
+	sessionName := channelSessionName(cc, msg)
+	if msg.Type != "slack" || !msg.IsThreadReply || !config.BoolOr(cc.SeparateTopLevelSessions, false) {
+		return sessionName
+	}
+	baseName := msg.Type + ":" + msg.Channel
+	if sessionName == baseName {
+		return sessionName
+	}
+	if store.FindSessionPath(agentID, sessionName) == "" && store.FindSessionPath(agentID, baseName) != "" {
+		return baseName
+	}
+	return sessionName
+}
+
 type slackThreadStreamer struct {
-	thread   channels.ThreadMessageSender
-	editor   channels.MessageEditor
-	channel  string
-	threadTS string
-	msgID    string
-	text     strings.Builder
+	thread    channels.ThreadMessageSender
+	editor    channels.MessageEditor
+	blocks    slackBlockMessageSender
+	channel   string
+	threadTS  string
+	pending   strings.Builder
+	toolMsgID string
+	tools     []slackToolDisclosure
+}
+
+type slackBlockMessageSender interface {
+	SendThreadBlocksAndGetID(channel, threadTS, fallbackText string, blocks ...slack.Block) (msgID string, err error)
+	EditMessageBlocks(channel, msgID, fallbackText string, blocks ...slack.Block) error
+}
+
+type slackToolDisclosure struct {
+	Name   string
+	Args   map[string]any
+	Result string
+	Error  string
 }
 
 func newSlackThreadStreamer(channelType string, ch channels.Channel, msg channels.IncomingMessage) *slackThreadStreamer {
@@ -534,6 +577,9 @@ func newSlackThreadStreamer(channelType string, ch channels.Channel, msg channel
 		channel:  msg.Channel,
 		threadTS: strings.TrimSpace(msg.ThreadTS),
 	}
+	if blocks, ok := ch.(slackBlockMessageSender); ok {
+		streamer.blocks = blocks
+	}
 	if editor, ok := ch.(channels.MessageEditor); ok {
 		streamer.editor = editor
 	}
@@ -544,61 +590,267 @@ func (s *slackThreadStreamer) Append(text string) {
 	if s == nil || text == "" {
 		return
 	}
-	s.text.WriteString(text)
-	s.Flush()
+	s.pending.WriteString(text)
+	s.FlushLines(false)
 }
 
-func (s *slackThreadStreamer) AppendDisclosure(text string) {
-	if s == nil || strings.TrimSpace(text) == "" {
+func (s *slackThreadStreamer) UpsertToolOutput(tool *agent.ToolEvent) {
+	if s == nil || tool == nil || strings.TrimSpace(tool.Name) == "" {
 		return
 	}
-	if s.text.Len() > 0 {
-		s.text.WriteString("\n\n")
+	if tool.Name == "agent_file_read" {
+		return
 	}
-	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
-		s.text.WriteString("> ")
-		s.text.WriteString(line)
-		s.text.WriteString("\n")
+	disclosure := slackToolDisclosure{
+		Name:   tool.Name,
+		Args:   tool.Args,
+		Result: tool.Result,
+		Error:  tool.Error,
 	}
-	s.Flush()
+	for i := len(s.tools) - 1; i >= 0; i-- {
+		if s.tools[i].Name == tool.Name && sameToolArgs(s.tools[i].Args, tool.Args) {
+			s.tools[i] = disclosure
+			s.FlushTools()
+			return
+		}
+	}
+	s.tools = append(s.tools, disclosure)
+	s.FlushTools()
 }
 
 func (s *slackThreadStreamer) Flush() {
 	if s == nil {
 		return
 	}
-	text := strings.TrimSpace(s.text.String())
-	if text == "" {
+	s.FlushLines(true)
+	s.FlushTools()
+}
+
+func (s *slackThreadStreamer) FlushLines(final bool) {
+	if s == nil {
 		return
 	}
-	if s.msgID == "" {
-		id, err := s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, text)
-		if err == nil {
-			s.msgID = id
+	for {
+		text := s.pending.String()
+		idx := strings.IndexByte(text, '\n')
+		if idx < 0 {
+			if final {
+				s.sendLine(strings.TrimRight(text, "\r"))
+				s.pending.Reset()
+			}
+			return
+		}
+		line := strings.TrimRight(text[:idx], "\r")
+		s.pending.Reset()
+		s.pending.WriteString(text[idx+1:])
+		s.sendLine(line)
+	}
+}
+
+func (s *slackThreadStreamer) sendLine(line string) {
+	if s == nil || line == "" {
+		return
+	}
+	_, err := s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, line+"\n")
+	if err != nil {
+		slog.Debug("server: failed to send Slack line", "channel", s.channel, "thread", s.threadTS, "err", err)
+	}
+}
+
+func (s *slackThreadStreamer) FlushTools() {
+	if s == nil || len(s.tools) == 0 {
+		return
+	}
+	blocks := s.toolBlocks()
+	if len(blocks) == 0 {
+		return
+	}
+	fallback := "Tool calls"
+	if s.toolMsgID == "" {
+		var (
+			id  string
+			err error
+		)
+		if s.blocks != nil {
+			id, err = s.blocks.SendThreadBlocksAndGetID(s.channel, s.threadTS, fallback, blocks...)
 		} else {
-			slog.Debug("server: failed to send Slack stream message", "channel", s.channel, "thread", s.threadTS, "err", err)
+			id, err = s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, formatToolDisclosuresBlock(s.tools, 2900))
+		}
+		if err == nil {
+			s.toolMsgID = id
+		} else {
+			slog.Debug("server: failed to send Slack tool calls", "channel", s.channel, "thread", s.threadTS, "err", err)
 		}
 		return
 	}
-	if s.editor != nil {
-		if err := s.editor.EditMessage(s.channel, s.msgID, text); err != nil {
-			slog.Debug("server: failed to edit Slack stream message", "channel", s.channel, "thread", s.threadTS, "err", err)
+	if s.blocks != nil {
+		if err := s.blocks.EditMessageBlocks(s.channel, s.toolMsgID, fallback, blocks...); err != nil {
+			slog.Debug("server: failed to edit Slack tool calls", "channel", s.channel, "thread", s.threadTS, "err", err)
 		}
 	}
 }
 
-func formatToolDisclosure(tool *agent.ToolEvent) string {
-	if tool == nil {
+func (s *slackThreadStreamer) toolBlocks() []slack.Block {
+	if s == nil || len(s.tools) == 0 {
+		return nil
+	}
+	toolText := formatToolDisclosuresBlock(s.tools, 2900)
+	return []slack.Block{slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, toolText, false, false), nil, nil, slack.SectionBlockOptionExpand(false))}
+}
+
+func formatToolDisclosuresBlock(tools []slackToolDisclosure, limit int) string {
+	var b strings.Builder
+	b.WriteString(":hammer_and_wrench: *Tool Calls*")
+	for i, tool := range tools {
+		part := formatToolDisclosureEntry(tool)
+		if b.Len()+len(part) > limit {
+			b.WriteString("\n... truncated")
+			return b.String()
+		}
+		b.WriteString(part)
+		if i == 7 && len(tools) > 8 {
+			fmt.Fprintf(&b, "\n... %d more", len(tools)-8)
+			break
+		}
+	}
+	return b.String()
+}
+
+func formatToolSummaryLine(tool slackToolDisclosure) string {
+	status := slackToolDisclosureStatus(tool)
+	input := compactToolInput(tool.Args, 180)
+	if input == "" {
+		return fmt.Sprintf("%s `%s`", status, tool.Name)
+	}
+	return fmt.Sprintf("%s `%s` :arrow_right: `%s`", status, tool.Name, escapeSlackInlineCode(input))
+}
+
+func formatToolDisclosureEntry(tool slackToolDisclosure) string {
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(formatToolSummaryLine(tool))
+	output := toolOutputText(tool)
+	if output == "" {
+		return b.String()
+	}
+	b.WriteString("\n\n")
+	if strings.TrimSpace(tool.Error) != "" {
+		b.WriteString("Error:")
+	} else {
+		b.WriteString("Output:")
+	}
+	b.WriteString("\n```")
+	b.WriteString(truncateSlackCodeBlock(output, 700))
+	b.WriteString("```")
+	return b.String()
+}
+
+func slackToolDisclosureStatus(tool slackToolDisclosure) string {
+	if strings.TrimSpace(tool.Error) != "" {
+		return ":warning:"
+	}
+	if strings.TrimSpace(tool.Result) == "" {
+		return ":thinking_face:"
+	}
+	return ":white_check_mark:"
+}
+
+func toolOutputText(tool slackToolDisclosure) string {
+	if strings.TrimSpace(tool.Error) != "" {
+		return strings.TrimSpace(tool.Error)
+	}
+	if strings.TrimSpace(tool.Result) != "" && tool.Name != "agent_file_read" {
+		return strings.TrimSpace(tool.Result)
+	}
+	return ""
+}
+
+func compactToolInput(args map[string]any, limit int) string {
+	if len(args) == 0 {
 		return ""
 	}
-	if len(tool.Args) == 0 {
-		return fmt.Sprintf("Tool call: `%s`", tool.Name)
-	}
-	data, err := json.Marshal(tool.Args)
+	data, err := json.Marshal(args)
 	if err != nil {
-		return fmt.Sprintf("Tool call: `%s`", tool.Name)
+		return ""
 	}
-	return fmt.Sprintf("Tool call: `%s` `%s`", tool.Name, string(data))
+	return singleLineToolText(string(data), limit)
+}
+
+func singleLineToolText(text string, limit int) string {
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if limit > 0 && len(text) > limit {
+		if limit <= 3 {
+			return strings.Repeat(".", limit)
+		}
+		return text[:limit-3] + "..."
+	}
+	return text
+}
+
+func truncateSlackCodeBlock(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	text = strings.ReplaceAll(text, "```", "`\u200b``")
+	if limit > 0 && len(text) > limit {
+		if limit <= 3 {
+			return strings.Repeat(".", limit)
+		}
+		return text[:limit-3] + "..."
+	}
+	return text
+}
+
+func escapeSlackInlineCode(text string) string {
+	text = strings.ReplaceAll(text, "&", "&amp;")
+	text = strings.ReplaceAll(text, "`", "'")
+	text = strings.ReplaceAll(text, "<", "&lt;")
+	text = strings.ReplaceAll(text, ">", "&gt;")
+	return text
+}
+
+func sameToolArgs(a, b map[string]any) bool {
+	left, leftErr := json.Marshal(a)
+	right, rightErr := json.Marshal(b)
+	return leftErr == nil && rightErr == nil && string(left) == string(right)
+}
+
+func slackToolStatusText(tool *agent.ToolEvent) string {
+	if tool == nil || tool.Result != "" || tool.Error != "" {
+		return ""
+	}
+	switch tool.Name {
+	case "agent_file_read":
+		file := toolArgString(tool.Args, "file", "path")
+		if file == "" {
+			return "is reading a file"
+		}
+		return "is reading " + file
+	default:
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			return ""
+		}
+		return "is using " + name
+	}
+}
+
+func toolArgString(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := args[key]
+		if !ok {
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			if text := strings.TrimSpace(v); text != "" {
+				return text
+			}
+		case fmt.Stringer:
+			if text := strings.TrimSpace(v.String()); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 func slackAssistantStatusText(status string) string {

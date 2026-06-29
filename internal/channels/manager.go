@@ -608,6 +608,25 @@ func (m *Manager) SendOnConfiguredChannel(agentName, channelType, configuredID, 
 	return ch.Send(channelID, text)
 }
 
+// SendThreadOnConfiguredChannel sends text into a platform thread using a
+// specific configured channel instance.
+func (m *Manager) SendThreadOnConfiguredChannel(agentName, channelType, configuredID, channelID, threadTS, text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := channelKey(agentName, channelType, configuredID)
+	ch, ok := m.channels[key]
+	if !ok {
+		return fmt.Errorf("configured channel %q not active", key)
+	}
+	threadSender, ok := ch.(ThreadMessageSender)
+	if !ok {
+		return fmt.Errorf("configured channel %q does not support threaded delivery", key)
+	}
+	_, err := threadSender.SendThreadMessageAndGetID(channelID, threadTS, text)
+	return err
+}
+
 // SendMediaOnConfiguredChannel sends a media file using a specific configured
 // channel instance identified by agentName/channelType/configuredID.
 func (m *Manager) SendMediaOnConfiguredChannel(agentName, channelType, configuredID, channelID, caption, filePath string) error {
