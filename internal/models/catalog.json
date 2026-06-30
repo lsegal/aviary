@@ -150,6 +150,12 @@
     "supports_image_input": true
   },
   {
+    "id": "anthropic/claude-sonnet-5",
+    "input_tokens": 264000,
+    "output_tokens": 64000,
+    "supports_image_input": true
+  },
+  {
     "id": "openai/gpt-5.4",
     "input_tokens": 400000,
     "output_tokens": 128000,
