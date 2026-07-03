@@ -79,7 +79,7 @@ jobs:
           echo "docker_tag=$CALL_TAG" >> "$GITHUB_OUTPUT"
           echo "publish_latest=$publish_latest" >> "$GITHUB_OUTPUT"
           echo "push_image=$push_image" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@v4.1.0
       - uses: docker/metadata-action@v6
         id: meta
         with:
