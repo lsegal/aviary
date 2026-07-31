@@ -1,4 +1,4 @@
-FROM golang:1.26.4-bookworm AS go-toolchain
+FROM golang:1.26.5-bookworm AS go-toolchain
 
 FROM node:25-bookworm
 
