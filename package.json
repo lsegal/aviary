@@ -59,7 +59,7 @@
 		"radix-vue": "^1.9.17",
 		"simple-icons": "^16.25.0",
 		"vue": "^3.5.39",
-		"vue-router": "^5.0.6"
+		"vue-router": "^5.2.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.3",
