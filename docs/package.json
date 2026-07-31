@@ -12,7 +12,7 @@
 	"devDependencies": {
 		"@heroicons/vue": "^2.2.0",
 		"autoprefixer": "^10.5.2",
-		"simple-icons": "^16.23.0",
+		"simple-icons": "^16.26.0",
 		"vitepress": "^1.6.4",
 		"vue": "^3.5.34"
 	}
