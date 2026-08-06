@@ -79,7 +79,7 @@ Schedule a one-time or recurring task.
 
 **Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script unless `precompile=false` is provided for that task.
 
-**Notes:** For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
+**Notes:** `in` and `schedule` are mutually exclusive — set exactly one per call. To both create a recurring task and fire it once immediately for testing, make two separate `task_schedule`/`task_run` calls rather than passing both fields at once. For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
 
 ---
 

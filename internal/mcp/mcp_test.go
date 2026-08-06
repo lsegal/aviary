@@ -1752,9 +1752,12 @@ func TestTaskScheduleToolExposesStrictInputSchema(t *testing.T) {
 	assert.NotContains(t, props, "prompt")
 	assert.NotContains(t, props, "script")
 
-	allOf, ok := schema["allOf"].([]any)
-	require.True(t, ok)
-	assert.Len(t, allOf, 1)
+	// "in" and "schedule" mutual exclusivity is enforced by the handler
+	// (which returns a clear, actionable error) rather than by an anonymous
+	// "allOf/not" JSON-schema constraint, whose validation errors are opaque
+	// (e.g. "validating /allOf/0: not: validated against <anonymous schema>")
+	// and unhelpful to callers trying to self-correct.
+	assert.NotContains(t, schema, "allOf")
 }
 
 func TestConfigSaveDoesNotSyncLiveSkillTools(t *testing.T) {

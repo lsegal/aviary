@@ -1219,17 +1219,16 @@ type taskStopArgs struct {
 }
 
 type taskScheduleArgs struct {
-	Agent        string   `json:"agent"`
-	Name         string   `json:"name,omitempty"`
-	Type         string   `json:"type,omitempty" schema:"enum=prompt|script"`
-	Content      string   `json:"content"`
-	In           string   `json:"in,omitempty"`
-	Schedule     string   `json:"schedule,omitempty"`
-	Target       string   `json:"target,omitempty"`
-	TriggerType  string   `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
-	Precompile   *bool    `json:"precompile,omitempty"`
-	RunDiscovery bool     `json:"run_discovery,omitempty"`
-	Schema       struct{} `json:"-" schema:"atmostone=in|schedule"`
+	Agent        string `json:"agent"`
+	Name         string `json:"name,omitempty"`
+	Type         string `json:"type,omitempty" schema:"enum=prompt|script"`
+	Content      string `json:"content"`
+	In           string `json:"in,omitempty"`
+	Schedule     string `json:"schedule,omitempty"`
+	Target       string `json:"target,omitempty"`
+	TriggerType  string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
+	Precompile   *bool  `json:"precompile,omitempty"`
+	RunDiscovery bool   `json:"run_discovery,omitempty"`
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
@@ -1263,7 +1262,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Use in=<delay> for a one-time task, or schedule=<cron expression> for a recurring configured task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1310,6 +1309,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, loadErr
 		}
 		target := normalizeTaskTarget(args.Target)
+		if target != "" && !config.ValidTaskTarget(target) {
+			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", args.Target)
+		}
 		effectiveTarget := target
 		if strings.TrimSpace(normalizeTaskSchedule(args.Schedule)) != "" {
 			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))

@@ -216,6 +216,12 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 	}
 }
 
+// ValidTaskTarget reports whether target is a valid task delivery target:
+// empty, "silent", "session:<name-or-id>", or "<channel>:<configured-id>:<target>".
+func ValidTaskTarget(target string) bool {
+	return validTaskTarget(target)
+}
+
 func validTaskTarget(target string) bool {
 	target = strings.TrimSpace(target)
 	if target == "" || strings.EqualFold(target, "silent") {
