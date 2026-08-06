@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -104,6 +105,48 @@ type pendingBrowserLogin struct {
 	err      error
 	stopOnce sync.Once
 	stop     func()
+}
+
+type browserOAuthCallbackResult struct {
+	code  string
+	state string
+}
+
+func browserOAuthCallbackHandler(expectedState string, codeCh chan<- browserOAuthCallbackResult, errCh chan<- error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state := r.URL.Query().Get("state")
+		if state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(expectedState)) != 1 {
+			http.Error(w, "invalid OAuth state", http.StatusBadRequest)
+			return
+		}
+
+		if errParam := r.URL.Query().Get("error"); errParam != "" {
+			desc := r.URL.Query().Get("error_description")
+			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("OAuth error %s: %s", errParam, desc):
+			default:
+			}
+			return
+		}
+
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "missing code", http.StatusBadRequest)
+			select {
+			case errCh <- fmt.Errorf("no code in OAuth callback"):
+			default:
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
+		select {
+		case codeCh <- browserOAuthCallbackResult{code: code, state: state}:
+		default:
+		}
+	}
 }
 
 func browserLoginListenHost() string {
@@ -362,11 +405,7 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", OpenAICallbackPort, err)
 	}
 
-	type callbackResult struct {
-		code  string
-		state string
-	}
-	codeCh := make(chan callbackResult, 1)
+	codeCh := make(chan browserOAuthCallbackResult, 1)
 	errCh := make(chan error, 1)
 	flow := &pendingBrowserLogin{
 		callbackURL: redirectURI,
@@ -381,32 +420,7 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 		_ = ln.Close()
 	}
 	// Codex registers the callback at /auth/callback.
-	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
-		if errParam := r.URL.Query().Get("error"); errParam != "" {
-			desc := r.URL.Query().Get("error_description")
-			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
-			select {
-			case errCh <- fmt.Errorf("OAuth error %s: %s", errParam, desc):
-			default:
-			}
-			return
-		}
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			select {
-			case errCh <- fmt.Errorf("no code in OAuth callback"):
-			default:
-			}
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
-		select {
-		case codeCh <- callbackResult{code: code, state: r.URL.Query().Get("state")}:
-		default:
-		}
-	})
+	mux.HandleFunc("/auth/callback", browserOAuthCallbackHandler(state, codeCh, errCh))
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -784,11 +798,7 @@ func StartGeminiLogin() (*BrowserLoginStart, error) {
 		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", GeminiCallbackPort, err)
 	}
 
-	type callbackResult struct {
-		code  string
-		state string
-	}
-	codeCh := make(chan callbackResult, 1)
+	codeCh := make(chan browserOAuthCallbackResult, 1)
 	errCh := make(chan error, 1)
 	flow := &pendingBrowserLogin{
 		callbackURL: redirectURI,
@@ -802,32 +812,7 @@ func StartGeminiLogin() (*BrowserLoginStart, error) {
 		_ = srv.Shutdown(context.Background())
 		_ = ln.Close()
 	}
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if errParam := r.URL.Query().Get("error"); errParam != "" {
-			desc := r.URL.Query().Get("error_description")
-			http.Error(w, "OAuth error: "+errParam, http.StatusBadRequest)
-			select {
-			case errCh <- fmt.Errorf("OAuth error %s: %s", errParam, desc):
-			default:
-			}
-			return
-		}
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			select {
-			case errCh <- fmt.Errorf("no code in OAuth callback"):
-			default:
-			}
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><body><h2>Authorization successful!</h2><p>You may close this tab.</p><script>window.close()</script></body></html>`)
-		select {
-		case codeCh <- callbackResult{code: code, state: r.URL.Query().Get("state")}:
-		default:
-		}
-	})
+	mux.HandleFunc("GET /{$}", browserOAuthCallbackHandler(state, codeCh, errCh))
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {

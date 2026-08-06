@@ -27,7 +27,9 @@
       "Bash(D:/github/lsegal/aviary/internal/server/server_test.go:*)",
       "Bash(D:/github/lsegal/aviary/internal/mcp/mcp_test.go:*)",
       "Bash(pnpm test:go:*)",
-      "Bash(pnpm lint:*)"
+      "Bash(pnpm lint:*)",
+      "Bash(gh workflow *)",
+      "Bash(gh run *)"
     ]
   }
 }

@@ -34,23 +34,31 @@ func extractProvider(model string) string {
 type AgentRunner struct {
 	agent    *domain.Agent
 	cfg      *config.AgentConfig
-	provider llm.Provider // nil until Phase 5 wiring; falls back to stub
-	factory  *llm.Factory // used to create fallback providers on demand
+	provider llm.Provider    // nil until Phase 5 wiring; falls back to stub
+	factory  providerFactory // used to create fallback providers on demand
 	stopCh   chan struct{}
 	mu       sync.Mutex
 	active   sync.WaitGroup
 	canceled bool
 }
 
+type providerFactory interface {
+	ForModel(model string) (llm.Provider, error)
+	ForModelForceRefresh(model string) (llm.Provider, error)
+}
+
 // NewAgentRunner creates an AgentRunner for the given agent.
 func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provider, factory *llm.Factory) *AgentRunner {
-	return &AgentRunner{
+	runner := &AgentRunner{
 		agent:    a,
 		cfg:      cfg,
 		provider: provider,
-		factory:  factory,
 		stopCh:   make(chan struct{}),
 	}
+	if factory != nil {
+		runner.factory = factory
+	}
+	return runner
 }
 
 // RunOverrides defines per-run overrides for model, fallbacks, and tools.
@@ -147,20 +155,20 @@ func (r *AgentRunner) promptCore(
 		}
 
 		tryFallback := func(origErr error) bool {
-			if len(remainingFallbacks) == 0 || r.factory == nil {
-				return false
+			for len(remainingFallbacks) > 0 && r.factory != nil {
+				nextModel := remainingFallbacks[0]
+				remainingFallbacks = remainingFallbacks[1:]
+				p, err := r.factory.ForModel(nextModel)
+				if err != nil {
+					slog.Warn("agent: fallback provider failed", "agent", r.agent.Name, "model", nextModel, "err", err)
+					continue
+				}
+				slog.Info("agent: falling back to model", "agent", r.agent.Name, "from", effectiveModel, "to", nextModel, "reason", origErr)
+				effectiveModel = nextModel
+				currentProvider = p
+				return true
 			}
-			nextModel := remainingFallbacks[0]
-			remainingFallbacks = remainingFallbacks[1:]
-			p, err := r.factory.ForModel(nextModel)
-			if err != nil {
-				slog.Warn("agent: fallback provider failed", "agent", r.agent.Name, "model", nextModel, "err", err)
-				return false
-			}
-			slog.Info("agent: falling back to model", "agent", r.agent.Name, "from", effectiveModel, "to", nextModel, "reason", origErr)
-			effectiveModel = nextModel
-			currentProvider = p
-			return true
+			return false
 		}
 
 		// tryTokenRefresh attempts to refresh the OAuth token for the current

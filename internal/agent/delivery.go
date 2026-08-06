@@ -70,7 +70,11 @@ func deliverToSession(agentID, sessionID, text string) {
 		return
 	}
 	deliveryRegistry.mu.RLock()
-	fns := deliveryRegistry.fns[SessionRuntimeKey(agentID, sessionID)]
+	registered := deliveryRegistry.fns[SessionRuntimeKey(agentID, sessionID)]
+	fns := make([]func(string), 0, len(registered))
+	for _, fn := range registered {
+		fns = append(fns, fn)
+	}
 	deliveryRegistry.mu.RUnlock()
 	for _, fn := range fns {
 		fn(text)
@@ -84,7 +88,11 @@ func DeliverMediaToSession(agentID, sessionID, caption, filePath string) {
 		return
 	}
 	deliveryRegistry.mu.RLock()
-	fns := deliveryRegistry.mfns[SessionRuntimeKey(agentID, sessionID)]
+	registered := deliveryRegistry.mfns[SessionRuntimeKey(agentID, sessionID)]
+	fns := make([]func(string, string), 0, len(registered))
+	for _, fn := range registered {
+		fns = append(fns, fn)
+	}
 	deliveryRegistry.mu.RUnlock()
 	for _, fn := range fns {
 		fn(caption, filePath)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
@@ -80,20 +81,29 @@ func UpdateChannelMetadataState(prevCfg, nextCfg *config.Config, now time.Time) 
 		state.Channels = map[string]ChannelMetadata{}
 	}
 
-	prevAgents := make(map[string]config.AgentConfig, len(prevCfg.Agents))
-	for _, agentCfg := range prevCfg.Agents {
-		prevAgents[agentCfg.Name] = agentCfg
+	channelKey := func(agentName string, ch config.ChannelConfig) string {
+		return fmt.Sprintf("%s/%s/%s", agentName, ch.Type, strings.TrimSpace(ch.ID))
 	}
 
+	prevChannels := map[string]config.ChannelConfig{}
+	if prevCfg != nil {
+		for _, agentCfg := range prevCfg.Agents {
+			for _, ch := range agentCfg.Channels {
+				prevChannels[channelKey(agentCfg.Name, ch)] = ch
+			}
+		}
+	}
+	nextChannels := make(map[string]struct{})
+
 	for _, agentCfg := range nextCfg.Agents {
-		prevAgent, ok := prevAgents[agentCfg.Name]
-		for ci, ch := range agentCfg.Channels {
-			key := fmt.Sprintf("%s/%s/%d", agentCfg.Name, ch.Type, ci)
+		for _, ch := range agentCfg.Channels {
+			key := channelKey(agentCfg.Name, ch)
+			nextChannels[key] = struct{}{}
 			meta := state.Channels[key]
 			enabled := config.BoolOr(ch.Enabled, true)
-			existedBefore := ok && ci < len(prevAgent.Channels)
+			prevCh, existedBefore := prevChannels[key]
 			if existedBefore {
-				prevEnabled := config.BoolOr(prevAgent.Channels[ci].Enabled, true)
+				prevEnabled := config.BoolOr(prevCh.Enabled, true)
 				if prevEnabled != enabled {
 					if enabled {
 						if !meta.EnabledAt.After(meta.DisabledAt) {
@@ -104,12 +114,21 @@ func UpdateChannelMetadataState(prevCfg, nextCfg *config.Config, now time.Time) 
 					}
 				}
 			} else if enabled {
-				if meta.EnabledAt.IsZero() {
-					meta.EnabledAt = now
-				}
-			} else if meta.DisabledAt.IsZero() {
+				meta.EnabledAt = now
+			} else {
 				meta.DisabledAt = now
 			}
+			state.Channels[key] = meta
+		}
+	}
+
+	for key, prevCh := range prevChannels {
+		if _, stillConfigured := nextChannels[key]; stillConfigured {
+			continue
+		}
+		meta := state.Channels[key]
+		if config.BoolOr(prevCh.Enabled, true) && !meta.DisabledAt.After(meta.EnabledAt) {
+			meta.DisabledAt = now
 			state.Channels[key] = meta
 		}
 	}

@@ -154,6 +154,76 @@ func TestGeneratePKCE_ChallengeIsSHA256(t *testing.T) {
 
 }
 
+func TestBrowserOAuthCallbackHandlerValidatesState(t *testing.T) {
+	t.Run("valid callback", func(t *testing.T) {
+		codeCh := make(chan browserOAuthCallbackResult, 1)
+		errCh := make(chan error, 1)
+		handler := browserOAuthCallbackHandler("expected-state", codeCh, errCh)
+		req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=auth-code&state=expected-state", nil)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		assert.Equal(t, http.StatusOK, res.Code)
+		result := <-codeCh
+		assert.Equal(t, "auth-code", result.code)
+		assert.Equal(t, "expected-state", result.state)
+		select {
+		case err := <-errCh:
+			assert.Fail(t, "unexpected callback error", err)
+		default:
+		}
+	})
+
+	for _, query := range []string{
+		"?code=auth-code",
+		"?code=auth-code&state=wrong-state",
+		"?error=access_denied",
+		"?error=access_denied&state=wrong-state",
+	} {
+		t.Run(query, func(t *testing.T) {
+			codeCh := make(chan browserOAuthCallbackResult, 1)
+			errCh := make(chan error, 1)
+			handler := browserOAuthCallbackHandler("expected-state", codeCh, errCh)
+			req := httptest.NewRequest(http.MethodGet, "/auth/callback"+query, nil)
+			res := httptest.NewRecorder()
+
+			handler(res, req)
+
+			assert.Equal(t, http.StatusBadRequest, res.Code)
+			assert.Contains(t, res.Body.String(), "invalid OAuth state")
+			select {
+			case <-codeCh:
+				assert.Fail(t, "invalid state consumed the callback flow")
+			default:
+			}
+			select {
+			case err := <-errCh:
+				assert.Fail(t, "invalid state terminated the callback flow", err)
+			default:
+			}
+		})
+	}
+
+	t.Run("valid provider error", func(t *testing.T) {
+		codeCh := make(chan browserOAuthCallbackResult, 1)
+		errCh := make(chan error, 1)
+		handler := browserOAuthCallbackHandler("expected-state", codeCh, errCh)
+		req := httptest.NewRequest(http.MethodGet, "/auth/callback?error=access_denied&state=expected-state", nil)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		assert.Equal(t, http.StatusBadRequest, res.Code)
+		assert.ErrorContains(t, <-errCh, "access_denied")
+		select {
+		case <-codeCh:
+			assert.Fail(t, "provider error produced an authorization code")
+		default:
+		}
+	})
+}
+
 func TestOAuthToken_IsExpired(t *testing.T) {
 	t.Run("expired", func(t *testing.T) {
 		tok := &OAuthToken{ExpiresAt: 1000}
