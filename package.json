@@ -54,7 +54,7 @@
 	},
 	"dependencies": {
 		"@heroicons/vue": "^2.2.0",
-		"marked": "^18.0.5",
+		"marked": "^18.0.7",
 		"pinia": "^3.0.4",
 		"radix-vue": "^1.9.17",
 		"simple-icons": "^16.25.0",
