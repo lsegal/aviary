@@ -68,7 +68,7 @@
 		"@tailwindcss/vite": "^4.3.2",
 		"@types/node": "^25.6.0",
 		"@vitejs/plugin-vue": "^6.0.7",
-		"autoprefixer": "^10.4.27",
+		"autoprefixer": "^10.5.4",
 		"concurrently": "^10.0.3",
 		"cross-env": "^10.1.0",
 		"execa": "^9.6.1",
