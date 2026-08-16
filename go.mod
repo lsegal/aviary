@@ -62,7 +62,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bkielbasa/cyclop v1.2.3 // indirect
 	github.com/blizzy78/varnamelen v0.8.0 // indirect
-	github.com/bokwoon95/wgo v0.6.3 // indirect
 	github.com/bombsimon/wsl/v4 v4.7.0 // indirect
 	github.com/bombsimon/wsl/v5 v5.6.0 // indirect
 	github.com/breml/bidichk v0.3.3 // indirect
@@ -263,7 +262,4 @@ require (
 	mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 // indirect
 )
 
-tool (
-	github.com/bokwoon95/wgo
-	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-)
+tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
