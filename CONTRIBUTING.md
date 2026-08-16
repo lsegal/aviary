@@ -76,7 +76,9 @@ pnpm dev
 This starts:
 
 - The Vite dev server at **http://localhost:5173** (hot-reload, no HTTPS)
-- The Aviary Go backend at **https://localhost:16677** (auto-restarts on Go file changes via `wgo`)
+- The Aviary Go backend at **https://localhost:16677** (hot-reloads Go file changes via [`forgo run --watch`](https://github.com/lsegal/forgo))
+
+The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
 
 Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
 

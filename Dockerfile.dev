@@ -5,6 +5,7 @@ FROM node:25-bookworm
 ARG TARGETARCH
 
 ENV GOROOT=/usr/local/go
+ENV FORGO_INSTALL_DIR=/usr/local/forgo
 ENV GOPATH=/home/dev/go
 ENV PNPM_HOME=/pnpm
 ENV AVIARY_SANDBOX=true
@@ -65,6 +66,17 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       ;; \
   esac \
   && rm -rf /var/lib/apt/lists/*
+
+# forgo powers `pnpm dev`'s Go hot reload; it only ships linux/amd64 binaries,
+# so other architectures fall back to plain `go run` at dev time.
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+    amd64) \
+      curl -fsSL https://github.com/lsegal/forgo/releases/latest/download/install.sh | sh \
+      ;; \
+    *) \
+      echo "skipping forgo install: no release for ${TARGETARCH:-$(dpkg --print-architecture)}" \
+      ;; \
+  esac
 
 RUN useradd -m -s /bin/bash dev \
   && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
