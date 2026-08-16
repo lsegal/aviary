@@ -234,7 +234,7 @@
 								clip-rule="evenodd" />
 						</svg>
 					</button>
-					<button type="submit" :disabled="(!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
+					<button type="submit" :disabled="isSending || (!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
 						aria-label="Send message" title="Send">
 						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
@@ -512,6 +512,7 @@ const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 const isStreaming = ref(false);
+const isSending = ref(false);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
 const chatInputEl = ref<HTMLInputElement | null>(null);
@@ -916,11 +917,13 @@ function onChatInputKeydown(e: KeyboardEvent) {
 }
 
 async function send() {
+	if (isSending.value) return;
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
+	isSending.value = true;
 	const now = new Date().toISOString();
 	const agentModel = agentsStore.agents.find(
 		(a) => a.name === selectedAgent.value,
@@ -1048,6 +1051,7 @@ async function send() {
 		});
 	} finally {
 		isStreaming.value = false;
+		isSending.value = false;
 	}
 	// Reload canonical messages from server after streaming completes.
 	// Skip if we showed an inline error so the error bubble stays visible.
