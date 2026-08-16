@@ -716,7 +716,9 @@ async function selectAgent(name: string) {
 	selectedAgent.value = name;
 	selectedSessionId.value = "";
 	sessions.value = [];
+	messages.value = [];
 	resetHistoryNavigation();
+	updateScrollState();
 	await loadSessions();
 	router.push(chatPath(name, selectedSessionId.value));
 }
@@ -725,7 +727,9 @@ async function selectSession(id: string) {
 	if (selectedSessionId.value === id) return;
 	loadMessagesSeq += 1;
 	selectedSessionId.value = id;
+	messages.value = [];
 	resetHistoryNavigation();
+	updateScrollState();
 	router.push(chatPath(selectedAgent.value, id));
 	await loadSessionMessages();
 }
@@ -745,6 +749,7 @@ async function createSession() {
 		loadMessagesSeq += 1;
 		messages.value = [];
 		resetHistoryNavigation();
+		updateScrollState();
 	} catch (e) {
 		console.error("Failed to create session", e);
 	}
