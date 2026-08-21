@@ -18,8 +18,8 @@ dependencies:
     specifier: ^1.9.17
     version: 1.9.17(vue@3.5.40)
   simple-icons:
-    specifier: ^16.27.1
-    version: 16.27.1
+    specifier: ^16.28.0
+    version: 16.28.0
   vue:
     specifier: ^3.5.40
     version: 3.5.40(typescript@6.0.3)
@@ -2430,8 +2430,8 @@ packages:
     engines: {node: '>=14'}
     dev: true
 
-  /simple-icons@16.27.1:
-    resolution: {integrity: sha512-slZF8iKxkv7Lb9SF3L1AcIl5iYLNvDrKKm8yV69cG66XvxJ12SX+bYTgxRwCY4bXSmklGXoXaKEyVmEypOCeqw==}
+  /simple-icons@16.28.0:
+    resolution: {integrity: sha512-sQPR5AtK/ijRjou7zw7mlLp08oB6FH7i0lOy5XJ2zp9mJs/yejgiOn7KvQoe2q4YJIx6VmgUSW5AOefebPt5kg==}
     engines: {node: '>=0.12.18'}
     dev: false
 
