@@ -70,7 +70,7 @@
 		"@types/node": "^26.2.0",
 		"@vitejs/plugin-vue": "^6.0.7",
 		"autoprefixer": "^10.5.4",
-		"concurrently": "^10.0.3",
+		"concurrently": "^10.0.5",
 		"cross-env": "^10.1.0",
 		"execa": "^10.0.1",
 		"postcss": "^8.5.23",
