@@ -41,6 +41,8 @@ type SlackChannel struct {
 	userNames       map[string]string
 	channelAliases  map[string]string
 	channelNames    map[string]string
+	seenMu          sync.Mutex
+	seenMessages    map[string]time.Time
 	stopOnce        sync.Once
 	cancel          context.CancelFunc
 	logSinkMu       sync.RWMutex
@@ -300,8 +302,22 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	if event == nil {
 		return
 	}
-	if normalized, ok := c.normalizeMessageRepliedEvent(context.Background(), event); ok {
+	if event.SubType == slack.MsgSubTypeMessageReplied {
+		normalized, ok := c.normalizeMessageRepliedEvent(context.Background(), event)
+		if !ok {
+			return
+		}
 		event = normalized
+	}
+	if event.SubType == "message_changed" && event.Message != nil {
+		// Slack also emits message_changed when a thread's reply count changes.
+		// Only a content edit should start another agent run.
+		if event.PreviousMessage != nil && event.PreviousMessage.Text == event.Message.Text {
+			return
+		}
+		if event.PreviousMessage == nil && event.Message.Edited == nil {
+			return
+		}
 	}
 
 	channelID := event.Channel
@@ -330,7 +346,8 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		files = event.Message.Files
 		attachments = event.Message.Attachments
 	}
-	if botID != "" || (strings.TrimSpace(text) == "" && len(files) == 0 && len(attachments) == 0) || from == "" || channelID == "" {
+	if botID != "" || (c.botUserID != "" && from == c.botUserID) ||
+		(strings.TrimSpace(text) == "" && len(files) == 0 && len(attachments) == 0) || from == "" || channelID == "" {
 		return
 	}
 
@@ -348,6 +365,9 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	}
 	if threadTS == "" {
 		threadTS = rawTimestamp
+	}
+	if c.seenMessage(channelID, from, rawTimestamp, text) {
+		return
 	}
 	isThreadReply := strings.TrimSpace(threadTS) != "" && strings.TrimSpace(rawTimestamp) != "" && threadTS != rawTimestamp
 	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
@@ -418,6 +438,39 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	}
 }
 
+// Slack can deliver the same mention as both a message and an app_mention
+// event. Keep a short-lived receipt so one user message starts one agent run.
+func (c *SlackChannel) seenMessage(channelID, from, timestamp, text string) bool {
+	if timestamp == "" {
+		return false
+	}
+	now := time.Now()
+	key := channelID + "\x00" + from + "\x00" + timestamp + "\x00" + text
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	if c.seenMessages == nil {
+		c.seenMessages = make(map[string]time.Time)
+	}
+	if seenAt, ok := c.seenMessages[key]; ok && now.Sub(seenAt) < 5*time.Minute {
+		return true
+	}
+	c.seenMessages[key] = now
+	if len(c.seenMessages) > 1024 {
+		for message, seenAt := range c.seenMessages {
+			if now.Sub(seenAt) >= 5*time.Minute {
+				delete(c.seenMessages, message)
+			}
+		}
+		for message := range c.seenMessages {
+			if len(c.seenMessages) <= 1024 {
+				break
+			}
+			delete(c.seenMessages, message)
+		}
+	}
+	return false
+}
+
 func (c *SlackChannel) normalizeMessageRepliedEvent(ctx context.Context, event *slackevents.MessageEvent) (*slackevents.MessageEvent, bool) {
 	if event == nil || event.SubType != slack.MsgSubTypeMessageReplied || event.Message == nil {
 		return event, false
@@ -427,6 +480,9 @@ func (c *SlackChannel) normalizeMessageRepliedEvent(ctx context.Context, event *
 	latestReply := strings.TrimSpace(event.Message.LatestReply)
 	if latestReply == "" && len(event.Message.Replies) > 0 {
 		latestReply = strings.TrimSpace(event.Message.Replies[len(event.Message.Replies)-1].Timestamp)
+	}
+	if latestReply == threadTS {
+		return event, false
 	}
 	if channelID == "" || threadTS == "" || latestReply == "" {
 		c.logf("slack: ignored message_replied event with missing channel/thread/reply channel=%s thread=%s reply=%s", channelID, threadTS, latestReply)
