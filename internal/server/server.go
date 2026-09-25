@@ -444,7 +444,9 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 						}
 					}
 				}
-				slackStreamer.UpsertToolOutput(e.Tool)
+				if runner.IsVerbose() {
+					slackStreamer.UpsertToolOutput(e.Tool)
+				}
 			}
 		case agent.StreamEventStatus:
 			if slackStreamer == nil {
@@ -591,7 +593,6 @@ func (s *slackThreadStreamer) Append(text string) {
 		return
 	}
 	s.pending.WriteString(text)
-	s.FlushLines(false)
 }
 
 func (s *slackThreadStreamer) UpsertToolOutput(tool *agent.ToolEvent) {
@@ -622,39 +623,14 @@ func (s *slackThreadStreamer) Flush() {
 	if s == nil {
 		return
 	}
-	s.FlushLines(true)
-	s.FlushTools()
-}
-
-func (s *slackThreadStreamer) FlushLines(final bool) {
-	if s == nil {
-		return
-	}
-	for {
-		text := s.pending.String()
-		idx := strings.IndexByte(text, '\n')
-		if idx < 0 {
-			if final {
-				s.sendLine(strings.TrimRight(text, "\r"))
-				s.pending.Reset()
-			}
-			return
+	if answer := strings.TrimSpace(s.pending.String()); answer != "" {
+		_, err := s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, answer)
+		if err != nil {
+			slog.Debug("server: failed to send Slack answer", "channel", s.channel, "thread", s.threadTS, "err", err)
 		}
-		line := strings.TrimRight(text[:idx], "\r")
-		s.pending.Reset()
-		s.pending.WriteString(text[idx+1:])
-		s.sendLine(line)
 	}
-}
-
-func (s *slackThreadStreamer) sendLine(line string) {
-	if s == nil || line == "" {
-		return
-	}
-	_, err := s.thread.SendThreadMessageAndGetID(s.channel, s.threadTS, line+"\n")
-	if err != nil {
-		slog.Debug("server: failed to send Slack line", "channel", s.channel, "thread", s.threadTS, "err", err)
-	}
+	s.pending.Reset()
+	s.FlushTools()
 }
 
 func (s *slackThreadStreamer) FlushTools() {
