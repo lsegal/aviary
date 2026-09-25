@@ -1151,6 +1151,33 @@ func TestRoutedSlackMessage_SharedConnectionRoutesMatchingSpec(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRoutedSlackMessage_SharedConnectionResolvesChannelName(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	ch.botUserID = "UBOT"
+	ch.channelAliases = map[string]string{"research": "C123"}
+	spec := channelSpec{
+		agentName: "Research",
+		channelConfig: config.ChannelConfig{
+			Type: "slack",
+			ID:   "bot",
+			AllowFrom: []config.AllowFromEntry{{
+				From:              "*",
+				AllowedGroups:     "#research",
+				RespondToMentions: true,
+			}},
+		},
+	}
+	msg := IncomingMessage{Type: "slack", From: "U123", Channel: "C123", Text: "<@UBOT> hi"}
+
+	_, ok := routedSlackMessage(ch, spec, msg)
+	assert.True(t, ok)
+	assert.True(t, matchesAnyAllowedGroup(ch.resolvedEntriesForRouting(spec.channelConfig.AllowFrom), msg.Channel))
+
+	msg.Channel = "COTHER"
+	_, ok = routedSlackMessage(ch, spec, msg)
+	assert.False(t, ok)
+}
+
 func TestManager_ReconcileSharesSlackConnection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

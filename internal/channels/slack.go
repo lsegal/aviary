@@ -783,6 +783,14 @@ func (c *SlackChannel) allowedEntries() []config.AllowFromEntry {
 	return c.resolvedAllowFrom
 }
 
+// resolvedEntriesForRouting applies the shared connection's identity cache to
+// one agent's allowFrom rules before the per-agent routing check.
+func (c *SlackChannel) resolvedEntriesForRouting(entries []config.AllowFromEntry) []config.AllowFromEntry {
+	c.identityMu.RLock()
+	defer c.identityMu.RUnlock()
+	return c.resolveAllowEntries(entries)
+}
+
 func (c *SlackChannel) displayNameForUser(userID string) string {
 	c.identityMu.RLock()
 	defer c.identityMu.RUnlock()
