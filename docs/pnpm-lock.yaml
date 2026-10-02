@@ -12,8 +12,8 @@ devDependencies:
     specifier: ^10.5.2
     version: 10.5.2(postcss@8.5.28)
   simple-icons:
-    specifier: ^16.30.0
-    version: 16.30.0
+    specifier: ^16.31.0
+    version: 16.31.0
   vitepress:
     specifier: ^1.6.4
     version: 1.6.4(@algolia/client-search@5.59.0)(postcss@8.5.28)(search-insights@2.17.3)
@@ -1402,8 +1402,8 @@ packages:
       '@types/hast': 3.0.4
     dev: true
 
-  /simple-icons@16.30.0:
-    resolution: {integrity: sha512-YX/HmgEqjpn5Zs3myzKp8ek5Ti+TdrkvNWn9skGLetg9tOg0cTjYizj9ESAYJn4xwc0GQYVGzQxBELDfbxq7WQ==}
+  /simple-icons@16.31.0:
+    resolution: {integrity: sha512-dDEqvQrmxL7ZnqQtGHGjCNW6CfiwzAif+83Hol9JXAnAB6wh2zsZD7Sc1kWT0O/RRAKt7xfG8W6UZhYBPD+GAA==}
     engines: {node: '>=0.12.18'}
     dev: true
 
