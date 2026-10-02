@@ -76,7 +76,7 @@
 		"postcss": "^8.5.28",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
-		"vite": "^8.2.2",
+		"vite": "^8.3.0",
 		"vpr": "^1.4.5",
 		"vue-tsc": "^3.3.11"
 	}
