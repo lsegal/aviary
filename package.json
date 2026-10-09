@@ -68,7 +68,7 @@
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.3",
 		"@types/node": "^26.5.1",
-		"@vitejs/plugin-vue": "^6.0.7",
+		"@vitejs/plugin-vue": "^6.0.9",
 		"autoprefixer": "^10.6.1",
 		"concurrently": "^10.0.5",
 		"cross-env": "^10.1.0",

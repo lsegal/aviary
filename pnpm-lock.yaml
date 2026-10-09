@@ -44,8 +44,8 @@ devDependencies:
     specifier: ^26.5.1
     version: 26.5.1
   '@vitejs/plugin-vue':
-    specifier: ^6.0.7
-    version: 6.0.7(vite@8.3.0)(vue@3.5.42)
+    specifier: ^6.0.9
+    version: 6.0.9(vite@8.3.0)(vue@3.5.42)
   autoprefixer:
     specifier: ^10.6.1
     version: 10.6.1(postcss@8.5.28)
@@ -867,8 +867,8 @@ packages:
     resolution: {integrity: sha512-g9gZnnXVq7gM7v3tJCWV/qw7w+KeOlSHAhgF9RytFyifW6AF61hdT2ucrYhPq9hLs5JIryeupHV3qGk95dH9ow==}
     dev: false
 
-  /@vitejs/plugin-vue@6.0.7(vite@8.3.0)(vue@3.5.42):
-    resolution: {integrity: sha512-km+p+XdSz9Sxm5rqUbqcSfZYaAniKxWBj1KURl+Jr7UaPvvX7BmaWMdP69I5rrFDeQGyxAG7NXdc57vz+snhWg==}
+  /@vitejs/plugin-vue@6.0.9(vite@8.3.0)(vue@3.5.42):
+    resolution: {integrity: sha512-rD/MORlhaZMlXWW0rEn4FB4wMinWC0z/D7Ye160S5+Rs1mC8ZDAdcDp4SjKfUhG5t8q1ktcPVw4xuTkPRlzrSA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
