@@ -2277,6 +2277,18 @@ func TestExecTool_NonShellAndShellModes(t *testing.T) {
 	assert.Contains(t, out, `"stdout"`)
 }
 
+func TestRunExecCommand_ReportsStartFailure(t *testing.T) {
+	base := t.TempDir()
+	result, err := runExecCommand(context.Background(), &config.ExecPermissionsConfig{}, execArgs{
+		Command: "go env GOOS",
+		Cwd:     filepath.Join(base, "missing"),
+	}, base)
+	require.Error(t, err)
+	assert.Equal(t, -1, result.ExitCode)
+	assert.NotEmpty(t, result.Error)
+	assert.Empty(t, result.Stdout)
+}
+
 func TestRunExecCommand_LoadsAgentDotEnv(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)

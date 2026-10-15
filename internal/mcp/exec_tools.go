@@ -31,6 +31,7 @@ type execResult struct {
 	Cwd          string   `json:"cwd,omitempty"`
 	Stdout       string   `json:"stdout,omitempty"`
 	Stderr       string   `json:"stderr,omitempty"`
+	Error        string   `json:"error,omitempty"`
 	ExitCode     int      `json:"exit_code"`
 	Shell        string   `json:"shell,omitempty"`
 	Interpolated bool     `json:"shell_interpolate"`
@@ -139,7 +140,10 @@ func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, ar
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		result.ExitCode = exitErr.ExitCode()
+	} else {
+		result.ExitCode = -1
 	}
+	result.Error = err.Error()
 	return result, err
 }
 
