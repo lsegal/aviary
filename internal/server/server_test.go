@@ -1604,7 +1604,7 @@ func TestCompactToolInput_TruncatesLongInputsOnOneLine(t *testing.T) {
 	assert.NotContains(t, input, "\n")
 }
 
-func TestSlackThreadStreamer_SendsCompletedLinesAsMessages(t *testing.T) {
+func TestSlackThreadStreamer_SendsOneCompletedAnswer(t *testing.T) {
 	ch := &recordingThreadChannel{}
 	streamer := &slackThreadStreamer{thread: ch}
 
@@ -1612,7 +1612,7 @@ func TestSlackThreadStreamer_SendsCompletedLinesAsMessages(t *testing.T) {
 	streamer.Append(" line\n  second line\nthird")
 	streamer.Flush()
 
-	assert.Equal(t, []string{"first line\n", "  second line\n", "third\n"}, ch.snapshot())
+	assert.Equal(t, []string{"first line\n  second line\nthird"}, ch.snapshot())
 }
 
 func TestSlackToolStatusText_FileRead(t *testing.T) {
