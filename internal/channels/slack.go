@@ -246,7 +246,7 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 	}()
 
 	err := c.sm.RunContext(ctx)
-	if err != nil && ctx.Err() == nil {
+	if ctx.Err() == nil {
 		c.logf("slack: socket mode exited with error: %v", err)
 	} else {
 		c.logf("slack: socket mode stopped")

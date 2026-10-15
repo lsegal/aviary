@@ -415,7 +415,7 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 	m.slack[connKey] = shared
 
 	go func(c *sharedSlackChannel) {
-		if err := c.ch.Start(cctx); err != nil && cctx.Err() == nil {
+		if err := c.ch.Start(cctx); cctx.Err() == nil {
 			slog.Warn("channel error", "key", connKey, "err", err)
 			m.mu.Lock()
 			c.err = err.Error()
