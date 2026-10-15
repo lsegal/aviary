@@ -744,6 +744,7 @@ func TestSlackChannel_HandleEditedMention(t *testing.T) {
 			User:    "U123",
 			Channel: "C123",
 			Text:    "hi <@UBOT>",
+			Edited:  &slack.Edited{},
 		},
 	})
 
@@ -752,6 +753,21 @@ func TestSlackChannel_HandleEditedMention(t *testing.T) {
 	assert.Equal(t, "U123", msg.From)
 	assert.Equal(t, "C123", msg.Channel)
 	assert.Equal(t, "hi <@UBOT>", msg.Text)
+}
+
+func TestSlackChannel_IgnoresThreadMetadataChange(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From: "*", AllowedGroups: "*", RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	var messages []IncomingMessage
+	ch.OnMessage(func(m IncomingMessage) { messages = append(messages, m) })
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		SubType: "message_changed", Channel: "C123", TimeStamp: "1710000001.123456",
+		Message:         &slack.Msg{User: "U123", Text: "<@UBOT> hi", Timestamp: "1710000000.123456"},
+		PreviousMessage: &slack.Msg{User: "U123", Text: "<@UBOT> hi", Timestamp: "1710000000.123456"},
+	})
+	assert.Empty(t, messages)
 }
 
 func TestSlackChannel_HandleAppMention(t *testing.T) {
@@ -780,6 +796,49 @@ func TestSlackChannel_HandleAppMention(t *testing.T) {
 	assert.Equal(t, "1710000000.000001", msg.ThreadTS)
 	assert.Equal(t, "<@UBOT> hi", msg.Text)
 	assert.Equal(t, time.Unix(1710000000, 123456000).UTC(), msg.ReceivedAt)
+}
+
+func TestSlackChannel_DeduplicatesMessageAndAppMention(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From: "*", AllowedGroups: "*", RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	var messages []IncomingMessage
+	ch.OnMessage(func(m IncomingMessage) { messages = append(messages, m) })
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User: "U123", Channel: "C123", Text: "<@UBOT> hi", TimeStamp: "1710000000.123456",
+	})
+	ch.handleAppMentionEvent(&slackevents.AppMentionEvent{
+		User: "U123", Channel: "C123", Text: "<@UBOT> hi", TimeStamp: "1710000000.123456",
+	})
+	assert.Len(t, messages, 1)
+}
+
+func TestSlackChannel_IgnoresOwnChannelJoin(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From: "*", AllowedGroups: "*", RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	var messages []IncomingMessage
+	ch.OnMessage(func(m IncomingMessage) { messages = append(messages, m) })
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User: "UBOT", Channel: "C123", Text: "<@UBOT> has joined the channel", TimeStamp: "1710000000.123456", SubType: "channel_join",
+	})
+	assert.Empty(t, messages)
+}
+
+func TestSlackChannel_IgnoresRootOnlyMessageReplied(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", []config.AllowFromEntry{{
+		From: "*", AllowedGroups: "*", RespondToMentions: true,
+	}}, "m", nil)
+	ch.botUserID = "UBOT"
+	var messages []IncomingMessage
+	ch.OnMessage(func(m IncomingMessage) { messages = append(messages, m) })
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		SubType: "message_replied", Channel: "C123", TimeStamp: "1710000000.123456",
+		Message: &slack.Msg{User: "U123", Text: "<@UBOT> hi", Timestamp: "1710000000.123456", LatestReply: "1710000000.123456"},
+	})
+	assert.Empty(t, messages)
 }
 
 func TestSlackChannel_HandleMessageUsesTimestampAsThreadFallback(t *testing.T) {
