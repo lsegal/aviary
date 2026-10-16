@@ -67,7 +67,7 @@
 		"@playwright/test": "^1.63.0",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.3",
-		"@types/node": "^26.5.1",
+		"@types/node": "^26.6.4",
 		"@vitejs/plugin-vue": "^6.0.9",
 		"autoprefixer": "^10.6.1",
 		"concurrently": "^10.0.5",
