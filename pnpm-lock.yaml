@@ -39,13 +39,13 @@ devDependencies:
     version: 0.5.19(tailwindcss@4.3.3)
   '@tailwindcss/vite':
     specifier: ^4.3.3
-    version: 4.3.3(vite@8.3.2)
+    version: 4.3.3(vite@8.3.3)
   '@types/node':
     specifier: ^26.5.1
     version: 26.5.1
   '@vitejs/plugin-vue':
     specifier: ^6.0.9
-    version: 6.0.9(vite@8.3.2)(vue@3.5.42)
+    version: 6.0.9(vite@8.3.3)(vue@3.5.42)
   autoprefixer:
     specifier: ^10.6.1
     version: 10.6.1(postcss@8.5.28)
@@ -68,8 +68,8 @@ devDependencies:
     specifier: ^6.0.3
     version: 6.0.3
   vite:
-    specifier: ^8.3.2
-    version: 8.3.2(@types/node@26.5.1)
+    specifier: ^8.3.3
+    version: 8.3.3(@types/node@26.5.1)
   vpr:
     specifier: ^1.4.5
     version: 1.4.5(@types/node@26.5.1)
@@ -833,7 +833,7 @@ packages:
       tailwindcss: 4.3.3
     dev: true
 
-  /@tailwindcss/vite@4.3.3(vite@8.3.2):
+  /@tailwindcss/vite@4.3.3(vite@8.3.3):
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
@@ -841,7 +841,7 @@ packages:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.3.2(@types/node@26.5.1)
+      vite: 8.3.3(@types/node@26.5.1)
     dev: true
 
   /@tanstack/virtual-core@3.13.23:
@@ -867,7 +867,7 @@ packages:
     resolution: {integrity: sha512-g9gZnnXVq7gM7v3tJCWV/qw7w+KeOlSHAhgF9RytFyifW6AF61hdT2ucrYhPq9hLs5JIryeupHV3qGk95dH9ow==}
     dev: false
 
-  /@vitejs/plugin-vue@6.0.9(vite@8.3.2)(vue@3.5.42):
+  /@vitejs/plugin-vue@6.0.9(vite@8.3.3)(vue@3.5.42):
     resolution: {integrity: sha512-rD/MORlhaZMlXWW0rEn4FB4wMinWC0z/D7Ye160S5+Rs1mC8ZDAdcDp4SjKfUhG5t8q1ktcPVw4xuTkPRlzrSA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
@@ -875,7 +875,7 @@ packages:
       vue: ^3.2.25
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.2(@types/node@26.5.1)
+      vite: 8.3.3(@types/node@26.5.1)
       vue: 3.5.42(typescript@6.0.3)
     dev: true
 
@@ -2531,8 +2531,8 @@ packages:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
     dev: true
 
-  /vite@8.3.2(@types/node@26.5.1):
-    resolution: {integrity: sha512-SQr1x6W5vVSbROg7vsyXIaxK9b0G7zsT68acdWWRmnBUsgDieLCRG+Rep9WdZgcposvv/GSnr4GUUBqB3vXq6w==}
+  /vite@8.3.3(@types/node@26.5.1):
+    resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
