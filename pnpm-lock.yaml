@@ -56,8 +56,8 @@ devDependencies:
     specifier: ^10.1.0
     version: 10.1.0
   execa:
-    specifier: ^10.0.1
-    version: 10.0.1
+    specifier: ^10.1.0
+    version: 10.1.0
   postcss:
     specifier: ^8.5.28
     version: 8.5.28
@@ -1465,8 +1465,8 @@ packages:
       es5-ext: 0.10.64
     dev: true
 
-  /execa@10.0.1:
-    resolution: {integrity: sha512-ge98qjkRK4IB7tL7Ju/6qmm5LHoH1eEMt5FNZrz3f4UIYhF28lggX20z3FaX1sgc67msLEn0N0BscOs29iuwyw==}
+  /execa@10.1.0:
+    resolution: {integrity: sha512-5HT/600HqXEtmkb9mK/PkTWw+bQSCzPnWiZ4/87wD3Hi0wFzCapOuNT9p4M08PDd+KLHdHvFhKjOWmNx/npRNQ==}
     engines: {node: '>=22'}
     dependencies:
       '@sindresorhus/merge-streams': 4.0.0
@@ -1476,7 +1476,7 @@ packages:
       is-plain-obj: 4.1.0
       is-stream: 4.0.1
       npm-run-path: 6.0.0
-      pretty-ms: 9.3.0
+      pretty-ms: 9.3.1
       signal-exit: 4.1.0
       strip-final-newline: 4.0.0
       which-command: 0.1.0
@@ -1495,7 +1495,7 @@ packages:
       is-plain-obj: 4.1.0
       is-stream: 4.0.1
       npm-run-path: 6.0.0
-      pretty-ms: 9.3.0
+      pretty-ms: 9.3.1
       signal-exit: 4.1.0
       strip-final-newline: 4.0.0
       yoctocolors: 2.2.0
@@ -2216,8 +2216,8 @@ packages:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  /pretty-ms@9.3.0:
-    resolution: {integrity: sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==}
+  /pretty-ms@9.3.1:
+    resolution: {integrity: sha512-HzMy3Geq23nVALD/M2LliU+F+M+gVNsvkQWWqeBZ8HDiCgzo6YPJ/Omrmtq24EFrIsk0a3EkQGEd7bDOo+IhGA==}
     engines: {node: '>=18'}
     dependencies:
       parse-ms: 4.0.0
