@@ -353,8 +353,8 @@ func TestCodexDefinitionContract(t *testing.T) {
 		// own defaultModel rather than leaving the choice to the CLI. The
 		// session has no checkout yet, so the run starts in the temp
 		// directory and skips Codex's git repo check.
-		WantRun:    []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-terra", freshPrompt("o/r", 7)},
-		WantResume: []string{"exec", "resume", "--json", "--skip-git-repo-check", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
+		WantRun:    []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-terra", freshPrompt("o/r", 7)},
+		WantResume: []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-terra", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
 		WantOutput: "working on it",
 	}.check(t)
 }
@@ -486,30 +486,37 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 // fresh clone -- so the definition carries GEMINI_CLI_TRUST_WORKSPACE rather
 // than passing --skip-trust, and the child process is checked for it here.
 // Its --output-format stream-json emits its own event shape rather than
-// Claude's, so the definition asks for text until the generic decoder from
-// #488 lands.
+// Claude's, decoded by the gemini-json format (#388): the stdout below is
+// captured from gemini-cli 0.58.0, whose assistant text arrives as deltas the
+// decoder joins back into one line.
 func TestGeminiDefinitionContract(t *testing.T) {
 	agentContract{
 		Definition: builtinDefinition(t, "gemini"),
 		Repo:       "o/r",
 		Number:     7,
 		SessionID:  "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-		Stdout:     "working on it",
+		Stdout: `{"type":"init","timestamp":"2026-11-19T11:13:09.402Z","session_id":"3f2504e0-4f89-11d3-9a0c-0305e82c3301","model":"gemini-3.5-flash"}\n` +
+			`{"type":"message","timestamp":"2026-11-19T11:13:09.402Z","role":"user","content":"the prompt"}\n` +
+			`{"type":"message","timestamp":"2026-11-19T11:13:09.531Z","role":"assistant","content":"working ","delta":true}\n` +
+			`{"type":"message","timestamp":"2026-11-19T11:13:09.531Z","role":"assistant","content":"on it","delta":true}\n` +
+			`{"type":"tool_use","timestamp":"2026-11-19T11:13:09.462Z","tool_name":"run_shell_command","tool_id":"run_shell_command_1","parameters":{"command":"echo hi"}}\n` +
+			`{"type":"tool_result","timestamp":"2026-11-19T11:13:09.483Z","tool_id":"run_shell_command_1","status":"success","output":"hi"}\n` +
+			`{"type":"result","timestamp":"2026-11-19T11:13:09.532Z","status":"success","stats":{"input_tokens":10,"output_tokens":2,"cached":0,"input":10}}`,
 		// The spec names no model, so the argv carries the definition's own
 		// defaultModel.
 		WantRun: []string{
 			"--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
 			"--approval-mode", "auto_edit", "--model", "gemini-3.5-flash",
-			"--output-format", "text",
+			"--output-format", "stream-json",
 			"-p", freshPrompt("o/r", 7),
 		},
 		WantResume: []string{
 			"--resume", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--approval-mode", "auto_edit", "--output-format", "text",
+			"--approval-mode", "auto_edit", "--output-format", "stream-json",
 			"-p", resumePrompt(),
 		},
 		WantEnv:    map[string]string{"GEMINI_CLI_TRUST_WORKSPACE": "true"},
-		WantOutput: "working on it",
+		WantOutput: "working on it\nRunning: echo hi",
 	}.check(t)
 }
 
@@ -527,14 +534,13 @@ func TestGeminiDefinitionYoloContract(t *testing.T) {
 		WantRun: []string{
 			"--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
 			"--yolo", "--model", "gemini-3.5-flash",
-			"--output-format", "text", "-p", freshPrompt("o/r", 7),
+			"--output-format", "stream-json", "-p", freshPrompt("o/r", 7),
 		},
 		WantResume: []string{
 			"--resume", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--yolo", "--output-format", "text", "-p", resumePrompt(),
+			"--yolo", "--output-format", "stream-json", "-p", resumePrompt(),
 		},
-		WantEnv:    map[string]string{"GEMINI_CLI_TRUST_WORKSPACE": "true"},
-		WantOutput: "working on it",
+		WantEnv: map[string]string{"GEMINI_CLI_TRUST_WORKSPACE": "true"},
 	}.check(t)
 }
 

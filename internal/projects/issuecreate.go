@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/lsegal/aviary/internal/projects/core"
 )
@@ -67,17 +68,23 @@ func createIssuePrompt(repository, text string, identity Identity) string {
 	return prompt
 }
 
-// issueURLPattern matches a GitHub issue URL, capturing its OWNER/REPO.
-var issueURLPattern = regexp.MustCompile(`https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/issues/[0-9]+`)
+// issueURLPattern matches one whole GitHub issue URL, capturing its
+// OWNER/REPO.
+var issueURLPattern = regexp.MustCompile(`^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/issues/[0-9]+$`)
 
 // createdIssueURL is the last issue URL on repository in gh-create's output,
 // which is the one it reports filing; issues it only mentions on the way come
-// earlier.
+// earlier. Each whitespace-separated word, stripped of the punctuation and
+// Markdown around it, is matched whole, so a URL is never read out of the
+// middle of a longer one.
 func createdIssueURL(output, repository string) string {
-	matches := issueURLPattern.FindAllStringSubmatch(output, -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		if strings.EqualFold(matches[i][1], repository) {
-			return matches[i][0]
+	words := strings.FieldsFunc(output, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("()<>[]\"'`*,;", r)
+	})
+	for i := len(words) - 1; i >= 0; i-- {
+		word := strings.TrimRight(words[i], ".:!?")
+		if match := issueURLPattern.FindStringSubmatch(word); match != nil && strings.EqualFold(match[1], repository) {
+			return match[0]
 		}
 	}
 	return ""

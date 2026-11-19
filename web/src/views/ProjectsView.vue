@@ -8,8 +8,9 @@
 						Projects isn't running on this server.
 					</p>
 					<p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-						No projects are watched yet. Run <code class="font-mono">aviary watch owner/repo</code> to start one.
+						No projects are watched yet. Add one here, or run <code class="font-mono">aviary watch owner/repo</code>.
 					</p>
+					<button type="button" :class="[ADD_BTN, 'mt-4']" @click="openAdd">+ Add project</button>
 				</div>
 			</div>
 			<template v-else>
@@ -52,10 +53,18 @@
 							:disabled="checking" @click="onCheckNow">
 							{{ checking ? "Checking…" : "Check now" }}
 						</button>
+						<router-link :to="`/projects/${encodeProject(project)}/settings`"
+							class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+							Settings
+						</router-link>
+						<button type="button" :class="ADD_BTN" @click="openAdd">+ Add project</button>
 					</div>
 				</header>
 
 				<div class="space-y-4 px-4 py-4 sm:px-6">
+					<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
+						@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
+						@import="onGitHub(() => importProfile($event))" />
 					<p v-if="status && !status.running" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
 						The watch isn't running{{ status.error ? `: ${status.error}` : "." }}
 					</p>
@@ -126,6 +135,7 @@
 				</div>
 			</template>
 		</div>
+		<AddProjectDialog v-if="adding" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
 
@@ -133,6 +143,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
@@ -172,8 +184,20 @@ const project = computed(() =>
 );
 const filter = ref<BoardFilter>("all");
 const { version } = useServerStatus();
-const { status, jobs, total, page, error, loading, checkNow, retry, stop } =
-	useProjectBoard(project, filter);
+const {
+	status,
+	jobs,
+	total,
+	page,
+	error,
+	loading,
+	checkNow,
+	signInToGitHub,
+	switchToPolling,
+	importProfile,
+	retry,
+	stop,
+} = useProjectBoard(project, filter);
 const {
 	schedules,
 	upcoming,
@@ -215,10 +239,30 @@ watch(
 	() => projectList.projects.value,
 	(list) => {
 		if (!project.value && list.length > 0) {
-			void router.replace(`/projects/${encodeProject(list[0].name)}`);
+			void router.replace({
+				path: `/projects/${encodeProject(list[0].name)}`,
+				query: route.query,
+			});
 		}
 	},
 );
+
+const ADD_BTN =
+	"rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700";
+// The add-project dialog is open while the URL carries ?add=1, so the
+// sidebar's "Add project" link can open it from anywhere.
+const adding = computed(() => route.query.add === "1");
+function openAdd() {
+	void router.push({ query: { ...route.query, add: "1" } });
+}
+function closeAdd() {
+	const { add: _, ...rest } = route.query;
+	void router.replace({ query: rest });
+}
+async function onAdded(target: string) {
+	await router.push(`/projects/${encodeProject(target)}`);
+	await projectList.refresh();
+}
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
@@ -229,7 +273,11 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(clock));
 
-const online = computed(() => status.value?.deliveryOnline ?? true);
+// A signed-out browser session reads nothing, so it counts as offline.
+const online = computed(
+	() =>
+		(status.value?.deliveryOnline ?? true) && !status.value?.github?.signedOut,
+);
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 
 const statCards = computed(() => {
@@ -253,8 +301,8 @@ const statCards = computed(() => {
 			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
 		},
 		{
-			label: "Completed",
-			value: s.completed,
+			label: "Merged (24h)",
+			value: s.merged24h,
 			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
 		},
 		{
@@ -289,6 +337,21 @@ async function onCheckNow() {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		checking.value = false;
+	}
+}
+
+// The signed-out banner's actions: sign in to GitHub in Aviary's browser,
+// switch to gh polling, or import a profile signed in elsewhere.
+const signingIn = ref(false);
+async function onGitHub(fn: () => Promise<void>) {
+	signingIn.value = true;
+	try {
+		await fn();
+		error.value = "";
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		signingIn.value = false;
 	}
 }
 </script>

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/models"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
@@ -135,6 +137,8 @@ func Register(s *sdkmcp.Server) {
 	registerTaskTools(s)
 	registerAgentContextTools(s)
 	registerFileTools(s)
+	registerFileEditTools(s)
+	registerFileSearchTools(s)
 	registerExecTools(s)
 	registerSessionTools(s)
 	registerTaskTools(s)
@@ -146,6 +150,7 @@ func Register(s *sdkmcp.Server) {
 	registerSkillTools(s)
 	registerUsageTools(s)
 	registerProjectTools(s)
+	registerProjectCheckTool(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
@@ -158,6 +163,8 @@ type agentRunArgs struct {
 	File                string `json:"file,omitempty"`
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	StreamEvents        bool   `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
+	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
@@ -262,6 +269,30 @@ func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err e
 	return agentName, agentName, nil
 }
 
+// resolveAgentRunWorkdir checks that an agent_run workdir is an existing
+// absolute directory and returns it with symlinks resolved, so the granted
+// root matches the paths the file tools resolve.
+func resolveAgentRunWorkdir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("workdir %q must be an absolute path", dir)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("workdir %q does not exist", dir)
+	}
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %q is not a directory", dir)
+	}
+	return resolved, nil
+}
+
 func resolveAgentRunHistory(args agentRunArgs) bool {
 	if args.History != nil {
 		return *args.History
@@ -333,6 +364,13 @@ func registerAgentTools(s *sdkmcp.Server) {
 			return text(fmt.Sprintf("stopped session %q", sess.ID))
 		}
 		ctx = agent.WithSessionID(ctx, sess.ID)
+		if args.Workdir != "" {
+			workdir, err := resolveAgentRunWorkdir(args.Workdir)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			ctx = agent.WithFilesystemGrant(ctx, workdir)
+		}
 
 		var buf strings.Builder
 		progressToken := req.Params.GetProgressToken()
@@ -340,10 +378,34 @@ func registerAgentTools(s *sdkmcp.Server) {
 		done := make(chan error, 1)
 		history := resolveAgentRunHistory(args)
 
+		// With stream_events, progress carries structured events in place of
+		// the text and tagged tool and media messages.
+		streamEvents := progressToken != nil && args.StreamEvents
+		if streamEvents {
+			progressToken = nil
+		}
+		events := &agentRunEvents{}
+
+		notifyEvent := func(event AgentRunEvent) {
+			if payload, err := json.Marshal(event); err == nil {
+				progressCount++
+				_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+					ProgressToken: req.Params.GetProgressToken(),
+					Progress:      progressCount,
+					Message:       string(payload),
+				})
+			}
+		}
+
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
 		}, func(e agent.StreamEvent) {
+			if streamEvents {
+				if event, ok := events.fromStream(e); ok {
+					notifyEvent(event)
+				}
+			}
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)
@@ -392,7 +454,11 @@ func registerAgentTools(s *sdkmcp.Server) {
 				done <- e.Err
 			}
 		})
-		if err := <-done; err != nil {
+		err := <-done
+		if streamEvents {
+			notifyEvent(AgentRunEvent{Type: "done"})
+		}
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return text(buf.String())
 			}
@@ -2767,6 +2833,32 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 // ── Server tools ─────────────────────────────────────────────────────────────
 
+// serverVersionStatus is server_version_check's result: the version check plus
+// the restart state and the running jobs an upgrade would stop.
+type serverVersionStatus struct {
+	update.CheckResult
+	Restart saferestart.Status `json:"restart"`
+}
+
+func currentRestartStatus() saferestart.Status {
+	if d := GetDeps(); d.RestartStatus != nil {
+		return d.RestartStatus()
+	}
+	return saferestart.Status{Phase: saferestart.PhaseIdle, Jobs: saferestart.RunningJobs()}
+}
+
+func requestSafeRestart(ctx context.Context, req saferestart.Request) (*sdkmcp.CallToolResult, struct{}, error) {
+	d := GetDeps()
+	if d.Restart == nil {
+		return nil, struct{}{}, fmt.Errorf("safe restart is only available when the Aviary server is running")
+	}
+	st, err := d.Restart(ctx, req)
+	if err != nil {
+		return nil, struct{}{}, err
+	}
+	return jsonResult(st)
+}
+
 func registerServerTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_status",
@@ -2777,34 +2869,37 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_version_check",
-		Description: "Check the current Aviary version against the latest GitHub release",
+		Description: "Check the current Aviary version against the latest GitHub release, and list the running jobs an upgrade would stop and resume",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		check, err := update.Check(ctx, nil)
 		if err != nil && check.LatestVersion == "" {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(check)
+		return jsonResult(serverVersionStatus{CheckResult: check, Restart: currentRestartStatus()})
 	})
 
 	type serverUpgradeArgs struct {
-		Version string `json:"version,omitempty"`
+		Version string `json:"version,omitempty" jsonschema:"release to install, with or without a leading v; defaults to the latest release"`
+		When    string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and upgrades once no jobs are running"`
 	}
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
-		Description: "Upgrade Aviary to the latest release and restart the server if needed",
+		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in coding CLI, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		d := GetDeps()
-		if update.EmulationActive() {
-			return jsonResult(map[string]any{"started": true, "emulated": true})
-		}
-		if d.Upgrade == nil {
-			return nil, struct{}{}, fmt.Errorf("server upgrade is only available when the Aviary server is running")
-		}
-		if err := d.Upgrade(ctx, args.Version); err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(map[string]any{"started": true})
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version})
+	})
+
+	type serverRestartArgs struct {
+		When   string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and restarts once no jobs are running"`
+		Cancel bool   `json:"cancel,omitempty" jsonschema:"withdraw a restart or upgrade that is still waiting for jobs to finish"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "server_restart",
+		Description: "Restart Aviary safely: checkpoint running jobs, restart, and resume each job in its own session",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverRestartArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Cancel: args.Cancel})
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -3586,6 +3681,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	registerConfiguredSkillTools(s)
+	registerCodingSkillTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",

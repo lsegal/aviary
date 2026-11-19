@@ -18,6 +18,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
 	"github.com/lsegal/aviary/internal/projects/process"
@@ -46,6 +47,7 @@ type Manager struct {
 	refreshMu sync.Mutex
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
+	browser   config.BrowserConfig
 	watches   []Watch
 	running   *engineRun
 	lastKey   string
@@ -54,6 +56,14 @@ type Manager struct {
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
+	// held is a safe restart's hold: no engine starts, and a running engine
+	// dispatches nothing new, while it is set. The engine reads it from its
+	// own goroutine, so it is not guarded by mu.
+	held atomic.Bool
+	// noticeMu guards restartNotices, the notice each job a safe restart
+	// stopped is resumed with, keyed by OWNER/REPO#N; see ResumeAfterRestart.
+	noticeMu       sync.Mutex
+	restartNotices map[string]string
 
 	identity    Identity
 	transcripts *transcriptStore
@@ -67,8 +77,27 @@ type Manager struct {
 	scheduleRerun atomic.Pointer[func(scheduleID string) error]
 
 	snapshot atomic.Pointer[core.Snapshot]
+	reports  *reporter
 	quotas   atomic.Pointer[map[string]string]
+
+	// loginRetry is the pending retry of an engine start whose gh login
+	// lookup failed, and loginRetryDelay the wait before the next one.
+	loginRetry      *time.Timer
+	loginRetryDelay time.Duration
+	// ghRunCommand replaces the engine's gh calls in tests.
+	ghRunCommand func(context.Context, ...string) ([]byte, error)
 }
+
+// The backoff between engine starts that failed to resolve the authenticated
+// gh login, which a rate limit or network error fails transiently.
+var (
+	loginRetryInitial = 5 * time.Second
+	loginRetryMax     = 5 * time.Minute
+)
+
+// errLoginLookup marks an engine start that failed resolving the
+// authenticated gh login; the manager retries it with backoff.
+var errLoginLookup = errors.New("resolve the authenticated gh user for allowed_commenters")
 
 // engineRun is one running engine and what it needs to shut down.
 type engineRun struct {
@@ -78,6 +107,10 @@ type engineRun struct {
 	done         chan struct{}
 	checkpointer *shutdownCheckpointer
 	cleanup      []func()
+	// signIn and driver are browser delivery's GitHub sign-in and browser,
+	// nil in other modes.
+	signIn *browser.SignInRecovery
+	driver browser.Handover
 }
 
 // managerLogLines is how many engine log lines the manager keeps for
@@ -96,6 +129,7 @@ func NewManager(stateDir string) (*Manager, error) {
 		logger:      slog.Default().With("component", "projects"),
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
+		reports:     newReporter(),
 	}
 	return m, nil
 }
@@ -116,8 +150,17 @@ func (m *Manager) SetEngineEnabled(enabled bool) {
 	m.mu.Unlock()
 }
 
+// SetBrowser records Aviary's browser settings, which browser delivery reads
+// GitHub through. It takes effect on the next Reconcile.
+func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
+	m.mu.Lock()
+	m.browser = cfg
+	m.mu.Unlock()
+}
+
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
+	m.reports.configure(cfg)
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
@@ -174,6 +217,7 @@ func (m *Manager) RemoveWatch(target string) bool {
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	m.stopped = true
+	m.cancelLoginRetryLocked()
 	run := m.running
 	m.running = nil
 	m.mu.Unlock()
@@ -196,14 +240,15 @@ type engineSettings struct {
 	AllIssues         bool                `json:"all_issues"`
 	Yolo              bool                `json:"yolo"`
 	Webhook           config.ProjectsWebhookConfig
-	Concurrency       int           `json:"-"`
-	AllowedCommenters []string      `json:"-"`
-	NoMerge           bool          `json:"-"`
-	NoChangelog       bool          `json:"-"`
-	UnblockInterval   time.Duration `json:"-"`
-	UnblockAgent      string        `json:"-"`
-	UnblockModel      string        `json:"-"`
-	TempDirs          []string      `json:"-"`
+	Browser           BrowserOptions `json:"browser"`
+	Concurrency       int            `json:"-"`
+	AllowedCommenters []string       `json:"-"`
+	NoMerge           bool           `json:"-"`
+	NoChangelog       bool           `json:"-"`
+	UnblockInterval   time.Duration  `json:"-"`
+	UnblockAgent      string         `json:"-"`
+	UnblockModel      string         `json:"-"`
+	TempDirs          []string       `json:"-"`
 }
 
 // restartKey is the part of the settings a running engine cannot change; the
@@ -242,6 +287,8 @@ func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
 		merged.Agents = overlay.Agents
 	}
 	merged.Yolo = merged.Yolo || overlay.Yolo
+	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
+	merged.BrowserVisible = merged.BrowserVisible || overlay.BrowserVisible
 	merged.NoMerge = merged.NoMerge || overlay.NoMerge
 	merged.NoChangelog = merged.NoChangelog || overlay.NoChangelog
 	if overlay.UnblockInterval != "" {
@@ -308,6 +355,13 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 	if cfg.Webhook != nil {
 		s.Webhook = *cfg.Webhook
 	}
+	if s.Delivery == DeliveryBrowser {
+		s.Browser = BrowserOptionsFrom(m.browser)
+		s.Browser.Vision, s.Browser.Headed = cfg.BrowserVision, cfg.BrowserVisible
+		if _, _, err := ResolveDelivery(s.Delivery, s.Interval, true, s.Browser); err != nil {
+			return s, fmt.Errorf("projects: %w", err)
+		}
+	}
 	if s.Webhook.Path == "" {
 		s.Webhook.Path = config.DefaultProjectsWebhookPath
 	}
@@ -353,7 +407,10 @@ func (m *Manager) refresh() error {
 	}
 	m.running = nil
 	m.lastKey = key
-	engineOff := m.engineOff
+	engineOff := m.engineOff || m.held.Load()
+	if len(settings.Targets) == 0 || engineOff {
+		m.cancelLoginRetryLocked()
+	}
 	m.mu.Unlock()
 	if run != nil {
 		m.logf("projects settings changed; restarting the engine (running jobs are checkpointed and resume)")
@@ -366,11 +423,16 @@ func (m *Manager) refresh() error {
 	}
 	next, err := m.startRun(settings)
 	if err != nil {
+		if errors.Is(err, errLoginLookup) {
+			m.retryLoginLater(err)
+			return err
+		}
 		m.setError(err.Error())
 		m.logf("projects engine failed to start: %v", err)
 		return err
 	}
 	m.mu.Lock()
+	m.cancelLoginRetryLocked()
 	if m.stopped || m.running != nil {
 		m.mu.Unlock()
 		m.stopRun(next)
@@ -380,6 +442,38 @@ func (m *Manager) refresh() error {
 	m.lastError = ""
 	m.mu.Unlock()
 	return nil
+}
+
+// retryLoginLater schedules another engine start after the gh login lookup
+// failed, doubling the wait each time up to loginRetryMax.
+func (m *Manager) retryLoginLater(err error) {
+	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return
+	}
+	delay := m.loginRetryDelay
+	if delay <= 0 {
+		delay = loginRetryInitial
+	}
+	m.loginRetryDelay = min(2*delay, loginRetryMax)
+	if m.loginRetry != nil {
+		m.loginRetry.Stop()
+	}
+	m.loginRetry = time.AfterFunc(delay, func() { _ = m.refresh() })
+	m.lastError = fmt.Sprintf("waiting %s to retry starting the engine: %v", delay, err)
+	m.mu.Unlock()
+	m.logf("projects engine waiting %s to retry starting: %v", delay, err)
+}
+
+// cancelLoginRetryLocked drops a pending login retry and resets its backoff.
+// m.mu must be held.
+func (m *Manager) cancelLoginRetryLocked() {
+	if m.loginRetry != nil {
+		m.loginRetry.Stop()
+		m.loginRetry = nil
+	}
+	m.loginRetryDelay = 0
 }
 
 func (m *Manager) setError(text string) {
@@ -442,12 +536,12 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		}
 		return nil, err
 	}
-	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, ReadyLabel: s.ReadyLabel, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}}
+	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, ReadyLabel: s.ReadyLabel, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
 	allowed := s.AllowedCommenters
 	if len(allowed) == 0 {
 		login, err := gh.resolveSelfLogin(ctx)
 		if err != nil {
-			return fail(fmt.Errorf("resolve the authenticated gh user for allowed_commenters: %w", err))
+			return fail(fmt.Errorf("%w: %w", errLoginLookup, err))
 		}
 		allowed = []string{login}
 	}
@@ -463,21 +557,22 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	var engine *Engine
 	runner := CommandRunner{
-		AgentBinaries: s.AgentBinaries,
-		Agents:        s.Agents,
-		Agent:         s.Agents[0],
-		TargetAgents:  s.TargetAgents,
-		Repo:          s.Targets[0],
-		Identity:      m.identity,
-		Yolo:          s.Yolo,
-		NoMerge:       s.NoMerge,
-		NoChangelog:   s.NoChangelog,
-		Definitions:   registry,
-		agentCursor:   agentCursor,
-		Active:        active,
-		Transcripts:   m.transcripts,
-		CloneRoot:     func() (string, error) { return engine.CloneRoot() },
-		Quotas:        m.latestQuotas,
+		AgentBinaries:     s.AgentBinaries,
+		Agents:            s.Agents,
+		Agent:             s.Agents[0],
+		TargetAgents:      s.TargetAgents,
+		Repo:              s.Targets[0],
+		Identity:          m.identity,
+		Yolo:              s.Yolo,
+		NoMerge:           s.NoMerge,
+		NoChangelog:       s.NoChangelog,
+		Definitions:       registry,
+		AllowedCommenters: allowed,
+		agentCursor:       agentCursor,
+		Active:            active,
+		Transcripts:       m.transcripts,
+		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
+		Quotas:            m.latestQuotas,
 	}
 	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)
@@ -505,11 +600,13 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 			m.quotas.Store(&readings)
 			return readings
 		},
-		Runner:      runner,
-		Active:      active,
-		Registry:    registry,
-		Out:         io.Discard,
-		Transcripts: m.transcripts,
+		Runner:        runner,
+		Active:        active,
+		Registry:      registry,
+		Out:           io.Discard,
+		Transcripts:   m.transcripts,
+		Held:          m.heldForRestart,
+		RestartNotice: m.restartNotice,
 	}
 	engine.noMerge.Store(s.NoMerge)
 	engine.noChangelog.Store(s.NoChangelog)
@@ -520,6 +617,11 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	run.engine = engine
 	if engine.UseWebhooks {
 		if err := m.startWebhooks(ctx, run, gh, events); err != nil {
+			return fail(err)
+		}
+	}
+	if s.Delivery == DeliveryBrowser {
+		if err := m.startBrowser(ctx, run, gh); err != nil {
 			return fail(err)
 		}
 	}
@@ -585,6 +687,26 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 	supervisor.probe, supervisor.logf = probeTunnel, m.logf
 	run.engine.Webhooks = supervisor.reconcile
 	run.engine.WebhookOnline = supervisor.online
+	return nil
+}
+
+// startBrowserDriver launches the browser browser delivery reads through. It
+// is a variable so tests can run the manager without a browser.
+var startBrowserDriver = browser.Start
+
+// startBrowser starts Aviary's browser for browser delivery and points the
+// engine's GitHub reads at it.
+func (m *Manager) startBrowser(ctx context.Context, run *engineRun, gh GHCLI) error {
+	options := run.settings.Browser
+	driver, err := startBrowserDriver(ctx, options.Config())
+	if err != nil {
+		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set projects.delivery to poll to read GitHub through gh instead", err)
+	}
+	// The browser closes cleanly with the engine, including when Aviary exits.
+	run.cleanup = append(run.cleanup, func() { _ = driver.Close() })
+	run.signIn = ApplyBrowserSources(run.engine, driver, options, gh)
+	run.driver = driver
+	m.logf("browser delivery reading GitHub through Aviary's browser (profile %s)", describeProfile(options.Profile))
 	return nil
 }
 
@@ -660,6 +782,13 @@ func (m *Manager) latestQuotas() map[string]string {
 // Snapshot receives the engine's published state.
 func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
+	m.reports.observe(snapshot)
+}
+
+// SetReportDelivery sets how projects that opted in to reports send them
+// through an agent's channels.
+func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
+	m.reports.setDelivery(deliver)
 }
 
 // Log receives one engine log line.

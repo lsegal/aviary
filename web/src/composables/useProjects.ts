@@ -195,6 +195,24 @@ export function useProjectBoard(
 		await refresh();
 	}
 
+	/** Opens GitHub's sign-in page in Aviary's browser. */
+	async function signInToGitHub() {
+		await callTool("project_github_signin", {});
+		await refresh();
+	}
+
+	/** Reads GitHub through gh polling instead of Aviary's browser. */
+	async function switchToPolling() {
+		await callTool("project_github_use_polling", {});
+		await refresh();
+	}
+
+	/** Imports the GitHub sign-in from a profile signed in elsewhere. */
+	async function importProfile(profile: string) {
+		await callTool("project_github_import", { profile });
+		await refresh();
+	}
+
 	return {
 		status,
 		jobs,
@@ -204,6 +222,9 @@ export function useProjectBoard(
 		loading,
 		refresh,
 		checkNow,
+		signInToGitHub,
+		switchToPolling,
+		importProfile,
 		retry: (job: ProjectJob) => action("project_job_retry", job),
 		stop: (job: ProjectJob) => action("project_job_stop", job),
 	};
@@ -214,6 +235,18 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	const { callTool } = useMCP();
 	const detail = ref<JobDetail | null>(null);
 	const error = ref("");
+	// The footer names who may steer the job; the setting rarely changes, so
+	// it is read once rather than polled.
+	const allowedCommenters = ref<string[]>([]);
+	onMounted(async () => {
+		try {
+			allowedCommenters.value = normalizeStatus(
+				parseToolJSON(await callTool("project_status", {})),
+			).allowedCommenters;
+		} catch {
+			// The footer still explains how to steer without the names.
+		}
+	});
 
 	const { refresh } = usePoll(async () => {
 		const key = `${target.value}#${number.value}`;
@@ -249,6 +282,7 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	return {
 		detail,
 		error,
+		allowedCommenters,
 		refresh,
 		retry: () => action("project_job_retry"),
 		stop: () => action("project_job_stop"),

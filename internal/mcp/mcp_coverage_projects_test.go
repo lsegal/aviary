@@ -23,6 +23,7 @@ var projectToolNames = []string{
 	"project_refresh", "project_add", "project_remove", "project_cli_list",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create",
+	"project_github_signin", "project_github_use_polling", "project_github_import",
 }
 
 // setupProjects gives each test its own config and a projects manager that
@@ -73,6 +74,7 @@ func TestProjectTools_NilDeps(t *testing.T) {
 		"project_job_pause": job, "project_job_resume": job, "project_job_stop": job,
 		"project_add": {"target": "o/r"}, "project_remove": {"target": "o/r"},
 		"project_issue_comment": {"number": 1, "text": "x"}, "project_issue_create": {"text": "x"},
+		"project_github_import": {"profile": "/p"},
 	}
 	for _, tool := range projectToolNames {
 		toolArgs := args[tool]
@@ -131,7 +133,9 @@ func TestProjectStatusAndJobsWithNothingWatched(t *testing.T) {
 	assert.Equal(t, m.Identity(), status["identity"])
 	assert.Equal(t, false, status["running"])
 	assert.Equal(t, []any{}, status["targets"])
-	assert.Equal(t, "poll", status["delivery"])
+	assert.Equal(t, "browser", status["delivery"])
+	assert.Equal(t, "20s", status["poll_interval"])
+	assert.Equal(t, map[string]any{"signed_out": false, "signing_in": false}, status["github"])
 	assert.Equal(t, "ready", status["ready_label"])
 	assert.EqualValues(t, 3, status["concurrency"])
 
@@ -227,9 +231,56 @@ func TestProjectStatusLogOffset(t *testing.T) {
 	assert.Equal(t, offset+1, next["log_offset"])
 }
 
+func TestProjectGitHubToolsWithoutBrowserDelivery(t *testing.T) {
+	d, m := setupProjects(t)
+	toolCallContains(t, d, "project_github_signin", map[string]any{}, "browser delivery is not running")
+	toolCallContains(t, d, "project_github_import", map[string]any{"profile": " "}, "profile is required")
+	toolCallContains(t, d, "project_github_import", map[string]any{"profile": t.TempDir()}, "no saved GitHub sign-in")
+
+	// Without a running engine the sign-in is imported straight into the
+	// profile Aviary's browser settings name.
+	profile := filepath.Join(t.TempDir(), "profile")
+	m.SetBrowser(config.BrowserConfig{ProfileDir: profile})
+	from := t.TempDir()
+	saved := `[{"name":"user_session","value":"abc","domain":"github.com","path":"/"}]`
+	require.NoError(t, os.WriteFile(filepath.Join(from, "aviary-session-cookies.json"), []byte(saved), 0o600))
+	imported := callJSON(t, d, "project_github_import", map[string]any{"profile": from})
+	assert.Equal(t, true, imported["imported"])
+	assert.Equal(t, saved, readFile(t, filepath.Join(profile, "aviary-session-cookies.json")))
+}
+
+func TestProjectGitHubUsePollingSavesDelivery(t *testing.T) {
+	d, _ := setupProjects(t)
+	result := callJSON(t, d, "project_github_use_polling", map[string]any{})
+	assert.Equal(t, "poll", result["delivery"])
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	assert.Equal(t, "poll", cfg.Projects.Delivery)
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, "poll", status["delivery"])
+	assert.Equal(t, "30s", status["poll_interval"])
+	assert.NotContains(t, status, "github", "gh polling has no browser session to report")
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(data))
+}
+
+func TestProjectAddWithReports(t *testing.T) {
+	d, _ := setupProjects(t)
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "m"}}}))
+	reports := map[string]any{"agent": "bot", "targets": []any{"slack:main:C1"}, "events": []any{"merged", "failed"}}
+
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "reports": map[string]any{"agent": "ghost", "targets": []any{"slack:main:C1"}}}, `reports agent "ghost" is not configured`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "reports": reports}, "reports apply only to a saved project")
+
+	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "reports": reports})
+	assert.Equal(t, true, added["saved"])
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Len(t, cfg.Projects.List, 1)
+	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Projects.List[0].Reports)
 }

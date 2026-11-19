@@ -106,3 +106,17 @@ func TestWakePausedPullRequestWithoutOneNamesItsBlocker(t *testing.T) {
 		}
 	}
 }
+
+func TestWakePausedKeepsAStalledPauseForTheOwner(t *testing.T) {
+	paused := PausedWork{Kind: PausedManual, Reason: StalledPauseReason}
+	merged := &OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "closed", Merged: true}}}
+	if wake, reason := WakePaused(paused, PausedCheck{Issue: Issue{Number: 7, State: "open"}, Own: merged}); wake != PausedStay || reason != StalledPauseReason {
+		t.Fatalf("WakePaused(stalled) = (%v, %q), want it to stay paused with its own reason", wake, reason)
+	}
+	if wake, _ := WakePaused(paused, PausedCheck{Issue: Issue{Number: 7, State: "closed"}}); wake != PausedComplete {
+		t.Fatalf("WakePaused(stalled, closed issue) = %v, want complete", wake)
+	}
+	if !HeldForOwner(StalledPauseReason) || !HeldForOwner(ManualPauseReason) || HeldForOwner("its pull request waits to be merged or closed") {
+		t.Fatal("HeldForOwner misclassified a pause reason")
+	}
+}

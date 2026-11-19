@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
@@ -894,6 +895,31 @@ func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
 
 }
 
+func TestValidate_StdioProviderRejected(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "stdio/claude",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "unknown provider \"stdio\""))
+
+}
+
+func TestValidate_CLIModel(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "a", Model: "cli/gemini/pro"},
+			{Name: "b", Model: "cli/claude"},
+		},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "unknown CLI backend \"gemini\""))
+	assert.True(t, hasIssue(issues, "expected cli/<claude|codex>/<model>"))
+
+}
+
 func TestValidate_UnknownProvider(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{
@@ -1103,6 +1129,7 @@ func TestUniqueProviderModels(t *testing.T) {
 			{Name: "a1", Model: "anthropic/claude-sonnet-4-5"},
 			{Name: "a2", Model: "openai/gpt-4"},
 			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
+			{Name: "a4", Model: "cli/claude/opus"},           // excluded
 		},
 	}
 	got := UniqueProviderModels(cfg)
@@ -1112,6 +1139,9 @@ func TestUniqueProviderModels(t *testing.T) {
 
 	_, ok = got["openai"]
 	assert.True(t, ok)
+
+	_, ok = got["cli"]
+	assert.False(t, ok)
 
 }
 
@@ -1447,6 +1477,26 @@ func TestWatcher(t *testing.T) {
 		w.Stop()
 		<-done
 	})
+}
+
+func TestCodingSkillsConfigKeepsOnlyNonDefaults(t *testing.T) {
+	on, off := true, false
+
+	assert.True(t, EffectiveCodingSkillsAutoUpdate(nil))
+	assert.True(t, EffectiveCodingSkillsAutoUpdate(&Config{}))
+	assert.True(t, EffectiveCodingSkillsInstallNewCLIs(&Config{}))
+	assert.False(t, EffectiveCodingSkillsAutoUpdate(&Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &off}}))
+	assert.False(t, EffectiveCodingSkillsInstallNewCLIs(&Config{CodingSkills: &CodingSkillsConfig{InstallNewCLIs: &off}}))
+
+	cfg := &Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &on, InstallNewCLIs: &on}}
+	normalize(cfg)
+	assert.Nil(t, cfg.CodingSkills, "defaults are not written")
+
+	cfg = &Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &on, InstallNewCLIs: &off}}
+	normalize(cfg)
+	require.NotNil(t, cfg.CodingSkills)
+	assert.Nil(t, cfg.CodingSkills.AutoUpdate)
+	assert.Equal(t, &off, cfg.CodingSkills.InstallNewCLIs)
 }
 
 func TestValidate_ProjectTask(t *testing.T) {

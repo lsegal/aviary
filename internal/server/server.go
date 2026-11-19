@@ -21,11 +21,13 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/projects"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -54,7 +56,8 @@ type Server struct {
 	skillsWatcher     *skills.Watcher
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
-	upgradeCh         chan struct{}
+	reexecCh          chan struct{}
+	restart           restartState
 	msgFn             func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage)
 }
 
@@ -66,7 +69,7 @@ func New(cfg *config.Config, token string) *Server {
 		mux:               http.NewServeMux(),
 		listenerRestartCh: make(chan struct{}, 1),
 		hardRestartCh:     make(chan struct{}, 1),
-		upgradeCh:         make(chan struct{}, 1),
+		reexecCh:          make(chan struct{}, 1),
 	}
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
@@ -121,6 +124,7 @@ func New(cfg *config.Config, token string) *Server {
 
 	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
 		s.projects = manager
+		manager.SetReportDelivery(s.deliverTaskOutput)
 	} else {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
 	}
@@ -134,13 +138,14 @@ func New(cfg *config.Config, token string) *Server {
 
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{
-		Projects:  s.projects,
-		Agents:    s.agents,
-		Scheduler: s.sched,
-		Channels:  s.channels,
-		Browser:   s.brw,
-		Auth:      authStore,
-		Upgrade:   s.triggerUpgrade,
+		Projects:      s.projects,
+		Agents:        s.agents,
+		Scheduler:     s.sched,
+		Channels:      s.channels,
+		Browser:       s.brw,
+		Auth:          authStore,
+		Restart:       s.requestRestart,
+		RestartStatus: s.RestartStatus,
 	})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
 	agent.SetSessionMessageObserver(func(agentID, sessionID, role string) {
@@ -185,6 +190,7 @@ func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
 
 // startProjects applies the projects: section and the startup watches.
 func (s *Server) startProjects() {
+	s.projects.SetBrowser(s.cfg.Browser)
 	s.projects.Reconcile(s.cfg.Projects)
 	for _, watch := range startupWatches {
 		if err := s.projects.AddWatch(watch); err != nil {
@@ -207,6 +213,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 		s.sched.Reconcile(newCfg)
 	}
 	if s.projects != nil {
+		s.projects.SetBrowser(newCfg.Browser)
 		go s.projects.Reconcile(newCfg.Projects)
 	}
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
@@ -254,8 +261,6 @@ func (s *Server) registerRoutes() {
 	// Log stream SSE endpoint + history REST endpoint.
 	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
 	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, http.HandlerFunc(logsHistoryHandler)))
-	s.mux.Handle("/api/version", BearerMiddleware(s.token, http.HandlerFunc(s.versionHandler)))
-	s.mux.Handle("/api/version/upgrade", BearerMiddleware(s.token, http.HandlerFunc(s.versionUpgradeHandler)))
 
 	// Daemons status + log-stream endpoints.
 	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, http.HandlerFunc(s.daemonsHandler)))
@@ -264,6 +269,20 @@ func (s *Server) registerRoutes() {
 
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
+}
+
+// codingSkillsSyncInterval is how often the server looks for coding CLIs set
+// up since the last check, so they get the coding-CLI skills.
+const codingSkillsSyncInterval = 15 * time.Minute
+
+// updateCodingSkills moves every signed-in coding CLI's skills to version, the
+// release an upgrade installs.
+func updateCodingSkills(ctx context.Context, version string) error {
+	result, err := codingskills.Default().UpdateTo(ctx, version)
+	if len(result.Installed) > 0 {
+		slog.Info("coding skills: updated for the upgrade", "version", version, "skills", strings.Join(result.Installed, ", "))
+	}
+	return err
 }
 
 // ListenAndServe starts the server on the configured port.
@@ -284,13 +303,36 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 	}()
 
+	exe, _ := executablePath()
+	update.CleanupStaging(exe)
+	go s.runSelfUpdater(ctx)
+
+	// Keep the coding-CLI skills installed and matching this release, and
+	// move them to the new release when Aviary upgrades.
+	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	saferestart.RegisterSkillsUpdater("coding-cli", updateCodingSkills)
+	defer saferestart.UnregisterSkillsUpdater("coding-cli")
+
+	// The marker is read once, so a later start never mistakes this one for
+	// its own safe restart.
+	marker, restarted := saferestart.TakeMarker()
+
 	// Start scheduler.
 	if s.sched != nil {
 		s.sched.Start(ctx)
+		saferestart.Register("tasks", s.sched)
+		defer saferestart.Unregister("tasks")
 	}
 
 	// Start the Projects engine, with any watches `aviary watch` handed over.
 	if s.projects != nil {
+		// Jobs a safe restart stopped resume in their own sessions and are
+		// told that Aviary restarted.
+		if restarted {
+			s.projects.ResumeAfterRestart(marker)
+		}
+		saferestart.Register("projects", s.projects)
+		defer saferestart.Unregister("projects")
 		go s.startProjects()
 	}
 
@@ -336,6 +378,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		var (
 			listenerRestart bool
 			hardRestart     bool
+			reexec          bool
 		)
 		select {
 		case <-ctx.Done():
@@ -343,7 +386,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			listenerRestart = true
 		case <-s.hardRestartCh:
 			hardRestart = true
-		case <-s.upgradeCh:
+		case <-s.reexecCh:
+			reexec = true
 		case err := <-errCh:
 			if errors.Is(err, http.ErrServerClosed) {
 				continue
@@ -371,6 +415,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		s.agents.Stop()
 
+		if reexec {
+			return ErrReexecRequired
+		}
 		if hardRestart {
 			return ErrRestartRequired
 		}
@@ -956,31 +1003,6 @@ func (s *Server) listen() (net.Listener, error) {
 		return nil, fmt.Errorf("listening on %s: %w", addr, err)
 	}
 	return ln, nil
-}
-
-func (s *Server) triggerUpgrade(_ context.Context, version string) error {
-	if update.EmulationActive() {
-		return nil
-	}
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locating executable: %w", err)
-	}
-	if err := update.StartHelper(update.HelperRequest{
-		TargetPath:  exePath,
-		WaitPID:     os.Getpid(),
-		Version:     version,
-		RestartArgs: append([]string{}, os.Args[1:]...),
-		Repo:        update.DefaultRepo,
-		APIBase:     update.DefaultAPIBase,
-	}); err != nil {
-		return err
-	}
-	select {
-	case s.upgradeCh <- struct{}{}:
-	default:
-	}
-	return nil
 }
 
 func tlsConfigChanged(a, b *config.TLSConfig) bool {

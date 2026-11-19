@@ -46,13 +46,17 @@
         </div>
       </div>
       <div class="relative mt-3">
+        <UpdateStatusBanner :restart="restart" class="mb-3" @cancel="cancelRestart()" />
         <div v-if="upgradeAvailable"
           class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-3">
-            <span>New version available: {{ latestVersion }}</span>
+            <span>New version available:
+              <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
+              <template v-else>{{ latestVersion }}</template>
+            </span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading" @click="triggerUpgrade()">
+              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
@@ -126,6 +130,10 @@
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
               <span class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
             </router-link>
+            <router-link :to="addProjectLink" data-testid="sidebar-add-project"
+              class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+              + Add project
+            </router-link>
           </div>
           <div v-else-if="link.children && isLinkActive(link)" class="mb-3 mt-1 space-y-1 pl-2">
             <router-link v-for="child in link.children" :key="child.key" :to="child.to"
@@ -136,17 +144,21 @@
         </template>
       </div>
       <div class="mt-auto flex flex-col gap-2">
+        <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
         <div v-if="upgradeAvailable"
           class="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-2">
             <span>New version available</span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-2.5 py-1 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading" @click="triggerUpgrade()">
+              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
-          <div class="mt-1 text-xs">{{ latestVersion }}</div>
+          <div class="mt-1 text-xs">
+            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
+            <template v-else>{{ latestVersion }}</template>
+          </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex flex-wrap gap-1.5 px-1">
@@ -174,6 +186,10 @@
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <slot />
     </main>
+
+    <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
+      :jobs="restart?.jobs ?? []" :busy="upgrading" @close="upgradeDialogOpen = false"
+      @confirm="triggerUpgrade($event)" />
   </div>
 </template>
 
@@ -185,6 +201,8 @@ import { useProjectList } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
 import { encodeProject } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
+import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import UpgradeDialog from "./UpgradeDialog.vue";
 
 type SettingsTab = "general" | "agents" | "skills" | "sessions" | "providers";
 type NavGroup = "settings" | "system" | "projects";
@@ -219,8 +237,16 @@ const {
 	upgradeAvailable,
 	versionMessage,
 	upgrading,
+	releaseUrl,
+	restart,
+	upgradeDialogOpen,
+	openUpgradeDialog,
 	triggerUpgrade,
+	cancelRestart,
 } = useServerStatus();
+const restartPending = computed(
+	() => !!restart.value && restart.value.phase !== "idle",
+);
 const logoUrl = "/logo.png";
 const brandLinks: BrandLink[] = [
 	{
@@ -269,6 +295,17 @@ const projectChildren = computed<NavChild[]>(() =>
 					: "idle",
 	})),
 );
+
+// Opens the add-project dialog over the current board, or the first one.
+const addProjectLink = computed(() => ({
+	path:
+		route.path.startsWith("/projects/") &&
+		!route.path.includes("/jobs/") &&
+		!route.path.endsWith("/settings")
+			? route.path
+			: "/projects",
+	query: { add: "1" },
+}));
 
 const projectsRunning = computed(() =>
 	projects.value.reduce((n, p) => n + p.running, 0),
@@ -326,7 +363,11 @@ function isChildActive(child: NavChild): boolean {
 		// Project names contain an encoded "/", so compare decoded paths.
 		const path = decodeURIComponent(child.to);
 		const current = decodeURIComponent(route.path);
-		return current === path || current.startsWith(`${path}/jobs/`);
+		return (
+			current === path ||
+			current.startsWith(`${path}/jobs/`) ||
+			current === `${path}/settings`
+		);
 	}
 	return route.path === child.to || route.path.startsWith(`${child.to}/`);
 }

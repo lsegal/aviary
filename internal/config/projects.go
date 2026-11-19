@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -15,11 +17,20 @@ type ProjectsConfig struct {
 	// Concurrency is how many jobs run at once across every project. 0 means
 	// DefaultProjectsConcurrency.
 	Concurrency int `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
-	// Interval is the time between GitHub polls, as a Go duration.
+	// Interval is the time between GitHub polls, as a Go duration. Unset
+	// means DefaultProjectsBrowserInterval for browser delivery and
+	// DefaultProjectsInterval otherwise.
 	Interval string `yaml:"interval,omitempty" json:"interval,omitempty"`
-	// Delivery is how GitHub changes arrive: "poll" (the default) or
-	// "webhook".
+	// Delivery is how GitHub changes arrive: "browser" (the default) reads
+	// the rendered pages in Aviary's browser, signed in as the user; "poll"
+	// polls through gh; "webhook" takes webhook deliveries.
 	Delivery string `yaml:"delivery,omitempty" json:"delivery,omitempty"`
+	// BrowserVision turns on browser delivery's capped screenshot fallback
+	// for pages it can no longer read.
+	BrowserVision bool `yaml:"browser_vision,omitempty" json:"browser_vision,omitempty"`
+	// BrowserVisible shows the browser browser delivery reads with, for
+	// debugging. It needs a display.
+	BrowserVisible bool `yaml:"browser_visible,omitempty" json:"browser_visible,omitempty"`
 	// ReadyLabel is the label a repository issue needs to be picked up.
 	// Unset means DefaultProjectsReadyLabel; an empty string turns it off.
 	ReadyLabel *string `yaml:"ready_label,omitempty" json:"ready_label,omitempty"`
@@ -71,6 +82,87 @@ type ProjectConfig struct {
 	// runs on the first one whose quota is not used up. Empty uses the
 	// section's Agents.
 	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
+	// Reports sends this project's job lifecycle events through an Aviary
+	// agent's channels. Unset means no reports.
+	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
+}
+
+// ProjectReportsConfig is a project's opt-in to job reports.
+type ProjectReportsConfig struct {
+	// Agent is the Aviary agent whose channels deliver the reports.
+	Agent string `yaml:"agent" json:"agent"`
+	// Targets are where reports go, in the same form as a scheduled task's
+	// target: "<channel type>:<configured channel id>:<delivery id>" or
+	// "session:<name>".
+	Targets []string `yaml:"targets" json:"targets"`
+	// Events limits reports to these job events. Empty means every event in
+	// ProjectReportEvents.
+	Events []string `yaml:"events,omitempty" json:"events,omitempty"`
+}
+
+// Project report events.
+const (
+	ProjectReportMerged  = "merged"
+	ProjectReportFailed  = "failed"
+	ProjectReportWaiting = "waiting"
+)
+
+// ProjectReportEvents are the job events a project can report.
+var ProjectReportEvents = []string{ProjectReportMerged, ProjectReportFailed, ProjectReportWaiting}
+
+// Enabled reports whether reports are on: an agent and at least one target
+// are set.
+func (r *ProjectReportsConfig) Enabled() bool {
+	if r == nil || strings.TrimSpace(r.Agent) == "" {
+		return false
+	}
+	for _, target := range r.Targets {
+		if strings.TrimSpace(target) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Reports reports whether event is reported.
+func (r *ProjectReportsConfig) Reports(event string) bool {
+	if !r.Enabled() {
+		return false
+	}
+	if len(r.Events) == 0 {
+		return true
+	}
+	for _, e := range r.Events {
+		if strings.EqualFold(strings.TrimSpace(e), event) {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateProjectReports checks report settings against this config: the
+// agent must exist, at least one target is needed, and every event must be
+// one of ProjectReportEvents. Nil settings, meaning no reports, are valid.
+func (c *Config) ValidateProjectReports(r *ProjectReportsConfig) error {
+	if r == nil {
+		return nil
+	}
+	agent := strings.TrimSpace(r.Agent)
+	if agent == "" {
+		return fmt.Errorf("reports need an agent")
+	}
+	if !slices.ContainsFunc(c.Agents, func(a AgentConfig) bool { return a.Name == agent }) {
+		return fmt.Errorf("reports agent %q is not configured", agent)
+	}
+	if !r.Enabled() {
+		return fmt.Errorf("reports need at least one target")
+	}
+	for _, event := range r.Events {
+		if !slices.Contains(ProjectReportEvents, strings.ToLower(strings.TrimSpace(event))) {
+			return fmt.Errorf("unknown report event %q; use one of %s", event, strings.Join(ProjectReportEvents, ", "))
+		}
+	}
+	return nil
 }
 
 // ProjectsWebhookConfig configures the webhook listener and its tunnel.
@@ -86,11 +178,13 @@ type ProjectsWebhookConfig struct {
 const (
 	DefaultProjectsConcurrency = 3
 	DefaultProjectsInterval    = 30 * time.Second
-	DefaultProjectsDelivery    = "poll"
-	DefaultProjectsReadyLabel  = "ready"
-	DefaultProjectsFilter      = "assignee:@me author:@me"
-	DefaultProjectsAgent       = "codex"
-	DefaultProjectsWebhookPath = "/webhook"
+	// DefaultProjectsBrowserInterval is browser delivery's poll interval.
+	DefaultProjectsBrowserInterval = 20 * time.Second
+	DefaultProjectsDelivery        = "browser"
+	DefaultProjectsReadyLabel      = "ready"
+	DefaultProjectsFilter          = "assignee:@me author:@me"
+	DefaultProjectsAgent           = "codex"
+	DefaultProjectsWebhookPath     = "/webhook"
 )
 
 // EffectiveConcurrency returns the job limit.
@@ -106,13 +200,17 @@ func (p ProjectsConfig) EffectiveInterval() time.Duration {
 	if d, err := time.ParseDuration(strings.TrimSpace(p.Interval)); err == nil && d > 0 {
 		return d
 	}
+	if p.EffectiveDelivery() == "browser" {
+		return DefaultProjectsBrowserInterval
+	}
 	return DefaultProjectsInterval
 }
 
-// EffectiveDelivery returns "poll" or "webhook".
+// EffectiveDelivery returns "browser", "poll" or "webhook".
 func (p ProjectsConfig) EffectiveDelivery() string {
-	if strings.EqualFold(strings.TrimSpace(p.Delivery), "webhook") {
-		return "webhook"
+	switch mode := strings.ToLower(strings.TrimSpace(p.Delivery)); mode {
+	case "poll", "webhook":
+		return mode
 	}
 	return DefaultProjectsDelivery
 }

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -16,11 +17,32 @@ func (o Output) Decoder() string {
 	return FormatText
 }
 
+// TranscriptFormat returns the format the job transcript is mapped with: the
+// named transcript mapper for a generic JSONL stream, and the decoder's own
+// format otherwise.
+func (o Output) TranscriptFormat() string {
+	if o.Transcript != "" {
+		return o.Transcript
+	}
+	return o.Decoder()
+}
+
+// transcriptFormats lists the mappers a JSONL definition may name.
+var transcriptFormats = []string{TranscriptClineJSON, TranscriptOpencodeJSON}
+
 // validate reports the first thing wrong with the output block.
 func (o Output) validate() error {
 	format, ok := outputFormats[strings.TrimSpace(o.Format)]
 	if !ok {
 		return fmt.Errorf(`field "output.format": %q must be one of %s`, o.Format, JoinOr(outputFormatNames()))
+	}
+	if o.Transcript != "" {
+		if format != FormatJSONL {
+			return fmt.Errorf(`field "output.transcript" is only meaningful when "output.format" is %q`, FormatJSONL)
+		}
+		if !slices.Contains(transcriptFormats, o.Transcript) {
+			return fmt.Errorf(`field "output.transcript": %q must be one of %s`, o.Transcript, JoinOr(transcriptFormats))
+		}
 	}
 	if format != FormatJSONL {
 		if o.JSONL != nil {

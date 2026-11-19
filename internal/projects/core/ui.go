@@ -174,12 +174,19 @@ type Snapshot struct {
 	Running     int
 	Queued      int
 	Completed   int
-	Failed      int
+	// Merged24h counts the pull requests of this run's jobs that merged in
+	// the last 24 hours.
+	Merged24h int
+	Failed    int
 	// Paused counts work out of the queue waiting on a GitHub merge or close,
 	// holding no agent slot.
 	Paused      int
 	Concurrency int
-	NextPoll    time.Time
+	// AllowedCommenters are the GitHub logins whose comments steer jobs, as
+	// the run applies them: the authenticated gh user when none are
+	// configured.
+	AllowedCommenters []string
+	NextPoll          time.Time
 	// LastPoll is when the most recent poll of GitHub finished. The poll loop
 	// only logs what it found when that changes, so this is the
 	// run's standing evidence that it is still checking.
@@ -202,6 +209,31 @@ type Snapshot struct {
 	// the jobs on the requested page.
 	Jobs        []JobSnapshot
 	VisibleJobs int
+	// GitHub is the browser-delivery GitHub session, which the board shows as
+	// a signed-out banner. It is zero outside browser delivery.
+	GitHub GitHubSession
+}
+
+// GitHubSession is what browser delivery knows about its GitHub sign-in.
+type GitHubSession struct {
+	// SignedOut reports that the most recent read was served to a signed-out
+	// session, so it found nothing and was reported as an error rather than
+	// as "no issues".
+	SignedOut bool `json:"signed_out"`
+	// URL and Status are the page that showed the signed-out session, and
+	// its HTTP status when a 404 or 403 is what gave it away.
+	URL    string `json:"url,omitempty"`
+	Status int    `json:"status,omitempty"`
+	// Since is when the signed-out spell began.
+	Since time.Time `json:"since,omitzero"`
+	// SigningIn reports a sign-in window that is open now.
+	SigningIn bool `json:"signing_in"`
+	// WindowUnavailable names why no sign-in window can appear on this
+	// machine, such as a container with no display. The banner then offers
+	// gh polling or importing a profile instead.
+	WindowUnavailable string `json:"window_unavailable,omitempty"`
+	// LastError is why the last sign-in attempt did not work.
+	LastError string `json:"last_error,omitempty"`
 }
 
 // UIReporter receives the published state of a run.
@@ -368,6 +400,9 @@ type AgentStatus struct {
 	// SkillsNote says which of aviary's installed skills are stale for the
 	// running release, empty when they are current.
 	SkillsNote string `json:"skillsNote,omitempty"`
+	// ProjectsNote says why the agent is gated out of Projects jobs, empty
+	// when it can run them.
+	ProjectsNote string `json:"projectsNote,omitempty"`
 	// Status is one of "ok", "warn", or "missing", matching the marker
 	// `aviary agents` prefixes each block with.
 	Status string `json:"status"`

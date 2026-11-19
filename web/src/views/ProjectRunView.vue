@@ -66,8 +66,12 @@
 					<footer v-if="job && !job.scheduled"
 						class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:flex-row sm:items-center sm:px-6">
 						<p class="flex-1">
-							Jobs only take instructions from GitHub comments by allowed commenters. To steer this job, comment on the issue or its
-							pull request.
+							Jobs only take instructions from GitHub comments by allowed commenters<template
+								v-if="allowedCommenters.length">
+								(<span data-testid="allowed-commenters"><template v-for="(login, i) in allowedCommenters" :key="login">{{ i ? ", " : "" }}<a
+										:href="`https://github.com/${encodeURIComponent(login)}`" target="_blank" rel="noreferrer"
+										class="font-medium text-blue-600 hover:underline dark:text-blue-400">@{{ login }}</a></template></span>)</template>.
+							To steer this job, comment on the issue or its pull request.
 						</p>
 						<div class="flex flex-wrap gap-2">
 							<a v-if="issueURL" :href="`${issueURL}#new_comment_field`"
@@ -115,7 +119,10 @@ const project = computed(() => String(route.params.project ?? ""));
 const number = computed(() => Number(route.params.number ?? 0));
 const boardPath = computed(() => `/projects/${encodeProject(project.value)}`);
 
-const { detail, error, retry, stop } = useProjectJob(project, number);
+const { detail, error, allowedCommenters, retry, stop } = useProjectJob(
+	project,
+	number,
+);
 const job = computed(() => detail.value?.job ?? null);
 const lifecycle = computed(() =>
 	detail.value ? lifecycleStep(detail.value) : { step: 0, done: false },

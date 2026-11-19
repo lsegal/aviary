@@ -99,3 +99,19 @@ func TestSummarizeMessages(t *testing.T) {
 		t.Fatalf("unexpected summary output: %q", out)
 	}
 }
+
+func TestModelInputBudgetUsesCatalogLimits(t *testing.T) {
+	tests := map[string]int{
+		"anthropic/claude-opus-5-5":   872000,
+		"anthropic/claude-sonnet-4-6": 872000,
+		"anthropic/claude-haiku-4-5":  136000,
+		"openai/gpt-6.2-sol":          922000,
+		"openai-codex/gpt-6-astra":    272000,
+		"openai/gpt-6-unlisted":       128000,
+	}
+	for model, want := range tests {
+		if got := ModelInputBudget(model); got != want {
+			t.Errorf("ModelInputBudget(%q) = %d; want %d", model, got, want)
+		}
+	}
+}

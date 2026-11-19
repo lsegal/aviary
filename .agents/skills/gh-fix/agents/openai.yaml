@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix GitHub Issue"
+  short_description: "Fix an issue, pass CI, and merge its PR"
+  default_prompt: "Use $gh-fix to run /gh-fix 123 in a separate clone, open a PR with the changelog and closing reference, fix CI until green, and merge it."

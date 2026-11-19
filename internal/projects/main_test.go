@@ -127,7 +127,7 @@ func TestOriginatingWorkStateRecognizesCrossRepoPullRequest(t *testing.T) {
 			name:   "merged with qualified reference",
 			source: `{"number":3,"body":"Closes owner/repo#7","repository":{"full_name":"fork/repo"},"pull_request":{}}`,
 			pull:   `{"state":"closed","merged_at":"2026-11-09T12:00:00Z"}`,
-			want:   PullRequestWorkState{Repository: "fork/repo", Number: 3, State: "closed", Merged: true},
+			want:   PullRequestWorkState{Repository: "fork/repo", Number: 3, State: "closed", Merged: true, MergedAt: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)},
 		},
 		{
 			name:   "open draft with issue URL",

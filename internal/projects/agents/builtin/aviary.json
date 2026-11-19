@@ -3,16 +3,16 @@
   "binary": "aviary",
   "levels": [],
   "session": {"assign": "none"},
-  "output": {"format": "text"},
+  "output": {"format": "aviary-json"},
   "doctor": {
     "modelsNote": "the model is the name of an Aviary agent, as aviary agent list shows them"
   },
   "args": {
     "run": [
-      {"args": ["agent", "run", "{model}", "{prompt}"]}
+      {"args": ["agent", "run", "--output-format", "json", "--workdir", ".", "{model}", "{prompt}"]}
     ],
     "vision": [
-      {"args": ["agent", "run", "{model}", "{prompt}\n\nImage: {image}"]}
+      {"args": ["agent", "run", "--output-format", "json", "--workdir", ".", "{model}", "{prompt}\n\nImage: {image}"]}
     ]
   }
 }

@@ -26,7 +26,8 @@
             @change="activePreset = null; store.fetch()" />
         </div>
         <span class="ml-auto text-sm font-semibold text-gray-700 dark:text-gray-300">
-          {{ fmtTokens(store.totalTokens) }} tokens
+          {{ fmtTokens(store.totalTokens) }} tokens<template v-if="store.totalCost !== null">
+            · <span data-testid="usage-total-cost">{{ fmtCost(store.totalCost) }}</span></template>
         </span>
         <button
           class="rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
@@ -58,7 +59,10 @@
           <div v-for="item in breakdown.items" :key="item.name" class="mb-3">
             <div class="mb-1 flex items-center justify-between text-xs">
               <span class="max-w-[70%] truncate text-gray-600 dark:text-gray-400">{{ item.name }}</span>
-              <span class="font-mono text-gray-500">{{ fmtTokens(item.tokens) }}</span>
+              <span class="font-mono text-gray-500">
+                {{ fmtTokens(item.tokens) }}<template v-if="item.cost !== null">
+                  · <span data-testid="usage-item-cost">{{ fmtCost(item.cost) }}</span></template>
+              </span>
             </div>
             <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
               <div class="h-full rounded-full bg-blue-400 transition-all dark:bg-blue-600"
@@ -251,6 +255,9 @@ const grandTotal = computed(
 );
 
 const statCards = computed(() => [
+	...(store.totalCost !== null
+		? [{ label: "Cost", value: fmtCost(store.totalCost) }]
+		: []),
 	{ label: "Messages", value: String(store.totalMessages) },
 	{ label: "Tool Calls", value: String(store.totalToolCalls) },
 	{
@@ -320,6 +327,10 @@ function fmtTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
 	return String(n);
+}
+
+function fmtCost(n: number): string {
+	return `$${n.toFixed(n < 0.01 ? 4 : 2)}`;
 }
 
 function fmtTs(ts: string): string {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/schedule"
 )
 
@@ -124,6 +125,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 		if a.Permissions != nil && !IsValidPermissionsPreset(a.Permissions.Preset) {
 			v.errorf(f+".permissions.preset", "invalid permissions preset %q; must be full, standard, or minimal", a.Permissions.Preset)
 		}
+		if a.Permissions != nil && a.Permissions.CLIBuiltinTools && EffectivePermissionsPreset(a.Permissions) != PermissionsPresetFull {
+			v.errorf(f+".permissions.cli_builtin_tools", "cli_builtin_tools requires the full permissions preset")
+		}
 		if a.Permissions != nil && a.Permissions.Exec != nil && len(a.Permissions.Exec.AllowedCommands) == 0 {
 			v.errorf(f+".permissions.exec.allowedCommands", "permissions.exec requires at least one allowedCommands entry")
 		}
@@ -239,11 +243,11 @@ func validTaskTarget(target string) bool {
 func (v *validator) checkModel(field, model string) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-4-5\")", model)
+		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-5-5\")", model)
 		return
 	}
 
-	provider := parts[0]
+	provider, name := parts[0], parts[1]
 
 	switch provider {
 	case "anthropic":
@@ -264,9 +268,50 @@ func (v *validator) checkModel(field, model string) {
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
 	case "vllm", "ollama":
+	case "cli":
+		v.checkCLIModel(field, model, name)
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, or ollama", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, google, google-gemini, github-copilot, vllm, ollama, or cli", provider, model)
 	}
+}
+
+// checkCLIModel checks a "cli/<backend>/<model>" model string and that the
+// backend's CLI is installed.
+func (v *validator) checkCLIModel(field, model, _ string) {
+	backend, _, err := cliagent.ParseModel(model)
+	if err != nil {
+		v.errorf(field, "%v", err)
+		return
+	}
+	if _, err := exec.LookPath(backend.Binary()); err != nil {
+		v.errorf(field, "%s CLI not found in PATH; install it to use model %q", backend, model)
+	}
+}
+
+// CLIBackends returns the CLI backends referenced by any agent model,
+// fallback, or model default.
+func CLIBackends(cfg *Config) []cliagent.Backend {
+	seen := map[cliagent.Backend]bool{}
+	var out []cliagent.Backend
+	add := func(model string) {
+		if b, _, err := cliagent.ParseModel(model); err == nil && !seen[b] {
+			seen[b] = true
+			out = append(out, b)
+		}
+	}
+	if cfg.Models.Defaults != nil {
+		add(cfg.Models.Defaults.Model)
+		for _, fb := range cfg.Models.Defaults.Fallbacks {
+			add(fb)
+		}
+	}
+	for _, a := range cfg.Agents {
+		add(a.Model)
+		for _, fb := range a.Fallbacks {
+			add(fb)
+		}
+	}
+	return out
 }
 
 // checkAuthCredential checks that key is present in the auth store.
@@ -442,8 +487,9 @@ func validAuthRef(ref string) bool {
 }
 
 // UniqueProviderModels returns a map of provider name → one representative
-// model string (e.g. "anthropic" → "anthropic/claude-sonnet-4-5") drawn from
-// all agents and model defaults.
+// model string (e.g. "anthropic" → "anthropic/claude-sonnet-5-5") drawn from
+// all agents and model defaults. "cli" models are excluded because they run
+// through a local CLI rather than a remote endpoint; see CLIBackends.
 func UniqueProviderModels(cfg *Config) map[string]string {
 	seen := map[string]string{}
 	add := func(model string) {
@@ -455,6 +501,9 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 			return
 		}
 		provider := model[:idx]
+		if provider == "cli" {
+			return
+		}
 		if _, ok := seen[provider]; !ok {
 			seen[provider] = model
 		}

@@ -22,6 +22,11 @@
 					"type": "boolean",
 					"description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
 				},
+				"auto_update": {
+					"type": "boolean",
+					"default": false,
+					"description": "Install new Aviary releases automatically, but only while no jobs are running."
+				},
 				"tls": {
 					"type": "object",
 					"additionalProperties": false,

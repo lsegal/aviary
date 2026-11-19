@@ -1,0 +1,435 @@
+package cliagent
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+)
+
+// claudeMCPToolPrefix prefixes Claude Code's names for tools served by
+// Aviary's MCP server.
+const claudeMCPToolPrefix = "mcp__" + MCPServerName + "__"
+
+// claudeSession keeps one long-lived `claude -p` process per session, fed
+// turns through stream-json input so later turns skip startup cost.
+type claudeSession struct {
+	opts Options
+
+	mu        sync.Mutex
+	proc      *claudeProc
+	sessionID string // set once the CLI reports it
+}
+
+type claudeProc struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	lines  chan []byte
+	stderr *tailBuffer
+	done   chan struct{}
+	err    error // set before done closes
+}
+
+func newClaudeSession(opts Options) *claudeSession {
+	return &claudeSession{opts: opts, sessionID: opts.ResumeID}
+}
+
+// claudeArgs builds the command line for a Claude Code process.
+func claudeArgs(opts Options, resumeID string) []string {
+	args := []string{
+		"-p",
+		"--input-format", "stream-json",
+		"--output-format", "stream-json",
+		"--verbose",
+		"--include-partial-messages",
+		"--model", opts.Model,
+		"--strict-mcp-config",
+		"--mcp-config", claudeMCPConfig(opts),
+	}
+	if opts.SystemPrompt != "" {
+		args = append(args, "--system-prompt", opts.SystemPrompt)
+	}
+	if opts.BuiltinTools {
+		// Nobody is present to approve prompts; the agent's rules already
+		// granted these tools.
+		args = append(args, "--permission-mode", "bypassPermissions")
+	} else {
+		args = append(args, "--tools", "")
+		if opts.MCPURL != "" {
+			args = append(args, "--allowedTools", "mcp__"+MCPServerName)
+		}
+	}
+	switch {
+	case opts.Ephemeral:
+		args = append(args, "--no-session-persistence")
+	case resumeID != "":
+		args = append(args, "--resume", resumeID)
+	case opts.NewSessionID != "":
+		args = append(args, "--session-id", opts.NewSessionID)
+	}
+	return args
+}
+
+// claudeMCPConfig returns the --mcp-config JSON. The bearer token is passed
+// through the environment so it never appears in the process list.
+func claudeMCPConfig(opts Options) string {
+	servers := map[string]any{}
+	if opts.MCPURL != "" {
+		servers[MCPServerName] = map[string]any{
+			"type":    "http",
+			"url":     opts.MCPURL,
+			"headers": map[string]string{"Authorization": "Bearer ${" + mcpTokenEnv + "}"},
+		}
+	}
+	data, _ := json.Marshal(map[string]any{"mcpServers": servers})
+	return string(data)
+}
+
+// mcpTokenEnv is the environment variable that carries the scoped MCP token.
+const mcpTokenEnv = "AVIARY_MCP_TOKEN"
+
+func cliEnv(opts Options) []string {
+	env := append(os.Environ(), opts.Env...)
+	if opts.MCPToken != "" {
+		env = append(env, mcpTokenEnv+"="+opts.MCPToken)
+	}
+	return env
+}
+
+func (s *claudeSession) start() (*claudeProc, error) {
+	cmd := exec.Command(s.opts.binary(), claudeArgs(s.opts, s.sessionID)...) //nolint:gosec // binary is a fixed backend name
+	cmd.Dir = s.opts.WorkDir
+	cmd.Env = cliEnv(s.opts)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	p := &claudeProc{
+		cmd:    cmd,
+		stdin:  stdin,
+		lines:  make(chan []byte, 64),
+		stderr: &tailBuffer{max: 4096},
+		done:   make(chan struct{}),
+	}
+	cmd.Stderr = p.stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting claude: %w", err)
+	}
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
+		for sc.Scan() {
+			line := append([]byte(nil), sc.Bytes()...)
+			p.lines <- line
+		}
+		close(p.lines)
+		p.err = cmd.Wait()
+		close(p.done)
+	}()
+	return p, nil
+}
+
+func (p *claudeProc) kill() {
+	_ = p.stdin.Close()
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	for range p.lines { //nolint:revive // drain so the reader goroutine can exit
+	}
+	<-p.done
+}
+
+// exitError describes why the process ended.
+func (p *claudeProc) exitError() error {
+	<-p.done
+	msg := strings.TrimSpace(p.stderr.String())
+	switch {
+	case msg != "":
+		return fmt.Errorf("claude exited: %s", msg)
+	case p.err != nil:
+		return fmt.Errorf("claude exited: %w", p.err)
+	default:
+		return errors.New("claude exited before finishing the turn")
+	}
+}
+
+func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.proc == nil {
+		p, err := s.start()
+		if err != nil {
+			return Result{}, err
+		}
+		s.proc = p
+	}
+	p := s.proc
+
+	msg, err := claudeUserMessage(turn)
+	if err != nil {
+		return Result{}, err
+	}
+	if _, err := p.stdin.Write(append(msg, '\n')); err != nil {
+		s.proc = nil
+		p.kill()
+		return Result{}, fmt.Errorf("writing to claude: %w", err)
+	}
+
+	m := newClaudeMapper(onEvent)
+	for {
+		select {
+		case <-ctx.Done():
+			// Interrupting mid-turn leaves the process in an unknown state;
+			// restart it (resuming the session) on the next turn.
+			s.proc = nil
+			p.kill()
+			return Result{}, ctx.Err()
+		case line, ok := <-p.lines:
+			if !ok {
+				s.proc = nil
+				return Result{}, p.exitError()
+			}
+			res, done, err := m.handle(line)
+			if m.sessionID != "" {
+				s.sessionID = m.sessionID
+			}
+			if done || err != nil {
+				return res, err
+			}
+		}
+	}
+}
+
+func (s *claudeSession) Close() error {
+	s.mu.Lock()
+	p := s.proc
+	s.proc = nil
+	s.mu.Unlock()
+	if p != nil {
+		p.kill()
+	}
+	return nil
+}
+
+// claudeUserMessage encodes a turn as a stream-json user message.
+func claudeUserMessage(turn Turn) ([]byte, error) {
+	content := []map[string]any{}
+	if turn.MediaURL != "" {
+		block, err := claudeImageBlock(turn.MediaURL)
+		if err != nil {
+			return nil, err
+		}
+		content = append(content, block)
+	}
+	text := turn.Text
+	if text == "" && len(content) == 0 {
+		text = " "
+	}
+	if text != "" {
+		content = append(content, map[string]any{"type": "text", "text": text})
+	}
+	return json.Marshal(map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": content},
+	})
+}
+
+func claudeImageBlock(mediaURL string) (map[string]any, error) {
+	if strings.HasPrefix(mediaURL, "data:") {
+		mediaType, data, err := splitDataURL(mediaURL)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"type":   "image",
+			"source": map[string]any{"type": "base64", "media_type": mediaType, "data": data},
+		}, nil
+	}
+	return map[string]any{
+		"type":   "image",
+		"source": map[string]any{"type": "url", "url": mediaURL},
+	}, nil
+}
+
+// splitDataURL returns the media type and base64 payload of a data URL.
+func splitDataURL(u string) (string, string, error) {
+	header, data, ok := strings.Cut(strings.TrimPrefix(u, "data:"), ",")
+	if !ok || !strings.HasSuffix(header, ";base64") {
+		return "", "", errors.New("image must be a base64 data URL")
+	}
+	return strings.TrimSuffix(header, ";base64"), data, nil
+}
+
+// claudeMapper turns Claude Code stream-json lines into Events.
+type claudeMapper struct {
+	emit      func(Event)
+	sessionID string
+	streamed  bool // text deltas seen for the current message
+	pending   map[string]*ToolEvent
+}
+
+func newClaudeMapper(emit func(Event)) *claudeMapper {
+	if emit == nil {
+		emit = func(Event) {}
+	}
+	return &claudeMapper{emit: emit, pending: map[string]*ToolEvent{}}
+}
+
+// handle processes one line. It returns done once the turn's result arrives.
+func (m *claudeMapper) handle(line []byte) (Result, bool, error) {
+	var ev map[string]any
+	if err := json.Unmarshal(line, &ev); err != nil {
+		return Result{}, false, nil // ignore non-JSON noise
+	}
+	if id := stringField(ev, "session_id"); id != "" && id != m.sessionID {
+		m.sessionID = id
+		m.emit(Event{Type: EventSession, SessionID: id})
+	}
+	switch stringField(ev, "type") {
+	case "stream_event":
+		inner := mapField(ev, "event")
+		switch stringField(inner, "type") {
+		case "message_start":
+			m.streamed = false
+		case "content_block_delta":
+			delta := mapField(inner, "delta")
+			if stringField(delta, "type") == "text_delta" {
+				if text := stringField(delta, "text"); text != "" {
+					m.streamed = true
+					m.emit(Event{Type: EventText, Text: text})
+				}
+			}
+		}
+	case "assistant":
+		for _, block := range contentBlocks(mapField(ev, "message")) {
+			switch stringField(block, "type") {
+			case "text":
+				if !m.streamed {
+					if text := stringField(block, "text"); text != "" {
+						m.emit(Event{Type: EventText, Text: text})
+					}
+				}
+			case "tool_use":
+				name := stringField(block, "name")
+				if strings.HasPrefix(name, claudeMCPToolPrefix) {
+					continue // reported by Aviary's MCP boundary
+				}
+				tool := &ToolEvent{ID: stringField(block, "id"), Name: name, Args: mapField(block, "input")}
+				m.pending[tool.ID] = tool
+				m.emit(Event{Type: EventToolStart, Tool: tool})
+			}
+		}
+	case "user":
+		for _, block := range contentBlocks(mapField(ev, "message")) {
+			if stringField(block, "type") != "tool_result" {
+				continue
+			}
+			id := stringField(block, "tool_use_id")
+			tool, ok := m.pending[id]
+			if !ok {
+				continue
+			}
+			delete(m.pending, id)
+			done := *tool
+			text := toolResultText(block["content"])
+			if isErr, _ := block["is_error"].(bool); isErr {
+				done.Error = text
+			} else {
+				done.Result = text
+			}
+			m.emit(Event{Type: EventToolResult, Tool: &done})
+		}
+	case "result":
+		if usage := mapField(ev, "usage"); usage != nil {
+			cost, _ := ev["total_cost_usd"].(float64)
+			m.emit(Event{Type: EventUsage, Usage: &Usage{
+				InputTokens:      intField(usage, "input_tokens"),
+				OutputTokens:     intField(usage, "output_tokens"),
+				CacheReadTokens:  intField(usage, "cache_read_input_tokens"),
+				CacheWriteTokens: intField(usage, "cache_creation_input_tokens"),
+				CostUSD:          cost,
+			}})
+		}
+		text := stringField(ev, "result")
+		if isErr, _ := ev["is_error"].(bool); isErr || (stringField(ev, "subtype") != "" && stringField(ev, "subtype") != "success") {
+			return Result{}, true, claudeResultError(ev, text)
+		}
+		return Result{Text: text}, true, nil
+	}
+	return Result{}, false, nil
+}
+
+func claudeResultError(ev map[string]any, text string) error {
+	if text != "" {
+		return fmt.Errorf("claude: %s", text)
+	}
+	if errs, ok := ev["errors"].([]any); ok && len(errs) > 0 {
+		parts := make([]string, 0, len(errs))
+		for _, e := range errs {
+			parts = append(parts, fmt.Sprint(e))
+		}
+		return fmt.Errorf("claude: %s", strings.Join(parts, "; "))
+	}
+	return fmt.Errorf("claude: turn failed (%s)", stringField(ev, "subtype"))
+}
+
+func contentBlocks(msg map[string]any) []map[string]any {
+	raw, _ := msg["content"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, b := range raw {
+		if m, ok := b.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func toolResultText(content any) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []any:
+		var parts []string
+		for _, b := range c {
+			if m, ok := b.(map[string]any); ok && stringField(m, "type") == "text" {
+				parts = append(parts, stringField(m, "text"))
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// tailBuffer keeps the last max bytes written to it.
+type tailBuffer struct {
+	mu  sync.Mutex
+	max int
+	buf []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf = append(b.buf, p...)
+	if len(b.buf) > b.max {
+		b.buf = b.buf[len(b.buf)-b.max:]
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.buf)
+}
