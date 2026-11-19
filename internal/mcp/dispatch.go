@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
@@ -32,6 +34,10 @@ func NewDispatcher(serverURL, token string) *Dispatcher {
 // If the server is running (PID file present and process alive), it returns a RemoteClient.
 // Otherwise it returns an InProcessClient connected to a fresh local server.
 func (d *Dispatcher) Resolve(ctx context.Context) (Client, error) {
+	return d.resolve(ctx, nil)
+}
+
+func (d *Dispatcher) resolve(ctx context.Context, opts *sdkmcp.ClientOptions) (Client, error) {
 	if d.isServerRunning() {
 		tok := d.token
 		if tok == "" {
@@ -42,7 +48,7 @@ func (d *Dispatcher) Resolve(ctx context.Context) (Client, error) {
 				return nil, fmt.Errorf("loading token: %w", err)
 			}
 		}
-		return NewRemoteClient(ctx, d.serverURL, tok)
+		return newRemoteClient(ctx, d.serverURL, tok, opts)
 	}
 
 	// Server not running — create a local in-process client.
@@ -50,7 +56,7 @@ func (d *Dispatcher) Resolve(ctx context.Context) (Client, error) {
 		return nil, err
 	}
 	srv := NewServer()
-	return NewInProcessClient(ctx, srv)
+	return newInProcessClient(ctx, srv, opts)
 }
 
 func ensureInProcessDeps() error {
@@ -113,6 +119,41 @@ func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (strin
 		return "", fmt.Errorf("calling tool %q: %w", name, err)
 	}
 
+	return extractText(result), nil
+}
+
+// sessionClient is a Client backed by an MCP client session.
+type sessionClient interface {
+	clientSession() *sdkmcp.ClientSession
+}
+
+// CallToolProgress is like CallTool, but asks the tool for progress
+// notifications and passes each one's message to onProgress while it runs.
+func (d *Dispatcher) CallToolProgress(ctx context.Context, name string, args any, onProgress func(string)) (string, error) {
+	c, err := d.resolve(ctx, &sdkmcp.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *sdkmcp.ProgressNotificationClientRequest) {
+			onProgress(req.Params.Message)
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sc, ok := c.(sessionClient)
+	if !ok {
+		return "", fmt.Errorf("calling tool %q: client does not support progress", name)
+	}
+	logToolCall("progress", name, args)
+	params := &sdkmcp.CallToolParams{Name: name, Arguments: args}
+	params.SetProgressToken(name)
+	result, err := sc.clientSession().CallTool(ctx, params)
+	if err != nil {
+		return "", fmt.Errorf("calling tool %q: %w", name, err)
+	}
+	if result.IsError {
+		return "", fmt.Errorf("%s", extractText(result))
+	}
 	return extractText(result), nil
 }
 

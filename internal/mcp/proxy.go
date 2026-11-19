@@ -26,6 +26,10 @@ type RemoteClient struct {
 // NewRemoteClient connects to the Aviary server at serverURL using the given token.
 // The URL should be the base server URL (e.g. "https://localhost:16677"); /mcp is appended.
 func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClient, error) {
+	return newRemoteClient(ctx, serverURL, token, nil)
+}
+
+func newRemoteClient(ctx context.Context, serverURL, token string, opts *sdkmcp.ClientOptions) (*RemoteClient, error) {
 	httpTransport, err := newRemoteHTTPTransport(serverURL)
 	if err != nil {
 		return nil, err
@@ -51,7 +55,7 @@ func NewRemoteClient(ctx context.Context, serverURL, token string) (*RemoteClien
 	c := sdkmcp.NewClient(&sdkmcp.Implementation{
 		Name:    "aviary-cli",
 		Version: buildinfo.Version,
-	}, nil)
+	}, opts)
 
 	session, err := c.Connect(connCtx, t, nil)
 	if err != nil {
@@ -130,6 +134,8 @@ func (c *RemoteClient) CallTool(ctx context.Context, name string, args any) (*sd
 		Arguments: args,
 	})
 }
+
+func (c *RemoteClient) clientSession() *sdkmcp.ClientSession { return c.session }
 
 // ListTools returns discoverable tools from the remote server.
 func (c *RemoteClient) ListTools(ctx context.Context) ([]ToolInfo, error) {

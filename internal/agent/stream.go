@@ -26,9 +26,9 @@ type ToolEvent struct {
 
 // FileChangeEvent describes a file changed by a file editing tool.
 type FileChangeEvent struct {
-	Tool string // the tool that made the change
-	Path string // absolute path of the changed file
-	Diff string // unified diff of the change
+	Tool string `json:"tool"` // the tool that made the change
+	Path string `json:"path"` // absolute path of the changed file
+	Diff string `json:"diff"` // unified diff of the change
 }
 
 // StreamEvent is a single event emitted during an agent response.

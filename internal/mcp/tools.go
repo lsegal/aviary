@@ -159,6 +159,8 @@ type agentRunArgs struct {
 	File                string `json:"file,omitempty"`
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	IncludeFileProgress bool   `json:"include_file_progress,omitempty"` // opt-in live file-change progress for job runtimes
+	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
@@ -263,6 +265,27 @@ func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err e
 	return agentName, agentName, nil
 }
 
+// resolveAgentRunWorkdir checks that an agent_run workdir is an existing
+// absolute directory and returns it with symlinks resolved, so the granted
+// root matches the paths the file tools resolve.
+func resolveAgentRunWorkdir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("workdir %q must be an absolute path", dir)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %q is not a directory", dir)
+	}
+	return resolved, nil
+}
+
 func resolveAgentRunHistory(args agentRunArgs) bool {
 	if args.History != nil {
 		return *args.History
@@ -334,6 +357,13 @@ func registerAgentTools(s *sdkmcp.Server) {
 			return text(fmt.Sprintf("stopped session %q", sess.ID))
 		}
 		ctx = agent.WithSessionID(ctx, sess.ID)
+		if args.Workdir != "" {
+			workdir, err := resolveAgentRunWorkdir(args.Workdir)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			ctx = agent.WithFilesystemGrant(ctx, workdir)
+		}
 
 		var buf strings.Builder
 		progressToken := req.Params.GetProgressToken()
@@ -368,6 +398,18 @@ func registerAgentTools(s *sdkmcp.Server) {
 							ProgressToken: progressToken,
 							Progress:      progressCount,
 							Message:       "[tool]" + string(payload),
+						})
+					}
+				}
+			case agent.StreamEventFile:
+				if progressToken != nil && args.IncludeFileProgress && e.File != nil {
+					payload, err := json.Marshal(e.File)
+					if err == nil {
+						progressCount++
+						_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+							ProgressToken: progressToken,
+							Progress:      progressCount,
+							Message:       "[file]" + string(payload),
 						})
 					}
 				}
