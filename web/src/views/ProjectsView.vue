@@ -8,8 +8,9 @@
 						Projects isn't running on this server.
 					</p>
 					<p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-						No projects are watched yet. Run <code class="font-mono">aviary watch owner/repo</code> to start one.
+						No projects are watched yet. Add one here, or run <code class="font-mono">aviary watch owner/repo</code>.
 					</p>
+					<button type="button" :class="[ADD_BTN, 'mt-4']" @click="openAdd">+ Add project</button>
 				</div>
 			</div>
 			<template v-else>
@@ -45,6 +46,11 @@
 							:disabled="checking" @click="onCheckNow">
 							{{ checking ? "Checking…" : "Check now" }}
 						</button>
+						<router-link :to="`/projects/${encodeProject(project)}/settings`"
+							class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+							Settings
+						</router-link>
+						<button type="button" :class="ADD_BTN" @click="openAdd">+ Add project</button>
 					</div>
 				</header>
 
@@ -110,6 +116,7 @@
 				</div>
 			</template>
 		</div>
+		<AddProjectDialog v-if="adding" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
 
@@ -117,6 +124,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import {
 	JOBS_PAGE_SIZE,
@@ -155,10 +163,30 @@ watch(
 	() => projectList.projects.value,
 	(list) => {
 		if (!project.value && list.length > 0) {
-			void router.replace(`/projects/${encodeProject(list[0].name)}`);
+			void router.replace({
+				path: `/projects/${encodeProject(list[0].name)}`,
+				query: route.query,
+			});
 		}
 	},
 );
+
+const ADD_BTN =
+	"rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700";
+// The add-project dialog is open while the URL carries ?add=1, so the
+// sidebar's "Add project" link can open it from anywhere.
+const adding = computed(() => route.query.add === "1");
+function openAdd() {
+	void router.push({ query: { ...route.query, add: "1" } });
+}
+function closeAdd() {
+	const { add: _, ...rest } = route.query;
+	void router.replace({ query: rest });
+}
+async function onAdded(target: string) {
+	await router.push(`/projects/${encodeProject(target)}`);
+	await projectList.refresh();
+}
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
