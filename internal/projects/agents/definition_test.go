@@ -252,6 +252,24 @@ func TestInvalidDefinitionsNameTheirField(t *testing.T) {
 		{"empty model", func(d *Definition) { d.Models = NewAllowList("") }, `"models"`},
 		{"unusable env name", func(d *Definition) { d.Env = map[string]string{"A=B": "c"} }, `"env"`},
 		{"stdin prompt with a placeholder", func(d *Definition) { d.PromptStdin = &[]string{"{model}"} }, `"promptStdin"`},
+		{"wakeup without a tool name path", func(d *Definition) {
+			d.Wakeup = &Wakeup{Tool: "defer", Delay: "after"}
+		}, `"wakeup.name"`},
+		{"wakeup without a tool", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Delay: "after"}
+		}, `"wakeup.tool"`},
+		{"wakeup without a delay", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer"}
+		}, `"wakeup.delay"`},
+		{"wakeup with an unreadable path", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer", Delay: "args..after"}
+		}, `"wakeup.delay"`},
+		{"wakeup event without a type", func(d *Definition) {
+			d.Wakeup = &Wakeup{Event: "defer", Name: "kind", Tool: "defer", Delay: "after"}
+		}, `"wakeup.type"`},
+		{"wakeup rejection without a call id", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer", Delay: "after", Rejected: &WakeupRejection{ID: "call", Error: "failed"}}
+		}, `"wakeup.id"`},
 		{"stdin prompt without a prompt argument", func(d *Definition) {
 			d.PromptStdin = &[]string{}
 			d.Args.Run = []Fragment{{Args: []string{"--say={prompt}"}}}
