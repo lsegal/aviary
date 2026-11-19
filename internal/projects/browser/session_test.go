@@ -295,3 +295,36 @@ func TestSessionSurvivesAProcessRestart(t *testing.T) {
 		t.Fatalf("second browser process came up with cookies %s, want the sign-in", got)
 	}
 }
+
+func TestImportSessionCopiesASavedSignIn(t *testing.T) {
+	from, to := t.TempDir(), filepath.Join(t.TempDir(), "profile")
+	saved := `[{"name":"user_session","value":"abc","domain":"github.com","path":"/","secure":true,"httpOnly":true}]`
+	if err := os.WriteFile(sessionCookiePath(from), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportSession(from, to); err != nil {
+		t.Fatalf("ImportSession: %v", err)
+	}
+	got, err := os.ReadFile(sessionCookiePath(to))
+	if err != nil || string(got) != saved {
+		t.Fatalf("imported %q, %v; want the saved sign-in", got, err)
+	}
+	if info, err := os.Stat(sessionCookiePath(to)); err == nil && runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("imported sign-in mode %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestImportSessionRefusesAProfileWithoutASignIn(t *testing.T) {
+	from := t.TempDir()
+	if err := ImportSession(from, t.TempDir()); !errors.Is(err, ErrNoSavedSession) {
+		t.Fatalf("ImportSession from an empty profile = %v, want ErrNoSavedSession", err)
+	}
+	// Only expiring crumbs left: someone was signed in, but nobody is now.
+	crumbs := `[{"name":"logged_in","value":"no","domain":"github.com","path":"/","expires":4102444800}]`
+	if err := os.WriteFile(sessionCookiePath(from), []byte(crumbs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportSession(from, t.TempDir()); !errors.Is(err, ErrNoSavedSession) {
+		t.Fatalf("ImportSession from a signed-out profile = %v, want ErrNoSavedSession", err)
+	}
+}

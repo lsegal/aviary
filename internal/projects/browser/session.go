@@ -273,3 +273,41 @@ func (b *Browser) saveSession(tab *Tab) error {
 func (b *Browser) restoreSession(tab *Tab) error {
 	return restoreSessionCookies(b.Profile(), tabJar{tab})
 }
+
+// ErrNoSavedSession reports a profile that has no saved GitHub sign-in to
+// import.
+var ErrNoSavedSession = errors.New("the profile has no saved GitHub sign-in")
+
+// ImportSession copies the GitHub sign-in saved in a profile that was signed
+// in elsewhere, such as on a desktop machine, into profile. It is how a
+// machine where no sign-in window can appear (Docker, a server with no
+// display) gets a signed-in session: the next browser started on profile
+// restores it before its first page load.
+func ImportSession(from, profile string) error {
+	data, err := os.ReadFile(sessionCookiePath(from))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %s", ErrNoSavedSession, from)
+	}
+	if err != nil {
+		return fmt.Errorf("read saved sign-in in %s: %w", from, err)
+	}
+	var cookies []sessionCookie
+	if err := json.Unmarshal(data, &cookies); err != nil {
+		return fmt.Errorf("decode saved sign-in in %s: %w", from, err)
+	}
+	for i := range cookies {
+		cookies[i].session = cookies[i].Expires == 0
+	}
+	if !signedIn(cookies) {
+		return fmt.Errorf("%w: %s", ErrNoSavedSession, from)
+	}
+	if err := os.MkdirAll(profile, 0o700); err != nil {
+		return fmt.Errorf("create browser profile directory %s: %w", profile, err)
+	}
+	// The file holds a live GitHub session, so it is written no wider than
+	// the profile directory it sits in.
+	if err := os.WriteFile(sessionCookiePath(profile), data, 0o600); err != nil {
+		return fmt.Errorf("write imported sign-in to %s: %w", profile, err)
+	}
+	return nil
+}
