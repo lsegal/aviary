@@ -54,6 +54,16 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	if targets == nil {
 		targets = []string{}
 	}
+	// A running engine publishes the commenters it enforces, which include
+	// the authenticated gh user it falls back to; otherwise report the
+	// configured list.
+	commenters := snapshot.AllowedCommenters
+	if !running || len(commenters) == 0 {
+		commenters = settings.AllowedCommenters
+	}
+	if commenters == nil {
+		commenters = []string{}
+	}
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
@@ -66,13 +76,14 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 			"completed": snapshot.Completed,
 			"failed":    snapshot.Failed,
 		},
-		"concurrency":   settings.Concurrency,
-		"delivery":      settings.Delivery,
-		"poll_interval": core.FormatInterval(settings.Interval),
-		"ready_label":   settings.ReadyLabel,
-		"quotas":        snapshot.Quotas,
-		"recent_logs":   logs,
-		"log_offset":    nextOffset,
+		"concurrency":        settings.Concurrency,
+		"delivery":           settings.Delivery,
+		"poll_interval":      core.FormatInterval(settings.Interval),
+		"ready_label":        settings.ReadyLabel,
+		"allowed_commenters": commenters,
+		"quotas":             snapshot.Quotas,
+		"recent_logs":        logs,
+		"log_offset":         nextOffset,
 	}
 	if snapshot.UseWebhooks {
 		status["webhook_online"] = snapshot.WebhookOnline
