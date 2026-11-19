@@ -2184,7 +2184,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
 		}
-		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, AllowedCommenters: append([]string(nil), w.AllowedCommenters...), Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}
