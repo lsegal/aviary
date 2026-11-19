@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1f29d-b786-75e0-a098-6e7d21c44f7f"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Todo:\n1. Create `note.txt` containing `x` using `apply_patch`.\n2. Reply `done`.\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"file_change","changes":[{"path":"/work/note.txt","kind":"add"}],"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"/work/note.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":31224,"cached_input_tokens":27520,"cache_write_input_tokens":0,"output_tokens":77,"reasoning_output_tokens":0}}
