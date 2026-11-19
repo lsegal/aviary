@@ -284,10 +284,18 @@ export function normalizeJob(v: unknown): ProjectJob {
 export function normalizeJobList(v: unknown): {
 	jobs: ProjectJob[];
 	total: number;
+	/** The jobs before a search query narrowed them; total without one. */
+	unfilteredTotal: number;
 } {
 	const raw = obj(v);
 	const jobs = arr(raw.jobs).map(normalizeJob);
-	return { jobs, total: num(raw.total) || jobs.length };
+	const total = num(raw.total) || jobs.length;
+	return {
+		jobs,
+		total,
+		unfilteredTotal:
+			raw.unfiltered_total === undefined ? total : num(raw.unfiltered_total),
+	};
 }
 
 function normalizeEvent(v: unknown): JobEvent | null {

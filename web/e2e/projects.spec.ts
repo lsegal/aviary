@@ -728,3 +728,118 @@ test.describe("phone width", () => {
 		expect(box.y).toBeGreaterThan(100);
 	});
 });
+
+test("search filters the whole job list across every field", async ({
+	page,
+}) => {
+	// 30 jobs span three pages. The search must find matches on any page, in
+	// the title, issue and PR numbers, session id, and output.
+	const many = Array.from({ length: 30 }, (_, i) => {
+		const number = 300 + i * 2;
+		return job({
+			number: number === 350 ? 351 : number,
+			title:
+				number === 350 ? "Search target on the last page" : `Job ${number}`,
+			status: number === 306 ? "failed" : "complete",
+			agent: "claude",
+			model: "opus",
+			started: 10 + i,
+			...(number === 310 ? { pr: 351 } : {}),
+		});
+	});
+	const sessions: Record<number, string> = { 320: "sess-351-abc" };
+	const logs: Record<number, string> = {
+		330: "panic: kaboom",
+		306: "retry 351 failed",
+	};
+	const matches = (j: (typeof many)[number], q: string) =>
+		[
+			j.key,
+			`#${j.number}`,
+			j.title,
+			j.status,
+			j.pull_request ? `#${j.pull_request}` : "",
+			sessions[j.number] ?? "",
+			logs[j.number] ?? "",
+		].some((f) => f.toLowerCase().includes(q.toLowerCase()));
+	await setup(page, undefined, {
+		project_job_list: (args?: Record<string, unknown>) => {
+			const query = typeof args?.query === "string" ? args.query : "";
+			const scoped = many.filter(
+				(j) =>
+					(!args?.target || j.target === args.target) &&
+					(!args?.status || j.status === args.status),
+			);
+			const found = query ? scoped.filter((j) => matches(j, query)) : scoped;
+			const offset = Number(args?.offset ?? 0);
+			const limit = Number(args?.limit ?? 50);
+			return {
+				jobs: found.slice(offset, offset + limit),
+				total: found.length,
+				offset,
+				limit,
+				...(query ? { unfiltered_total: scoped.length } : {}),
+			};
+		},
+		project_job_get: (args?: Record<string, unknown>) => {
+			const found = many.find((j) => j.number === args?.number);
+			if (!found) throw new Error("no such job");
+			return {
+				...found,
+				session_id: sessions[found.number] ?? "",
+				scrollback: logs[found.number] ?? "",
+			};
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary");
+	const cards = page.getByTestId("job-card");
+	const pages = page.getByRole("navigation", { name: "Job pages" });
+	const search = page.getByRole("searchbox", { name: "Search jobs" });
+	await expect(pages).toContainText("Page 1 of 3");
+	await expect(cards).toHaveCount(12);
+	await expect(page.getByTestId("search-count")).toHaveCount(0);
+
+	// Typing filters at once and lands on the first page of the matches.
+	await pages.getByRole("button", { name: "Next" }).click();
+	await expect(pages).toContainText("Page 2 of 3");
+	await search.pressSequentially("351");
+	await expect(pages).toContainText("Page 1 of 1");
+	await expect(page.getByTestId("search-count")).toHaveText(
+		"4 of 30 jobs match",
+	);
+	await expect(cards).toHaveCount(4);
+	for (const n of ["Search target", "Job 310", "Job 320", "Job 306"]) {
+		await expect(cards.filter({ hasText: n })).toHaveCount(1);
+	}
+
+	// The search narrows within the active status filter.
+	await page.getByRole("tab", { name: "Failed" }).click();
+	await expect(cards).toHaveCount(1);
+	await expect(cards).toContainText("#306");
+	await expect(page.getByTestId("search-count")).toHaveText(
+		"1 of 1 job matches",
+	);
+	await page.getByRole("tab", { name: /^All/ }).click();
+
+	await search.fill("kaboom");
+	await expect(cards).toHaveCount(1);
+	await expect(cards).toContainText("#330");
+	await search.fill("search target");
+	await expect(cards).toHaveCount(1);
+	await expect(cards).toContainText("#351");
+
+	await search.fill("zzzzz");
+	await expect(cards).toHaveCount(0);
+	await expect(page.getByTestId("search-empty")).toContainText(
+		"No jobs match “zzzzz”",
+	);
+	await expect(page.getByTestId("search-count")).toHaveText(
+		"0 of 30 jobs match",
+	);
+	await expect(pages).toContainText("Page 1 of 1");
+
+	await page.getByRole("button", { name: "Clear search" }).click();
+	await expect(search).toHaveValue("");
+	await expect(pages).toContainText("Page 1 of 3");
+	await expect(cards).toHaveCount(12);
+});
