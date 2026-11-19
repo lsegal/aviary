@@ -235,7 +235,7 @@ func (s *Server) performRestart(ctx context.Context, status saferestart.Status) 
 		}); err != nil {
 			return fmt.Errorf("installing %s: %w", status.Version, err)
 		}
-		if err := saferestart.UpdateSkills(ctx); err != nil {
+		if err := saferestart.UpdateSkills(ctx, status.Version); err != nil {
 			slog.Warn("server: updating skills during upgrade", "component", "update", "error", err)
 		}
 	}

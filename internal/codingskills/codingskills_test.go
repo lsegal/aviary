@@ -210,6 +210,34 @@ func TestInstallOneSkillForOneCLI(t *testing.T) {
 	assert.Equal(t, [][]string{{"--yes", "skills", "add", "https://github.com/lsegal/aviary/tree/v2.0.0/.agents/skills/gh-create", "--global", "--agent", "codex", "-y"}}, npx.calls)
 }
 
+func TestUpdateToReinstallsInstalledCopiesFromTheNewRelease(t *testing.T) {
+	m, npx, home := newTestManager(t, "2.0.0", "claude", "codex", "gemini")
+	writeSkill(t, filepath.Join(home, ".agents", "skills"), "gh-fix", "fix v2\n")
+	writeSkill(t, filepath.Join(home, ".gemini", "skills"), "gh-discuss", "discuss v1\n")
+
+	result, err := m.UpdateTo(context.Background(), "v2.1.0")
+	require.NoError(t, err)
+
+	tree := "https://github.com/lsegal/aviary/tree/v2.1.0/.agents/skills/"
+	assert.Equal(t, [][]string{
+		// The copy matching the running 2.0.0 bundle is updated too, and
+		// skills a CLI lacks are not installed.
+		{"--yes", "skills", "add", tree + "gh-fix", "--global", "--agent", "codex", "-y"},
+		{"--yes", "skills", "add", tree + "gh-discuss", "--global", "--agent", "gemini-cli", "-y"},
+	}, npx.calls)
+	assert.Equal(t, []string{"gh-fix/codex", "gh-discuss/gemini"}, result.Installed)
+}
+
+func TestUpdateToSkipsNonReleaseVersions(t *testing.T) {
+	m, npx, home := newTestManager(t, "2.0.0", "codex")
+	writeSkill(t, filepath.Join(home, ".agents", "skills"), "gh-fix", "fix v1\n")
+
+	result, err := m.UpdateTo(context.Background(), "dev")
+	require.NoError(t, err)
+	assert.Empty(t, result.Installed)
+	assert.Empty(t, npx.calls)
+}
+
 func TestInstallRejectsUnknownSkillOrCLI(t *testing.T) {
 	m, npx, _ := newTestManager(t, "2.0.0", "claude")
 

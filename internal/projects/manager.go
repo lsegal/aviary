@@ -56,8 +56,14 @@ type Manager struct {
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
-	// held is a safe restart's hold: no engine starts while it is set.
-	held bool
+	// held is a safe restart's hold: no engine starts, and a running engine
+	// dispatches nothing new, while it is set. The engine reads it from its
+	// own goroutine, so it is not guarded by mu.
+	held atomic.Bool
+	// noticeMu guards restartNotices, the notice each job a safe restart
+	// stopped is resumed with, keyed by OWNER/REPO#N; see ResumeAfterRestart.
+	noticeMu       sync.Mutex
+	restartNotices map[string]string
 
 	identity    Identity
 	transcripts *transcriptStore
@@ -397,7 +403,7 @@ func (m *Manager) refresh() error {
 	}
 	m.running = nil
 	m.lastKey = key
-	engineOff := m.engineOff || m.held
+	engineOff := m.engineOff || m.held.Load()
 	if len(settings.Targets) == 0 || engineOff {
 		m.cancelLoginRetryLocked()
 	}
@@ -590,11 +596,13 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 			m.quotas.Store(&readings)
 			return readings
 		},
-		Runner:      runner,
-		Active:      active,
-		Registry:    registry,
-		Out:         io.Discard,
-		Transcripts: m.transcripts,
+		Runner:        runner,
+		Active:        active,
+		Registry:      registry,
+		Out:           io.Discard,
+		Transcripts:   m.transcripts,
+		Held:          m.heldForRestart,
+		RestartNotice: m.restartNotice,
 	}
 	engine.noMerge.Store(s.NoMerge)
 	engine.noChangelog.Store(s.NoChangelog)

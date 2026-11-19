@@ -268,6 +268,16 @@ func (s *Server) registerRoutes() {
 // up since the last check, so they get the coding-CLI skills.
 const codingSkillsSyncInterval = 15 * time.Minute
 
+// updateCodingSkills moves every signed-in coding CLI's skills to version, the
+// release an upgrade installs.
+func updateCodingSkills(ctx context.Context, version string) error {
+	result, err := codingskills.Default().UpdateTo(ctx, version)
+	if len(result.Installed) > 0 {
+		slog.Info("coding skills: updated for the upgrade", "version", version, "skills", strings.Join(result.Installed, ", "))
+	}
+	return err
+}
+
 // ListenAndServe starts the server on the configured port.
 // It returns only when the context is cancelled, an error occurs, or an
 // explicit process restart is requested.
@@ -290,8 +300,15 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	update.CleanupStaging(exe)
 	go s.runSelfUpdater(ctx)
 
-	// Keep the coding-CLI skills installed and matching this release.
+	// Keep the coding-CLI skills installed and matching this release, and
+	// move them to the new release when Aviary upgrades.
 	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	saferestart.RegisterSkillsUpdater("coding-cli", updateCodingSkills)
+	defer saferestart.UnregisterSkillsUpdater("coding-cli")
+
+	// The marker is read once, so a later start never mistakes this one for
+	// its own safe restart.
+	marker, restarted := saferestart.TakeMarker()
 
 	// Start scheduler.
 	if s.sched != nil {
@@ -302,6 +319,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	// Start the Projects engine, with any watches `aviary watch` handed over.
 	if s.projects != nil {
+		// Jobs a safe restart stopped resume in their own sessions and are
+		// told that Aviary restarted.
+		if restarted {
+			s.projects.ResumeAfterRestart(marker)
+		}
 		saferestart.Register("projects", s.projects)
 		defer saferestart.Unregister("projects")
 		go s.startProjects()

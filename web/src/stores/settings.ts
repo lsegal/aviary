@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { useMCP } from "../composables/useMCP";
+import type { ProjectsSection } from "../lib/projectSettings";
 import type { PermissionsPreset } from "../lib/toolPermissions";
 
 export interface TLSConfig {
@@ -143,6 +144,8 @@ export interface AppConfig {
 	scheduler: SchedulerConfig;
 	skills: Record<string, SkillConfig>;
 	coding_skills?: CodingSkillsConfig;
+	/** The projects: section (non-default values only); edited on project settings pages. */
+	projects: ProjectsSection;
 }
 
 function defaultConfig(): AppConfig {
@@ -159,6 +162,7 @@ function defaultConfig(): AppConfig {
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
+		projects: {},
 	};
 }
 
@@ -238,6 +242,7 @@ export const useSettingsStore = defineStore("settings", () => {
 				},
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
 				skills: parsed.skills ?? {},
+				projects: parsed.projects ?? {},
 			};
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
