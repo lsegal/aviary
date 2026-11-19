@@ -89,6 +89,7 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 ## Keeping jobs moving
 
 - A run that exits while its issue is still open is resumed in the same session, or restarted when the session is gone.
+- Those resumes back off, doubling from 30 seconds up to 15 minutes. After four resumes in a row that leave no new commits, pull requests, or comments on GitHub, the job is paused instead, with the reason in the job list and the log. Like a job the owner paused, it stays paused until you retry it; the stuck-job watchdog leaves it alone.
 - Work waiting on GitHub, such as an open dependency or a stacked blocker, is paused and gives up its slot until it is unblocked.
 - A pull request closed without merging restarts the work.
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.

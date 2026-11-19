@@ -324,7 +324,7 @@ func TestEngineCancelsTheWakeupWhenTheIssueCloses(t *testing.T) {
 	if calls := runner.callCount(); calls != 1 {
 		t.Fatalf("the cancelled wakeup still resumed the agent: %d runs", calls)
 	}
-	if !strings.Contains(h.out.String(), "cancelling the wakeup") {
+	if !strings.Contains(h.out.String(), "closed while its agent waited for the scheduled wakeup; cancelling the wait") {
 		t.Fatalf("the cancelled wakeup was not logged:\n%s", h.out.String())
 	}
 }
