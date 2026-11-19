@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/projects/transcript"
 )
 
 // museJSONL describes an event stream shaped unlike Claude's, so the generic
@@ -146,7 +147,9 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 		{format: "stream-json", want: "*projects.claudeJSONOutputWriter"},
 		{format: "claude-stream-json", want: "*projects.claudeJSONOutputWriter"},
 		{format: "jsonl", want: "*projects.jsonlOutputWriter"},
-		{format: "gemini-json", want: "*projects.geminiJSONOutputWriter"},
+		{format: "codex-json", want: "*projects.transcriptOutputWriter"},
+		{format: "aviary-json", want: "*projects.transcriptOutputWriter"},
+		{format: "gemini-json", want: "*projects.transcriptOutputWriter"},
 	} {
 		t.Run(test.format, func(t *testing.T) {
 			output := agents.Output{Format: test.format}
@@ -173,7 +176,7 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 // left on Flush.
 func TestGeminiJSONOutputWriterRendersTheStream(t *testing.T) {
 	var output bytes.Buffer
-	w := newGeminiJSONOutputWriter(&output)
+	w := newTranscriptOutputWriter(&output, transcript.FormatGeminiJSON)
 	lines := []string{
 		`{"type":"init","session_id":"s","model":"gemini-3.5-flash"}`,
 		`{"type":"message","role":"user","content":"the prompt"}`,

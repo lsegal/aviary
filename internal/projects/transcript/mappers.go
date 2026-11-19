@@ -331,6 +331,51 @@ func codexItem(item map[string]any, completed bool) []Event {
 	return nil
 }
 
+// aviaryMapper maps `aviary agent run --output-format json`: one event per
+// line for each reply, tool call, tool result, file change and error.
+type aviaryMapper struct{}
+
+type aviaryEvent struct {
+	Type   string         `json:"type"`
+	Text   string         `json:"text"`
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	Input  map[string]any `json:"input"`
+	Output string         `json:"output"`
+	Error  string         `json:"error"`
+	Path   string         `json:"path"`
+	Diff   string         `json:"diff"`
+	URL    string         `json:"url"`
+}
+
+func (aviaryMapper) Map(line []byte) []Event {
+	var event aviaryEvent
+	if json.Unmarshal(line, &event) != nil {
+		return nil
+	}
+	switch event.Type {
+	case "message":
+		if strings.TrimSpace(event.Text) != "" {
+			return []Event{{Kind: KindMessage, Text: event.Text}}
+		}
+	case "tool_call":
+		return []Event{{Kind: KindToolCall, CallID: event.ID, Name: event.Name, Input: event.Input}}
+	case "tool_result":
+		result := Event{Kind: KindToolResult, CallID: event.ID, Name: event.Name, Output: event.Output}
+		if event.Error != "" {
+			result.Output, result.IsError = event.Error, true
+		}
+		return []Event{result}
+	case "file_change":
+		return []Event{{Kind: KindFileChange, Name: event.Name, Path: event.Path, Diff: event.Diff}}
+	case "media":
+		return []Event{{Kind: KindToolResult, Name: "media", Images: []string{event.URL}}}
+	case "error":
+		return []Event{{Kind: KindSystem, Text: event.Text, IsError: true}}
+	}
+	return nil
+}
+
 func stringValue(m map[string]any, key string) string {
 	if m == nil {
 		return ""
