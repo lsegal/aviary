@@ -40,6 +40,9 @@ type Manager struct {
 	stateDir string
 	logger   *slog.Logger
 
+	// refreshMu serializes refreshes, so two config changes never start two
+	// engines.
+	refreshMu sync.Mutex
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	watches   []Watch
@@ -47,6 +50,9 @@ type Manager struct {
 	lastKey   string
 	lastError string
 	stopped   bool
+	// engineOff keeps the manager tracking settings without starting an
+	// engine; see SetEngineEnabled.
+	engineOff bool
 
 	identity    Identity
 	transcripts *transcriptStore
@@ -95,6 +101,15 @@ func (m *Manager) Identity() string { return string(m.identity) }
 
 // statePath is the engine's work state file.
 func (m *Manager) statePath() string { return filepath.Join(m.stateDir, "state.json") }
+
+// SetEngineEnabled turns starting the engine on or off. With it off the
+// manager still tracks projects and settings, which lets callers exercise the
+// API without reaching GitHub. It is on by default.
+func (m *Manager) SetEngineEnabled(enabled bool) {
+	m.mu.Lock()
+	m.engineOff = !enabled
+	m.mu.Unlock()
+}
 
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
@@ -311,6 +326,8 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 // they match, a live update when only live settings changed, and a restart
 // otherwise.
 func (m *Manager) refresh() error {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()
@@ -331,12 +348,13 @@ func (m *Manager) refresh() error {
 	}
 	m.running = nil
 	m.lastKey = key
+	engineOff := m.engineOff
 	m.mu.Unlock()
 	if run != nil {
 		m.logf("projects settings changed; restarting the engine (running jobs are checkpointed and resume)")
 		m.stopRun(run)
 	}
-	if len(settings.Targets) == 0 {
+	if len(settings.Targets) == 0 || engineOff {
 		m.setError("")
 		m.snapshot.Store(nil)
 		return nil
