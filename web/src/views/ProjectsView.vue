@@ -193,8 +193,8 @@ const statCards = computed(() => {
 			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
 		},
 		{
-			label: "Completed",
-			value: s.completed,
+			label: "Merged (24h)",
+			value: s.merged24h,
 			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
 		},
 		{

@@ -42,11 +42,13 @@ export interface ProjectStatus {
 	lastChecked: string;
 	interval: string;
 	readyLabel: string;
+	/** GitHub logins whose comments may steer jobs. */
+	allowedCommenters: string[];
 	slotsUsed: number;
 	slotsTotal: number;
 	activeJobs: number;
 	waitingJobs: number;
-	completed: number;
+	merged24h: number;
 	failed: number;
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
@@ -373,11 +375,12 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		lastChecked: str(raw.last_check),
 		interval: str(raw.poll_interval),
 		readyLabel: str(raw.ready_label) || "ready",
+		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
 		activeJobs: num(jobs.running),
 		waitingJobs: num(jobs.queued) + num(jobs.paused),
-		completed: num(jobs.completed),
+		merged24h: num(jobs.merged_24h),
 		failed: num(jobs.failed),
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),

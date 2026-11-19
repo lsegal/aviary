@@ -1,7 +1,12 @@
 package projects
 
 import (
+	"context"
+	"errors"
 	"reflect"
+	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,6 +111,30 @@ func TestManagerWatchesComeAndGo(t *testing.T) {
 	m.Shutdown()
 }
 
+func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
+	m := newTestManager(t)
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{}) {
+		t.Fatalf("unconfigured allowed_commenters = %#v, want an empty list", got)
+	}
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, AllowedCommenters: []string{"alice", "bob"}})
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"alice", "bob"}) {
+		t.Fatalf("configured allowed_commenters = %v", got)
+	}
+	// A running engine reports the commenters it enforces, such as the
+	// authenticated gh user it falls back to when none are configured.
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}})
+	m.snapshot.Store(&core.Snapshot{AllowedCommenters: []string{"me"}})
+	m.mu.Lock()
+	m.running = &engineRun{}
+	m.mu.Unlock()
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"me"}) {
+		t.Fatalf("running allowed_commenters = %v", got)
+	}
+	m.mu.Lock()
+	m.running = nil
+	m.mu.Unlock()
+}
+
 func TestManagerRejectsABadUnblockInterval(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, UnblockInterval: "soon"})
@@ -161,5 +190,54 @@ func TestManagerSafeRestartParticipant(t *testing.T) {
 	m.mu.Unlock()
 	if held {
 		t.Fatal("the hold was not released")
+	}
+}
+
+// TestManagerRetriesAFailedLoginLookup checks a transient failure resolving
+// the gh login for allowed_commenters delays the engine instead of leaving the
+// watch without one.
+func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
+	initial := loginRetryInitial
+	loginRetryInitial = 10 * time.Millisecond
+	t.Cleanup(func() { loginRetryInitial = initial })
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Shutdown)
+	var lookups atomic.Int32
+	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
+		if slices.Equal(args, []string{"api", "user", "--jq", ".login"}) {
+			if lookups.Add(1) == 1 {
+				return []byte(`{"message": "API rate limit exceeded"}`), errors.New("exit status 1")
+			}
+			return []byte("octocat\n"), nil
+		}
+		return nil, errors.New("gh is unavailable in tests")
+	}
+	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agents: []string{"codex"}}); !errors.Is(err, errLoginLookup) {
+		t.Fatalf("AddWatch error = %v, want the login lookup failure", err)
+	}
+	if logs, _ := m.logsSince(0, managerLogLines); !slices.ContainsFunc(logs, func(line string) bool { return strings.Contains(line, "waiting 10ms to retry starting") }) {
+		t.Fatalf("logs = %q, want the retry wait", logs)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		m.mu.Lock()
+		run := m.running
+		m.mu.Unlock()
+		if run != nil {
+			if got := run.engine.AllowedCommenters; !slices.Equal(got, []string{"octocat"}) {
+				t.Fatalf("allowed commenters = %q", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("engine did not start after %d lookups", lookups.Load())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := lookups.Load(); got != 2 {
+		t.Fatalf("lookups = %d, want 2", got)
 	}
 }

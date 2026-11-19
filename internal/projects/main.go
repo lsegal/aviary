@@ -271,7 +271,11 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		base := currentPullRequest.Base
 		stacked := base.Ref != "" && base.Repo.DefaultBranch != "" && base.Ref != base.Repo.DefaultBranch
 		tasksDone, tasksTotal := core.ChecklistProgress(currentPullRequest.Body)
-		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
+		var mergedAt time.Time
+		if currentPullRequest.MergedAt != nil {
+			mergedAt = *currentPullRequest.MergedAt
+		}
+		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
 	}
 	return state, nil
 }

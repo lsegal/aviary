@@ -76,6 +76,8 @@ type PullRequestWorkState struct {
 	Number     int
 	State      string
 	Merged     bool
+	// MergedAt is when the pull request merged, zero while it has not.
+	MergedAt time.Time
 	// IsDraft reports whether the pull request is still a draft. A run that
 	// finishes with an open, unmerged, non-draft pull request left behind has
 	// deliberately marked its fix ready and is waiting on a human rather than
