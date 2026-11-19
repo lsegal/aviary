@@ -3,19 +3,33 @@ package projects
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
-func TestClaudeJSONOutputWriterRecordsTrailingScheduleWakeup(t *testing.T) {
+// claudeWakeupDetector reads a stream for the deferred-turn signal the
+// built-in claude definition declares.
+func claudeWakeupDetector(t *testing.T) *wakeupDetector {
+	t.Helper()
+	definition, ok := agents.MustBuiltin().Lookup("claude")
+	if !ok || definition.Wakeup == nil {
+		t.Fatal("the built-in claude definition declares no wakeup signal")
+	}
+	return newWakeupDetector(*definition.Wakeup)
+}
+
+func TestClaudeDefinitionRecordsTrailingScheduleWakeup(t *testing.T) {
 	var output bytes.Buffer
-	w := newClaudeJSONOutputWriter(&output)
+	detector := claudeWakeupDetector(t)
+	w := io.MultiWriter(detector, newClaudeJSONOutputWriter(&output))
 	lines := []string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"The rest is still running; I'll wait for it to finish."}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"ScheduleWakeup","input":{"delaySeconds":240,"prompt":"/gh-fix o/r#7 identity:/aviary:ABC","reason":"watching CI run"}}]}}`,
@@ -28,7 +42,7 @@ func TestClaudeJSONOutputWriterRecordsTrailingScheduleWakeup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	wakeup, pending := w.PendingWakeup()
+	wakeup, pending := detector.PendingWakeup()
 	if !pending {
 		t.Fatal("a trailing ScheduleWakeup was not recorded")
 	}
@@ -41,7 +55,7 @@ func TestClaudeJSONOutputWriterRecordsTrailingScheduleWakeup(t *testing.T) {
 	}
 }
 
-func TestClaudeJSONOutputWriterDropsStoppedAndRejectedWakeups(t *testing.T) {
+func TestClaudeDefinitionDropsStoppedAndRejectedWakeups(t *testing.T) {
 	for name, lines := range map[string][]string{
 		"none scheduled": {
 			`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"go test ./..."}}]}}`,
@@ -56,7 +70,7 @@ func TestClaudeJSONOutputWriterDropsStoppedAndRejectedWakeups(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			w := newClaudeJSONOutputWriter(io.Discard)
+			w := claudeWakeupDetector(t)
 			for _, line := range lines {
 				if _, err := io.WriteString(w, line+"\n"); err != nil {
 					t.Fatal(err)
@@ -78,8 +92,8 @@ func TestParseScheduledWakeupClampsTheDelayLikeClaudeCode(t *testing.T) {
 		{seconds: 270, want: 270 * time.Second},
 		{seconds: 86400, want: time.Hour},
 	} {
-		input, _ := json.Marshal(map[string]any{"delaySeconds": tc.seconds, "prompt": "p"})
-		if got := parseScheduledWakeup(input); got == nil || got.Delay != tc.want {
+		input := map[string]any{"delaySeconds": tc.seconds, "prompt": "p"}
+		if got := parseScheduledWakeup(claudeWakeupDetector(t).config, input); got == nil || got.Delay != tc.want {
 			t.Fatalf("parseScheduledWakeup(%v seconds) = %+v, want a delay of %s", tc.seconds, got, tc.want)
 		}
 	}
@@ -329,4 +343,119 @@ func TestEngineCapsConsecutiveWakeups(t *testing.T) {
 	// The failed state is saved before the run's error is logged (issue
 	// #785), so the log is waited on rather than read once the state fails.
 	waitForLog(t, h.out, "wakeups in a row")
+}
+
+// acmeWakeupDefinition is a non-Claude CLI declaring its own deferred-turn
+// signal in cli_definitions: a flat event rather than a tool call nested in a
+// message, decoded as plain text. The fake agent prints the resume output on
+// any invocation naming "resume", so both templates name it.
+func acmeWakeupDefinition(t *testing.T, binary string) *agents.Registry {
+	t.Helper()
+	return loadDefinitions(t, fmt.Sprintf(`{"agents":[{
+		"name": "acme",
+		"binary": %q,
+		"session": {"assign": "aviary"},
+		"output": {"format": "text"},
+		"wakeup": {
+			"type": "kind", "event": "defer",
+			"name": "kind", "tool": "defer",
+			"input": "args", "delay": "after", "prompt": "then", "reason": "why", "stop": "cancel"
+		},
+		"args": {
+			"run": [{"args": ["--session", "{session}", "resume", "{prompt}"]}],
+			"resume": [{"args": ["resume", "{session}", "{prompt}"]}]
+		}
+	}]}`, binary))
+}
+
+const acmeWakeupEvent = `{"kind":"defer","args":{"after":"120","then":"look at CI again","why":"CI is running"}}`
+
+func TestConfiguredCLIDeclaresItsOwnWakeupSignal(t *testing.T) {
+	for name, tc := range map[string]struct {
+		output string
+		want   *scheduledWakeup
+	}{
+		"scheduled":                     {output: acmeWakeupEvent, want: &scheduledWakeup{Delay: 2 * time.Minute, Prompt: "look at CI again", Reason: "CI is running"}},
+		"cancelled":                     {output: acmeWakeupEvent + "\n" + `{"kind":"defer","args":{"cancel":true}}`},
+		"claude's signal is not acme's": {output: `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"ScheduleWakeup","input":{"delaySeconds":300,"prompt":"p","reason":"r"}}]}}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			binary, _ := writeFakeAgent(t, tc.output, 0)
+			runner := CommandRunner{Agent: "acme", Definitions: acmeWakeupDefinition(t, binary), Repo: "o/r"}
+			err := runner.RunSession(context.Background(), Issue{Number: 7}, AgentSession{ID: "session-7", Agent: "acme", Resume: true}, func(AgentSession) {})
+			var wakeup *scheduledWakeup
+			if tc.want == nil {
+				if errors.As(err, &wakeup) || err != nil {
+					t.Fatalf("RunSession() error = %v, want none", err)
+				}
+				return
+			}
+			if !errors.As(err, &wakeup) || *wakeup != *tc.want {
+				t.Fatalf("RunSession() error = %v, want the wakeup %+v", err, *tc.want)
+			}
+		})
+	}
+}
+
+// sessionRecordingRunner runs the real CommandRunner, reporting each session
+// it is asked to run.
+type sessionRecordingRunner struct {
+	CommandRunner
+	sessions chan AgentSession
+}
+
+func (r sessionRecordingRunner) RunSession(ctx context.Context, issue Issue, session AgentSession, update func(AgentSession)) error {
+	return r.RunSessionWithOutput(ctx, issue, session, update, nil)
+}
+
+func (r sessionRecordingRunner) RunSessionWithOutput(ctx context.Context, issue Issue, session AgentSession, update func(AgentSession), output io.Writer) error {
+	select {
+	case r.sessions <- session:
+	default:
+	}
+	return r.CommandRunner.RunSessionWithOutput(ctx, issue, session, update, output)
+}
+
+func TestEngineWaitsAndResumesAConfiguredCLIsWakeup(t *testing.T) {
+	binary, log := writeFakeAgent(t, acmeWakeupEvent, 0)
+	runner := sessionRecordingRunner{
+		CommandRunner: CommandRunner{Agent: "acme", Definitions: acmeWakeupDefinition(t, binary), Repo: "o/r"},
+		sessions:      make(chan AgentSession, 4),
+	}
+	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
+	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
+	reporter := &snapshotReporter{}
+	w := &Engine{
+		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(t.TempDir(), "state.json"),
+		Issues: src, Runner: runner, Active: &activeAgents{}, Out: &syncBuffer{}, UI: reporter,
+		closureInterval: time.Millisecond, wakeupDelayOverride: 200 * time.Millisecond,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	first := waitForSession(t, runner.sessions)
+	waiting := waitForJobStatus(t, reporter, 7, "waiting")
+	if waiting.WaitReason != "CI is running" || waiting.WakeAt.IsZero() {
+		t.Fatalf("waiting job = %+v, want its reason and wake time", waiting)
+	}
+	resumed := waitForSession(t, runner.sessions)
+	if !resumed.Resume || resumed.ID != first.ID || resumed.Update != "look at CI again" {
+		t.Fatalf("wakeup did not resume the same session with the agent's prompt: first=%+v resumed=%+v", first, resumed)
+	}
+	// The resumed session is reported before its process starts, so the
+	// invocation it records is waited on.
+	var invocations []string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if invocations = fakeAgentInvocations(t, log); len(invocations) >= 2 {
+			break
+		}
+	}
+	if len(invocations) < 2 || !strings.Contains(invocations[1], "resume "+first.ID) || !strings.Contains(invocations[1], "look at CI again") {
+		t.Fatalf("invocations = %q, want the second to resume session %s with the agent's prompt", invocations, first.ID)
+	}
 }

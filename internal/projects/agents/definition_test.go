@@ -252,6 +252,24 @@ func TestInvalidDefinitionsNameTheirField(t *testing.T) {
 		{"empty model", func(d *Definition) { d.Models = NewAllowList("") }, `"models"`},
 		{"unusable env name", func(d *Definition) { d.Env = map[string]string{"A=B": "c"} }, `"env"`},
 		{"stdin prompt with a placeholder", func(d *Definition) { d.PromptStdin = &[]string{"{model}"} }, `"promptStdin"`},
+		{"wakeup without a tool name path", func(d *Definition) {
+			d.Wakeup = &Wakeup{Tool: "defer", Delay: "after"}
+		}, `"wakeup.name"`},
+		{"wakeup without a tool", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Delay: "after"}
+		}, `"wakeup.tool"`},
+		{"wakeup without a delay", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer"}
+		}, `"wakeup.delay"`},
+		{"wakeup with an unreadable path", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer", Delay: "args..after"}
+		}, `"wakeup.delay"`},
+		{"wakeup event without a type", func(d *Definition) {
+			d.Wakeup = &Wakeup{Event: "defer", Name: "kind", Tool: "defer", Delay: "after"}
+		}, `"wakeup.type"`},
+		{"wakeup rejection without a call id", func(d *Definition) {
+			d.Wakeup = &Wakeup{Name: "kind", Tool: "defer", Delay: "after", Rejected: &WakeupRejection{ID: "call", Error: "failed"}}
+		}, `"wakeup.id"`},
 		{"stdin prompt without a prompt argument", func(d *Definition) {
 			d.PromptStdin = &[]string{}
 			d.Args.Run = []Fragment{{Args: []string{"--say={prompt}"}}}
@@ -802,6 +820,26 @@ func TestBuiltinDefaultModelsCarryNoReasoningLevel(t *testing.T) {
 			if strings.HasSuffix(model, "-"+level) {
 				t.Errorf("%s default model %q ends in its own reasoning level %q; --agent %s:LEVEL would render both", name, model, level, name)
 			}
+		}
+	}
+}
+
+// TestOnlyAgyIsGatedOutOfProjects pins which built-in agents cannot run a
+// Projects job: agy has no machine-readable output mode, so it cannot produce
+// the structured job transcript Projects records.
+func TestOnlyAgyIsGatedOutOfProjects(t *testing.T) {
+	registry := MustBuiltin()
+	for _, name := range registry.Names() {
+		definition, _ := registry.Lookup(name)
+		err := definition.ProjectsError()
+		if name == "agy" {
+			if err == nil || !strings.Contains(err.Error(), "agent agy is unavailable for Projects jobs: agy has no machine-readable output mode") {
+				t.Fatalf("agy ProjectsError = %v, want the gate's reason", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s ProjectsError = %v, want none", name, err)
 		}
 	}
 }
