@@ -6,7 +6,7 @@
   "levels": [],
   "env": {"GEMINI_CLI_TRUST_WORKSPACE": "true"},
   "session": {"assign": "aviary"},
-  "output": {"format": "text"},
+  "output": {"format": "gemini-json"},
   "missingSession": ["no previous sessions found", "invalid session identifier"],
   "skills": {"target": "gemini-cli"},
   "doctor": {
@@ -24,14 +24,14 @@
       {"when": "yolo", "args": ["--yolo"]},
       {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
       {"when": "model", "args": ["--model", "{model}"]},
-      {"args": ["--output-format", "text"]},
+      {"args": ["--output-format", "stream-json"]},
       {"args": ["-p", "{prompt}"]}
     ],
     "resume": [
       {"args": ["--resume", "{session}"]},
       {"when": "yolo", "args": ["--yolo"]},
       {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
-      {"args": ["--output-format", "text"]},
+      {"args": ["--output-format", "stream-json"]},
       {"args": ["-p", "{prompt}"]}
     ],
     "vision": [

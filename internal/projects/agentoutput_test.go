@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/projects/transcript"
 )
 
 // museJSONL describes an event stream shaped unlike Claude's, so the generic
@@ -148,6 +149,7 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 		{format: "jsonl", want: "*projects.jsonlOutputWriter"},
 		{format: "codex-json", want: "*projects.transcriptOutputWriter"},
 		{format: "aviary-json", want: "*projects.transcriptOutputWriter"},
+		{format: "gemini-json", want: "*projects.transcriptOutputWriter"},
 	} {
 		t.Run(test.format, func(t *testing.T) {
 			output := agents.Output{Format: test.format}
@@ -165,6 +167,37 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 				t.Fatalf("format %q selected %s, want %s", test.format, got, test.want)
 			}
 		})
+	}
+}
+
+// #388: Gemini streams its reply as deltas, so the decoder joins them into one
+// line, ends the message before a line that is not an event, renders tool
+// calls and errors as progress lines, and writes the message a cut-off stream
+// left on Flush.
+func TestGeminiJSONOutputWriterRendersTheStream(t *testing.T) {
+	var output bytes.Buffer
+	w := newTranscriptOutputWriter(&output, transcript.FormatGeminiJSON)
+	lines := []string{
+		`{"type":"init","session_id":"s","model":"gemini-3.5-flash"}`,
+		`{"type":"message","role":"user","content":"the prompt"}`,
+		`{"type":"message","role":"assistant","content":"reading ","delta":true}`,
+		`{"type":"message","role":"assistant","content":"the issue","delta":true}`,
+		`Error executing tool replace: no match`,
+		`{"type":"tool_use","tool_name":"replace","tool_id":"r1","parameters":{"file_path":"/w/a.go","old_string":"a","new_string":"b"}}`,
+		`{"type":"tool_result","tool_id":"r1","status":"error","output":"no match"}`,
+		`{"type":"error","severity":"error","message":"quota exhausted"}`,
+		`{"type":"message","role":"assistant","content":"stopped ","delta":true}`,
+		`{"type":"message","role":"assistant","content":"early","delta":true}`,
+	}
+	if _, err := io.WriteString(w, strings.Join(lines, "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := "reading the issue\nError executing tool replace: no match\nEditing: /w/a.go\nAgent error: quota exhausted\nstopped early\n"
+	if got := output.String(); got != want {
+		t.Fatalf("decoded stream = %q, want %q", got, want)
 	}
 }
 
