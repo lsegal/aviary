@@ -140,3 +140,34 @@ func TestUnknownFormatHasNoMapper(t *testing.T) {
 		t.Fatal("text output should have no structured mapper")
 	}
 }
+
+func TestAviaryJSONMapsToEvents(t *testing.T) {
+	log, _ := Open("")
+	recorder := log.Recorder(NewMapper(FormatAviaryJSON))
+	stream := strings.Join([]string{
+		`{"kind":"message","time":"2026-11-19T10:00:00Z","text":"Renaming."}`,
+		`{"kind":"tool_call","name":"file_edit","input":{"path":"main.go"}}`,
+		`{"kind":"file_change","name":"file_edit","path":"/clone/main.go","diff":"--- a\n+++ b\n@@ -1 +1 @@\n-package main\n+package app\n"}`,
+		`{"kind":"comment_relay","author":"someone","text":"not from the agent"}`,
+		`{"kind":"system","text":"not from the agent"}`,
+		`Error: agent "x" not found`,
+	}, "\n") + "\n"
+	if _, err := recorder.Write([]byte(stream)); err != nil {
+		t.Fatal(err)
+	}
+	recorder.Flush()
+	events := log.Events(0)
+	if kinds(events) != "message,tool_call,file_change" {
+		t.Fatalf("kinds = %s", kinds(events))
+	}
+	if events[0].Text != "Renaming." || events[0].Time.IsZero() {
+		t.Fatalf("message = %+v", events[0])
+	}
+	if events[1].Name != "file_edit" || events[1].Input["path"] != "main.go" {
+		t.Fatalf("tool call = %+v", events[1])
+	}
+	change := events[2]
+	if change.Name != "file_edit" || change.Path != "/clone/main.go" || !strings.Contains(change.Diff, "+package app") || change.Time.IsZero() {
+		t.Fatalf("file change = %+v", change)
+	}
+}
