@@ -11,7 +11,7 @@
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="runPath" class="hover:underline">
-					<span v-if="job.issue">#{{ job.issue }} </span>{{ job.title || job.id }}
+					{{ job.issue ? `#${job.issue} ` : "" }}{{ job.title || job.id }}
 				</router-link>
 			</h3>
 			<p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
