@@ -231,7 +231,11 @@ type Engine struct {
 	StatePath   string
 	ReadyState  string
 	noMerge     atomic.Bool
-	noChangelog atomic.Bool
+	// allowedCommenters is the live allowed-commenter list for the runner's
+	// prompts. runner() reads it from job goroutines, so it is kept apart
+	// from AllowedCommenters, which only the Run loop touches.
+	allowedCommenters atomic.Pointer[[]string]
+	noChangelog       atomic.Bool
 	// autoUpdate is read by the updater each round.
 	autoUpdate atomic.Bool
 	// clones keeps the temp directories new clones go in and the record of
