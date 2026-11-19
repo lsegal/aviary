@@ -2140,8 +2140,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// #723).
 	closureChecker = recordLinkedPullRequests(closureChecker, mentions.linked)
 	// Every one of those reads also notes the merged pull requests, which
-	// status counts over the last day.
-	merges := newRecentMerges()
+	// status counts over the last day. They are saved beside the work state
+	// so the count survives a restart (issue #413).
+	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
 	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
 	// watch started. A linked pull request anywhere else delivers nothing, so
