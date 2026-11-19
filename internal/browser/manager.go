@@ -333,11 +333,16 @@ func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Con
 }
 
 // userDataDir returns the Chrome user data directory for Aviary's browser.
-// If profileDir is set it is used as-is; otherwise a browser directory
-// alongside aviary.yaml is used.
+// If profileDir is set it is used as-is; otherwise DefaultProfileDir is used.
 func (m *Manager) userDataDir() string {
 	if m.profileDir != "" {
 		return m.profileDir
 	}
+	return DefaultProfileDir()
+}
+
+// DefaultProfileDir is the profile Aviary's browser uses when the browser
+// settings name none: a browser directory alongside aviary.yaml.
+func DefaultProfileDir() string {
 	return filepath.Join(filepath.Dir(config.DefaultPath()), "browser")
 }

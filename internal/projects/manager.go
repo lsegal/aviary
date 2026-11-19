@@ -18,6 +18,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
 	"github.com/lsegal/aviary/internal/projects/process"
@@ -46,6 +47,7 @@ type Manager struct {
 	refreshMu sync.Mutex
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
+	browser   config.BrowserConfig
 	watches   []Watch
 	running   *engineRun
 	lastKey   string
@@ -74,6 +76,10 @@ type engineRun struct {
 	done         chan struct{}
 	checkpointer *shutdownCheckpointer
 	cleanup      []func()
+	// signIn and driver are browser delivery's GitHub sign-in and browser,
+	// nil in other modes.
+	signIn *browser.SignInRecovery
+	driver browser.Handover
 }
 
 // managerLogLines is how many engine log lines the manager keeps for
@@ -109,6 +115,14 @@ func (m *Manager) statePath() string { return filepath.Join(m.stateDir, "state.j
 func (m *Manager) SetEngineEnabled(enabled bool) {
 	m.mu.Lock()
 	m.engineOff = !enabled
+	m.mu.Unlock()
+}
+
+// SetBrowser records Aviary's browser settings, which browser delivery reads
+// GitHub through. It takes effect on the next Reconcile.
+func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
+	m.mu.Lock()
+	m.browser = cfg
 	m.mu.Unlock()
 }
 
@@ -192,6 +206,7 @@ type engineSettings struct {
 	AllIssues         bool                `json:"all_issues"`
 	Yolo              bool                `json:"yolo"`
 	Webhook           config.ProjectsWebhookConfig
+	Browser           BrowserOptions      `json:"browser"`
 	Concurrency       int           `json:"-"`
 	AllowedCommenters []string      `json:"-"`
 	NoMerge           bool          `json:"-"`
@@ -238,6 +253,8 @@ func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
 		merged.Agents = overlay.Agents
 	}
 	merged.Yolo = merged.Yolo || overlay.Yolo
+	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
+	merged.BrowserVisible = merged.BrowserVisible || overlay.BrowserVisible
 	merged.NoMerge = merged.NoMerge || overlay.NoMerge
 	merged.NoChangelog = merged.NoChangelog || overlay.NoChangelog
 	if overlay.UnblockInterval != "" {
@@ -303,6 +320,13 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 	}
 	if cfg.Webhook != nil {
 		s.Webhook = *cfg.Webhook
+	}
+	if s.Delivery == DeliveryBrowser {
+		s.Browser = BrowserOptionsFrom(m.browser)
+		s.Browser.Vision, s.Browser.Headed = cfg.BrowserVision, cfg.BrowserVisible
+		if _, _, err := ResolveDelivery(s.Delivery, s.Interval, true, s.Browser); err != nil {
+			return s, fmt.Errorf("projects: %w", err)
+		}
 	}
 	if s.Webhook.Path == "" {
 		s.Webhook.Path = config.DefaultProjectsWebhookPath
@@ -518,6 +542,11 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 			return fail(err)
 		}
 	}
+	if s.Delivery == DeliveryBrowser {
+		if err := m.startBrowser(ctx, run, gh); err != nil {
+			return fail(err)
+		}
+	}
 	go func() {
 		defer close(run.done)
 		if err := engine.Run(ctx); err != nil && ctx.Err() == nil {
@@ -580,6 +609,26 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 	supervisor.probe, supervisor.logf = probeTunnel, m.logf
 	run.engine.Webhooks = supervisor.reconcile
 	run.engine.WebhookOnline = supervisor.online
+	return nil
+}
+
+// startBrowserDriver launches the browser browser delivery reads through. It
+// is a variable so tests can run the manager without a browser.
+var startBrowserDriver = browser.Start
+
+// startBrowser starts Aviary's browser for browser delivery and points the
+// engine's GitHub reads at it.
+func (m *Manager) startBrowser(ctx context.Context, run *engineRun, gh GHCLI) error {
+	options := run.settings.Browser
+	driver, err := startBrowserDriver(ctx, options.Config())
+	if err != nil {
+		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set projects.delivery to poll to read GitHub through gh instead", err)
+	}
+	// The browser closes cleanly with the engine, including when Aviary exits.
+	run.cleanup = append(run.cleanup, func() { _ = driver.Close() })
+	run.signIn = ApplyBrowserSources(run.engine, driver, options, gh)
+	run.driver = driver
+	m.logf("browser delivery reading GitHub through Aviary's browser (profile %s)", describeProfile(options.Profile))
 	return nil
 }
 
