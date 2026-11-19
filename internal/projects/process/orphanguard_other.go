@@ -12,14 +12,14 @@ import (
 )
 
 // macOS and the BSDs offer no equivalent of Linux's parent-death signal or
-// Windows' job objects, so the kernel cannot take glorp's subprocesses down with
-// it. A supervised reaper stands in for that (issue #266): glorp holds the write
+// Windows' job objects, so the kernel cannot take aviary's subprocesses down with
+// it. A supervised reaper stands in for that: aviary holds the write
 // end of a pipe to a small shell process and reports the process group of every
-// child it owns. The kernel closes that pipe when glorp's process object is
+// child it owns. The kernel closes that pipe when aviary's process object is
 // destroyed — including on a SIGKILL that runs no userspace cleanup at all — and
 // the reaper then terminates every group still recorded.
 //
-// Only groups glorp still owns are recorded, so a normal shutdown, which already
+// Only groups aviary still owns are recorded, so a normal shutdown, which already
 // reaps its own children, leaves the reaper with nothing to do and no chance of
 // signalling a process group whose id has since been reused.
 const orphanReaperScript = `
@@ -42,8 +42,8 @@ sleep 1
 for pid in $live; do kill -KILL "-$pid" 2>/dev/null; done
 `
 
-// orphanReaper is glorp's single connection to its reaper process. The pipe is
-// deliberately never closed while glorp runs: its closing is the signal the
+// orphanReaper is aviary's single connection to its reaper process. The pipe is
+// deliberately never closed while aviary runs: its closing is the signal the
 // reaper acts on.
 var orphanReaper struct {
 	mu    sync.Mutex
@@ -52,7 +52,7 @@ var orphanReaper struct {
 	owned map[*exec.Cmd]int
 }
 
-// startOrphanReaper starts the reaper process and returns the pipe glorp reports
+// startOrphanReaper starts the reaper process and returns the pipe aviary reports
 // owned process groups on, along with the reaper itself.
 func startOrphanReaper() (io.WriteCloser, *exec.Cmd, error) {
 	reader, writer, err := os.Pipe()
@@ -63,7 +63,7 @@ func startOrphanReaper() (io.WriteCloser, *exec.Cmd, error) {
 	cmd := exec.Command("/bin/sh", "-c", orphanReaperScript)
 	cmd.Stdin = reader
 	// The reaper needs its own process group: it must survive whatever takes
-	// glorp down long enough to clean up after it.
+	// aviary down long enough to clean up after it.
 	isolateProcessTree(cmd)
 	if err := spawner.start(cmd); err != nil {
 		_ = writer.Close()
@@ -76,7 +76,7 @@ func startOrphanReaper() (io.WriteCloser, *exec.Cmd, error) {
 }
 
 // orphanReaperPipe returns the reaper's pipe, starting the reaper on first use.
-// It reports nil when the reaper could not be started; glorp's own cleanup paths
+// It reports nil when the reaper could not be started; aviary's own cleanup paths
 // still cover every exit it can observe.
 func orphanReaperPipe() io.Writer {
 	orphanReaper.once.Do(func() {
@@ -94,11 +94,11 @@ func orphanReaperPipe() io.Writer {
 func guardOrphanedProcess(*exec.Cmd) {}
 
 // adoptOrphanedProcess records a freshly started child's process group with the
-// reaper. Children that share glorp's own process group are skipped: they
-// already receive the terminal's signals, and killing that group after glorp is
-// gone could reach well beyond glorp's own subprocesses. Nothing here can leave
+// reaper. Children that share aviary's own process group are skipped: they
+// already receive the terminal's signals, and killing that group after aviary is
+// gone could reach well beyond aviary's own subprocesses. Nothing here can leave
 // a child unusable, so no failure is worth reporting: an unrecorded child is
-// still cleaned up on every exit glorp can observe.
+// still cleaned up on every exit aviary can observe.
 func adoptOrphanedProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return nil
@@ -117,7 +117,7 @@ func adoptOrphanedProcess(cmd *exec.Cmd) error {
 	return nil
 }
 
-// releaseOrphanedProcess tells the reaper glorp no longer owns a child, so a
+// releaseOrphanedProcess tells the reaper aviary no longer owns a child, so a
 // later reap cannot signal a process group id that has been reused since. The
 // group is remembered from adoption because a child that has already exited no
 // longer has one to look up.

@@ -5,7 +5,7 @@
   "defaultModel": "gemini-3.5-flash",
   "levels": [],
   "env": {"GEMINI_CLI_TRUST_WORKSPACE": "true"},
-  "session": {"assign": "glorp"},
+  "session": {"assign": "aviary"},
   "output": {"format": "text"},
   "missingSession": ["no previous sessions found", "invalid session identifier"],
   "skills": {"target": "gemini-cli"},

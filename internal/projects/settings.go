@@ -14,15 +14,15 @@ import (
 )
 
 // maxConcurrencyPermits bounds how high --concurrency can be raised at
-// runtime (issue #341). It is far above any concurrency a real instance
+// runtime. It is far above any concurrency a real instance
 // would use; it only exists so concurrencySemaphore can pre-allocate a
 // fixed-capacity channel instead of an unbounded one.
 const maxConcurrencyPermits = 256
 
 // concurrencySemaphore is a counting semaphore whose capacity can change
 // while acquire/release calls are in flight, which a plain buffered channel
-// cannot do. Live settings changes (issue #341) need to grow or shrink the
-// number of concurrently dispatched agents without restarting glorp.
+// cannot do. Live settings changes need to grow or shrink the
+// number of concurrently dispatched agents without restarting aviary.
 type concurrencySemaphore struct {
 	mu     sync.Mutex
 	limit  int
@@ -84,7 +84,7 @@ func (s *concurrencySemaphore) resize(newLimit int) {
 }
 
 // SettingsUpdate and SettingsSnapshot live in package core so the browser
-// dashboard's settings modal (issue #341) can speak them without importing the
+// dashboard's settings modal can speak them without importing the
 // root package.
 type SettingsUpdate = core.SettingsUpdate
 
@@ -100,7 +100,7 @@ type settingsResult struct {
 	err      error
 }
 
-func (w *Glorp) settingsRequestsChan() chan settingsRequest {
+func (w *Engine) settingsRequestsChan() chan settingsRequest {
 	w.settingsOnce.Do(func() { w.settingsRequests = make(chan settingsRequest) })
 	return w.settingsRequests
 }
@@ -109,8 +109,8 @@ func (w *Glorp) settingsRequestsChan() chan settingsRequest {
 // settings snapshot. It hands the update to the running Run loop, which
 // owns the mutated fields, so it only takes effect once Run is looping. An
 // update that changes nothing is a read, answered from CurrentSettings
-// without waiting on the loop at all (issue #803).
-func (w *Glorp) ApplySettings(ctx context.Context, update SettingsUpdate) (SettingsSnapshot, error) {
+// without waiting on the loop at all.
+func (w *Engine) ApplySettings(ctx context.Context, update SettingsUpdate) (SettingsSnapshot, error) {
 	if update == (SettingsUpdate{}) {
 		return w.CurrentSettings(ctx)
 	}
@@ -134,9 +134,9 @@ func (w *Glorp) ApplySettings(ctx context.Context, update SettingsUpdate) (Setti
 // CurrentSettings reports the live settings snapshot without changing
 // anything. It reads the snapshot the Run loop last published rather than
 // asking the loop, which may be in the middle of a poll, so the settings
-// modal renders immediately (issue #803). Before Run has published one,
+// modal renders immediately. Before Run has published one,
 // nothing has changed the settings yet, so they are read as configured.
-func (w *Glorp) CurrentSettings(ctx context.Context) (SettingsSnapshot, error) {
+func (w *Engine) CurrentSettings(ctx context.Context) (SettingsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return SettingsSnapshot{}, err
 	}
@@ -149,7 +149,7 @@ func (w *Glorp) CurrentSettings(ctx context.Context) (SettingsSnapshot, error) {
 // publishSettings records the current settings for CurrentSettings and
 // returns them. Like settingsSnapshot, it must only be called from the Run
 // loop's goroutine.
-func (w *Glorp) publishSettings() SettingsSnapshot {
+func (w *Engine) publishSettings() SettingsSnapshot {
 	snapshot := w.settingsSnapshot()
 	w.settingsView.Store(&snapshot)
 	return snapshot
@@ -194,7 +194,7 @@ func validateSettingsUpdate(registry *agents.Registry, update SettingsUpdate) er
 // applySettingsRequest mutates the fields owned by the Run loop and returns
 // the resulting snapshot. It must only be called from the Run loop's
 // goroutine, the same rule handleJobAction's callers already follow.
-func (w *Glorp) applySettingsRequest(update SettingsUpdate, sem *concurrencySemaphore) settingsResult {
+func (w *Engine) applySettingsRequest(update SettingsUpdate, sem *concurrencySemaphore) settingsResult {
 	if err := validateSettingsUpdate(w.registry(), update); err != nil {
 		return settingsResult{err: err}
 	}
@@ -257,10 +257,10 @@ func (w *Glorp) applySettingsRequest(update SettingsUpdate, sem *concurrencySema
 
 // registry returns the agent registry this run was configured with, falling
 // back to the run's own when the instance carries none. Every settings
-// surface reads the agent list from here rather than from the two names glorp
-// used to ship, so a .glorp.config.json agent is selectable without a code
-// change (issue #489).
-func (w *Glorp) registry() *agents.Registry {
+// surface reads the agent list from here rather than from the two names aviary
+// used to ship, so a .aviary.config.json agent is selectable without a code
+// change.
+func (w *Engine) registry() *agents.Registry {
 	if w.Registry != nil {
 		return w.Registry
 	}
@@ -269,7 +269,7 @@ func (w *Glorp) registry() *agents.Registry {
 
 // agentOptions lists the registered agents with the models and levels each
 // accepts, for the dashboard's agent selector.
-func (w *Glorp) agentOptions() []core.AgentOption {
+func (w *Engine) agentOptions() []core.AgentOption {
 	registry := w.registry()
 	names := registry.Names()
 	options := make([]core.AgentOption, 0, len(names))
@@ -289,12 +289,12 @@ func (w *Glorp) agentOptions() []core.AgentOption {
 
 // settingsSnapshot reads the fields applySettingsRequest owns. Like that
 // function, it must only be called from the Run loop's goroutine.
-func (w *Glorp) settingsSnapshot() SettingsSnapshot {
+func (w *Engine) settingsSnapshot() SettingsSnapshot {
 	return SettingsSnapshot{
 		Concurrency: w.Concurrency,
 		ReadyState:  w.ReadyState,
 		// ReadyStateDefault surfaces the value projectReadyState falls back to
-		// when ReadyState is unset (issue #344), so the settings UI can show
+		// when ReadyState is unset, so the settings UI can show
 		// what's actually in effect instead of leaving the field blank.
 		ReadyStateDefault: projectReadyState(w.ReadyState, ""),
 		AllowedCommenters: append([]string(nil), w.AllowedCommenters...),
@@ -323,7 +323,7 @@ func unblockIntervalText(interval time.Duration) string {
 }
 
 // unblockDefault is the coding agent spec the unblock call falls back to.
-func (w *Glorp) unblockDefault() string {
+func (w *Engine) unblockDefault() string {
 	runner, ok := w.runner().(CommandRunner)
 	if !ok {
 		return ""
@@ -332,12 +332,12 @@ func (w *Glorp) unblockDefault() string {
 }
 
 // runner returns the AgentRunner new dispatches should use, applying any
-// live agent override (issue #341) on top of the configured CommandRunner.
+// live agent override on top of the configured CommandRunner.
 // Unlike the fields applySettingsRequest owns, this is read from goroutines
 // spawned by the Run loop as well as the loop itself, so the override is
 // stored behind an atomic pointer rather than left to single-goroutine
 // ownership.
-func (w *Glorp) runner() AgentRunner {
+func (w *Engine) runner() AgentRunner {
 	override := w.agentOverride.Load()
 	if runner, ok := w.Runner.(CommandRunner); ok {
 		runner.NoMerge = w.noMerge.Load()
@@ -354,7 +354,7 @@ func (w *Glorp) runner() AgentRunner {
 // configuredAgents returns the agent specs new dispatches may use: the live
 // override when one is set, otherwise the CommandRunner's configured agents.
 // It reports nothing for runners that carry no agent configuration at all.
-func (w *Glorp) configuredAgents() []string {
+func (w *Engine) configuredAgents() []string {
 	if override := w.agentOverride.Load(); override != nil && len(*override) > 0 {
 		return append([]string(nil), *override...)
 	}
@@ -372,11 +372,11 @@ func (w *Glorp) configuredAgents() []string {
 }
 
 // agentStillConfigured reports whether a persisted session's agent is one the
-// current configuration would still dispatch to (issue #358). Work state
+// current configuration would still dispatch to. Work state
 // written by an earlier run must not pin an issue to an agent the -agent flag
 // no longer includes. Runners that expose no agent configuration can't
 // contradict the persisted value, so their sessions resume unchanged.
-func (w *Glorp) agentStillConfigured(agent string) bool {
+func (w *Engine) agentStillConfigured(agent string) bool {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {
 		return false

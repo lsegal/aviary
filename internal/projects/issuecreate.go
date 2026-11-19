@@ -14,11 +14,11 @@ import (
 const maxIssueDescription = 4000
 
 // CreateIssue files an issue on a repository through the gh-create skill
-// (issue #807), run by the prompt agent with this instance's identity so the
-// issue carries gh-create's created-by marker (issue #747). A non-empty model
+//, run by the prompt agent with this instance's identity so the
+// issue carries gh-create's created-by marker. A non-empty model
 // overrides the configured prompt-agent model for this call. It waits for the
 // skill to finish and reports the new issue's URL.
-func (w *Glorp) CreateIssue(ctx context.Context, request core.IssueCreate) (core.IssueCreateResult, error) {
+func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (core.IssueCreateResult, error) {
 	text := strings.TrimSpace(request.Text)
 	switch {
 	case !core.ValidRepo(request.Repository):
@@ -62,7 +62,7 @@ func (w *Glorp) CreateIssue(ctx context.Context, request core.IssueCreate) (core
 func createIssuePrompt(repository, text string, identity Identity) string {
 	prompt := "/gh-create " + repository + " " + text
 	if identity != "" {
-		prompt += " identity:/glorp:" + string(identity)
+		prompt += " identity:/aviary:" + string(identity)
 	}
 	return prompt
 }
@@ -88,7 +88,7 @@ const issueCreateTimeout = 15 * time.Minute
 
 // oneShotRunner is the call that runs one prompt on the coding agent outside
 // any job, such as filing an issue.
-func (w *Glorp) oneShotRunner() (func(context.Context, agentSpec, string) (string, error), error) {
+func (w *Engine) oneShotRunner() (func(context.Context, agentSpec, string) (string, error), error) {
 	if w.oneShotRun != nil {
 		return w.oneShotRun, nil
 	}

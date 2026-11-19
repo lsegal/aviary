@@ -29,8 +29,8 @@ var agentVersionCommand = func(ctx context.Context, binary string) ([]byte, erro
 // version found, and the version required when the installed binary is too
 // old, and a warning line when the definition declares a minimum but the
 // binary's version cannot be read -- an unreadable version proceeds, because
-// blocking on it would break any CLI that prints its version some way glorp
-// has not seen (issue #535). A definition declaring no minimum runs no
+// blocking on it would break any CLI that prints its version some way aviary
+// has not seen. A definition declaring no minimum runs no
 // process at all.
 func checkAgentVersion(ctx context.Context, definition agents.Definition, binary string) (warning string, err error) {
 	if strings.TrimSpace(definition.MinVersion) == "" {

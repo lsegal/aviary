@@ -19,7 +19,7 @@ import (
 )
 
 // cloneMinFreeBytes is the free space a temp directory must have before a new
-// clone is placed in it (issue #830). A directory with less is skipped for the
+// clone is placed in it. A directory with less is skipped for the
 // next one in the configured order.
 var cloneMinFreeBytes uint64 = 2 << 30
 
@@ -28,12 +28,12 @@ var cloneMinFreeBytes uint64 = 2 << 30
 var diskFree = diskFreeBytes
 
 // errNoCloneSpace is returned when no sanctioned temp directory has room for
-// a new clone. Clones are never placed anywhere else (issue #830).
+// a new clone. Clones are never placed anywhere else.
 var errNoCloneSpace = errors.New("no temp directory has room for a new clone")
 
 // cloneRoots returns the sanctioned directories clones may live in, in the
 // order new clones try them. An empty configuration means the system temp
-// directory, which is implied rather than stored (issue #830).
+// directory, which is implied rather than stored.
 func cloneRoots(configured []string) []string {
 	roots := make([]string, 0, len(configured))
 	seen := map[string]bool{}
@@ -129,7 +129,7 @@ func formatBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", value, suffix[i])
 }
 
-// cloneRecord is the bookkeeping for one clone glorp created or adopted.
+// cloneRecord is the bookkeeping for one clone aviary created or adopted.
 type cloneRecord struct {
 	Path                  string    `json:"path"`
 	Repository            string    `json:"repository,omitempty"`
@@ -143,7 +143,7 @@ type cloneRecord struct {
 }
 
 // cloneRegistry persists every clone record beside the work state file, so
-// the list outlives the jobs and survives restarts (issue #830).
+// the list outlives the jobs and survives restarts.
 type cloneRegistry struct {
 	mu      sync.Mutex
 	path    string
@@ -151,7 +151,7 @@ type cloneRegistry struct {
 }
 
 // clonesPathFor names the registry file kept beside statePath: a state file
-// .glorp.json keeps its clones in .glorp.clones.json. An empty state path
+// .aviary.json keeps its clones in .aviary.clones.json. An empty state path
 // keeps the registry in memory only.
 func clonesPathFor(statePath string) string {
 	if statePath == "" {
@@ -278,7 +278,7 @@ func (r *cloneRegistry) remove(path string) error {
 }
 
 // cloneDirPattern matches the clone directory names the gh-fix skill creates,
-// such as glorp-gh-fix-830.
+// such as aviary-gh-fix-830.
 var cloneDirPattern = regexp.MustCompile(`^(.+)-gh-fix-(\d+)$`)
 
 // adopt records clones already on disk so leftovers from before bookkeeping,
@@ -441,7 +441,7 @@ func listClones(reg *cloneRegistry, usage cloneUsage) core.ClonesSnapshot {
 		}
 		if !isDir(rec.Path) {
 			if _, err := os.Stat(rec.Path); errors.Is(err, fs.ErrNotExist) {
-				// Removed outside glorp; nothing is left to list or clear.
+				// Removed outside aviary; nothing is left to list or clear.
 				_ = reg.remove(rec.Path)
 				continue
 			}
@@ -520,7 +520,7 @@ func removeTree(path string) error {
 }
 
 // tempDirFlag is the repeatable --temp-dir switch: the ordered temp
-// directories new clones are placed in (issue #830).
+// directories new clones are placed in.
 type tempDirFlag struct {
 	values []string
 }

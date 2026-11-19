@@ -17,7 +17,7 @@ import (
 )
 
 // defaultUnblockInterval is how often the stuck-job watchdog looks for stuck
-// jobs unless --unblock-interval says otherwise (issues #779 and #795).
+// jobs unless --unblock-interval says otherwise.
 const defaultUnblockInterval = 15 * time.Minute
 
 // minUnblockInterval is the shortest interval the watchdog accepts, so a typo
@@ -104,13 +104,13 @@ func validateUnblockAgent(registry *agents.Registry, config unblockConfig) error
 }
 
 // UnblockInterval is how often the watchdog runs, or 0 when it is off.
-func (w *Glorp) UnblockInterval() time.Duration {
+func (w *Engine) UnblockInterval() time.Duration {
 	return time.Duration(w.unblockInterval.Load())
 }
 
 // SetUnblockInterval changes the watchdog's interval, restarting its wait so
 // the new interval takes effect at once.
-func (w *Glorp) SetUnblockInterval(interval time.Duration) {
+func (w *Engine) SetUnblockInterval(interval time.Duration) {
 	w.unblockInterval.Store(int64(interval))
 	select {
 	case w.unblockResets() <- struct{}{}:
@@ -118,12 +118,12 @@ func (w *Glorp) SetUnblockInterval(interval time.Duration) {
 	}
 }
 
-func (w *Glorp) unblockResets() chan struct{} {
+func (w *Engine) unblockResets() chan struct{} {
 	w.unblockResetOnce.Do(func() { w.unblockReset = make(chan struct{}, 1) })
 	return w.unblockReset
 }
 
-func (w *Glorp) unblockSettings() unblockConfig {
+func (w *Engine) unblockSettings() unblockConfig {
 	if config := w.unblockOverride.Load(); config != nil {
 		return *config
 	}
@@ -131,21 +131,21 @@ func (w *Glorp) unblockSettings() unblockConfig {
 }
 
 // SetUnblockAgent sets the unblock call's agent and model override.
-func (w *Glorp) SetUnblockAgent(config unblockConfig) {
+func (w *Engine) SetUnblockAgent(config unblockConfig) {
 	config.Agent, config.Model = strings.TrimSpace(config.Agent), strings.TrimSpace(config.Model)
 	w.unblockOverride.Store(&config)
 }
 
 // unblockSpec resolves the agent and model the unblock call runs with: the
-// override when one is set, otherwise the coding agent glorp dispatches jobs
+// override when one is set, otherwise the coding agent aviary dispatches jobs
 // to and its model.
-func (w *Glorp) unblockSpec() (agentSpec, error) {
+func (w *Engine) unblockSpec() (agentSpec, error) {
 	return w.oneShotSpec(w.unblockSettings())
 }
 
 // oneShotSpec resolves an out-of-band agent call's override, falling back to
 // the coding agent and its model for whatever the override leaves empty.
-func (w *Glorp) oneShotSpec(config unblockConfig) (agentSpec, error) {
+func (w *Engine) oneShotSpec(config unblockConfig) (agentSpec, error) {
 	registry := w.registry()
 	var spec agentSpec
 	if config.Agent != "" {
@@ -174,11 +174,11 @@ func (w *Glorp) oneShotSpec(config unblockConfig) (agentSpec, error) {
 	return spec, nil
 }
 
-// watchStuckJobs is the stuck-job watchdog (issue #779). Every interval it
+// watchStuckJobs is the stuck-job watchdog. Every interval it
 // looks for jobs that are paused or whose scrollback has not changed since the
 // last look, and runs one out-of-band unblock agent call covering all of them.
 // Rounds never overlap: the next interval starts once a call has finished.
-func (w *Glorp) watchStuckJobs(ctx context.Context, jobs func() []JobSnapshot) {
+func (w *Engine) watchStuckJobs(ctx context.Context, jobs func() []JobSnapshot) {
 	if interval := w.UnblockInterval(); interval > 0 {
 		w.logf("checking for stuck jobs every %s", formatInterval(interval))
 	}
@@ -209,7 +209,7 @@ func (w *Glorp) watchStuckJobs(ctx context.Context, jobs func() []JobSnapshot) {
 			continue
 		case key := <-w.unblockTriggers():
 			// A round asked for from the prompt area runs now, through the
-			// same round and history as a timed one (issue #801).
+			// same round and history as a timed one.
 			if timer != nil {
 				timer.Stop()
 			}
@@ -241,16 +241,16 @@ func (w *Glorp) watchStuckJobs(ctx context.Context, jobs func() []JobSnapshot) {
 	}
 }
 
-func (w *Glorp) unblockTriggers() chan string {
+func (w *Engine) unblockTriggers() chan string {
 	w.unblockTriggerOnce.Do(func() { w.unblockTrigger = make(chan string, 1) })
 	return w.unblockTrigger
 }
 
 // TriggerUnblock asks the watchdog for an unblock round now, over every stuck
-// job or, given a job key, over that job alone (issue #801). It never waits:
+// job or, given a job key, over that job alone. It never waits:
 // the round runs on the watchdog's goroutine and logs what it finds and does,
 // as a timed round does.
-func (w *Glorp) TriggerUnblock(key string) error {
+func (w *Engine) TriggerUnblock(key string) error {
 	select {
 	case w.unblockTriggers() <- strings.TrimSpace(key):
 		return nil
@@ -289,7 +289,7 @@ func requestedStuckJobs(jobs []JobSnapshot, baseline map[string]string, history 
 		}
 		return []stuckJob{{Key: key, Job: job, Why: why}}, nil
 	}
-	return nil, fmt.Errorf("the unblock round requested for %s cannot run: glorp has no such job", key)
+	return nil, fmt.Errorf("the unblock round requested for %s cannot run: aviary has no such job", key)
 }
 
 // scrollbacks records each job's scrollback, to compare a later look with.
@@ -350,7 +350,7 @@ func detectStuckJobs(jobs []JobSnapshot, baseline map[string]string, history map
 // runUnblockRound makes the round's single unblock agent call, logs what it
 // detected and what the agent did for each item, and records those actions as
 // the items' history for the next round.
-func (w *Glorp) runUnblockRound(ctx context.Context, stuck []stuckJob, history map[string][]string, interval time.Duration) {
+func (w *Engine) runUnblockRound(ctx context.Context, stuck []stuckJob, history map[string][]string, interval time.Duration) {
 	described := make([]string, len(stuck))
 	for i, item := range stuck {
 		described[i] = fmt.Sprintf("%s (%s)", item.Key, item.Why)
@@ -382,7 +382,7 @@ func (w *Glorp) runUnblockRound(ctx context.Context, stuck []stuckJob, history m
 	if err != nil && len(actions) == 0 {
 		// The exit code alone says nothing about why the call failed, so the
 		// agent's own last words go into the log and the history, where the
-		// next round's escalation reads them (issue #793).
+		// next round's escalation reads them.
 		tail := lastLines(output, unblockOutputLines)
 		if tail == "" {
 			w.logf("stuck-job watchdog unblock agent failed: %v, and the agent produced no output", err)
@@ -442,20 +442,20 @@ func parseUnblockActions(output string) map[string]unblockAction {
 // and unblock each one, planning them together because they can be related.
 func unblockPrompt(identity Identity, selfLogin, webUIURL string, stuck []stuckJob, interval time.Duration) string {
 	var b strings.Builder
-	mention := "@/glorp:" + string(identity)
-	fmt.Fprintf(&b, "You are the stuck-job watchdog of the glorp instance /glorp:%s. glorp dispatches GitHub issues to coding agents as jobs. The %d job(s) below look stuck: each is paused, or its agent has written no new output for at least %s. You are not a job on any of these issues: do not claim them, do not run /gh-fix for them, and do not resume their sessions. Unblock them so their own jobs pick the work back up.\n\n", identity, len(stuck), formatInterval(interval))
+	mention := "@/aviary:" + string(identity)
+	fmt.Fprintf(&b, "You are the stuck-job watchdog of the aviary instance /aviary:%s. aviary dispatches GitHub issues to coding agents as jobs. The %d job(s) below look stuck: each is paused, or its agent has written no new output for at least %s. You are not a job on any of these issues: do not claim them, do not run /gh-fix for them, and do not resume their sessions. Unblock them so their own jobs pick the work back up.\n\n", identity, len(stuck), formatInterval(interval))
 	b.WriteString("The jobs may be related, for example stacked pull requests parked behind one root pull request, so plan the steps for all of them together before acting.\n\n")
 	b.WriteString("For each job:\n")
 	b.WriteString("1. Verify its live state with gh before prescribing anything: the issue and pull request state, check results, mergeability, and what has merged or closed since the job stopped. A report the job's agent posted earlier may be stale, and that is often why the job is stuck.\n")
 	b.WriteString("2. If nothing blocks it any more and it only needs to hear so, or its agent is legitimately busy, such as waiting on a long CI run, leave it alone and report none.\n")
-	fmt.Fprintf(&b, "3. Otherwise post one comment on its pull request, or on its issue when it has none, that mentions the pull request's or issue's author with @LOGIN and this instance with %s, and gives concrete next steps grounded in the live state you verified. glorp's mention path delivers that comment to the owning job, which wakes or resumes it.", mention)
+	fmt.Fprintf(&b, "3. Otherwise post one comment on its pull request, or on its issue when it has none, that mentions the pull request's or issue's author with @LOGIN and this instance with %s, and gives concrete next steps grounded in the live state you verified. aviary's mention path delivers that comment to the owning job, which wakes or resumes it.", mention)
 	if selfLogin != "" {
-		fmt.Fprintf(&b, " glorp runs as @%s.", selfLogin)
+		fmt.Fprintf(&b, " aviary runs as @%s.", selfLogin)
 	}
 	b.WriteString("\n")
 	b.WriteString("4. When a comment will not work for a job, perform a local task on this machine instead, such as fixing its checkout")
 	if webUIURL != "" {
-		fmt.Fprintf(&b, " or retrying, stopping, or pausing it through glorp's dashboard API: POST %s/api/jobs/action with the JSON body {\"action\":\"retry\",\"target\":\"TARGET\",\"number\":NUMBER}, where TARGET and NUMBER come from the job's key TARGET#NUMBER", strings.TrimRight(webUIURL, "/"))
+		fmt.Fprintf(&b, " or retrying, stopping, or pausing it through aviary's dashboard API: POST %s/api/jobs/action with the JSON body {\"action\":\"retry\",\"target\":\"TARGET\",\"number\":NUMBER}, where TARGET and NUMBER come from the job's key TARGET#NUMBER", strings.TrimRight(webUIURL, "/"))
 	}
 	b.WriteString(".\n")
 	b.WriteString("Do every step you can do yourself instead of leaving it to the owner, and prefer steps that let the owning job continue its own work over doing that work for it. A job listed with earlier interventions is still stuck after them: never repeat an intervention that already failed, such as posting the same comment again; escalate to a different one or to a local task.\n\n")

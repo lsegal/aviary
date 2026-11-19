@@ -19,7 +19,7 @@ func writeShimFile(t *testing.T, path, content string) {
 }
 
 // The shim npm writes for a package whose bin is a native executable, as
-// @anthropic-ai/claude-code installs claude.cmd (issue #809).
+// @anthropic-ai/claude-code installs claude.cmd.
 const npmNativeShim = `@ECHO off
 GOTO start
 :find_dp0

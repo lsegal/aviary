@@ -11,7 +11,7 @@ import (
 // TestPauseHelperProcess is not a real test: TestPauseStopsAndResumesChild
 // runs the test binary as a child that appends to a file until it is killed.
 func TestPauseHelperProcess(t *testing.T) {
-	path := os.Getenv("GLORP_PAUSE_HELPER_FILE")
+	path := os.Getenv("AVIARY_PAUSE_HELPER_FILE")
 	if path == "" {
 		return
 	}
@@ -34,11 +34,11 @@ func fileSize(path string) int64 {
 }
 
 // The shutdown checkpoint pauses an agent so its checkout stops changing
-// while it is committed (issue #741).
+// while it is committed.
 func TestPauseStopsAndResumesChild(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ticks")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestPauseHelperProcess$")
-	cmd.Env = append(os.Environ(), "GLORP_PAUSE_HELPER_FILE="+path)
+	cmd.Env = append(os.Environ(), "AVIARY_PAUSE_HELPER_FILE="+path)
 	if err := Start(cmd); err != nil {
 		t.Fatalf("start child: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestPauseStopsAndResumesChild(t *testing.T) {
 func TestStopEndsPausedChild(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ticks")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestPauseHelperProcess$")
-	cmd.Env = append(os.Environ(), "GLORP_PAUSE_HELPER_FILE="+path)
+	cmd.Env = append(os.Environ(), "AVIARY_PAUSE_HELPER_FILE="+path)
 	if err := Start(cmd); err != nil {
 		t.Fatalf("start child: %v", err)
 	}

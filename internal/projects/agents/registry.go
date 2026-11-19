@@ -20,7 +20,7 @@ type Registry struct {
 	order       []string
 }
 
-// Builtin returns a registry holding only the definitions shipped with glorp.
+// Builtin returns a registry holding only the definitions shipped with aviary.
 // The embedded documents are validated at load, so a built-in that no longer
 // parses is a build-time mistake surfaced on the first call rather than a
 // silently missing agent.
@@ -53,7 +53,7 @@ func Builtin() (*Registry, error) {
 }
 
 // MustBuiltin is Builtin for the callers that have nowhere to report a broken
-// embedded document, which can only be a bug in glorp itself.
+// embedded document, which can only be a bug in aviary itself.
 func MustBuiltin() *Registry {
 	registry, err := Builtin()
 	if err != nil {
@@ -106,7 +106,7 @@ func (r *Registry) Names() []string {
 }
 
 // SkillsTargets lists the skills.sh target ids of the registered agents,
-// deduplicated and sorted. It is what the installers install glorp's skills
+// deduplicated and sorted. It is what the installers install aviary's skills
 // for, so an agent added to the registry is covered without either installer
 // script being edited. Agents whose definition names no target are skipped.
 func (r *Registry) SkillsTargets() []string {

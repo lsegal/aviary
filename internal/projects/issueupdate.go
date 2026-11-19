@@ -37,9 +37,9 @@ func (g GHCLI) PostCommentURL(ctx context.Context, repo string, number int, body
 
 // PostIssueUpdate posts update as a comment on its issue or pull request that
 // mentions the author and this instance, the way the stuck-job watchdog's
-// unblock agent reaches a job (issue #779): glorp's mention path delivers it
+// unblock agent reaches a job: aviary's mention path delivers it
 // to the owning job. It reports the comment's URL.
-func (w *Glorp) PostIssueUpdate(ctx context.Context, update core.IssueUpdate) (core.IssueUpdateResult, error) {
+func (w *Engine) PostIssueUpdate(ctx context.Context, update core.IssueUpdate) (core.IssueUpdateResult, error) {
 	text := strings.TrimSpace(update.Text)
 	switch {
 	case !core.ValidRepo(update.Repository):
@@ -60,7 +60,7 @@ func (w *Glorp) PostIssueUpdate(ctx context.Context, update core.IssueUpdate) (c
 	if err != nil {
 		return core.IssueUpdateResult{}, err
 	}
-	body := fmt.Sprintf("@%s @/glorp:%s\n\n%s", author, w.Identity, text)
+	body := fmt.Sprintf("@%s @/aviary:%s\n\n%s", author, w.Identity, text)
 	url, err := client.PostCommentURL(ctx, update.Repository, update.Number, body)
 	if err != nil {
 		return core.IssueUpdateResult{}, err

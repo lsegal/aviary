@@ -101,22 +101,22 @@ func TestGHCLIHydrateIssuePrefersPublicAPI(t *testing.T) {
 	}
 }
 
-// TestGlorpIssueHandledSnapshot covers the predicate browser mode diffs
+// TestEngineIssueHandledSnapshot covers the predicate browser mode diffs
 // against: in-flight and completed work is handled, failed work is not,
 // because it gets dispatched again and still needs its metadata.
-func TestGlorpIssueHandledSnapshot(t *testing.T) {
-	w := &Glorp{}
+func TestEngineIssueHandledSnapshot(t *testing.T) {
+	w := &Engine{}
 	issue := func(number int) Issue {
-		return Issue{Number: number, Target: "lsegal/glorp", Repository: "lsegal/glorp"}
+		return Issue{Number: number, Target: "lsegal/aviary", Repository: "lsegal/aviary"}
 	}
 	if w.issueHandled(issue(1)) {
 		t.Fatal("issueHandled() = true before any snapshot was published")
 	}
 	w.publishHandledIssues(map[string]workState{
-		"lsegal/glorp#1": {Status: "completed"},
-		"lsegal/glorp#2": {Status: "failed"},
-		"lsegal/glorp#3": {Status: "active"},
-	}, map[string]string{"lsegal/glorp#4": "claude"})
+		"lsegal/aviary#1": {Status: "completed"},
+		"lsegal/aviary#2": {Status: "failed"},
+		"lsegal/aviary#3": {Status: "active"},
+	}, map[string]string{"lsegal/aviary#4": "claude"})
 	for number, want := range map[int]bool{1: true, 2: false, 3: true, 4: true, 5: false} {
 		if got := w.issueHandled(issue(number)); got != want {
 			t.Fatalf("issueHandled(#%d) = %v, want %v", number, got, want)

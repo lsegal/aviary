@@ -10,7 +10,7 @@ import (
 // run loop has not yet reached its dispatch select statement. Before that
 // point the handlers would otherwise block indefinitely on an unbuffered
 // channel nothing is reading from yet, leaving the dashboard's "loading
-// settings..." spinner stuck with no error and no timeout (issue #579). The
+// settings..." spinner stuck with no error and no timeout. The
 // dashboard treats this as a signal to retry rather than a hard failure.
 var ErrNotReady = errors.New("run is still starting")
 
@@ -20,7 +20,7 @@ type JobSnapshot struct {
 	Target string
 	// Repository is the OWNER/REPO hosting the job's issue, which differs
 	// from Target when Target is a project, so the dashboards can link the
-	// issue number to its page (issue #767).
+	// issue number to its page.
 	Repository        string
 	Title             string
 	Status            string
@@ -32,19 +32,19 @@ type JobSnapshot struct {
 	Started           time.Time
 	Log               string
 	// WaitReason and WakeAt describe a job whose agent scheduled a wakeup and
-	// is waiting for it, with Status "waiting" (issue #671). WaitReason also
-	// says what a job with Status "paused" waits on (issue #732).
+	// is waiting for it, with Status "waiting". WaitReason also
+	// says what a job with Status "paused" waits on.
 	WaitReason string
 	WakeAt     time.Time
 	// PullRequest is the number of the job's current pull request, or 0 while
 	// it has none. PullRequestRepository is the OWNER/REPO hosting it, set
 	// only when that differs from the issue's repository, such as a pull
-	// request opened from a fork (issue #753).
+	// request opened from a fork.
 	PullRequest           int
 	PullRequestRepository string
 	// TasksDone and TasksTotal count the checked and all items in the plan
 	// checklist of the job's current pull request, and Progress is the
-	// percentage done the dashboards draw as a progress bar (issue #755). A
+	// percentage done the dashboards draw as a progress bar. A
 	// job whose pull request has no checklist, or that has no pull request,
 	// has a TasksTotal of zero and shows no bar. Progress is computed here
 	// only, so the two dashboards can never disagree about it.
@@ -52,7 +52,7 @@ type JobSnapshot struct {
 	TasksTotal int
 	Progress   int
 	// Kind is JobKindIssue, JobKindDiscussion, or JobKindSchedule, and
-	// ScheduleID names the schedule a scheduled run fired from (issue #848).
+	// ScheduleID names the schedule a scheduled run fired from.
 	Kind       string
 	ScheduleID string
 }
@@ -65,7 +65,7 @@ const (
 )
 
 // HasProgress reports whether the job has a plan checklist to measure its
-// progress against (issue #755).
+// progress against.
 func (j JobSnapshot) HasProgress() bool {
 	return j.TasksTotal > 0
 }
@@ -115,7 +115,7 @@ func (j JobSnapshot) issueRepository() string {
 }
 
 // IssueURL is the GitHub page of the job's issue, or "" when its repository
-// is unknown (issue #767).
+// is unknown.
 func (j JobSnapshot) IssueURL() string {
 	repository := j.issueRepository()
 	// A scheduled run's Number is its fire time, not an issue.
@@ -127,7 +127,7 @@ func (j JobSnapshot) IssueURL() string {
 
 // PullRequestURL is the GitHub page of the job's pull request, in its own
 // repository when that differs from the issue's, or "" when the job has no
-// pull request (issue #767).
+// pull request.
 func (j JobSnapshot) PullRequestURL() string {
 	repository := j.PullRequestRepository
 	if repository == "" {
@@ -140,8 +140,8 @@ func (j JobSnapshot) PullRequestURL() string {
 }
 
 // SetPullRequest records the current pull request in state as the job's, and
-// reports whether that changed what the dashboards show (issue #753), along
-// with the progress its plan checklist makes (issue #755).
+// reports whether that changed what the dashboards show, along
+// with the progress its plan checklist makes.
 func (j *JobSnapshot) SetPullRequest(state OriginatingWorkState, issueRepository string) bool {
 	number, repository := 0, ""
 	pullRequest, ok := CurrentPullRequest(state)
@@ -151,7 +151,7 @@ func (j *JobSnapshot) SetPullRequest(state OriginatingWorkState, issueRepository
 			repository = pullRequest.Repository
 		}
 	}
-	// A merged pull request reads 100% (issue #755).
+	// A merged pull request reads 100%.
 	changed := j.setProgress(pullRequest.TasksDone, pullRequest.TasksTotal, pullRequest.Merged)
 	if j.PullRequest == number && j.PullRequestRepository == repository {
 		return changed
@@ -164,7 +164,7 @@ func (j *JobSnapshot) SetPullRequest(state OriginatingWorkState, issueRepository
 // in the root package and the browser dashboard in package webui both render
 // it, so it lives here rather than in either of them.
 type Snapshot struct {
-	// Identity is this dispatcher instance's own handoff ID (issue #624). The
+	// Identity is this dispatcher instance's own handoff ID. The
 	// dashboards show it as the leftmost status segment so an operator
 	// watching several running instances can tell which one they are looking
 	// at without cross-referencing a terminal title or log line.
@@ -176,13 +176,13 @@ type Snapshot struct {
 	Completed   int
 	Failed      int
 	// Paused counts work out of the queue waiting on a GitHub merge or close,
-	// holding no agent slot (issue #732).
+	// holding no agent slot.
 	Paused      int
 	Concurrency int
 	NextPoll    time.Time
 	// LastPoll is when the most recent poll of GitHub finished. The poll loop
-	// only logs what it found when that changes (issue #413), so this is the
-	// run's standing evidence that it is still checking (issue #447).
+	// only logs what it found when that changes, so this is the
+	// run's standing evidence that it is still checking.
 	LastPoll      time.Time
 	Interval      time.Duration
 	UseWebhooks   bool
@@ -197,9 +197,9 @@ type Snapshot struct {
 	Quota      string
 	Quotas     map[string]string
 	// Jobs holds every in-flight job. The terminal dashboard draws just the
-	// first VisibleJobs (issue #714); the web dashboard pages through all of
+	// first VisibleJobs; the web dashboard pages through all of
 	// them VisibleJobs at a time, and /api/state publishes the Log only for
-	// the jobs on the requested page (issue #739).
+	// the jobs on the requested page.
 	Jobs        []JobSnapshot
 	VisibleJobs int
 }
@@ -220,7 +220,7 @@ type JobAction struct {
 
 // JobActions says which job actions the run accepts for a job in one state,
 // so a dashboard never enables a button whose request is guaranteed to fail
-// (issue #763). RetryReason says why retry is refused, when it is.
+//. RetryReason says why retry is refused, when it is.
 type JobActions struct {
 	Retry       bool
 	RetryReason string
@@ -239,18 +239,18 @@ func JobActionAvailability(status string) JobActions {
 		actions.Retry, actions.RetryReason = false, "Waiting for the stopped run to exit"
 	}
 	// A job waiting on a scheduled wakeup still holds its agent session, so
-	// it can be stopped just like a running one (issue #671). A queued job
-	// has nothing to stop yet, but it can be held back (issue #771).
+	// it can be stopped just like a running one. A queued job
+	// has nothing to stop yet, but it can be held back.
 	running := status == "active" || status == "waiting"
 	actions.Pause = running || status == "queued"
 	// Stopping a paused job clears it, so a manual pause Retry cannot
-	// requeue still has a way out (issue #777).
+	// requeue still has a way out.
 	actions.Stop = running || status == "paused"
 	return actions
 }
 
-// SettingsUpdate carries a partial update to glorp's live-editable runtime
-// settings (issue #341). Nil fields are left unchanged.
+// SettingsUpdate carries a partial update to aviary's live-editable runtime
+// settings. Nil fields are left unchanged.
 type SettingsUpdate struct {
 	Concurrency       *int      `json:"concurrency,omitempty"`
 	ReadyState        *string   `json:"readyState,omitempty"`
@@ -258,18 +258,18 @@ type SettingsUpdate struct {
 	NoMerge           *bool     `json:"noMerge,omitempty"`
 	NoChangelog       *bool     `json:"noChangelog,omitempty"`
 	// AutoUpdate chooses whether the updater restarts onto a new release
-	// while agents are busy (issue #824); off waits until none are active.
+	// while agents are busy; off waits until none are active.
 	AutoUpdate *bool `json:"autoUpdate,omitempty"`
 	// TempDirs replaces the ordered temp directories new clones are placed in
-	// (issue #830). An empty list means the system temp directory.
+	//. An empty list means the system temp directory.
 	TempDirs *[]string `json:"tempDirs,omitempty"`
 	// ActiveAgents replaces the live set of agent specs new dispatches
-	// round-robin across (issue #572), overriding what --agent configured at
+	// round-robin across, overriding what --agent configured at
 	// startup. When given it must name at least one valid agent spec; the
 	// result is reported back as SettingsSnapshot.ConfiguredAgents.
 	ActiveAgents *[]string `json:"activeAgents,omitempty"`
 	// UnblockInterval is how often the stuck-job watchdog runs, as a
-	// duration such as "5m", or "0" to turn it off (issue #779).
+	// duration such as "5m", or "0" to turn it off.
 	UnblockInterval *string `json:"unblockInterval,omitempty"`
 	// UnblockAgent and UnblockModel override the agent and model of the
 	// watchdog's unblock call. Empty means the coding agent and its model.
@@ -288,7 +288,7 @@ type AgentOption struct {
 	Levels []string `json:"levels,omitempty"`
 }
 
-// SettingsSnapshot reports the settings a running glorp instance can change
+// SettingsSnapshot reports the settings a running aviary instance can change
 // on the fly, and their current values.
 type SettingsSnapshot struct {
 	Concurrency       int      `json:"concurrency"`
@@ -297,12 +297,12 @@ type SettingsSnapshot struct {
 	AllowedCommenters []string `json:"allowedCommenters"`
 	NoMerge           bool     `json:"noMerge"`
 	NoChangelog       bool     `json:"noChangelog"`
-	// AutoUpdate reports whether updates restart glorp even while agents
-	// are busy (issue #824).
+	// AutoUpdate reports whether updates restart aviary even while agents
+	// are busy.
 	AutoUpdate bool `json:"autoUpdate"`
 	// TempDirs is the configured, ordered temp directories, empty for the
 	// system temp directory, and TempDirDefault is that system directory
-	// (issue #830).
+	//.
 	TempDirs       []string `json:"tempDirs"`
 	TempDirDefault string   `json:"tempDirDefault"`
 	// Agents lists every agent the run's registry defines, built-in and
@@ -313,10 +313,10 @@ type SettingsSnapshot struct {
 	AgentOptions []AgentOption `json:"agentOptions,omitempty"`
 	// ConfiguredAgents lists the agent specs this run dispatches with, which
 	// is a subset of Agents chosen by --agent or the live ActiveAgents
-	// override (issue #572).
+	// override.
 	ConfiguredAgents []string `json:"configuredAgents"`
 	// UnblockInterval, UnblockAgent, and UnblockModel are the stuck-job
-	// watchdog's settings (issue #779), and UnblockDefault is the agent spec
+	// watchdog's settings, and UnblockDefault is the agent spec
 	// its unblock call uses when no agent or model override is set.
 	UnblockInterval string `json:"unblockInterval"`
 	UnblockAgent    string `json:"unblockAgent"`
@@ -325,8 +325,8 @@ type SettingsSnapshot struct {
 }
 
 // AgentStatus reports one registered agent's install, sign-in, and quota
-// state, mirroring what `glorp agents` prints, for the settings dashboard's
-// agents tab (issue #572).
+// state, mirroring what `aviary agents` prints, for the settings dashboard's
+// agents tab.
 type AgentStatus struct {
 	Name        string `json:"name"`
 	Installed   bool   `json:"installed"`
@@ -345,20 +345,20 @@ type AgentStatus struct {
 	// ModelNote explains a missing or partial list.
 	Models    []string `json:"models,omitempty"`
 	ModelNote string   `json:"modelNote,omitempty"`
-	// DefaultModel is the model glorp runs this agent with when --agent names
+	// DefaultModel is the model aviary runs this agent with when --agent names
 	// none, empty for an agent whose definition leaves the choice to its own
-	// CLI (issue #612).
+	// CLI.
 	DefaultModel string `json:"defaultModel,omitempty"`
-	// SkillsNote says which of glorp's installed skills are stale for the
-	// running release, empty when they are current (issue #797).
+	// SkillsNote says which of aviary's installed skills are stale for the
+	// running release, empty when they are current.
 	SkillsNote string `json:"skillsNote,omitempty"`
 	// Status is one of "ok", "warn", or "missing", matching the marker
-	// `glorp agents` prefixes each block with.
+	// `aviary agents` prefixes each block with.
 	Status string `json:"status"`
 }
 
 // CheckpointResult is one active run's outcome in the shutdown checkpoint
-// glorp takes before it restarts or exits (issue #741): Outcome is "pushed",
+// aviary takes before it restarts or exits: Outcome is "pushed",
 // "nothing to push", "failed", or "timed out", and Detail says why.
 type CheckpointResult struct {
 	Target  string
@@ -370,7 +370,7 @@ type CheckpointResult struct {
 
 // IssueUpdate is an update to post as a comment on Repository's issue or pull
 // request Number, mentioning its author so the owning job hears it through
-// glorp's mention path (issue #806).
+// aviary's mention path.
 type IssueUpdate struct {
 	Repository string `json:"repository"`
 	Number     int    `json:"number"`
@@ -384,7 +384,7 @@ type IssueUpdateResult struct {
 }
 
 // IssueCreate asks for an issue to be filed on Repository through the
-// gh-create skill (issue #807), described by Text. Model, when set, overrides
+// gh-create skill, described by Text. Model, when set, overrides
 // the configured prompt-agent model for this request.
 type IssueCreate struct {
 	Repository string `json:"repository"`

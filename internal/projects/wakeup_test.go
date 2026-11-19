@@ -18,7 +18,7 @@ func TestClaudeJSONOutputWriterRecordsTrailingScheduleWakeup(t *testing.T) {
 	w := newClaudeJSONOutputWriter(&output)
 	lines := []string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"The rest is still running; I'll wait for it to finish."}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"ScheduleWakeup","input":{"delaySeconds":240,"prompt":"/gh-fix o/r#7 identity:/glorp:ABC","reason":"watching CI run"}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"ScheduleWakeup","input":{"delaySeconds":240,"prompt":"/gh-fix o/r#7 identity:/aviary:ABC","reason":"watching CI run"}}]}}`,
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"scheduled"}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"Waiting on the background check run."}]}}`,
 		`{"type":"result","subtype":"success","is_error":false,"result":"Waiting on the background check run."}`,
@@ -32,7 +32,7 @@ func TestClaudeJSONOutputWriterRecordsTrailingScheduleWakeup(t *testing.T) {
 	if !pending {
 		t.Fatal("a trailing ScheduleWakeup was not recorded")
 	}
-	want := scheduledWakeup{Delay: 4 * time.Minute, Prompt: "/gh-fix o/r#7 identity:/glorp:ABC", Reason: "watching CI run"}
+	want := scheduledWakeup{Delay: 4 * time.Minute, Prompt: "/gh-fix o/r#7 identity:/aviary:ABC", Reason: "watching CI run"}
 	if wakeup != want {
 		t.Fatalf("PendingWakeup() = %+v, want %+v", wakeup, want)
 	}
@@ -207,7 +207,7 @@ func waitForJobStatus(t *testing.T, reporter *snapshotReporter, number int, stat
 }
 
 type wakeupHarness struct {
-	w         *Glorp
+	w         *Engine
 	src       *fakeClosureSource
 	runner    *wakeupRunner
 	reporter  *snapshotReporter
@@ -226,7 +226,7 @@ func startWakeupHarness(t *testing.T, runner *wakeupRunner, delay time.Duration)
 		statePath: filepath.Join(t.TempDir(), "state.json"),
 	}
 	h.src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
-	h.w = &Glorp{
+	h.w = &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: h.statePath,
 		Issues: h.src, Runner: runner, Active: &activeAgents{}, Out: h.out, UI: h.reporter,
 		closureInterval: time.Millisecond, wakeupDelayOverride: delay,
@@ -242,10 +242,10 @@ func startWakeupHarness(t *testing.T, runner *wakeupRunner, delay time.Duration)
 	return h
 }
 
-func TestGlorpResumesAScheduledWakeupWithItsOwnPrompt(t *testing.T) {
+func TestEngineResumesAScheduledWakeupWithItsOwnPrompt(t *testing.T) {
 	runner := &wakeupRunner{
 		sessions: make(chan AgentSession, 4),
-		wakeups:  []*scheduledWakeup{{Delay: 4 * time.Minute, Prompt: "/gh-fix o/r#7 identity:/glorp:ABC", Reason: "watching CI run"}},
+		wakeups:  []*scheduledWakeup{{Delay: 4 * time.Minute, Prompt: "/gh-fix o/r#7 identity:/aviary:ABC", Reason: "watching CI run"}},
 	}
 	h := startWakeupHarness(t, runner, 200*time.Millisecond)
 
@@ -258,7 +258,7 @@ func TestGlorpResumesAScheduledWakeupWithItsOwnPrompt(t *testing.T) {
 	if !resumed.Resume || resumed.ID != first.ID {
 		t.Fatalf("wakeup did not resume the same session: first=%+v resumed=%+v", first, resumed)
 	}
-	if resumed.Update != "/gh-fix o/r#7 identity:/glorp:ABC" {
+	if resumed.Update != "/gh-fix o/r#7 identity:/aviary:ABC" {
 		t.Fatalf("wakeup resumed the session with %q, want the agent's own prompt", resumed.Update)
 	}
 	job := waitForJobStatus(t, h.reporter, 7, "active")
@@ -274,7 +274,7 @@ func TestGlorpResumesAScheduledWakeupWithItsOwnPrompt(t *testing.T) {
 	}
 }
 
-func TestGlorpStopsAJobWaitingOnItsWakeup(t *testing.T) {
+func TestEngineStopsAJobWaitingOnItsWakeup(t *testing.T) {
 	runner := &wakeupRunner{
 		sessions: make(chan AgentSession, 4),
 		wakeups:  []*scheduledWakeup{{Delay: time.Hour, Prompt: "check CI", Reason: "watching CI run"}},
@@ -293,7 +293,7 @@ func TestGlorpStopsAJobWaitingOnItsWakeup(t *testing.T) {
 	}
 }
 
-func TestGlorpCancelsTheWakeupWhenTheIssueCloses(t *testing.T) {
+func TestEngineCancelsTheWakeupWhenTheIssueCloses(t *testing.T) {
 	runner := &wakeupRunner{
 		sessions: make(chan AgentSession, 4),
 		wakeups:  []*scheduledWakeup{{Delay: time.Hour, Prompt: "check CI", Reason: "watching CI run"}},
@@ -315,7 +315,7 @@ func TestGlorpCancelsTheWakeupWhenTheIssueCloses(t *testing.T) {
 	}
 }
 
-func TestGlorpCapsConsecutiveWakeups(t *testing.T) {
+func TestEngineCapsConsecutiveWakeups(t *testing.T) {
 	runner := &wakeupRunner{
 		sessions: make(chan AgentSession, 1),
 		always:   &scheduledWakeup{Delay: time.Minute, Prompt: "check CI", Reason: "watching CI run"},

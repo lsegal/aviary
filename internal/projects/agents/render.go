@@ -128,7 +128,7 @@ func (d Definition) Supports(mode Mode) bool {
 
 // resumeFragments is the template a resume renders. An agent that declares no
 // resumable session (session.assign "none") may leave args.resume out, and
-// falls back to its run template: glorp only ever resumes such an agent to
+// falls back to its run template: aviary only ever resumes such an agent to
 // recover work, and the recovery prompt makes that re-run do the recovering.
 // The fallback is explicit here because rendering nothing fails the job.
 func (d Definition) resumeFragments() []Fragment {
@@ -173,10 +173,10 @@ func (d Definition) SessionPattern() *regexp.Regexp {
 	return expr
 }
 
-// AssignsSessionID reports whether glorp generates the session ID and hands it
+// AssignsSessionID reports whether aviary generates the session ID and hands it
 // to the agent, rather than reading one back from the agent's own output.
-func (d Definition) AssignsSessionID() bool { return d.Session.Assign == AssignGlorp }
+func (d Definition) AssignsSessionID() bool { return d.Session.Assign == AssignEngine }
 
-// CapturesSessionID reports whether the agent prints a session ID for glorp to
+// CapturesSessionID reports whether the agent prints a session ID for aviary to
 // read.
 func (d Definition) CapturesSessionID() bool { return d.Session.Assign == AssignCapture }

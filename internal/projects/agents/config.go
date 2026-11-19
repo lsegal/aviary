@@ -11,15 +11,15 @@ import (
 	"strings"
 )
 
-// DefaultConfigPath is the agent-definition config file glorp reads when
-// --config is not given. It is deliberately not .glorp.json: that file is the
+// DefaultConfigPath is the agent-definition config file aviary reads when
+// --config is not given. It is deliberately not .aviary.json: that file is the
 // work state the daemon rewrites as issues are handled, and a hand-edited
 // agent definition living there would be clobbered by the next state save.
-// glorp only ever reads this file.
-const DefaultConfigPath = ".glorp.config.json"
+// aviary only ever reads this file.
+const DefaultConfigPath = ".aviary.config.json"
 
 // SettingsSection is the other section that file takes: default values for
-// glorp's own switches (issue #614). The agent loader does not read it, but
+// aviary's own switches. The agent loader does not read it, but
 // it has to know the name so a file carrying it is not rejected as unknown.
 const SettingsSection = "settings"
 
@@ -37,7 +37,7 @@ var stateKeyPattern = regexp.MustCompile(`^(\d+|[^#]+#\d+)$`)
 
 // Load builds the registry a run dispatches with: the built-in definitions,
 // overridden and extended by path when it exists. A missing file is not an
-// error; glorp runs on the built-ins alone. Anything else wrong with the file
+// error; aviary runs on the built-ins alone. Anything else wrong with the file
 // is fatal and named: a definition silently dropped for being malformed is
 // indistinguishable, at the --agent prompt, from a typo.
 func Load(path string) (*Registry, error) {
@@ -86,7 +86,7 @@ func parseConfig(path string, raw []byte) ([]override, error) {
 	}
 	for key := range top {
 		if stateKeyPattern.MatchString(key) {
-			return nil, fmt.Errorf("agent config %s: %q looks like a work-state record; work state belongs in the --state file (%s) and agent definitions in this file", path, key, "default .glorp.json")
+			return nil, fmt.Errorf("agent config %s: %q looks like a work-state record; work state belongs in the --state file (%s) and agent definitions in this file", path, key, "default .aviary.json")
 		}
 		if key != "agents" && key != SettingsSection {
 			return nil, fmt.Errorf("agent config %s: unknown section %q; the sections defined so far are \"agents\" and %q", path, key, SettingsSection)

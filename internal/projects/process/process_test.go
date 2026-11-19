@@ -100,8 +100,8 @@ func TestWaitChildProcessStopsTracking(t *testing.T) {
 	}
 }
 
-// A child that was never isolated shares glorp's process group, so signalling
-// it must never widen to the group and take glorp itself down.
+// A child that was never isolated shares aviary's process group, so signalling
+// it must never widen to the group and take aviary itself down.
 func TestSignalProcessTreeSpareTheParentProcessGroup(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {

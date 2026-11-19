@@ -90,7 +90,7 @@ func TestOriginatingWorkStateReadsPullRequestDraftStatus(t *testing.T) {
 }
 
 // A same-repo pull request keeps being matched by the plain #N closing form,
-// even when the timeline event names its repository (issue #728).
+// even when the timeline event names its repository.
 func TestOriginatingWorkStateRecognizesSameRepoPlainReference(t *testing.T) {
 	for _, fullName := range []string{"owner/repo", "Owner/Repo"} {
 		t.Run(fullName, func(t *testing.T) {
@@ -236,10 +236,10 @@ func TestGHCLIPostComment(t *testing.T) {
 		calls = append(calls, append([]string(nil), args...))
 		return []byte(`{}`), nil
 	}}
-	if err := gh.PostComment(context.Background(), "owner/repo", 7, "Starting work on this issue /glorp:AAA"); err != nil {
+	if err := gh.PostComment(context.Background(), "owner/repo", 7, "Starting work on this issue /aviary:AAA"); err != nil {
 		t.Fatalf("PostComment: %v", err)
 	}
-	want := []string{"api", "repos/owner/repo/issues/7/comments", "-f", "body=Starting work on this issue /glorp:AAA"}
+	want := []string{"api", "repos/owner/repo/issues/7/comments", "-f", "body=Starting work on this issue /aviary:AAA"}
 	if !reflect.DeepEqual(calls[0], want) {
 		t.Fatalf("call = %#v, want %#v", calls[0], want)
 	}
@@ -280,13 +280,13 @@ func TestGHCLIAddReactionReturnsError(t *testing.T) {
 
 func TestGHCLIListComments(t *testing.T) {
 	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
-		return []byte(`[{"body":"Starting work on this issue /glorp:AAA","created_at":"2026-07-20T12:00:00Z"}]`), nil
+		return []byte(`[{"body":"Starting work on this issue /aviary:AAA","created_at":"2026-07-20T12:00:00Z"}]`), nil
 	}}
 	comments, err := gh.ListComments(context.Background(), "owner/repo", 7)
 	if err != nil {
 		t.Fatalf("ListComments: %v", err)
 	}
-	if len(comments) != 1 || comments[0].Body != "Starting work on this issue /glorp:AAA" {
+	if len(comments) != 1 || comments[0].Body != "Starting work on this issue /aviary:AAA" {
 		t.Fatalf("comments = %#v", comments)
 	}
 }
@@ -321,11 +321,11 @@ func TestVersionDefaultsToDevelopment(t *testing.T) {
 
 func TestParseTargetURLs(t *testing.T) {
 	for _, input := range []string{
-		"https://github.com/lsegal/glorp",
-		"https://github.com/lsegal/glorp/",
+		"https://github.com/lsegal/aviary",
+		"https://github.com/lsegal/aviary/",
 	} {
 		got, err := parseTarget(input)
-		if err != nil || got.Repo != "lsegal/glorp" || got.IsProject {
+		if err != nil || got.Repo != "lsegal/aviary" || got.IsProject {
 			t.Fatalf("parseTarget(%q) = %#v, %v", input, got, err)
 		}
 	}
@@ -338,29 +338,29 @@ func TestParseTargetURLs(t *testing.T) {
 		t.Fatalf("organization project target = %#v, %v", got, err)
 	}
 	for _, input := range []string{
-		"https://github.com/lsegal/glorp/discussions",
-		"https://github.com/lsegal/glorp/discussions/",
+		"https://github.com/lsegal/aviary/discussions",
+		"https://github.com/lsegal/aviary/discussions/",
 	} {
 		got, err := parseTarget(input)
-		if err != nil || !got.IsDiscussion || got.Repo != "lsegal/glorp" || got.IsProject || got.DiscussionCategory != "" {
+		if err != nil || !got.IsDiscussion || got.Repo != "lsegal/aviary" || got.IsProject || got.DiscussionCategory != "" {
 			t.Fatalf("parseTarget(%q) = %#v, %v", input, got, err)
 		}
 	}
-	got, err = parseTarget("https://github.com/lsegal/glorp/discussions/categories/q-a")
-	if err != nil || !got.IsDiscussion || got.Repo != "lsegal/glorp" || got.DiscussionCategory != "q-a" {
+	got, err = parseTarget("https://github.com/lsegal/aviary/discussions/categories/q-a")
+	if err != nil || !got.IsDiscussion || got.Repo != "lsegal/aviary" || got.DiscussionCategory != "q-a" {
 		t.Fatalf("discussion category target = %#v, %v", got, err)
 	}
-	if _, err := parseTarget("https://github.com/lsegal/glorp/discussions/categories/"); err == nil {
+	if _, err := parseTarget("https://github.com/lsegal/aviary/discussions/categories/"); err == nil {
 		t.Fatal("expected an error for an empty discussion category")
 	}
 }
 
 func TestExpandTargetShorthand(t *testing.T) {
-	origin := func() (string, bool) { return "lsegal/glorp", true }
+	origin := func() (string, bool) { return "lsegal/aviary", true }
 	for _, tt := range []struct{ in, want string }{
-		{"projects:3", "https://github.com/lsegal/glorp/projects/3"},
+		{"projects:3", "https://github.com/lsegal/aviary/projects/3"},
 		{"projects:other/repo/4", "https://github.com/other/repo/projects/4"},
-		{"discussions:q-a", "https://github.com/lsegal/glorp/discussions/categories/q-a"},
+		{"discussions:q-a", "https://github.com/lsegal/aviary/discussions/categories/q-a"},
 		{"discussions:other/repo/q-a", "https://github.com/other/repo/discussions/categories/q-a"},
 		{"discussions:other/repo", "https://github.com/other/repo/discussions"},
 		{"discussions:/other/repo/q-a/", "https://github.com/other/repo/discussions/categories/q-a"},
@@ -462,20 +462,20 @@ func TestGHCLIListUnansweredDiscussionsReturnsError(t *testing.T) {
 
 func TestParseGitHubRemote(t *testing.T) {
 	for _, input := range []string{
-		"https://github.com/lsegal/glorp",
-		"https://github.com/lsegal/glorp.git",
-		"git@github.com:lsegal/glorp.git",
-		"ssh://git@github.com/lsegal/glorp.git",
+		"https://github.com/lsegal/aviary",
+		"https://github.com/lsegal/aviary.git",
+		"git@github.com:lsegal/aviary.git",
+		"ssh://git@github.com/lsegal/aviary.git",
 	} {
 		repo, ok := parseGitHubRemote(input)
-		if !ok || repo != "lsegal/glorp" {
+		if !ok || repo != "lsegal/aviary" {
 			t.Fatalf("parseGitHubRemote(%q) = %q, %v", input, repo, ok)
 		}
 	}
 	for _, input := range []string{
 		"",
-		"https://gitlab.com/lsegal/glorp",
-		"git@gitlab.com:lsegal/glorp.git",
+		"https://gitlab.com/lsegal/aviary",
+		"git@gitlab.com:lsegal/aviary.git",
 	} {
 		if _, ok := parseGitHubRemote(input); ok {
 			t.Fatalf("parseGitHubRemote(%q) unexpectedly succeeded", input)
@@ -493,7 +493,7 @@ func TestOriginRemoteTarget(t *testing.T) {
 		}
 	}
 	run("init")
-	run("remote", "add", "origin", "https://github.com/lsegal/glorp.git")
+	run("remote", "add", "origin", "https://github.com/lsegal/aviary.git")
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -505,21 +505,21 @@ func TestOriginRemoteTarget(t *testing.T) {
 	defer os.Chdir(wd)
 
 	repo, ok := originRemoteTarget()
-	if !ok || repo != "lsegal/glorp" {
+	if !ok || repo != "lsegal/aviary" {
 		t.Fatalf("originRemoteTarget() = %q, %v", repo, ok)
 	}
 }
 
 func TestIssueRepositoryUsesProjectItemRepository(t *testing.T) {
-	issue := Issue{Number: 32, Repository: "lsegal/glorp"}
-	if got := issueRepository("https://github.com/users/lsegal/projects/3", issue); got != "lsegal/glorp" {
+	issue := Issue{Number: 32, Repository: "lsegal/aviary"}
+	if got := issueRepository("https://github.com/users/lsegal/projects/3", issue); got != "lsegal/aviary" {
 		t.Fatalf("issue repository = %q", got)
 	}
 }
 
 func TestIssueRepositoryNormalizesRepositoryURL(t *testing.T) {
 	issue := Issue{Number: 32}
-	if got := issueRepository("https://github.com/lsegal/glorp", issue); got != "lsegal/glorp" {
+	if got := issueRepository("https://github.com/lsegal/aviary", issue); got != "lsegal/aviary" {
 		t.Fatalf("issue repository = %q", got)
 	}
 }
@@ -544,7 +544,7 @@ func TestUserProjectListUsesURLOwnerType(t *testing.T) {
 	var calls [][]string
 	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string(nil), args...))
-		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"title":"bug","body":"details","state":"OPEN","createdAt":"2026-07-20T17:38:43Z","repository":{"nameWithOwner":"lsegal/glorp"},"labels":{"nodes":[{"name":"agent-started"}]}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
+		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"title":"bug","body":"details","state":"OPEN","createdAt":"2026-07-20T17:38:43Z","repository":{"nameWithOwner":"lsegal/aviary"},"labels":{"nodes":[{"name":"agent-started"}]}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
 	}}
 	issues, err := gh.ListIssues(context.Background(), "https://github.com/users/lsegal/projects/3")
 	if err != nil {
@@ -553,7 +553,7 @@ func TestUserProjectListUsesURLOwnerType(t *testing.T) {
 	if len(calls) != 1 || len(calls[0]) < 4 || calls[0][0] != "api" || calls[0][1] != "graphql" || !strings.Contains(calls[0][3], "user(login:$login)") {
 		t.Fatalf("gh calls = %#v, want typed user GraphQL query", calls)
 	}
-	if len(issues) != 1 || issues[0].Number != 171 || issues[0].Repository != "lsegal/glorp" || issues[0].ProjectStatus != "Todo" || issues[0].ProjectItemID != "PVTI_item" || len(issues[0].Labels) != 1 {
+	if len(issues) != 1 || issues[0].Number != 171 || issues[0].Repository != "lsegal/aviary" || issues[0].ProjectStatus != "Todo" || issues[0].ProjectItemID != "PVTI_item" || len(issues[0].Labels) != 1 {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
@@ -870,7 +870,7 @@ func TestProjectStateQueriesOnlyBoardKeyFields(t *testing.T) {
 	var calls [][]string
 	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string(nil), args...))
-		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"state":"OPEN","repository":{"nameWithOwner":"lsegal/glorp"}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
+		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"state":"OPEN","repository":{"nameWithOwner":"lsegal/aviary"}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
 	}}
 	state, err := gh.ProjectState(context.Background(), "https://github.com/users/lsegal/projects/3")
 	if err != nil {
@@ -898,7 +898,7 @@ func TestProjectStateRejectsRepositoryTarget(t *testing.T) {
 		t.Fatal("repository target should not reach gh")
 		return nil, nil
 	}}
-	if _, err := gh.ProjectState(context.Background(), "lsegal/glorp"); err == nil {
+	if _, err := gh.ProjectState(context.Background(), "lsegal/aviary"); err == nil {
 		t.Fatal("repository target did not produce an error")
 	}
 }
@@ -906,9 +906,9 @@ func TestProjectStateRejectsRepositoryTarget(t *testing.T) {
 // The stub agent that writeFakeAgent installs is the test binary itself, so
 // these variables carry its behaviour into the child process.
 const (
-	fakeAgentLogEnv          = "GLORP_FAKE_AGENT_LOG"
-	fakeAgentResumeOutputEnv = "GLORP_FAKE_AGENT_RESUME_OUTPUT"
-	fakeAgentResumeCodeEnv   = "GLORP_FAKE_AGENT_RESUME_CODE"
+	fakeAgentLogEnv          = "AVIARY_FAKE_AGENT_LOG"
+	fakeAgentResumeOutputEnv = "AVIARY_FAKE_AGENT_RESUME_OUTPUT"
+	fakeAgentResumeCodeEnv   = "AVIARY_FAKE_AGENT_RESUME_CODE"
 )
 
 func TestMain(m *testing.M) {
@@ -985,7 +985,7 @@ func TestCommandArgsPromptResumedSessionWithIssueUpdate(t *testing.T) {
 // TestGHCLIBoundsEveryCommand checks each `gh` call carries a deadline of its
 // own. Every read the poll loop makes against GitHub is one of these calls, so
 // an invocation that hangs used to park the goroutine that dispatches work for
-// the rest of the run (issue #472).
+// the rest of the run.
 func TestGHCLIBoundsEveryCommand(t *testing.T) {
 	var deadline time.Time
 	var bounded bool
@@ -1070,7 +1070,7 @@ func TestRemoteControlNoLeverFindingNamesEveryCandidate(t *testing.T) {
 }
 
 // TestRemoteControlUpstreamIssueIsAClaudeCodeIssue guards the one pointer that
-// makes the finding actionable: a glorp issue or a bare repository URL here
+// makes the finding actionable: a aviary issue or a bare repository URL here
 // would send the next reader somewhere that cannot resolve it.
 func TestRemoteControlUpstreamIssueIsAClaudeCodeIssue(t *testing.T) {
 	if !strings.HasPrefix(remoteControlUpstreamIssue, "https://github.com/anthropics/claude-code/issues/") {

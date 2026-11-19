@@ -8,7 +8,7 @@
     "capture": "(?i)session id:\\s*([0-9a-f]{8}-[0-9a-f-]{27,})",
     "clearOnResumeFailure": true
   },
-  "output": {"format": "text"},
+  "output": {"format": "codex-json"},
   "quota": {"reader": "codex"},
   "skills": {"target": "codex"},
   "doctor": {
@@ -20,7 +20,7 @@
   "promptStdin": ["-"],
   "args": {
     "run": [
-      {"args": ["exec"]},
+      {"args": ["exec", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
       {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
       {"when": "model", "args": ["--model", "{model}"]},
@@ -28,7 +28,7 @@
       {"args": ["{prompt}"]}
     ],
     "resume": [
-      {"args": ["exec", "resume"]},
+      {"args": ["exec", "resume", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
       {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
       {"args": ["{session}", "{prompt}"]}

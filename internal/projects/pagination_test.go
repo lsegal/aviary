@@ -49,7 +49,7 @@ const nupp24PullRequest = `{"state":"open","draft":true,"body":"Closes #24\n\n##
 
 // A closing pull request cross-referenced past the first timeline page is
 // found on the public API, and the job's dashboard card shows its number and
-// checklist progress (issue #759).
+// checklist progress.
 func TestOriginatingWorkStateReadsTimelinePastFirstPagePublic(t *testing.T) {
 	first, second := nupp24Timeline(t)
 	var urls []string
@@ -148,7 +148,7 @@ func TestOriginatingWorkStateSinglePageTimeline(t *testing.T) {
 
 // A list response read through a single-page helper is an error rather than a
 // silently truncated list, on the public API and through gh alike, so a list
-// endpoint that slips past review fails its first test (issue #759).
+// endpoint that slips past review fails its first test.
 func TestSinglePageHelpersRejectListResponses(t *testing.T) {
 	gh := GHCLI{
 		publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
@@ -169,8 +169,8 @@ func TestSinglePageHelpersRejectListResponses(t *testing.T) {
 	}
 }
 
-// Webhooks are listed through every page, so glorp's own webhook past the
-// first page is found instead of duplicated (issue #759).
+// Webhooks are listed through every page, so aviary's own webhook past the
+// first page is found instead of duplicated.
 func TestConfigureWebhookSpecListsEveryPage(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "args")
 	binary := fakeQuotaBinary(t, fmt.Sprintf(`echo "$@" >> %s
@@ -186,7 +186,7 @@ esac`, strconv.Quote(log)))
 }
 
 // The open pull requests whose reviews are scanned for mentions are listed
-// through every page (issue #759).
+// through every page.
 func TestRecentReviewCommentsListsEveryOpenPullRequestPage(t *testing.T) {
 	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
 		switch {
@@ -214,7 +214,7 @@ var listEndpoint = regexp.MustCompile(`/(timeline|comments|events|issues|pulls|h
 // reads (apiGETObject, and api with no method) whose path names a list
 // endpoint. The runtime guard catches the ones a test exercises; this catches
 // the rest at review time. This is the third endpoint found reading one page
-// of a list (issues #722 and #759), so the class is guarded structurally.
+// of a list, so the class is guarded structurally.
 func TestNoListEndpointThroughSinglePageHelpers(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

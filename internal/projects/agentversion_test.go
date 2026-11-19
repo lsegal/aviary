@@ -29,7 +29,7 @@ func stubAgentVersion(t *testing.T, output string, err error) *[]string {
 // dispatch: an installed binary that is too old fails naming both versions, one
 // at or above the minimum passes silently, and one whose version cannot be read
 // -- either because the output carries none or because asking failed -- warns
-// and proceeds (issue #535).
+// and proceeds.
 func TestCheckAgentVersion(t *testing.T) {
 	definition := agents.Definition{Name: "gemini", Binary: "gemini", MinVersion: "0.58.0"}
 	for _, tc := range []struct {
@@ -100,7 +100,7 @@ func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
 			Run:    []agents.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
 			Resume: []agents.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignGlorp}, Output: agents.Output{Format: agents.FormatText},
+		Session: agents.Session{Assign: agents.AssignEngine}, Output: agents.Output{Format: agents.FormatText},
 	})
 	registry, err := agents.NewRegistry(definition)
 	if err != nil {
@@ -131,7 +131,7 @@ func TestDispatchProceedsAtMinimumVersion(t *testing.T) {
 			Run:    []agents.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
 			Resume: []agents.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignGlorp}, Output: agents.Output{Format: agents.FormatText},
+		Session: agents.Session{Assign: agents.AssignEngine}, Output: agents.Output{Format: agents.FormatText},
 	})
 	registry, err := agents.NewRegistry(definition)
 	if err != nil {

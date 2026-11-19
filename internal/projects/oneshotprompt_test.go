@@ -15,7 +15,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
-const oneShotHelperEnv = "GLORP_ONESHOT_HELPER"
+const oneShotHelperEnv = "AVIARY_ONESHOT_HELPER"
 
 // promptFilePattern reads the prompt file path back out of the pointer prompt
 // an agent without stdin support is given.
@@ -88,7 +88,7 @@ func TestOneShotPromptKeepsShortPromptsInArgv(t *testing.T) {
 
 // Every out-of-band call is marked one-shot, so an agent definition can add
 // the flags a call outside any checkout needs, such as Codex's
-// --skip-git-repo-check (issue #817).
+// --skip-git-repo-check.
 func TestOneShotPromptMarksTheCallOneShot(t *testing.T) {
 	codex, _ := agents.MustBuiltin().Lookup("codex")
 	call, err := newOneShotPrompt(codex, agents.Values{Prompt: "status?"}, t.TempDir())
@@ -96,7 +96,7 @@ func TestOneShotPromptMarksTheCallOneShot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer call.cleanup()
-	want := []string{"exec", "--skip-git-repo-check", "-"}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "-"}
 	if got := codex.Render(agents.ModeRun, call.Values); !reflect.DeepEqual(got, want) {
 		t.Errorf("codex one-shot argv = %#v, want %#v", got, want)
 	}

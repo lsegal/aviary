@@ -25,7 +25,7 @@ func agentRegistry() *agents.Registry {
 		return registry
 	}
 	// The built-in documents are embedded and validated by this package's own
-	// tests, so a failure here is a glorp build that shipped a broken one.
+	// tests, so a failure here is a aviary build that shipped a broken one.
 	registry := agents.MustBuiltin()
 	registeredAgents.CompareAndSwap(nil, registry)
 	return registeredAgents.Load()
@@ -37,7 +37,7 @@ func setAgentRegistry(registry *agents.Registry) { registeredAgents.Store(regist
 // agentDefinition resolves one agent name against the registry in force.
 func agentDefinition(name string) (agents.Definition, bool) { return agentRegistry().Lookup(name) }
 
-// agentAssignsSessionID reports whether glorp generates the session ID for an
+// agentAssignsSessionID reports whether aviary generates the session ID for an
 // agent spec and hands it over, rather than reading one back from the agent's
 // own output. An agent the registry does not know keeps the historical
 // behaviour of being given a generated ID.
@@ -99,7 +99,7 @@ func definitionEnv(definition agents.Definition) []string {
 }
 
 // guardWorkStateFile rejects a --state file that holds agent definitions. The
-// two files are deliberately separate -- glorp rewrites the state file and only
+// two files are deliberately separate -- aviary rewrites the state file and only
 // ever reads the config file -- so definitions written into the state file
 // would be silently destroyed by the next save. Say which file they belong in
 // rather than losing them.
@@ -118,7 +118,7 @@ func guardWorkStateFile(path string) error {
 		return nil
 	}
 	if _, ok := top["agents"]; ok {
-		return fmt.Errorf("state file %s contains an %q section: agent definitions belong in %s (or the file named by --config), which glorp only ever reads, while --state is rewritten as issues are handled", path, "agents", agents.DefaultConfigPath)
+		return fmt.Errorf("state file %s contains an %q section: agent definitions belong in %s (or the file named by --config), which aviary only ever reads, while --state is rewritten as issues are handled", path, "agents", agents.DefaultConfigPath)
 	}
 	return nil
 }

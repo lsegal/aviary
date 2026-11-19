@@ -1,4 +1,4 @@
-// Package core holds the types glorp's halves exchange: the issues and
+// Package core holds the types aviary's halves exchange: the issues and
 // comments a source produces, the state a run reads back from GitHub, and the
 // target syntax that names where either comes from. It is deliberately small
 // and dependency free, so the browser driver in package browser and the root
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Issue is a GitHub issue as glorp reads it, whichever source it came from.
+// Issue is a GitHub issue as aviary reads it, whichever source it came from.
 type Issue struct {
 	Number        int               `json:"number"`
 	Repository    string            `json:"repository,omitempty"`
@@ -26,10 +26,10 @@ type Issue struct {
 	ProjectItemID string            `json:"-"`
 	Target        string            `json:"-"`
 	// Fork is the OWNER/REPO of the user's fork the fix is pushed to when the
-	// user cannot write to Repository (issue #712). Empty pushes to Repository.
+	// user cannot write to Repository. Empty pushes to Repository.
 	Fork string `json:"-"`
 	// Prompt replaces the gh-fix invocation for a scheduled run, which has no
-	// issue (issue #848), and ScheduleID names the schedule it fired from.
+	// issue, and ScheduleID names the schedule it fired from.
 	Prompt     string `json:"-"`
 	ScheduleID string `json:"-"`
 }
@@ -68,7 +68,7 @@ func IssueRepository(target string, issue Issue) string {
 type PullRequestWorkState struct {
 	// Repository is the OWNER/REPO hosting the pull request. It differs from
 	// the issue's repository when the fix was opened elsewhere, such as from
-	// a fork, and is empty when unknown (issue #718).
+	// a fork, and is empty when unknown.
 	Repository string
 	Number     int
 	State      string
@@ -76,15 +76,15 @@ type PullRequestWorkState struct {
 	// IsDraft reports whether the pull request is still a draft. A run that
 	// finishes with an open, unmerged, non-draft pull request left behind has
 	// deliberately marked its fix ready and is waiting on a human rather than
-	// stalled (issue #628).
+	// stalled.
 	IsDraft bool
 	// Stacked reports whether the pull request targets a branch other than
 	// its repository's default branch, which is how a pull request stacked on
 	// an open blocker's branch looks until that blocker merges. A ready one
-	// is paused waiting on its base rather than held for a human (issue #659).
+	// is paused waiting on its base rather than held for a human.
 	Stacked bool
 	// TasksDone and TasksTotal count the checked and all task-list items in
-	// the pull request's body, the run's plan checklist (issue #755).
+	// the pull request's body, the run's plan checklist.
 	TasksDone  int
 	TasksTotal int
 }
@@ -107,7 +107,7 @@ func (p PullRequestWorkState) InRepo(repo string) bool {
 // CurrentPullRequest returns the pull request an issue's work is on now: the
 // newest open one, or else the newest merged one. A pull request closed
 // without merging was rejected or superseded, so it is never current, and a
-// newer pull request replaces an older one (issue #753).
+// newer pull request replaces an older one.
 func CurrentPullRequest(state OriginatingWorkState) (PullRequestWorkState, bool) {
 	var current PullRequestWorkState
 	found := false
@@ -139,7 +139,7 @@ type OriginatingWorkState struct {
 	IssueState string
 	// IssueBody is the issue's description, compared between checks so an
 	// edit made while an agent is working is relayed into its session
-	// (issue #469).
+	//.
 	IssueBody    string
 	PullRequests []PullRequestWorkState
 }
@@ -151,7 +151,7 @@ type WorkClosureChecker interface {
 
 // StackSource reports whether a repository has GitHub stacked pull requests
 // enabled, so an issue blocked by an open issue can be built on the blocker's
-// branch instead of waiting for it to close (issue #657).
+// branch instead of waiting for it to close.
 type StackSource interface {
 	StacksEnabled(context.Context, string) (bool, error)
 }

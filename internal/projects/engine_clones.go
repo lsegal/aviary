@@ -8,7 +8,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
-// cloneState is a Glorp's temp-directory setting and clone bookkeeping (issue
+// cloneState is a Engine's temp-directory setting and clone bookkeeping (issue
 // #830).
 type cloneState struct {
 	mu sync.Mutex
@@ -22,7 +22,7 @@ type cloneState struct {
 }
 
 // SetTempDirs replaces the ordered temp directories new clones are placed in.
-func (w *Glorp) SetTempDirs(dirs []string) {
+func (w *Engine) SetTempDirs(dirs []string) {
 	w.clones.mu.Lock()
 	w.clones.tempDirs = append([]string(nil), dirs...)
 	w.clones.mu.Unlock()
@@ -30,7 +30,7 @@ func (w *Glorp) SetTempDirs(dirs []string) {
 
 // TempDirs reports the configured temp directories, empty for the system
 // temp directory.
-func (w *Glorp) TempDirs() []string {
+func (w *Engine) TempDirs() []string {
 	w.clones.mu.Lock()
 	defer w.clones.mu.Unlock()
 	return append([]string{}, w.clones.tempDirs...)
@@ -38,24 +38,24 @@ func (w *Glorp) TempDirs() []string {
 
 // CloneRoots reports the sanctioned directories, in the order new clones try
 // them.
-func (w *Glorp) CloneRoots() []string {
+func (w *Engine) CloneRoots() []string {
 	return cloneRoots(w.TempDirs())
 }
 
 // CloneRoot picks the directory a new run's agent starts in and clones under:
 // the first sanctioned root with room for a clone.
-func (w *Glorp) CloneRoot() (string, error) {
+func (w *Engine) CloneRoot() (string, error) {
 	return pickCloneRoot(w.CloneRoots())
 }
 
-func (w *Glorp) setCloneView(view func() (map[string]workState, map[string]JobSnapshot)) {
+func (w *Engine) setCloneView(view func() (map[string]workState, map[string]JobSnapshot)) {
 	w.clones.mu.Lock()
 	w.clones.view = view
 	w.clones.mu.Unlock()
 }
 
 // cloneRegistry loads the registry beside the state file on first use.
-func (w *Glorp) cloneRegistry() (*cloneRegistry, error) {
+func (w *Engine) cloneRegistry() (*cloneRegistry, error) {
 	w.clones.mu.Lock()
 	defer w.clones.mu.Unlock()
 	if w.clones.registry != nil {
@@ -70,7 +70,7 @@ func (w *Glorp) cloneRegistry() (*cloneRegistry, error) {
 }
 
 // recordClone books the checkout a run announced.
-func (w *Glorp) recordClone(key, target string, issue Issue, checkout string) {
+func (w *Engine) recordClone(key, target string, issue Issue, checkout string) {
 	reg, err := w.cloneRegistry()
 	if err != nil {
 		w.logf("issue #%d could not record clone %s: %v", issue.Number, checkout, err)
@@ -85,7 +85,7 @@ func (w *Glorp) recordClone(key, target string, issue Issue, checkout string) {
 }
 
 // cloneUsage gathers what deciding whether a clone is in use reads.
-func (w *Glorp) cloneUsage() cloneUsage {
+func (w *Engine) cloneUsage() cloneUsage {
 	usage := cloneUsage{roots: w.CloneRoots(), live: w.Active.checkouts()}
 	w.clones.mu.Lock()
 	view := w.clones.view
@@ -100,7 +100,7 @@ func (w *Glorp) cloneUsage() cloneUsage {
 
 // ListClones enumerates every recorded clone, adopting leftovers found on
 // disk first.
-func (w *Glorp) ListClones(context.Context) (core.ClonesSnapshot, error) {
+func (w *Engine) ListClones(context.Context) (core.ClonesSnapshot, error) {
 	reg, err := w.cloneRegistry()
 	if err != nil {
 		return core.ClonesSnapshot{}, err
@@ -111,7 +111,7 @@ func (w *Glorp) ListClones(context.Context) (core.ClonesSnapshot, error) {
 }
 
 // ClearClones removes every clone nothing can still need.
-func (w *Glorp) ClearClones(context.Context) (core.ClearClonesResult, error) {
+func (w *Engine) ClearClones(context.Context) (core.ClearClonesResult, error) {
 	reg, err := w.cloneRegistry()
 	if err != nil {
 		return core.ClearClonesResult{}, err

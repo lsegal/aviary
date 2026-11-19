@@ -12,7 +12,7 @@ import (
 )
 
 // fakeForkSource is an issue source whose repositories answer where their
-// fixes are pushed (issue #712).
+// fixes are pushed.
 type fakeForkSource struct {
 	*fakeSource
 	forks  map[string]string
@@ -70,10 +70,10 @@ func TestGHCLIForkFor(t *testing.T) {
 }
 
 func TestCommandRunnerPassesForkAdvice(t *testing.T) {
-	prompt := "/gh-fix owner/repo#12 identity:/glorp:ABC and do not merge and use fork me/repo\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
+	prompt := "/gh-fix owner/repo#12 identity:/aviary:ABC and do not merge and use fork me/repo\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Repository: "owner/repo", Target: "owner/repo", Fork: "me/repo"}
 	got := commandArgs(CommandRunner{Agent: "codex", Identity: "ABC", NoMerge: true}, issue)
-	want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
@@ -87,7 +87,7 @@ func runForkDispatch(t *testing.T, source *fakeForkSource) (Issue, []string, str
 	runner := issueRunner{issues: make(chan Issue, 1)}
 	reporter := &snapshotReporter{}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(t.TempDir(), "state.json"),
 		Issues: source, Runner: runner, Out: logs, UI: reporter,
 	}
@@ -120,7 +120,7 @@ func forkSource(forks map[string]string, err error) *fakeForkSource {
 	}
 }
 
-func TestGlorpOpensPullRequestFromForkWithoutWritePermission(t *testing.T) {
+func TestEngineOpensPullRequestFromForkWithoutWritePermission(t *testing.T) {
 	got, targets, logs := runForkDispatch(t, forkSource(map[string]string{"o/r": "me/r"}, nil))
 	if got.Number != 7 || got.Fork != "me/r" {
 		t.Fatalf("dispatched %+v, want issue #7 pushed to fork me/r", got)
@@ -136,7 +136,7 @@ func TestGlorpOpensPullRequestFromForkWithoutWritePermission(t *testing.T) {
 	}
 }
 
-func TestGlorpKeepsSameRepositoryFlowWithWritePermission(t *testing.T) {
+func TestEngineKeepsSameRepositoryFlowWithWritePermission(t *testing.T) {
 	got, targets, _ := runForkDispatch(t, forkSource(nil, nil))
 	if got.Number != 7 || got.Fork != "" {
 		t.Fatalf("dispatched %+v, want issue #7 with no fork", got)
@@ -146,7 +146,7 @@ func TestGlorpKeepsSameRepositoryFlowWithWritePermission(t *testing.T) {
 	}
 }
 
-func TestGlorpHoldsIssueWhenWritePermissionCannotBeRead(t *testing.T) {
+func TestEngineHoldsIssueWhenWritePermissionCannotBeRead(t *testing.T) {
 	got, targets, logs := runForkDispatch(t, forkSource(nil, errors.New("HTTP 502")))
 	if got.Number != 0 {
 		t.Fatalf("dispatched %+v, want nothing dispatched", got)
@@ -159,9 +159,9 @@ func TestGlorpHoldsIssueWhenWritePermissionCannotBeRead(t *testing.T) {
 	}
 }
 
-func TestGlorpCachesWritePermission(t *testing.T) {
+func TestEngineCachesWritePermission(t *testing.T) {
 	source := forkSource(map[string]string{"o/r": "me/r"}, nil)
-	w := &Glorp{Issues: source}
+	w := &Engine{Issues: source}
 	for range 3 {
 		if fork, err := w.forkFor(context.Background(), "o/r"); fork != "me/r" || err != nil {
 			t.Fatalf("forkFor() = %q, %v; want me/r", fork, err)

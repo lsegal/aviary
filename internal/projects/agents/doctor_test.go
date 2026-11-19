@@ -146,7 +146,7 @@ func TestDoctorValidate(t *testing.T) {
 
 // TestDoctorSurvivesTheConfigRoundTrip checks a doctor block reaches a
 // definition through the config file's marshal-and-merge, which is what lets an
-// agent glorp has never heard of report its models without a code change.
+// agent aviary has never heard of report its models without a code change.
 func TestDoctorSurvivesTheConfigRoundTrip(t *testing.T) {
 	registry, err := Load(writeConfig(t, `{"agents": [{
 		"name": "mine", "binary": "mine",

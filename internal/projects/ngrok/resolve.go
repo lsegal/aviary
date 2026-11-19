@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// DefaultBinary is the ngrok command glorp runs when the user configured none
+// DefaultBinary is the ngrok command aviary runs when the user configured none
 // of their own. It is a bare name rather than a path because it is looked up
-// on PATH first and, failing that, fetched through npx (issue #498).
+// on PATH first and, failing that, fetched through npx.
 const DefaultBinary = "ngrok"
 
-// npxBinary and npxPackage name the npm entry point glorp falls back to. The
+// npxBinary and npxPackage name the npm entry point aviary falls back to. The
 // `ngrok` package's bin is the ngrok agent itself rather than a Node shim, so
 // running it this way starts the same process a local install would, which is
 // what keeps the log parsing and the orphan sweep working unchanged.
@@ -35,7 +35,7 @@ const (
 // lookPath is a variable so tests can decide what is installed.
 var lookPath = exec.LookPath
 
-// command is how glorp invokes the ngrok agent: the executable to run and the
+// command is how aviary invokes the ngrok agent: the executable to run and the
 // arguments that precede ngrok's own.
 type command struct {
 	name   string
@@ -83,7 +83,7 @@ func (c command) args(listenAddr string) []string {
 
 // npmProgress reports whether a line is npm's own chatter rather than anything
 // ngrok said. Fetching the package through npx puts deprecation warnings and
-// progress notices on the same streams glorp reads the tunnel from, and the
+// progress notices on the same streams aviary reads the tunnel from, and the
 // watcher would otherwise take every one of them for an unclassifiable ngrok
 // failure and print it. Only npm's advisory prefixes are dropped: `npm error`
 // stays a failure, because a package that cannot be fetched is exactly why no

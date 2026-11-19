@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-func TestGlorpTracksCurrentPullRequestInJobSnapshot(t *testing.T) {
+func TestEngineTracksCurrentPullRequestInJobSnapshot(t *testing.T) {
 	reporter := &snapshotReporter{}
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7, Title: "bug"}}}}}
 	runner := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: src, Runner: runner, UI: reporter, closureInterval: time.Millisecond,
 	}

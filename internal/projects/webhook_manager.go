@@ -172,7 +172,7 @@ type webhookConfigurer interface {
 // webhookReconciler re-runs webhook configuration for every target while the
 // daemon runs. The repositories backing a project board are enumerated when
 // the board's webhooks are configured, so a repository added to the board
-// after startup would otherwise have no webhook until glorp restarts (issue
+// after startup would otherwise have no webhook until aviary restarts (issue
 // #238). ConfigureWebhook only creates a webhook whose endpoint is not already
 // registered, so reconciling repeatedly neither duplicates webhooks nor churns
 // existing ones. Failures are reported and non-fatal: the repositories that
@@ -223,11 +223,11 @@ func (r *webhookReconciler) reconcile(ctx context.Context) {
 // the board: projects_v2_item says nothing about an issue being edited,
 // commented on, or closed, so without those the runs working the board's
 // issues learn about a change only on the watcher's next poll instead of
-// being nudged immediately (issue #471). GitHub publishes no
+// being nudged immediately. GitHub publishes no
 // projects_v2 webhook for user-owned projects, so those fall back to a
 // repository webhook on each repository currently backing the board's items;
 // that pushes new issues immediately instead of leaving the whole target to
-// the periodic poller (issue #234). Board-only changes, such as dragging an
+// the periodic poller. Board-only changes, such as dragging an
 // existing issue onto the board or moving a card between columns, still
 // surface through periodic synchronization.
 func (g GHCLI) webhookSpecs(ctx context.Context, target target) ([]webhookSpec, error) {
@@ -288,7 +288,7 @@ func repositoryWebhookSpec(repo string) webhookSpec {
 // the board's in-flight runs have to hear about, rather than the full
 // repository set: a board target dispatches from the board, so pushes and
 // pull-request activity are not its business. Pull request reviews are the
-// exception, because a direct mention can be posted in one (issue #695). A
+// exception, because a direct mention can be posted in one. A
 // repository that is also
 // watched as a repository target shares the one hook and keeps its wider
 // event set, because this narrower spec asks for nothing it is missing.
@@ -366,7 +366,7 @@ func webhookAccessError(action string, spec webhookSpec, err error) error {
 
 // api calls a single-object REST endpoint. A GET reads one page only, so it
 // refuses a list response with errListReadOnePage; list endpoints go through
-// apiList (issue #759).
+// apiList.
 func (g GHCLI) api(ctx context.Context, path, method string, body ...string) ([]byte, error) {
 	args := []string{"api", path}
 	if method != "" {
@@ -383,8 +383,8 @@ func (g GHCLI) api(ctx context.Context, path, method string, body ...string) ([]
 }
 
 // apiList reads every page of a list endpoint, so a repository or
-// organization with more than one page of webhooks still has glorp's own
-// webhook found instead of a duplicate created (issue #759).
+// organization with more than one page of webhooks still has aviary's own
+// webhook found instead of a duplicate created.
 func (g GHCLI) apiList(ctx context.Context, path string) ([]byte, error) {
 	return g.runAPI(ctx, []string{"api", path, "--paginate"})
 }
@@ -392,7 +392,7 @@ func (g GHCLI) apiList(ctx context.Context, path string) ([]byte, error) {
 func (g GHCLI) runAPI(ctx context.Context, args []string, body ...string) ([]byte, error) {
 	// Bounded like every other `gh` call: webhook reconciliation runs on the
 	// poll loop, so a call stuck on a connection that died while the machine
-	// slept would otherwise stop the watch for good (issue #683).
+	// slept would otherwise stop the watch for good.
 	runCtx, cancel := context.WithTimeout(ctx, ghCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, g.Binary, args...)

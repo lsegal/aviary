@@ -12,12 +12,12 @@ import (
 
 // orphanKillGrace is how long a leftover agent gets to shut itself down before
 // it is killed outright. It is short because nothing depends on the agent's
-// exit: glorp only needs the local ngrok API port and the account session it
+// exit: aviary only needs the local ngrok API port and the account session it
 // holds.
 const orphanKillGrace = 2 * time.Second
 
 // platformRunningProcesses lists every process on the machine with its parent,
-// which is how glorp tells an agent it abandoned from one a live glorp still
+// which is how aviary tells an agent it abandoned from one a live aviary still
 // owns. BSD-style flags are used because they are what macOS and Linux agree
 // on.
 func platformRunningProcesses() ([]processEntry, error) {
@@ -30,7 +30,7 @@ func platformRunningProcesses() ([]processEntry, error) {
 
 // platformTerminateProcess asks a leftover agent to exit and kills it if it
 // does not. Only the process itself is signalled: an orphan's process group id
-// may have been reused in the time it went unowned, and glorp has no claim on
+// may have been reused in the time it went unowned, and aviary has no claim on
 // whatever holds it now.
 func platformTerminateProcess(pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {

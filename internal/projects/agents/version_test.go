@@ -97,7 +97,7 @@ func TestVersionSupported(t *testing.T) {
 }
 
 // TestVersionTooOldError checks the failure names both versions and the agent,
-// which is the whole point of declaring a minimum (issue #535).
+// which is the whole point of declaring a minimum.
 func TestVersionTooOldError(t *testing.T) {
 	definition := Definition{Name: "gemini", Binary: "gemini", MinVersion: "0.58.0"}
 	message := definition.VersionTooOldError("/opt/bin/gemini", "0.2.2").Error()

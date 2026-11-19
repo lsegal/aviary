@@ -33,7 +33,7 @@ func IssueBlocked(issue Issue) (bool, string) {
 }
 
 // StackableDependency returns the one open dependency an issue could be
-// stacked on instead of waiting for it to close (issue #657): with GitHub
+// stacked on instead of waiting for it to close: with GitHub
 // stacked pull requests, the dependent issue's pull request is built on the
 // blocker's branch. A tracking issue with sub-issues is never stackable, and
 // neither is an issue blocked by more than one open issue, because a stack is
@@ -87,7 +87,7 @@ func ShouldDispatchIssue(repo string, issue Issue, isActive, wasActive, wasCompl
 }
 
 // ProjectItemInProgress reports whether issue is a project item currently
-// parked in the "In Progress" column, which is how a glorp instance marks
+// parked in the "In Progress" column, which is how a aviary instance marks
 // work it has claimed.
 func ProjectItemInProgress(target string, issue Issue) bool {
 	return IsProjectTarget(target) && strings.EqualFold(strings.TrimSpace(issue.ProjectStatus), "In Progress")

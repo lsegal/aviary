@@ -103,7 +103,7 @@ func TestNewRunNamesItsCloneDirectory(t *testing.T) {
 // removes only the finished job's clone and reports the space reclaimed.
 func TestClearClonesKeepsActiveAndPausedJobs(t *testing.T) {
 	root := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), ".glorp.json")
+	statePath := filepath.Join(t.TempDir(), ".aviary.json")
 	active := makeClone(t, root, "r-gh-fix-1", "o/r")
 	paused := makeClone(t, root, "r-gh-fix-2", "o/r")
 	finished := makeClone(t, root, "r-gh-fix-3", "o/r")
@@ -116,7 +116,7 @@ func TestClearClonesKeepsActiveAndPausedJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	w := &Glorp{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: &logs}
+	w := &Engine{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: &logs}
 	w.SetTempDirs([]string{root})
 	for number, dir := range map[int]string{1: active, 2: paused, 3: finished} {
 		w.recordClone(issueKey(Issue{Number: number, Target: "o/r"}), "o/r", Issue{Number: number, Target: "o/r"}, dir)
@@ -147,7 +147,7 @@ func TestClearClonesKeepsActiveAndPausedJobs(t *testing.T) {
 		t.Fatal("clear removed the wrong directories")
 	}
 	// Each removal logs its size and the round ends with the total
-	// (issue #838).
+	//.
 	if result.Removed[0].Size != result.Reclaimed {
 		t.Fatalf("removed size %d, reclaimed %d", result.Removed[0].Size, result.Reclaimed)
 	}
@@ -184,12 +184,12 @@ func TestClonesSurviveRestartAndAdoptLeftovers(t *testing.T) {
 	if err := saveScopedWorkState(statePath, work, []string{"o/r", "o/s"}); err != nil {
 		t.Fatal(err)
 	}
-	before := &Glorp{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: os.Stderr}
+	before := &Engine{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: os.Stderr}
 	before.SetTempDirs([]string{root})
 	before.recordClone("o/r#1", "o/r", Issue{Number: 1, Target: "o/r"}, recorded)
 
 	// A new instance on the same state file is a restart.
-	after := &Glorp{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: os.Stderr}
+	after := &Engine{Targets: []string{"o/r", "o/s"}, StatePath: statePath, Out: os.Stderr}
 	after.SetTempDirs([]string{root})
 	snapshot, err := after.ListClones(context.Background())
 	if err != nil {
@@ -231,7 +231,7 @@ func TestClassifyCloneKeepsWhatItCannotVerify(t *testing.T) {
 
 func TestTempDirsSetting(t *testing.T) {
 	dir := t.TempDir()
-	w := &Glorp{Concurrency: 1, Out: os.Stderr}
+	w := &Engine{Concurrency: 1, Out: os.Stderr}
 	update := []string{dir, " "}
 	result := w.applySettingsRequest(SettingsUpdate{TempDirs: &update}, newConcurrencySemaphore(1))
 	if result.err != nil {

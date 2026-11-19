@@ -4,7 +4,7 @@
   "levels": ["low", "medium", "high"],
   "env": {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"},
   "defaultModel": "sonnet",
-  "session": {"assign": "glorp"},
+  "session": {"assign": "aviary"},
   "output": {"format": "stream-json"},
   "quota": {"reader": "claude"},
   "skills": {"target": "claude-code"},

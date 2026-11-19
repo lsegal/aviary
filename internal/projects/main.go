@@ -33,13 +33,13 @@ var version = "dev"
 var errProjectIssueNotFound = errors.New("project issue not found")
 
 // shutdownDrainBudget is how long the watch may take to wind down once
-// shutdown starts, after the checkpoint, before glorp stops waiting for it.
+// shutdown starts, after the checkpoint, before aviary stops waiting for it.
 const shutdownDrainBudget = 30 * time.Second
 
 // runUntilStopped runs the watch until it returns, or until it has had budget
 // to finish after ctx is cancelled. A run that is still unwinding then is left
 // for the deferred reaping, so a shutdown or restart always goes ahead
-// instead of waiting forever on one stuck run (issue #749).
+// instead of waiting forever on one stuck run.
 func runUntilStopped(ctx context.Context, run func(context.Context) error, budget time.Duration, logf func(string, ...interface{})) error {
 	done := make(chan error, 1)
 	go func() { done <- run(ctx) }()
@@ -118,11 +118,11 @@ type GHCLI struct {
 	selfLoginCache *sync.Map
 }
 
-// ghCommandTimeout bounds a single `gh` invocation. Every read and write glorp
+// ghCommandTimeout bounds a single `gh` invocation. Every read and write aviary
 // makes against GitHub goes through one, including the issue listing the poll
 // loop blocks on, so a subprocess that hangs -- a stuck TLS connection, a
 // prompt nobody answers -- would otherwise stop the watch dispatching anything
-// for the rest of the run (issue #472). It is generous enough that no ordinary
+// for the rest of the run. It is generous enough that no ordinary
 // call reaches it, and a variable only so tests need not spend it.
 var ghCommandTimeout = 2 * time.Minute
 
@@ -159,7 +159,7 @@ func (g GHCLI) timedOut(ctx, runCtx context.Context, args []string, err error) e
 
 // StacksEnabled reports whether repo has GitHub stacked pull requests
 // enabled. The Stacks API answers 404 Not Found for a repository without
-// them, which is a definite "no" rather than an error (issue #657).
+// them, which is a definite "no" rather than an error.
 func (g GHCLI) StacksEnabled(ctx context.Context, repo string) (bool, error) {
 	if err := g.apiReachable(ctx, g.isPublicRepo(ctx, repo), "repos/"+repo+"/stacks?per_page=1"); err != nil {
 		if detail := err.Error(); strings.Contains(detail, "HTTP 404") || strings.Contains(detail, "Not Found") {
@@ -170,7 +170,7 @@ func (g GHCLI) StacksEnabled(ctx context.Context, repo string) (bool, error) {
 	return true, nil
 }
 
-// ForkFor reports where a fix for an issue in repo is pushed (issue #712): an
+// ForkFor reports where a fix for an issue in repo is pushed: an
 // empty string when the authenticated user can push to repo, and otherwise
 // the OWNER/REPO of the user's fork of it. GitHub's create-fork call returns
 // the existing fork when there already is one, so it doubles as the lookup.
@@ -207,7 +207,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		return OriginatingWorkState{}, fmt.Errorf("decode issue #%d state: %w", number, err)
 	}
 	// The timeline is read in full: a long-lived issue's current pull request
-	// is often cross-referenced well past the first page (issue #759).
+	// is often cross-referenced well past the first page.
 	output, err = g.apiGETPaginated(ctx, public, "repos/"+repo+"/issues/"+strconv.Itoa(number)+"/timeline?per_page=100")
 	if err != nil {
 		return OriginatingWorkState{}, fmt.Errorf("read issue #%d timeline: %w: %s", number, err, strings.TrimSpace(string(output)))
@@ -239,7 +239,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 			continue
 		}
 		// A pull request in another repository, such as one opened from a
-		// fork, is read back from its own repository (issue #718).
+		// fork, is read back from its own repository.
 		pullRepo := timelineSourceRepo(pullRequest.Repository.FullName, pullRequest.RepositoryURL, repo)
 		if !closesIssue(pullRequest.Body, pullRepo, repo, number) {
 			continue
@@ -278,7 +278,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 // closesIssue reports whether a pull request body hosted in pullRepo closes
 // issue number in repo. A bare #N only names repo's issue when the pull
 // request lives there too; from another repository the reference must be
-// fully qualified as OWNER/REPO#N or an issue URL (issue #718).
+// fully qualified as OWNER/REPO#N or an issue URL.
 func closesIssue(body, pullRepo, repo string, number int) bool {
 	quoted := regexp.QuoteMeta(repo)
 	reference := quoted + `#|https://github\.com/` + quoted + `/issues/`
@@ -353,7 +353,7 @@ func parseAgentSpec(value string) (agentSpec, error) {
 
 // parseAgentSpecIn is parseAgentSpec against an explicit registry. The agent
 // name, and the models and levels it accepts, come from the registry rather
-// than from a hardcoded list, so an agent declared in .glorp.config.json is
+// than from a hardcoded list, so an agent declared in .aviary.config.json is
 // accepted by --agent on the same terms as a built-in one.
 func parseAgentSpecIn(registry *agents.Registry, value string) (agentSpec, error) {
 	name := strings.TrimSpace(value)
@@ -384,7 +384,7 @@ func parseAgentSpecIn(registry *agents.Registry, value string) (agentSpec, error
 	}
 	// A spec that names no model takes the definition's managed default
 	// rather than whatever the agent's CLI would reach for on its own, which
-	// is usually its largest model (issue #612). Resolving it here, where the
+	// is usually its largest model. Resolving it here, where the
 	// spec is built, is what makes the choice visible everywhere a spec goes:
 	// the rendered argv, the dashboard line, and the agent/model:level string
 	// persisted in the work state, so a resumed session keeps the model it
@@ -442,7 +442,7 @@ func (f *agentFlag) specs() []string {
 }
 
 // agentBinaryFlag collects repeated --agent-binary NAME=PATH values. One
-// executable flag per agent does not scale past the two glorp shipped with,
+// executable flag per agent does not scale past the two aviary shipped with,
 // so the agent is named in the value rather than in the flag.
 type agentBinaryFlag struct {
 	paths map[string]string
@@ -676,7 +676,7 @@ const discussionsQuery = `query($owner:String!,$name:String!){
 // record of whether it still needs an answer, so no local state is needed
 // to avoid re-dispatching an already-answered thread.
 //
-// This is one of only three GraphQL calls left in glorp (issue #276); GitHub
+// This is one of only three GraphQL calls left in aviary; GitHub
 // Discussions has no REST API at all, so it is unavoidable. It only runs for
 // repositories explicitly configured with a `discussions:` target, never as
 // part of ordinary issue-repo polling.
@@ -837,7 +837,7 @@ const (
 )
 
 // listProjectItemFields queries GraphQL directly (one of only three GraphQL
-// calls left in glorp; see issue #276) because GitHub Projects (v2) has no
+// calls left in aviary; see issue #276) because GitHub Projects (v2) has no
 // REST API. It only runs for a user/org-owned project board target.
 func (g GHCLI) listProjectItemFields(ctx context.Context, target target, filter string, allIssues bool, contentFields string) ([]projectItem, error) {
 	ownerField := target.ProjectOwnerType
@@ -1080,7 +1080,7 @@ func (g GHCLI) PostComment(ctx context.Context, repo string, number int, body st
 }
 
 // AddReaction adds an emoji reaction to a specific comment, used to
-// acknowledge a direct mention was read (issue #581).
+// acknowledge a direct mention was read.
 func (g GHCLI) AddReaction(ctx context.Context, repo string, commentID int64, content string) error {
 	output, err := g.run(ctx, "api", "repos/"+repo+"/issues/comments/"+strconv.FormatInt(commentID, 10)+"/reactions", "-f", "content="+content)
 	if err != nil {
@@ -1156,7 +1156,7 @@ func (g GHCLI) SetIssueStatus(ctx context.Context, repo string, issue Issue, sta
 }
 
 // repositoryProjectItems queries GraphQL directly (one of only three
-// GraphQL calls left in glorp; see issue #276) to find which project
+// GraphQL calls left in aviary; see issue #276) to find which project
 // boards an issue belongs to, since GitHub Projects (v2) has no REST API.
 // It only runs when SetIssueStatus is asked to move an issue's status and
 // no project target was given directly.
@@ -1299,11 +1299,14 @@ type CommandRunner struct {
 	// times the struct is copied.
 	agentCursor *atomic.Uint64
 	// Active tracks the agents this runner has started and their checkouts,
-	// for the shutdown checkpoint (issue #741). It is shared by pointer across
+	// for the shutdown checkpoint. It is shared by pointer across
 	// copies, and nil tracks nothing.
 	Active *activeAgents
+	// Transcripts records each run's raw output and structured events. Nil
+	// records nothing.
+	Transcripts *transcriptStore
 	// CloneRoot picks the sanctioned temp directory a run without a checkout
-	// starts in and clones under (issue #830). Nil uses the system temp
+	// starts in and clones under. Nil uses the system temp
 	// directory.
 	CloneRoot func() (string, error)
 }
@@ -1315,10 +1318,10 @@ func commandArgs(r CommandRunner, issue Issue) []string {
 // codexRemoteControlNotice explains why --remote-control reaches no Codex run.
 // Codex exposes Remote Control only through its `codex remote-control` daemon,
 // which is the app-server hosting the threads it starts itself: there is no
-// per-run argument for `codex exec` and no way to hand it an exec process glorp
+// per-run argument for `codex exec` and no way to hand it an exec process aviary
 // has already started. Reaching Codex runs from a phone would mean driving
 // Codex over the app-server protocol instead of `codex exec` altogether.
-const codexRemoteControlNotice = "remote control is not passed to codex runs: `codex exec` takes no Remote Control argument, and the separate `codex remote-control` daemon hosts only the sessions it starts itself, so codex runs stay viewable in glorp's own dashboard"
+const codexRemoteControlNotice = "remote control is not passed to codex runs: `codex exec` takes no Remote Control argument, and the separate `codex remote-control` daemon hosts only the sessions it starts itself, so codex runs stay viewable in aviary's own dashboard"
 
 // remoteControlCodexNotice returns the notice above when a watch has Remote
 // Control on and a Codex agent configured, and an empty string otherwise.
@@ -1347,22 +1350,22 @@ func remoteControlCodexNotice(remoteControl bool, agents []string) string {
 const remoteControlSettings = `{"remoteControlAtStartup":true}`
 
 // remoteControlUpstreamIssue tracks the Claude Code change that would make a
-// headless glorp run viewable remotely. Until it ships there is nothing for
-// glorp to pass, which is why --remote-control stays an inert opt-in.
+// headless aviary run viewable remotely. Until it ships there is nothing for
+// aviary to pass, which is why --remote-control stays an inert opt-in.
 const remoteControlUpstreamIssue = "https://github.com/anthropics/claude-code/issues/91906"
 
 // remoteControlNoLeverFinding records the search for a replacement lever so it
-// is not made a third time (issue #506). Every candidate was measured against
+// is not made a third time. Every candidate was measured against
 // Claude Code 2.1.248 with a real headless run, not read off documentation:
 //
 //   - remoteControlAtStartup via --settings: arrives but is not read under -p,
-//     as remoteControlSettings describes. This is the one glorp still passes.
+//     as remoteControlSettings describes. This is the one aviary still passes.
 //   - autoUploadSessions, the hoped-for view-only mirror: no such setting
 //     exists. It is absent from Claude Code's settings reference, and a -p run
 //     with -d (every debug category) makes no upload or session-share request
 //     of any kind, so there is nothing to enable.
 //   - `claude remote-control`, the separate server mode: it hosts only the
-//     sessions it creates itself, so glorp cannot hand it a `claude -p` child
+//     sessions it creates itself, so aviary cannot hand it a `claude -p` child
 //     it already started. Its --session-id takes a server-side code session,
 //     not a local session UUID: reattaching with one is rejected as "invalid
 //     session ID: must be a cse_... or session_... tagged ID". It is doubly
@@ -1371,9 +1374,9 @@ const remoteControlUpstreamIssue = "https://github.com/anthropics/claude-code/is
 //     a -p run never triggers since print mode skips that dialog, and it then
 //     asks "Enable Remote Control? (y/n)" on the terminal.
 //
-// So there is no lever on glorp's side, and the remaining answer is a Claude
+// So there is no lever on aviary's side, and the remaining answer is a Claude
 // Code change, filed upstream as remoteControlUpstreamIssue. Until that lands
-// a run is followed in glorp's own dashboard, which is localhost only.
+// a run is followed in aviary's own dashboard, which is localhost only.
 const remoteControlNoLeverFinding = "no lever makes a `claude -p` run viewable remotely: remoteControlAtStartup is not read under -p, autoUploadSessions does not exist, and `claude remote-control` hosts only the sessions it starts itself; tracked upstream at " + remoteControlUpstreamIssue
 
 // remoteControlInertNotice returns the finding above when a watch opts into
@@ -1388,20 +1391,20 @@ func remoteControlInertNotice(remoteControl bool) string {
 }
 
 // remoteControlSessionName names the Remote Control session after the issue
-// being worked on, so concurrent glorp runs are told apart in the Claude app
+// being worked on, so concurrent aviary runs are told apart in the Claude app
 // instead of all appearing under the same host name.
 func remoteControlSessionName(target string, issue Issue) string {
 	if repo := issueRepository(target, issue); repo != "" {
-		return fmt.Sprintf("glorp %s#%d", repo, issue.Number)
+		return fmt.Sprintf("aviary %s#%d", repo, issue.Number)
 	}
-	return fmt.Sprintf("glorp #%d", issue.Number)
+	return fmt.Sprintf("aviary #%d", issue.Number)
 }
 
 // sessionRunDir is the directory a run's agent starts in, and whether that is
 // its checkout. Before a checkout directory exists, the agent runs outside
-// glorp's own working directory so it cannot mistake an ambient git repo (e.g.
-// the repo glorp itself was launched from) for the one it was asked to work on
-// (issue #279).
+// aviary's own working directory so it cannot mistake an ambient git repo (e.g.
+// the repo aviary itself was launched from) for the one it was asked to work on
+// .
 func sessionRunDir(session AgentSession) (string, bool) {
 	if session.CheckoutDirectory != "" {
 		if info, err := os.Stat(session.CheckoutDirectory); err == nil && info.IsDir() {
@@ -1415,7 +1418,7 @@ func sessionRunDir(session AgentSession) (string, bool) {
 }
 
 // resolveRunDir chooses the sanctioned temp directory a run without a usable
-// checkout starts in (issue #830). It fails, rather than falling back to some
+// checkout starts in. It fails, rather than falling back to some
 // other directory, when no configured temp directory has room for a clone.
 func (r CommandRunner) resolveRunDir(session AgentSession) (AgentSession, error) {
 	if _, inCheckout := sessionRunDir(session); inCheckout || session.RunDir != "" || r.CloneRoot == nil {
@@ -1450,7 +1453,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 			prompt = fmt.Sprintf("/gh-fix %d", issue.Number)
 		}
 		if !isDiscussionTarget(target) && r.Identity != "" {
-			prompt += " identity:/glorp:" + string(r.Identity)
+			prompt += " identity:/aviary:" + string(r.Identity)
 		}
 		if !isDiscussionTarget(target) && r.NoMerge {
 			prompt += " and do not merge"
@@ -1459,19 +1462,19 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 			prompt += " and no changelog"
 		}
 		// The user cannot write to the issue's repository, so the fix is pushed
-		// to their fork and its pull request opened from there (issue #712).
+		// to their fork and its pull request opened from there.
 		if !isDiscussionTarget(target) && issue.Fork != "" {
 			prompt += " and use fork " + issue.Fork
 		}
 		prompt += "\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-		// The clone must live under a sanctioned temp directory (issue #830),
+		// The clone must live under a sanctioned temp directory,
 		// so the run names the one it chose rather than leaving it to the agent.
 		if _, inCheckout := sessionRunDir(session); session.RunDir != "" && !inCheckout && !isDiscussionTarget(target) {
 			prompt += "\n\nClone directory: " + session.RunDir
 		}
 	} else if session.Update != "" {
 		// The session is being resumed to relay a change made to the issue
-		// while it was running (issue #469), so the change itself is the
+		// while it was running, so the change itself is the
 		// prompt rather than a bare "continue".
 		prompt = session.Update
 		prompt += "\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
@@ -1498,7 +1501,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	// values below are what one dispatch substitutes into it.
 	// A run that starts in the temp directory rather than its checkout is
 	// outside any git repository, which Codex refuses without
-	// --skip-git-repo-check (issue #819).
+	// --skip-git-repo-check.
 	_, inCheckout := sessionRunDir(session)
 	return definition.Render(mode, agents.Values{
 		Prompt:     prompt,
@@ -1521,21 +1524,21 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 }
 
 // scheduledRunPrompt is what a scheduled run's agent is told in place of the
-// gh-fix invocation (issue #848): the schedule's own prompt, the repository it
+// gh-fix invocation: the schedule's own prompt, the repository it
 // targets, and where to clone it.
 func scheduledRunPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(issue.Prompt))
-	fmt.Fprintf(&b, "\n\nThis is a scheduled prompt (schedule %q, %q) that glorp runs on a timer; it is not tied to an issue.", issue.ScheduleID, issue.Title)
+	fmt.Fprintf(&b, "\n\nThis is a scheduled prompt (schedule %q, %q) that aviary runs on a timer; it is not tied to an issue.", issue.ScheduleID, issue.Title)
 	if issue.Repository != "" {
 		b.WriteString("\n\nRepository: " + issue.Repository)
 	}
 	if r.Identity != "" {
-		b.WriteString("\n\nInstance identity: /glorp:" + string(r.Identity) + ". End the body of every issue you create with `**Created by Glorp:** /glorp:" + string(r.Identity) + "`.")
+		b.WriteString("\n\nInstance identity: /aviary:" + string(r.Identity) + ". End the body of every issue you create with `**Created by Engine:** /aviary:" + string(r.Identity) + "`.")
 	}
 	b.WriteString("\n\nKeep your responses concise. Finish with a one-line summary of what you did.")
 	if _, inCheckout := sessionRunDir(session); session.RunDir != "" && !inCheckout {
-		b.WriteString("\n\nIf you need a checkout, clone the repository into a new directory inside this clone directory and nowhere else, print GLORP_CHECKOUT_DIRECTORY=<absolute clone path> once it exists, and remove it before you finish: " + session.RunDir)
+		b.WriteString("\n\nIf you need a checkout, clone the repository into a new directory inside this clone directory and nowhere else, print AVIARY_CHECKOUT_DIRECTORY=<absolute clone path> once it exists, and remove it before you finish: " + session.RunDir)
 	}
 	return b.String()
 }
@@ -1571,7 +1574,7 @@ func (r CommandRunner) specForSession(session AgentSession) agentSpec {
 		value = r.Agent
 	}
 	// Parsed against this runner's own registry rather than the process-wide
-	// one, so the managed default model a spec falls back to (issue #612) is
+	// one, so the managed default model a spec falls back to is
 	// the one declared by the very definition this runner dispatches with.
 	spec, err := parseAgentSpecIn(r.registry(), value)
 	if err != nil {
@@ -1614,14 +1617,14 @@ func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.C
 	cmd := exec.CommandContext(ctx, binary, args...)
 	if shimErr != nil {
 		// Start reports it, so every caller fails the call loudly instead of
-		// the agent answering a truncated prompt (issue #809).
+		// the agent answering a truncated prompt.
 		cmd.Err = shimErr
 	}
 	// Cancelling the run ends the agent's whole process tree, not just the
 	// agent, and Wait stops waiting on its output pipes soon after. A tree the
 	// shutdown checkpoint paused cannot exit by itself, so killing only the
 	// agent left its paused children holding the pipes and Wait, and with it
-	// every restart, hung forever (issue #749).
+	// every restart, hung forever.
 	cmd.Cancel = func() error { return process.Kill(cmd) }
 	cmd.WaitDelay = agentCommandWaitDelay
 	// Stdin stays the null device: Codex treats any other stdin as an optional
@@ -1645,14 +1648,14 @@ type sessionMetadataCaptureWriter struct {
 	checkout *checkoutCapture
 }
 
-const checkoutDirectoryMarker = "GLORP_CHECKOUT_DIRECTORY="
+const checkoutDirectoryMarker = "AVIARY_CHECKOUT_DIRECTORY="
 
-// checkoutCapture reads glorp's own GLORP_CHECKOUT_DIRECTORY marker out of a
-// line and reports the isolated checkout once. The marker is glorp's protocol
+// checkoutCapture reads aviary's own AVIARY_CHECKOUT_DIRECTORY marker out of a
+// line and reports the isolated checkout once. The marker is aviary's protocol
 // rather than any agent's, so the same capture is shared by every writer that
 // might see it: the decoded assistant text, where an agent that narrates the
 // path puts it, and the raw stream, where an agent that announces it through a
-// shell tool leaves it (issue #552).
+// shell tool leaves it.
 type checkoutCapture struct {
 	mu       sync.Mutex
 	captured bool
@@ -1686,7 +1689,7 @@ func (c *checkoutCapture) capture(line string) {
 // captureRaw scans one line of an agent's raw stream. A JSON envelope is
 // walked so a marker nested anywhere inside it is found, whichever field the
 // agent happened to put it in: cline announces the checkout through a shell
-// tool, so the marker only ever reaches glorp inside a tool result the decoder
+// tool, so the marker only ever reaches aviary inside a tool result the decoder
 // does not read, and the same is true of any other agent whose definition maps
 // only text and tool names. A line that is not JSON is scanned as it is.
 func (c *checkoutCapture) captureRaw(line string) {
@@ -1807,7 +1810,7 @@ type claudeJSONOutputWriter struct {
 	buffer []byte
 	// wakeup is the last ScheduleWakeup the agent called, and wakeupID the
 	// tool_use ID it was called with, so a call the tool rejected is dropped
-	// again (issue #671).
+	// again.
 	wakeup   *scheduledWakeup
 	wakeupID string
 }
@@ -2090,7 +2093,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// An agent whose definition declares a minimum CLI version is checked
 	// before it is dispatched, so an install too old for the definition's
 	// argv reports the version as the cause instead of dying on an
-	// unrecognized argument (issue #535).
+	// unrecognized argument.
 	versionWarning, versionErr := checkAgentVersion(ctx, definition, binary)
 	if versionErr != nil {
 		return versionErr, false
@@ -2101,11 +2104,11 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	}
 	args := commandArgsForSession(r, issue, session)
 	cmd := newAgentCommand(ctx, binary, args...)
-	// The definition's env is what the agent needs beyond glorp's own
+	// The definition's env is what the agent needs beyond aviary's own
 	// environment: Claude's headless print mode, for instance, caps how long
 	// it waits for in-flight background shell tasks before terminating them
-	// (10 minutes by default), and glorp dispatches it for long-lived
-	// autonomous work (issue #330).
+	// (10 minutes by default), and aviary dispatches it for long-lived
+	// autonomous work.
 	if env := definitionEnv(definition); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
@@ -2129,8 +2132,8 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		agentOutput = io.MultiWriter(agentOutput, r.Output)
 	}
 	// Retain the trailing output so a failing run can quote what actually went
-	// wrong, both in glorp's own logs and in its bug report, instead of an
-	// empty placeholder (issues #353, #355). Wrapping here, before the
+	// wrong, both in aviary's own logs and in its bug report, instead of an
+	// empty placeholder. Wrapping here, before the
 	// decoding writers, means the captured text is the human-readable stream
 	// rather than raw agent JSON.
 	outputTail := &agentOutputTailWriter{output: agentOutput, limit: agentOutputTailLimit}
@@ -2172,6 +2175,10 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		detector = &missingSessionDetector{output: agentOutput, patterns: definition.MissingSessionPatterns()}
 		agentOutput = detector
 	}
+	if recorder := r.transcriptRecorder(issue, definition.Output.Format); recorder != nil {
+		agentOutput = io.MultiWriter(recorder, agentOutput)
+		defer recorder.Flush()
+	}
 	cmd.Stdout, cmd.Stderr = agentOutput, agentOutput
 	runErr := process.Start(cmd)
 	if runErr == nil {
@@ -2192,7 +2199,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if runErr == nil {
 		// In print mode the process exits when the turn ends, so a wakeup the
 		// agent scheduled would never fire. It is handed to the run loop
-		// instead, which waits it out and resumes the session (issue #671).
+		// instead, which waits it out and resumes the session.
 		if reporter, ok := decoder.(wakeupReporter); ok {
 			if wakeup, pending := reporter.PendingWakeup(); pending {
 				return &wakeup, false

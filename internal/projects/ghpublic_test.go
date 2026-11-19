@@ -564,8 +564,8 @@ func TestLoadDependenciesUsesAuthenticatedRESTForPrivateRepo(t *testing.T) {
 }
 
 // TestLoadDependenciesReadsEveryPublicPage keeps a blocker or open sub-issue
-// on a later page from being dropped, which would let glorp dispatch an issue
-// GitHub still considers blocked (issue #722).
+// on a later page from being dropped, which would let aviary dispatch an issue
+// GitHub still considers blocked.
 func TestLoadDependenciesReadsEveryPublicPage(t *testing.T) {
 	gh := GHCLI{
 		publicRepoCache: &sync.Map{},
@@ -702,7 +702,7 @@ func TestListCommentsUsesPublicAPIForPublicRepo(t *testing.T) {
 }
 
 // TestDefaultIssueFilterOmitsKindAndStateQualifiers pins the kind and state
-// qualifiers out of the filter a user is shown and overrides. glorp only ever
+// qualifiers out of the filter a user is shown and overrides. aviary only ever
 // dispatches an open issue, so they are appended to every query it builds
 // instead, and overriding --filter must not mean repeating them.
 func TestDefaultIssueFilterOmitsKindAndStateQualifiers(t *testing.T) {

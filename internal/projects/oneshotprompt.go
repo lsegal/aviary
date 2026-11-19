@@ -14,7 +14,7 @@ import (
 // oneShotArgvPromptLimit is the largest prompt an out-of-band call still
 // passes as an argument to an agent that cannot read it from stdin. Anything
 // larger goes through a file, well clear of Windows' 32,767-character command
-// line and Linux's 128 KiB single-argument limit (issue #815).
+// line and Linux's 128 KiB single-argument limit.
 const oneShotArgvPromptLimit = 8 * 1024
 
 // windowsCommandLineLimit is the most characters CreateProcess accepts in a
@@ -53,7 +53,7 @@ func newOneShotPrompt(definition agents.Definition, values agents.Values, dir st
 	if len(values.Prompt) <= oneShotArgvPromptLimit {
 		return call, nil
 	}
-	file, err := os.CreateTemp(dir, "glorp-prompt-*.md")
+	file, err := os.CreateTemp(dir, "aviary-prompt-*.md")
 	if err != nil {
 		return call, fmt.Errorf("write the prompt file: %w", err)
 	}

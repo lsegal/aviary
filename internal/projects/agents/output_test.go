@@ -180,7 +180,7 @@ func TestMissingSessionPatternsDefaultToTheSharedList(t *testing.T) {
 func TestBuiltinOutputDecoders(t *testing.T) {
 	registry := MustBuiltin()
 	for name, want := range map[string]string{
-		"claude": FormatStreamJSON, "codex": FormatText,
+		"claude": FormatStreamJSON, "codex": FormatCodexJSON,
 		"cline": FormatJSONL, "opencode": FormatJSONL, "muse": FormatJSONL,
 	} {
 		definition, ok := registry.Lookup(name)

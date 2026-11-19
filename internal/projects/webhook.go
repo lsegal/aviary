@@ -30,10 +30,10 @@ type WebhookEvent struct {
 	// #294).
 	CommentAuthor string
 	// CommentID is CommentBody's GitHub comment ID, used to react to the
-	// comment that carried a direct mention (issue #581).
+	// comment that carried a direct mention.
 	CommentID int64
 	// CommentNodeID is CommentBody's GraphQL node ID. A pull_request_review
-	// delivery's review body can only be reacted to through it (issue #695).
+	// delivery's review body can only be reacted to through it.
 	CommentNodeID string
 	// MentionedIssues names same-repository issues referenced by a closed
 	// issue or pull request. The run loop uses these references to treat the
@@ -43,9 +43,9 @@ type WebhookEvent struct {
 	// OnPullRequest reports that an issue_comment delivery's comment was
 	// posted on a pull request rather than an issue, and ClosesIssues names
 	// the issues that pull request's description closes, so a direct mention
-	// posted there reaches the issue it fixes (issue #689). Review comment
+	// posted there reaches the issue it fixes. Review comment
 	// and review deliveries are always on a pull request, and IssueNumber
-	// names it (issue #695).
+	// names it.
 	OnPullRequest bool
 	ClosesIssues  []int
 	// DiscussionNumber and DiscussionTitle carry the thread a `discussion`
@@ -57,7 +57,7 @@ type WebhookEvent struct {
 }
 
 // WebhookHandler accepts GitHub webhook deliveries, records useful delivery
-// details, and asks the glorp to refresh its issue list. The payload is not
+// details, and asks the aviary to refresh its issue list. The payload is not
 // used as the source of issue data: the next authenticated GitHub CLI query
 // remains authoritative.
 type WebhookHandler struct {

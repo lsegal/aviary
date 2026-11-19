@@ -9,10 +9,11 @@ import (
 	"sync"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/projects/transcript"
 )
 
 // outputDecoder wraps the writer an agent's stdout is forwarded to, turning
-// whatever the agent prints into the human-readable lines glorp shows. Which
+// whatever the agent prints into the human-readable lines aviary shows. Which
 // decoder a run gets is the agent definition's to say, so a CLI with its own
 // event stream is read by describing it rather than by adding another arm to
 // runOnce.
@@ -32,6 +33,8 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 		return newClaudeJSONOutputWriter(w)
 	case agents.FormatJSONL:
 		return newJSONLOutputWriter(w, *output.JSONL)
+	case agents.FormatCodexJSON:
+		return newCodexJSONOutputWriter(w)
 	}
 	return nil
 }
@@ -362,4 +365,61 @@ func firstJSONLString(values []any) string {
 		}
 	}
 	return ""
+}
+
+// codexJSONOutputWriter renders `codex exec --json` for the job's scrollback:
+// agent messages as text, commands, file changes and tool calls as progress
+// lines, and the thread id in the "session id:" form the codex definition
+// captures.
+type codexJSONOutputWriter struct {
+	lineWriter
+	output io.Writer
+	mapper transcript.Mapper
+}
+
+func newCodexJSONOutputWriter(output io.Writer) *codexJSONOutputWriter {
+	w := &codexJSONOutputWriter{output: output, mapper: transcript.NewMapper(transcript.FormatCodexJSON)}
+	w.line = w.writeLine
+	return w
+}
+
+func (w *codexJSONOutputWriter) writeLine(line []byte) error {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return nil
+	}
+	var envelope struct {
+		Type     string `json:"type"`
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		_, err = fmt.Fprintln(w.output, string(line))
+		return err
+	}
+	if envelope.Type == "thread.started" && envelope.ThreadID != "" {
+		_, err := fmt.Fprintf(w.output, "session id: %s\n", envelope.ThreadID)
+		return err
+	}
+	var texts []string
+	for _, event := range w.mapper.Map(line) {
+		switch {
+		case event.Kind == transcript.KindMessage:
+			if text := strings.TrimSpace(event.Text); text != "" {
+				texts = append(texts, text)
+			}
+		case event.Kind == transcript.KindCommand && event.Status == "running":
+			texts = append(texts, "Running: "+event.Command)
+		case event.Kind == transcript.KindFileChange:
+			texts = append(texts, "Editing: "+event.Path)
+		case event.Kind == transcript.KindToolCall:
+			texts = append(texts, "Running: "+event.Name)
+		case event.Kind == transcript.KindSystem && event.IsError:
+			texts = append(texts, "Agent error: "+event.Text)
+		}
+	}
+	if len(texts) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
+	return err
 }

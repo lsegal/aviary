@@ -9,14 +9,14 @@ import (
 )
 
 // TestBuiltinDefinitionsLoad checks the embedded documents parse and validate.
-// They are the only definitions a default run has, so a broken one is a glorp
+// They are the only definitions a default run has, so a broken one is a aviary
 // that cannot dispatch anything.
 func TestBuiltinDefinitionsLoad(t *testing.T) {
 	registry, err := Builtin()
 	if err != nil {
 		t.Fatalf("Builtin() error = %v", err)
 	}
-	// Asserted as a superset rather than an exact list: every agent glorp
+	// Asserted as a superset rather than an exact list: every agent aviary
 	// adds a definition for lands here, and a test that has to be edited to
 	// add one only ever reports that an agent was added.
 	requireRegistered(t, registry, "claude", "codex")
@@ -31,7 +31,7 @@ func TestBuiltinDefinitionsLoad(t *testing.T) {
 }
 
 // TestBuiltinArgvIsUnchanged pins the argv every mode renders for the agents
-// glorp already shipped. This is the parity claim the refactor rests on: the
+// aviary already shipped. This is the parity claim the refactor rests on: the
 // definitions replace hand-written branches, so the arguments they produce
 // have to be exactly what those branches produced.
 func TestBuiltinArgvIsUnchanged(t *testing.T) {
@@ -47,24 +47,24 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		{
 			name: "codex fresh", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt},
-			want:   []string{"exec", prompt},
+			want:   []string{"exec", "--json", prompt},
 		},
 		{
 			name: "codex fresh with model and level", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt, Model: "gpt-5.6-luna", Level: "high"},
-			want:   []string{"exec", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt},
+			want:   []string{"exec", "--json", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt},
 		},
 		{
 			name: "codex fresh yolo", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt, Yolo: true},
-			want:   []string{"exec", "--dangerously-bypass-approvals-and-sandbox", prompt},
+			want:   []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", prompt},
 		},
 		{
 			// A resume takes neither the model nor the level: the session it
 			// continues already has them.
 			name: "codex resume", agent: "codex", mode: ModeResume,
 			values: Values{Prompt: prompt, Session: "sess-1", Model: "gpt-5.6-luna", Level: "high"},
-			want:   []string{"exec", "resume", "sess-1", prompt},
+			want:   []string{"exec", "resume", "--json", "sess-1", prompt},
 		},
 		{
 			name: "codex vision", agent: "codex", mode: ModeVision,
@@ -91,18 +91,18 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		},
 		{
 			name: "claude fresh with remote control", agent: "claude", mode: ModeRun,
-			values: Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "glorp o/r#7"},
+			values: Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
 			want: []string{
 				"-p", "--permission-mode", "auto", "--settings", `{"remoteControlAtStartup":true}`,
-				"--rc", "glorp o/r#7", "--output-format", "stream-json", "--verbose", prompt,
+				"--rc", "aviary o/r#7", "--output-format", "stream-json", "--verbose", prompt,
 			},
 		},
 		{
 			// Codex declares no remote-control fragment, so the run's flag
 			// reaches its argv not at all.
 			name: "codex ignores remote control", agent: "codex", mode: ModeRun,
-			values: Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "glorp o/r#7"},
-			want:   []string{"exec", prompt},
+			values: Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
+			want:   []string{"exec", "--json", prompt},
 		},
 		{
 			name: "claude resume", agent: "claude", mode: ModeResume,
@@ -145,7 +145,7 @@ func TestRenderSkipsUnknownMode(t *testing.T) {
 
 // TestRenderPromptStdinReplacesThePromptArgument checks an out-of-band call
 // that writes its prompt to stdin renders the agent's stand-in for the prompt
-// argument instead of the prompt (issue #815), and that every other call, and
+// argument instead of the prompt, and that every other call, and
 // every agent that cannot read stdin, renders the prompt as before.
 func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 	registry := MustBuiltin()
@@ -154,7 +154,7 @@ func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 		want  []string
 	}{
 		{"claude", []string{"-p", "--permission-mode", "auto", "--output-format", "stream-json", "--verbose"}},
-		{"codex", []string{"exec", "-"}},
+		{"codex", []string{"exec", "--json", "-"}},
 	} {
 		definition, _ := registry.Lookup(test.agent)
 		if !definition.ReadsPromptFromStdin() {
@@ -183,12 +183,12 @@ func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 func TestRenderCodexOneShotSkipsTheGitRepoCheck(t *testing.T) {
 	codex, _ := MustBuiltin().Lookup("codex")
 	values := Values{Prompt: "status?", Model: "gpt-5", PromptStdin: true, OneShot: true, NoCheckout: true}
-	want := []string{"exec", "--skip-git-repo-check", "--model", "gpt-5", "-"}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5", "-"}
 	if got := codex.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 		t.Errorf("one-shot argv = %#v, want %#v", got, want)
 	}
 	values.Yolo = true
-	want = []string{"exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5", "-"}
+	want = []string{"exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5", "-"}
 	if got := codex.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 		t.Errorf("one-shot yolo argv = %#v, want %#v", got, want)
 	}
@@ -199,7 +199,7 @@ func TestRenderCodexOneShotSkipsTheGitRepoCheck(t *testing.T) {
 			}
 		}
 	}
-	want = []string{"exec", "resume", "--skip-git-repo-check", "abc", "fix it"}
+	want = []string{"exec", "resume", "--json", "--skip-git-repo-check", "abc", "fix it"}
 	if got := codex.Render(ModeResume, Values{Prompt: "fix it", Session: "abc", NoCheckout: true}); !reflect.DeepEqual(got, want) {
 		t.Errorf("resume argv outside a checkout = %#v, want %#v", got, want)
 	}
@@ -213,7 +213,7 @@ func TestInvalidDefinitionsNameTheirField(t *testing.T) {
 		return Definition{
 			Name: "acme", Binary: "acme",
 			Args:    Args{Run: []Fragment{{Args: []string{"{prompt}"}}}, Resume: []Fragment{{Args: []string{"{session}"}}}},
-			Session: Session{Assign: AssignGlorp},
+			Session: Session{Assign: AssignEngine},
 			Output:  Output{Format: FormatText},
 		}
 	}
@@ -313,7 +313,7 @@ func TestSessionAccessors(t *testing.T) {
 	registry := MustBuiltin()
 	claude, _ := registry.Lookup("claude")
 	if !claude.AssignsSessionID() || claude.CapturesSessionID() || claude.SessionPattern() != nil {
-		t.Fatal("claude should take the session ID glorp assigns it")
+		t.Fatal("claude should take the session ID aviary assigns it")
 	}
 	codex, _ := registry.Lookup("codex")
 	if codex.AssignsSessionID() || !codex.CapturesSessionID() {
@@ -346,8 +346,8 @@ func requireRegistered(t *testing.T, registry *Registry, names ...string) {
 }
 
 // TestSkillsTargetShapeIsValidated checks a malformed skills.sh target id is
-// rejected while an id glorp has never heard of is accepted: the set of ids
-// skills.sh knows grows without glorp, so only the shape is glorp's business.
+// rejected while an id aviary has never heard of is accepted: the set of ids
+// skills.sh knows grows without aviary, so only the shape is aviary's business.
 func TestSkillsTargetShapeIsValidated(t *testing.T) {
 	definition := Definition{
 		Name: "acme", Binary: "acme",
@@ -373,7 +373,7 @@ func TestSkillsTargetShapeIsValidated(t *testing.T) {
 }
 
 // TestQuotaValidation covers the quota block the registry-driven quota reader
-// selects on (issue #489). A block that names a reader glorp does not have, or
+// selects on. A block that names a reader aviary does not have, or
 // that carries generic-reader fields the chosen reader would ignore, is
 // rejected rather than silently doing nothing: a quota that never appears
 // looks exactly like an agent that has none.
@@ -463,7 +463,7 @@ func TestQuotaDefaults(t *testing.T) {
 	}
 }
 
-// TestBuiltinAgentsKeepTheirQuotaReaders checks the definitions glorp ships
+// TestBuiltinAgentsKeepTheirQuotaReaders checks the definitions aviary ships
 // still select the readers whose status-bar strings the UI tests pin.
 func TestBuiltinAgentsKeepTheirQuotaReaders(t *testing.T) {
 	registry := MustBuiltin()
@@ -604,7 +604,7 @@ func TestSessionlessBuiltinsResumeAsTheyRan(t *testing.T) {
 }
 
 // TestResumingAgentsKeepTheirOwnTemplate checks the fallback is confined to
-// sessionless agents: an agent glorp holds a session ID for still resumes with
+// sessionless agents: an agent aviary holds a session ID for still resumes with
 // the arguments its definition declares.
 func TestResumingAgentsKeepTheirOwnTemplate(t *testing.T) {
 	registry := MustBuiltin()
@@ -689,7 +689,7 @@ func doctorFixture(doctor Doctor) Definition {
 }
 
 // TestDefaultModelFillsInAnUnspecifiedModel checks the managed default an
-// --agent spec with no model of its own falls back to (issue #612), and that a
+// --agent spec with no model of its own falls back to, and that a
 // definition naming none still leaves the choice to the agent's own CLI.
 func TestDefaultModelFillsInAnUnspecifiedModel(t *testing.T) {
 	withDefault := Definition{DefaultModel: "gpt-5.6-terra"}
@@ -741,17 +741,17 @@ func TestDefaultModelHasToBeOneTheAgentAccepts(t *testing.T) {
 }
 
 // TestBuiltinDefaultModelsAreMidTier checks the shipped defaults are the ones
-// glorp means to spend a queue of issues on rather than each CLI's own largest
-// model (issue #612), and that the agents whose catalogs are per-account name
-// none rather than a model id glorp cannot promise every account has.
+// aviary means to spend a queue of issues on rather than each CLI's own largest
+// model, and that the agents whose catalogs are per-account name
+// none rather than a model id aviary cannot promise every account has.
 //
 // The four ids here were each read out of the CLI's own catalog rather than
-// guessed (issue #622). gemini's list is built inside the CLI rather than
+// guessed. gemini's list is built inside the CLI rather than
 // fetched for the account, so a flash id can be promised the way codex's and
 // claude's can; agy's is fetched, but every id it offers except the Claude and
 // GPT-OSS ones ends in its own reasoning level. muse, cline, and opencode name
 // none deliberately: their catalogs are whatever the signed-in account can
-// reach, so any id glorp wrote down here would fail the dispatch outright on
+// reach, so any id aviary wrote down here would fail the dispatch outright on
 // an account that does not have it -- strictly worse than letting the CLI
 // choose. See TestBuiltinDefaultModelsCarryNoReasoningLevel for the other half
 // of the agy decision.
@@ -780,7 +780,7 @@ func TestBuiltinDefaultModelsAreMidTier(t *testing.T) {
 // agy decision in issue #622: agy renders {level} into its own --effort
 // fragment, and most of the ids its catalog offers spell the level into the id
 // itself (gemini-3.8-flash-medium, gemini-3.1-pro-high). A default carrying an
-// embedded level would have glorp dispatch --model gemini-3.8-flash-medium
+// embedded level would have aviary dispatch --model gemini-3.8-flash-medium
 // --effort high and let the CLI pick which of the two contradictory levels
 // wins, so the default has to be an id with no level in it. The same holds for
 // any built-in that declares levels at all.

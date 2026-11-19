@@ -51,7 +51,7 @@ func TestParseClaimVariants(t *testing.T) {
 func TestLastCommentMatchesOnlyTheNewestExactComment(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: claimComment("SELF", false)})
-	w := &Glorp{Comments: comments}
+	w := &Engine{Comments: comments}
 
 	matched, err := w.lastCommentMatches(context.Background(), "o/r", 1, claimComment("SELF", false))
 	if err != nil || !matched {
@@ -106,7 +106,7 @@ type fakeCommentClient struct {
 type fakeReaction struct {
 	Repo      string
 	CommentID int64
-	// Kind and NodeID say which reaction endpoint was used (issue #695).
+	// Kind and NodeID say which reaction endpoint was used.
 	Kind    CommentKind
 	NodeID  string
 	Content string
@@ -180,7 +180,7 @@ func (f *fakeCommentClient) reactionsSnapshot() []fakeReaction {
 
 func TestNegotiateOwnershipClaimsWhenUncontested(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true }}
 	claimed, err := w.negotiateOwnership(context.Background(), ownershipTarget{Repo: "o/r", Number: 1})
 	if err != nil {
 		t.Fatalf("negotiateOwnership: %v", err)
@@ -202,7 +202,7 @@ func TestNegotiateOwnershipClaimsWhenUncontested(t *testing.T) {
 
 func TestNegotiateOwnershipUsesContinuingClaimForDraftPR(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true }}
 	claimed, err := w.negotiateOwnership(context.Background(), ownershipTarget{Repo: "o/r", Number: 5, Continue: true})
 	if err != nil || !claimed {
 		t.Fatalf("negotiateOwnership: claimed=%v err=%v", claimed, err)
@@ -216,7 +216,7 @@ func TestNegotiateOwnershipUsesContinuingClaimForDraftPR(t *testing.T) {
 func TestNegotiateOwnershipStandsDownWhenAnotherInstanceResponds(t *testing.T) {
 	comments := newFakeCommentClient()
 	waited := false
-	w := &Glorp{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool {
 		// Simulate another instance answering while we wait.
 		comments.inject("o/r", 1, Comment{Body: signComment(presenceClaimBody, "OTHER"), CreatedAt: time.Now()})
 		waited = true
@@ -242,7 +242,7 @@ func TestNegotiateOwnershipStandsDownWhenAnotherInstanceResponds(t *testing.T) {
 
 func TestNegotiateOwnershipStandsDownOnCompetingStartingClaim(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool {
 		comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "LATER"), CreatedAt: time.Now()})
 		return true
 	}}
@@ -255,7 +255,7 @@ func TestNegotiateOwnershipStandsDownOnCompetingStartingClaim(t *testing.T) {
 func TestNegotiateOwnershipReturnsFalseWhenContextCancelledDuringWait(t *testing.T) {
 	comments := newFakeCommentClient()
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &Glorp{Comments: comments, Identity: "SELF", ownershipWait: func(ctx context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(ctx context.Context) bool {
 		cancel()
 		return false
 	}}
@@ -269,7 +269,7 @@ func TestNegotiateOwnershipReturnsFalseWhenContextCancelledDuringWait(t *testing
 }
 
 func TestNegotiateOwnershipNoopWithoutCommentClient(t *testing.T) {
-	w := &Glorp{}
+	w := &Engine{}
 	claimed, err := w.negotiateOwnership(context.Background(), ownershipTarget{Repo: "o/r", Number: 1})
 	if err != nil || !claimed {
 		t.Fatalf("expected an instance without comment support to claim immediately, got claimed=%v err=%v", claimed, err)
@@ -311,10 +311,10 @@ func TestOwnershipTargetForFallsBackToIssueWithoutOpenPullRequest(t *testing.T) 
 
 // settleNegotiation runs a reap, waits for the background handshake it hands
 // off, then runs the reap again the way the next poll would. The grace window
-// no longer runs on the poll loop (issue #437), so an issue whose handshake is
+// no longer runs on the poll loop, so an issue whose handshake is
 // won is dispatched by the following poll rather than by the reap that started
 // it. pending is a constructor because the reap filters its batch in place.
-func settleNegotiation(w *Glorp, checker WorkClosureChecker, pending func() []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
+func settleNegotiation(w *Engine, checker WorkClosureChecker, pending func() []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
 	w.negotiateContestedIssues(context.Background(), checker, pending(), seen, aggressive)
 	w.awaitNegotiations()
 	return w.negotiateContestedIssues(context.Background(), checker, pending(), seen, false)
@@ -325,7 +325,7 @@ func TestNegotiateContestedIssuesFiltersDeclinedClaims(t *testing.T) {
 	// Issue #1 is contested and another instance answers; issue #2 is
 	// uncontested so it passes straight through without negotiation.
 	comments.inject("o/r", 1, Comment{})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool {
 		comments.inject("o/r", 1, Comment{Body: signComment(presenceClaimBody, "OTHER"), CreatedAt: time.Now()})
 		return true
 	}}
@@ -347,7 +347,7 @@ func TestNegotiateContestedIssuesFiltersDeclinedClaims(t *testing.T) {
 
 func TestNegotiateContestedIssuesSkipsResumedSessions(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF"}
+	w := &Engine{Comments: comments, Identity: "SELF"}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true, session: AgentSession{Resume: true}},
 	}
@@ -380,7 +380,7 @@ func TestLatestClaimByOtherPicksNewestForeignClaim(t *testing.T) {
 
 func TestClaimStandingHonoursStaleClaimAge(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	target := ownershipTarget{Repo: "o/r", Number: 1}
 
 	if standing, err := w.claimStanding(context.Background(), target); err != nil || standing.OwnerFresh || standing.OwnerClaimed || standing.SelfHolds {
@@ -398,7 +398,7 @@ func TestClaimStandingHonoursStaleClaimAge(t *testing.T) {
 
 func TestClaimStandingReportsThisInstanceAsHolderOfItsOwnNewestClaim(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	target := ownershipTarget{Repo: "o/r", Number: 1}
 
 	comments.inject("o/r", 1, Comment{Body: signComment(askClaimBody, "SELF"), CreatedAt: time.Now().Add(-7 * time.Minute)})
@@ -433,7 +433,7 @@ func TestNegotiateContestedIssuesDoesNotReAskWorkThisInstanceAlreadyClaimed(t *t
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(askClaimBody, "SELF"), CreatedAt: time.Now().Add(-7 * time.Minute)})
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "SELF"), CreatedAt: time.Now().Add(-4 * time.Minute)})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	pending := []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true}}
 	seen := map[string]bool{issueKey(pending[0].issue): true}
 
@@ -454,7 +454,7 @@ func TestNegotiateContestedIssuesSkipsFreshlyClaimedWorkWhenNotAggressive(t *tes
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	comments.inject("o/r", 2, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-3 * time.Hour)})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true},
 		{issue: Issue{Number: 2, Repository: "o/r", Target: "o/r"}, contested: true},
@@ -482,12 +482,12 @@ func TestNegotiateContestedIssuesSkipsFreshlyClaimedWorkWhenNotAggressive(t *tes
 // regardless of claim age. The ask only reads answers posted after it, and a
 // live instance that announced itself minutes ago does not re-announce during
 // the grace window, so nothing answered and the freshly started instance
-// claimed and dispatched work that was actively running (issue #514).
+// claimed and dispatched work that was actively running.
 func TestNegotiateContestedIssuesAggressiveStandsDownForFreshClaims(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
 	pending := func() []pendingIssue {
 		return []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true}}
 	}
@@ -511,7 +511,7 @@ func TestNegotiateContestedIssuesAggressiveStandsDownForFreshClaims(t *testing.T
 func TestNegotiateContestedIssuesAggressiveStillReapsStaleAndUnclaimedWork(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-3 * time.Hour)})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	pending := func() []pendingIssue {
 		return []pendingIssue{
 			{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true},
@@ -537,7 +537,7 @@ func TestNegotiateContestedIssuesAggressiveNegotiatesWhenTheClaimReadFails(t *te
 	comments := newFakeCommentClient()
 	comments.listErr = errors.New("boom")
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
 	pending := []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true}}
 	w.negotiateContestedIssues(context.Background(), nil, pending, map[string]bool{}, true)
 	w.awaitNegotiations()
@@ -548,15 +548,15 @@ func TestNegotiateContestedIssuesAggressiveNegotiatesWhenTheClaimReadFails(t *te
 }
 
 func TestReapPollTickOnlyWhenPollingIsSlower(t *testing.T) {
-	fast := &Glorp{Interval: time.Minute}
+	fast := &Engine{Interval: time.Minute}
 	if tick := fast.reapPollTick(); tick != 0 {
 		t.Fatalf("tick = %v, want 0 when polling is already faster than the reap interval", tick)
 	}
-	push := &Glorp{Interval: time.Minute, UseWebhooks: true}
+	push := &Engine{Interval: time.Minute, UseWebhooks: true}
 	if tick := push.reapPollTick(); tick != reapPollInterval {
 		t.Fatalf("tick = %v, want %v in webhook push mode", tick, reapPollInterval)
 	}
-	slow := &Glorp{Interval: time.Hour}
+	slow := &Engine{Interval: time.Hour}
 	if tick := slow.reapPollTick(); tick != reapPollInterval {
 		t.Fatalf("tick = %v, want %v for slow polling", tick, reapPollInterval)
 	}
@@ -576,7 +576,7 @@ func requireLogged(t *testing.T, logs string, fragments ...string) {
 func TestNegotiateContestedIssuesLogsReapAskAndPickup(t *testing.T) {
 	comments := newFakeCommentClient()
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
 	pending := func() []pendingIssue {
 		return []pendingIssue{{issue: Issue{Number: 7, Repository: "o/r", Target: "o/r"}, contested: true}}
 	}
@@ -596,7 +596,7 @@ func TestNegotiateContestedIssuesLogsReapAskAndPickup(t *testing.T) {
 func TestNegotiateContestedIssuesLogsStandDownWithClaimingIdentity(t *testing.T) {
 	comments := newFakeCommentClient()
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs}
 	w.ownershipWait = func(context.Context) bool {
 		comments.inject("o/r", 8, Comment{Body: signComment(presenceClaimBody, "OTHER"), CreatedAt: time.Now()})
 		return true
@@ -617,7 +617,7 @@ func TestNegotiateContestedIssuesLogsStaleAndFreshClaimAges(t *testing.T) {
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	comments.inject("o/r", 2, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-3 * time.Hour)})
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true},
 		{issue: Issue{Number: 2, Repository: "o/r", Target: "o/r"}, contested: true},
@@ -651,7 +651,7 @@ func TestCommenterAllowed(t *testing.T) {
 func TestAuthorizedDirectMentionRequiresLastCommentMentionAndAllowedAuthor(t *testing.T) {
 	ctx := context.Background()
 	comments := newFakeCommentClient()
-	comments.inject("o/r", 1, Comment{Body: "Please retry @/glorp:SELF", Author: "lsegal", CreatedAt: time.Now()})
+	comments.inject("o/r", 1, Comment{Body: "Please retry @/aviary:SELF", Author: "lsegal", CreatedAt: time.Now()})
 
 	authorized, err := authorizedDirectMention(ctx, comments, "o/r", 1, "SELF", nil)
 	if err != nil {
@@ -682,7 +682,7 @@ func TestAuthorizedDirectMentionRequiresLastCommentMentionAndAllowedAuthor(t *te
 func TestNegotiateContestedIssuesLogsProjectItemReasonAndPullRequestTarget(t *testing.T) {
 	comments := newFakeCommentClient()
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs, ownershipWait: func(context.Context) bool { return true }}
 	checker := &fakeClosureSource{state: OriginatingWorkState{PullRequests: []PullRequestWorkState{{Number: 42, State: "open"}}}}
 	issue := Issue{Number: 9, Repository: "o/r", Target: "https://github.com/users/o/projects/1", ProjectStatus: "In Progress"}
 	pending := func() []pendingIssue { return []pendingIssue{{issue: issue, contested: true}} }
@@ -774,7 +774,7 @@ func TestParseDiscussionWorkKey(t *testing.T) {
 // already ran must still stop it from asking again.
 func TestNegotiateContestedIssuesDoesNotReAskAfterItsOwnHandshake(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	pending := func() []pendingIssue {
 		return []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, contested: true}}
 	}
@@ -813,7 +813,7 @@ func TestNegotiateContestedIssuesDoesNotReAskAfterItsOwnHandshake(t *testing.T) 
 // must not re-ask, and must not quietly pick the work up either.
 func TestNegotiateContestedIssuesRemembersStandingDown(t *testing.T) {
 	comments := newFakeCommentClient()
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	w.ownershipWait = func(context.Context) bool {
 		comments.inject("o/r", 3, Comment{Body: signComment(presenceClaimBody, "OTHER"), CreatedAt: time.Now()})
 		return true
@@ -838,7 +838,7 @@ func TestNegotiateContestedIssuesRemembersStandingDown(t *testing.T) {
 // A record older than the staleness window is not evidence of anything: work
 // that really was abandoned has to be renegotiable.
 func TestSettledHandshakeExpiresWithTheStalenessWindow(t *testing.T) {
-	w := &Glorp{Identity: "SELF", Out: io.Discard, staleClaim: time.Hour}
+	w := &Engine{Identity: "SELF", Out: io.Discard, staleClaim: time.Hour}
 	target := ownershipTarget{Repo: "o/r", Number: 5}
 	w.recordHandshake(target, true)
 	if record, age, ok := w.settledHandshake(target); !ok || !record.Claimed || age > time.Minute {
@@ -859,7 +859,7 @@ func TestSettledHandshakeExpiresWithTheStalenessWindow(t *testing.T) {
 }
 
 // syncBuffer is a bytes.Buffer that a goroutine writing log output and the
-// test reading that output can share. Tests that pass it as Glorp.Out while
+// test reading that output can share. Tests that pass it as Engine.Out while
 // Run works in the background need it to stay race-free.
 type syncBuffer struct {
 	mu  sync.Mutex
@@ -906,7 +906,7 @@ func TestNegotiateContestedIssuesDoesNotBlockThePollOnTheGraceWindow(t *testing.
 	comments := newFakeCommentClient()
 	release := make(chan struct{})
 	logs := &syncBuffer{}
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: logs, ownershipWait: func(ctx context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", Out: logs, ownershipWait: func(ctx context.Context) bool {
 		select {
 		case <-release:
 			return true
@@ -969,7 +969,7 @@ func TestNegotiateContestedIssuesDoesNotBlockThePollOnTheGraceWindow(t *testing.
 
 // A claim this instance withdrew must stop reading as ownership, or the reap
 // that follows a released ticket would keep standing down for work nobody is
-// doing (issue #434).
+// doing.
 func TestLatestClaimMatchingIgnoresWithdrawnClaims(t *testing.T) {
 	claimed := time.Now().Add(-time.Minute)
 	comments := []Comment{
@@ -991,7 +991,7 @@ func TestClaimStandingReportsNoOwnerAfterSelfRelease(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 7, Comment{Body: signComment(startingClaimBody, "SELF"), CreatedAt: time.Now().Add(-time.Minute)})
 	comments.inject("o/r", 7, Comment{Body: signComment(releaseClaimBody, "SELF"), CreatedAt: time.Now()})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	standing, err := w.claimStanding(context.Background(), ownershipTarget{Repo: "o/r", Number: 7})
 	if err != nil {
 		t.Fatal(err)
@@ -1007,7 +1007,7 @@ func TestClaimStandingReportsNoOwnerAfterSelfRelease(t *testing.T) {
 func TestReleaseOwnershipWithdrawsClaimAndForgetsHandshake(t *testing.T) {
 	comments := newFakeCommentClient()
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs}
 	target := ownershipTarget{Repo: "o/r", Number: 7}
 	w.recordHandshake(target, true)
 	w.releaseOwnership(context.Background(), target, "the dispatch never happened")
@@ -1031,7 +1031,7 @@ func TestReleaseOwnershipLogsAFailedWithdrawal(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.postErr = errors.New("boom")
 	var logs bytes.Buffer
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: &logs}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: &logs}
 	w.releaseOwnership(context.Background(), ownershipTarget{Repo: "o/r", Number: 7}, "the dispatch never happened")
 	requireLogged(t, logs.String(), "issue o/r#7 claim not withdrawn after the dispatch never happened", "may still read as claimed by SELF")
 }
@@ -1039,7 +1039,7 @@ func TestReleaseOwnershipLogsAFailedWithdrawal(t *testing.T) {
 // A withdrawal posted in the same clock tick as the claim it withdraws must
 // still retire that claim. Windows's wall clock resolves to roughly 15ms, so
 // the two comments routinely carry one timestamp and ordering on time alone
-// let the superseded claim win (issue #443).
+// let the superseded claim win.
 func TestLatestClaimMatchingBreaksTimestampTiesOnCommentOrder(t *testing.T) {
 	at := time.Now().Add(-time.Minute)
 	comments := []Comment{
@@ -1067,7 +1067,7 @@ func TestClaimStandingBreaksTimestampTiesBetweenInstances(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 7, Comment{Body: signComment(startingClaimBody, "SELF"), CreatedAt: at})
 	comments.inject("o/r", 7, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: at})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	standing, err := w.claimStanding(context.Background(), target)
 	if err != nil {
 		t.Fatal(err)
@@ -1079,7 +1079,7 @@ func TestClaimStandingBreaksTimestampTiesBetweenInstances(t *testing.T) {
 	comments = newFakeCommentClient()
 	comments.inject("o/r", 7, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: at})
 	comments.inject("o/r", 7, Comment{Body: signComment(startingClaimBody, "SELF"), CreatedAt: at})
-	w = &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w = &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	standing, err = w.claimStanding(context.Background(), target)
 	if err != nil {
 		t.Fatal(err)
@@ -1097,7 +1097,7 @@ func TestStandDownForStandingClaimsUsesTheFiveMinuteCooldownThenNegotiates(t *te
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	comments.inject("o/r", 2, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-7 * time.Minute)})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}},
 		{issue: Issue{Number: 2, Repository: "o/r", Target: "o/r"}},
@@ -1127,7 +1127,7 @@ func TestStandDownForStandingClaimsSkipsWorkItDoesNotDecide(t *testing.T) {
 		comments.inject("o/r", number, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	}
 	comments.inject("o/r", 4, Comment{Body: signComment(continuingClaimBody, "SELF"), CreatedAt: time.Now()})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, session: AgentSession{Resume: true}},
 		{issue: Issue{Number: 2, Repository: "o/r", Target: "o/r"}, contested: true},
@@ -1148,7 +1148,7 @@ func TestStandDownForStandingClaimsSkipsWorkItDoesNotDecide(t *testing.T) {
 func TestStandDownForStandingClaimsKeepsCandidatesWhenTheReadFails(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.listErr = errors.New("boom")
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	pending := []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}}}
 	if result := w.standDownForStandingClaims(context.Background(), nil, pending, map[string]bool{}); len(result) != 1 {
 		t.Fatalf("result = %+v, want the candidate kept when its claims cannot be read", result)
@@ -1161,7 +1161,7 @@ func TestStandDownForStandingClaimsReadsThePullRequestContinuingTheWork(t *testi
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 10, Comment{Body: signComment(continuingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	checker := &fakeClosureSource{state: OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 10, State: "open"}}}}
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	pending := []pendingIssue{{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}}}
 	if result := w.standDownForStandingClaims(context.Background(), checker, pending, map[string]bool{}); len(result) != 0 {
 		t.Fatalf("result = %+v, want the pickup dropped for the claim standing on its open pull request", result)
@@ -1172,12 +1172,12 @@ func TestStandDownForStandingClaimsReadsThePullRequestContinuingTheWork(t *testi
 // that poll is the only one before the next tick. It must find the handshake
 // already finished: a poll that still sees it in flight drops the issue as
 // "being negotiated", and with nothing left to nudge the loop the reclaimed
-// work waits out the whole tick (issue #673). Nothing here waits for the
+// work waits out the whole tick. Nothing here waits for the
 // background goroutine to exit; the nudge itself is the signal, exactly as the
 // Run loop receives it.
 func TestNegotiationNudgeFollowsHandshakeCompletion(t *testing.T) {
 	for attempt := 0; attempt < 200; attempt++ {
-		w := &Glorp{Comments: newFakeCommentClient(), Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
+		w := &Engine{Comments: newFakeCommentClient(), Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 		pending := func() []pendingIssue {
 			return []pendingIssue{{issue: Issue{Number: 7, Repository: "o/r", Target: "o/r"}, contested: true}}
 		}

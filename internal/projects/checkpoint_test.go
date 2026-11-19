@@ -206,7 +206,7 @@ func TestCheckpointRefusesDetachedHead(t *testing.T) {
 	}
 }
 
-// In the cross-repo flow (issue #712) the branch tracks the fork remote, and
+// In the cross-repo flow the branch tracks the fork remote, and
 // the checkpoint pushes there and nowhere else.
 func TestCheckpointPushesForkRunToFork(t *testing.T) {
 	origin, checkout := checkpointRepo(t)
@@ -357,7 +357,7 @@ func (a *activeAgents) trackedNumbers() []int {
 
 // A run waiting out a scheduled wakeup has no agent process but still has a
 // checkout, so the shutdown checkpoint covers it too.
-func TestGlorpTracksRunWaitingOnWakeupForCheckpoint(t *testing.T) {
+func TestEngineTracksRunWaitingOnWakeupForCheckpoint(t *testing.T) {
 	runner := &wakeupRunner{
 		sessions: make(chan AgentSession, 4),
 		wakeups:  []*scheduledWakeup{{Delay: time.Hour, Prompt: "check CI", Reason: "watching CI run"}},

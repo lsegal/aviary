@@ -32,7 +32,7 @@ const museDecoded = "Running: read_file\na.txt contains hi"
 
 // TestMuseDefinitionContract proves the shipped Meta Muse Code definition
 // against the fake CLI. Muse takes a caller-assigned session ID like Claude
-// does, so a resume is the same `muse exec` invocation carrying the ID glorp
+// does, so a resume is the same `muse exec` invocation carrying the ID aviary
 // already holds, and its
 // JSONL stream is decoded by the field paths its own definition names.
 func TestMuseDefinitionContract(t *testing.T) {

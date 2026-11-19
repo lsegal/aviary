@@ -18,6 +18,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/projects/transcript"
 )
 
 const (
@@ -30,18 +31,18 @@ const (
 	// base poll interval rather than undercutting it, since every active
 	// issue runs two of these loops in parallel and each poll costs several
 	// GitHub API requests; a tighter interval was burning quota far faster
-	// than the base issue-list poll (issue #276).
+	// than the base issue-list poll.
 	workClosureInterval  = 30 * time.Second
 	projectProbeInterval = 30 * time.Second
 	// reapPollInterval is the longest an instance goes without a reap pass
 	// over abandoned work. Polling can be much less frequent than this in
-	// webhook push mode, so reaping gets its own floor (issue #239).
+	// webhook push mode, so reaping gets its own floor.
 	reapPollInterval = 10 * time.Minute
 	// pausedWatchInterval is the longest paused work goes without a wake
-	// check. Paused work only resumes when glorp notices its blocker or pull
+	// check. Paused work only resumes when aviary notices its blocker or pull
 	// request closing on GitHub, so every paused record is read back on this
 	// cadence, including ones whose issue the poll no longer lists. It is
-	// never faster than the main poll interval (issue #769).
+	// never faster than the main poll interval.
 	pausedWatchInterval = 10 * time.Minute
 )
 
@@ -56,14 +57,14 @@ type jobActionRequest struct {
 	done   chan error
 }
 
-// errWorkClaimedByOther signals that another glorp instance posted a newer
+// errWorkClaimedByOther signals that another aviary instance posted a newer
 // starting/continuing claim while this instance was actively working the
-// same issue. Per the handoff protocol (issue #214), the most recent claim
+// same issue. Per the handoff protocol, the most recent claim
 // always wins, so the losing instance cooperatively stops.
 var errWorkClaimedByOther = errors.New("work claimed by another instance")
 
 // errWorkUpdated signals that the issue an agent is working changed on GitHub
-// while the run was in flight (issue #469). Unlike the other cancellation
+// while the run was in flight. Unlike the other cancellation
 // causes it is not the end of the work: the run loop stops the agent's current
 // prompt and immediately resumes the same session with workUpdate's
 // instruction, so the closure, edited description, or new comment reaches the
@@ -80,7 +81,7 @@ type workUpdate struct {
 	// closed marks the update a closure raised, so the cleanup run it starts
 	// is not interrupted again by the same closure.
 	closed bool
-	// restart marks the update a rejected pull request raised (issue #690).
+	// restart marks the update a rejected pull request raised.
 	// The work is not over, so a run whose session cannot be resumed to hear
 	// about it is started over in a fresh session rather than stopped.
 	restart bool
@@ -158,10 +159,10 @@ type AgentSession struct {
 	CheckoutDirectory string
 	Resume            bool
 	// RunDir is the sanctioned temp directory a run without a checkout starts
-	// in and clones under, chosen once per run by CommandRunner (issue #830).
+	// in and clones under, chosen once per run by CommandRunner.
 	RunDir string
 	// Update carries a change made to the issue while the agent was working
-	// it (issue #469). A resumed session that has one is prompted with it
+	// it. A resumed session that has one is prompted with it
 	// instead of the generic "continue", so the closure, edited description,
 	// or new comment reaches the agent that is already holding the work
 	// rather than being noticed only after the run ends.
@@ -177,7 +178,7 @@ type AgentIdentifier interface {
 	AgentName() string
 }
 type UIReporter = core.UIReporter
-type Glorp struct {
+type Engine struct {
 	Repo        string
 	Targets     []string
 	Interval    time.Duration
@@ -189,10 +190,10 @@ type Glorp struct {
 	ReadyState  string
 	noMerge     atomic.Bool
 	noChangelog atomic.Bool
-	// autoUpdate is read by the updater each round (issue #824).
+	// autoUpdate is read by the updater each round.
 	autoUpdate atomic.Bool
 	// clones keeps the temp directories new clones go in and the record of
-	// every clone this instance has made (issue #830).
+	// every clone this instance has made.
 	clones cloneState
 	Issues IssueSource
 	// Discussions lists unanswered top-level Discussion threads for
@@ -232,32 +233,32 @@ type Glorp struct {
 	// generated once at startup and never persisted.
 	Identity Identity
 	// AllowedCommenters restricts which GitHub logins may trigger a direct
-	// @/glorp:ID mention run (issue #294), and whose new comments are relayed
-	// into a running agent (issue #717). An empty list places no restriction;
+	// @/aviary:ID mention run, and whose new comments are relayed
+	// into a running agent. An empty list places no restriction;
 	// the CLI defaults it to the authenticated gh user.
 	AllowedCommenters []string
 	// SelfLogin is the GitHub login this instance runs as. A new comment from
 	// an allowed commenter that mentions it triggers a recheck of its issue
-	// (issue #708). Empty turns that trigger off.
+	//. Empty turns that trigger off.
 	SelfLogin string
-	// Comments drives the cooperative handoff handshake (issue #214). When
+	// Comments drives the cooperative handoff handshake. When
 	// nil, ownership negotiation is skipped and dispatch behaves as before.
 	Comments CommentClient
-	// Mentions is scanned on every poll for direct @/glorp:ID mentions when
+	// Mentions is scanned on every poll for direct @/aviary:ID mentions when
 	// no webhook delivers them, on an issue and on its pull request alike
-	// (issue #689). Nil leaves mentions to the webhook path alone.
+	//. Nil leaves mentions to the webhook path alone.
 	Mentions MentionSource
 	// Webhooks re-reconciles push webhooks on every periodic poll so a
 	// repository that joins a project board after startup gets a webhook
-	// without a restart (issue #238). Nil skips reconciliation, as in poll
+	// without a restart. Nil skips reconciliation, as in poll
 	// mode where no webhooks are configured at all.
 	Webhooks func(context.Context)
 	// WebhookOnline reports whether push deliveries are reaching the webhook
 	// server, such as whether the ngrok tunnel was alive at its last check
-	// (issue #687). Nil reports push mode as always online.
+	//. Nil reports push mode as always online.
 	WebhookOnline func() bool
 	// Recover re-establishes the run's own long-lived connections after the
-	// machine wakes from sleep, such as browser mode's browser (issue #683).
+	// machine wakes from sleep, such as browser mode's browser.
 	// Nil has nothing to recover.
 	Recover func(context.Context)
 	// ownershipWait overrides the reap grace-period wait in tests.
@@ -270,12 +271,12 @@ type Glorp struct {
 	// considered abandoned in tests.
 	staleClaim time.Duration
 	// handshakeMu guards handshakes, this instance's own record of the
-	// ownership negotiations it has already run (issue #432).
+	// ownership negotiations it has already run.
 	handshakeMu sync.Mutex
 	handshakes  map[string]handshakeRecord
 	// negotiateMu guards negotiating, the set of issues whose ownership
 	// handshake is waiting out its grace window in the background. The wait
-	// lasts minutes, so it must not run on the poll loop (issue #437); later
+	// lasts minutes, so it must not run on the poll loop; later
 	// polls skip an issue that already has a handshake in flight instead of
 	// posting a duplicate ask.
 	negotiateMu sync.Mutex
@@ -292,22 +293,22 @@ type Glorp struct {
 	logMu          sync.Mutex
 	// repeatMu guards lastLogged, the state last reported under each
 	// logChanged key. A poll loop ticking every few seconds must report a
-	// summary, or a failure, once rather than on every tick (issue #413).
+	// summary, or a failure, once rather than on every tick.
 	repeatMu   sync.Mutex
 	lastLogged map[string]string
 	// stacksMu guards stacks, the last answer to whether each repository has
-	// GitHub stacked pull requests enabled (issue #657). Blocked issues are
+	// GitHub stacked pull requests enabled. Blocked issues are
 	// re-evaluated on every poll, so the answer is cached rather than asked
 	// again each tick.
 	stacksMu sync.Mutex
 	stacks   map[string]stacksProbe
 	// forksMu guards forks, the last answer to where each repository's fixes are
-	// pushed (issue #712), so permission is not read again for every dispatch.
+	// pushed, so permission is not read again for every dispatch.
 	forksMu       sync.Mutex
 	forks         map[string]forkProbe
 	jobActionOnce sync.Once
 	jobActions    chan jobActionRequest
-	// settingsOnce/settingsRequests carry live settings updates (issue #341)
+	// settingsOnce/settingsRequests carry live settings updates
 	// into the Run loop, mirroring the jobActionOnce/jobActions pattern above.
 	settingsOnce     sync.Once
 	settingsRequests chan settingsRequest
@@ -316,7 +317,7 @@ type Glorp struct {
 	// blocking on settingsRequests/jobActions, which nothing reads until
 	// Run gets there -- resetFailedWork and, in webhook mode, ngrok startup
 	// and per-target webhook configuration can all still be running, and
-	// none of that has a bound on how long it takes (issue #579).
+	// none of that has a bound on how long it takes.
 	readyOnce sync.Once
 	ready     chan struct{}
 	// notReadyWait overrides notReadyTimeout in tests.
@@ -327,14 +328,14 @@ type Glorp struct {
 	// rather than a plain field owned by the loop's goroutine.
 	agentOverride atomic.Pointer[[]string]
 	// handledIssues snapshots the issue keys this instance already has in
-	// flight or has finished, taken from .glorp.json and the active set at
+	// flight or has finished, taken from .aviary.json and the active set at
 	// the top of every poll. Browser mode reads it through issueHandled to
 	// decide which extracted issues still need a metadata fetch (issue
 	// #381); the issue source runs on the poll's own goroutine but the
 	// snapshot is published under workMu, so it is stored atomically.
 	handledIssues atomic.Pointer[map[string]bool]
 	// unblockInterval is how often the stuck-job watchdog runs, in
-	// nanoseconds, or 0 when it is off (issue #779). unblockReset restarts its
+	// nanoseconds, or 0 when it is off. unblockReset restarts its
 	// wait when the interval changes, and unblockOverride holds the unblock
 	// call's agent and model override. All are read from the watchdog's own
 	// goroutine, so they are stored atomically.
@@ -346,9 +347,11 @@ type Glorp struct {
 	unblockRun func(context.Context, agentSpec, string) (string, error)
 	// unblockTrigger carries unblock rounds the prompt agent asks for into
 	// the watchdog's own loop, so they reuse its round and history and never
-	// overlap a timed round (issue #801). An empty key means every stuck job.
+	// overlap a timed round. An empty key means every stuck job.
 	unblockTriggerOnce sync.Once
 	unblockTrigger     chan string
+	// Transcripts holds every job's structured transcript.
+	Transcripts *transcriptStore
 	// oneShotRun replaces one-off agent calls such as issue creation in tests.
 	oneShotRun func(context.Context, agentSpec, string) (string, error)
 	// published is the run's most recently published snapshot, and
@@ -357,7 +360,7 @@ type Glorp struct {
 	recentLogs []string
 	// settingsView is the settings snapshot the Run loop last published. The
 	// settings modal reads it directly, so opening settings never waits on a
-	// poll, startup, or anything else the loop is busy with (issue #803).
+	// poll, startup, or anything else the loop is busy with.
 	settingsView atomic.Pointer[SettingsSnapshot]
 }
 
@@ -369,7 +372,7 @@ type Glorp struct {
 // status reports.
 const recentLogLines = 40
 
-func (w *Glorp) publishHandledIssues(work map[string]workState, active map[string]string) {
+func (w *Engine) publishHandledIssues(work map[string]workState, active map[string]string) {
 	handled := make(map[string]bool, len(work)+len(active))
 	for key := range active {
 		handled[key] = true
@@ -386,7 +389,7 @@ func (w *Glorp) publishHandledIssues(work map[string]workState, active map[strin
 // issue, so a transport that pays per issue for metadata can skip it. An
 // unpublished snapshot treats every issue as unhandled, which is correct for
 // the first poll: nothing is in flight yet.
-func (w *Glorp) issueHandled(issue Issue) bool {
+func (w *Engine) issueHandled(issue Issue) bool {
 	handled := w.handledIssues.Load()
 	if handled == nil {
 		return false
@@ -395,12 +398,12 @@ func (w *Glorp) issueHandled(issue Issue) bool {
 }
 
 // acquireSlot blocks until sem has a free slot. Unlike sem.acquire, it also
-// services live settings updates (issue #341) while waiting, since it runs
+// services live settings updates while waiting, since it runs
 // on the same goroutine as the Run loop's settingsRequestsChan case: raising
 // --concurrency is most useful exactly when every slot is taken, and a plain
 // sem.acquire here would block that goroutine and deadlock the very request
 // meant to free it.
-func (w *Glorp) acquireSlot(ctx context.Context, sem *concurrencySemaphore) error {
+func (w *Engine) acquireSlot(ctx context.Context, sem *concurrencySemaphore) error {
 	for {
 		select {
 		case <-sem.tokens:
@@ -413,14 +416,14 @@ func (w *Glorp) acquireSlot(ctx context.Context, sem *concurrencySemaphore) erro
 	}
 }
 
-func (w *Glorp) jobActionRequests() chan jobActionRequest {
+func (w *Engine) jobActionRequests() chan jobActionRequest {
 	w.jobActionOnce.Do(func() { w.jobActions = make(chan jobActionRequest) })
 	return w.jobActions
 }
 
 // readyChan lazily creates the channel Run closes once it reaches its
-// dispatch select statement (issue #579).
-func (w *Glorp) readyChan() chan struct{} {
+// dispatch select statement.
+func (w *Engine) readyChan() chan struct{} {
 	w.readyOnce.Do(func() { w.ready = make(chan struct{}) })
 	return w.ready
 }
@@ -432,12 +435,12 @@ func (w *Glorp) readyChan() chan struct{} {
 // main.go's run()) reaches the loop well within this, so a request that
 // merely arrived first still succeeds once Run gets there -- this is not a
 // fail-immediately check. It only bounds the genuinely stuck case, which
-// used to block forever with no feedback (issue #579); the dashboard treats
+// used to block forever with no feedback; the dashboard treats
 // the resulting error as a signal to retry, so this only needs to be short
 // enough that a retry loop notices, not a hard startup deadline.
 const notReadyTimeout = 3 * time.Second
 
-func (w *Glorp) checkReady(ctx context.Context) error {
+func (w *Engine) checkReady(ctx context.Context) error {
 	wait := notReadyTimeout
 	if w.notReadyWait > 0 {
 		wait = w.notReadyWait
@@ -452,7 +455,7 @@ func (w *Glorp) checkReady(ctx context.Context) error {
 	}
 }
 
-func (w *Glorp) handleJobAction(ctx context.Context, action jobAction) error {
+func (w *Engine) handleJobAction(ctx context.Context, action jobAction) error {
 	if err := w.checkReady(ctx); err != nil {
 		return err
 	}
@@ -472,8 +475,8 @@ func (w *Glorp) handleJobAction(ctx context.Context, action jobAction) error {
 
 // awaitStoppedRun replies to a stop or retry request from the web UI once the
 // run it cancelled has exited, so the request does not report success while
-// the agent is still writing, pushing, or posting (issue #719).
-func (w *Glorp) awaitStoppedRun(ctx context.Context, number int, exited <-chan struct{}, done chan<- error) {
+// the agent is still writing, pushing, or posting.
+func (w *Engine) awaitStoppedRun(ctx context.Context, number int, exited <-chan struct{}, done chan<- error) {
 	select {
 	case <-exited:
 		w.logf("issue #%d stopped from web UI; its agent has exited", number)
@@ -483,7 +486,7 @@ func (w *Glorp) awaitStoppedRun(ctx context.Context, number int, exited <-chan s
 	}
 }
 
-func (w *Glorp) periodicPollInterval() time.Duration {
+func (w *Engine) periodicPollInterval() time.Duration {
 	if w.UseWebhooks {
 		if w.fallbackInterval > 0 {
 			return w.fallbackInterval
@@ -495,7 +498,7 @@ func (w *Glorp) periodicPollInterval() time.Duration {
 
 // projectBoardProbeInterval is how often push mode checks project targets for
 // board-only changes that produce no webhook delivery.
-func (w *Glorp) projectBoardProbeInterval() time.Duration {
+func (w *Engine) projectBoardProbeInterval() time.Duration {
 	if w.probeInterval > 0 {
 		return w.probeInterval
 	}
@@ -504,8 +507,8 @@ func (w *Glorp) projectBoardProbeInterval() time.Duration {
 
 // projectProbeTargets lists the targets whose boards need fingerprint probing.
 // Only push mode needs it; poll mode already refreshes every Interval, and a
-// board that pushes its own changes needs no probe at all (issue #249).
-func (w *Glorp) projectProbeTargets(targets []string) []string {
+// board that pushes its own changes needs no probe at all.
+func (w *Engine) projectProbeTargets(targets []string) []string {
 	if !w.UseWebhooks || w.Projects == nil {
 		return nil
 	}
@@ -520,7 +523,7 @@ func (w *Glorp) projectProbeTargets(targets []string) []string {
 
 // pushedBoardTargets lists the project targets whose board changes arrive as
 // webhook deliveries, so they are deliberately left unprobed.
-func (w *Glorp) pushedBoardTargets(targets []string) []string {
+func (w *Engine) pushedBoardTargets(targets []string) []string {
 	if !w.UseWebhooks {
 		return nil
 	}
@@ -535,7 +538,7 @@ func (w *Glorp) pushedBoardTargets(targets []string) []string {
 
 // boardPushesChanges reports whether GitHub delivers projects_v2_item events
 // for a project target. An organization-owned project gets an organization
-// webhook covering every board edit (issue #138), and push mode refuses to
+// webhook covering every board edit, and push mode refuses to
 // start when that hook cannot be installed, so probing one is pure duplicate
 // polling. User-owned projects get no such event, and a repository-scoped
 // project URL does not say who owns the board, so both keep probing.
@@ -546,8 +549,8 @@ func boardPushesChanges(repo string) bool {
 
 // watchDescription names the refresh strategy in the startup log. Push mode
 // never polls at Interval, so reporting that interval invites the question of
-// why a board still looks polled (issue #249).
-func (w *Glorp) watchDescription() string {
+// why a board still looks polled.
+func (w *Engine) watchDescription() string {
 	if !w.UseWebhooks {
 		return fmt.Sprintf("polling every %s", formatInterval(w.Interval))
 	}
@@ -557,7 +560,7 @@ func (w *Glorp) watchDescription() string {
 // reapPollTick is how often a reap pass runs when ordinary polling is slower
 // than reapPollInterval. It returns 0 when polling already runs at least that
 // often, in which case every poll doubles as a reap pass.
-func (w *Glorp) reapPollTick() time.Duration {
+func (w *Engine) reapPollTick() time.Duration {
 	interval := reapPollInterval
 	if w.reapInterval > 0 {
 		interval = w.reapInterval
@@ -570,7 +573,7 @@ func (w *Glorp) reapPollTick() time.Duration {
 
 // pausedWatchEvery is how often every paused record is checked for a wake:
 // pausedWatchInterval, or the main poll interval when that is slower.
-func (w *Glorp) pausedWatchEvery() time.Duration {
+func (w *Engine) pausedWatchEvery() time.Duration {
 	interval := pausedWatchInterval
 	if w.pausedInterval > 0 {
 		interval = w.pausedInterval
@@ -585,21 +588,21 @@ func (w *Glorp) pausedWatchEvery() time.Duration {
 // polling is slower than pausedWatchEvery (webhook push mode). It returns 0
 // when polling already runs at least that often, in which case the poll that
 // finds the watch due runs it.
-func (w *Glorp) pausedWatchTick() time.Duration {
+func (w *Engine) pausedWatchTick() time.Duration {
 	if w.periodicPollInterval() <= w.pausedWatchEvery() {
 		return 0
 	}
 	return w.pausedWatchEvery()
 }
 
-func (w *Glorp) staleClaimAfter() time.Duration {
+func (w *Engine) staleClaimAfter() time.Duration {
 	if w.staleClaim > 0 {
 		return w.staleClaim
 	}
 	return staleClaimDuration
 }
 
-func (w *Glorp) activeWorkClosureInterval() time.Duration {
+func (w *Engine) activeWorkClosureInterval() time.Duration {
 	if w.closureInterval > 0 {
 		return w.closureInterval
 	}
@@ -610,14 +613,14 @@ func (w *Glorp) activeWorkClosureInterval() time.Duration {
 // Run loop on. It is buffered so a handshake never blocks on a loop that is
 // busy, and depth one because the nudge only asks for one more poll however
 // many handshakes settled.
-func (w *Glorp) negotiatedNudges() chan struct{} {
+func (w *Engine) negotiatedNudges() chan struct{} {
 	w.negotiatedOnce.Do(func() { w.negotiated = make(chan struct{}, 1) })
 	return w.negotiated
 }
 
 // nudgePoll asks the Run loop to poll again, dropping the nudge when one is
 // already queued.
-func (w *Glorp) nudgePoll() {
+func (w *Engine) nudgePoll() {
 	select {
 	case w.negotiatedNudges() <- struct{}{}:
 	default:
@@ -629,7 +632,7 @@ func (w *Glorp) nudgePoll() {
 // handshake waits out its grace window, so every poll in that window sees the
 // same issue as contested again; without this guard each one would post
 // another "Does anyone have this?" on the same ticket.
-func (w *Glorp) beginNegotiation(key string) bool {
+func (w *Engine) beginNegotiation(key string) bool {
 	w.negotiateMu.Lock()
 	defer w.negotiateMu.Unlock()
 	if w.negotiating[key] {
@@ -643,7 +646,7 @@ func (w *Glorp) beginNegotiation(key string) bool {
 }
 
 // endNegotiation releases the reservation taken by beginNegotiation.
-func (w *Glorp) endNegotiation(key string) {
+func (w *Engine) endNegotiation(key string) {
 	w.negotiateMu.Lock()
 	defer w.negotiateMu.Unlock()
 	delete(w.negotiating, key)
@@ -651,7 +654,7 @@ func (w *Glorp) endNegotiation(key string) {
 
 // negotiationInFlight reports whether a background handshake for key is still
 // running, so the reap can leave it alone rather than re-announcing it.
-func (w *Glorp) negotiationInFlight(key string) bool {
+func (w *Engine) negotiationInFlight(key string) bool {
 	w.negotiateMu.Lock()
 	defer w.negotiateMu.Unlock()
 	return w.negotiating[key]
@@ -659,7 +662,7 @@ func (w *Glorp) negotiationInFlight(key string) bool {
 
 // awaitNegotiations blocks until every background handshake this instance
 // started has finished.
-func (w *Glorp) awaitNegotiations() {
+func (w *Engine) awaitNegotiations() {
 	w.negotiateWG.Wait()
 }
 
@@ -672,11 +675,11 @@ type pendingIssue struct {
 	// must be negotiated through the comment protocol before dispatch.
 	contested bool
 	// mentioned marks a candidate dispatched because the ticket's newest
-	// comment is a direct @/glorp:ID mention of this instance. That is an
+	// comment is a direct @/aviary:ID mention of this instance. That is an
 	// explicit instruction addressed to this instance, so it overrides the
 	// claims standing on the ticket rather than being filtered by them.
 	mentioned bool
-	// woken marks paused work whose wake condition fired (issue #732). It
+	// woken marks paused work whose wake condition fired. It
 	// goes back through the claim protocol even when its session resumes, so
 	// when several instances see the same wake only the first to claim it
 	// takes it.
@@ -693,9 +696,9 @@ type pendingIssue struct {
 // posted for a candidate this instance turns out not to dispatch. Without it
 // the ticket stays claimed by an instance with no work record and no running
 // agent: other instances read the claim and stand down for work nobody is
-// doing (issue #434). Candidates that hold no claim of this instance's own
+// doing. Candidates that hold no claim of this instance's own
 // have nothing to withdraw.
-func (w *Glorp) releasePendingClaim(ctx context.Context, pending pendingIssue, reason string) {
+func (w *Engine) releasePendingClaim(ctx context.Context, pending pendingIssue, reason string) {
 	if pending.claim == nil {
 		return
 	}
@@ -711,7 +714,7 @@ func (w *Glorp) releasePendingClaim(ctx context.Context, pending pendingIssue, r
 // instances post on the ticket itself are not part of that decision, so an
 // issue another instance announced "Starting work on this issue" on minutes
 // ago was dispatched as a first-time pickup, and both instances worked the
-// same ticket and opened their own pull request for it (issue #511). The
+// same ticket and opened their own pull request for it. The
 // contested path already reads those claims before reaping; this is the same
 // read for the path that skips negotiation entirely.
 //
@@ -722,7 +725,7 @@ func (w *Glorp) releasePendingClaim(ctx context.Context, pending pendingIssue, r
 // Work this instance holds the newest claim on is its own and passes through.
 // A comment read that fails leaves the candidate alone rather than stalling
 // dispatch on an unreachable API.
-func (w *Glorp) standDownForStandingClaims(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool) []pendingIssue {
+func (w *Engine) standDownForStandingClaims(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool) []pendingIssue {
 	if w.Comments == nil || len(newIssues) == 0 {
 		return newIssues
 	}
@@ -784,11 +787,11 @@ func (w *Glorp) standDownForStandingClaims(ctx context.Context, checker WorkClos
 // stay marked as seen, so a later poll retries them as contested work rather
 // than dispatching them as if nothing had ever claimed them. A won handshake
 // leaves this instance's own claim on the ticket, which is what the next poll
-// reads to dispatch the work (issue #437).
+// reads to dispatch the work.
 //
 // The first reap after startup is aggressive: every contested candidate no
 // other instance holds a live claim on is asked about immediately, rather
-// than waiting for the periodic timer (issue #239). Later reaps additionally
+// than waiting for the periodic timer. Later reaps additionally
 // skip anything this instance already claimed or already negotiated, so they
 // do not re-post "does anyone have this?" on every pass. Both reaps stand
 // down for a foreign claim newer than staleClaimDuration: the handshake only
@@ -796,7 +799,7 @@ func (w *Glorp) standDownForStandingClaims(ctx context.Context, checker WorkClos
 // itself minutes ago does not re-announce during the grace window, so asking
 // unconditionally on startup took work another instance was running (issue
 // #514).
-func (w *Glorp) negotiateContestedIssues(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
+func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
 	if w.Comments == nil || len(newIssues) == 0 {
 		return newIssues
 	}
@@ -874,7 +877,7 @@ func (w *Glorp) negotiateContestedIssues(ctx context.Context, checker WorkClosur
 					// handshake it would run has already been run and won.
 					// Asking again would spam the ticket with an ask/claim
 					// pair on every pass and stall each one for the grace
-					// period (issue #425).
+					// period.
 					if standing.SelfHolds {
 						w.logf("issue #%d already claimed by this instance %s ago; dispatching without re-asking", issue.Number, standing.SelfAge.Round(time.Second))
 						keep[i] = true
@@ -908,7 +911,7 @@ func (w *Glorp) negotiateContestedIssues(ctx context.Context, checker WorkClosur
 			}
 			// The handshake waits out a grace window measured in minutes.
 			// Running it here would stop the poll loop for that whole window,
-			// so nothing else is read or dispatched meanwhile (issue #437).
+			// so nothing else is read or dispatched meanwhile.
 			// It is handed to a goroutine instead, and the poll returns
 			// without this issue: once the handshake settles, the next poll
 			// reads its own claim (or its handshake record) and dispatches
@@ -933,7 +936,7 @@ func (w *Glorp) negotiateContestedIssues(ctx context.Context, checker WorkClosur
 				// in a deferred call after it. The nudged poll is the only one
 				// before the next tick, and while the key still reads as in
 				// flight that poll drops the issue as still being negotiated,
-				// leaving won work waiting out the whole interval (issue #673).
+				// leaving won work waiting out the whole interval.
 				w.endNegotiation(key)
 				if claimed {
 					w.logf("issue #%d picked up after handoff; dispatching on the next poll", issue.Number)
@@ -968,7 +971,7 @@ func (w *Glorp) negotiateContestedIssues(ctx context.Context, checker WorkClosur
 // tells the next poll whether it still needs an answer. active only guards
 // against dispatching the same discussion twice while an agent run for it
 // is still in flight.
-func (w *Glorp) pollDiscussions(ctx context.Context, n int, targets []string, sem *concurrencySemaphore, wg *sync.WaitGroup, workMu *sync.Mutex, active map[string]string) {
+func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, sem *concurrencySemaphore, wg *sync.WaitGroup, workMu *sync.Mutex, active map[string]string) {
 	if w.Discussions == nil {
 		return
 	}
@@ -1008,7 +1011,7 @@ func (w *Glorp) pollDiscussions(ctx context.Context, n int, targets []string, se
 	}
 	// Every target's candidates are collected before any of them blocks on a
 	// slot, so one Discussions target's backlog cannot take every slot ahead
-	// of another target's threads (issue #467).
+	// of another target's threads.
 	pending = balanceAcrossTargets(pending, counts)
 	for index, candidate := range pending {
 		issue := candidate.issue
@@ -1067,7 +1070,7 @@ type issueWatch struct {
 	// the poll notices it in poll mode.
 	nudge <-chan struct{}
 	// observed, when set, is handed every state read back for the issue, so
-	// the dashboards can show the pull request the run is on (issue #753).
+	// the dashboards can show the pull request the run is on.
 	observed func(OriginatingWorkState)
 }
 
@@ -1077,13 +1080,13 @@ func (watch issueWatch) canRelay() bool {
 }
 
 // watchForIssueUpdates polls the issue an agent is working and interrupts the
-// run when GitHub says something about it changed (issue #469). A run that can
+// run when GitHub says something about it changed. A run that can
 // be resumed is interrupted with a workUpdate the run loop replays into the
 // same session; one that cannot keeps the original behaviour of stopping on a
 // closure. Closure and description changes are read from the closure checker,
 // new comments from the comment client, so browser mode watches the rendered
 // pages the rest of the run already reads and poll mode watches the API.
-func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChecker, issue Issue, watch issueWatch, cancel context.CancelCauseFunc, ready chan<- struct{}) {
+func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureChecker, issue Issue, watch issueWatch, cancel context.CancelCauseFunc, ready chan<- struct{}) {
 	repo := issueRepository(issue.Target, issue)
 	var previous OriginatingWorkState
 	var err error
@@ -1130,16 +1133,19 @@ func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChe
 						cancel(cause)
 						return
 					}
+					w.jobSystem(issueKey(issue), reason+"; relayed into the session")
 					w.logf("issue #%d interrupting agent: %s; asking it to clean up in the same session", issue.Number, reason)
 					cancel(&workUpdate{summary: reason, closed: true, instruction: closedWorkCleanupPrompt(issue, reason)})
 					return
 				}
 				if number, reason := rejectedPullRequest(previous, current); reason != "" {
+					w.jobSystem(issueKey(issue), "restarted: "+reason)
 					w.logf("issue #%d restarting agent: %s while the issue is still open; starting a fresh attempt", issue.Number, reason)
 					cancel(&workUpdate{summary: reason, restart: true, instruction: rejectedPullRequestPrompt(issue, number)})
 					return
 				}
 				if watch.canRelay() && previous.IssueBody != "" && current.IssueBody != previous.IssueBody {
+					w.jobSystem(issueKey(issue), "issue description edited; relayed into the session")
 					w.logf("issue #%d interrupting agent: its description changed; relaying it into the same session", issue.Number)
 					cancel(&workUpdate{summary: fmt.Sprintf("issue #%d description changed", issue.Number), instruction: changedDescriptionPrompt(issue)})
 					return
@@ -1157,9 +1163,10 @@ func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChe
 			}
 			continue
 		}
-		// Only allowed commenters may steer a running agent (issue #717):
+		// Only allowed commenters may steer a running agent:
 		// anyone else's comment is marked seen and logged once, never relayed.
 		added := 0
+		var relayed []transcript.Event
 		for _, comment := range comments {
 			key := commentKey(comment)
 			if seen[key] || !relayableComment(comment, watch.since) {
@@ -1171,8 +1178,11 @@ func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChe
 				continue
 			}
 			added++
+			relayed = append(relayed, transcript.Event{Kind: transcript.KindCommentRelay, Author: comment.Author, Text: comment.Body})
 		}
 		if mentioned := w.pullRequestMentions(ctx, repo, issue, previous.PullRequests, watch.since, seen); len(mentioned) > 0 {
+			w.jobEvents(issueKey(issue), relayed...)
+			w.jobSystem(issueKey(issue), "mentioned on pull request "+formatIssueRefs(mentioned)+"; relayed into the session")
 			w.logf("issue #%d interrupting agent: instance %s was mentioned on pull request %s; relaying it into the same session", issue.Number, w.Identity, formatIssueRefs(mentioned))
 			cancel(&workUpdate{summary: fmt.Sprintf("issue #%d was mentioned on pull request %s", issue.Number, formatIssueRefs(mentioned)), instruction: pullRequestMentionPrompt(issue, mentioned, added)})
 			return
@@ -1180,6 +1190,7 @@ func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChe
 		if added == 0 {
 			continue
 		}
+		w.jobEvents(issueKey(issue), relayed...)
 		w.logf("issue #%d interrupting agent: %d new comment(s); relaying them into the same session", issue.Number, added)
 		cancel(&workUpdate{summary: fmt.Sprintf("issue #%d has %d new comment(s)", issue.Number, added), instruction: newCommentsPrompt(issue, added)})
 		return
@@ -1188,7 +1199,7 @@ func (w *Glorp) watchForIssueUpdates(ctx context.Context, checker WorkClosureChe
 
 // commentsSeen snapshots the conversation a run starts from, so only what is
 // posted after it counts as news for that run.
-func (w *Glorp) commentsSeen(ctx context.Context, repo string, number int) map[string]bool {
+func (w *Engine) commentsSeen(ctx context.Context, repo string, number int) map[string]bool {
 	seen := map[string]bool{}
 	if w.Comments == nil {
 		return seen
@@ -1208,15 +1219,15 @@ func (w *Glorp) commentsSeen(ctx context.Context, repo string, number int) map[s
 
 // pullRequestMentions lists the pull requests linked to the issue a run is
 // working that gained a direct mention of this instance since the run began
-// (issue #693). The run's own watcher only reads the issue's conversation, so
+// . The run's own watcher only reads the issue's conversation, so
 // without this a mention posted on the pull request the agent opened got its
 // eyes reaction and was never heard by the agent. Only mentions from allowed
 // commenters count: the agent itself posts on its pull request, and relaying
 // that would restart it on its own chatter. Review comments and review
-// bodies on those pull requests are read as well (issue #695). Every comment
+// bodies on those pull requests are read as well. Every comment
 // read is added to seen, so one mention is relayed, or logged as skipped,
 // once.
-func (w *Glorp) pullRequestMentions(ctx context.Context, repo string, issue Issue, pullRequests []PullRequestWorkState, since time.Time, seen map[string]bool) []int {
+func (w *Engine) pullRequestMentions(ctx context.Context, repo string, issue Issue, pullRequests []PullRequestWorkState, since time.Time, seen map[string]bool) []int {
 	if w.Identity == "" {
 		return nil
 	}
@@ -1269,7 +1280,7 @@ func (w *Glorp) pullRequestMentions(ctx context.Context, repo string, issue Issu
 
 // pullRequestMentionPrompt tells an agent that a human mentioned this instance
 // on the pull request it is working, so the comment is acted on rather than
-// only acknowledged (issue #693).
+// only acknowledged.
 func pullRequestMentionPrompt(issue Issue, pullRequests []int, issueComments int) string {
 	noun := "pull request"
 	if len(pullRequests) > 1 {
@@ -1287,9 +1298,9 @@ func commentKey(comment Comment) string {
 }
 
 // relayableComment reports whether a comment is worth interrupting an agent
-// for. The handoff handshake (issue #214) posts claims on the same
+// for. The handoff handshake posts claims on the same
 // conversation, and every instance watching the issue reads them, so relaying
-// those would restart the agent on glorp's own bookkeeping.
+// those would restart the agent on aviary's own bookkeeping.
 func relayableComment(comment Comment, since time.Time) bool {
 	if _, _, ok := parseClaim(comment.Body); ok {
 		return false
@@ -1303,7 +1314,7 @@ func closedWorkCleanupPrompt(issue Issue, reason string) string {
 
 // rejectedPullRequestPrompt tells an agent whose pull request a human closed
 // without merging, while the issue stayed open, that the attempt was rejected
-// and the work starts over (issue #690). The closed pull request is never
+// and the work starts over. The closed pull request is never
 // reopened or reused, matching gh-fix, which only resumes open pull requests.
 func rejectedPullRequestPrompt(issue Issue, pullRequest int) string {
 	return fmt.Sprintf("Pull request #%d for issue #%d was closed without merging while the issue is still open. That attempt was rejected.\n\nDo not merge, reopen, or reuse pull request #%d or its branch. Read the issue and the closed pull request's conversation from GitHub for why it was rejected, then start a fresh implementation: a new branch from the current default branch, a new draft pull request that closes issue #%d, and the rest of the gh-fix workflow through merge.", pullRequest, issue.Number, pullRequest, issue.Number)
@@ -1322,7 +1333,7 @@ func newCommentsPrompt(issue Issue, added int) string {
 }
 
 // unclosedWorkPrompt asks an agent whose run ended with the issue still open to
-// carry the work the rest of the way (issue #475). Finishing a prompt is not
+// carry the work the rest of the way. Finishing a prompt is not
 // finishing the ticket: an agent that timed out, stopped early, or reported
 // success without merging exits exactly as one that merged does, so the
 // resumed session is told what is still missing rather than a bare "continue".
@@ -1336,17 +1347,17 @@ func unclosedWorkPrompt(issue Issue) string {
 // deliberately withholds its merge for a human (a DONOTMERGE directive)
 // finishes in exactly that shape on purpose, and it must not be mistaken for
 // one that stopped early and kept alive forever waiting for a hold nothing
-// here can lift (issue #628). It reports whether the issue is done and
+// here can lift. It reports whether the issue is done and
 // whether GitHub answered at all, so a check that could not be made is never
 // mistaken for an issue that is still open. A merge GitHub has not finished
 // processing is allowed for by re-reading once after the closure interval
 // before the work is treated as unfinished. When the run is done because its
 // ready pull request is held rather than because the issue closed, it also
-// returns the paused record for that pull request (issue #732): stacked when
+// returns the paused record for that pull request: stacked when
 // the pull request is built on a base other than the default branch, so it can
-// only merge after its blocker does (issue #659), and otherwise held for a
+// only merge after its blocker does, and otherwise held for a
 // human to merge or close.
-func (w *Glorp) confirmIssueClosed(ctx context.Context, checker WorkClosureChecker, issue Issue) (closed, answered bool, held *core.PausedWork) {
+func (w *Engine) confirmIssueClosed(ctx context.Context, checker WorkClosureChecker, issue Issue) (closed, answered bool, held *core.PausedWork) {
 	repo := issueRepository(issue.Target, issue)
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
@@ -1383,7 +1394,7 @@ func (w *Glorp) confirmIssueClosed(ctx context.Context, checker WorkClosureCheck
 // is open, unmerged, and no longer a draft. That is what a gh-fix run leaves
 // behind when it marks its fix ready but withholds the merge for a human, and
 // it is otherwise indistinguishable from work still in flight, so the
-// keepalive loop needs this to tell the two apart (issue #628).
+// keepalive loop needs this to tell the two apart.
 func pullRequestHeldForReview(state OriginatingWorkState) bool {
 	for _, pullRequest := range state.PullRequests {
 		if strings.EqualFold(pullRequest.State, "open") && !pullRequest.Merged && !pullRequest.IsDraft {
@@ -1397,7 +1408,7 @@ func pullRequestHeldForReview(state OriginatingWorkState) bool {
 // that is stacked on another branch. Such a pull request is not held for a
 // human: it is waiting for its blocker to merge so it can be retargeted onto
 // the default branch and merged, which a later run has to come back and do
-// (issue #659).
+// .
 func pullRequestPausedOnStack(state OriginatingWorkState) bool {
 	for _, pullRequest := range state.PullRequests {
 		if strings.EqualFold(pullRequest.State, "open") && !pullRequest.Merged && !pullRequest.IsDraft && pullRequest.Stacked {
@@ -1415,7 +1426,7 @@ func pausedWorkPrompt(issue Issue) string {
 }
 
 // pausedRecord returns what paused work waits on. A record saved before paused
-// work had kinds is a stacked pull request waiting on its blocker (issue #659).
+// work had kinds is a stacked pull request waiting on its blocker.
 func pausedRecord(state workState) core.PausedWork {
 	if state.Paused == nil || state.Paused.Kind == "" {
 		return core.PausedWork{Kind: core.PausedStacked}
@@ -1424,12 +1435,12 @@ func pausedRecord(state workState) core.PausedWork {
 }
 
 // pausedWake reads the GitHub state that paused work's wake check needs and
-// decides it (issue #732). An issue that only waits on its blockers is decided
+// decides it. An issue that only waits on its blockers is decided
 // from the issue as the poll listed it. Work that left a pull request behind
 // also reads that pull request back, and a stacked one still blocked reads its
 // blockers' pull requests too. It also returns the rejected pull request when
 // the work restarts, and the work's own state when it was read. A read that fails is left out, so it never wakes work.
-func (w *Glorp) pausedWake(ctx context.Context, checker WorkClosureChecker, paused core.PausedWork, issue Issue) (core.PausedWake, string, int, *OriginatingWorkState) {
+func (w *Engine) pausedWake(ctx context.Context, checker WorkClosureChecker, paused core.PausedWork, issue Issue) (core.PausedWake, string, int, *OriginatingWorkState) {
 	check := core.PausedCheck{Issue: issue}
 	if checker != nil && paused.Kind != core.PausedBlocked && paused.Kind != core.PausedManual {
 		repo := issueRepository(issue.Target, issue)
@@ -1458,16 +1469,16 @@ func (w *Glorp) pausedWake(ctx context.Context, checker WorkClosureChecker, paus
 
 // IssueHydrator reads one issue back from GitHub with its state and
 // dependencies, so paused work whose issue the poll does not list can still
-// be woken when its blockers close (issue #769).
+// be woken when its blockers close.
 type IssueHydrator interface {
 	HydrateIssue(ctx context.Context, repo string, issue *Issue) error
 }
 
 // unlistedPausedIssues reads back the paused work whose issue the poll did not
 // list, so the paused watch can decide its wake exactly as it does for listed
-// work (issue #769). An issue that cannot be read is left out; the poll still
+// work. An issue that cannot be read is left out; the poll still
 // finishes it if its own state shows it closed or merged.
-func (w *Glorp) unlistedPausedIssues(ctx context.Context, hydrator IssueHydrator, keys []string, targets []string) []Issue {
+func (w *Engine) unlistedPausedIssues(ctx context.Context, hydrator IssueHydrator, keys []string, targets []string) []Issue {
 	var issues []Issue
 	for _, key := range keys {
 		target, number, ok := parseIssueWorkKey(key)
@@ -1499,12 +1510,12 @@ func pausedJobReason(paused core.PausedWork) string {
 }
 
 // completedWorkRejected reports a completed issue, still open, whose pull
-// request was closed without merging after its run ended (issue #729). A run
+// request was closed without merging after its run ended. A run
 // only completes with its issue still open when it left a ready pull request
 // for a human, so no open or merged pull request remaining means that one was
 // rejected. A failed check reports nothing, leaving the issue suppressed until
 // a later poll can read it.
-func (w *Glorp) completedWorkRejected(ctx context.Context, checker WorkClosureChecker, issue Issue) (int, string) {
+func (w *Engine) completedWorkRejected(ctx context.Context, checker WorkClosureChecker, issue Issue) (int, string) {
 	state, err := checker.OriginatingWorkState(ctx, issueRepository(issue.Target, issue), issue.Number)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -1523,7 +1534,7 @@ func completedPullRequestRejected(state OriginatingWorkState) (int, string) {
 
 // closedWorkReason reports why work must stop because its issue was closed
 // without a merge. A pull request closed while the issue is still open is not
-// a reason to stop; rejectedPullRequest reports it instead (issue #690).
+// a reason to stop; rejectedPullRequest reports it instead.
 func closedWorkReason(previous, current OriginatingWorkState, issueNumber int) string {
 	if strings.EqualFold(current.IssueState, "closed") && !strings.EqualFold(previous.IssueState, "closed") {
 		for _, pullRequest := range current.PullRequests {
@@ -1538,7 +1549,7 @@ func closedWorkReason(previous, current OriginatingWorkState, issueNumber int) s
 
 // rejectedPullRequest reports a pull request closed without merging since
 // previous while the issue stayed open, which rejects that attempt and
-// restarts the work rather than ending it (issue #690). A closed issue always
+// restarts the work rather than ending it. A closed issue always
 // wins: work on it stops, so a pull request closed alongside it, or by the
 // cleanup the closure asked for, never restarts it.
 func rejectedPullRequest(previous, current OriginatingWorkState) (int, string) {
@@ -1572,7 +1583,7 @@ func rejectedPullRequest(previous, current OriginatingWorkState) (int, string) {
 // the handoff protocol described in issue #214, the last instance to post
 // such a claim wins, so detecting one here means this instance lost the
 // ticket mid-run and must cooperatively cancel.
-func (w *Glorp) watchForCompetingClaim(ctx context.Context, target ownershipTarget, issueNumber int, since time.Time, cancel context.CancelCauseFunc) {
+func (w *Engine) watchForCompetingClaim(ctx context.Context, target ownershipTarget, issueNumber int, since time.Time, cancel context.CancelCauseFunc) {
 	if w.Comments == nil {
 		return
 	}
@@ -1605,18 +1616,18 @@ type workState struct {
 	SessionID         string `json:"sessionId,omitempty"`
 	Agent             string `json:"agent,omitempty"`
 	CheckoutDirectory string `json:"checkoutDirectory,omitempty"`
-	// Owner is the identity of the glorp instance that most recently claimed
+	// Owner is the identity of the aviary instance that most recently claimed
 	// this ticket through the handoff protocol, cached to help future reaps
 	// recognize their own prior work.
 	Owner string `json:"owner,omitempty"`
-	// Paused describes what work with Status "paused" waits on (issue #732).
+	// Paused describes what work with Status "paused" waits on.
 	// A "paused" record without it predates paused kinds and is a stacked
-	// pull request waiting on its blocker (issue #659).
+	// pull request waiting on its blocker.
 	Paused *core.PausedWork `json:"paused,omitempty"`
 }
 
 // UnmarshalJSON reads a work state, including one saved while paused work was
-// still called parked (issue #734): a "parked" status and its "parked" record
+// still called parked: a "parked" status and its "parked" record
 // are read as paused, so existing state files keep working.
 func (s *workState) UnmarshalJSON(data []byte) error {
 	type plain workState
@@ -1654,17 +1665,17 @@ func activeCountsByTarget(active map[string]string, parse func(string) (string, 
 
 // balanceAcrossTargets reorders the dispatch candidates a poll produced so the
 // watched targets are drawn from in turn instead of one target's whole backlog
-// being queued ahead of another's (issue #464). A poll lists the targets in the
+// being queued ahead of another's. A poll lists the targets in the
 // order they were configured and appends each one's issues to a single slice,
 // and the dispatch loop blocks on a concurrency slot in that same order, so
-// `glorp watch repoA repoB` with 20 open issues in repoA and 3 in repoB spends
+// `aviary watch repoA repoB` with 20 open issues in repoA and 3 in repoB spends
 // every slot on repoA until it drains and never reaches repoB.
 //
 // Each target keeps its own order, and the rotation is led by whichever target
 // has the least work already in flight (ties broken by configured order), so a
 // target that already filled slots on an earlier poll yields the next ones to a
 // target that has none. Discussion dispatch rotates over its own candidates
-// through this same function (issue #467).
+// through this same function.
 //
 // Before rotating, candidates are split into priority tiers by label (issue
 // #681): issues labeled `critical` come first, then `high`, then everything
@@ -1820,7 +1831,7 @@ func activeIssuesForRepo(active map[string]string, repo string) []int {
 }
 
 // manuallyPausedIssuesForRepo returns the issue numbers in repo whose work
-// the owner paused from a dashboard (issue #771).
+// the owner paused from a dashboard.
 func manuallyPausedIssuesForRepo(work map[string]workState, repo string) []int {
 	var numbers []int
 	for key, state := range work {
@@ -1862,7 +1873,7 @@ func (s *taskState) snapshot() (running, queued, completed, failed int) {
 	return s.running, s.queued, s.completed, s.failed
 }
 
-func (w *Glorp) logf(format string, args ...interface{}) {
+func (w *Engine) logf(format string, args ...interface{}) {
 	w.logMu.Lock()
 	defer w.logMu.Unlock()
 	line := fmt.Sprintf("%s "+format, append([]interface{}{time.Now().Format("2006-01-02 15:04:05")}, args...)...)
@@ -1883,8 +1894,8 @@ func (w *Glorp) logf(format string, args ...interface{}) {
 // logChanged logs a line only when the state it reports differs from the state
 // last logged under the same key, and reports whether it logged. Polling
 // otherwise repeats an unchanged summary, and an unchanged failure, on every
-// tick (issue #413).
-func (w *Glorp) logChanged(key, state, format string, args ...interface{}) bool {
+// tick.
+func (w *Engine) logChanged(key, state, format string, args ...interface{}) bool {
 	w.repeatMu.Lock()
 	if previous, ok := w.lastLogged[key]; ok && previous == state {
 		w.repeatMu.Unlock()
@@ -1902,7 +1913,7 @@ func (w *Glorp) logChanged(key, state, format string, args ...interface{}) bool 
 // forgetLogged drops the state remembered for key so the next logChanged with
 // it logs again, and reports whether anything was remembered. That answer is
 // how a poll that succeeded knows a failure was reported for it earlier.
-func (w *Glorp) forgetLogged(key string) bool {
+func (w *Engine) forgetLogged(key string) bool {
 	w.repeatMu.Lock()
 	defer w.repeatMu.Unlock()
 	_, ok := w.lastLogged[key]
@@ -1913,7 +1924,7 @@ func (w *Glorp) forgetLogged(key string) bool {
 // pollStallIntervals is how many poll intervals may pass with no poll
 // completing before the run reports that it has stopped making progress. A
 // poll that finds nothing new logs nothing, so a wedged loop and a quiet one
-// read the same in the terminal; this is what tells them apart (issue #472).
+// read the same in the terminal; this is what tells them apart.
 const pollStallIntervals = 4
 
 // The wake check compares how much wall-clock time passed between two of its
@@ -1927,7 +1938,7 @@ var (
 
 // watchForWake reports each time the machine resumes from sleep, with roughly
 // how long it slept, so the run can re-establish connections that did not
-// survive it instead of staying broken until it is restarted (issue #683).
+// survive it instead of staying broken until it is restarted.
 func watchForWake(ctx context.Context) <-chan time.Duration {
 	wakes := make(chan time.Duration, 1)
 	ticker := time.NewTicker(wakeCheckInterval)
@@ -1967,7 +1978,7 @@ func detectWakes(ctx context.Context, ticks <-chan time.Time, interval time.Dura
 // makes is bounded, so a stall this long means something else is holding it;
 // saying so is what keeps a watch that has stopped dispatching from looking
 // merely idle.
-func (w *Glorp) watchPollProgress(ctx context.Context, interval time.Duration, started time.Time, lastPoll func() time.Time) {
+func (w *Engine) watchPollProgress(ctx context.Context, interval time.Duration, started time.Time, lastPoll func() time.Time) {
 	if interval <= 0 {
 		return
 	}
@@ -1995,14 +2006,14 @@ func (w *Glorp) watchPollProgress(ctx context.Context, interval time.Duration, s
 	}
 }
 
-func (w *Glorp) Run(ctx context.Context) error {
+func (w *Engine) Run(ctx context.Context) error {
 	// Ownership handshakes wait out their grace window off the poll loop, so
 	// a run that is shutting down waits for them here rather than leaving
 	// them posting comments after it has returned. Cancelling ctx cuts the
 	// wait short, so this does not hold a shutdown open for the full window.
 	defer w.awaitNegotiations()
 	// Published before anything slow, so settings read from here on even
-	// while startup is still loading state or calling GitHub (issue #803).
+	// while startup is still loading state or calling GitHub.
 	w.publishSettings()
 	targets := append([]string(nil), w.Targets...)
 	if len(targets) == 0 && w.Repo != "" {
@@ -2052,18 +2063,18 @@ func (w *Glorp) Run(ctx context.Context) error {
 	// nudges lets a webhook delivery about an issue an agent is working ask
 	// that run's watcher to check GitHub now rather than on its next tick, so
 	// push mode relays the change as promptly as it dispatches new work
-	// (issue #469). The delivery is only a nudge: what actually interrupts the
+	//. The delivery is only a nudge: what actually interrupts the
 	// run is still read back from GitHub.
 	nudges := make(map[string]chan struct{})
 	// runExits is closed once a run's goroutine has finished, after its agent
 	// process has exited and its bookkeeping is saved, so a stop from the web
 	// UI can wait for that instead of replying as soon as it cancels. stopping
 	// reserves an issue between the stop request and that exit, so no poll
-	// dispatches a second run beside the one still unwinding (issue #719).
+	// dispatches a second run beside the one still unwinding.
 	runExits := make(map[string]chan struct{})
 	stopping := make(map[string]bool)
 	// pausing marks a stopping run that the owner paused, so its exit records
-	// a manual pause instead of a failure (issue #771).
+	// a manual pause instead of a failure.
 	pausing := make(map[string]bool)
 	directMentions := make(map[string]bool)
 	mentions := newMentionScan(time.Now())
@@ -2079,13 +2090,13 @@ func (w *Glorp) Run(ctx context.Context) error {
 	jobs := make(map[string]JobSnapshot)
 	issueCounts := make(map[string]int)
 	// lastPoll is when the most recent poll of GitHub finished, which the UIs
-	// report so a run that has stopped logging every tick (issue #413) can
-	// still be seen checking (issue #447). Guarded by jobMu, since publish
+	// report so a run that has stopped logging every tick can
+	// still be seen checking. Guarded by jobMu, since publish
 	// reads it from whichever goroutine reports a job change.
 	var lastPoll time.Time
 	var jobMu sync.Mutex
 	// Clearing unused clones reads the live work and jobs, so a clone a job
-	// still needs is never removed (issue #830).
+	// still needs is never removed.
 	w.setCloneView(func() (map[string]workState, map[string]JobSnapshot) {
 		workMu.Lock()
 		workCopy := make(map[string]workState, len(work))
@@ -2137,18 +2148,18 @@ func (w *Glorp) Run(ctx context.Context) error {
 	pollNumber := 0
 	// observed records the "repo#number" keys returned by the most recent
 	// poll. Webhook follow-up refreshes exist only to outlast GitHub's issue
-	// index lag (issue #176), so once the delivered issue shows up here the
+	// index lag, so once the delivered issue shows up here the
 	// remaining refreshes have nothing left to catch. Only the run loop's own
 	// goroutine reads or writes it.
 	var observed map[string]bool
 	// retriedPaused holds the paused job a web UI retry just unpaused while
 	// the poll that requeues it runs, so a blocker that is still open does not
-	// pause it again: the retry overrides what it waited on (issue #763).
+	// pause it again: the retry overrides what it waited on.
 	// Only the run loop's own goroutine reads or writes it.
 	retriedPaused := make(map[string]bool)
 	// retryAfterStop holds running jobs a web UI retry stopped, to requeue
 	// once their run exits. serveJobAction answers dashboard job actions, both
-	// from the run loop and while a poll waits for a slot (issue #771).
+	// from the run loop and while a poll waits for a slot.
 	retryAfterStop := make(map[string]bool)
 	var serveJobAction func(request jobActionRequest, dispatching bool)
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
@@ -2177,7 +2188,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 	}
 	// lastPausedWatch is when the paused watch last read back every paused
 	// record, including ones the poll did not list, and forcePausedWatch asks
-	// the next poll to run it regardless (issue #769). Only the run loop's own
+	// the next poll to run it regardless. Only the run loop's own
 	// goroutine reads or writes them.
 	var lastPausedWatch time.Time
 	forcePausedWatch := false
@@ -2222,7 +2233,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 		}
 		// Without webhooks nothing delivers an issue_comment, so direct
 		// mentions are found by scanning each repository's recent comments
-		// (issue #689).
+		//.
 		if !w.UseWebhooks && w.Mentions != nil {
 			w.scanDirectMentions(ctx, mentions, mentionScanRepos(targets, issues), observed, directMentions)
 		} else if w.Mentions != nil {
@@ -2244,7 +2255,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			workMu.Lock()
 			for key, state := range work {
 				// A manual pause is read back too: nothing on GitHub wakes
-				// it, but its issue closing finishes it (issue #775).
+				// it, but its issue closing finishes it.
 				if _, running := active[key]; state.Status == "paused" && !running && !listed[key] {
 					keys = append(keys, key)
 				}
@@ -2254,9 +2265,9 @@ func (w *Glorp) Run(ctx context.Context) error {
 			issues = append(issues, w.unlistedPausedIssues(ctx, issueHydrator, keys, targets)...)
 		}
 		// pauseJob shows paused work on the dashboards, apart from both active
-		// and completed work (issue #732).
+		// and completed work.
 		// A paused job whose own state was read shows its pull request
-		// (issue #753).
+		//.
 		pauseJob := func(issue Issue, key, reason string, own *OriginatingWorkState) {
 			jobMu.Lock()
 			job, ok := jobs[key]
@@ -2326,7 +2337,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			_, running := active[key]
 			workMu.Unlock()
 			// Paused work is out of the queue and holds no slot until its
-			// wake condition, read from GitHub here, fires (issue #732).
+			// wake condition, read from GitHub here, fires.
 			wasPaused := pausedState.Status == "paused" && !running
 			var paused core.PausedWork
 			wake, wakeReason, wakeRejected := core.PausedStay, "", 0
@@ -2413,8 +2424,8 @@ func (w *Glorp) Run(ctx context.Context) error {
 			}
 			// A completed run's ready pull request can still be closed without
 			// merging after the run ended. That rejects the attempt exactly as
-			// it does mid-run (issue #690), so the completed record stops
-			// suppressing the issue and the work restarts (issue #729).
+			// it does mid-run, so the completed record stops
+			// suppressing the issue and the work restarts.
 			rejected := 0
 			if wake == core.PausedRestart {
 				rejected = wakeRejected
@@ -2468,7 +2479,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				}
 				// Work state persisted by an earlier run must not pin the issue
 				// to an agent the current configuration no longer dispatches to
-				// (issue #358). Drop the stale identity so the dispatch below
+				//. Drop the stale identity so the dispatch below
 				// selects a currently configured agent and starts a fresh
 				// session instead of resuming with the retired one.
 				if session.Agent != "" && !w.agentStillConfigured(session.Agent) {
@@ -2505,7 +2516,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 		}
 		// Paused work whose issue the poll no longer lists cannot be woken by
 		// it, so its own pull requests are read back once per poll to finish
-		// it when its issue closed or its pull request merged (issue #732).
+		// it when its issue closed or its pull request merged.
 		if closureChecker != nil {
 			workMu.Lock()
 			unlisted := make(map[string]core.PausedWork)
@@ -2531,8 +2542,8 @@ func (w *Glorp) Run(ctx context.Context) error {
 			}
 		}
 		// A job the owner paused whose issue the poll no longer lists still
-		// shows on the dashboards until the owner retries it (issue #771) or
-		// its issue closes (issue #775).
+		// shows on the dashboards until the owner retries it or
+		// its issue closes.
 		workMu.Lock()
 		var manual []string
 		for key, state := range work {
@@ -2548,7 +2559,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 		}
 		// A mention whose issue the poll did not list can never be dispatched,
 		// so say why it is waiting rather than leaving it queued silently
-		// (issue #693).
+		//.
 		for mentionKey := range directMentions {
 			if !observed[mentionKey] {
 				w.logChanged("mention-unlisted-"+mentionKey, "waiting", "%s direct mention of instance %s is waiting: it is not among the open issues this instance watches (closed, filtered out, a pull request that closes no issue, or not indexed yet)", mentionKey, w.Identity)
@@ -2594,7 +2605,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				}
 			}
 			// A repository the user cannot write to has its fix pushed to the
-			// user's fork instead (issue #712). The issue, its claim, and its
+			// user's fork instead. The issue, its claim, and its
 			// status all stay on the original repository; only the branch and
 			// pull request come from the fork, which joins the watched targets
 			// so its activity is watched without a restart.
@@ -2685,6 +2696,11 @@ func (w *Glorp) Run(ctx context.Context) error {
 			job.Status = "active"
 			jobs[issueKey(issue)] = job
 			jobMu.Unlock()
+			if session.Resume {
+				w.jobSystem(issueKey(issue), "resumed session "+session.ID+" on "+session.Agent)
+			} else {
+				w.jobSystem(issueKey(issue), "claimed and started on "+session.Agent)
+			}
 			publish()
 			startedRunning, startedQueued := running, queued
 			wg.Add(1)
@@ -2769,13 +2785,13 @@ func (w *Glorp) Run(ctx context.Context) error {
 				// interrupted because the issue changed under it is resumed in
 				// place with what changed, so the agent already holding the
 				// work receives it rather than the change waiting out the run
-				// (issue #469).
+				//.
 				alreadyClosed := false
 				var paused *core.PausedWork
 				keepalives := 0
 				// wakeup is the ScheduleWakeup the agent's last turn left
 				// pending, which the next pass waits out before resuming the
-				// session with the agent's own prompt (issue #671).
+				// session with the agent's own prompt.
 				var wakeup *scheduledWakeup
 				wakeups := 0
 				setWaiting := func(from, to, reason string, wakeAt time.Time) {
@@ -2807,6 +2823,9 @@ func (w *Glorp) Run(ctx context.Context) error {
 						}
 						jobMu.Unlock()
 						if changed {
+							if label := job.PullRequestLabel(); label != "" {
+								w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "pull request opened: " + label, URL: job.PullRequestURL()})
+							}
 							publish()
 						}
 					}}
@@ -2888,7 +2907,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 							// Print mode exits when the turn ends, so the
 							// wakeup the agent asked for would never fire and
 							// the run would look finished while it waits on
-							// CI (issue #671). The session is kept alive and
+							// CI. The session is kept alive and
 							// resumed with the agent's own prompt instead.
 							wakeups++
 							if wakeups > maxConsecutiveWakeups {
@@ -2908,7 +2927,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 							break
 						}
 						// The agent finishing its prompt is not the work being
-						// done (issue #475): one that timed out or stopped
+						// done: one that timed out or stopped
 						// early returns exactly as one that merged its pull
 						// request does. The run only counts as complete once
 						// GitHub says the issue is closed; while it is still
@@ -2919,9 +2938,9 @@ func (w *Glorp) Run(ctx context.Context) error {
 							// A run that finished with a ready pull request
 							// still open is paused on that pull request, so its
 							// slot is freed and a later poll wakes it on a merge
-							// or a close (issue #732). One stacked on the blocker
+							// or a close. One stacked on the blocker
 							// the issue was dispatched with waits for that
-							// blocker instead (issue #659); stacked on anything
+							// blocker instead; stacked on anything
 							// else, it is a hold for a human like any other.
 							if closed && held != nil {
 								if held.Kind == core.PausedStacked {
@@ -2956,7 +2975,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 						if update.restart {
 							// A rejected pull request leaves the issue open, so
 							// the work starts over in a fresh session rather
-							// than ending (issue #690).
+							// than ending.
 							w.logf("issue #%d cannot resume its session to deliver the update; restarting the agent for a fresh attempt", i.Number)
 							agentSession.Resume = false
 							agentSession.Update = ""
@@ -2979,7 +2998,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				if manualPause {
 					// The owner paused the run: it is held, keeping its session
 					// and its claim on the issue, until the owner retries it.
-					// Its project item stays in progress (issue #771).
+					// Its project item stays in progress.
 					workMu.Lock()
 					delete(active, key)
 					mentions.agentStopped(i.Repository+"#"+strconv.Itoa(i.Number), time.Now())
@@ -3015,6 +3034,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 					job.Log += runErr.Error()
 					jobs[key] = job
 					jobMu.Unlock()
+					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + firstLine(runErr.Error()), IsError: true})
 					state := work[key]
 					state.Status = "failed"
 					work[key] = state
@@ -3057,6 +3077,11 @@ func (w *Glorp) Run(ctx context.Context) error {
 					}
 					jobs[key] = job
 					jobMu.Unlock()
+					if paused != nil {
+						w.jobSystem(key, "paused: "+job.WaitReason)
+					} else {
+						w.jobSystem(key, "completed")
+					}
 					state := work[key]
 					state.Status = "completed"
 					state.Paused = nil
@@ -3091,13 +3116,13 @@ func (w *Glorp) Run(ctx context.Context) error {
 	}
 	// poll runs one poll and reports the end of a run of failures, so a poll
 	// loop that recovers says so once even though the failures it recovered
-	// from were only reported once (issue #413).
+	// from were only reported once.
 	poll := func(sweep map[string]bool) error {
 		err := pollOnce(sweep)
 		if err == nil {
 			// Record and publish the check itself, not just what it dispatched:
 			// a poll that finds nothing new logs nothing, so this timestamp is
-			// what tells the user the run is still alive (issue #447).
+			// what tells the user the run is still alive.
 			jobMu.Lock()
 			lastPoll = time.Now()
 			jobMu.Unlock()
@@ -3112,7 +3137,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 	// through here, so the same failure repeating on every tick is
 	// reported when it starts rather than on every tick, and the listing or
 	// state error that caused it is reported by this line alone instead of
-	// being logged a second time where it was raised (issue #413).
+	// being logged a second time where it was raised.
 	reportPollError := func(kind string, err error) {
 		if kind != "" {
 			kind += " "
@@ -3120,7 +3145,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 		w.logChanged("poll-error", err.Error(), "%spoll #%d error: %v; retrying in %s", kind, pollNumber, err, w.periodicPollInterval())
 	}
 	// respondToOwnershipAsk answers a "Does anyone have this?" handoff comment
-	// (issue #214) the moment its webhook delivery arrives, rather than
+	// the moment its webhook delivery arrives, rather than
 	// waiting for the next poll to notice the issue is still active locally.
 	respondToOwnershipAsk := func(ctx context.Context, event WebhookEvent) {
 		if event.Kind != "issue_comment" || event.Action != "created" || w.Comments == nil {
@@ -3135,13 +3160,13 @@ func (w *Glorp) Run(ctx context.Context) error {
 		paused := manuallyPausedIssuesForRepo(work, event.Repository)
 		workMu.Unlock()
 		// A job the owner paused keeps the issue reserved, so this instance
-		// still answers for it (issue #771).
+		// still answers for it.
 		owned := slices.Contains(numbers, event.IssueNumber) || slices.Contains(paused, event.IssueNumber)
 		// Once a draft pull request exists the handshake moves to it
 		// (ownershipTargetFor), so the ask names the pull request number and
 		// never matches an active issue number. Checking the open pull
 		// requests of the work already in flight is what keeps a busy
-		// instance from silently losing its branch (issue #363).
+		// instance from silently losing its branch.
 		if !owned && closureChecker != nil {
 			for _, number := range numbers {
 				state, err := closureChecker.OriginatingWorkState(ctx, event.Repository, number)
@@ -3173,7 +3198,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 	}
 	// awaitPausedRun replies to a pause once the run it stopped has exited
 	// and recorded the pause, after pushing the run's work with the shutdown
-	// checkpoint (issues #719, #741, #771).
+	// checkpoint.
 	awaitPausedRun := func(key, target string, number int, exited <-chan struct{}, done chan<- error) {
 		select {
 		case <-exited:
@@ -3226,7 +3251,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				// its record and card are dropped and its claim on the issue
 				// is released. A manual pause whose open issue the poll no
 				// longer lists can only be ended this way, since Retry has
-				// nothing to requeue (issue #777).
+				// nothing to requeue.
 				w.logf("issue #%d stop requested from web UI; clearing its pause and releasing the issue", action.Number)
 				workMu.Lock()
 				if cancellations[key] != nil {
@@ -3269,7 +3294,8 @@ func (w *Glorp) Run(ctx context.Context) error {
 				request.done <- fmt.Errorf("job is not running")
 				return
 			}
-			w.logf("issue #%d stop requested from web UI", action.Number)
+			w.logf("issue #%d stop requested", action.Number)
+			w.jobSystem(key, "stopped by the owner")
 			jobMu.Lock()
 			job.Status = "stopping"
 			jobs[key] = job
@@ -3278,7 +3304,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			cancel(errWorkStoppedFromWebUI)
 			// Cancelling only signals the agent, so the reply waits for
 			// the run to exit, off the dispatch loop so it keeps serving
-			// everything else meanwhile (issue #719).
+			// everything else meanwhile.
 			go w.awaitStoppedRun(ctx, action.Number, exited, request.done)
 		case "retry":
 			switch job.Status {
@@ -3306,8 +3332,8 @@ func (w *Glorp) Run(ctx context.Context) error {
 			}
 			if dispatching && (job.Status == "failed" || job.Status == "complete" || job.Status == "paused") {
 				// Requeuing takes a poll, and the poll already running is
-				// waiting for a slot to dispatch queued work (issue #771).
-				request.done <- fmt.Errorf("job cannot be retried while glorp waits for a free slot to dispatch queued work; try again once that work starts")
+				// waiting for a slot to dispatch queued work.
+				request.done <- fmt.Errorf("job cannot be retried while aviary waits for a free slot to dispatch queued work; try again once that work starts")
 				return
 			}
 			switch job.Status {
@@ -3327,7 +3353,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				// Retrying overrides whatever the paused job waits on: its
 				// pause is dropped, its session is kept as a failed run's
 				// is, and it is requeued. A held pull request is left as it
-				// is on GitHub; the rerun picks it up (issue #763).
+				// is on GitHub; the rerun picks it up.
 				w.logf("issue #%d retry requested from web UI; clearing its pause and rerunning gh-fix", action.Number)
 				workMu.Lock()
 				paused := work[key]
@@ -3377,7 +3403,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			if job.Status == "queued" {
 				// A queued job has not started, so pausing it only takes it
 				// out of the queue: nothing is dispatched or cancelled, and
-				// later polls pass it over until it is retried (issue #771).
+				// later polls pass it over until it is retried.
 				w.logf("issue #%d pause requested from web UI; holding it out of the queue until it is retried", action.Number)
 				workMu.Lock()
 				state := work[key]
@@ -3410,7 +3436,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 				return
 			}
 			// Pausing a running job stops it the way Stop does, then holds
-			// it, still reserved, until it is retried (issue #771).
+			// it, still reserved, until it is retried.
 			w.logf("issue #%d pause requested from web UI; stopping its run and pausing it until it is retried", action.Number)
 			jobMu.Lock()
 			job.Status = "stopping"
@@ -3432,7 +3458,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 	// mode the ngrok tunnel and per-target webhook configuration in
 	// main.go's run() -- can take a real amount of time, and a settings or
 	// job-action request that lands during that window must not block on a
-	// channel nothing is reading yet (issue #579).
+	// channel nothing is reading yet.
 	close(w.readyChan())
 	if err := poll(nil); err != nil {
 		if ctx.Err() != nil {
@@ -3516,7 +3542,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 	}
 	// Reaping abandoned work rides along with polling, so when polling is
 	// slower than reapPollInterval (webhook push mode) it gets its own,
-	// faster ticker (issue #239).
+	// faster ticker.
 	var reap <-chan time.Time
 	if reapTick := w.reapPollTick(); reapTick > 0 {
 		reapTicker := time.NewTicker(reapTick)
@@ -3557,7 +3583,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			if w.Webhooks != nil {
 				w.Webhooks(ctx)
 				// The tunnel check can change whether webhooks are online,
-				// and a poll that fails will not publish it (issue #687).
+				// and a poll that fails will not publish it.
 				publish()
 			}
 			if err := poll(nil); err != nil {
@@ -3573,7 +3599,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			// Connections made before the machine slept may not have
 			// survived it, and the poll it slept through is overdue, so
 			// both are dealt with now rather than on the next tick, which
-			// can be an hour away (issue #683).
+			// can be an hour away.
 			w.logf("machine woke from about %s of sleep; checking connections and refreshing", formatInterval(slept.Round(time.Second)))
 			if w.Recover != nil {
 				w.Recover(ctx)
@@ -3581,7 +3607,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			if w.Webhooks != nil {
 				w.Webhooks(ctx)
 				// The tunnel check can change whether webhooks are online,
-				// and a poll that fails will not publish it (issue #687).
+				// and a poll that fails will not publish it.
 				publish()
 			}
 			if err := poll(nil); err != nil && ctx.Err() == nil {
@@ -3613,7 +3639,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			respondToOwnershipAsk(ctx, event)
 			// A delivery about an issue an agent is already working is not new
 			// work to dispatch; it is a change that agent needs to hear about,
-			// so its watcher is asked to check GitHub now (issue #469).
+			// so its watcher is asked to check GitHub now.
 			if webhookEventUpdatesActiveWork(event) {
 				workMu.Lock()
 				pending := nudgesForIssue(nudges, event.Repository, event.IssueNumber)
@@ -3648,12 +3674,12 @@ func (w *Glorp) Run(ctx context.Context) error {
 			}
 			if kind, ok := webhookMentionKind(event); ok && mentionedIdentity(event.CommentBody, w.Identity) {
 				// Acknowledge the mention was read regardless of whether it goes on
-				// to authorize a run (issue #581): a human watching the thread should
+				// to authorize a run: a human watching the thread should
 				// see the eyes reaction even when the mention is stale or from an
 				// unauthorized commenter, since either way this instance saw it.
 				w.reactToMention(ctx, event.Repository, kind, event.IssueNumber, event.CommentID, event.CommentNodeID)
 				// A mention in the webhook payload alone is not enough to trigger a
-				// run (issue #294): the mentioning comment must also come from an
+				// run: the mentioning comment must also come from an
 				// allowed commenter and be on GitHub as delivered, reverified there
 				// rather than trusted from the delivery. A conversation comment
 				// must also still be the thread's last comment.
@@ -3702,7 +3728,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 			if kind, ok := webhookMentionKind(event); ok && !mentionedIdentity(event.CommentBody, w.Identity) && w.commentRequestsRecheck(event.CommentBody, event.CommentAuthor) {
 				// The delivery marks the comment as new, so only its author, its
 				// mention of the login, and its presence on GitHub need checking
-				// (issue #708).
+				//.
 				verified, err := w.commentOnGitHub(ctx, kind, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
 				if err != nil {
 					w.logf("issue #%d failed to verify comment mentioning %s: %v", event.IssueNumber, w.SelfLogin, err)
@@ -3886,7 +3912,7 @@ func stateFileFingerprint(path string) string {
 }
 
 // webhookEventNeedsRefresh reports whether a delivery could have changed which
-// issues are dispatchable, using only the payload glorp already decoded. A
+// issues are dispatchable, using only the payload aviary already decoded. A
 // closed pull request can unblock referenced work even when it does not close
 // an issue, so it refreshes immediately. Push, ping, other pull request
 // activity, and comments do not. Unrecognized event kinds refresh so a newly
@@ -3926,7 +3952,7 @@ func webhookEventNeedsRefresh(event WebhookEvent) bool {
 }
 
 // webhookEventUpdatesActiveWork reports whether a delivery could have changed
-// the issue itself under an agent already working it (issue #469). These are
+// the issue itself under an agent already working it. These are
 // deliberately the deliveries webhookEventNeedsRefresh ignores: an edited
 // description and a new comment change nothing about which issues are
 // dispatchable, but they change what the agent holding this one was asked to
@@ -3982,7 +4008,7 @@ func webhookContinuationSweep(event WebhookEvent) map[string]bool {
 // webhookMentionKind reports whether a delivery is a newly posted comment a
 // direct mention could be in, and which kind: an issue or pull request
 // conversation comment, an inline review comment, or a submitted review's
-// body (issue #695).
+// body.
 func webhookMentionKind(event WebhookEvent) (CommentKind, bool) {
 	switch {
 	case event.Kind == "issue_comment" && event.Action == "created":
@@ -4035,7 +4061,7 @@ func webhookEventLabel(event WebhookEvent) string {
 	return event.Kind + "/" + event.Action
 }
 
-func (w *Glorp) logWebhookEvent(event WebhookEvent) {
+func (w *Engine) logWebhookEvent(event WebhookEvent) {
 	switch event.Kind {
 	case "push":
 		w.logf("webhook push received (repository: %s, ref: %s, before: %s, after: %s, commits: %d)", event.Repository, event.Ref, event.Before, event.After, event.CommitCount)
@@ -4056,7 +4082,7 @@ func (w *Glorp) logWebhookEvent(event WebhookEvent) {
 	}
 }
 
-func (w *Glorp) resetFailedWork(ctx context.Context, work map[string]workState) error {
+func (w *Engine) resetFailedWork(ctx context.Context, work map[string]workState) error {
 	for key, state := range work {
 		if state.Status != "failed" {
 			continue
@@ -4104,7 +4130,7 @@ func workStateMatchesRemote(target string, issue Issue, state workState) bool {
 			return strings.EqualFold(strings.TrimSpace(issue.ProjectStatus), "In Progress")
 		}
 		// Repository work state persists only in this instance's own
-		// .glorp.json, and there is no remote label left to cross-check.
+		// .aviary.json, and there is no remote label left to cross-check.
 		// Trust it only when it carries enough identity to actually resume
 		// (a session ID and agent); an incomplete record can't be resumed
 		// reliably, so treat it as stale and let a fresh pickup negotiate
@@ -4394,7 +4420,7 @@ type stacksProbe struct {
 // enabled, caching the answer for stacksProbeTTL. A source that cannot answer
 // or a failed read counts as disabled, which keeps the old wait-for-blocker
 // behavior.
-func (w *Glorp) stacksEnabled(ctx context.Context, repo string) bool {
+func (w *Engine) stacksEnabled(ctx context.Context, repo string) bool {
 	source, ok := w.Issues.(StackSource)
 	if !ok || repo == "" {
 		return false
@@ -4430,11 +4456,11 @@ type forkProbe struct {
 }
 
 // forkFor returns the OWNER/REPO of the fork an issue in repo pushes its fix
-// to, or an empty string when the user can write to repo itself (issue #712).
+// to, or an empty string when the user can write to repo itself.
 // The answer is cached for forkProbeTTL. A source that cannot answer keeps the
 // same-repository flow, while a failed read is returned so the issue is not
 // dispatched to push where it cannot.
-func (w *Glorp) forkFor(ctx context.Context, repo string) (string, error) {
+func (w *Engine) forkFor(ctx context.Context, repo string) (string, error) {
 	source, ok := w.Issues.(ForkSource)
 	if !ok || repo == "" {
 		return "", nil
@@ -4459,12 +4485,12 @@ func (w *Glorp) forkFor(ctx context.Context, repo string) (string, error) {
 }
 
 // stackableOnDependency reports whether a blocked issue can be dispatched
-// anyway by stacking its pull request on its blocker's branch (issue #657),
+// anyway by stacking its pull request on its blocker's branch,
 // and which open pull request it would stack on. That needs stacked pull
 // requests enabled on the repository, exactly one open blocker in that same
 // repository (core.StackableDependency), and an open pull request for that
 // blocker to build on; otherwise the issue keeps waiting for its blocker.
-func (w *Glorp) stackableOnDependency(ctx context.Context, checker WorkClosureChecker, issue Issue) (int, bool) {
+func (w *Engine) stackableOnDependency(ctx context.Context, checker WorkClosureChecker, issue Issue) (int, bool) {
 	if checker == nil {
 		return 0, false
 	}

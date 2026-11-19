@@ -16,8 +16,8 @@ import (
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
-// configSettingsSection is the section of .glorp.config.json that carries
-// default values for `glorp watch` switches (issue #614). Every flag the
+// configSettingsSection is the section of .aviary.config.json that carries
+// default values for `aviary watch` switches. Every flag the
 // command takes can be given here under its own name, so a run's usual
 // configuration lives in the file rather than in a shell alias.
 const configSettingsSection = agents.SettingsSection
@@ -147,7 +147,7 @@ func configSettingScalar(raw json.RawMessage) (string, error) {
 
 // settingsUpdateFlags renders a dashboard settings change into the switch
 // names the settings section stores it under, so what the modal writes is
-// read back as a default on the next start (issue #614).
+// read back as a default on the next start.
 func settingsUpdateFlags(update core.SettingsUpdate) map[string]any {
 	values := map[string]any{}
 	if update.Concurrency != nil {
@@ -233,7 +233,7 @@ func saveConfigSettings(path string, values map[string]any) error {
 	}
 	out = append(out, '\n')
 	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".glorp.config.*.json")
+	temp, err := os.CreateTemp(dir, ".aviary.config.*.json")
 	if err != nil {
 		return fmt.Errorf("write config %s: %w", path, err)
 	}

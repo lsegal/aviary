@@ -64,7 +64,7 @@ func listCalls(src *fakeSource) int {
 }
 
 // pollTwice runs two more polls and waits for both to list issues.
-func pollTwice(t *testing.T, w *Glorp, src *fakeSource, logs *syncBuffer) {
+func pollTwice(t *testing.T, w *Engine, src *fakeSource, logs *syncBuffer) {
 	t.Helper()
 	for range 2 {
 		before := listCalls(src)
@@ -83,8 +83,8 @@ func pollTwice(t *testing.T, w *Glorp, src *fakeSource, logs *syncBuffer) {
 // Pausing an active job stops its run the way Stop does, replying only once
 // the agent has exited and its work was checkpointed, and then holds it as a
 // manual pause that later polls never dispatch, even once its pull request
-// merges (issue #771).
-func TestGlorpWebUIPausesActiveWork(t *testing.T) {
+// merges.
+func TestEngineWebUIPausesActiveWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	checkout := t.TempDir()
 	src := pausingSource([]Issue{{Number: 7, Title: "7", Repository: "o/r"}})
@@ -92,7 +92,7 @@ func TestGlorpWebUIPausesActiveWork(t *testing.T) {
 	runner := &pausableRunner{checkout: checkout, sessions: make(chan Issue, 4), exit: make(chan struct{})}
 	git := &recordingGit{}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Hour, checkpointGit: git.run,
 	}
@@ -158,14 +158,14 @@ func TestGlorpWebUIPausesActiveWork(t *testing.T) {
 }
 
 // Pausing a queued job dispatches and cancels nothing: it only leaves the
-// queue, and later polls pass it over while other work runs (issue #771).
-func TestGlorpWebUIPausesQueuedWork(t *testing.T) {
+// queue, and later polls pass it over while other work runs.
+func TestEngineWebUIPausesQueuedWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Title: "7"}, {Number: 8, Title: "8"}}}}
 	runner := &pausableRunner{sessions: make(chan Issue, 4), exit: make(chan struct{})}
 	close(runner.exit)
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs,
 	}
@@ -210,8 +210,8 @@ func TestGlorpWebUIPausesQueuedWork(t *testing.T) {
 }
 
 // A pause on a job in any other state is refused and changes nothing
-// (issue #771).
-func TestGlorpWebUIRefusesPauseOfPausedWork(t *testing.T) {
+//.
+func TestEngineWebUIRefusesPauseOfPausedWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingOn": [12]}}}`), 0600); err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestGlorpWebUIRefusesPauseOfPausedWork(t *testing.T) {
 	src := pausingSource(blockedOn12("open"))
 	src.states[12] = OriginatingWorkState{IssueState: "open"}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}, Out: logs,
 	}
@@ -239,7 +239,7 @@ func TestGlorpWebUIRefusesPauseOfPausedWork(t *testing.T) {
 }
 
 // manuallyPausedUnlisted saves issue #7 as paused by its owner, with a session
-// to resume, while the poll lists no issues at all (issue #775).
+// to resume, while the poll lists no issues at all.
 func manuallyPausedUnlisted(t *testing.T, statePath string) *hydratingPausingSource {
 	t.Helper()
 	saved := `{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "manual"}}}`
@@ -254,13 +254,13 @@ func manuallyPausedUnlisted(t *testing.T, statePath string) *hydratingPausingSou
 
 // A manually paused job whose issue the poll no longer lists is finished once
 // its issue closes, instead of staying paused with nothing Retry could requeue.
-// The closed issue finishes the job; it never runs it again (issue #775).
-func TestGlorpFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
+// The closed issue finishes the job; it never runs it again.
+func TestEngineFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := manuallyPausedUnlisted(t, statePath)
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src.fakePausingSource, Runner: runner, Out: logs, closureInterval: time.Hour,
 	}
@@ -295,13 +295,13 @@ func TestGlorpFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 
 // The paused watch reads a manual pause's issue back like any other paused
 // work, so a closed issue finishes it even without its own state being read
-// (issues #769, #775).
-func TestGlorpPausedWatchFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
+//.
+func TestEnginePausedWatchFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := manuallyPausedUnlisted(t, statePath)
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Hour, pausedInterval: 20 * time.Millisecond,
 	}
@@ -336,14 +336,14 @@ func TestGlorpPausedWatchFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 // Stop clears a manually paused job whose open issue the poll no longer lists,
 // which Retry cannot requeue: its record and card are dropped and its claim
 // is released, so the issue is dispatched afresh once it is listed again
-// (issue #777).
-func TestGlorpWebUIStopClearsAnUnlistedManualPause(t *testing.T) {
+//.
+func TestEngineWebUIStopClearsAnUnlistedManualPause(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := manuallyPausedUnlisted(t, statePath)
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src.fakePausingSource, Runner: runner, Comments: comments, Out: logs, closureInterval: time.Hour,
 	}

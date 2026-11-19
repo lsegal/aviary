@@ -10,7 +10,7 @@ import (
 )
 
 // The first shutdown signal runs prepare before the context is canceled, so
-// the shutdown checkpoint (issue #741) finishes while agents still exist.
+// the shutdown checkpoint finishes while agents still exist.
 func TestShutdownContextPreparesBeforeCanceling(t *testing.T) {
 	contexts := make(chan context.Context, 1)
 	prepared := make(chan error, 1)

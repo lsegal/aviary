@@ -57,7 +57,7 @@ func (f *fakeSource) ListIssues(_ context.Context, _ string) ([]Issue, error) {
 // on a delivery. These tests assert ordering, not latency: the work itself
 // takes microseconds, but a loaded CI runner can stall a goroutine for far
 // longer than that, and a one-second deadline turned that stall into a
-// spurious failure (issue #558). The deadline only has to be short enough to
+// spurious failure. The deadline only has to be short enough to
 // fail before the package timeout.
 const webhookDispatchWait = 30 * time.Second
 
@@ -216,13 +216,13 @@ func (f *fakeRunner) Run(ctx context.Context, i Issue) error {
 	f.mu.Unlock()
 	return nil
 }
-func TestGlorpRunsUnseenIssuesWithLimit(t *testing.T) {
+func TestEngineRunsUnseenIssuesWithLimit(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 1}, {Number: 2}}, {{Number: 1}, {Number: 2}, {Number: 3}, {Number: 4}}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	logs := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &Glorp{Repo: "o/r", Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	time.Sleep(20 * time.Millisecond)
@@ -255,7 +255,7 @@ func TestGlorpRunsUnseenIssuesWithLimit(t *testing.T) {
 	}
 }
 
-func TestGlorpDispatchesUnansweredDiscussions(t *testing.T) {
+func TestEngineDispatchesUnansweredDiscussions(t *testing.T) {
 	dir := t.TempDir()
 	target := "https://github.com/o/r/discussions"
 	ds := &fakeDiscussionSource{batches: [][]Discussion{{{Number: 9, Title: "Q"}}}}
@@ -263,7 +263,7 @@ func TestGlorpDispatchesUnansweredDiscussions(t *testing.T) {
 	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	logs := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &Glorp{Repo: target, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Discussions: ds, Runner: r, Out: logs}
+	w := &Engine{Repo: target, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Discussions: ds, Runner: r, Out: logs}
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	select {
@@ -295,7 +295,7 @@ func TestGlorpDispatchesUnansweredDiscussions(t *testing.T) {
 	}
 }
 
-func TestGlorpRetriesWebhookRefreshUntilIssueIsIndexed(t *testing.T) {
+func TestEngineRetriesWebhookRefreshUntilIssueIsIndexed(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{
 		{},            // initial poll
@@ -308,7 +308,7 @@ func TestGlorpRetriesWebhookRefreshUntilIssueIsIndexed(t *testing.T) {
 	// Unbuffered: the send in sendWebhookEvent is the readiness signal, so it
 	// must block until the run loop actually receives the delivery.
 	events := make(chan WebhookEvent)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour,
@@ -346,13 +346,13 @@ func TestGlorpRetriesWebhookRefreshUntilIssueIsIndexed(t *testing.T) {
 	}
 }
 
-func TestGlorpRespondsImmediatelyToOwnershipAskWebhook(t *testing.T) {
+func TestEngineRespondsImmediatelyToOwnershipAskWebhook(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	events := make(chan WebhookEvent, 1)
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", Comments: comments,
@@ -402,12 +402,12 @@ func TestGlorpRespondsImmediatelyToOwnershipAskWebhook(t *testing.T) {
 	}
 }
 
-func TestGlorpDispatchesDirectIdentityMention(t *testing.T) {
+func TestEngineDispatchesDirectIdentityMention(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}, {{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	events := make(chan WebhookEvent, 1)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF",
@@ -423,7 +423,7 @@ func TestGlorpDispatchesDirectIdentityMention(t *testing.T) {
 	}
 	close(runner.release)
 
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/glorp:SELF"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/aviary:SELF"}
 	select {
 	case n := <-runner.dispatched:
 		if n != 7 {
@@ -438,7 +438,7 @@ func TestGlorpDispatchesDirectIdentityMention(t *testing.T) {
 	}
 }
 
-func TestGlorpRetriesPendingDirectMentionAfterIssueListLag(t *testing.T) {
+func TestEngineRetriesPendingDirectMentionAfterIssueListLag(t *testing.T) {
 	dir := t.TempDir()
 	// The immediate direct-mention refresh can race GitHub's issue search
 	// index. It must retry until it sees and dispatches the mentioned issue,
@@ -446,7 +446,7 @@ func TestGlorpRetriesPendingDirectMentionAfterIssueListLag(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}, {}, {{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	events := make(chan WebhookEvent, 1)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF",
@@ -471,7 +471,7 @@ func TestGlorpRetriesPendingDirectMentionAfterIssueListLag(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/glorp:SELF"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/aviary:SELF"}
 	select {
 	case n := <-runner.dispatched:
 		if n != 7 {
@@ -486,12 +486,12 @@ func TestGlorpRetriesPendingDirectMentionAfterIssueListLag(t *testing.T) {
 	}
 }
 
-func TestGlorpIgnoresDirectMentionFromDisallowedCommenter(t *testing.T) {
+func TestEngineIgnoresDirectMentionFromDisallowedCommenter(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}, {{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	events := make(chan WebhookEvent, 1)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", AllowedCommenters: []string{"trusted"},
@@ -507,7 +507,7 @@ func TestGlorpIgnoresDirectMentionFromDisallowedCommenter(t *testing.T) {
 	}
 	close(runner.release)
 
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/glorp:SELF", CommentAuthor: "impersonator"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/aviary:SELF", CommentAuthor: "impersonator"}
 	select {
 	case n := <-runner.dispatched:
 		t.Fatalf("mention from a disallowed commenter should not redispatch issue, got #%d", n)
@@ -521,15 +521,15 @@ func TestGlorpIgnoresDirectMentionFromDisallowedCommenter(t *testing.T) {
 
 // A mention should be acknowledged with an eyes reaction just for being read,
 // even when it goes on to be rejected as unauthorized to trigger a run
-// (issue #581): the reaction tells a human watching the thread that this
+//: the reaction tells a human watching the thread that this
 // instance saw the mention, independent of whether it acted on it.
-func TestGlorpReactsToDirectMentionEvenWhenUnauthorized(t *testing.T) {
+func TestEngineReactsToDirectMentionEvenWhenUnauthorized(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}, {{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	events := make(chan WebhookEvent, 1)
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", AllowedCommenters: []string{"trusted"},
@@ -546,7 +546,7 @@ func TestGlorpReactsToDirectMentionEvenWhenUnauthorized(t *testing.T) {
 	}
 	close(runner.release)
 
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentID: 42, CommentBody: "Please revisit this @/glorp:SELF", CommentAuthor: "impersonator"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentID: 42, CommentBody: "Please revisit this @/aviary:SELF", CommentAuthor: "impersonator"}
 	select {
 	case n := <-runner.dispatched:
 		t.Fatalf("mention from a disallowed commenter should not redispatch issue, got #%d", n)
@@ -571,13 +571,13 @@ func TestGlorpReactsToDirectMentionEvenWhenUnauthorized(t *testing.T) {
 	}
 }
 
-func TestGlorpIgnoresDirectMentionThatIsNotTheLastComment(t *testing.T) {
+func TestEngineIgnoresDirectMentionThatIsNotTheLastComment(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}, {{Number: 7}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	events := make(chan WebhookEvent, 1)
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", Comments: comments,
@@ -593,12 +593,12 @@ func TestGlorpIgnoresDirectMentionThatIsNotTheLastComment(t *testing.T) {
 	}
 	close(runner.release)
 
-	// A follow-up comment posted after the mention (but before glorp reacts to
+	// A follow-up comment posted after the mention (but before aviary reacts to
 	// the webhook delivery) means the mention is no longer the last comment.
-	comments.inject("o/r", 7, Comment{Body: "Please revisit this @/glorp:SELF", Author: "lsegal", CreatedAt: time.Now()})
+	comments.inject("o/r", 7, Comment{Body: "Please revisit this @/aviary:SELF", Author: "lsegal", CreatedAt: time.Now()})
 	comments.inject("o/r", 7, Comment{Body: "actually never mind", Author: "lsegal", CreatedAt: time.Now().Add(time.Second)})
 
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/glorp:SELF", CommentAuthor: "lsegal"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/aviary:SELF", CommentAuthor: "lsegal"}
 	select {
 	case n := <-runner.dispatched:
 		t.Fatalf("a stale mention buried under a newer comment should not redispatch issue, got #%d", n)
@@ -611,23 +611,23 @@ func TestGlorpIgnoresDirectMentionThatIsNotTheLastComment(t *testing.T) {
 }
 
 func TestMentionedIdentityOnlyMatchesAddressedInstance(t *testing.T) {
-	if !mentionedIdentity("Please retry @/glorp:SELF.", "SELF") {
+	if !mentionedIdentity("Please retry @/aviary:SELF.", "SELF") {
 		t.Fatal("expected direct mention to match")
 	}
-	for _, body := range []string{"Please retry @/glorp:OTHER", "Please retry @/glorp:SELFISH", "handoff /glorp:SELF"} {
+	for _, body := range []string{"Please retry @/aviary:OTHER", "Please retry @/aviary:SELFISH", "handoff /aviary:SELF"} {
 		if mentionedIdentity(body, "SELF") {
 			t.Fatalf("unexpected identity match for %q", body)
 		}
 	}
 }
 
-func TestGlorpStopsAgentWhenOriginatingWorkCloses(t *testing.T) {
+func TestEngineStopsAgentWhenOriginatingWorkCloses(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	runner := &fakeRunner{release: make(chan struct{})}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -669,14 +669,14 @@ func TestGlorpStopsAgentWhenOriginatingWorkCloses(t *testing.T) {
 	t.Fatalf("closed originating work did not stop the agent:\n%s", logs.String())
 }
 
-func TestGlorpDoesNotCancelRunWithoutCompetingClaim(t *testing.T) {
+func TestEngineDoesNotCancelRunWithoutCompetingClaim(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}}}
 	runner := &fakeSessionRunner{agent: "codex", sessions: make(chan AgentSession, 1)}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 		Comments: comments, Identity: "SELF",
@@ -720,13 +720,13 @@ func (r *slowExitRunner) RunSession(ctx context.Context, _ Issue, session AgentS
 	return ctx.Err()
 }
 
-func TestGlorpWebUIStopWaitsForTheAgentToExitAndReservesTheIssue(t *testing.T) {
+func TestEngineWebUIStopWaitsForTheAgentToExitAndReservesTheIssue(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Title: "Stop me"}}}}
 	runner := &slowExitRunner{sessions: make(chan AgentSession, 2), exit: make(chan struct{})}
 	events := make(chan WebhookEvent, 1)
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, Out: logs, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF",
@@ -757,7 +757,7 @@ func TestGlorpWebUIStopWaitsForTheAgentToExitAndReservesTheIssue(t *testing.T) {
 
 	// A mention polled while the stopped run is still exiting must neither
 	// start a second run nor be relayed into the dying one.
-	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/glorp:SELF"}
+	events <- WebhookEvent{Kind: "issue_comment", Action: "created", Repository: "o/r", IssueNumber: 7, CommentBody: "Please revisit this @/aviary:SELF"}
 	deadline := time.Now().Add(2 * time.Second)
 	for !strings.Contains(logs.String(), "issue #7 not picked up: its stopped run is still exiting") {
 		if time.Now().After(deadline) {
@@ -796,13 +796,13 @@ func TestGlorpWebUIStopWaitsForTheAgentToExitAndReservesTheIssue(t *testing.T) {
 	}
 }
 
-func TestGlorpWebUIRetriesActiveWork(t *testing.T) {
+func TestEngineWebUIRetriesActiveWork(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Title: "Retry me"}}}}
 	runner := &fakeSessionRunner{agent: "codex", sessions: make(chan AgentSession, 2), reported: AgentSession{ID: "session-7"}}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs,
 	}
@@ -835,7 +835,7 @@ func TestGlorpWebUIRetriesActiveWork(t *testing.T) {
 	}
 }
 
-func TestGlorpCancelsRunAndRemovesCheckoutWhenAnotherInstanceClaimsIssue(t *testing.T) {
+func TestEngineCancelsRunAndRemovesCheckoutWhenAnotherInstanceClaimsIssue(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	checkoutDir := filepath.Join(dir, "checkout")
@@ -846,7 +846,7 @@ func TestGlorpCancelsRunAndRemovesCheckoutWhenAnotherInstanceClaimsIssue(t *test
 	runner := &fakeSessionRunner{agent: "codex", sessions: make(chan AgentSession, 1), reported: AgentSession{CheckoutDirectory: checkoutDir}}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 		Comments: comments, Identity: "SELF",
@@ -883,14 +883,14 @@ func TestGlorpCancelsRunAndRemovesCheckoutWhenAnotherInstanceClaimsIssue(t *test
 	t.Fatalf("competing claim did not stop the agent:\n%s", logs.String())
 }
 
-func TestGlorpIgnoresCompetingClaimFromSameIdentity(t *testing.T) {
+func TestEngineIgnoresCompetingClaimFromSameIdentity(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}}}
 	runner := &fakeSessionRunner{agent: "codex", sessions: make(chan AgentSession, 1)}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 		Comments: comments, Identity: "SELF",
@@ -970,13 +970,13 @@ func TestClosedWorkDistinguishesIssueClosureFromRejectedPullRequest(t *testing.T
 	}
 }
 
-func TestGlorpRestartsAgentWhenPullRequestClosesWithIssueOpen(t *testing.T) {
+func TestEngineRestartsAgentWhenPullRequestClosesWithIssueOpen(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", PullRequests: []PullRequestWorkState{{Number: 9, State: "OPEN"}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 4)}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -1014,7 +1014,7 @@ func TestGlorpRestartsAgentWhenPullRequestClosesWithIssueOpen(t *testing.T) {
 	}
 }
 
-func TestGlorpPeriodicPollInterval(t *testing.T) {
+func TestEnginePeriodicPollInterval(t *testing.T) {
 	tests := []struct {
 		name        string
 		useWebhooks bool
@@ -1025,7 +1025,7 @@ func TestGlorpPeriodicPollInterval(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			w := &Glorp{Interval: 12 * time.Second, UseWebhooks: test.useWebhooks}
+			w := &Engine{Interval: 12 * time.Second, UseWebhooks: test.useWebhooks}
 			if got := w.periodicPollInterval(); got != test.want {
 				t.Fatalf("periodic poll interval = %s, want %s", got, test.want)
 			}
@@ -1033,9 +1033,9 @@ func TestGlorpPeriodicPollInterval(t *testing.T) {
 	}
 }
 
-func TestGlorpKeepsPollingProjectTargetsInWebhookMode(t *testing.T) {
+func TestEngineKeepsPollingProjectTargetsInWebhookMode(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/users/o/projects/3", Interval: time.Millisecond, Concurrency: 1,
 		Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, UseWebhooks: true,
 		fallbackInterval: time.Millisecond,
@@ -1064,7 +1064,7 @@ func TestGlorpKeepsPollingProjectTargetsInWebhookMode(t *testing.T) {
 	t.Fatal("project target did not receive a second poll")
 }
 
-func TestGlorpPeriodicPollResyncsRepositoryIssueInWebhookMode(t *testing.T) {
+func TestEnginePeriodicPollResyncsRepositoryIssueInWebhookMode(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{7: {Status: "completed"}}); err != nil {
@@ -1075,7 +1075,7 @@ func TestGlorpPeriodicPollResyncsRepositoryIssueInWebhookMode(t *testing.T) {
 		{{Number: 7}},
 	}}
 	r := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: r, UseWebhooks: true,
 		fallbackInterval: time.Millisecond,
@@ -1105,9 +1105,9 @@ func TestGlorpPeriodicPollResyncsRepositoryIssueInWebhookMode(t *testing.T) {
 	t.Fatal("periodic poll did not resync stale completed repository issue")
 }
 
-func TestGlorpShowsAgentOutputInJobSnapshot(t *testing.T) {
+func TestEngineShowsAgentOutputInJobSnapshot(t *testing.T) {
 	reporter := &snapshotReporter{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 1, Title: "bug"}}}},
 		Runner: fakeOutputRunner{}, UI: reporter,
@@ -1134,10 +1134,10 @@ func TestGlorpShowsAgentOutputInJobSnapshot(t *testing.T) {
 	t.Fatalf("agent output was not included in snapshots: %+v", reporter.snapshots)
 }
 
-func TestGlorpPreservesAgentMetadataAfterCompletion(t *testing.T) {
+func TestEnginePreservesAgentMetadataAfterCompletion(t *testing.T) {
 	checkout := t.TempDir()
 	reporter := &snapshotReporter{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 1, Title: "bug"}}}},
 		Runner: fakeOutputRunner{reported: AgentSession{ID: "session-1", CheckoutDirectory: checkout}}, UI: reporter,
@@ -1166,9 +1166,9 @@ func TestGlorpPreservesAgentMetadataAfterCompletion(t *testing.T) {
 	}
 	t.Fatalf("completed job snapshot was not published: %+v", reporter.snapshots)
 }
-func TestGlorpIncludesAgentSpecInJobSnapshot(t *testing.T) {
+func TestEngineIncludesAgentSpecInJobSnapshot(t *testing.T) {
 	reporter := &snapshotReporter{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 1, Title: "bug"}}}},
 		Runner: &fakeSessionRunner{agent: "claude/opus:low", sessions: make(chan AgentSession, 1)}, UI: reporter,
@@ -1198,12 +1198,12 @@ func TestGlorpIncludesAgentSpecInJobSnapshot(t *testing.T) {
 	t.Fatalf("agent spec was not included in any job snapshot: %+v", reporter.snapshots)
 }
 
-func TestGlorpTreatsPreexistingUnseenIssuesAsNew(t *testing.T) {
+func TestEngineTreatsPreexistingUnseenIssuesAsNew(t *testing.T) {
 	dir := t.TempDir()
 	old := time.Now().Add(-time.Hour)
 	src := &fakeSource{batches: [][]Issue{{{Number: 1, CreatedAt: old}}}}
 	r := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r,
 	}
@@ -1236,10 +1236,10 @@ func TestGlorpTreatsPreexistingUnseenIssuesAsNew(t *testing.T) {
 	}
 }
 
-func TestGlorpUpdatesProjectStatus(t *testing.T) {
+func TestEngineUpdatesProjectStatus(t *testing.T) {
 	r := &fakeRunner{release: make(chan struct{})}
 	status := &fakeIssueStatuser{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7, ProjectStatus: "Todo"}}}}, Runner: r, Status: status,
 	}
@@ -1280,11 +1280,11 @@ func (f *statusFailingOnce) SetIssueStatus(_ context.Context, _ string, issue Is
 	return nil
 }
 
-func TestGlorpDispatchSkipsIssueOnStatusUpdateFailureWithoutAbortingOthers(t *testing.T) {
+func TestEngineDispatchSkipsIssueOnStatusUpdateFailureWithoutAbortingOthers(t *testing.T) {
 	r := &fakeRunner{release: make(chan struct{})}
 	status := &statusFailingOnce{}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 2,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7}, {Number: 8}}}}, Runner: r, Status: status, Out: logs,
 	}
@@ -1333,11 +1333,11 @@ func (f *erroringThenSucceedingSource) ListIssues(_ context.Context, _ string) (
 	return f.batches[idx], nil
 }
 
-func TestGlorpInitialPollFailureIsNotFatal(t *testing.T) {
+func TestEngineInitialPollFailureIsNotFatal(t *testing.T) {
 	src := &erroringThenSucceedingSource{failN: 1, batches: [][]Issue{{{Number: 7}}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: 10 * time.Millisecond, Concurrency: 1, Issues: src, Runner: r, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: 10 * time.Millisecond, Concurrency: 1, Issues: src, Runner: r, Out: logs}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -1373,7 +1373,7 @@ func TestGlorpInitialPollFailureIsNotFatal(t *testing.T) {
 func TestPollLoggingIsQuietWhileNothingChanges(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{}}}
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, Out: logs}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -1415,7 +1415,7 @@ func TestPollLoggingIsQuietWhileNothingChanges(t *testing.T) {
 func TestRepeatedPollFailureIsLoggedOnce(t *testing.T) {
 	src := &erroringThenSucceedingSource{failN: 3, batches: [][]Issue{{}}}
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, Out: logs}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -1448,20 +1448,20 @@ func TestRepeatedPollFailureIsLoggedOnce(t *testing.T) {
 }
 
 func TestInvalidRepo(t *testing.T) {
-	w := &Glorp{Repo: "bad", Interval: time.Second, Concurrency: 1}
+	w := &Engine{Repo: "bad", Interval: time.Second, Concurrency: 1}
 	if w.Run(context.Background()) == nil {
 		t.Fatal("expected error")
 	}
 }
 
-func TestGlorpResetsFailedWorkOnStart(t *testing.T) {
+func TestEngineResetsFailedWorkOnStart(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}, 8: {Status: "completed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: &fakeRunner{release: make(chan struct{})},
 		Status: status,
@@ -1478,14 +1478,14 @@ func TestGlorpResetsFailedWorkOnStart(t *testing.T) {
 	}
 }
 
-func TestGlorpResetsFailedProjectWorkOnStart(t *testing.T) {
+func TestEngineResetsFailedProjectWorkOnStart(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: &fakeRunner{release: make(chan struct{})},
 		Status: status, ReadyState: "Agent Queue",
@@ -1504,14 +1504,14 @@ func TestGlorpResetsFailedProjectWorkOnStart(t *testing.T) {
 
 // A project item left at "In Progress" by an instance that died mid-run is
 // invisible to the new instance's local state, so it must be reclaimed
-// through the handoff handshake rather than skipped forever (issue #231).
-func TestGlorpReclaimsStrandedInProgressProjectItem(t *testing.T) {
+// through the handoff handshake rather than skipped forever.
+func TestEngineReclaimsStrandedInProgressProjectItem(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r", ProjectStatus: "In Progress"}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: runner, Out: logs,
 		Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true },
@@ -1555,13 +1555,13 @@ func TestGlorpReclaimsStrandedInProgressProjectItem(t *testing.T) {
 
 // The reclaim above must still respect a live owner: when another instance
 // answers the ask, this one stands down and leaves the item alone.
-func TestGlorpStandsDownOnStrandedProjectItemStillOwned(t *testing.T) {
+func TestEngineStandsDownOnStrandedProjectItemStillOwned(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r", ProjectStatus: "In Progress"}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: runner, Out: logs,
 		Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool {
@@ -1591,25 +1591,25 @@ func TestGlorpStandsDownOnStrandedProjectItemStillOwned(t *testing.T) {
 	}
 }
 
-func TestGlorpIgnoresMissingProjectIssueWhenResettingFailedWork(t *testing.T) {
+func TestEngineIgnoresMissingProjectIssueWhenResettingFailedWork(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{err: errProjectIssueNotFound}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: &fakeRunner{release: make(chan struct{})}, Status: status,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := w.Run(ctx); err != nil {
-		t.Fatalf("missing project issue should not stop glorp: %v", err)
+		t.Fatalf("missing project issue should not stop aviary: %v", err)
 	}
 }
 
-func TestGlorpKeepsWatchingWhenProjectResetFails(t *testing.T) {
+func TestEngineKeepsWatchingWhenProjectResetFails(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
@@ -1617,14 +1617,14 @@ func TestGlorpKeepsWatchingWhenProjectResetFails(t *testing.T) {
 	}
 	status := &fakeIssueStatuser{err: errors.New("list project items: exit status 1")}
 	var logs bytes.Buffer
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: &fakeRunner{release: make(chan struct{})}, Status: status, Out: &logs,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := w.Run(ctx); err != nil {
-		t.Fatalf("project reset failure should not stop glorp: %v", err)
+		t.Fatalf("project reset failure should not stop aviary: %v", err)
 	}
 	if !strings.Contains(logs.String(), "reset failed issue #7 project status: list project items: exit status 1") {
 		t.Fatalf("project reset failure was not logged:\n%s", logs.String())
@@ -1632,7 +1632,7 @@ func TestGlorpKeepsWatchingWhenProjectResetFails(t *testing.T) {
 }
 
 // codexDefaultModel, claudeDefaultModel, and geminiDefaultModel are the
-// managed defaults those built-in definitions declare (issues #612 and #622),
+// managed defaults those built-in definitions declare,
 // read from the definitions rather than restated here so a default that moves
 // does not need every argv expectation below edited with it.
 var (
@@ -1651,7 +1651,7 @@ func builtinDefaultModel(name string) string {
 
 func TestCommandRunnerUsesSelectedAgentSyntax(t *testing.T) {
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-	if got, want := commandArgs(CommandRunner{Agent: "codex"}, Issue{Number: 12}), []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "codex"}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args: %#v", got)
 	}
 	if got, want := commandArgs(CommandRunner{Agent: "claude"}, Issue{Number: 12}), []string{"-p", "--permission-mode", "auto", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}; !reflect.DeepEqual(got, want) {
@@ -1660,30 +1660,30 @@ func TestCommandRunnerUsesSelectedAgentSyntax(t *testing.T) {
 }
 
 func TestCommandRunnerIncludesIssueRepository(t *testing.T) {
-	prompt := "/gh-fix owner/repo#12 identity:/glorp:ABC\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
+	prompt := "/gh-fix owner/repo#12 identity:/aviary:ABC\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Repository: "owner/repo", Target: "https://github.com/users/owner/projects/3"}
 	got := commandArgs(CommandRunner{Agent: "codex", Repo: "wrong/repo", Identity: "ABC"}, issue)
-	want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
 }
 
 func TestCommandRunnerPassesNoMergeAdvice(t *testing.T) {
-	prompt := "/gh-fix owner/repo#12 identity:/glorp:ABC and do not merge\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
+	prompt := "/gh-fix owner/repo#12 identity:/aviary:ABC and do not merge\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Repository: "owner/repo", Target: "owner/repo"}
 	got := commandArgs(CommandRunner{Agent: "codex", Identity: "ABC", NoMerge: true}, issue)
-	want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
 }
 
 func TestCommandRunnerPassesNoChangelogAdvice(t *testing.T) {
-	prompt := "/gh-fix owner/repo#12 identity:/glorp:ABC and do not merge and no changelog\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
+	prompt := "/gh-fix owner/repo#12 identity:/aviary:ABC and do not merge and no changelog\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Repository: "owner/repo", Target: "owner/repo"}
 	got := commandArgs(CommandRunner{Agent: "codex", Identity: "ABC", NoMerge: true, NoChangelog: true}, issue)
-	want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
@@ -1693,7 +1693,7 @@ func TestCommandRunnerUsesGhDiscussForDiscussionTargets(t *testing.T) {
 	prompt := "/gh-discuss 5\n\nRepository: owner/repo\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 5, Target: "https://github.com/owner/repo/discussions"}
 	got := commandArgs(CommandRunner{Agent: "codex"}, issue)
-	want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
@@ -1701,7 +1701,7 @@ func TestCommandRunnerUsesGhDiscussForDiscussionTargets(t *testing.T) {
 
 func TestCommandRunnerYoloDisablesAgentSafetyChecks(t *testing.T) {
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-	if got, want := commandArgs(CommandRunner{Agent: "codex", Yolo: true}, Issue{Number: 12}), []string{"exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "codex", Yolo: true}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex yolo args = %#v, want %#v", got, want)
 	}
 	if got, want := commandArgs(CommandRunner{Agent: "claude", Yolo: true}, Issue{Number: 12}), []string{"-p", "--dangerously-skip-permissions", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}; !reflect.DeepEqual(got, want) {
@@ -1713,7 +1713,7 @@ func TestCommandRunnerRemoteControlMakesClaudeRunsViewable(t *testing.T) {
 	prompt := "/gh-fix owner/repo#12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Target: "owner/repo"}
 	got := commandArgs(CommandRunner{Agent: "claude", RemoteControl: true}, issue)
-	want := []string{"-p", "--permission-mode", "auto", "--settings", `{"remoteControlAtStartup":true}`, "--rc", "glorp owner/repo#12", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}
+	want := []string{"-p", "--permission-mode", "auto", "--settings", `{"remoteControlAtStartup":true}`, "--rc", "aviary owner/repo#12", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude remote control args = %#v, want %#v", got, want)
 	}
@@ -1725,7 +1725,7 @@ func TestCommandRunnerRemoteControlLeavesCodexUnchanged(t *testing.T) {
 	prompt := "/gh-fix owner/repo#12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Target: "owner/repo"}
 	got := commandArgs(CommandRunner{Agent: "codex", RemoteControl: true}, issue)
-	if want := []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
+	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex remote control args = %#v, want %#v", got, want)
 	}
 }
@@ -1744,26 +1744,26 @@ func TestCommandRunnerRemoteControlNamesResumedSessions(t *testing.T) {
 	// session per issue rather than a new entry on every resume.
 	session := AgentSession{ID: "sess-1", Agent: "claude", Resume: true}
 	got := commandArgsForSession(CommandRunner{Agent: "claude", RemoteControl: true}, Issue{Number: 12, Target: "owner/repo"}, session)
-	if !slices.Contains(got, "glorp owner/repo#12") {
+	if !slices.Contains(got, "aviary owner/repo#12") {
 		t.Fatalf("resumed args missing remote control session name: %#v", got)
 	}
 }
 
 func TestRemoteControlSessionNameFallsBackToIssueNumber(t *testing.T) {
-	if got, want := remoteControlSessionName("", Issue{Number: 12}), "glorp #12"; got != want {
+	if got, want := remoteControlSessionName("", Issue{Number: 12}), "aviary #12"; got != want {
 		t.Fatalf("session name = %q, want %q", got, want)
 	}
 }
 
 func TestCommandRunnerPassesAgentSpecModelAndLevel(t *testing.T) {
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-	if got, want := commandArgs(CommandRunner{Agent: "codex/gpt-5.6-luna:high"}, Issue{Number: 12}), []string{"exec", "--skip-git-repo-check", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "codex/gpt-5.6-luna:high"}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}
 	if got, want := commandArgs(CommandRunner{Agent: "claude/claude-sonnet:medium"}, Issue{Number: 12}), []string{"-p", "--permission-mode", "auto", "--model", "claude-sonnet", "--effort", "medium", "--output-format", "stream-json", "--verbose", prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude args = %#v, want %#v", got, want)
 	}
-	if got, want := commandArgs(CommandRunner{Agent: "codex:low"}, Issue{Number: 12}), []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, "-c", "model_reasoning_effort=low", prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "codex:low"}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, "-c", "model_reasoning_effort=low", prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex level-only args = %#v, want %#v", got, want)
 	}
 }
@@ -1788,7 +1788,7 @@ func TestParseAgentSpec(t *testing.T) {
 		want  agentSpec
 	}{
 		// An agent named without a model takes its definition's managed
-		// default, so the model glorp chose is the one the spec carries
+		// default, so the model aviary chose is the one the spec carries
 		// everywhere it goes rather than something only the CLI knows.
 		{"codex", agentSpec{Name: "codex", Model: codexDefaultModel}},
 		{" claude ", agentSpec{Name: "claude", Model: claudeDefaultModel}},
@@ -1800,8 +1800,8 @@ func TestParseAgentSpec(t *testing.T) {
 		{"gemini/gemini-2.5-pro", agentSpec{Name: "gemini", Model: "gemini-2.5-pro"}},
 		// cline's catalog is whatever its account can reach, so it names no
 		// default and its bare spec still carries none: the CLI keeps
-		// choosing for itself rather than glorp naming an id the account may
-		// not have (issue #622).
+		// choosing for itself rather than aviary naming an id the account may
+		// not have.
 		{"cline", agentSpec{Name: "cline"}},
 		{"cline/anthropic/claude-sonnet-5", agentSpec{Name: "cline", Model: "anthropic/claude-sonnet-5"}},
 	} {
@@ -1847,7 +1847,7 @@ func TestCommandRunnerResumesOriginalAgentSession(t *testing.T) {
 	codex := CommandRunner{Agent: "claude/saved-model:high", Yolo: true}
 	session := AgentSession{ID: "session-7", Agent: "codex", CheckoutDirectory: dir, Resume: true}
 	resumePrompt := "continue\n\nRecover the existing work. If this issue has a draft pull request, inspect it and pull its branch before continuing."
-	wantCodex := []string{"exec", "resume", "--dangerously-bypass-approvals-and-sandbox", "session-7", resumePrompt}
+	wantCodex := []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "session-7", resumePrompt}
 	if got := commandArgsForSession(codex, Issue{Number: 7}, session); !reflect.DeepEqual(got, wantCodex) {
 		t.Fatalf("Codex resume args = %#v, want %#v", got, wantCodex)
 	}
@@ -1864,7 +1864,7 @@ func TestCommandRunnerResumesOriginalAgentSession(t *testing.T) {
 // dispatch that starts in the temp directory, because its checkout does not
 // exist yet or is gone, passes --skip-git-repo-check so Codex does not refuse
 // to run there without --yolo, and that a run inside its checkout renders
-// unchanged (issue #819).
+// unchanged.
 func TestCommandRunnerSkipsCodexGitRepoCheckWithoutCheckout(t *testing.T) {
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	resumePrompt := "continue\n\nRecover the existing work. If this issue has a draft pull request, inspect it and pull its branch before continuing."
@@ -1876,11 +1876,11 @@ func TestCommandRunnerSkipsCodexGitRepoCheckWithoutCheckout(t *testing.T) {
 		session AgentSession
 		want    []string
 	}{
-		{"first dispatch", AgentSession{Agent: "codex"}, []string{"exec", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}},
-		{"inside checkout", AgentSession{Agent: "codex", CheckoutDirectory: dir}, []string{"exec", "--model", codexDefaultModel, prompt}},
-		{"resume inside checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: dir, Resume: true}, []string{"exec", "resume", "s-1", resumePrompt}},
-		{"resume without checkout", AgentSession{ID: "s-1", Agent: "codex", Resume: true}, []string{"exec", "resume", "--skip-git-repo-check", "s-1", resumePrompt}},
-		{"resume with missing checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: missing, Resume: true}, []string{"exec", "resume", "--skip-git-repo-check", "s-1", resumePrompt + "\n\nThe original repository directory no longer exists. Regenerate any missing work before continuing."}},
+		{"first dispatch", AgentSession{Agent: "codex"}, []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}},
+		{"inside checkout", AgentSession{Agent: "codex", CheckoutDirectory: dir}, []string{"exec", "--json", "--model", codexDefaultModel, prompt}},
+		{"resume inside checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: dir, Resume: true}, []string{"exec", "resume", "--json", "s-1", resumePrompt}},
+		{"resume without checkout", AgentSession{ID: "s-1", Agent: "codex", Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "s-1", resumePrompt}},
+		{"resume with missing checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: missing, Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "s-1", resumePrompt + "\n\nThe original repository directory no longer exists. Regenerate any missing work before continuing."}},
 	}
 	for _, tc := range cases {
 		if got := commandArgsForSession(runner, Issue{Number: 12}, tc.session); !reflect.DeepEqual(got, tc.want) {
@@ -1968,9 +1968,9 @@ func TestCommandRunnerRestartsCodexWithoutTheMissingSessionID(t *testing.T) {
 }
 
 // TestCommandRunnerRunsOutsideAmbientWorkingDirectory guards against issue
-// #279: a fresh (non-resumed) run must not inherit glorp's own working
+// #279: a fresh (non-resumed) run must not inherit aviary's own working
 // directory, since that directory can belong to an unrelated git repository
-// (e.g. the repo `glorp watch` happened to be launched from) and mislead the
+// (e.g. the repo `aviary watch` happened to be launched from) and mislead the
 // agent's own ambient-repo detection into targeting the wrong repository.
 func TestCommandRunnerRunsOutsideAmbientWorkingDirectory(t *testing.T) {
 	binary, log := writeFakeAgent(t, "", 0)
@@ -1988,14 +1988,14 @@ func TestCommandRunnerRunsOutsideAmbientWorkingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.HasPrefix(got[0], "cwd="+ambientWD) {
-		t.Fatalf("agent invocation ran in glorp's own working directory: %q", got[0])
+		t.Fatalf("agent invocation ran in aviary's own working directory: %q", got[0])
 	}
 }
 
 // TestCommandRunnerDisablesClaudeBackgroundWaitCeiling guards against issue
 // #330: Claude Code's headless print mode terminates in-flight background
 // shell tasks after a 10 minute ceiling, making long-lived autonomous runs
-// appear to give up mid-task. glorp must disable that ceiling for claude.
+// appear to give up mid-task. aviary must disable that ceiling for claude.
 func TestCommandRunnerDisablesClaudeBackgroundWaitCeiling(t *testing.T) {
 	binary, log := writeFakeAgent(t, "", 0)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
@@ -2102,7 +2102,7 @@ func TestSessionMetadataCaptureWriterPreservesOutputAndCapturesCodexSessionAndCh
 	}
 	chunks := []string{
 		"OpenAI Codex\nsession ",
-		"id: 0199a213-81c0-7800-8aa1-bbab2a035a53\nworking\nGLORP_CHECKOUT_",
+		"id: 0199a213-81c0-7800-8aa1-bbab2a035a53\nworking\nAVIARY_CHECKOUT_",
 		"DIRECTORY=" + checkout + "\n",
 	}
 	for _, chunk := range chunks {
@@ -2127,7 +2127,7 @@ func TestSessionMetadataCaptureWriterCapturesCheckoutWrappedInMarkdown(t *testin
 		output:   io.Discard,
 		onUpdate: func(update AgentSession) { updates = append(updates, update) },
 	}
-	_, _ = io.WriteString(w, "`GLORP_CHECKOUT_DIRECTORY="+checkout+"`\n")
+	_, _ = io.WriteString(w, "`AVIARY_CHECKOUT_DIRECTORY="+checkout+"`\n")
 	want := []AgentSession{{CheckoutDirectory: checkout}}
 	if !reflect.DeepEqual(updates, want) {
 		t.Fatalf("captured metadata = %#v, want %#v", updates, want)
@@ -2140,7 +2140,7 @@ func TestSessionMetadataCaptureWriterIgnoresInvalidCheckout(t *testing.T) {
 		output:   io.Discard,
 		onUpdate: func(update AgentSession) { updates = append(updates, update) },
 	}
-	_, _ = io.WriteString(w, "GLORP_CHECKOUT_DIRECTORY=relative/path\nGLORP_CHECKOUT_DIRECTORY="+filepath.Join(t.TempDir(), "missing")+"\n")
+	_, _ = io.WriteString(w, "AVIARY_CHECKOUT_DIRECTORY=relative/path\nAVIARY_CHECKOUT_DIRECTORY="+filepath.Join(t.TempDir(), "missing")+"\n")
 	if len(updates) != 0 {
 		t.Fatalf("invalid checkout metadata was captured: %#v", updates)
 	}
@@ -2286,7 +2286,7 @@ func TestWorkStateRoundTrip(t *testing.T) {
 	}
 }
 
-func TestGlorpResumesPersistedSessionWithOriginalAgent(t *testing.T) {
+func TestEngineResumesPersistedSessionWithOriginalAgent(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	want := workState{Status: "active", SessionID: "session-7", Agent: "codex", CheckoutDirectory: dir}
@@ -2294,7 +2294,7 @@ func TestGlorpResumesPersistedSessionWithOriginalAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 1)}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7}}}}, Runner: runner,
 	}
@@ -2316,7 +2316,7 @@ func TestGlorpResumesPersistedSessionWithOriginalAgent(t *testing.T) {
 	}
 }
 
-func TestGlorpReclaimsFailedPersistedSession(t *testing.T) {
+func TestEngineReclaimsFailedPersistedSession(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	want := workState{Status: "failed", SessionID: "session-167", Agent: "codex", CheckoutDirectory: dir}
@@ -2324,8 +2324,8 @@ func TestGlorpReclaimsFailedPersistedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 1)}
-	w := &Glorp{
-		Repo: "lsegal/glorp", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
+	w := &Engine{
+		Repo: "lsegal/aviary", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 167}}}}, Runner: runner,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2346,15 +2346,15 @@ func TestGlorpReclaimsFailedPersistedSession(t *testing.T) {
 	}
 }
 
-func TestGlorpPersistsSessionReportedByCodex(t *testing.T) {
+func TestEnginePersistsSessionReportedByCodex(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	checkout := filepath.Join(dir, "glorp-gh-fix-7")
+	checkout := filepath.Join(dir, "aviary-gh-fix-7")
 	if err := os.Mkdir(checkout, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runner := &fakeSessionRunner{agent: "codex", sessions: make(chan AgentSession, 1), reported: AgentSession{ID: "codex-session", CheckoutDirectory: checkout}}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7}}}}, Runner: runner,
 	}
@@ -2467,12 +2467,12 @@ func TestWebhookEventNeedsRefresh(t *testing.T) {
 	}
 }
 
-func TestGlorpSkipsRefreshForIrrelevantWebhookDeliveries(t *testing.T) {
+func TestEngineSkipsRefreshForIrrelevantWebhookDeliveries(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	events := make(chan WebhookEvent, 4)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: r,
 		UseWebhooks: true, Events: events, fallbackInterval: time.Hour,
@@ -2520,7 +2520,7 @@ func TestGlorpSkipsRefreshForIrrelevantWebhookDeliveries(t *testing.T) {
 	}
 }
 
-func TestGlorpResumesFailedReferencedWorkWhenPullRequestCloses(t *testing.T) {
+func TestEngineResumesFailedReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	want := workState{Status: "failed", SessionID: "session-7", Agent: "codex", CheckoutDirectory: dir}
@@ -2535,7 +2535,7 @@ func TestGlorpResumesFailedReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	// Unbuffered: the send in sendWebhookEvent is the readiness signal, so it
 	// must block until the run loop actually receives the delivery.
 	events := make(chan WebhookEvent)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, UseWebhooks: true, Events: events, fallbackInterval: time.Hour,
 	}
@@ -2561,7 +2561,7 @@ func TestGlorpResumesFailedReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	}
 }
 
-func TestGlorpNegotiatesReferencedWorkWhenPullRequestCloses(t *testing.T) {
+func TestEngineNegotiatesReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	dir := t.TempDir()
 	source := &fakeClosureSource{
 		fakeSource: &fakeSource{batches: [][]Issue{
@@ -2576,7 +2576,7 @@ func TestGlorpNegotiatesReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	// Unbuffered: the send in sendWebhookEvent is the readiness signal, so it
 	// must block until the run loop actually receives the delivery.
 	events := make(chan WebhookEvent)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: source, Runner: runner, UseWebhooks: true, Events: events, fallbackInterval: time.Hour,
 		Comments: comments, Identity: "SELF", ownershipWait: func(context.Context) bool { return true },
@@ -2618,14 +2618,14 @@ func TestGlorpNegotiatesReferencedWorkWhenPullRequestCloses(t *testing.T) {
 	}
 }
 
-func TestGlorpStopsWebhookFollowUpOnceIssueIsObserved(t *testing.T) {
+func TestEngineStopsWebhookFollowUpOnceIssueIsObserved(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}, {{Number: 1, Repository: "o/r"}}}}
 	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	// Unbuffered: the send in sendWebhookEvent is the readiness signal, so it
 	// must block until the run loop actually receives the delivery.
 	events := make(chan WebhookEvent)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 20 * time.Millisecond, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: r,
 		UseWebhooks: true, Events: events, fallbackInterval: time.Hour,
@@ -2663,7 +2663,7 @@ func TestGlorpStopsWebhookFollowUpOnceIssueIsObserved(t *testing.T) {
 	}
 }
 
-func TestGlorpKeepsWebhookFollowUpWhenAnotherDeliveryArrives(t *testing.T) {
+func TestEngineKeepsWebhookFollowUpWhenAnotherDeliveryArrives(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{
 		{},                         // initial baseline
@@ -2675,7 +2675,7 @@ func TestGlorpKeepsWebhookFollowUpWhenAnotherDeliveryArrives(t *testing.T) {
 	// Unbuffered: the send in sendWebhookEvent is the readiness signal, so it
 	// must block until the run loop actually receives the delivery.
 	events := make(chan WebhookEvent)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 40 * time.Millisecond, Concurrency: 2,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: r,
 		UseWebhooks: true, Events: events,
@@ -2717,7 +2717,7 @@ func TestGlorpKeepsWebhookFollowUpWhenAnotherDeliveryArrives(t *testing.T) {
 	t.Fatal("webhook follow-up did not dispatch the latest issue")
 }
 
-func TestGlorpReloadsChangedStateAfterDebounce(t *testing.T) {
+func TestEngineReloadsChangedStateAfterDebounce(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	if err := saveWorkState(statePath, map[int]workState{1: {Status: "completed"}}); err != nil {
@@ -2725,7 +2725,7 @@ func TestGlorpReloadsChangedStateAfterDebounce(t *testing.T) {
 	}
 	src := &fakeSource{batches: [][]Issue{{{Number: 1}}, {{Number: 1}, {Number: 2}}}}
 	r := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath, Issues: src, Runner: r}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath, Issues: src, Runner: r}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -2774,12 +2774,12 @@ func TestIssueKeyUsesTargetAndNumber(t *testing.T) {
 	}
 }
 
-func TestGlorpPersistsSessionIDAfterCompletion(t *testing.T) {
+func TestEnginePersistsSessionIDAfterCompletion(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7}}}}
 	r := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		StatePath: statePath, Issues: src, Runner: r,
 	}
@@ -2895,7 +2895,7 @@ func TestRestoredWorkStateMatchesRemote(t *testing.T) {
 	}
 }
 
-func TestGlorpRequeuesStaleRepositoryWorkState(t *testing.T) {
+func TestEngineRequeuesStaleRepositoryWorkState(t *testing.T) {
 	for _, status := range []string{"active", "completed"} {
 		t.Run(status, func(t *testing.T) {
 			dir := t.TempDir()
@@ -2905,7 +2905,7 @@ func TestGlorpRequeuesStaleRepositoryWorkState(t *testing.T) {
 			}
 			r := &fakeRunner{release: make(chan struct{})}
 			logs := &syncBuffer{}
-			w := &Glorp{
+			w := &Engine{
 				Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 				Issues: &fakeSource{batches: [][]Issue{{{Number: 7}}}}, Runner: r, Out: logs,
 			}
@@ -2939,7 +2939,7 @@ func TestGlorpRequeuesStaleRepositoryWorkState(t *testing.T) {
 	}
 }
 
-func TestGlorpRedispatchesProjectItemMovedBackToTodoAfterCompletion(t *testing.T) {
+func TestEngineRedispatchesProjectItemMovedBackToTodoAfterCompletion(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, ProjectStatus: "Todo"}}}}
@@ -2950,7 +2950,7 @@ func TestGlorpRedispatchesProjectItemMovedBackToTodoAfterCompletion(t *testing.T
 	// against a wall-clock deadline.
 	r := &fakeRunner{release: make(chan struct{}), allow: make(chan struct{}), dispatched: make(chan int, 1)}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/users/o/projects/3", Interval: time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: r, Out: logs,
 	}
@@ -3022,14 +3022,14 @@ func TestIssueBlockedWhenItHasSubIssues(t *testing.T) {
 	}
 }
 
-func TestGlorpDoesNotDispatchBlockedIssue(t *testing.T) {
+func TestEngineDoesNotDispatchBlockedIssue(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{
 		{Number: 7, Repository: "o/r", DependsOn: []IssueDependency{{Number: 12, State: "open"}}},
 	}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, Out: logs,
 	}
@@ -3066,14 +3066,14 @@ func TestGlorpDoesNotDispatchBlockedIssue(t *testing.T) {
 	}
 }
 
-func TestGlorpDoesNotDispatchIssueWithSubIssues(t *testing.T) {
+func TestEngineDoesNotDispatchIssueWithSubIssues(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{
 		{Number: 7, Repository: "o/r", HasSubIssues: true},
 	}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: src, Runner: runner, Out: logs,
 	}
@@ -3130,7 +3130,7 @@ func (f *fakeProjectState) callCount() int {
 	return f.calls
 }
 
-func TestGlorpDispatchesProjectBoardChangeBeforeFallbackPoll(t *testing.T) {
+func TestEngineDispatchesProjectBoardChangeBeforeFallbackPoll(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{
 		{}, // initial poll: nothing on the board yet
@@ -3140,7 +3140,7 @@ func TestGlorpDispatchesProjectBoardChangeBeforeFallbackPoll(t *testing.T) {
 	// The board changes on the second probe, and the fallback poll is an hour
 	// away, so only the probe can produce this dispatch.
 	board := &fakeProjectState{states: []string{"before", "after"}}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/users/o/projects/3", Interval: time.Millisecond, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: r, UseWebhooks: true,
 		Projects: board, fallbackInterval: time.Hour, probeInterval: time.Millisecond,
@@ -3166,11 +3166,11 @@ func TestGlorpDispatchesProjectBoardChangeBeforeFallbackPoll(t *testing.T) {
 	}
 }
 
-func TestGlorpSkipsPollWhileProjectBoardIsUnchanged(t *testing.T) {
+func TestEngineSkipsPollWhileProjectBoardIsUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
 	board := &fakeProjectState{states: []string{"steady"}}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/users/o/projects/3", Interval: time.Millisecond, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: &fakeRunner{release: make(chan struct{})},
 		UseWebhooks: true, Projects: board, fallbackInterval: time.Hour, probeInterval: time.Millisecond,
@@ -3201,7 +3201,7 @@ func TestGlorpSkipsPollWhileProjectBoardIsUnchanged(t *testing.T) {
 	}
 }
 
-func TestGlorpDoesNotProbeBoardsWithoutProjectTargetsOrPushMode(t *testing.T) {
+func TestEngineDoesNotProbeBoardsWithoutProjectTargetsOrPushMode(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		targets     []string
@@ -3215,14 +3215,14 @@ func TestGlorpDoesNotProbeBoardsWithoutProjectTargetsOrPushMode(t *testing.T) {
 		{name: "no source", targets: []string{"https://github.com/users/o/projects/3"}, useWebhooks: true, want: 0},
 		// An organization board pushes every change over its own
 		// projects_v2_item webhook, so probing it is duplicate polling
-		// (issue #249).
+		//.
 		{name: "organization project target", targets: []string{"https://github.com/orgs/o/projects/3"}, useWebhooks: true, projects: &fakeProjectState{}, want: 0},
 		// A repository-scoped project URL does not name the owner type, so
 		// the probe stays on rather than assuming push coverage.
 		{name: "repository-scoped project target", targets: []string{"https://github.com/o/r/projects/3"}, useWebhooks: true, projects: &fakeProjectState{}, want: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			w := &Glorp{UseWebhooks: test.useWebhooks, Projects: test.projects}
+			w := &Engine{UseWebhooks: test.useWebhooks, Projects: test.projects}
 			if got := len(w.projectProbeTargets(test.targets)); got != test.want {
 				t.Fatalf("probed targets = %d, want %d", got, test.want)
 			}
@@ -3232,13 +3232,13 @@ func TestGlorpDoesNotProbeBoardsWithoutProjectTargetsOrPushMode(t *testing.T) {
 
 func TestPushedBoardTargets(t *testing.T) {
 	targets := []string{"o/r", "https://github.com/users/o/projects/3", "https://github.com/orgs/o/projects/4", "https://github.com/o/r/projects/5"}
-	w := &Glorp{UseWebhooks: true, Projects: &fakeProjectState{}}
+	w := &Engine{UseWebhooks: true, Projects: &fakeProjectState{}}
 	got := w.pushedBoardTargets(targets)
 	want := []string{"https://github.com/orgs/o/projects/4"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("pushed board targets = %v, want %v", got, want)
 	}
-	if got := (&Glorp{}).pushedBoardTargets(targets); got != nil {
+	if got := (&Engine{}).pushedBoardTargets(targets); got != nil {
 		t.Fatalf("poll mode pushed board targets = %v, want none", got)
 	}
 	// Every project target is either probed or push-covered, never neither.
@@ -3249,22 +3249,22 @@ func TestPushedBoardTargets(t *testing.T) {
 }
 
 // Push mode never polls at Interval, so saying so in the startup log makes a
-// probed board look polled (issue #249).
+// probed board look polled.
 func TestWatchDescription(t *testing.T) {
-	if got := (&Glorp{Interval: time.Minute}).watchDescription(); got != "polling every 1m" {
+	if got := (&Engine{Interval: time.Minute}).watchDescription(); got != "polling every 1m" {
 		t.Fatalf("poll mode description = %q", got)
 	}
-	got := (&Glorp{Interval: time.Minute, UseWebhooks: true}).watchDescription()
+	got := (&Engine{Interval: time.Minute, UseWebhooks: true}).watchDescription()
 	if !strings.Contains(got, formatInterval(pushFallbackInterval)) || strings.Contains(got, "polling") {
 		t.Fatalf("push mode description = %q, want one naming the %s fallback and not the poll interval", got, pushFallbackInterval)
 	}
 }
 
 func TestProjectBoardProbeInterval(t *testing.T) {
-	if got := (&Glorp{}).projectBoardProbeInterval(); got != projectProbeInterval {
+	if got := (&Engine{}).projectBoardProbeInterval(); got != projectProbeInterval {
 		t.Fatalf("default probe interval = %s, want %s", got, projectProbeInterval)
 	}
-	if got := (&Glorp{probeInterval: time.Second}).projectBoardProbeInterval(); got != time.Second {
+	if got := (&Engine{probeInterval: time.Second}).projectBoardProbeInterval(); got != time.Second {
 		t.Fatalf("override probe interval = %s, want 1s", got)
 	}
 	if projectProbeInterval >= pushFallbackInterval {
@@ -3274,11 +3274,11 @@ func TestProjectBoardProbeInterval(t *testing.T) {
 
 // Push webhooks have to be reconciled while the daemon runs, not only at
 // startup, so a repository added to a project board later gets a webhook
-// without a restart (issue #238).
-func TestGlorpReconcilesWebhooksOnPeriodicPoll(t *testing.T) {
+// without a restart.
+func TestEngineReconcilesWebhooksOnPeriodicPoll(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{}}}
 	reconciled := make(chan struct{}, 1)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/users/o/projects/3", Interval: time.Millisecond, Concurrency: 1,
 		Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, UseWebhooks: true,
 		fallbackInterval: time.Millisecond,
@@ -3306,9 +3306,9 @@ func TestGlorpReconcilesWebhooksOnPeriodicPoll(t *testing.T) {
 	}
 }
 
-func TestGlorpReapsOnItsOwnTickerWhenPollingIsSlow(t *testing.T) {
+func TestEngineReapsOnItsOwnTickerWhenPollingIsSlow(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: src, Runner: &fakeRunner{release: make(chan struct{})}, UseWebhooks: true,
 		fallbackInterval: time.Hour, reapInterval: time.Millisecond,
@@ -3332,9 +3332,9 @@ func TestGlorpReapsOnItsOwnTickerWhenPollingIsSlow(t *testing.T) {
 	t.Fatal("reap ticker did not run additional polls while the poll interval was an hour away")
 }
 
-// runGlorpUntilAgentInvoked runs w until the fake agent stub records its first
+// runEngineUntilAgentInvoked runs w until the fake agent stub records its first
 // invocation, then stops the loop and returns that invocation.
-func runGlorpUntilAgentInvoked(t *testing.T, w *Glorp, log string) string {
+func runEngineUntilAgentInvoked(t *testing.T, w *Engine, log string) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -3360,7 +3360,7 @@ func runGlorpUntilAgentInvoked(t *testing.T, w *Glorp, log string) string {
 	return invocations[0]
 }
 
-func TestGlorpDiscardsPersistedAgentThatIsNoLongerConfigured(t *testing.T) {
+func TestEngineDiscardsPersistedAgentThatIsNoLongerConfigured(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	stale := workState{Status: "active", SessionID: "session-7", Agent: "codex", CheckoutDirectory: dir}
@@ -3368,12 +3368,12 @@ func TestGlorpDiscardsPersistedAgentThatIsNoLongerConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary, log := writeFakeAgent(t, "", 0)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7}}}},
 		Runner: CommandRunner{Agent: "claude", Agents: []string{"claude"}, ClaudeBinary: binary, CodexBinary: binary, Repo: "o/r"},
 	}
-	invocation := runGlorpUntilAgentInvoked(t, w, log)
+	invocation := runEngineUntilAgentInvoked(t, w, log)
 	if strings.Contains(invocation, "--resume") || strings.Contains(invocation, "session-7") {
 		t.Fatalf("invocation resumed the retired agent's session: %q", invocation)
 	}
@@ -3392,7 +3392,7 @@ func TestGlorpDiscardsPersistedAgentThatIsNoLongerConfigured(t *testing.T) {
 	}
 }
 
-func TestGlorpResumesPersistedAgentThatIsStillConfigured(t *testing.T) {
+func TestEngineResumesPersistedAgentThatIsStillConfigured(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	want := workState{Status: "active", SessionID: "session-7", Agent: "codex", CheckoutDirectory: dir}
@@ -3400,21 +3400,21 @@ func TestGlorpResumesPersistedAgentThatIsStillConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary, log := writeFakeAgent(t, "", 0)
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: &fakeSource{batches: [][]Issue{{{Number: 7}}}},
 		Runner: CommandRunner{Agent: "claude", Agents: []string{"claude", "codex"}, ClaudeBinary: binary, CodexBinary: binary, Repo: "o/r"},
 	}
-	invocation := runGlorpUntilAgentInvoked(t, w, log)
+	invocation := runEngineUntilAgentInvoked(t, w, log)
 	if !strings.Contains(invocation, "resume") || !strings.Contains(invocation, "session-7") {
 		t.Fatalf("invocation = %q, want the still configured codex session resumed", invocation)
 	}
 }
 
-func TestGlorpAnswersOwnershipAskOnItsPullRequest(t *testing.T) {
+func TestEngineAnswersOwnershipAskOnItsPullRequest(t *testing.T) {
 	dir := t.TempDir()
 	// The issue is worked locally as #7, but its draft pull request is #42, so
-	// the handoff ask arrives naming #42 (issue #363).
+	// the handoff ask arrives naming #42.
 	source := &fakeClosureSource{
 		fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r"}}}},
 		state:      OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 42, State: "open"}}},
@@ -3422,7 +3422,7 @@ func TestGlorpAnswersOwnershipAskOnItsPullRequest(t *testing.T) {
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	events := make(chan WebhookEvent, 1)
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: source, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", Comments: comments,
@@ -3469,7 +3469,7 @@ func TestGlorpAnswersOwnershipAskOnItsPullRequest(t *testing.T) {
 	}
 }
 
-func TestGlorpIgnoresOwnershipAskOnAnotherInstancesPullRequest(t *testing.T) {
+func TestEngineIgnoresOwnershipAskOnAnotherInstancesPullRequest(t *testing.T) {
 	dir := t.TempDir()
 	source := &fakeClosureSource{
 		fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r"}}}},
@@ -3480,7 +3480,7 @@ func TestGlorpIgnoresOwnershipAskOnAnotherInstancesPullRequest(t *testing.T) {
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	events := make(chan WebhookEvent, 1)
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state.json"),
 		Issues: source, Runner: runner, UseWebhooks: true, Events: events,
 		fallbackInterval: time.Hour, Identity: "SELF", Comments: comments,
@@ -3525,14 +3525,14 @@ func (alwaysFailingStatuser) SetIssueStatus(_ context.Context, _ string, _ Issue
 // A won handshake posts a claim before the dispatch it announces happens, so a
 // dispatch skipped afterwards must withdraw that claim rather than leave the
 // ticket owned by an instance with no work record and no running agent
-// (issue #434).
-func TestGlorpReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
+//.
+func TestEngineReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r", ProjectStatus: "In Progress"}}}}
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	comments := newFakeCommentClient()
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: time.Hour, Concurrency: 1,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: runner, Out: logs,
 		Status: alwaysFailingStatuser{}, Comments: comments, Identity: "SELF",
@@ -3544,8 +3544,8 @@ func TestGlorpReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
 	go func() { done <- w.Run(ctx) }()
 
 	// A 5-second deadline here turned a stalled goroutine into a spurious
-	// failure on a loaded CI runner (issue #630), the same failure mode
-	// webhookDispatchWait already exists to avoid (issue #558): the work
+	// failure on a loaded CI runner, the same failure mode
+	// webhookDispatchWait already exists to avoid: the work
 	// itself takes microseconds, but go test -race across the whole module
 	// can starve this goroutine for well over five seconds.
 	deadline := time.Now().Add(webhookDispatchWait)
@@ -3594,7 +3594,7 @@ func TestGlorpReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
 // ticket froze the whole watch for two minutes: poll #1 in the log of issue
 // #437 started at 21:12:21 and completed at 21:14:25, and nothing was read or
 // dispatched in between. Polling must continue while a handshake waits.
-func TestGlorpKeepsPollingWhileAHandoffWaitsOutItsGraceWindow(t *testing.T) {
+func TestEngineKeepsPollingWhileAHandoffWaitsOutItsGraceWindow(t *testing.T) {
 	dir := t.TempDir()
 	// Issue #7 is stranded at "In Progress", so it is negotiated; issue #8
 	// appears on the next poll and needs no handshake at all.
@@ -3606,7 +3606,7 @@ func TestGlorpKeepsPollingWhileAHandoffWaitsOutItsGraceWindow(t *testing.T) {
 	comments := newFakeCommentClient()
 	release := make(chan struct{})
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "https://github.com/o/r/projects/3", Interval: 20 * time.Millisecond, Concurrency: 2,
 		StatePath: filepath.Join(dir, "state.json"), Issues: src, Runner: runner, Out: logs,
 		Comments: comments, Identity: "SELF", ownershipWait: func(ctx context.Context) bool {
@@ -3665,9 +3665,9 @@ func TestGlorpKeepsPollingWhileAHandoffWaitsOutItsGraceWindow(t *testing.T) {
 	}
 }
 
-func TestGlorpPublishesLastPollTime(t *testing.T) {
+func TestEnginePublishesLastPollTime(t *testing.T) {
 	reporter := &snapshotReporter{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{}}},
 		Runner: fakeOutputRunner{}, UI: reporter,
@@ -3831,7 +3831,7 @@ func (s *targetDiscussionSource) ListUnansweredDiscussions(_ context.Context, ta
 	return s.discussions[target], nil
 }
 
-func TestGlorpDoesNotStarveAQuietDiscussionTargetBehindABusyOne(t *testing.T) {
+func TestEngineDoesNotStarveAQuietDiscussionTargetBehindABusyOne(t *testing.T) {
 	dir := t.TempDir()
 	busyTarget := "https://github.com/o/a/discussions"
 	quietTarget := "https://github.com/o/b/discussions"
@@ -3848,7 +3848,7 @@ func TestGlorpDoesNotStarveAQuietDiscussionTargetBehindABusyOne(t *testing.T) {
 	logs := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &Glorp{Targets: []string{busyTarget, quietTarget}, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Discussions: ds, Runner: r, Out: logs}
+	w := &Engine{Targets: []string{busyTarget, quietTarget}, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Discussions: ds, Runner: r, Out: logs}
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	// The runner blocks, so only Concurrency discussions are ever started.
@@ -3879,7 +3879,7 @@ func TestGlorpDoesNotStarveAQuietDiscussionTargetBehindABusyOne(t *testing.T) {
 	}
 }
 
-func TestGlorpDoesNotStarveAQuietTargetBehindABusyOne(t *testing.T) {
+func TestEngineDoesNotStarveAQuietTargetBehindABusyOne(t *testing.T) {
 	dir := t.TempDir()
 	busy := make([]Issue, 0, 20)
 	for i := 1; i <= 20; i++ {
@@ -3893,7 +3893,7 @@ func TestGlorpDoesNotStarveAQuietTargetBehindABusyOne(t *testing.T) {
 	logs := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &Glorp{Targets: []string{"o/a", "o/b"}, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
+	w := &Engine{Targets: []string{"o/a", "o/b"}, Interval: time.Millisecond, Concurrency: 2, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	// The runner blocks, so only Concurrency issues are ever started. Both
@@ -3937,12 +3937,12 @@ func waitForSession(t *testing.T, sessions <-chan AgentSession) AgentSession {
 	}
 }
 
-func TestGlorpRelaysClosedWorkIntoTheSameSession(t *testing.T) {
+func TestEngineRelaysClosedWorkIntoTheSameSession(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -3983,7 +3983,7 @@ func TestGlorpRelaysClosedWorkIntoTheSameSession(t *testing.T) {
 	}
 }
 
-func TestGlorpRelaysRejectedPullRequestIntoTheSameSession(t *testing.T) {
+func TestEngineRelaysRejectedPullRequestIntoTheSameSession(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		issueState string
@@ -3998,7 +3998,7 @@ func TestGlorpRelaysRejectedPullRequestIntoTheSameSession(t *testing.T) {
 			src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 			src.state = OriginatingWorkState{IssueState: "OPEN", PullRequests: []PullRequestWorkState{{Number: 9, State: "OPEN"}}}
 			runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
-			w := &Glorp{
+			w := &Engine{
 				Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 				Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 			}
@@ -4031,12 +4031,12 @@ func TestGlorpRelaysRejectedPullRequestIntoTheSameSession(t *testing.T) {
 	}
 }
 
-func TestGlorpRelaysChangedDescriptionIntoTheSameSession(t *testing.T) {
+func TestEngineRelaysChangedDescriptionIntoTheSameSession(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -4062,13 +4062,13 @@ func TestGlorpRelaysChangedDescriptionIntoTheSameSession(t *testing.T) {
 	}
 }
 
-func TestGlorpRelaysNewCommentsIntoTheSameSession(t *testing.T) {
+func TestEngineRelaysNewCommentsIntoTheSameSession(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
 	comments := newFakeCommentClient()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 		Comments: comments, Identity: "SELF",
@@ -4092,17 +4092,17 @@ func TestGlorpRelaysNewCommentsIntoTheSameSession(t *testing.T) {
 	}
 }
 
-// TestGlorpIgnoresNewCommentFromDisallowedCommenter checks a comment from a
+// TestEngineIgnoresNewCommentFromDisallowedCommenter checks a comment from a
 // login outside --allowed-commenters never interrupts or steers a running
-// agent (issue #717), while an allowed commenter's comment still relays.
-func TestGlorpIgnoresNewCommentFromDisallowedCommenter(t *testing.T) {
+// agent, while an allowed commenter's comment still relays.
+func TestEngineIgnoresNewCommentFromDisallowedCommenter(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
 	comments := newFakeCommentClient()
 	out := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: out, closureInterval: time.Millisecond,
 		Comments: comments, Identity: "SELF", AllowedCommenters: []string{"lsegal"},
@@ -4177,9 +4177,9 @@ func TestNudgesForIssueMatchesTargetScopedKeys(t *testing.T) {
 
 func TestRelayableCommentIgnoresHandoffChatter(t *testing.T) {
 	since := time.Now()
-	// The handshake (issue #214) posts its claims on the same conversation
+	// The handshake posts its claims on the same conversation
 	// every instance watching the issue reads, so relaying them would restart
-	// the agent on glorp's own bookkeeping.
+	// the agent on aviary's own bookkeeping.
 	for _, body := range []string{signComment(startingClaimBody, "OTHER"), signComment(presenceClaimBody, "SELF"), signComment(askClaimBody, "OTHER")} {
 		if relayableComment(Comment{Body: body, CreatedAt: since.Add(time.Second)}, since) {
 			t.Fatalf("handoff claim %q was treated as a relayable comment", body)
@@ -4200,10 +4200,10 @@ func TestRelayableCommentIgnoresHandoffChatter(t *testing.T) {
 // stopped completing polls says so, once, and says so again when polling
 // resumes. A poll that finds nothing new logs nothing, so a wedged loop and a
 // quiet one used to read the same in the terminal: the run looked alive while
-// it picked nothing up for hours (issue #472).
+// it picked nothing up for hours.
 func TestWatchPollProgressReportsAStalledLoop(t *testing.T) {
 	var out bytes.Buffer
-	w := &Glorp{Out: &out}
+	w := &Engine{Out: &out}
 	last := time.Time{}
 	var mu sync.Mutex
 	lastPoll := func() time.Time {
@@ -4272,13 +4272,13 @@ func (f *finishingSessionRunner) RunSession(ctx context.Context, _ Issue, sessio
 	return nil
 }
 
-func TestGlorpContinuesAnAgentThatFinishedWithTheIssueStillOpen(t *testing.T) {
+func TestEngineContinuesAnAgentThatFinishedWithTheIssueStillOpen(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	out := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: out, closureInterval: time.Millisecond,
 	}
@@ -4310,14 +4310,14 @@ func TestGlorpContinuesAnAgentThatFinishedWithTheIssueStillOpen(t *testing.T) {
 	}
 }
 
-func TestGlorpCompletesWhenTheIssueIsActuallyClosed(t *testing.T) {
+func TestEngineCompletesWhenTheIssueIsActuallyClosed(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	// Closed behind a merged pull request, which is what a finished run looks
 	// like; the merge keeps the watcher from reading the closure as an abort.
 	src.state = OriginatingWorkState{IssueState: "closed", PullRequests: []PullRequestWorkState{{Number: 8, State: "merged", Merged: true}}}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -4348,15 +4348,15 @@ func TestGlorpCompletesWhenTheIssueIsActuallyClosed(t *testing.T) {
 	}
 }
 
-func TestGlorpPausesAPullRequestHeldReadyForReview(t *testing.T) {
+func TestEnginePausesAPullRequestHeldReadyForReview(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	// The issue stays open on purpose -- a gh-fix run held the merge for a
 	// human -- but its pull request is open, unmerged, and past draft, which
-	// is what a deliberately withheld merge leaves behind (issue #628).
+	// is what a deliberately withheld merge leaves behind.
 	src.state = OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 8, State: "open"}}}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -4385,10 +4385,10 @@ func TestGlorpPausesAPullRequestHeldReadyForReview(t *testing.T) {
 
 // runHeldPullRequestToCompletion runs issue #7 until its agent finishes with a
 // ready pull request held for a human, the state a do-not-merge run ends in,
-// and returns the first session it was launched with (issue #729).
+// and returns the first session it was launched with.
 func runHeldPullRequestToCompletion(t *testing.T, src *fakeClosureSource, runner *finishingSessionRunner, statePath string) AgentSession {
 	t.Helper()
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -4404,7 +4404,7 @@ func runHeldPullRequestToCompletion(t *testing.T, src *fakeClosureSource, runner
 	return first
 }
 
-func TestGlorpRestartsCompletedWorkWhenItsPullRequestIsClosedWithoutMerging(t *testing.T) {
+func TestEngineRestartsCompletedWorkWhenItsPullRequestIsClosedWithoutMerging(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	src.state = OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 8, State: "open"}}}
@@ -4424,7 +4424,7 @@ func TestGlorpRestartsCompletedWorkWhenItsPullRequestIsClosedWithoutMerging(t *t
 	}
 }
 
-func TestGlorpNeverRestartsCompletedWorkWhosePullRequestMerged(t *testing.T) {
+func TestEngineNeverRestartsCompletedWorkWhosePullRequestMerged(t *testing.T) {
 	for name, test := range map[string]struct {
 		final  OriginatingWorkState
 		status string
@@ -4445,7 +4445,7 @@ func TestGlorpNeverRestartsCompletedWorkWhosePullRequestMerged(t *testing.T) {
 			src.mu.Unlock()
 
 			// A merge or a close is the paused pull request's terminal event,
-			// which completes the work (issue #732).
+			// which completes the work.
 			waitForWorkStatus(t, statePath, 7, test.status)
 			select {
 			case extra := <-runner.sessions:
@@ -4477,14 +4477,14 @@ func TestCompletedPullRequestRejected(t *testing.T) {
 	}
 }
 
-func TestGlorpKeepsAnAgentAliveWhileItsDraftPullRequestIsStillInProgress(t *testing.T) {
+func TestEngineKeepsAnAgentAliveWhileItsDraftPullRequestIsStillInProgress(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
 	// A draft pull request is work still in flight, not a hold, so it must
 	// not be mistaken for a finished, deliberately withheld merge.
 	src.state = OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 8, State: "open", IsDraft: true}}}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -4507,7 +4507,7 @@ func TestGlorpKeepsAnAgentAliveWhileItsDraftPullRequestIsStillInProgress(t *test
 }
 
 func TestConfirmIssueClosedReportsAnUnansweredCheck(t *testing.T) {
-	w := &Glorp{Out: &syncBuffer{}, closureInterval: time.Millisecond}
+	w := &Engine{Out: &syncBuffer{}, closureInterval: time.Millisecond}
 	src := &fakeClosureSource{fakeSource: &fakeSource{}, err: errors.New("boom")}
 	if closed, answered, _ := w.confirmIssueClosed(context.Background(), src, Issue{Number: 7, Repository: "o/r"}); closed || answered {
 		t.Fatalf("confirmIssueClosed(err) = (%v, %v), want (false, false)", closed, answered)
@@ -4523,7 +4523,7 @@ func TestConfirmIssueClosedReportsAnUnansweredCheck(t *testing.T) {
 
 // TestCheckoutMarkerCaptureWriterReadsMarkerInsideAToolResult covers issue
 // #552: cline announces the checkout by running a shell command, so the marker
-// only ever reaches glorp inside a content_end tool result, which the JSONL
+// only ever reaches aviary inside a content_end tool result, which the JSONL
 // decoder never reads because the definition maps only text and tool names.
 // Scanning the raw stream before decoding finds it wherever the agent put it.
 func TestCheckoutMarkerCaptureWriterReadsMarkerInsideAToolResult(t *testing.T) {
@@ -4532,7 +4532,7 @@ func TestCheckoutMarkerCaptureWriterReadsMarkerInsideAToolResult(t *testing.T) {
 	var updates []AgentSession
 	capture := &checkoutCapture{onUpdate: func(update AgentSession) { updates = append(updates, update) }}
 	w := &checkoutMarkerCaptureWriter{output: &output, capture: capture}
-	line := `{"ts":"2026-09-04T00:52:26.311Z","type":"agent_event","event":{"type":"content_end","contentType":"tool","toolName":"execute_command","output":[{"query":"echo","result":"running\nGLORP_CHECKOUT_DIRECTORY=` + jsonStringBody(t, checkout) + `\ndone","success":true}]}}` + "\n"
+	line := `{"ts":"2026-09-04T00:52:26.311Z","type":"agent_event","event":{"type":"content_end","contentType":"tool","toolName":"execute_command","output":[{"query":"echo","result":"running\nAVIARY_CHECKOUT_DIRECTORY=` + jsonStringBody(t, checkout) + `\ndone","success":true}]}}` + "\n"
 	if _, err := io.WriteString(w, line); err != nil {
 		t.Fatal(err)
 	}
@@ -4546,22 +4546,22 @@ func TestCheckoutMarkerCaptureWriterReadsMarkerInsideAToolResult(t *testing.T) {
 }
 
 // TestCheckoutMarkerCaptureWriterReadsOpencodeAndPlainStreams proves the scan
-// is agent-independent, which is the point of reading glorp's own marker off
+// is agent-independent, which is the point of reading aviary's own marker off
 // the raw stream: opencode's part-shaped tool state carries it in a field its
 // definition does not map either, and a plain-text agent's line is scanned as
 // it is written.
 func TestCheckoutMarkerCaptureWriterReadsOpencodeAndPlainStreams(t *testing.T) {
 	for name, line := range map[string]string{
-		"opencode": `{"type":"part","part":{"type":"tool","tool":"bash","state":{"status":"completed","output":"GLORP_CHECKOUT_DIRECTORY=%s"}}}`,
-		"plain":    "GLORP_CHECKOUT_DIRECTORY=%s",
-		"chunked":  `{"type":"content_end","event":{"output":[{"result":"GLORP_CHECKOUT_DIRECTORY=%s"}]}}`,
+		"opencode": `{"type":"part","part":{"type":"tool","tool":"bash","state":{"status":"completed","output":"AVIARY_CHECKOUT_DIRECTORY=%s"}}}`,
+		"plain":    "AVIARY_CHECKOUT_DIRECTORY=%s",
+		"chunked":  `{"type":"content_end","event":{"output":[{"result":"AVIARY_CHECKOUT_DIRECTORY=%s"}]}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			checkout := t.TempDir()
 			var updates []AgentSession
 			capture := &checkoutCapture{onUpdate: func(update AgentSession) { updates = append(updates, update) }}
 			w := &checkoutMarkerCaptureWriter{output: io.Discard, capture: capture}
-			// A path inside a JSON string reaches glorp escaped, because the
+			// A path inside a JSON string reaches aviary escaped, because the
 			// agent encoded it: a Windows checkout is written with doubled
 			// separators and has to decode back to the path it names.
 			path := checkout
@@ -4596,7 +4596,7 @@ func TestCheckoutCaptureReportsTheCheckoutOnce(t *testing.T) {
 	decoded := &sessionMetadataCaptureWriter{output: io.Discard, checkout: capture, onUpdate: func(AgentSession) {
 		t.Fatal("the decoded scan updated the session through its own callback")
 	}}
-	marker := "GLORP_CHECKOUT_DIRECTORY=" + checkout + "\n"
+	marker := "AVIARY_CHECKOUT_DIRECTORY=" + checkout + "\n"
 	if _, err := io.WriteString(raw, marker); err != nil {
 		t.Fatal(err)
 	}
@@ -4615,8 +4615,8 @@ func TestCheckoutMarkerCaptureWriterIgnoresMarkersThatNameNoCheckout(t *testing.
 	var updates []AgentSession
 	capture := &checkoutCapture{onUpdate: func(update AgentSession) { updates = append(updates, update) }}
 	w := &checkoutMarkerCaptureWriter{output: io.Discard, capture: capture}
-	_, _ = io.WriteString(w, `{"event":{"text":"emit GLORP_CHECKOUT_DIRECTORY=<absolute clone path>"}}`+"\n")
-	_, _ = io.WriteString(w, `{"event":{"text":"GLORP_CHECKOUT_DIRECTORY=`+jsonStringBody(t, filepath.Join(t.TempDir(), "missing"))+`"}}`+"\n")
+	_, _ = io.WriteString(w, `{"event":{"text":"emit AVIARY_CHECKOUT_DIRECTORY=<absolute clone path>"}}`+"\n")
+	_, _ = io.WriteString(w, `{"event":{"text":"AVIARY_CHECKOUT_DIRECTORY=`+jsonStringBody(t, filepath.Join(t.TempDir(), "missing"))+`"}}`+"\n")
 	w.Flush()
 	if len(updates) != 0 {
 		t.Fatalf("invalid checkout metadata was captured: %#v", updates)
@@ -4636,7 +4636,7 @@ func jsonStringBody(t *testing.T, value string) string {
 
 // TestCommandRunnerUsesAConfiguredDefaultModel checks the managed default
 // reaches the dispatched argv end to end, from a definition a config file
-// declared rather than one glorp ships (issue #612), and that a spec naming its
+// declared rather than one aviary ships, and that a spec naming its
 // own model still overrides it.
 func TestCommandRunnerUsesAConfiguredDefaultModel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), agents.DefaultConfigPath)
@@ -4649,18 +4649,18 @@ func TestCommandRunnerUsesAConfiguredDefaultModel(t *testing.T) {
 	}
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	got := commandArgs(CommandRunner{Agent: "codex", Definitions: registry}, Issue{Number: 12})
-	if want := []string{"exec", "--skip-git-repo-check", "--model", "gpt-5.4", prompt}; !reflect.DeepEqual(got, want) {
+	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.4", prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("configured default argv = %#v, want %#v", got, want)
 	}
 	explicit := commandArgs(CommandRunner{Agent: "codex/gpt-5.6-sol", Definitions: registry}, Issue{Number: 12})
-	if want := []string{"exec", "--skip-git-repo-check", "--model", "gpt-5.6-sol", prompt}; !reflect.DeepEqual(explicit, want) {
+	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-sol", prompt}; !reflect.DeepEqual(explicit, want) {
 		t.Fatalf("explicit model argv = %#v, want %#v", explicit, want)
 	}
 }
 
 // TestDetectWakesReportsAClockJump checks a wall-clock gap far longer than the
 // check interval -- the machine slept through it -- is reported with roughly
-// how long it slept, while ordinary ticks are not (issue #683).
+// how long it slept, while ordinary ticks are not.
 func TestDetectWakesReportsAClockJump(t *testing.T) {
 	interval := 15 * time.Second
 	// The detector reads the clock once to start and once per tick, so it is

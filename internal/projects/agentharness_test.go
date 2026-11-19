@@ -32,14 +32,14 @@ import (
 
 // Environment the fake agent reads. They are documented on the program itself.
 const (
-	fakeAgentRecordEnv   = "GLORP_FAKE_AGENT_RECORD"
-	fakeAgentStdoutEnv   = "GLORP_FAKE_AGENT_STDOUT"
-	fakeAgentSessionEnv  = "GLORP_FAKE_AGENT_SESSION"
-	fakeAgentCheckoutEnv = "GLORP_FAKE_AGENT_CHECKOUT"
-	fakeAgentWatchEnv    = "GLORP_FAKE_AGENT_ENV"
-	fakeAgentMissingEnv  = "GLORP_FAKE_AGENT_MISSING"
-	fakeAgentMissingText = "GLORP_FAKE_AGENT_MISSING_TEXT"
-	fakeAgentFailEnv     = "GLORP_FAKE_AGENT_FAIL"
+	fakeAgentRecordEnv   = "AVIARY_FAKE_AGENT_RECORD"
+	fakeAgentStdoutEnv   = "AVIARY_FAKE_AGENT_STDOUT"
+	fakeAgentSessionEnv  = "AVIARY_FAKE_AGENT_SESSION"
+	fakeAgentCheckoutEnv = "AVIARY_FAKE_AGENT_CHECKOUT"
+	fakeAgentWatchEnv    = "AVIARY_FAKE_AGENT_ENV"
+	fakeAgentMissingEnv  = "AVIARY_FAKE_AGENT_MISSING"
+	fakeAgentMissingText = "AVIARY_FAKE_AGENT_MISSING_TEXT"
+	fakeAgentFailEnv     = "AVIARY_FAKE_AGENT_FAIL"
 )
 
 // fakeAgentCLI builds testdata/fakeagent once per test binary and returns the
@@ -52,7 +52,7 @@ var fakeAgentCLI = sync.OnceValues(buildFakeAgentCLI)
 var fakeAgentCLIDir string
 
 func buildFakeAgentCLI() (string, error) {
-	dir, err := os.MkdirTemp("", "glorp-fakeagent-")
+	dir, err := os.MkdirTemp("", "aviary-fakeagent-")
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +91,7 @@ type fakeAgentRun struct {
 	Stdout string
 	// Session is announced as the agent's own session ID.
 	Session string
-	// Checkout is announced as a GLORP_CHECKOUT_DIRECTORY marker.
+	// Checkout is announced as a AVIARY_CHECKOUT_DIRECTORY marker.
 	Checkout string
 	// WatchEnv names the environment variables the fake records.
 	WatchEnv []string
@@ -122,7 +122,7 @@ func (f fakeAgentRun) install(t *testing.T, definition agents.Definition) (agent
 	t.Setenv(fakeAgentMissingText, f.MissingText)
 	t.Setenv(fakeAgentFailEnv, invocationValue(f.FailOn))
 	// A definition declaring a minimum CLI version has that version asked of
-	// its binary before every dispatch (issue #535). The fake agent has no
+	// its binary before every dispatch. The fake agent has no
 	// version of its own, so the check is answered here with exactly the
 	// minimum: the harness is proving argv, not the version gate, which has
 	// its own tests.
@@ -172,7 +172,7 @@ type agentContract struct {
 	// Repo and Number name the issue the dispatch is for.
 	Repo   string
 	Number int
-	// SessionID is the session the run carries: assigned by glorp, or
+	// SessionID is the session the run carries: assigned by aviary, or
 	// announced by the agent, depending on the definition.
 	SessionID string
 	// Yolo and RemoteControl mirror the run's own flags.
@@ -191,7 +191,7 @@ type agentContract struct {
 	MissingText string
 }
 
-// freshPrompt and resumePrompt are the prompts glorp sends, exposed so a
+// freshPrompt and resumePrompt are the prompts aviary sends, exposed so a
 // contract can state the argv it expects in full.
 func freshPrompt(repo string, number int) string {
 	return fmt.Sprintf("/gh-fix %s#%d", repo, number) + "\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
@@ -232,7 +232,7 @@ func (c agentContract) runner(t *testing.T, behaviour fakeAgentRun) (CommandRunn
 func (c agentContract) issue() Issue { return Issue{Number: c.Number, Target: c.Repo} }
 
 // checkFresh dispatches a new issue and checks the argv, the environment, the
-// session ID glorp ends up holding, and the decoded output.
+// session ID aviary ends up holding, and the decoded output.
 func (c agentContract) checkFresh(t *testing.T) {
 	behaviour := fakeAgentRun{Stdout: c.Stdout}
 	session := AgentSession{Agent: c.Definition.Name}
@@ -265,7 +265,7 @@ func (c agentContract) checkFresh(t *testing.T) {
 	if captured := capturedSessionID(updates); c.Definition.CapturesSessionID() && captured != c.SessionID {
 		t.Fatalf("captured session ID = %q, want the one the agent announced (%q)", captured, c.SessionID)
 	} else if c.Definition.AssignsSessionID() && captured != "" {
-		t.Fatalf("captured session ID = %q, want none for an agent glorp assigns IDs to", captured)
+		t.Fatalf("captured session ID = %q, want none for an agent aviary assigns IDs to", captured)
 	}
 	if c.WantOutput != "" && !strings.Contains(output.String(), c.WantOutput) {
 		t.Fatalf("decoded output = %q, want it to contain %q", output.String(), c.WantOutput)
@@ -325,11 +325,11 @@ func (c agentContract) checkResumeRestart(t *testing.T) {
 		t.Fatalf("second invocation = %#v, want the dead session ID dropped", restarted)
 	}
 	if !c.Definition.Session.ClearOnResumeFailure && !carried {
-		t.Fatalf("second invocation = %#v, want the session ID glorp assigned kept", restarted)
+		t.Fatalf("second invocation = %#v, want the session ID aviary assigned kept", restarted)
 	}
 }
 
-// builtinDefinition resolves one of the definitions glorp ships.
+// builtinDefinition resolves one of the definitions aviary ships.
 func builtinDefinition(t *testing.T, name string) agents.Definition {
 	t.Helper()
 	definition, ok := agents.MustBuiltin().Lookup(name)
@@ -352,14 +352,14 @@ func TestCodexDefinitionContract(t *testing.T) {
 		// The spec names no model, so the argv carries the definition's
 		// own defaultModel rather than leaving the choice to the CLI. The
 		// session has no checkout yet, so the run starts in the temp
-		// directory and skips Codex's git repo check (issue #819).
-		WantRun:    []string{"exec", "--skip-git-repo-check", "--model", "gpt-5.6-terra", freshPrompt("o/r", 7)},
-		WantResume: []string{"exec", "resume", "--skip-git-repo-check", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
+		// directory and skips Codex's git repo check.
+		WantRun:    []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-terra", freshPrompt("o/r", 7)},
+		WantResume: []string{"exec", "resume", "--json", "--skip-git-repo-check", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
 		WantOutput: "working on it",
 	}.check(t)
 }
 
-// TestClaudeDefinitionContract proves the shipped claude definition: glorp
+// TestClaudeDefinitionContract proves the shipped claude definition: aviary
 // assigns the session ID, the child gets the environment the definition names,
 // and the JSON event stream is decoded rather than shown raw.
 func TestClaudeDefinitionContract(t *testing.T) {
@@ -384,7 +384,7 @@ func TestClaudeDefinitionContract(t *testing.T) {
 }
 
 // TestOpencodeDefinitionContract proves the shipped opencode definition. The
-// CLI has no session ID glorp can either assign or read back -- `opencode run`
+// CLI has no session ID aviary can either assign or read back -- `opencode run`
 // prints none in its default output format, and `--session` only accepts an ID
 // opencode itself minted -- so the definition declares no session at all and a
 // resume is rendered as a plain `opencode run` carrying the recovery prompt.
@@ -446,11 +446,11 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 			// opencode reads no remote-control settings, so the run's flag
 			// reaches its argv not at all.
 			name: "run ignores remote control", mode: agents.ModeRun,
-			values: agents.Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "glorp o/r#7"},
+			values: agents.Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
 			want:   []string{"run", "--auto", "--format", "json", prompt},
 		},
 		{
-			// A session ID glorp happens to be holding is never rendered: the
+			// A session ID aviary happens to be holding is never rendered: the
 			// definition assigns none, so there is nothing to resume by.
 			name: "resume carries no session", mode: agents.ModeResume,
 			values: agents.Values{Prompt: prompt, Session: "ses_1a2b3c"},
@@ -471,7 +471,7 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 		})
 	}
 	if definition.AssignsSessionID() || definition.CapturesSessionID() {
-		t.Fatal("opencode declares a session ID glorp can neither assign nor capture")
+		t.Fatal("opencode declares a session ID aviary can neither assign nor capture")
 	}
 	if !definition.AcceptsLevel("high") || definition.AcceptsLevel("ultra") {
 		t.Fatal("opencode levels are not validated against the definition")
@@ -480,9 +480,9 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 
 // TestGeminiDefinitionContract proves the shipped gemini definition. Gemini
 // CLI takes a caller-supplied UUID with --session-id and resumes it by that
-// same UUID with --resume, so glorp assigns the ID exactly as it does for
+// same UUID with --resume, so aviary assigns the ID exactly as it does for
 // Claude. Its headless mode refuses to run in a directory the user has not
-// trusted interactively, which every glorp run is -- the work happens in a
+// trusted interactively, which every aviary run is -- the work happens in a
 // fresh clone -- so the definition carries GEMINI_CLI_TRUST_WORKSPACE rather
 // than passing --skip-trust, and the child process is checked for it here.
 // Its --output-format stream-json emits its own event shape rather than
@@ -496,7 +496,7 @@ func TestGeminiDefinitionContract(t *testing.T) {
 		SessionID:  "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
 		Stdout:     "working on it",
 		// The spec names no model, so the argv carries the definition's own
-		// defaultModel (issue #622).
+		// defaultModel.
 		WantRun: []string{
 			"--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
 			"--approval-mode", "auto_edit", "--model", "gemini-3.5-flash",
@@ -561,7 +561,7 @@ func TestGeminiVisionArgsNameTheImageInThePrompt(t *testing.T) {
 // TestGeminiResumeFailureMessagesRestartTheWork pins the wordings Gemini CLI
 // prints when the recorded session is gone -- one for a project with no
 // session history and one for a project whose history does not hold that
-// UUID -- against the messages glorp watches for. Without them a resume of an
+// UUID -- against the messages aviary watches for. Without them a resume of an
 // expired session is reported as an agent failure instead of restarting.
 func TestGeminiResumeFailureMessagesRestartTheWork(t *testing.T) {
 	for _, message := range []string{
@@ -581,13 +581,13 @@ func TestGeminiResumeFailureMessagesRestartTheWork(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !detector.sessionMissing() {
-			t.Fatalf("glorp does not recognise %q as a session it can no longer resume", message)
+			t.Fatalf("aviary does not recognise %q as a session it can no longer resume", message)
 		}
 	}
 }
 
 // TestConfiguredAgentDefinitionIsDispatchable proves the whole path an agent
-// nobody built in takes: declared in .glorp.config.json, accepted by --agent,
+// nobody built in takes: declared in .aviary.config.json, accepted by --agent,
 // and dispatched through the executable its own definition names.
 func TestConfiguredAgentDefinitionIsDispatchable(t *testing.T) {
 	binary, err := fakeAgentCLI()

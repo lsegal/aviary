@@ -114,7 +114,7 @@ func TestStartReportsAnUnresolvableCommand(t *testing.T) {
 	}
 }
 
-// npx puts its own progress on the streams glorp reads the tunnel URL from.
+// npx puts its own progress on the streams aviary reads the tunnel URL from.
 func TestNgrokLogWatcherIgnoresNpmProgress(t *testing.T) {
 	watcher := &ngrokLogWatcher{}
 	watcher.Write([]byte("npm warn deprecated uuid@8.3.2: no longer supported\n"))

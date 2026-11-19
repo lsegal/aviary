@@ -23,7 +23,7 @@ type webhookTunnel interface {
 // tunnelSupervisor keeps webhook mode's ngrok tunnel delivering. ngrok is
 // started once, and nothing else notices when it dies or its session does not
 // survive the machine sleeping, so GitHub would go on posting deliveries to a
-// dead URL until glorp restarted (issue #683). The supervisor checks the tunnel
+// dead URL until aviary restarted. The supervisor checks the tunnel
 // end to end before every webhook reconciliation -- on each fallback poll and
 // whenever the machine wakes -- and starts a new one when it no longer reaches
 // the webhook server, pointing the webhooks at the new URL if it changed.
@@ -40,7 +40,7 @@ type tunnelSupervisor struct {
 	logf        func(string, ...interface{})
 	// down records that the last check found the tunnel not reaching the
 	// webhook server, or could not start a new one. GitHub deliveries are lost
-	// while it lasts, so the dashboards show webhooks as offline (issue #687).
+	// while it lasts, so the dashboards show webhooks as offline.
 	down atomic.Bool
 }
 
@@ -115,7 +115,7 @@ func (s *tunnelSupervisor) Close() error {
 }
 
 // probeTunnel asks the tunnel's public URL for the webhook path and reports
-// whether the request reached glorp's webhook server. ngrok answers for an
+// whether the request reached aviary's webhook server. ngrok answers for an
 // endpoint whose agent has gone away itself, marking the response with an
 // error code header, so any such answer -- or none at all -- is a dead tunnel.
 // The webhook server refuses the GET, which is fine: it only has to answer.

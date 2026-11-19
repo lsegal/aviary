@@ -208,7 +208,7 @@ func TestAgentDoctorFallsBackToDeclaredModels(t *testing.T) {
 // TestAgentDoctorListsKnownModels checks a definition that names no allow-list
 // but knows what its CLI takes is enumerated rather than dismissed with the
 // note that any model is accepted, which is the whole point of the field
-// (issue #560). The list is labelled as glorp's rather than the CLI's, because
+//. The list is labelled as aviary's rather than the CLI's, because
 // it is not an allow-list: a model released after the definition still runs.
 func TestAgentDoctorListsKnownModels(t *testing.T) {
 	doctor := stubDoctor(t, map[string]bool{"known": true}, noProbe, noProbe, noProbe, nil)
@@ -216,8 +216,8 @@ func TestAgentDoctorListsKnownModels(t *testing.T) {
 	if strings.Join(report.models, ",") != "known/opus,known/sonnet" {
 		t.Errorf("known models = %v, want the known list qualified", report.models)
 	}
-	if !strings.Contains(report.modelNote, "known to glorp") {
-		t.Errorf("known note = %q, want it to say the list is glorp's", report.modelNote)
+	if !strings.Contains(report.modelNote, "known to aviary") {
+		t.Errorf("known note = %q, want it to say the list is aviary's", report.modelNote)
 	}
 	registry := testDoctorRegistry(t)
 	definition, _ := registry.Lookup("known")
@@ -322,7 +322,7 @@ func TestDescribeQuotaTellsUntrackedFromUnavailable(t *testing.T) {
 }
 
 // TestAgentStatusConvertsReportFields checks the settings dashboard's agents
-// tab (issue #572) reads the same probe results the terminal report renders,
+// tab reads the same probe results the terminal report renders,
 // including the quota error text and the machine-readable status key.
 func TestAgentStatusConvertsReportFields(t *testing.T) {
 	report := agentReport{
@@ -503,7 +503,7 @@ func TestRunProbeConversationAsksAndStopsAtTheAnswer(t *testing.T) {
 // the test rather than as the whole suite.
 func runDoctorProbeAsHelper(t *testing.T, argv []string, spec agents.Doctor) ([]byte, bool) {
 	t.Helper()
-	t.Setenv("GLORP_DOCTOR_PROBE_HELPER", "1")
+	t.Setenv("AVIARY_DOCTOR_PROBE_HELPER", "1")
 	return runDoctorProbe(context.Background(), argv, spec, spec.ModelsStdinLines(argv[0]))
 }
 
@@ -511,7 +511,7 @@ func runDoctorProbeAsHelper(t *testing.T, argv []string, spec agents.Doctor) ([]
 // TestRunProbeConversationAsksAndStopsAtTheAnswer, a stand-in for an agent
 // that answers a handshake and then goes on waiting for its client.
 func TestDoctorProbeHelperProcess(t *testing.T) {
-	if os.Getenv("GLORP_DOCTOR_PROBE_HELPER") != "1" {
+	if os.Getenv("AVIARY_DOCTOR_PROBE_HELPER") != "1" {
 		t.Skip("helper process for TestRunProbeConversationAsksAndStopsAtTheAnswer")
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -528,8 +528,8 @@ func TestDoctorProbeHelperProcess(t *testing.T) {
 	time.Sleep(30 * time.Second)
 }
 
-// TestAgentReportShowsTheManagedDefaultModel checks `glorp agents` names the
-// model an agent runs with when --agent gives it none (issue #612), qualified
+// TestAgentReportShowsTheManagedDefaultModel checks `aviary agents` names the
+// model an agent runs with when --agent gives it none, qualified
 // so it can be copied straight back into --agent, and says nothing extra for an
 // agent whose definition leaves the choice to its own CLI.
 func TestAgentReportShowsTheManagedDefaultModel(t *testing.T) {
@@ -560,7 +560,7 @@ func TestAgentStatusCarriesTheDefaultModel(t *testing.T) {
 	}
 }
 
-// TestAgentDoctorFlagsStaleSkills checks stale installed skills (issue #797)
+// TestAgentDoctorFlagsStaleSkills checks stale installed skills
 // warn on every installed agent that installs them, and are printed on the
 // report and carried to the dashboard, while an agent with no skills target is
 // left alone.
@@ -568,7 +568,7 @@ func TestAgentDoctorFlagsStaleSkills(t *testing.T) {
 	installed := map[string]bool{"probed": true, "silent": true}
 	signedIn := func(string) (string, bool) { return "logged in", true }
 	doctor := stubDoctor(t, installed, noProbe, signedIn, noProbe, nil)
-	doctor.skillsNote = func() string { return "gh-fix stale for glorp v1.5.25; restart glorp to reinstall" }
+	doctor.skillsNote = func() string { return "gh-fix stale for aviary v1.5.25; restart aviary to reinstall" }
 	reports := doctor.Report(context.Background())
 	probed := reportFor(t, reports, "probed")
 	if probed.skillsNote == "" || probed.status() != statusWarn {
@@ -579,7 +579,7 @@ func TestAgentDoctorFlagsStaleSkills(t *testing.T) {
 	}
 	var out strings.Builder
 	writeAgentReports(&out, []agentReport{probed})
-	if !strings.Contains(out.String(), "gh-fix stale for glorp v1.5.25") {
+	if !strings.Contains(out.String(), "gh-fix stale for aviary v1.5.25") {
 		t.Fatalf("report = %q, want the skills line", out.String())
 	}
 	if status := agentStatus(probed); status.SkillsNote != probed.skillsNote || status.Status != "warn" {

@@ -65,7 +65,7 @@ func codexQuotaArgv(binary string) []string {
 // builtinQuotaTimeout bounds one reading by the built-in Codex and Claude
 // readers, as a definition's own timeout bounds a quota command. Quotas are
 // read on the poll loop, so a CLI stuck on a connection that went dead while
-// the machine slept would otherwise stop the watch for good (issue #683). It
+// the machine slept would otherwise stop the watch for good. It
 // is a variable only so tests need not spend it.
 var builtinQuotaTimeout = agents.DefaultQuotaTimeout
 
@@ -138,7 +138,7 @@ func scanCodexQuota(stdout io.Reader) (string, error) {
 
 func codexQuotaRequests() []string {
 	return []string{
-		`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"glorp","title":"glorp","version":"dev"}}}`,
+		`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"aviary","title":"aviary","version":"dev"}}}`,
 		`{"method":"initialized","params":{}}`,
 		`{"id":2,"method":"account/rateLimits/read"}`,
 	}
@@ -238,7 +238,7 @@ var (
 // formatClaudeQuota renders whichever of the session and week lines the
 // report carries. Either one is a reading: the CLI leaves the session line out
 // entirely when no session window is open, and requiring it turned a report
-// with a perfectly good week percentage into no reading at all (issue #791).
+// with a perfectly good week percentage into no reading at all.
 func formatClaudeQuota(usageText string) string {
 	var parts []string
 	for _, window := range []struct {
@@ -266,7 +266,7 @@ const quotaCommandWaitDelay = time.Second
 // commandQuotaReader is the generic quota source: it runs the argv a
 // definition names, reads the JSON that argv prints, and renders the fields
 // the definition points at into the definition's own template. It is what
-// lets an agent glorp has never heard of report a quota, and it caches on the
+// lets an agent aviary has never heard of report a quota, and it caches on the
 // same one-minute terms as the built-in readers so a poll never re-runs it.
 type commandQuotaReader struct {
 	Binary string
@@ -455,7 +455,7 @@ func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func
 // results keyed by agent name. A reader that has a source but no reading
 // reports itself unavailable, with the reason when it has one, so a broken
 // read is never shown as the "not tracked" of an agent with no source at all
-// (issue #791).
+//.
 func combinedQuotaReader(readers []namedQuotaReader) func(context.Context) map[string]string {
 	return func(ctx context.Context) map[string]string {
 		result := make(map[string]string, len(readers))

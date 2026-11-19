@@ -95,12 +95,12 @@ func TestValidateSettingsUpdateRejectsBadValues(t *testing.T) {
 	}
 }
 
-func TestGlorpApplySettingsConcurrencyTakesEffectLive(t *testing.T) {
+func TestEngineApplySettingsConcurrencyTakesEffectLive(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 1}, {Number: 2}}}}
 	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 2)}
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: time.Millisecond, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -134,13 +134,13 @@ func TestGlorpApplySettingsConcurrencyTakesEffectLive(t *testing.T) {
 	<-done
 }
 
-func TestGlorpApplySettingsReadyStateAndAllowedCommenters(t *testing.T) {
+func TestEngineApplySettingsReadyStateAndAllowedCommenters(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	defer close(r.release)
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs, ReadyState: "Ready"}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs, ReadyState: "Ready"}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -161,10 +161,10 @@ func TestGlorpApplySettingsReadyStateAndAllowedCommenters(t *testing.T) {
 	<-done
 }
 
-func TestGlorpApplySettingsNoMergeChangesNewDispatches(t *testing.T) {
+func TestEngineApplySettingsNoMergeChangesNewDispatches(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -185,10 +185,10 @@ func TestGlorpApplySettingsNoMergeChangesNewDispatches(t *testing.T) {
 	<-done
 }
 
-func TestGlorpApplySettingsAutoUpdate(t *testing.T) {
+func TestEngineApplySettingsAutoUpdate(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
 	w.autoUpdate.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -214,10 +214,10 @@ func TestGlorpApplySettingsAutoUpdate(t *testing.T) {
 	<-done
 }
 
-func TestGlorpApplySettingsNoChangelogChangesNewDispatches(t *testing.T) {
+func TestEngineApplySettingsNoChangelogChangesNewDispatches(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex"}, Out: &syncBuffer{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -238,13 +238,13 @@ func TestGlorpApplySettingsNoChangelogChangesNewDispatches(t *testing.T) {
 	<-done
 }
 
-func TestGlorpApplySettingsReadyStateDefaultReflectsUnsetFallback(t *testing.T) {
+func TestEngineApplySettingsReadyStateDefaultReflectsUnsetFallback(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	defer close(r.release)
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -272,12 +272,12 @@ func TestGlorpApplySettingsReadyStateDefaultReflectsUnsetFallback(t *testing.T) 
 	<-done
 }
 
-// TestGlorpApplySettingsFailsFastBeforeRunIsReady checks that a settings
+// TestEngineApplySettingsFailsFastBeforeRunIsReady checks that a settings
 // change made before Run starts fails with core.ErrNotReady, bounded by
 // notReadyWait, instead of blocking forever on a channel Run isn't reading
 // yet -- the hang reported in issue #579.
-func TestGlorpApplySettingsFailsFastBeforeRunIsReady(t *testing.T) {
-	w := &Glorp{notReadyWait: 20 * time.Millisecond}
+func TestEngineApplySettingsFailsFastBeforeRunIsReady(t *testing.T) {
+	w := &Engine{notReadyWait: 20 * time.Millisecond}
 	start := time.Now()
 	_, err := w.ApplySettings(context.Background(), SettingsUpdate{Concurrency: intPtr(2)})
 	if !errors.Is(err, core.ErrNotReady) {
@@ -288,11 +288,11 @@ func TestGlorpApplySettingsFailsFastBeforeRunIsReady(t *testing.T) {
 	}
 }
 
-// TestGlorpHandleJobActionFailsFastBeforeRunIsReady mirrors
-// TestGlorpApplySettingsFailsFastBeforeRunIsReady for the job-action path
-// (issue #579).
-func TestGlorpHandleJobActionFailsFastBeforeRunIsReady(t *testing.T) {
-	w := &Glorp{notReadyWait: 20 * time.Millisecond}
+// TestEngineHandleJobActionFailsFastBeforeRunIsReady mirrors
+// TestEngineApplySettingsFailsFastBeforeRunIsReady for the job-action path
+//.
+func TestEngineHandleJobActionFailsFastBeforeRunIsReady(t *testing.T) {
+	w := &Engine{notReadyWait: 20 * time.Millisecond}
 	start := time.Now()
 	err := w.handleJobAction(context.Background(), core.JobAction{Action: "retry", Target: "o/r", Number: 1})
 	if !errors.Is(err, core.ErrNotReady) {
@@ -303,17 +303,17 @@ func TestGlorpHandleJobActionFailsFastBeforeRunIsReady(t *testing.T) {
 	}
 }
 
-// TestGlorpApplySettingsSucceedsOnceRunBecomesReady checks a settings
+// TestEngineApplySettingsSucceedsOnceRunBecomesReady checks a settings
 // request that arrives just before Run reaches readiness still succeeds once
 // it gets there, rather than failing merely because it arrived first (issue
 // #579).
-func TestGlorpApplySettingsSucceedsOnceRunBecomesReady(t *testing.T) {
+func TestEngineApplySettingsSucceedsOnceRunBecomesReady(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
 	r := &fakeRunner{release: make(chan struct{})}
 	defer close(r.release)
 	logs := &syncBuffer{}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs, notReadyWait: 5 * time.Second}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: logs, notReadyWait: 5 * time.Second}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -326,11 +326,11 @@ func TestGlorpApplySettingsSucceedsOnceRunBecomesReady(t *testing.T) {
 	<-done
 }
 
-// TestGlorpReadsSettingsBeforeRunStarts checks that reading settings answers
+// TestEngineReadsSettingsBeforeRunStarts checks that reading settings answers
 // at once from the configured values even before Run is looping, rather
-// than waiting for it the way a change must (issue #803).
-func TestGlorpReadsSettingsBeforeRunStarts(t *testing.T) {
-	w := &Glorp{Concurrency: 3, ReadyState: "Agent Ready", AllowedCommenters: []string{"octocat"}, notReadyWait: 5 * time.Second}
+// than waiting for it the way a change must.
+func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
+	w := &Engine{Concurrency: 3, ReadyState: "Agent Ready", AllowedCommenters: []string{"octocat"}, notReadyWait: 5 * time.Second}
 	start := time.Now()
 	for _, read := range []func() (SettingsSnapshot, error){
 		func() (SettingsSnapshot, error) { return w.CurrentSettings(context.Background()) },
@@ -381,8 +381,8 @@ func serveWithin(t *testing.T, handler http.Handler, method, path string) *httpt
 	}
 }
 
-func TestGlorpRunnerAppliesLiveAgentOverride(t *testing.T) {
-	w := &Glorp{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
+func TestEngineRunnerAppliesLiveAgentOverride(t *testing.T) {
+	w := &Engine{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
 	if got := w.runner().(CommandRunner).AgentName(); got != "codex" {
 		t.Fatalf("agent before override = %q", got)
 	}
@@ -397,10 +397,10 @@ func TestGlorpRunnerAppliesLiveAgentOverride(t *testing.T) {
 	}
 }
 
-// TestGlorpRunnerAppliesLiveMultiAgentOverride checks a multiselect override
-// (issue #572) round robins across every agent it names, not just the first.
-func TestGlorpRunnerAppliesLiveMultiAgentOverride(t *testing.T) {
-	w := &Glorp{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
+// TestEngineRunnerAppliesLiveMultiAgentOverride checks a multiselect override
+// round robins across every agent it names, not just the first.
+func TestEngineRunnerAppliesLiveMultiAgentOverride(t *testing.T) {
+	w := &Engine{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
 	override := []string{"codex", "claude/opus", "muse"}
 	w.agentOverride.Store(&override)
 	runner, ok := w.runner().(CommandRunner)
@@ -416,33 +416,33 @@ func intPtr(v int) *int               { return &v }
 func strPtr(v string) *string         { return &v }
 func agentsPtr(v ...string) *[]string { return &v }
 
-func TestGlorpAgentStillConfigured(t *testing.T) {
+func TestEngineAgentStillConfigured(t *testing.T) {
 	commandRunner := CommandRunner{Agent: "codex", Agents: []string{"codex", "claude/opus:high"}}
 	single := CommandRunner{Agent: "claude"}
 	cases := []struct {
 		name     string
-		glorp    *Glorp
+		aviary    *Engine
 		override string
 		agent    string
 		want     bool
 	}{
-		{name: "listed", glorp: &Glorp{Runner: commandRunner}, agent: "codex", want: true},
-		{name: "listed with spec", glorp: &Glorp{Runner: commandRunner}, agent: "claude/opus:high", want: true},
-		{name: "retired", glorp: &Glorp{Runner: commandRunner}, agent: "claude", want: false},
-		{name: "empty", glorp: &Glorp{Runner: commandRunner}, agent: "", want: false},
-		{name: "single agent", glorp: &Glorp{Runner: single}, agent: "claude", want: true},
-		{name: "single agent mismatch", glorp: &Glorp{Runner: single}, agent: "codex", want: false},
-		{name: "override wins", glorp: &Glorp{Runner: commandRunner}, override: "claude", agent: "codex", want: false},
-		{name: "override matches", glorp: &Glorp{Runner: commandRunner}, override: "claude", agent: "claude", want: true},
-		{name: "unconfigured runner", glorp: &Glorp{Runner: &fakeSessionRunner{agent: "claude"}}, agent: "codex", want: true},
+		{name: "listed", aviary: &Engine{Runner: commandRunner}, agent: "codex", want: true},
+		{name: "listed with spec", aviary: &Engine{Runner: commandRunner}, agent: "claude/opus:high", want: true},
+		{name: "retired", aviary: &Engine{Runner: commandRunner}, agent: "claude", want: false},
+		{name: "empty", aviary: &Engine{Runner: commandRunner}, agent: "", want: false},
+		{name: "single agent", aviary: &Engine{Runner: single}, agent: "claude", want: true},
+		{name: "single agent mismatch", aviary: &Engine{Runner: single}, agent: "codex", want: false},
+		{name: "override wins", aviary: &Engine{Runner: commandRunner}, override: "claude", agent: "codex", want: false},
+		{name: "override matches", aviary: &Engine{Runner: commandRunner}, override: "claude", agent: "claude", want: true},
+		{name: "unconfigured runner", aviary: &Engine{Runner: &fakeSessionRunner{agent: "claude"}}, agent: "codex", want: true},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			if test.override != "" {
 				override := []string{test.override}
-				test.glorp.agentOverride.Store(&override)
+				test.aviary.agentOverride.Store(&override)
 			}
-			if got := test.glorp.agentStillConfigured(test.agent); got != test.want {
+			if got := test.aviary.agentStillConfigured(test.agent); got != test.want {
 				t.Fatalf("agentStillConfigured(%q) = %t, want %t", test.agent, got, test.want)
 			}
 		})
@@ -475,10 +475,10 @@ func registryForSettings(t *testing.T) *agents.Registry {
 
 // TestSettingsSnapshotListsEveryRegisteredAgent checks the settings API
 // reports the registry rather than the agents this run happens to dispatch
-// with, which is what makes a .glorp.config.json agent selectable in the
-// dashboard with no code change (issue #489).
+// with, which is what makes a .aviary.config.json agent selectable in the
+// dashboard with no code change.
 func TestSettingsSnapshotListsEveryRegisteredAgent(t *testing.T) {
-	w := &Glorp{
+	w := &Engine{
 		Registry: registryForSettings(t),
 		Runner:   CommandRunner{Agent: "codex", Agents: []string{"codex"}},
 	}
@@ -527,7 +527,7 @@ func TestSettingsValidatesAgainstTheRunsRegistry(t *testing.T) {
 // not hold a persisted session, and an agent a config file dropped entirely
 // must not either.
 func TestAgentStillConfiguredIgnoresTheRegistry(t *testing.T) {
-	w := &Glorp{
+	w := &Engine{
 		Registry: registryForSettings(t),
 		Runner:   CommandRunner{Agent: "codex", Agents: []string{"codex"}},
 	}
@@ -539,13 +539,13 @@ func TestAgentStillConfiguredIgnoresTheRegistry(t *testing.T) {
 	}
 	// A config-defined agent that disappeared from config is gone from the
 	// registry too, and is likewise not configured.
-	dropped := &Glorp{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
+	dropped := &Engine{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
 	if dropped.agentStillConfigured("muse") {
 		t.Fatal("an agent no longer in config should not keep a session")
 	}
 	// It is still dispatchable while --agent names it, registry or not: the
 	// registry rejects it at parse time, not here.
-	kept := &Glorp{Runner: CommandRunner{Agent: "muse", Agents: []string{"muse"}}}
+	kept := &Engine{Runner: CommandRunner{Agent: "muse", Agents: []string{"muse"}}}
 	if !kept.agentStillConfigured("muse") {
 		t.Fatal("an agent --agent still names should keep its session")
 	}

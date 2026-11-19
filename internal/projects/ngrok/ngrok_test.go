@@ -23,8 +23,8 @@ func TestNgrokLogWatcherReadsTunnelURLFromOwnProcess(t *testing.T) {
 	var out bytes.Buffer
 	watcher := &ngrokLogWatcher{out: &out}
 	// A second agent on the machine pushes this process's web API off 4040,
-	// which is exactly the case that used to make glorp adopt the other
-	// agent's tunnel (issue #361). The URL still comes from this log.
+	// which is exactly the case that used to make aviary adopt the other
+	// agent's tunnel. The URL still comes from this log.
 	watcher.Write([]byte(`{"lvl":"warn","msg":"cannot bind default web address, trying alternatives","addr":"127.0.0.1:4040"}` + "\n"))
 	watcher.Write([]byte(`{"lvl":"info","msg":"starting web service","addr":"127.0.0.1:4041"}` + "\n"))
 	if watcher.URL() != "" {

@@ -25,7 +25,7 @@ func orgProjectItemsResponse(repos ...string) []byte {
 
 // An organization project keeps its projects_v2_item hook and gains a narrow
 // issue hook on each repository backing the board, so a change to an issue an
-// agent is working is delivered instead of waiting out the poll (issue #471).
+// agent is working is delivered instead of waiting out the poll.
 func TestWebhookSpecsSupportOrganizationProjects(t *testing.T) {
 	target, err := parseTarget("https://github.com/orgs/example/projects/3")
 	if err != nil {
@@ -92,7 +92,7 @@ func TestOrganizationWebhookErrorsReportRequiredAccess(t *testing.T) {
 
 // A user-owned project gets no projects_v2 webhook from GitHub, so push mode
 // has to watch the repositories backing the board instead of falling back to
-// polling for the whole target (issue #234).
+// polling for the whole target.
 func TestWebhookSpecsWatchPersonalProjectRepositories(t *testing.T) {
 	target, err := parseTarget("https://github.com/users/octocat/projects/3")
 	if err != nil {
@@ -196,7 +196,7 @@ func (f *fakeConfigurer) ConfigureWebhook(_ context.Context, target, _, _ string
 
 // A repository added to the board after startup has no webhook until the
 // target is configured again, so reconciliation has to keep running and has to
-// announce only the webhooks it actually created (issue #238).
+// announce only the webhooks it actually created.
 func TestWebhookReconcilerConfiguresNewlyDiscoveredRepositories(t *testing.T) {
 	gh := &fakeConfigurer{results: []struct {
 		created []string
@@ -238,7 +238,7 @@ func TestWebhookReconcilerIsQuietWhenNothingChanges(t *testing.T) {
 	}
 }
 
-// A repository glorp cannot configure is reported once and never stops the
+// A repository aviary cannot configure is reported once and never stops the
 // daemon; the targets after it still get reconciled.
 func TestWebhookReconcilerReportsFailuresWithoutStopping(t *testing.T) {
 	failure := fmt.Errorf("%w (1 of 2): create webhooks for octocat/beta: HTTP 403", errWebhookPartiallyConfigured)
@@ -270,7 +270,7 @@ func TestWebhookReconcilerReportsFailuresWithoutStopping(t *testing.T) {
 }
 
 // A Discussions-board target needs the `discussion` event; the issue events a
-// repository target subscribes to never announce a new thread (issue #226).
+// repository target subscribes to never announce a new thread.
 func TestWebhookSpecsSubscribeDiscussionEvents(t *testing.T) {
 	target, err := parseTarget("https://github.com/octocat/alpha/discussions")
 	if err != nil {
@@ -316,7 +316,7 @@ func TestMissingWebhookEvents(t *testing.T) {
 // TestGHCLIAPITimesOut checks webhook configuration's `gh api` calls are
 // bounded like every other `gh` call. Reconciliation runs on the poll loop, so
 // one stuck on a connection that died while the machine slept used to stop
-// the watch for good (issue #683).
+// the watch for good.
 func TestGHCLIAPITimesOut(t *testing.T) {
 	binary := fakeQuotaBinary(t, "sleep 30")
 	previous := ghCommandTimeout

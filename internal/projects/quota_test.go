@@ -225,7 +225,7 @@ func TestCodexQuotaArgvIsWhatTheCLIAccepts(t *testing.T) {
 
 // TestCodexQuotaReaderReportsWhyItCouldNotRead checks a Codex read that
 // cannot run its binary reports the reason rather than only an empty string,
-// which is what lets `glorp agents` say more than "unavailable".
+// which is what lets `aviary agents` say more than "unavailable".
 func TestCodexQuotaReaderReportsWhyItCouldNotRead(t *testing.T) {
 	reader := &codexQuotaReader{Binary: filepath.Join(t.TempDir(), "definitely-not-codex")}
 	quota, err := reader.Read(context.Background())
@@ -240,7 +240,7 @@ func TestCodexQuotaReaderReportsWhyItCouldNotRead(t *testing.T) {
 // TestBuiltinQuotaReadersTimeOut checks the built-in Codex and Claude readers
 // give up on a CLI that never answers, as a quota command does. They run on the
 // poll loop, so one stuck on a connection that died while the machine slept
-// used to stop the watch for good (issue #683).
+// used to stop the watch for good.
 func TestBuiltinQuotaReadersTimeOut(t *testing.T) {
 	binary := fakeQuotaBinary(t, "sleep 30")
 	previous := builtinQuotaTimeout
@@ -263,7 +263,7 @@ func TestBuiltinQuotaReadersTimeOut(t *testing.T) {
 // claudeWeekOnlyUsage is what current Claude CLIs print for `/usage` when no
 // session window is open: a week line and no session line at all. Requiring
 // the session line made this report no reading, which the status bar then
-// showed as "not tracked" (issue #791).
+// showed as "not tracked".
 const claudeWeekOnlyUsage = `{"type":"result","subtype":"success","local_command":"usage","result":"You are currently using your subscription to power your Claude Code usage\n\nCurrent week (all models): 22% used · resets Nov 18, 5:59am (America/Los_Angeles)\nCurrent week (Fable): 0% used · resets Nov 18, 6am (America/Los_Angeles)\n"}`
 
 // TestClaudeQuotaReadsAWeekOnlyReport checks a `/usage` report without a
@@ -298,7 +298,7 @@ func TestClaudeQuotaReaderReadsTheCLIReport(t *testing.T) {
 // #791: an agent with a built-in or command reader whose read fails shows
 // "unavailable" and the reason, and only an agent with no reader at all shows
 // "not tracked". The failed Claude read used to come back as an empty reading
-// and render exactly like an agent glorp has no reader for.
+// and render exactly like an agent aviary has no reader for.
 func TestCombinedQuotaReaderSaysWhyATrackedReadFailed(t *testing.T) {
 	registry := registryWith(t,
 		definitionWithQuota(t, "claude", agents.Quota{Reader: agents.QuotaClaude}),

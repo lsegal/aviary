@@ -8,9 +8,9 @@ import (
 	"sync"
 )
 
-// linkedPullRequests is the limited watch glorp derives from the open pull
+// linkedPullRequests is the limited watch aviary derives from the open pull
 // requests that work on an issue but live in another repository, such as a
-// fork (issue #723). The configured targets and the mention scans only cover
+// fork. The configured targets and the mention scans only cover
 // the issue repositories, so without it a review, a mention, or a merge on such
 // a pull request goes unseen once the agent has released its slot. It names
 // only those pull requests, never their repositories' other issues, so nothing
@@ -91,7 +91,7 @@ func (l *linkedPullRequests) repos() []string {
 }
 
 // linkedPullRequestRecorder is a WorkClosureChecker that records the linked
-// pull requests of every issue state it reads, so every check glorp already
+// pull requests of every issue state it reads, so every check aviary already
 // makes on active, paused, and completed work keeps the derived watch current.
 type linkedPullRequestRecorder struct {
 	WorkClosureChecker

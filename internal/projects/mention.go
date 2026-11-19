@@ -24,13 +24,13 @@ const (
 	// ReviewComment is an inline comment on a pull request's diff (issue
 	// #695).
 	ReviewComment
-	// ReviewBody is the body of a submitted pull request review (issue #695).
+	// ReviewBody is the body of a submitted pull request review.
 	ReviewBody
 )
 
 // RecentComment is one comment found by a repository-wide scan of recent
-// issue and pull request comments (issue #689), or of pull request review
-// comments and review bodies (issue #695).
+// issue and pull request comments, or of pull request review
+// comments and review bodies.
 type RecentComment struct {
 	ID int64
 	// Kind says which API ID belongs to. The zero value is a conversation
@@ -54,9 +54,9 @@ func (c RecentComment) routed(repo string) mentionComment {
 	return mentionComment{Kind: c.Kind, Repository: repo, Number: c.Number, ID: c.ID, Author: c.Author}
 }
 
-// MentionSource is what the poll modes scan for direct @/glorp:ID mentions.
+// MentionSource is what the poll modes scan for direct @/aviary:ID mentions.
 // They receive no issue_comment webhook deliveries, so without it a mention
-// posted on an issue or its pull request is never seen (issue #689).
+// posted on an issue or its pull request is never seen.
 type MentionSource interface {
 	// RecentComments lists the comments posted or edited on any issue or
 	// pull request in repo since the given time, oldest first.
@@ -70,7 +70,7 @@ type MentionSource interface {
 // ReviewMentionSource is what the poll modes scan for direct mentions posted
 // in pull request reviews. Inline review comments and review bodies are
 // separate GitHub APIs from the conversation RecentComments reads, so without
-// it a mention posted in a review is never seen (issue #695).
+// it a mention posted in a review is never seen.
 type ReviewMentionSource interface {
 	// RecentReviewComments lists the inline review comments and submitted
 	// review bodies posted or edited on any open pull request in repo since
@@ -84,7 +84,7 @@ type ReviewMentionSource interface {
 // already handled are skipped by ID.
 const mentionScanOverlap = time.Minute
 
-// agentCommentGrace is how long after an agent finishes a comment from glorp's
+// agentCommentGrace is how long after an agent finishes a comment from aviary's
 // own login is still attributed to that agent rather than to a human.
 const agentCommentGrace = 30 * time.Second
 
@@ -92,8 +92,8 @@ const agentCommentGrace = 30 * time.Second
 // treat @name as a mention: fenced code, inline code, and quoted lines.
 var markdownNonMentions = regexp.MustCompile("(?s)```.*?```|`[^`\\n]*`|(?m:^[ \\t]*>.*$)")
 
-// anyInstanceMention matches an @/glorp:ID mention of any instance.
-var anyInstanceMention = regexp.MustCompile(`(^|\s)@/glorp:\S`)
+// anyInstanceMention matches an @/aviary:ID mention of any instance.
+var anyInstanceMention = regexp.MustCompile(`(^|\s)@/aviary:\S`)
 
 // mentionedLogin reports whether body mentions the GitHub user login with an
 // ordinary @login. A longer login or a @login/team reference does not match.
@@ -106,11 +106,11 @@ func mentionedLogin(body, login string) bool {
 }
 
 // commentRequestsRecheck reports whether a comment that does not mention this
-// instance still triggers a recheck of its issue (issue #708): it must come
-// from an allowed commenter and mention the login glorp runs as. An empty
-// allowed list names nobody here, handshake comments are glorp's own, and a
+// instance still triggers a recheck of its issue: it must come
+// from an allowed commenter and mention the login aviary runs as. An empty
+// allowed list names nobody here, handshake comments are aviary's own, and a
 // comment addressed to another instance is not an instruction to this one.
-func (w *Glorp) commentRequestsRecheck(body, author string) bool {
+func (w *Engine) commentRequestsRecheck(body, author string) bool {
 	if len(w.AllowedCommenters) == 0 || !commenterAllowed(author, w.AllowedCommenters) || !mentionedLogin(body, w.SelfLogin) {
 		return false
 	}
@@ -122,10 +122,10 @@ func (w *Glorp) commentRequestsRecheck(body, author string) bool {
 
 // queueCommentRecheck queues a run for each key a login-mention comment
 // addresses and returns the keys it queued. Only issues this instance watches
-// qualify. A comment from glorp's own login posted while its agent ran on the
+// qualify. A comment from aviary's own login posted while its agent ran on the
 // issue is left out: agents post as that login, so it may be the agent's own,
 // and a human's is relayed by that run's watcher.
-func (w *Glorp) queueCommentRecheck(scan *mentionScan, keys []string, comment mentionComment, at time.Time, listed, directMentions map[string]bool) []string {
+func (w *Engine) queueCommentRecheck(scan *mentionScan, keys []string, comment mentionComment, at time.Time, listed, directMentions map[string]bool) []string {
 	author := comment.Author
 	var queued []string
 	for _, key := range keys {
@@ -151,7 +151,7 @@ func (w *Glorp) queueCommentRecheck(scan *mentionScan, keys []string, comment me
 // handleScannedRecheck acts on one scanned comment that requests a recheck. It
 // reports false only when the issues it addresses could not be read and the
 // comment should be read again on the next scan.
-func (w *Glorp) handleScannedRecheck(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed, directMentions map[string]bool) bool {
+func (w *Engine) handleScannedRecheck(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed, directMentions map[string]bool) bool {
 	numbers := []int{comment.Number}
 	linked := scan.linked.issues(repo, comment.Number)
 	if len(linked) == 0 && (comment.Kind != ConversationComment || !listed[repo+"#"+strconv.Itoa(comment.Number)]) {
@@ -178,7 +178,7 @@ func (w *Glorp) handleScannedRecheck(ctx context.Context, scan *mentionScan, rep
 // commentOnGitHub reports whether repo#number carries a comment of kind from
 // author with exactly body, so a webhook delivery is reverified rather than
 // trusted from its payload.
-func (w *Glorp) commentOnGitHub(ctx context.Context, kind CommentKind, repo string, number int, body, author string) (bool, error) {
+func (w *Engine) commentOnGitHub(ctx context.Context, kind CommentKind, repo string, number int, body, author string) (bool, error) {
 	if w.Comments == nil {
 		return true, nil
 	}
@@ -216,7 +216,7 @@ type mentionScan struct {
 	// seeds seen rather than counting as new.
 	seeded map[string]bool
 	// seen is every comment already considered for a login-mention recheck, so
-	// a comment is new only the first time it appears (issue #708).
+	// a comment is new only the first time it appears.
 	seen map[mentionScanKey]bool
 	// rechecks names the "repo#number" keys in the direct-mention queue only
 	// because a comment mentioned the login, not this instance. It is not
@@ -225,10 +225,10 @@ type mentionScan struct {
 	rechecks map[string]bool
 	// comments is the latest comment that queued each "repo#number" key in
 	// the direct-mention queue, so a job's issue can route it to the prompt
-	// agent instead of restarting the job (issue #842).
+	// agent instead of restarting the job.
 	comments map[string]mentionComment
 	// linked is the derived watch on pull requests that work on an issue
-	// from another repository, such as a fork (issue #723).
+	// from another repository, such as a fork.
 	linked *linkedPullRequests
 
 	// agentMu guards agentRunning and agentEnded, which run goroutines update.
@@ -308,10 +308,10 @@ func mentionScanRepos(targets []string, issues []Issue) []string {
 // issue it addresses, the same way the webhook path records an issue_comment
 // delivery. A mention on a pull request is recorded under the issues the
 // pull request closes. Conversation comments and, when the source can list
-// them, review comments and review bodies (issue #695) are scanned from
+// them, review comments and review bodies are scanned from
 // cursors of their own, so one listing failing never skips the other's
 // window. listed is the "repo#number" keys the poll just listed.
-func (w *Glorp) scanDirectMentions(ctx context.Context, scan *mentionScan, repos []string, listed map[string]bool, directMentions map[string]bool) {
+func (w *Engine) scanDirectMentions(ctx context.Context, scan *mentionScan, repos []string, listed map[string]bool, directMentions map[string]bool) {
 	reviews, _ := w.Mentions.(ReviewMentionSource)
 	for _, repo := range repos {
 		w.scanMentionStream(ctx, scan, repo, repo, "recent comments", w.Mentions.RecentComments, nil, listed, directMentions)
@@ -323,12 +323,12 @@ func (w *Glorp) scanDirectMentions(ctx context.Context, scan *mentionScan, repos
 }
 
 // scanLinkedPullRequests scans the repositories hosting linked pull requests
-// (issue #723) that covered does not already reach, and acts only on comments
+// that covered does not already reach, and acts only on comments
 // posted on those pull requests. covered is the repositories scanned in full
 // or receiving webhook deliveries. A comment on any other issue or pull
 // request in such a repository is never acted on, so the derived watch never
 // dispatches that repository's own issues.
-func (w *Glorp) scanLinkedPullRequests(ctx context.Context, scan *mentionScan, covered []string, listed map[string]bool, directMentions map[string]bool) {
+func (w *Engine) scanLinkedPullRequests(ctx context.Context, scan *mentionScan, covered []string, listed map[string]bool, directMentions map[string]bool) {
 	reviews, _ := w.Mentions.(ReviewMentionSource)
 	for _, repo := range scan.linked.repos() {
 		if slices.ContainsFunc(covered, func(candidate string) bool { return strings.EqualFold(candidate, repo) }) {
@@ -345,7 +345,7 @@ func (w *Glorp) scanLinkedPullRequests(ctx context.Context, scan *mentionScan, c
 // scanMentionStream reads one listing of repo's recent comments from the
 // cursor stored under cursor and acts on each new mention in it. When only is
 // set, comments on numbers it rejects are skipped.
-func (w *Glorp) scanMentionStream(ctx context.Context, scan *mentionScan, repo, cursor, label string, list func(context.Context, string, time.Time) ([]RecentComment, error), only func(int) bool, listed map[string]bool, directMentions map[string]bool) {
+func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, repo, cursor, label string, list func(context.Context, string, time.Time) ([]RecentComment, error), only func(int) bool, listed map[string]bool, directMentions map[string]bool) {
 	since, ok := scan.since[cursor]
 	if !ok {
 		// An identity is new on every start, so nothing posted before this
@@ -414,7 +414,7 @@ func (w *Glorp) scanMentionStream(ctx context.Context, scan *mentionScan, repo, 
 // always on a pull request, so it addresses the issues that pull request
 // closes, or nothing. It reports false only when the mention could not be
 // verified and should be read again on the next scan.
-func (w *Glorp) handleScannedMention(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed map[string]bool, directMentions map[string]bool) bool {
+func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed map[string]bool, directMentions map[string]bool) bool {
 	w.reactToMention(ctx, repo, comment.Kind, comment.Number, comment.ID, comment.NodeID)
 	authorized := commenterAllowed(comment.Author, w.AllowedCommenters)
 	if authorized && w.Comments != nil && comment.Kind == ConversationComment {
@@ -435,7 +435,7 @@ func (w *Glorp) handleScannedMention(ctx context.Context, scan *mentionScan, rep
 	}
 	if linked := scan.linked.issues(repo, comment.Number); len(linked) > 0 {
 		// A linked pull request in another repository addresses the issue
-		// it works, wherever that issue lives (issue #723).
+		// it works, wherever that issue lives.
 		w.logf("%s pull request #%d directly mentioned instance %s%s; it is linked to %s", repo, comment.Number, w.Identity, mentionLocationSuffix(comment.Kind), strings.Join(linked, ", "))
 		for _, key := range linked {
 			directMentions[key] = true
@@ -473,7 +473,7 @@ func (w *Glorp) handleScannedMention(ctx context.Context, scan *mentionScan, rep
 // endpoint its kind of comment needs: a review body is reached only through
 // its GraphQL node ID. A failure is logged and otherwise ignored, since the
 // reaction only tells a human the mention was read.
-func (w *Glorp) reactToMention(ctx context.Context, repo string, kind CommentKind, number int, id int64, nodeID string) {
+func (w *Engine) reactToMention(ctx context.Context, repo string, kind CommentKind, number int, id int64, nodeID string) {
 	var err error
 	switch kind {
 	case ConversationComment:
@@ -524,7 +524,7 @@ func mentionLocationSuffix(kind CommentKind) string {
 // reviewMentionOnGitHub reports whether pull request repo#number carries a
 // review comment or review body from author with exactly body, so a review
 // delivery's mention is reverified against GitHub rather than trusted from
-// the payload (issue #695). A review has no "last comment" the way a
+// the payload. A review has no "last comment" the way a
 // conversation does, so being on GitHub as delivered is what is checked.
 func reviewMentionOnGitHub(ctx context.Context, lister ReviewCommentLister, repo string, number int, body, author string) (bool, error) {
 	comments, err := lister.ListReviewComments(ctx, repo, number)
@@ -703,7 +703,7 @@ func (g GHCLI) RecentReviewComments(ctx context.Context, repo string, since time
 }
 
 // ListReviewComments lists the inline review comments and submitted review
-// bodies on pull request repo#number, oldest first (issue #695).
+// bodies on pull request repo#number, oldest first.
 func (g GHCLI) ListReviewComments(ctx context.Context, repo string, number int) ([]Comment, error) {
 	public := g.isPublicRepo(ctx, repo)
 	output, err := g.apiGETPaginated(ctx, public, "repos/"+repo+"/pulls/"+strconv.Itoa(number)+"/comments")
@@ -769,7 +769,7 @@ func (g GHCLI) pullRequestReviews(ctx context.Context, public bool, repo string,
 }
 
 // AddReviewCommentReaction adds an emoji reaction to an inline pull request
-// review comment, acknowledging a direct mention posted in one (issue #695).
+// review comment, acknowledging a direct mention posted in one.
 func (g GHCLI) AddReviewCommentReaction(ctx context.Context, repo string, commentID int64, content string) error {
 	output, err := g.run(ctx, "api", "repos/"+repo+"/pulls/comments/"+strconv.FormatInt(commentID, 10)+"/reactions", "-f", "content="+content)
 	if err != nil {
@@ -784,7 +784,7 @@ func (g GHCLI) AddReviewCommentReaction(ctx context.Context, repo string, commen
 const addReactionMutation = `mutation($subject: ID!, $content: ReactionContent!) { addReaction(input: {subjectId: $subject, content: $content}) { reaction { content } } }`
 
 // AddReviewReaction adds an emoji reaction to the body of a submitted pull
-// request review, named by its GraphQL node ID (issue #695). content uses the
+// request review, named by its GraphQL node ID. content uses the
 // REST spelling, such as "eyes".
 func (g GHCLI) AddReviewReaction(ctx context.Context, repo string, nodeID string, content string) error {
 	output, err := g.run(ctx, "api", "graphql", "-f", "query="+addReactionMutation, "-f", "subject="+nodeID, "-f", "content="+strings.ToUpper(content))

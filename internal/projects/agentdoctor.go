@@ -65,11 +65,11 @@ type agentReport struct {
 	quotaErr  error
 	models    []string
 	modelNote string
-	// defaultModel is the model glorp runs the agent with when --agent names
-	// none, empty for a definition that leaves that to the CLI (issue #612).
+	// defaultModel is the model aviary runs the agent with when --agent names
+	// none, empty for a definition that leaves that to the CLI.
 	defaultModel string
-	// skillsNote says which of glorp's installed skills are stale, empty when
-	// they match the running release or the agent installs none (issue #797).
+	// skillsNote says which of aviary's installed skills are stale, empty when
+	// they match the running release or the agent installs none.
 	skillsNote string
 }
 
@@ -77,7 +77,7 @@ type agentReport struct {
 func (r agentReport) installed() bool { return r.path != "" }
 
 // statusKey is the machine-readable form of status(), for a JSON consumer
-// such as the settings dashboard's agents tab (issue #572) rather than the
+// such as the settings dashboard's agents tab rather than the
 // terminal's ASCII marker.
 func (r agentReport) statusKey() string {
 	switch {
@@ -237,7 +237,7 @@ func (d *agentDoctor) Report(ctx context.Context) []agentReport {
 }
 
 // agentStatus converts an agentReport into the wire format the settings
-// dashboard's agents tab reads (issue #572) -- the same probe `glorp agents`
+// dashboard's agents tab reads -- the same probe `aviary agents`
 // renders as text.
 func agentStatus(report agentReport) core.AgentStatus {
 	status := core.AgentStatus{
@@ -262,7 +262,7 @@ func agentStatus(report agentReport) core.AgentStatus {
 }
 
 // agentStatuses probes every agent in registry and reports it in the shape
-// the settings dashboard's agents tab reads (issue #572).
+// the settings dashboard's agents tab reads.
 func agentStatuses(ctx context.Context, registry *agents.Registry) ([]core.AgentStatus, error) {
 	reports := newAgentDoctor(registry).Report(ctx)
 	statuses := make([]core.AgentStatus, len(reports))
@@ -324,7 +324,7 @@ func (d *agentDoctor) reportVersion(ctx context.Context, definition agents.Defin
 
 // reportAuth resolves the sign-in state. A definition's own probe decides it;
 // failing that, a quota reading is proof enough, because every quota reader
-// glorp has asks the CLI something only a signed-in account can answer. An
+// aviary has asks the CLI something only a signed-in account can answer. An
 // agent with neither is reported as unknown rather than guessed at.
 func (d *agentDoctor) reportAuth(ctx context.Context, definition agents.Definition, binary, quota string) string {
 	if argv := definition.Doctor.AuthArgv(binary); len(argv) > 0 {
@@ -369,7 +369,7 @@ func (d *agentDoctor) reportModels(ctx context.Context, definition agents.Defini
 // agent takes no model" are different answers and neither is a list.
 //
 // The known list is qualified with a note rather than presented as the whole
-// truth: it is what glorp has been told, not what the CLI enforces, and a
+// truth: it is what aviary has been told, not what the CLI enforces, and a
 // model that shipped after this definition did still works.
 func declaredModels(definition agents.Definition) ([]string, string) {
 	switch {
@@ -387,9 +387,9 @@ func declaredModels(definition agents.Definition) ([]string, string) {
 	return nil, "any model the CLI accepts"
 }
 
-// knownModelsNote qualifies a list glorp declared rather than read from the
+// knownModelsNote qualifies a list aviary declared rather than read from the
 // CLI, so nobody reads it as the CLI's own catalog.
-const knownModelsNote = "known to glorp; the CLI may accept others"
+const knownModelsNote = "known to aviary; the CLI may accept others"
 
 // modelsNote is the label the report puts on that list: the definition's own
 // when it wrote one, because a CLI that routes to a provider needs to say

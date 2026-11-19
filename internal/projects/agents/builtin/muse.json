@@ -2,7 +2,7 @@
   "name": "muse",
   "binary": "muse",
   "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "ultra"],
-  "session": {"assign": "glorp"},
+  "session": {"assign": "aviary"},
   "output": {
     "format": "jsonl",
     "jsonl": {
@@ -19,7 +19,7 @@
   "doctor": {
     "models": ["{binary}", "serve"],
     "modelsStdin": [
-      "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"glorp\",\"version\":\"1\"}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"aviary\",\"version\":\"1\"}}}",
       "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}",
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"model/list\",\"params\":{}}"
     ],

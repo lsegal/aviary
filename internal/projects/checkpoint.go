@@ -17,7 +17,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/process"
 )
 
-// The shutdown checkpoint (issue #741) is bounded so a slow or unreachable
+// The shutdown checkpoint is bounded so a slow or unreachable
 // remote can never hold a restart or exit hostage: each run gets
 // checkpointRunBudget to commit and push, and the whole phase ends after
 // checkpointPhaseBudget whatever is still outstanding.
@@ -33,14 +33,14 @@ const (
 	checkpointFailed   = "failed"
 	checkpointTimedOut = "timed out"
 	// checkpointPending is a run whose checkpoint is still going, as the
-	// restart reports it while the phase runs (issue #749).
+	// restart reports it while the phase runs.
 	checkpointPending = "pending"
 )
 
 // checkpointGitWaitDelay bounds how long a checkpoint git command that was
 // cancelled at its deadline may keep its output pipes open, such as through a
 // credential helper or ssh it started, before Wait gives up on them. Without
-// it a hung push held its run past the run budget (issue #749).
+// it a hung push held its run past the run budget.
 const checkpointGitWaitDelay = 2 * time.Second
 
 // activeAgents tracks the agent subprocesses this instance is running and the
@@ -121,7 +121,7 @@ func (a *activeAgents) remove(run *activeAgent) {
 
 // pauseAll suspends every running agent so its checkout stops changing, and
 // keeps any agent started afterwards paused too. Agents stay paused until
-// glorp terminates them; the checkpoint is only taken on the way out. It
+// aviary terminates them; the checkpoint is only taken on the way out. It
 // reports each run with the checkout to commit, in issue order.
 func (a *activeAgents) pauseAll() []checkpointRun {
 	if a == nil {
@@ -136,7 +136,7 @@ func (a *activeAgents) pauseAll() []checkpointRun {
 			_ = process.Pause(run.cmd)
 		}
 		// A scheduled run has no issue or pull request to push its work to,
-		// and is not resumed after the restart (issue #848).
+		// and is not resumed after the restart.
 		if run.issue.ScheduleID != "" {
 			continue
 		}
@@ -256,7 +256,7 @@ func (s *shutdownCheckpointer) Progress() []core.CheckpointResult {
 // checkpointAll checkpoints every run concurrently, handing each outcome to
 // report, when given, as soon as it is known. A run still going when the
 // overall budget ends is reported as timed out and left behind; its git
-// commands are owned subprocesses, so glorp's exit reaps them.
+// commands are owned subprocesses, so aviary's exit reaps them.
 func checkpointAll(runs []checkpointRun, git checkpointGit, perRun, overall time.Duration, report func(int, core.CheckpointResult)) []core.CheckpointResult {
 	results := make([]core.CheckpointResult, len(runs))
 	done := make([]bool, len(runs))
@@ -471,7 +471,7 @@ func checkpointMessage(number int) string {
 }
 
 // checkouts reports every in-flight run with the checkout it announced, which
-// is empty while the agent has not announced one yet (issue #830).
+// is empty while the agent has not announced one yet.
 func (a *activeAgents) checkouts() []checkpointRun {
 	if a == nil {
 		return nil

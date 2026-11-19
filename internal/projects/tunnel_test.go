@@ -61,7 +61,7 @@ func TestTunnelSupervisorKeepsAHealthyTunnel(t *testing.T) {
 // TestTunnelSupervisorRestartsADeadTunnel checks a tunnel that no longer
 // reaches the webhook server -- ngrok died, or its session did not survive the
 // machine sleeping -- is replaced, and the webhooks are pointed at the new URL
-// in the same pass rather than left posting to a dead one (issue #683).
+// in the same pass rather than left posting to a dead one.
 func TestTunnelSupervisorRestartsADeadTunnel(t *testing.T) {
 	dead := &fakeTunnel{url: "https://one.ngrok.app"}
 	gh := &endpointConfigurer{}
@@ -153,7 +153,7 @@ func TestProbeTunnel(t *testing.T) {
 // TestTunnelSupervisorReportsTunnelHealth checks the supervisor reports webhooks
 // as offline from the moment a probe finds the tunnel dead until a probe or
 // restart succeeds, so the dashboards stop claiming deliveries are arriving
-// while they are lost (issue #687).
+// while they are lost.
 func TestTunnelSupervisorReportsTunnelHealth(t *testing.T) {
 	dead := &fakeTunnel{url: "https://one.ngrok.app"}
 	var logs []string
@@ -209,11 +209,11 @@ func TestTunnelSupervisorRecoversWhenAProbeSucceeds(t *testing.T) {
 	}
 }
 
-// TestGlorpReportsTunnelHealthToTheDashboards checks the snapshot both
+// TestEngineReportsTunnelHealthToTheDashboards checks the snapshot both
 // dashboards render follows the supervisor: online at startup, offline after a
 // dead tunnel fails to restart, and online again once a restart succeeds
-// (issue #687).
-func TestGlorpReportsTunnelHealthToTheDashboards(t *testing.T) {
+//.
+func TestEngineReportsTunnelHealthToTheDashboards(t *testing.T) {
 	var logs []string
 	s := newTestSupervisor(&fakeTunnel{url: "https://one.ngrok.app"}, &endpointConfigurer{}, &logs)
 	s.probe = func(_ context.Context, endpoint string) error {
@@ -230,7 +230,7 @@ func TestGlorpReportsTunnelHealthToTheDashboards(t *testing.T) {
 		return &fakeTunnel{url: "https://two.ngrok.app"}, nil
 	}
 	reporter := &snapshotReporter{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: &fakeRunner{release: make(chan struct{})},
 		UseWebhooks: true, fallbackInterval: 5 * time.Millisecond, UI: reporter,

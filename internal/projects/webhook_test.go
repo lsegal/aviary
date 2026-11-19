@@ -71,7 +71,7 @@ func TestWebhookHandlerTriggersProjectItemEvents(t *testing.T) {
 
 func TestWebhookHandlerTriggersIssueCommentEvents(t *testing.T) {
 	events := make(chan WebhookEvent, 1)
-	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(`{"action":"created","repository":{"full_name":"o/r"},"issue":{"number":7},"comment":{"body":"Does anyone have this? /glorp:ABC"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(`{"action":"created","repository":{"full_name":"o/r"},"issue":{"number":7},"comment":{"body":"Does anyone have this? /aviary:ABC"}}`))
 	req.Header.Set("X-GitHub-Event", "issue_comment")
 	res := httptest.NewRecorder()
 	WebhookHandler{Events: events, WebhookPath: "/webhook"}.ServeHTTP(res, req)
@@ -80,7 +80,7 @@ func TestWebhookHandlerTriggersIssueCommentEvents(t *testing.T) {
 	}
 	select {
 	case event := <-events:
-		if event.Kind != "issue_comment" || event.Action != "created" || event.Repository != "o/r" || event.IssueNumber != 7 || event.CommentBody != "Does anyone have this? /glorp:ABC" {
+		if event.Kind != "issue_comment" || event.Action != "created" || event.Repository != "o/r" || event.IssueNumber != 7 || event.CommentBody != "Does anyone have this? /aviary:ABC" {
 			t.Fatalf("event = %#v", event)
 		}
 	default:
@@ -137,14 +137,14 @@ func TestDecodeWebhookEventIncludesPullRequestMentions(t *testing.T) {
 }
 
 func TestDecodeWebhookEventIncludesCommentDetails(t *testing.T) {
-	event := decodeWebhookEvent("issue_comment", []byte(`{"action":"created","repository":{"full_name":"o/r"},"issue":{"number":54},"comment":{"id":9001,"body":"Does anyone have this? /glorp:ABC","user":{"login":"lsegal"}}}`))
-	if event.Kind != "issue_comment" || event.Action != "created" || event.Repository != "o/r" || event.IssueNumber != 54 || event.CommentBody != "Does anyone have this? /glorp:ABC" || event.CommentAuthor != "lsegal" || event.CommentID != 9001 {
+	event := decodeWebhookEvent("issue_comment", []byte(`{"action":"created","repository":{"full_name":"o/r"},"issue":{"number":54},"comment":{"id":9001,"body":"Does anyone have this? /aviary:ABC","user":{"login":"lsegal"}}}`))
+	if event.Kind != "issue_comment" || event.Action != "created" || event.Repository != "o/r" || event.IssueNumber != 54 || event.CommentBody != "Does anyone have this? /aviary:ABC" || event.CommentAuthor != "lsegal" || event.CommentID != 9001 {
 		t.Fatalf("event = %#v", event)
 	}
 }
 
 // A new Discussions thread arrives as a `discussion` delivery, which is the
-// push-mode counterpart to polling a Discussions-board target (issue #226).
+// push-mode counterpart to polling a Discussions-board target.
 func TestWebhookHandlerTriggersDiscussionEvents(t *testing.T) {
 	events := make(chan WebhookEvent, 1)
 	body := `{"action":"created","repository":{"full_name":"o/r"},"discussion":{"number":7,"title":"How do I run it?"}}`

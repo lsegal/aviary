@@ -1,4 +1,4 @@
-// Command fakeagent stands in for a vendor agent CLI in glorp's own tests.
+// Command fakeagent stands in for a vendor agent CLI in aviary's own tests.
 //
 // The real CLIs cannot be exercised in CI: they are not installed on the
 // runners and most of them need credentials, so a definition's claim about the
@@ -6,22 +6,22 @@
 // would otherwise be untested. This program is invoked in their place. It
 // records every invocation it receives -- argv, working directory, and the
 // environment variables it was told to watch -- as one JSON object per line in
-// the file named by GLORP_FAKE_AGENT_RECORD, and then behaves as that
+// the file named by AVIARY_FAKE_AGENT_RECORD, and then behaves as that
 // invocation was configured to.
 //
 // Everything it does is driven by the environment rather than by flags,
 // because the argv is the thing under test and has to arrive exactly as the
 // definition rendered it.
 //
-//	GLORP_FAKE_AGENT_RECORD   file the invocation records are appended to (required)
-//	GLORP_FAKE_AGENT_STDOUT   text written to stdout, with \n understood
-//	GLORP_FAKE_AGENT_SESSION  session ID announced as "session id: <value>"
-//	GLORP_FAKE_AGENT_CHECKOUT directory announced as GLORP_CHECKOUT_DIRECTORY=
-//	GLORP_FAKE_AGENT_ENV      comma-separated variables to record
-//	GLORP_FAKE_AGENT_MISSING  0-based invocation that reports a missing session
-//	GLORP_FAKE_AGENT_MISSING_TEXT  what that invocation prints, so a definition
+//	AVIARY_FAKE_AGENT_RECORD   file the invocation records are appended to (required)
+//	AVIARY_FAKE_AGENT_STDOUT   text written to stdout, with \n understood
+//	AVIARY_FAKE_AGENT_SESSION  session ID announced as "session id: <value>"
+//	AVIARY_FAKE_AGENT_CHECKOUT directory announced as AVIARY_CHECKOUT_DIRECTORY=
+//	AVIARY_FAKE_AGENT_ENV      comma-separated variables to record
+//	AVIARY_FAKE_AGENT_MISSING  0-based invocation that reports a missing session
+//	AVIARY_FAKE_AGENT_MISSING_TEXT  what that invocation prints, so a definition
 //	                          naming its own missing-session phrase is exercised
-//	GLORP_FAKE_AGENT_FAIL     0-based invocation that exits non-zero
+//	AVIARY_FAKE_AGENT_FAIL     0-based invocation that exits non-zero
 package main
 
 import (
@@ -41,9 +41,9 @@ type record struct {
 }
 
 func main() {
-	path := os.Getenv("GLORP_FAKE_AGENT_RECORD")
+	path := os.Getenv("AVIARY_FAKE_AGENT_RECORD")
 	if path == "" {
-		fmt.Fprintln(os.Stderr, "fakeagent: GLORP_FAKE_AGENT_RECORD is required")
+		fmt.Fprintln(os.Stderr, "fakeagent: AVIARY_FAKE_AGENT_RECORD is required")
 		os.Exit(2)
 	}
 	index, err := appendRecord(path)
@@ -51,27 +51,27 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fakeagent:", err)
 		os.Exit(2)
 	}
-	if session := os.Getenv("GLORP_FAKE_AGENT_SESSION"); session != "" {
+	if session := os.Getenv("AVIARY_FAKE_AGENT_SESSION"); session != "" {
 		fmt.Printf("session id: %s\n", session)
 	}
-	if checkout := os.Getenv("GLORP_FAKE_AGENT_CHECKOUT"); checkout != "" {
-		fmt.Printf("GLORP_CHECKOUT_DIRECTORY=%s\n", checkout)
+	if checkout := os.Getenv("AVIARY_FAKE_AGENT_CHECKOUT"); checkout != "" {
+		fmt.Printf("AVIARY_CHECKOUT_DIRECTORY=%s\n", checkout)
 	}
-	if text := os.Getenv("GLORP_FAKE_AGENT_STDOUT"); text != "" {
+	if text := os.Getenv("AVIARY_FAKE_AGENT_STDOUT"); text != "" {
 		fmt.Println(strings.ReplaceAll(text, `\n`, "\n"))
 	}
-	if matchesInvocation("GLORP_FAKE_AGENT_MISSING", index) {
-		// The wording is one of the messages glorp watches for when a resume
+	if matchesInvocation("AVIARY_FAKE_AGENT_MISSING", index) {
+		// The wording is one of the messages aviary watches for when a resume
 		// names a session the agent no longer holds, or the one the agent's
 		// own definition says it prints instead.
-		missing := os.Getenv("GLORP_FAKE_AGENT_MISSING_TEXT")
+		missing := os.Getenv("AVIARY_FAKE_AGENT_MISSING_TEXT")
 		if missing == "" {
 			missing = "error: session not found"
 		}
 		fmt.Fprintln(os.Stderr, missing)
 		os.Exit(1)
 	}
-	if matchesInvocation("GLORP_FAKE_AGENT_FAIL", index) {
+	if matchesInvocation("AVIARY_FAKE_AGENT_FAIL", index) {
 		fmt.Fprintln(os.Stderr, "fakeagent: failing as instructed")
 		os.Exit(3)
 	}
@@ -89,7 +89,7 @@ func appendRecord(path string) (int, error) {
 		return 0, err
 	}
 	entry := record{Args: os.Args[1:], Dir: dir, Env: map[string]string{}}
-	for _, name := range strings.Split(os.Getenv("GLORP_FAKE_AGENT_ENV"), ",") {
+	for _, name := range strings.Split(os.Getenv("AVIARY_FAKE_AGENT_ENV"), ",") {
 		if name = strings.TrimSpace(name); name != "" {
 			entry.Env[name] = os.Getenv(name)
 		}

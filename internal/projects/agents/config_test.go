@@ -32,7 +32,7 @@ func TestLoadWithoutAConfigFile(t *testing.T) {
 // not mean restating the whole agent.
 func TestConfigOverridesABuiltinFieldByField(t *testing.T) {
 	// The narrowed models list has to admit the default the built-in
-	// carries, so the override names one the list allows (issue #612).
+	// carries, so the override names one the list allows.
 	path := writeConfig(t, `{"agents":[{"name":"claude","binary":"/opt/claude","models":["opus"],"defaultModel":"opus"}]}`)
 	registry, err := Load(path)
 	if err != nil {
@@ -183,7 +183,7 @@ func TestConfigErrorsNameTheFileTheAgentAndTheField(t *testing.T) {
 
 // TestConfigIsNeverWritten checks loading leaves the file exactly as the user
 // wrote it. The whole reason definitions do not live in the state file is that
-// glorp rewrites that one.
+// aviary rewrites that one.
 func TestConfigIsNeverWritten(t *testing.T) {
 	document := `{"agents":[{"name":"claude","binary":"/opt/claude"}]}`
 	path := writeConfig(t, document)
@@ -202,7 +202,7 @@ func TestConfigIsNeverWritten(t *testing.T) {
 // TestConfigEmptyAllowListDeclaresNoValue checks the config file can say what
 // a built-in says: an empty list declares that the agent takes no value for
 // that dimension, which is distinct from null, the documented way to clear an
-// inherited list back to accepting anything (issue #532).
+// inherited list back to accepting anything.
 func TestConfigEmptyAllowListDeclaresNoValue(t *testing.T) {
 	path := writeConfig(t, `{"agents":[{"name":"codex","levels":[]}]}`)
 	registry, err := Load(path)
@@ -223,7 +223,7 @@ func TestConfigEmptyAllowListDeclaresNoValue(t *testing.T) {
 }
 
 // TestConfigSetsAndDropsTheDefaultModel checks a config file owns the managed
-// default (issue #612): it can point a built-in at another model, and can drop
+// default: it can point a built-in at another model, and can drop
 // the inherited one with null so the agent's own CLI chooses again.
 func TestConfigSetsAndDropsTheDefaultModel(t *testing.T) {
 	replaced, err := Load(writeConfig(t, `{"agents":[{"name":"codex","defaultModel":"gpt-5.4"}]}`))
@@ -245,7 +245,7 @@ func TestConfigSetsAndDropsTheDefaultModel(t *testing.T) {
 }
 
 // TestConfigRejectsADefaultModelItsOwnAllowListDenies checks the file is told
-// which field is wrong rather than glorp running a model the same document says
+// which field is wrong rather than aviary running a model the same document says
 // it does not accept.
 func TestConfigRejectsADefaultModelItsOwnAllowListDenies(t *testing.T) {
 	_, err := Load(writeConfig(t, `{"agents":[{"name":"codex","models":["gpt-5.4"],"defaultModel":"gpt-5.6-sol"}]}`))

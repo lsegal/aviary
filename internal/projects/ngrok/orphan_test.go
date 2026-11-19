@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// The agent found in issue #364 was started by a glorp old enough to use a
-// different log level, so the match cannot depend on the flags glorp happens to
+// The agent found in issue #364 was started by a aviary old enough to use a
+// different log level, so the match cannot depend on the flags aviary happens to
 // pass today.
-func TestOrphanedNgrokAgentsSelectsAbandonedGlorpTunnels(t *testing.T) {
+func TestOrphanedNgrokAgentsSelectsAbandonedEngineTunnels(t *testing.T) {
 	processes := parseProcessList(`
   72096     1 /opt/homebrew/bin/ngrok http --log=stdout --log-level=crit [::]:65026
   81002     1 ngrok http --log=stdout --log-format=json --log-level=info 127.0.0.1:65026
@@ -27,13 +27,13 @@ func TestOrphanedNgrokAgentsSelectsAbandonedGlorpTunnels(t *testing.T) {
 		pids[orphan.pid] = true
 	}
 	if len(orphans) != 2 || !pids[72096] || !pids[81002] {
-		t.Fatalf("selected %v, want the two abandoned glorp agents 72096 and 81002", orphans)
+		t.Fatalf("selected %v, want the two abandoned aviary agents 72096 and 81002", orphans)
 	}
 }
 
-// A second glorp watching another repository still owns its agent, and reaping
+// A second aviary watching another repository still owns its agent, and reaping
 // it would tear down a live tunnel.
-func TestOrphanedNgrokAgentsLeavesALiveGlorpsAgentAlone(t *testing.T) {
+func TestOrphanedNgrokAgentsLeavesALiveEnginesAgentAlone(t *testing.T) {
 	processes := []processEntry{{pid: 4242, ppid: 402, command: "ngrok http --log=stdout --log-level=info 127.0.0.1:65026"}}
 	if orphans := orphanedNgrokAgents(processes); len(orphans) != 0 {
 		t.Fatalf("selected %v, want no orphans", orphans)
@@ -110,7 +110,7 @@ func stubProcessSweep(t *testing.T, list func() ([]processEntry, error), termina
 }
 
 // The npm package's bin is the ngrok agent itself rather than a Node shim, so
-// an agent glorp started through npx (issue #498) leaves the same argv behind
+// an agent aviary started through npx leaves the same argv behind
 // as an installed one and is reaped by the same match. Node is what npx runs,
 // not what the agent ends up being, so a stray npx must not be swept up with
 // it.

@@ -12,10 +12,10 @@ import (
 )
 
 // TestClineDefinitionContract proves the shipped cline definition against the
-// fake CLI. Cline is the first agent glorp ships that has no headless resume:
+// fake CLI. Cline is the first agent aviary ships that has no headless resume:
 // `cline --id <session>` switches the CLI into its interactive TUI even when a
 // prompt is passed positionally, and refuses to run without a terminal, so
-// there is no session for glorp to assign or to read back. The definition says
+// there is no session for aviary to assign or to read back. The definition says
 // so with "session": {"assign": "none"}, and its resume template restarts the
 // work with the recovery prompt rather than naming a session, which is what
 // this contract checks: the run and the resume render the same argv apart from
@@ -25,7 +25,7 @@ import (
 // The stdout below is a captured `cline --json` run, trimmed of its usage and
 // token-level events. Cline wraps every event in its own envelope, so the type
 // is at event.type and the text at event.text, and a finished tool call is a
-// content_end whose contentType is "tool": glorp reads the name out of it and
+// content_end whose contentType is "tool": aviary reads the name out of it and
 // renders the same "Running: ..." line Claude's decoder does. The content_update
 // events below are the same call still streaming, and they carry the same
 // toolName, so a decoder that read them would render one "Running: read_files"
@@ -96,7 +96,7 @@ func TestClineDefinitionRendersOneProgressLinePerToolCall(t *testing.T) {
 		`{"type":"agent_event","event":{"type":"content_end","contentType":"text","text":"running the build"}}`,
 		`{"type":"agent_event","event":{"type":"content_update","contentType":"tool","toolCallId":"call_1","toolName":"run_commands","text":""}}`,
 		`{"type":"agent_event","event":{"type":"content_update","contentType":"tool","toolCallId":"call_1","toolName":"run_commands","text":""}}`,
-		`{"type":"agent_event","event":{"type":"content_update","contentType":"tool","toolCallId":"call_1","toolName":"run_commands","text":"ok  github.com/lsegal/glorp"}}`,
+		`{"type":"agent_event","event":{"type":"content_update","contentType":"tool","toolCallId":"call_1","toolName":"run_commands","text":"ok  github.com/lsegal/aviary"}}`,
 		`{"type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"call_1","toolName":"run_commands","output":[{"result":"ok","success":true}]}}`,
 	}
 	if _, err := io.WriteString(w, strings.Join(lines, "\n")+"\n"); err != nil {
@@ -114,8 +114,8 @@ func TestClineDefinitionRendersOneProgressLinePerToolCall(t *testing.T) {
 }
 
 // TestClineDefinitionDeclaresNoSession records the finding the contract above
-// rests on. An agent whose session assignment silently changed to "glorp"
-// would have glorp generate an ID it then never passes to anything, and one
+// rests on. An agent whose session assignment silently changed to "aviary"
+// would have aviary generate an ID it then never passes to anything, and one
 // changed to "capture" would have it watch the output forever for an ID the
 // CLI does not print, so the declaration is asserted rather than assumed.
 func TestClineDefinitionDeclaresNoSession(t *testing.T) {
@@ -124,7 +124,7 @@ func TestClineDefinitionDeclaresNoSession(t *testing.T) {
 		t.Fatalf("session.assign = %q, want %q: cline has no headless resume", definition.Session.Assign, agents.AssignNone)
 	}
 	if definition.AssignsSessionID() || definition.CapturesSessionID() {
-		t.Fatal("cline neither takes a session ID from glorp nor prints one of its own")
+		t.Fatal("cline neither takes a session ID from aviary nor prints one of its own")
 	}
 	if !definition.Supports(agents.ModeResume) {
 		t.Fatal("a resume template is still required, so a recovered run restarts rather than rendering nothing")
@@ -179,7 +179,7 @@ func TestClineDefinitionAutoApprovesRegardlessOfYolo(t *testing.T) {
 }
 
 // TestClineLevelsMatchTheCLI checks the level allow-list is the set cline's
-// --thinking accepts, so a value it would reject is answered by glorp with the
+// --thinking accepts, so a value it would reject is answered by aviary with the
 // list rather than by cline with a usage error one dispatch later.
 func TestClineLevelsMatchTheCLI(t *testing.T) {
 	definition := builtinDefinition(t, "cline")
@@ -198,7 +198,7 @@ func TestClineLevelsMatchTheCLI(t *testing.T) {
 
 // TestClineDispatchReportsItsCheckoutDirectory is the end-to-end half of issue
 // #552. A cline run announced its checkout by running a shell command, so the
-// GLORP_CHECKOUT_DIRECTORY marker only ever appeared inside the content_end
+// AVIARY_CHECKOUT_DIRECTORY marker only ever appeared inside the content_end
 // tool result the definition maps nothing in, and the dashboard read
 // "checkout: pending" for the whole run. The stdout below is that event, and
 // the dispatch has to end holding the directory.
@@ -206,7 +206,7 @@ func TestClineDispatchReportsItsCheckoutDirectory(t *testing.T) {
 	checkout := t.TempDir()
 	encoded := jsonStringBody(t, checkout)
 	definition, _ := fakeAgentRun{
-		Stdout: `{"ts":"2026-09-04T00:52:26.311Z","type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"call_1","toolName":"execute_command","output":[{"query":"echo GLORP_CHECKOUT_DIRECTORY=` + encoded + `","result":"GLORP_CHECKOUT_DIRECTORY=` + encoded + `","success":true}]}}\n` +
+		Stdout: `{"ts":"2026-09-04T00:52:26.311Z","type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"call_1","toolName":"execute_command","output":[{"query":"echo AVIARY_CHECKOUT_DIRECTORY=` + encoded + `","result":"AVIARY_CHECKOUT_DIRECTORY=` + encoded + `","success":true}]}}\n` +
 			`{"ts":"2026-09-04T00:52:27.743Z","type":"agent_event","event":{"type":"content_end","contentType":"text","text":"cloned"}}`,
 	}.install(t, builtinDefinition(t, "cline"))
 	registry, err := agents.NewRegistry(definition)

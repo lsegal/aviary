@@ -1,6 +1,6 @@
 package core
 
-// CloneEntry is one checkout directory glorp has on record for a job (issue
+// CloneEntry is one checkout directory aviary has on record for a job (issue
 // #830), as the settings dashboards list it.
 type CloneEntry struct {
 	Path string `json:"path"`
@@ -19,7 +19,7 @@ type CloneEntry struct {
 	InUse  bool   `json:"inUse"`
 	Reason string `json:"reason,omitempty"`
 	// Size is the bytes a clear reclaimed by removing the clone, measured
-	// right before removal (issue #838). Listing leaves it zero.
+	// right before removal. Listing leaves it zero.
 	Size int64 `json:"size,omitempty"`
 }
 

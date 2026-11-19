@@ -74,12 +74,12 @@ func IsDiscussionTarget(repo string) bool {
 // from, dropping every qualifier that names the kind or the state of what to
 // look for.
 //
-// glorp only ever dispatches an open issue: a closed one has nothing left to
+// aviary only ever dispatches an open issue: a closed one has nothing left to
 // do and a pull request is not work it can pick up, so "is:issue" and the open
 // state are appended to every query rather than being defaults a --filter can
 // displace. They are therefore not part of the filter a user is shown or
 // overrides, and a filter that names its own kind or state has that term
-// dropped here instead of contradicting the qualifiers glorp adds.
+// dropped here instead of contradicting the qualifiers aviary adds.
 //
 // It is shared with ProjectItemQuery, which appends the same two qualifiers in
 // a project board's own narrower vocabulary.

@@ -1,4 +1,4 @@
-// Package agents describes the coding-agent CLIs glorp can dispatch work to as
+// Package agents describes the coding-agent CLIs aviary can dispatch work to as
 // data rather than as code. Every place that has to know how to talk to an
 // agent -- the argv for a fresh run, a resume, and a one-shot vision call, the
 // environment its child process needs, how its session ID is established, and
@@ -16,25 +16,25 @@ import (
 	"time"
 )
 
-// Definition is everything glorp needs to know to invoke one agent CLI. It is
+// Definition is everything aviary needs to know to invoke one agent CLI. It is
 // unmarshalled from the built-in JSON documents embedded in this package and
-// from the user's own .glorp.config.json.
+// from the user's own .aviary.config.json.
 type Definition struct {
 	// Name is the agent name used in --agent name/model:level.
 	Name string `json:"name"`
 	// Binary is the default executable the agent is invoked through. It is
-	// overridable per agent by the run's own binary flags (issue #489).
+	// overridable per agent by the run's own binary flags.
 	Binary string `json:"binary"`
 	// MinVersion is the lowest version of Binary the definition's argv
 	// templates are known to work with, as a dotted version such as
 	// "0.58.0". Declaring it turns an opaque unrecognized-argument failure
-	// from an older CLI into an error naming both versions (issue #535). An
+	// from an older CLI into an error naming both versions. An
 	// empty value checks nothing and costs no process.
 	MinVersion string `json:"minVersion,omitempty"`
-	// Args holds the argv template for each mode glorp invokes.
+	// Args holds the argv template for each mode aviary invokes.
 	Args Args `json:"args"`
 	// Env is extra environment for the child process, layered on top of
-	// glorp's own environment.
+	// aviary's own environment.
 	Env map[string]string `json:"env,omitempty"`
 	// Session says how a session ID is established and what happens to it
 	// when a resume fails.
@@ -43,15 +43,15 @@ type Definition struct {
 	// and to say what was expected when it does not match.
 	Levels AllowList `json:"levels"`
 	Models AllowList `json:"models"`
-	// DefaultModel is the model glorp runs this agent with when --agent
-	// names no model of its own (issue #612). Agent CLIs mostly default to
+	// DefaultModel is the model aviary runs this agent with when --agent
+	// names no model of its own. Agent CLIs mostly default to
 	// their largest model, which is the wrong thing to spend a queue of
-	// issues on, so glorp picks the mid-tier one instead of leaving the
+	// issues on, so aviary picks the mid-tier one instead of leaving the
 	// choice to the CLI. An empty value keeps the old behaviour: no
 	// {model} is rendered and the CLI decides for itself, which is what a
 	// definition whose catalog is fetched for the signed-in account and
 	// cannot be named up front has to do -- muse, cline, and opencode name
-	// none for that reason (issue #622), since an id glorp wrote down would
+	// none for that reason, since an id aviary wrote down would
 	// fail the dispatch on an account that cannot reach it. A default also
 	// has to leave the level to {level}: an id with the reasoning level
 	// spelled into it renders beside the fragment that names one, which is
@@ -79,9 +79,9 @@ type Definition struct {
 	// Absent means the agent cannot; [] means the prompt argument is simply
 	// left out (Claude's -p reads stdin then), and ["-"] stands in for it
 	// (Codex's exec). Out-of-band calls send their large payload this way, so
-	// no OS command-line limit can stop the agent from starting (issue #815).
+	// no OS command-line limit can stop the agent from starting.
 	PromptStdin *[]string `json:"promptStdin,omitempty"`
-	// Doctor names the read-only probes `glorp agents` runs to report on the
+	// Doctor names the read-only probes `aviary agents` runs to report on the
 	// agent: whether its CLI is signed in, and which models it accepts. An
 	// agent that declares none is reported from what the definition already
 	// says, and runs no process of its own.
@@ -167,7 +167,7 @@ func (a AllowList) validate(field string) error {
 	return nil
 }
 
-// Args are the argv templates for the three shapes of invocation glorp makes:
+// Args are the argv templates for the three shapes of invocation aviary makes:
 // a fresh run, a resume of an earlier session, and the one-shot vision call
 // browser mode makes on a screenshot.
 //
@@ -195,7 +195,7 @@ type Fragment struct {
 
 // Session describes how the agent's session ID comes to exist.
 type Session struct {
-	// Assign is "glorp" when glorp generates the ID and passes it to the
+	// Assign is "aviary" when aviary generates the ID and passes it to the
 	// agent (Claude's --session-id), "capture" when the agent assigns its own
 	// and prints it (Codex), or "none" when the agent has no resumable
 	// session at all.
@@ -205,7 +205,7 @@ type Session struct {
 	Capture string `json:"capture,omitempty"`
 	// ClearOnResumeFailure drops the recorded ID when a resume fails because
 	// the session is gone, so the restarted run takes a fresh one. Agents
-	// glorp assigns IDs for keep theirs.
+	// aviary assigns IDs for keep theirs.
 	ClearOnResumeFailure bool `json:"clearOnResumeFailure,omitempty"`
 }
 
@@ -236,7 +236,7 @@ type JSONL struct {
 	// Text is the path to the human-readable text an event carries.
 	Text string `json:"text,omitempty"`
 	// ToolName and ToolInput are the paths to a tool call's name and to its
-	// input object, rendered as the "Running: ..." progress lines glorp shows
+	// input object, rendered as the "Running: ..." progress lines aviary shows
 	// for Claude. Paths that share a prefix are paired element by element, so
 	// a name and its own input come from the same block.
 	ToolName  string `json:"toolName,omitempty"`
@@ -283,7 +283,7 @@ type JSONLEvent struct {
 	ToolNamePrefix string `json:"toolNamePrefix,omitempty"`
 }
 
-// Skills names where an agent reads glorp's skills from.
+// Skills names where an agent reads aviary's skills from.
 type Skills struct {
 	// Target is the skills.sh target id `skills add --agent` takes: a
 	// dedicated one such as "codex" or "claude-code", or "universal" for a
@@ -437,10 +437,10 @@ func (q Quota) validate() error {
 	return nil
 }
 
-// Doctor names the read-only commands `glorp agents` runs to report on one
+// Doctor names the read-only commands `aviary agents` runs to report on one
 // agent. Both are optional and neither is ever run by a dispatch: the report
 // is the only caller, so a definition that declares nothing here still lists,
-// and an agent glorp has never heard of gains a sign-in check and a model list
+// and an agent aviary has never heard of gains a sign-in check and a model list
 // by naming two commands in a config file rather than by a code change.
 //
 // A command must be non-interactive and must not change anything. A CLI whose
@@ -486,11 +486,11 @@ type Doctor struct {
 	ModelPattern string `json:"modelPattern,omitempty"`
 	// KnownModels are model names the definition itself carries, for a CLI
 	// with no way at all to be asked. No built-in declares any: a list
-	// written into glorp is stale the morning after a vendor ships, which is
+	// written into aviary is stale the morning after a vendor ships, which is
 	// what issue #566 was, so a definition that can reach its CLI declares
-	// Models instead. It survives for a config file describing a CLI glorp
+	// Models instead. It survives for a config file describing a CLI aviary
 	// has never seen, and it is deliberately not an allow-list -- nothing
-	// validates against it -- so the report labels it as what glorp was told
+	// validates against it -- so the report labels it as what aviary was told
 	// rather than as what the CLI takes.
 	KnownModels []string `json:"knownModels,omitempty"`
 	// ModelsNote replaces the label the report puts on the models field. It
@@ -655,7 +655,7 @@ func (d Doctor) validate() error {
 
 // Assign values.
 const (
-	AssignGlorp   = "glorp"
+	AssignEngine   = "aviary"
 	AssignCapture = "capture"
 	AssignNone    = "none"
 )
@@ -666,6 +666,7 @@ const (
 	FormatText       = "text"
 	FormatStreamJSON = "stream-json"
 	FormatJSONL      = "jsonl"
+	FormatCodexJSON  = "codex-json"
 
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"
@@ -678,6 +679,7 @@ var outputFormats = map[string]string{
 	FormatStreamJSON:      FormatStreamJSON,
 	formatClaudeJSONAlias: FormatStreamJSON,
 	FormatJSONL:           FormatJSONL,
+	FormatCodexJSON:       FormatCodexJSON,
 }
 
 // outputFormatNames lists the accepted spellings for an error message.
@@ -690,7 +692,7 @@ func outputFormatNames() []string {
 }
 
 // DefaultMissingSessionPatterns are the messages agents print when asked to
-// resume a session they no longer have on disk (sessions expire, and a glorp
+// resume a session they no longer have on disk (sessions expire, and a aviary
 // work state file routinely outlives the agent's local conversation history).
 // A definition that names none is detected by these.
 var DefaultMissingSessionPatterns = []string{
@@ -732,8 +734,8 @@ var knownConditions = append([]string{"yolo", "remoteControl", "oneShot", "noChe
 var placeholderPattern = regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9]*)\}`)
 
 // skillsTargetPattern is the shape a skills.sh target id may take. The set of
-// ids skills.sh knows grows without glorp, so the shape is checked and the
-// value is not: an id glorp has never heard of is the user's to pass on.
+// ids skills.sh knows grows without aviary, so the shape is checked and the
+// value is not: an id aviary has never heard of is the user's to pass on.
 var skillsTargetPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // namePattern is the shape an agent name may take. It has to survive being
@@ -762,7 +764,7 @@ func (d Definition) Validate() error {
 	if len(d.Args.Run) == 0 {
 		return fmt.Errorf(`field "args.run" is required`)
 	}
-	// A resume template is required of every agent glorp can hold a session
+	// A resume template is required of every agent aviary can hold a session
 	// ID for. An agent that declares session.assign "none" has no session to
 	// resume, so it may leave args.resume out and have a recovery re-run its
 	// run template instead of duplicating it verbatim.
@@ -787,7 +789,7 @@ func (d Definition) Validate() error {
 		}
 	}
 	switch d.Session.Assign {
-	case AssignGlorp, AssignNone:
+	case AssignEngine, AssignNone:
 		if d.Session.Capture != "" {
 			return fmt.Errorf(`field "session.capture" is only meaningful when "session.assign" is %q`, AssignCapture)
 		}
@@ -803,7 +805,7 @@ func (d Definition) Validate() error {
 			return fmt.Errorf(`field "session.capture": %q has no capture group for the session ID`, d.Session.Capture)
 		}
 	default:
-		return fmt.Errorf(`field "session.assign": %q must be %q, %q, or %q`, d.Session.Assign, AssignGlorp, AssignCapture, AssignNone)
+		return fmt.Errorf(`field "session.assign": %q must be %q, %q, or %q`, d.Session.Assign, AssignEngine, AssignCapture, AssignNone)
 	}
 	if err := d.Output.validate(); err != nil {
 		return err
@@ -885,7 +887,7 @@ func (d Definition) AcceptsModel(model string) bool { return d.Models.Admits(mod
 
 // ModelOrDefault is the model one dispatch runs with: the one the --agent spec
 // named, or the definition's managed default when it named none. It is the
-// single place the fallback happens, so the model glorp chose is the one the
+// single place the fallback happens, so the model aviary chose is the one the
 // argv, the dashboard, and the persisted work state all agree on rather than
 // something only the agent's own CLI knows.
 func (d Definition) ModelOrDefault(model string) string {

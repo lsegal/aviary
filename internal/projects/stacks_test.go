@@ -13,7 +13,7 @@ import (
 )
 
 // fakeStackSource is a closure source whose repository reports whether
-// stacked pull requests are enabled (issue #657).
+// stacked pull requests are enabled.
 type fakeStackSource struct {
 	*fakeClosureSource
 	enabled bool
@@ -77,7 +77,7 @@ func runBlockedIssuePoll(t *testing.T, source IssueSource) (int, string) {
 	t.Helper()
 	runner := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(t.TempDir(), "state.json"),
 		Issues: source, Runner: runner, Out: logs,
 	}
@@ -109,7 +109,7 @@ func blockedIssueSource(enabled bool, pullRequests ...PullRequestWorkState) *fak
 	}
 }
 
-func TestGlorpStacksBlockedIssueOnBlockerPullRequest(t *testing.T) {
+func TestEngineStacksBlockedIssueOnBlockerPullRequest(t *testing.T) {
 	got, logs := runBlockedIssuePoll(t, blockedIssueSource(true, PullRequestWorkState{Number: 13, State: "closed"}, PullRequestWorkState{Number: 14, State: "open"}))
 	if got != 7 {
 		t.Fatalf("dispatched #%d, want blocked issue #7 stacked on its blocker\n%s", got, logs)
@@ -119,7 +119,7 @@ func TestGlorpStacksBlockedIssueOnBlockerPullRequest(t *testing.T) {
 	}
 }
 
-func TestGlorpWaitsForBlockerWithoutStackedPullRequests(t *testing.T) {
+func TestEngineWaitsForBlockerWithoutStackedPullRequests(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		source *fakeStackSource
@@ -137,9 +137,9 @@ func TestGlorpWaitsForBlockerWithoutStackedPullRequests(t *testing.T) {
 	}
 }
 
-func TestGlorpCachesStackedPullRequestSetting(t *testing.T) {
+func TestEngineCachesStackedPullRequestSetting(t *testing.T) {
 	source := blockedIssueSource(false)
-	w := &Glorp{Issues: source}
+	w := &Engine{Issues: source}
 	for range 3 {
 		if w.stacksEnabled(context.Background(), "o/r") {
 			t.Fatal("stacksEnabled() = true, want false")
@@ -177,7 +177,7 @@ func TestOriginatingWorkStateReadsStackedPullRequestBase(t *testing.T) {
 }
 
 // fakePausingSource answers per issue number, so a dependent issue's stacked
-// pull request and its blocker's pull request can be told apart (issue #659).
+// pull request and its blocker's pull request can be told apart.
 type fakePausingSource struct {
 	*fakeSource
 	mu     sync.Mutex
@@ -195,7 +195,7 @@ func (f *fakePausingSource) StacksEnabled(context.Context, string) (bool, error)
 // mergeBlocker makes every later poll report issue #7's blocker as closed. The
 // test calls it only after seeing the issue paused: with the merge scripted
 // into a fixed batch, a poll can unpause the issue before the test reads the
-// paused state, and the state never shows it again (issue #710).
+// paused state, and the state never shows it again.
 func (f *fakePausingSource) mergeBlocker() {
 	f.fakeSource.mu.Lock()
 	defer f.fakeSource.mu.Unlock()
@@ -231,12 +231,12 @@ func waitForWorkStatus(t *testing.T, statePath string, number int, status string
 	}
 }
 
-func TestGlorpPausesAStackedPullRequestWaitingOnItsBlocker(t *testing.T) {
+func TestEnginePausesAStackedPullRequestWaitingOnItsBlocker(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := pausingSource(blockedOn12("open"))
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -267,14 +267,14 @@ func TestGlorpPausesAStackedPullRequestWaitingOnItsBlocker(t *testing.T) {
 	}
 }
 
-func TestGlorpPausesAHeldPullRequestThatIsNotStackedOnItsPullRequest(t *testing.T) {
+func TestEnginePausesAHeldPullRequestThatIsNotStackedOnItsPullRequest(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := pausingSource(blockedOn12("open"))
 	// Merge withheld on a pull request that already targets the default
-	// branch: a donotmerge hold, not a paused stack (issue #628).
+	// branch: a donotmerge hold, not a paused stack.
 	src.states[7] = OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open"}}}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: &syncBuffer{}, closureInterval: time.Millisecond,
 	}
@@ -290,12 +290,12 @@ func TestGlorpPausesAHeldPullRequestThatIsNotStackedOnItsPullRequest(t *testing.
 	waitForPaused(t, statePath, 7, core.PausedPullRequest)
 }
 
-func TestGlorpRedispatchesAPausedIssueOnceItsBlockerMerges(t *testing.T) {
+func TestEngineRedispatchesAPausedIssueOnceItsBlockerMerges(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := pausingSource(blockedOn12("open"))
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}

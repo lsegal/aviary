@@ -11,7 +11,7 @@ import (
 )
 
 // startReapTarget starts a process in its own process group, standing in for a
-// subprocess glorp owns. It is waited on for the whole test, because a child
+// subprocess aviary owns. It is waited on for the whole test, because a child
 // nobody has waited on lingers as a zombie that still answers a liveness check.
 func startReapTarget(t *testing.T) int {
 	t.Helper()
@@ -34,7 +34,7 @@ func startReapTarget(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-// Closing the pipe is what the kernel does for glorp when it is killed outright,
+// Closing the pipe is what the kernel does for aviary when it is killed outright,
 // so a recorded group must not survive it.
 func TestOrphanReaperKillsRecordedGroupWhenPipeCloses(t *testing.T) {
 	pipe, reaper, err := startOrphanReaper()
@@ -58,7 +58,7 @@ func TestOrphanReaperKillsRecordedGroupWhenPipeCloses(t *testing.T) {
 	}
 }
 
-// A released group belongs to nobody as far as glorp is concerned, and its id
+// A released group belongs to nobody as far as aviary is concerned, and its id
 // may have been handed to an unrelated process by now.
 func TestOrphanReaperLeavesReleasedGroupAlone(t *testing.T) {
 	pipe, reaper, err := startOrphanReaper()
@@ -82,7 +82,7 @@ func TestOrphanReaperLeavesReleasedGroupAlone(t *testing.T) {
 	}
 }
 
-// A second glorp instance records its own children with its own reaper, so one
+// A second aviary instance records its own children with its own reaper, so one
 // instance shutting down must not disturb the other's tree.
 func TestOrphanReaperIgnoresAnotherInstancesTree(t *testing.T) {
 	pipe, reaper, err := startOrphanReaper()
@@ -104,7 +104,7 @@ func TestOrphanReaperIgnoresAnotherInstancesTree(t *testing.T) {
 }
 
 // Ownership bookkeeping is what keeps the reaper from signalling a process group
-// glorp has already cleaned up.
+// aviary has already cleaned up.
 func TestOwnedProcessGroupIsReleasedWhenChildIsForgotten(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
 	if err := Start(cmd); err != nil {

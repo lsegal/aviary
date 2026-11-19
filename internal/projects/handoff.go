@@ -12,7 +12,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
-// Identity uniquely names one running glorp instance. It lives only in
+// Identity uniquely names one running aviary instance. It lives only in
 // memory: a restarted instance gets a new identity, which is why ownership
 // of previously claimed work must be renegotiated rather than assumed.
 type Identity string
@@ -43,7 +43,7 @@ const ownershipWaitDuration = 2 * time.Minute
 
 // staleClaimDuration is how old the newest claim from another instance must
 // be before a periodic reap treats the work as abandoned and re-opens the
-// "does anyone have this?" handshake. Reaps run repeatedly (issue #239), so
+// "does anyone have this?" handshake. Reaps run repeatedly, so
 // without this the handshake would be re-posted on every pass and spam
 // issues that a live instance is still working.
 const staleClaimDuration = 5 * time.Minute
@@ -67,25 +67,25 @@ const (
 	claimReleasing
 )
 
-// identityPattern matches the trailing "/glorp:UUID" signature that every
+// identityPattern matches the trailing "/aviary:UUID" signature that every
 // handoff comment must carry.
-var identityPattern = regexp.MustCompile(`/glorp:(\S+)\s*$`)
+var identityPattern = regexp.MustCompile(`/aviary:(\S+)\s*$`)
 
-// mentionedIdentity reports whether a comment directly addresses this glorp
-// instance using the public @/glorp:ID meta-mention syntax. Delimiters prevent
+// mentionedIdentity reports whether a comment directly addresses this aviary
+// instance using the public @/aviary:ID meta-mention syntax. Delimiters prevent
 // one instance ID from matching a longer ID that merely shares its prefix.
 func mentionedIdentity(body string, id Identity) bool {
 	if id == "" {
 		return false
 	}
-	pattern := `(^|\s)@/glorp:` + regexp.QuoteMeta(string(id)) + `($|\s|[.,!?;:])`
+	pattern := `(^|\s)@/aviary:` + regexp.QuoteMeta(string(id)) + `($|\s|[.,!?;:])`
 	return regexp.MustCompile(pattern).MatchString(body)
 }
 
 // signComment appends the instance identity signature used to attribute a
-// handoff comment to a specific glorp instance.
+// handoff comment to a specific aviary instance.
 func signComment(body string, id Identity) string {
-	return fmt.Sprintf("%s /glorp:%s", body, id)
+	return fmt.Sprintf("%s /aviary:%s", body, id)
 }
 
 // commenterAllowed reports whether login may trigger a direct-mention gh-fix
@@ -107,10 +107,10 @@ func commenterAllowed(login string, allowed []string) bool {
 }
 
 // authorizedDirectMention reports whether the most recent comment on
-// repo#number is a safe, actionable direct mention of this glorp instance
-// (issue #294): it must be the very last comment, so a stale mention buried
+// repo#number is a safe, actionable direct mention of this aviary instance
+//: it must be the very last comment, so a stale mention buried
 // under newer conversation cannot silently retrigger a run; it must contain
-// the @/glorp:ID mention syntax addressed to id; and it must be posted by an
+// the @/aviary:ID mention syntax addressed to id; and it must be posted by an
 // allowed commenter.
 func authorizedDirectMention(ctx context.Context, comments CommentLister, repo string, number int, id Identity, allowed []string) (bool, error) {
 	list, err := comments.ListComments(ctx, repo, number)
@@ -178,7 +178,7 @@ func claimedByOther(comments []Comment, after time.Time, self Identity) (Identit
 // latestClaimMatching returns the creation time, position, and signing
 // identity of the most recent standing claim whose signer satisfies match. A
 // claim stands only while it is that signer's newest handoff comment: an
-// instance that released the work (issue #434) holds nothing, so its withdrawn
+// instance that released the work holds nothing, so its withdrawn
 // claim is not reported as ownership even though the claim comment is still on
 // the ticket.
 //
@@ -187,7 +187,7 @@ func claimedByOther(comments []Comment, after time.Time, self Identity) (Identit
 // posted in quick succession can carry the same timestamp -- Windows's wall
 // clock has a resolution of roughly 15ms, and a withdrawal posted right after
 // the claim it withdraws lands well inside that -- so ordering on time alone
-// let the superseded claim win (issue #443). The returned position lets a
+// let the superseded claim win. The returned position lets a
 // caller break the same tie against a claim signed by another identity.
 func latestClaimMatching(comments []Comment, match func(Identity) bool) (time.Time, int, Identity, bool) {
 	type standingClaim struct {
@@ -259,7 +259,7 @@ func latestClaimBySelf(comments []Comment, self Identity) (time.Time, int, bool)
 // newest one signed by another instance, and the newest one this instance
 // signed itself. A reap needs both, because the last claim posted wins and an
 // instance that only looked at foreign claims would be blind to work it had
-// already claimed and re-open the handshake on it (issue #425).
+// already claimed and re-open the handshake on it.
 type claimStanding struct {
 	// Owner is the newest foreign claimant, when there is one.
 	Owner        Identity
@@ -277,7 +277,7 @@ type claimStanding struct {
 // claimStanding reads the target's comments once and reports who currently
 // holds it. Work with no claim at all, or one older than staleClaimDuration,
 // is fair game for the "does anyone have this?" handshake.
-func (w *Glorp) claimStanding(ctx context.Context, target ownershipTarget) (claimStanding, error) {
+func (w *Engine) claimStanding(ctx context.Context, target ownershipTarget) (claimStanding, error) {
 	var standing claimStanding
 	if w.Comments == nil {
 		return standing, nil
@@ -308,7 +308,7 @@ func (w *Glorp) claimStanding(ctx context.Context, target ownershipTarget) (clai
 // completion, and what it decided. The reap's other guards are all derived
 // from GitHub's own comments; this one is local, so a negotiation cannot be
 // re-opened just because a comment read disagrees with what already happened
-// (issue #432).
+//.
 type handshakeRecord struct {
 	At time.Time
 	// Claimed reports that the negotiation ended with this instance owning
@@ -326,7 +326,7 @@ func handshakeKey(target ownershipTarget) string {
 // recordHandshake stores the outcome of a negotiation this instance just ran,
 // so later reaps on the same target reuse the decision instead of asking the
 // same question again.
-func (w *Glorp) recordHandshake(target ownershipTarget, claimed bool) {
+func (w *Engine) recordHandshake(target ownershipTarget, claimed bool) {
 	w.handshakeMu.Lock()
 	defer w.handshakeMu.Unlock()
 	if w.handshakes == nil {
@@ -337,8 +337,8 @@ func (w *Glorp) recordHandshake(target ownershipTarget, claimed bool) {
 
 // forgetHandshake drops the record of a negotiation whose outcome no longer
 // holds, so the next reap renegotiates the target instead of reusing a
-// decision this instance has since walked back (issue #434).
-func (w *Glorp) forgetHandshake(target ownershipTarget) {
+// decision this instance has since walked back.
+func (w *Engine) forgetHandshake(target ownershipTarget) {
 	w.handshakeMu.Lock()
 	defer w.handshakeMu.Unlock()
 	delete(w.handshakes, handshakeKey(target))
@@ -348,7 +348,7 @@ func (w *Glorp) forgetHandshake(target ownershipTarget) {
 // recently enough that re-running it would only repost the same ask and the
 // same claim. Records older than the staleness window are dropped so genuinely
 // abandoned work is renegotiated rather than held forever.
-func (w *Glorp) settledHandshake(target ownershipTarget) (handshakeRecord, time.Duration, bool) {
+func (w *Engine) settledHandshake(target ownershipTarget) (handshakeRecord, time.Duration, bool) {
 	w.handshakeMu.Lock()
 	defer w.handshakeMu.Unlock()
 	record, ok := w.handshakes[handshakeKey(target)]
@@ -413,7 +413,7 @@ func ownershipTargetFor(ctx context.Context, checker WorkClosureChecker, issue I
 // waits at least ownershipWaitDuration, and only claims the work if no
 // other instance answered or claimed it first. The last instance to post a
 // starting/continuing claim always wins.
-func (w *Glorp) negotiateOwnership(ctx context.Context, target ownershipTarget) (bool, error) {
+func (w *Engine) negotiateOwnership(ctx context.Context, target ownershipTarget) (bool, error) {
 	if w.Comments == nil {
 		return true, nil
 	}
@@ -446,11 +446,11 @@ func (w *Glorp) negotiateOwnership(ctx context.Context, target ownershipTarget) 
 // announces happens, so a dispatch that is skipped afterwards would otherwise
 // leave the ticket owned by an instance that is doing nothing with it: other
 // instances stand down for work nobody is doing, and the ticket stays
-// contested on every later poll (issue #434). Posting the withdrawal makes the
+// contested on every later poll. Posting the withdrawal makes the
 // released ticket readable as unclaimed by every instance, and dropping the
 // local handshake record makes this one renegotiate rather than reuse a
 // decision it has just walked back.
-func (w *Glorp) releaseOwnership(ctx context.Context, target ownershipTarget, reason string) {
+func (w *Engine) releaseOwnership(ctx context.Context, target ownershipTarget, reason string) {
 	w.forgetHandshake(target)
 	if w.Comments == nil {
 		return
@@ -465,7 +465,7 @@ func (w *Glorp) releaseOwnership(ctx context.Context, target ownershipTarget, re
 // awaitOwnershipWindow blocks for the handoff grace period, or returns
 // false early if the context is cancelled first. Tests override
 // ownershipWait to avoid real sleeps.
-func (w *Glorp) awaitOwnershipWindow(ctx context.Context) bool {
+func (w *Engine) awaitOwnershipWindow(ctx context.Context) bool {
 	if w.ownershipWait != nil {
 		return w.ownershipWait(ctx)
 	}
@@ -491,8 +491,8 @@ func claimComment(id Identity, continuing bool) string {
 
 // lastCommentMatches reports whether body is already the newest comment on a
 // ticket. Dispatch uses it before announcing an uncontested pickup so a
-// repeated poll cannot stack identical ownership claims (issue #633).
-func (w *Glorp) lastCommentMatches(ctx context.Context, repo string, number int, body string) (bool, error) {
+// repeated poll cannot stack identical ownership claims.
+func (w *Engine) lastCommentMatches(ctx context.Context, repo string, number int, body string) (bool, error) {
 	if w.Comments == nil {
 		return false, nil
 	}

@@ -30,7 +30,7 @@ func (t *Tunnel) Close() error {
 	return process.Stop(t.cmd)
 }
 
-// ngrokLogRecord is the subset of ngrok's JSON log records glorp reads.
+// ngrokLogRecord is the subset of ngrok's JSON log records aviary reads.
 type ngrokLogRecord struct {
 	Level   string `json:"lvl"`
 	Message string `json:"msg"`
@@ -39,15 +39,15 @@ type ngrokLogRecord struct {
 }
 
 // ngrokLogWatcher reads the tunnel's public URL out of the log stream of the
-// ngrok process glorp itself started. The local ngrok API cannot be used for
+// ngrok process aviary itself started. The local ngrok API cannot be used for
 // this: it lives on a fixed port (4040) owned by whichever agent bound it
-// first, so a second agent — an orphaned glorp tunnel, or an unrelated one —
-// silently moves glorp's own API to 4041 and glorp adopts a stranger's tunnel
-// URL, pointing the GitHub webhook at a dead port (issue #361).
+// first, so a second agent — an orphaned aviary tunnel, or an unrelated one —
+// silently moves aviary's own API to 4041 and aviary adopts a stranger's tunnel
+// URL, pointing the GitHub webhook at a dead port.
 //
 // Only failures are forwarded to the wrapped writer, which keeps ngrok's
 // routine chatter (including a benign Windows agent-path diagnostic) out of
-// glorp's UI while still showing the user why a tunnel never came up.
+// aviary's UI while still showing the user why a tunnel never came up.
 type ngrokLogWatcher struct {
 	mu      sync.Mutex
 	out     io.Writer
@@ -96,11 +96,11 @@ func (w *ngrokLogWatcher) consume(line string) {
 	}
 }
 
-// record keeps a failure for the error glorp returns if no tunnel comes up.
+// record keeps a failure for the error aviary returns if no tunnel comes up.
 // Only fatal records are also printed, matching what the previous
 // critical-only log level showed: ngrok reports recoverable problems (such as
 // a host-info probe it could not run) at error level, and those would
-// otherwise clutter glorp's UI on an otherwise healthy tunnel.
+// otherwise clutter aviary's UI on an otherwise healthy tunnel.
 func (w *ngrokLogWatcher) record(message string, fatal bool) {
 	w.failure = append(w.failure, message)
 	if fatal && w.out != nil {
@@ -114,7 +114,7 @@ func (w *ngrokLogWatcher) URL() string {
 	return w.url
 }
 
-// Failure summarizes the error output ngrok produced, for the error glorp
+// Failure summarizes the error output ngrok produced, for the error aviary
 // returns when no tunnel is established.
 func (w *ngrokLogWatcher) Failure() string {
 	w.mu.Lock()
@@ -160,7 +160,7 @@ func Start(ctx context.Context, binary, listenAddr string, out io.Writer) (*Tunn
 	}
 	// Agents abandoned by an earlier run hold the local ngrok API port and one
 	// of the account's simultaneous agent sessions, so clear them out before
-	// asking for a tunnel of glorp's own (issue #364).
+	// asking for a tunnel of aviary's own.
 	reapOrphanedNgrokAgents(out)
 	watcher := &ngrokLogWatcher{out: out}
 	cmd := exec.CommandContext(ctx, invocation.name, invocation.args(listenAddr)...)
@@ -197,7 +197,7 @@ func ngrokStartError(failure string) error {
 }
 
 // ngrokArgs keeps ngrok from entering its interactive terminal dashboard,
-// which clears glorp's UI, and asks for JSON records so glorp can read the
+// which clears aviary's UI, and asks for JSON records so aviary can read the
 // tunnel URL of this exact process out of the stream. Info level is required
 // because the "started tunnel" record carrying the URL is logged at it;
 // ngrokLogWatcher filters the stream back down to failures.

@@ -10,9 +10,9 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-// isolateProcessTree puts the child in its own process group so glorp can
+// isolateProcessTree puts the child in its own process group so aviary can
 // signal the child and everything it spawns as one unit. A child that inherits
-// glorp's terminal keeps sharing glorp's group: a background group reading the
+// aviary's terminal keeps sharing aviary's group: a background group reading the
 // terminal is stopped with SIGTTIN, and such a child already receives the
 // terminal's own interrupt and hangup signals.
 func isolateProcessTree(cmd *exec.Cmd) {
@@ -33,7 +33,7 @@ func signalProcessTree(cmd *exec.Cmd, signal processSignal) error {
 		return os.ErrProcessDone
 	}
 	target := cmd.Process.Pid
-	// Never signal glorp's own process group: a child that was not isolated
+	// Never signal aviary's own process group: a child that was not isolated
 	// shares it, and killing the group would take the parent down too.
 	if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil && pgid != syscall.Getpgrp() {
 		target = -pgid

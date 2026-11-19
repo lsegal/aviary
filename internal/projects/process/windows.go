@@ -13,7 +13,7 @@ import (
 )
 
 // isolateProcessTree gives the child its own console process group so console
-// signals aimed at glorp are not forwarded to it before glorp can shut it down
+// signals aimed at aviary are not forwarded to it before aviary can shut it down
 // in order.
 func isolateProcessTree(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {

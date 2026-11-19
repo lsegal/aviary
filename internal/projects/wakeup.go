@@ -9,13 +9,13 @@ import (
 )
 
 // scheduleWakeupTool is the Claude Code tool an agent calls to be re-invoked
-// later. glorp runs Claude in print mode, where the process exits as soon as
-// the turn ends, so the wakeup it asked for never fires on its own; glorp keeps
-// the run alive and fires it instead (issue #671).
+// later. aviary runs Claude in print mode, where the process exits as soon as
+// the turn ends, so the wakeup it asked for never fires on its own; aviary keeps
+// the run alive and fires it instead.
 const scheduleWakeupTool = "ScheduleWakeup"
 
 // The delay an agent asks for is clamped to the range Claude Code's own
-// runtime allows, so glorp waits exactly as long as the agent would have.
+// runtime allows, so aviary waits exactly as long as the agent would have.
 const (
 	minWakeupDelay = time.Minute
 	maxWakeupDelay = time.Hour
@@ -86,7 +86,7 @@ func wakeupPrompt(issue Issue, wakeup scheduledWakeup) string {
 // elapsed and the session should be resumed, and closed when the issue closed
 // first, which cancels the wakeup. Both are false when ctx ended, whether from
 // a stop or an update to the issue, which the caller reads from its cause.
-func (w *Glorp) awaitWakeup(ctx context.Context, checker WorkClosureChecker, issue Issue, delay time.Duration) (due, closed bool) {
+func (w *Engine) awaitWakeup(ctx context.Context, checker WorkClosureChecker, issue Issue, delay time.Duration) (due, closed bool) {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	var poll <-chan time.Time
@@ -114,7 +114,7 @@ func (w *Glorp) awaitWakeup(ctx context.Context, checker WorkClosureChecker, iss
 }
 
 // wakeupDelay is how long the run loop waits for a wakeup; tests shorten it.
-func (w *Glorp) wakeupDelay(wakeup scheduledWakeup) time.Duration {
+func (w *Engine) wakeupDelay(wakeup scheduledWakeup) time.Duration {
 	if w.wakeupDelayOverride > 0 {
 		return w.wakeupDelayOverride
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The kinds of paused work (issue #732). Paused work is out of the dispatch
+// The kinds of paused work. Paused work is out of the dispatch
 // queue and holds no agent slot. It waits on one GitHub terminal event (a
 // merge or a close) and goes back into the queue through the normal claim path
 // when that event happens. Review activity never wakes it.
@@ -14,17 +14,17 @@ const (
 	// close.
 	PausedBlocked = "blocked"
 	// PausedStacked is a ready pull request stacked on its blocker's branch,
-	// waiting for the blocker's pull request to merge or close (issue #659).
+	// waiting for the blocker's pull request to merge or close.
 	PausedStacked = "stacked"
 	// PausedPullRequest is a finished run whose ready pull request is held
 	// for a human to merge (a DONOTMERGE directive). It waits for that pull
 	// request to merge, which completes the work, or to close unmerged, which
-	// restarts it fresh (issues #690, #729).
+	// restarts it fresh.
 	PausedPullRequest = "pull-request"
-	// PausedManual is work the owner paused from a dashboard (issue #771). No
+	// PausedManual is work the owner paused from a dashboard. No
 	// GitHub event wakes it; it waits until the owner retries it. Only its
 	// issue closing finishes it, so it does not linger once the work is gone
-	// (issue #775).
+	//.
 	PausedManual = "manual"
 )
 
@@ -101,12 +101,12 @@ func OpenPullRequests(state OriginatingWorkState) []int {
 func WakePaused(paused PausedWork, check PausedCheck) (PausedWake, string) {
 	// A closed issue finishes every kind of paused work, a manual pause
 	// included, so a job the owner paused does not stay paused forever once
-	// its issue is gone (issue #775).
+	// its issue is gone.
 	if strings.EqualFold(check.Issue.State, "closed") || (check.Own != nil && strings.EqualFold(check.Own.IssueState, "closed")) {
 		return PausedComplete, fmt.Sprintf("issue #%d was closed", check.Issue.Number)
 	}
 	// Only the owner resumes a manual pause, by retrying the job, so nothing
-	// else read from GitHub wakes or finishes it (issue #771).
+	// else read from GitHub wakes or finishes it.
 	if paused.Kind == PausedManual {
 		return PausedStay, ManualPauseReason
 	}
@@ -134,7 +134,7 @@ func WakePaused(paused PausedWork, check PausedCheck) (PausedWake, string) {
 			return PausedStay, fmt.Sprintf("its pull request %s waits to merge", formatNumbers(open))
 		}
 		// No pull request is left to merge, so waiting on one would never
-		// end. The work falls back to its blockers instead (issue #762).
+		// end. The work falls back to its blockers instead.
 		if blocked, reason := IssueBlocked(check.Issue); blocked {
 			return PausedStay, reason + "; it has no open pull request"
 		}

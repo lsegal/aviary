@@ -15,7 +15,7 @@ import (
 )
 
 // waitForPaused waits until issue number is recorded as paused work of kind,
-// and returns its paused record (issue #732).
+// and returns its paused record.
 func waitForPaused(t *testing.T, statePath string, number int, kind string) core.PausedWork {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -31,14 +31,14 @@ func waitForPaused(t *testing.T, statePath string, number int, kind string) core
 	}
 }
 
-func TestGlorpPausesADependencyBlockedIssueUntilItsBlockerCloses(t *testing.T) {
+func TestEnginePausesADependencyBlockedIssueUntilItsBlockerCloses(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := pausingSource(blockedOn12("open"))
 	// The blocker has no pull request to stack on, so the issue can only wait.
 	src.states[12] = OriginatingWorkState{IssueState: "open"}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -70,12 +70,12 @@ func TestGlorpPausesADependencyBlockedIssueUntilItsBlockerCloses(t *testing.T) {
 	}
 }
 
-func TestGlorpForgetsAPausedBlockedIssueThatClosed(t *testing.T) {
+func TestEngineForgetsAPausedBlockedIssueThatClosed(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := pausingSource(blockedOn12("open"))
 	src.states[12] = OriginatingWorkState{IssueState: "open"}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: io.Discard, closureInterval: time.Millisecond,
 	}
@@ -111,13 +111,13 @@ func TestGlorpForgetsAPausedBlockedIssueThatClosed(t *testing.T) {
 
 // Woken paused work goes back through the claim protocol even though its
 // session resumes, so when two instances see the same wake, the one that
-// claimed first keeps it and the other stands down (issue #732).
+// claimed first keeps it and the other stands down.
 func TestStandDownForStandingClaimsChecksWokenPausedWork(t *testing.T) {
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-time.Minute)})
 	comments.inject("o/r", 2, Comment{Body: signComment(startingClaimBody, "OTHER"), CreatedAt: time.Now().Add(-2 * time.Minute)})
 	comments.inject("o/r", 2, Comment{Body: signComment(startingClaimBody, "SELF"), CreatedAt: time.Now().Add(-time.Minute)})
-	w := &Glorp{Comments: comments, Identity: "SELF", Out: io.Discard}
+	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard}
 	pending := []pendingIssue{
 		{issue: Issue{Number: 1, Repository: "o/r", Target: "o/r"}, session: AgentSession{Resume: true}, woken: true},
 		{issue: Issue{Number: 2, Repository: "o/r", Target: "o/r"}, session: AgentSession{Resume: true}, woken: true},
@@ -129,7 +129,7 @@ func TestStandDownForStandingClaimsChecksWokenPausedWork(t *testing.T) {
 }
 
 // A state file saved while paused work was called parked is read as paused,
-// with its record kept (issue #734).
+// with its record kept.
 func TestLoadWorkStateReadsParkedWorkAsPaused(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	legacy := `{
@@ -163,11 +163,11 @@ func TestLoadWorkStateReadsParkedWorkAsPaused(t *testing.T) {
 	}
 }
 
-// The nupp#5 shape (issue #762): a pull-request record saved while some pull
+// The nupp#5 shape: a pull-request record saved while some pull
 // request was held, for an issue that now has no pull request, no sub-issues,
 // and only closed dependencies. Nothing is left for it to wait on, so the
 // first poll dispatches it instead of leaving it paused forever.
-func TestGlorpDispatchesPausedPullRequestWorkWithNothingToWaitOn(t *testing.T) {
+func TestEngineDispatchesPausedPullRequestWorkWithNothingToWaitOn(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	saved := `{"o/r#7": {"status": "paused", "paused": {"kind": "pull-request", "pullRequests": [15]}}}`
 	if err := os.WriteFile(statePath, []byte(saved), 0600); err != nil {
@@ -177,7 +177,7 @@ func TestGlorpDispatchesPausedPullRequestWorkWithNothingToWaitOn(t *testing.T) {
 	src.states[7] = OriginatingWorkState{IssueState: "open"}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -197,8 +197,8 @@ func TestGlorpDispatchesPausedPullRequestWorkWithNothingToWaitOn(t *testing.T) {
 
 // Retrying a paused job from the web UI clears its pause and reruns gh-fix,
 // whatever kind of work it was waiting on, leaving its session as a failed
-// run's is (issue #763).
-func TestGlorpWebUIRetriesPausedWork(t *testing.T) {
+// run's is.
+func TestEngineWebUIRetriesPausedWork(t *testing.T) {
 	cases := []struct {
 		name   string
 		paused string
@@ -208,7 +208,7 @@ func TestGlorpWebUIRetriesPausedWork(t *testing.T) {
 		{"blocked", `{"kind": "blocked", "waitingOn": [12]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open"}},
 		{"stacked", `{"kind": "stacked", "waitingOn": [12], "pullRequests": [15]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}},
 		{"pull request", `{"kind": "pull-request", "pullRequests": [15]}`, []Issue{{Number: 7, Repository: "o/r"}}, OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open"}}}},
-		// A manual pause ends only when the owner retries it (issue #771).
+		// A manual pause ends only when the owner retries it.
 		{"manual", `{"kind": "manual"}`, []Issue{{Number: 7, Repository: "o/r"}}, OriginatingWorkState{IssueState: "open"}},
 		{"legacy", ``, blockedOn12("open"), OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}},
 	}
@@ -230,7 +230,7 @@ func TestGlorpWebUIRetriesPausedWork(t *testing.T) {
 			// The rerun keeps running, so its active state can be read back.
 			runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
 			logs := &syncBuffer{}
-			w := &Glorp{
+			w := &Engine{
 				Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 				Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 			}
@@ -271,8 +271,8 @@ func TestGlorpWebUIRetriesPausedWork(t *testing.T) {
 }
 
 // A retry that cannot requeue the paused job keeps it paused and says so,
-// rather than reporting success for a retry that changed nothing (issue #763).
-func TestGlorpWebUIRetryKeepsPauseWhenNothingIsRequeued(t *testing.T) {
+// rather than reporting success for a retry that changed nothing.
+func TestEngineWebUIRetryKeepsPauseWhenNothingIsRequeued(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingOn": [12]}}}`), 0600); err != nil {
 		t.Fatal(err)
@@ -281,7 +281,7 @@ func TestGlorpWebUIRetryKeepsPauseWhenNothingIsRequeued(t *testing.T) {
 	src.states[12] = OriginatingWorkState{IssueState: "open"}
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
 	}
@@ -314,7 +314,7 @@ func TestGlorpWebUIRetryKeepsPauseWhenNothingIsRequeued(t *testing.T) {
 }
 
 // hydratingPausingSource also reads single issues back, as the paused watch
-// does for paused work the poll does not list (issue #769).
+// does for paused work the poll does not list.
 type hydratingPausingSource struct {
 	*fakePausingSource
 	issueMu   sync.Mutex
@@ -360,13 +360,13 @@ func unlistedBlockedSource(t *testing.T, statePath string) *hydratingPausingSour
 }
 
 // A paused issue the poll no longer lists is still watched: once its blocker
-// closes, the paused watch wakes it and dispatches it (issue #769).
-func TestGlorpWakesPausedWorkTheDispatchListNoLongerHas(t *testing.T) {
+// closes, the paused watch wakes it and dispatches it.
+func TestEngineWakesPausedWorkTheDispatchListNoLongerHas(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := unlistedBlockedSource(t, statePath)
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
 	logs := &syncBuffer{}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond, pausedInterval: 20 * time.Millisecond,
 	}
@@ -401,12 +401,12 @@ func TestGlorpWakesPausedWorkTheDispatchListNoLongerHas(t *testing.T) {
 
 // In push mode the fallback poll can be far apart, so the paused watch runs
 // on its own interval: paused work is re-checked within it even when nothing
-// else in the run happens (issue #769).
-func TestGlorpWatchesPausedWorkOnItsOwnInterval(t *testing.T) {
+// else in the run happens.
+func TestEngineWatchesPausedWorkOnItsOwnInterval(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := unlistedBlockedSource(t, statePath)
 	runner := &finishingSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4), finish: 1}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: 5 * time.Millisecond, Concurrency: 1, StatePath: statePath,
 		Issues: src, Runner: runner, Out: io.Discard, closureInterval: time.Millisecond,
 		UseWebhooks: true, fallbackInterval: time.Hour, reapInterval: time.Hour, pausedInterval: 20 * time.Millisecond,
@@ -431,7 +431,7 @@ func TestGlorpWatchesPausedWorkOnItsOwnInterval(t *testing.T) {
 }
 
 func TestPausedWatchIsNeverFasterThanThePoll(t *testing.T) {
-	w := &Glorp{Interval: time.Minute}
+	w := &Engine{Interval: time.Minute}
 	if got := w.pausedWatchEvery(); got != pausedWatchInterval {
 		t.Fatalf("pausedWatchEvery() = %s, want %s", got, pausedWatchInterval)
 	}
@@ -442,7 +442,7 @@ func TestPausedWatchIsNeverFasterThanThePoll(t *testing.T) {
 	if got := w.pausedWatchEvery(); got != time.Hour {
 		t.Fatalf("pausedWatchEvery() = %s, want the slower poll interval", got)
 	}
-	push := &Glorp{Interval: time.Minute, UseWebhooks: true}
+	push := &Engine{Interval: time.Minute, UseWebhooks: true}
 	if got := push.pausedWatchTick(); got != pausedWatchInterval {
 		t.Fatalf("pausedWatchTick() = %s in push mode, want %s", got, pausedWatchInterval)
 	}

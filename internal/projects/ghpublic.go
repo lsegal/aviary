@@ -58,7 +58,7 @@ func (g GHCLI) publicGET(ctx context.Context, requestURL string) ([]byte, http.H
 // unauthenticated public API so the check itself never spends the
 // authenticated token's rate limit. The result is cached for the lifetime of
 // g's cache (shared across copies of GHCLI via the pointer field) since a
-// repository's visibility rarely changes during a single glorp run.
+// repository's visibility rarely changes during a single aviary run.
 //
 // The whole public-API path is gated on publicRepoCache being non-nil: only
 // main() sets it, so this never probes the network (or changes behavior) for
@@ -93,7 +93,7 @@ func (g GHCLI) probePublicRepo(ctx context.Context, repo string) bool {
 // errListReadOnePage reports a list endpoint read through a single-page
 // helper. GitHub returns only the first page (30 items by default) of a list,
 // so such a read silently drops everything after it; a list endpoint has to go
-// through apiGETPaginated instead (issues #722 and #759).
+// through apiGETPaginated instead.
 var errListReadOnePage = errors.New("list endpoint read through a single-page helper; use apiGETPaginated")
 
 // rejectListBody returns errListReadOnePage when body is a JSON array.
@@ -113,7 +113,7 @@ func rejectListBody(path string, body []byte) error {
 //
 // It reads one page only, so it refuses a list (JSON array) response with
 // errListReadOnePage rather than return a truncated one: list endpoints go
-// through apiGETPaginated (issue #759).
+// through apiGETPaginated.
 func (g GHCLI) apiGETObject(ctx context.Context, public bool, path string, extraGHArgs ...string) ([]byte, error) {
 	if public {
 		body, _, status, err := g.publicGET(ctx, "https://api.github.com/"+path)
@@ -317,7 +317,7 @@ func (g GHCLI) listPublicIssues(ctx context.Context, repo, filter string, allIss
 // listAuthenticatedIssues lists open issues in repo via the REST Search API,
 // authenticated through `gh api` rather than `gh issue list` (which queries
 // GraphQL). It is the private-repo/public-API-unavailable counterpart to
-// listPublicIssues, and the only path glorp's core polling loop takes for a
+// listPublicIssues, and the only path aviary's core polling loop takes for a
 // private repository.
 func (g GHCLI) listAuthenticatedIssues(ctx context.Context, repo, filter string, allIssues bool) ([]Issue, error) {
 	query := publicIssueSearchQuery(repo, filter, allIssues, "")

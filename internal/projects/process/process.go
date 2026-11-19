@@ -13,13 +13,13 @@ import (
 	"time"
 )
 
-// childProcesses tracks every subprocess glorp owns so none of them can outlive
-// the parent (issue #260). Helpers such as the ngrok tunnel keep running by
-// themselves once started, so glorp terminates them on every exit path it can
+// childProcesses tracks every subprocess aviary owns so none of them can outlive
+// the parent. Helpers such as the ngrok tunnel keep running by
+// themselves once started, so aviary terminates them on every exit path it can
 // observe: a normal return, a fatal os.Exit, a signal, or a panic.
 var childProcesses = &processTracker{}
 
-// processSignal is the portable subset of process signalling glorp needs.
+// processSignal is the portable subset of process signalling aviary needs.
 type processSignal int
 
 const (
@@ -40,7 +40,7 @@ const (
 	// stopGrace is how long a child gets to exit after being asked politely,
 	// before it is killed outright.
 	stopGrace = 2 * time.Second
-	// reapGrace is the shorter budget used while glorp itself is exiting, so
+	// reapGrace is the shorter budget used while aviary itself is exiting, so
 	// shutting down stays responsive.
 	reapGrace = 500 * time.Millisecond
 )
@@ -63,7 +63,7 @@ func (t *processTracker) forget(cmd *exec.Cmd) {
 	t.mu.Lock()
 	delete(t.running, cmd)
 	t.mu.Unlock()
-	// A child glorp no longer owns must stop being a reap target, or a platform
+	// A child aviary no longer owns must stop being a reap target, or a platform
 	// guard that reaps recorded process groups could signal a reused id.
 	releaseOrphanedProcess(cmd)
 }
@@ -110,7 +110,7 @@ func (t *processTracker) reap() {
 var spawner = &processSpawner{}
 
 // processSpawner forks owned subprocesses from a single OS thread that lives as
-// long as glorp does. Linux's parent-death signal (issue #264) is delivered when
+// long as aviary does. Linux's parent-death signal is delivered when
 // the *thread* that forked the child exits, not when the process does, and Go's
 // runtime retires idle threads whenever it likes. Forking from an ordinary
 // goroutine would therefore kill healthy children at unpredictable moments, so
@@ -149,8 +149,8 @@ func (s *processSpawner) start(cmd *exec.Cmd) error {
 
 // Start starts cmd as an owned subprocess: it runs in its own
 // process group so the processes it spawns are terminated with it, it is
-// tracked so glorp kills the whole tree before exiting, and the kernel is asked
-// to tear it down should glorp die without running any cleanup at all.
+// tracked so aviary kills the whole tree before exiting, and the kernel is asked
+// to tear it down should aviary die without running any cleanup at all.
 //
 // On platforms where the kernel guard can only be installed on a process that
 // already exists, the child is created in a state where it has not run yet and
@@ -224,7 +224,7 @@ func Stop(cmd *exec.Cmd) error {
 }
 
 // Pause suspends a tracked child and everything it spawned, so nothing in the
-// tree runs until Resume or a kill. The shutdown checkpoint (issue #741) uses
+// tree runs until Resume or a kill. The shutdown checkpoint uses
 // it to commit an agent's checkout without catching a half-written file.
 func Pause(cmd *exec.Cmd) error { return signalProcessTree(cmd, pauseSignal) }
 
@@ -235,11 +235,11 @@ func Resume(cmd *exec.Cmd) error { return signalProcessTree(cmd, resumeSignal) }
 // It only signals and never waits, so it is safe as an exec.Cmd Cancel
 // function while another goroutine is in Wait. Killing just the child would
 // leave its descendants holding its output pipes, and a paused descendant
-// never lets go of them, so Wait would never return (issue #749).
+// never lets go of them, so Wait would never return.
 func Kill(cmd *exec.Cmd) error { return signalProcessTree(cmd, killSignal) }
 
 // stopError discards the failure a child reports when it dies from the signal
-// glorp just sent it, which is the expected outcome of stopping it.
+// aviary just sent it, which is the expected outcome of stopping it.
 func stopError(err error) error {
 	var exit *exec.ExitError
 	if err == nil || errors.Is(err, os.ErrProcessDone) || errors.As(err, &exit) {
@@ -259,17 +259,17 @@ func ExitAfterReaping(code int) {
 	os.Exit(code)
 }
 
-// shutdownSignals are the signals that mean glorp should stop. Hangup is
-// included so closing the terminal that started glorp takes its subprocesses
+// shutdownSignals are the signals that mean aviary should stop. Hangup is
+// included so closing the terminal that started aviary takes its subprocesses
 // down instead of leaving them behind.
 var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // ShutdownContext returns a context that is canceled by the first shutdown
-// signal, giving glorp a chance to stop its subprocesses in order. The first
+// signal, giving aviary a chance to stop its subprocesses in order. The first
 // signal runs prepare, when given, before the context is canceled, so work
 // that must happen while subprocesses are still alive (the shutdown
 // checkpoint, issue #741) finishes first. A second signal means "now": every
-// owned subprocess is killed and glorp exits immediately, even mid-prepare,
+// owned subprocess is killed and aviary exits immediately, even mid-prepare,
 // so an impatient second Ctrl-C cannot leave an orphan behind.
 func ShutdownContext(prepare func()) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -305,7 +305,7 @@ func ShutdownContext(prepare func()) (context.Context, func()) {
 
 // Supervisor adapts the tracked child-process helpers to an interface value,
 // for callers such as the webui package that start a subprocess of their own
-// and need it reaped along with every other subprocess glorp owns.
+// and need it reaped along with every other subprocess aviary owns.
 type Supervisor struct{}
 
 func (Supervisor) Start(cmd *exec.Cmd) error { return Start(cmd) }

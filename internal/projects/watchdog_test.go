@@ -93,8 +93,8 @@ func awaitLog(t *testing.T, logs *syncBuffer, want string) {
 	t.Fatalf("log never showed %q:\n%s", want, logs.String())
 }
 
-func watchdogGlorp(calls *unblockCalls, logs *syncBuffer) *Glorp {
-	w := &Glorp{Identity: "ABCD1234", SelfLogin: "octo", Out: logs, Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, unblockRun: calls.run}
+func watchdogEngine(calls *unblockCalls, logs *syncBuffer) *Engine {
+	w := &Engine{Identity: "ABCD1234", SelfLogin: "octo", Out: logs, Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, unblockRun: calls.run}
 	w.SetUnblockInterval(30 * time.Millisecond)
 	return w
 }
@@ -159,7 +159,7 @@ func TestWatchdogRunsOneCallForEveryStuckJobAndEscalates(t *testing.T) {
 		"UNBLOCK o/r#1 local: rebased the stack",
 	)
 	logs := &syncBuffer{}
-	w := watchdogGlorp(calls, logs)
+	w := watchdogEngine(calls, logs)
 	list := &jobList{}
 	list.set(
 		JobSnapshot{Target: "o/r", Number: 1, Status: "paused", WaitReason: "its stacked pull request waits on its blocker to merge", PullRequest: 11},
@@ -174,7 +174,7 @@ func TestWatchdogRunsOneCallForEveryStuckJobAndEscalates(t *testing.T) {
 	}()
 	calls.await(t, 1)
 	first := calls.prompt(0)
-	for _, want := range []string{"key: o/r#1", "key: o/r#2", "https://github.com/o/r/pull/11", "@/glorp:ABCD1234", "@octo", "UNBLOCK KEY comment"} {
+	for _, want := range []string{"key: o/r#1", "key: o/r#2", "https://github.com/o/r/pull/11", "@/aviary:ABCD1234", "@octo", "UNBLOCK KEY comment"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("first prompt is missing %q:\n%s", want, first)
 		}
@@ -212,7 +212,7 @@ func TestWatchdogRunsOneCallForEveryStuckJobAndEscalates(t *testing.T) {
 func TestWatchdogFindsAnActiveJobWhoseOutputStopped(t *testing.T) {
 	calls := newUnblockCalls()
 	logs := &syncBuffer{}
-	w := watchdogGlorp(calls, logs)
+	w := watchdogEngine(calls, logs)
 	list := &jobList{}
 	list.set(JobSnapshot{Target: "o/r", Number: 5, Status: "active", Log: "waiting forever\n"})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -228,7 +228,7 @@ func TestWatchdogFindsAnActiveJobWhoseOutputStopped(t *testing.T) {
 
 func TestWatchdogLeavesHealthyJobsAlone(t *testing.T) {
 	calls := newUnblockCalls()
-	w := watchdogGlorp(calls, &syncBuffer{})
+	w := watchdogEngine(calls, &syncBuffer{})
 	var mu sync.Mutex
 	step := 0
 	jobs := func() []JobSnapshot {
@@ -251,7 +251,7 @@ func TestWatchdogLeavesHealthyJobsAlone(t *testing.T) {
 
 func TestWatchdogIntervalChangesTakeEffect(t *testing.T) {
 	calls := newUnblockCalls()
-	w := watchdogGlorp(calls, &syncBuffer{})
+	w := watchdogEngine(calls, &syncBuffer{})
 	w.SetUnblockInterval(0)
 	list := &jobList{}
 	list.set(JobSnapshot{Target: "o/r", Number: 1, Status: "paused", WaitReason: "x"})
@@ -267,7 +267,7 @@ func TestWatchdogIntervalChangesTakeEffect(t *testing.T) {
 }
 
 func TestUnblockSpecDefaultsToTheCodingAgentAndTakesOverrides(t *testing.T) {
-	w := &Glorp{Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}}
+	w := &Engine{Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}}
 	spec, err := w.unblockSpec()
 	if err != nil || spec.Name != "claude" || spec.Model != "opus" {
 		t.Fatalf("default unblock spec = %+v, %v; want claude/opus", spec, err)
@@ -301,10 +301,10 @@ func TestParseUnblockInterval(t *testing.T) {
 	}
 }
 
-func TestGlorpApplySettingsChangesTheWatchdog(t *testing.T) {
+func TestEngineApplySettingsChangesTheWatchdog(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Registry: agents.MustBuiltin(), Out: &syncBuffer{}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Registry: agents.MustBuiltin(), Out: &syncBuffer{}}
 	w.SetUnblockInterval(defaultUnblockInterval)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -355,7 +355,7 @@ func TestRunWatchdogCoversASilentRunningJob(t *testing.T) {
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Title: "Silent"}}}}
 	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	calls := newUnblockCalls()
-	w := &Glorp{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: &syncBuffer{}, unblockRun: calls.run}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: r, Out: &syncBuffer{}, unblockRun: calls.run}
 	w.SetUnblockAgent(unblockConfig{Agent: "claude"})
 	w.SetUnblockInterval(40 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -374,7 +374,7 @@ func TestRunWatchdogCoversASilentRunningJob(t *testing.T) {
 // TestWatchdogLogsAFailedUnblockCallsOutput covers a call that exits non-zero:
 // the agent's own output, not just the exit code, reaches the log and each
 // job's history, a report printed before the exit reads as that report, and a
-// silent failure says the agent produced no output (issue #793).
+// silent failure says the agent produced no output.
 func TestWatchdogLogsAFailedUnblockCallsOutput(t *testing.T) {
 	stuck := []stuckJob{
 		{Key: "o/r#1", Job: JobSnapshot{Target: "o/r", Number: 1, Status: "paused"}, Why: "paused"},
@@ -411,7 +411,7 @@ func TestWatchdogLogsAFailedUnblockCallsOutput(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := &syncBuffer{}
-			w := watchdogGlorp(newUnblockCalls(), logs)
+			w := watchdogEngine(newUnblockCalls(), logs)
 			w.unblockRun = func(context.Context, agentSpec, string) (string, error) { return tc.output, exit }
 			history := map[string][]string{}
 			w.runUnblockRound(context.Background(), stuck, history, time.Minute)

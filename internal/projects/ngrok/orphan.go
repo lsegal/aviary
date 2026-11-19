@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// glorp's platform orphan guards (issues #260, #264, #266) cover every exit
+// aviary's platform orphan guards cover every exit
 // path the kernel can act on, but an ngrok agent was still found running twelve
-// days after the run that started it (issue #364): the guard belongs to the
-// glorp build that started the child, so an agent left behind by an older
+// days after the run that started it: the guard belongs to the
+// aviary build that started the child, so an agent left behind by an older
 // build, or by a reaper that was killed along with its parent, has nobody left
 // to clean it up. Such an agent is not idle waste — it owns the local ngrok API
 // port and consumes one of the account's simultaneous agent sessions, and a
-// couple of them make every later run fail with ERR_NGROK_108 — so glorp sweeps
+// couple of them make every later run fail with ERR_NGROK_108 — so aviary sweeps
 // up its own leftovers before starting a tunnel of its own.
 
-// processEntry is the subset of a running process glorp needs to recognize a
+// processEntry is the subset of a running process aviary needs to recognize a
 // leftover agent of its own.
 type processEntry struct {
 	pid     int
@@ -34,7 +34,7 @@ var (
 )
 
 // reapOrphanedNgrokAgents stops every ngrok agent left behind by an earlier
-// glorp run and reports how many were stopped. Failing to sweep is never worth
+// aviary run and reports how many were stopped. Failing to sweep is never worth
 // failing a startup over: the tunnel that follows either works or reports its
 // own error.
 func reapOrphanedNgrokAgents(out io.Writer) int {
@@ -49,14 +49,14 @@ func reapOrphanedNgrokAgents(out io.Writer) int {
 		}
 	}
 	if stopped > 0 && out != nil {
-		fmt.Fprintf(out, "stopped %d leftover ngrok agent(s) from an earlier glorp run\n", stopped)
+		fmt.Fprintf(out, "stopped %d leftover ngrok agent(s) from an earlier aviary run\n", stopped)
 	}
 	return stopped
 }
 
-// orphanedNgrokAgents picks out the agents glorp started and no longer owns.
-// Only reparented processes qualify: an agent still owned by a live glorp — a
-// second instance watching another repository — has that glorp as its parent
+// orphanedNgrokAgents picks out the agents aviary started and no longer owns.
+// Only reparented processes qualify: an agent still owned by a live aviary — a
+// second instance watching another repository — has that aviary as its parent
 // and must be left alone.
 func orphanedNgrokAgents(processes []processEntry) []processEntry {
 	orphans := make([]processEntry, 0, len(processes))
@@ -64,7 +64,7 @@ func orphanedNgrokAgents(processes []processEntry) []processEntry {
 		if process.pid <= 1 || process.ppid != 1 {
 			continue
 		}
-		if !glorpNgrokCommand(process.command) {
+		if !aviaryNgrokCommand(process.command) {
 			continue
 		}
 		orphans = append(orphans, process)
@@ -72,13 +72,13 @@ func orphanedNgrokAgents(processes []processEntry) []processEntry {
 	return orphans
 }
 
-// glorpNgrokCommand reports whether a command line is an ngrok agent started by
-// glorp. glorp is the reason an agent logs to standard output: the interactive
+// aviaryNgrokCommand reports whether a command line is an ngrok agent started by
+// aviary. aviary is the reason an agent logs to standard output: the interactive
 // dashboard is what ngrok does by default, so `ngrok http --log=stdout` is the
-// signature of a glorp tunnel rather than one a user started by hand. The log
-// level is not part of the match, because it has changed across glorp releases
+// signature of a aviary tunnel rather than one a user started by hand. The log
+// level is not part of the match, because it has changed across aviary releases
 // and the agents worth reaping are precisely the ones from older ones.
-func glorpNgrokCommand(command string) bool {
+func aviaryNgrokCommand(command string) bool {
 	fields := strings.Fields(command)
 	if len(fields) < 2 || !ngrokExecutable(fields[0]) {
 		return false
@@ -102,7 +102,7 @@ func ngrokExecutable(argv0 string) bool {
 	return strings.EqualFold(strings.TrimSuffix(name, ".exe"), "ngrok")
 }
 
-// parseProcessList reads the `pid ppid command` records glorp asks the platform
+// parseProcessList reads the `pid ppid command` records aviary asks the platform
 // process lister for. Lines it cannot read are skipped rather than failing the
 // sweep: one unreadable record must not hide the orphans in the rest.
 func parseProcessList(output string) []processEntry {

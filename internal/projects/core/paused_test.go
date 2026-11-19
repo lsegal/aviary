@@ -90,7 +90,7 @@ func TestWakePausedResumesWhenEveryBlockerClosed(t *testing.T) {
 }
 
 // A pull-request record with no open pull request falls back to its blockers,
-// and the reason it stays names what keeps it paused (issue #762).
+// and the reason it stays names what keeps it paused.
 func TestWakePausedPullRequestWithoutOneNamesItsBlocker(t *testing.T) {
 	none := &OriginatingWorkState{IssueState: "open"}
 	paused := PausedWork{Kind: PausedPullRequest}

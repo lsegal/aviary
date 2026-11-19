@@ -15,7 +15,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/process"
 )
 
-const shimHelperEnv = "GLORP_SHIM_HELPER"
+const shimHelperEnv = "AVIARY_SHIM_HELPER"
 
 // TestAgentShimHelperProcess is not a real test: the shim tests run the test
 // binary behind a .cmd shim as a stand-in agent that prints the arguments it
@@ -35,7 +35,7 @@ func TestAgentShimHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-// runShimAgent runs binary the way glorp runs an agent and returns the
+// runShimAgent runs binary the way aviary runs an agent and returns the
 // arguments the stand-in agent received.
 func runShimAgent(t *testing.T, binary string, args ...string) ([]string, error) {
 	t.Helper()

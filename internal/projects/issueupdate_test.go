@@ -29,7 +29,7 @@ func (c updateCommentClient) PostCommentURL(ctx context.Context, repo string, nu
 func TestPostIssueUpdateMentionsTheAuthorAndThisInstance(t *testing.T) {
 	comments := updateCommentClient{fakeCommentClient: newFakeCommentClient(), author: "octo"}
 	logs := &syncBuffer{}
-	w := &Glorp{Identity: "ABCD1234", Comments: comments, Out: logs}
+	w := &Engine{Identity: "ABCD1234", Comments: comments, Out: logs}
 	result, err := w.PostIssueUpdate(context.Background(), core.IssueUpdate{Repository: "o/r", Number: 2, Text: "  The blocker merged; rebase onto main.  "})
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestPostIssueUpdateMentionsTheAuthorAndThisInstance(t *testing.T) {
 		t.Errorf("result = %+v", result)
 	}
 	posted := comments.comments["o/r#2"]
-	if len(posted) != 1 || posted[0].Body != "@octo @/glorp:ABCD1234\n\nThe blocker merged; rebase onto main." {
+	if len(posted) != 1 || posted[0].Body != "@octo @/aviary:ABCD1234\n\nThe blocker merged; rebase onto main." {
 		t.Fatalf("posted %+v", posted)
 	}
 	// The comment reaches the owning job through the mention path.
@@ -61,11 +61,11 @@ func TestPostIssueUpdateMentionsTheAuthorAndThisInstance(t *testing.T) {
 // An instance that genuinely cannot post says what it is missing.
 func TestPostIssueUpdateNamesTheMissingCapability(t *testing.T) {
 	update := core.IssueUpdate{Repository: "o/r", Number: 2, Text: "x"}
-	_, err := (&Glorp{Out: &syncBuffer{}}).PostIssueUpdate(context.Background(), update)
+	_, err := (&Engine{Out: &syncBuffer{}}).PostIssueUpdate(context.Background(), update)
 	if err == nil || !strings.Contains(err.Error(), "gh auth status") {
 		t.Errorf("no comment client: %v", err)
 	}
-	_, err = (&Glorp{Comments: newFakeCommentClient(), Out: &syncBuffer{}}).PostIssueUpdate(context.Background(), update)
+	_, err = (&Engine{Comments: newFakeCommentClient(), Out: &syncBuffer{}}).PostIssueUpdate(context.Background(), update)
 	if err == nil || !strings.Contains(err.Error(), "cannot read an issue's author") {
 		t.Errorf("comment client without update support: %v", err)
 	}

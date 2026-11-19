@@ -10,10 +10,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ownedJob holds every subprocess glorp starts. The job is configured to kill
-// its members when its last handle closes, which happens when glorp's process
-// object is destroyed — including when glorp is terminated outright and runs no
-// cleanup of its own (issue #264). Unlike Linux's parent-death signal, job
+// ownedJob holds every subprocess aviary starts. The job is configured to kill
+// its members when its last handle closes, which happens when aviary's process
+// object is destroyed — including when aviary is terminated outright and runs no
+// cleanup of its own. Unlike Linux's parent-death signal, job
 // membership is inherited, so grandchildren are covered too.
 var ownedJob struct {
 	once   sync.Once
@@ -54,7 +54,7 @@ func ownedJobObject() (windows.Handle, error) {
 // member before it runs a single instruction. Windows can only put a process
 // that already exists into a job, and a child assigned after it starts running
 // has a window in which it can spawn grandchildren the job never covers, or in
-// which glorp can be killed with the child not yet a member (issue #267).
+// which aviary can be killed with the child not yet a member.
 //
 // The child stays suspended until adoptOrphanedProcess resumes it, so nothing
 // may return a started child to a caller without calling that.
@@ -65,12 +65,12 @@ func guardOrphanedProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
 }
 
-// adoptOrphanedProcess makes a freshly created child a member of glorp's job
+// adoptOrphanedProcess makes a freshly created child a member of aviary's job
 // object and then lets it run. It reports an error only when the child cannot
 // be resumed, which is the one failure that would leave it hung forever;
 // failing to join the job costs the kill-on-close guarantee for that child but
 // leaves it working, and the userspace cleanup paths in this package still cover
-// every exit glorp can observe.
+// every exit aviary can observe.
 func adoptOrphanedProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return nil
@@ -83,8 +83,8 @@ func adoptOrphanedProcess(cmd *exec.Cmd) error {
 	return nil
 }
 
-// assignToOwnedJob puts a process into glorp's job object, ignoring the
-// failures described on adoptOrphanedProcess. glorp already running inside
+// assignToOwnedJob puts a process into aviary's job object, ignoring the
+// failures described on adoptOrphanedProcess. aviary already running inside
 // another job is not one of them: Windows 8 and later nest jobs, so the child
 // simply belongs to both.
 func assignToOwnedJob(pid uint32) {

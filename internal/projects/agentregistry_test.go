@@ -36,11 +36,11 @@ func TestConfigPathIsReadBeforeTheFlagsAre(t *testing.T) {
 }
 
 // TestWorkStateFileWithAgentDefinitionsIsRejected checks definitions written
-// into the --state file are reported rather than destroyed. glorp rewrites
+// into the --state file are reported rather than destroyed. aviary rewrites
 // that file as issues are handled, so a hand-edited definition living there
 // would not survive the next save.
 func TestWorkStateFileWithAgentDefinitionsIsRejected(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".glorp.json")
+	path := filepath.Join(t.TempDir(), ".aviary.json")
 	if err := os.WriteFile(path, []byte(`{"agents":[{"name":"acme"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestAgentModelAllowListIsEnforced(t *testing.T) {
 	}
 }
 
-// TestAgentAssignsSessionIDFollowsTheDefinition checks which agents glorp
+// TestAgentAssignsSessionIDFollowsTheDefinition checks which agents aviary
 // generates a session ID for is read from the registry, and that an agent it
 // has never heard of keeps the historical behaviour of being given one.
 func TestAgentAssignsSessionIDFollowsTheDefinition(t *testing.T) {
@@ -285,7 +285,7 @@ func TestAgentBinaryFlagParsesNameEqualsPath(t *testing.T) {
 // reaches --agent: gemini has no reasoning-effort flag and no {level} fragment
 // to render one into, so a level is refused at startup instead of being parsed
 // and then dropped, which from the prompt looked exactly like one that was
-// honoured (issue #532).
+// honoured.
 func TestAgentThatTakesNoLevelRejectsOne(t *testing.T) {
 	_, err := parseAgentSpec("gemini:high")
 	if err == nil || !strings.Contains(err.Error(), "agent gemini takes no reasoning level") {

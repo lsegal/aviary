@@ -18,7 +18,7 @@ import (
 
 // Linux delivers the parent-death signal when the *thread* that forked the
 // child exits, and Go retires idle threads freely, so a child forked from an
-// ordinary goroutine would die at an unpredictable moment while glorp is still
+// ordinary goroutine would die at an unpredictable moment while aviary is still
 // running. Churn threads hard and prove the child is untouched.
 func TestOwnedChildSurvivesThreadChurn(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
@@ -45,7 +45,7 @@ func TestOwnedChildSurvivesThreadChurn(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	if !processAlive(pid) {
-		t.Fatalf("child %d was killed while glorp was still running", pid)
+		t.Fatalf("child %d was killed while aviary was still running", pid)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestSpawnerStartsChildrenFromEveryGoroutine(t *testing.T) {
 }
 
 func TestSpawnerReportsStartFailures(t *testing.T) {
-	cmd := exec.Command("glorp-no-such-binary-exists")
+	cmd := exec.Command("aviary-no-such-binary-exists")
 	if err := Start(cmd); err == nil {
 		t.Fatalf("starting a missing binary succeeded")
 	}
@@ -80,10 +80,10 @@ func TestSpawnerReportsStartFailures(t *testing.T) {
 	}
 }
 
-// The acceptance case from issues #264, #266 and #364: however glorp itself
+// The acceptance case from issues #264, #266 and #364: however aviary itself
 // dies, its subprocesses must go with it on every Unix, even though no
 // userspace cleanup can run. A hangup stands in for the terminal window being
-// closed out from under a `glorp watch`, and a panic for a crash.
+// closed out from under a `aviary watch`, and a panic for a crash.
 func TestKilledParentTakesItsChildrenDown(t *testing.T) {
 	for _, exit := range []struct {
 		name string
@@ -98,11 +98,11 @@ func TestKilledParentTakesItsChildrenDown(t *testing.T) {
 }
 
 // assertParentTakesItsChildDown re-executes the test binary as a stand-in
-// glorp, ends it the way mode describes, and requires the child it owned to be
+// aviary, ends it the way mode describes, and requires the child it owned to be
 // gone.
 func assertParentTakesItsChildDown(t *testing.T, mode string) {
 	parent := exec.Command(os.Args[0], "-test.run=TestOrphanGuardHelperProcess", "-test.timeout=60s")
-	parent.Env = append(os.Environ(), "GLORP_ORPHAN_HELPER=1", "GLORP_ORPHAN_HELPER_EXIT="+mode)
+	parent.Env = append(os.Environ(), "AVIARY_ORPHAN_HELPER=1", "AVIARY_ORPHAN_HELPER_EXIT="+mode)
 	stdout, err := parent.StdoutPipe()
 	if err != nil {
 		t.Fatalf("pipe helper stdout: %v", err)
@@ -148,7 +148,7 @@ func assertParentTakesItsChildDown(t *testing.T, mode string) {
 // TestKilledParentTakesItsChildrenDown, re-executed as its own process so it
 // can be killed outright.
 func TestOrphanGuardHelperProcess(t *testing.T) {
-	if os.Getenv("GLORP_ORPHAN_HELPER") != "1" {
+	if os.Getenv("AVIARY_ORPHAN_HELPER") != "1" {
 		t.Skip("helper process for TestKilledParentTakesItsChildrenDown")
 	}
 	cmd := exec.Command("sleep", "60")
@@ -157,10 +157,10 @@ func TestOrphanGuardHelperProcess(t *testing.T) {
 	}
 	fmt.Printf("child-pid %d\n", cmd.Process.Pid)
 	os.Stdout.Sync()
-	switch os.Getenv("GLORP_ORPHAN_HELPER_EXIT") {
+	switch os.Getenv("AVIARY_ORPHAN_HELPER_EXIT") {
 	case "hangup":
 		// What a closed terminal sends, with no handler installed, so the
-		// process dies exactly as an unattended `glorp watch` would.
+		// process dies exactly as an unattended `aviary watch` would.
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
 	case "panic":
 		panic("helper crash")

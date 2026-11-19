@@ -10,7 +10,7 @@ import (
 )
 
 // A child assigned to the job only after it starts running can spawn
-// grandchildren, or outlive a killed glorp, before it is a member (issue #267).
+// grandchildren, or outlive a killed aviary, before it is a member.
 // Creating it suspended is what closes that window.
 func TestOwnedChildIsCreatedSuspended(t *testing.T) {
 	cmd := exec.Command("cmd", "/c", "exit 0")
@@ -25,7 +25,7 @@ func TestOwnedChildIsCreatedSuspended(t *testing.T) {
 }
 
 // The suspended child must be a job member before it runs, and must actually
-// run afterwards: a child left suspended would hang glorp forever.
+// run afterwards: a child left suspended would hang aviary forever.
 func TestOwnedChildJoinsJobAndRuns(t *testing.T) {
 	job, err := ownedJobObject()
 	if err != nil {
@@ -37,7 +37,7 @@ func TestOwnedChildJoinsJobAndRuns(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = Stop(cmd) })
 	if !processInJob(t, uint32(cmd.Process.Pid), job) {
-		t.Fatalf("child %d is not a member of glorp's job object", cmd.Process.Pid)
+		t.Fatalf("child %d is not a member of aviary's job object", cmd.Process.Pid)
 	}
 	var exit *exec.ExitError
 	if err := Wait(cmd); !errors.As(err, &exit) || exit.ExitCode() != 7 {

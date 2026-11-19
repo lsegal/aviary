@@ -26,11 +26,11 @@ func TestOriginatingWorkStateCountsPullRequestChecklist(t *testing.T) {
 	}
 }
 
-func TestGlorpUpdatesJobProgressAsChecklistChanges(t *testing.T) {
+func TestEngineUpdatesJobProgressAsChecklistChanges(t *testing.T) {
 	reporter := &snapshotReporter{}
 	src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7, Title: "bug"}}}}}
 	runner := &fakeRunner{release: make(chan struct{})}
-	w := &Glorp{
+	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
 		Issues: src, Runner: runner, UI: reporter, closureInterval: time.Millisecond,
 	}
