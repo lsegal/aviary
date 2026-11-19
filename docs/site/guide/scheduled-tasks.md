@@ -144,6 +144,52 @@ tasks:
     prompt: "Post the weekly release notes to Slack."
 ```
 
+### Schedule triggers
+
+Instead of a cron expression, a task can pick its trigger with `trigger` (inferred from the other fields when omitted):
+
+| Trigger | Fields | Example |
+| --- | --- | --- |
+| `once` | `start_at` | `start_at: "2026-12-01T09:00"` |
+| `interval` | `every` (`90s`, `30m`, `2h`, `1d`), optional `start_at` anchor | `every: 2h` |
+| `daily` | `at` (`HH:MM`, comma-separate several) | `at: "09:00, 17:30"` |
+| `weekly` | `days` and `at` | `days: mon,wed,fri` |
+| `cron` | `schedule` | `schedule: "0 9 * * 1-5"` |
+
+Every trigger is evaluated in `timezone`, an IANA zone such as `America/Toronto` (default: the host's local zone). A wall-clock time skipped by a daylight-saving change fires at the first time after the jump. `start_at` also delays the first fire of a recurring trigger, and `run_once: true` makes any trigger fire once.
+
+Two policies control what happens when things do not go to plan:
+
+- **`overlap`**: what a fire does while the previous run is still pending or running. `queue` (default) queues another run; `skip` drops the fire.
+- **`missed`**: what happens to fires that were due while Aviary was stopped or the machine slept. `skip` (default) drops them; `run_once` runs a single catch-up run, however many fires were missed. Aviary persists each task's last fire, and checks for overdue fires every 30 seconds so it notices a wake from sleep.
+
+```yaml
+tasks:
+  - name: standup
+    trigger: weekly
+    days: mon,tue,wed,thu,fri
+    at: "09:15"
+    timezone: America/Toronto
+    overlap: skip
+    missed: run_once
+    prompt: "Summarize what changed yesterday."
+```
+
+Each task keeps a run history of its last 20 fires: fire time, what fired it, status, a one-line summary and duration. `task_list` returns it with the next run time.
+
+### Managing schedules
+
+| Tool | CLI | Purpose |
+| --- | --- | --- |
+| `task_schedule` | `aviary task add <agent> <name> <prompt> --every 2h` | Create or replace a task |
+| `task_list` | `aviary task list` | Tasks with next run and last result |
+| `task_update` | `aviary task update <name> --at 10:00` | Change fields; an empty value clears one, `enabled=false` pauses |
+| `task_preview` | `aviary task preview [<name>] [--every 15m]` | Next fires of a saved task or unsaved trigger (default 3) |
+| `task_run` | `aviary task run <name>` | Run now, ignoring the overlap policy |
+| `task_delete` | `aviary task rm <name>` | Delete a task file and its history |
+
+`aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`.
+
 ## Output Delivery
 
 Tasks that produce output can deliver it to a channel automatically. Set `target` to a channel route:

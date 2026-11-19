@@ -25,7 +25,7 @@ List all configured task definitions across all agents.
 
 **Arguments:** none
 
-**Returns:** JSON array of task config objects from `aviary.yaml`.
+**Returns:** JSON array of registered tasks with their trigger fields, a `description` of the trigger, `next_run`, `last_fire`, and `history` (the last 20 fires, each with `fire_time`, `reason`, `status`, `summary` and `duration_ms`).
 
 ```json
 [
@@ -72,6 +72,15 @@ Schedule a one-time or recurring task.
 | `name` | string | | Task name (required to persist as a recurring task in config) |
 | `target` | string | | Output delivery target |
 | `trigger_type` | string | | `"cron"` or `"watch"` |
+| `trigger` | string | | `once`, `interval`, `daily`, `weekly` or `cron`; inferred from the fields below when omitted |
+| `every` | string | | Interval period (`90s`, `30m`, `2h`, `1d`) |
+| `at` | string | | Daily or weekly time of day, `HH:MM` (comma-separate several) |
+| `days` | string | | Weekly days, e.g. `mon,wed,fri` |
+| `timezone` | string | | IANA zone the trigger is evaluated in (default: local) |
+| `start_at` | string | | Once-trigger time, or earliest fire of a recurring trigger |
+| `run_once` | bool | | Fire only once |
+| `overlap` | string | | `queue` (default) or `skip` while a previous run is active |
+| `missed` | string | | `skip` (default) or `run_once` for fires missed while stopped or asleep |
 | `precompile` | bool | | Override automatic prompt-task precompilation for this task. Set to `false` to keep it as a prompt task. |
 | `run_discovery` | bool | | Run the task immediately to discover its compiled form |
 
@@ -79,7 +88,43 @@ Schedule a one-time or recurring task.
 
 **Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script unless `precompile=false` is provided for that task.
 
-**Notes:** `in` and `schedule` are mutually exclusive — set exactly one per call. To both create a recurring task and fire it once immediately for testing, make two separate `task_schedule`/`task_run` calls rather than passing both fields at once. For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
+**Notes:** `in` and a schedule trigger are mutually exclusive — set exactly one per call. To both create a recurring task and fire it once immediately for testing, make two separate `task_schedule`/`task_run` calls rather than passing both fields at once. For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
+
+---
+
+## task_update
+
+Change fields of an existing task. Only the fields passed change; an empty string clears a field.
+
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`.
+
+**Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
+
+---
+
+## task_delete
+
+Delete a task definition and its run history. Running jobs keep running; use `task_stop` for those. Tasks defined inline in `aviary.yaml` must be removed there.
+
+**Arguments:** `name` (required), `agent`.
+
+---
+
+## task_preview
+
+Return the next fires of a saved task, or of an unsaved trigger.
+
+**Arguments:** `name` for a saved task, or the trigger fields of `task_schedule`; `count` (default 3, at most 20).
+
+**Returns:**
+
+```json
+{
+  "description": "weekly on Mon, Fri at 09:00 (UTC)",
+  "timezone": "UTC",
+  "next": ["2026-11-20T09:00:00Z", "2026-11-23T09:00:00Z", "2026-11-27T09:00:00Z"]
+}
+```
 
 ---
 

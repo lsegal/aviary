@@ -80,7 +80,7 @@ var taskListCmd = &cobra.Command{
 			return err
 		}
 		if taskListJSON {
-			fmt.Fprintln(cmd.OutOrStdout(), out)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 			return nil
 		}
 		var tasks []domain.ScheduledTask
@@ -94,11 +94,11 @@ var taskListCmd = &cobra.Command{
 
 func writeTaskTable(w io.Writer, tasks []domain.ScheduledTask) {
 	if len(tasks) == 0 {
-		fmt.Fprintln(w, "No scheduled tasks.")
+		_, _ = fmt.Fprintln(w, "No scheduled tasks.")
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TASK\tTRIGGER\tNEXT RUN\tLAST RESULT")
+	_, _ = fmt.Fprintln(tw, "TASK\tTRIGGER\tNEXT RUN\tLAST RESULT")
 	for _, t := range tasks {
 		trigger := t.Description
 		if trigger == "" && t.Watch != "" {
@@ -116,7 +116,7 @@ func writeTaskTable(w io.Writer, tasks []domain.ScheduledTask) {
 			run := t.History[n-1]
 			last = fmt.Sprintf("%s %s", run.Status, run.FireTime.Local().Format("2006-01-02 15:04"))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, trigger, next, last)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, trigger, next, last)
 	}
 	_ = tw.Flush()
 }
@@ -145,7 +145,7 @@ Choose the trigger with --schedule (cron), or --every, --at, --days and
 				if err != nil {
 					return err
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), out)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 				return nil
 			}
 		}
@@ -172,7 +172,7 @@ var taskUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), out)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 		return nil
 	},
 }
@@ -187,7 +187,7 @@ var taskRmCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), out)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 		return nil
 	},
 }
@@ -214,19 +214,19 @@ var taskPreviewCmd = &cobra.Command{
 			Next        []string `json:"next"`
 		}
 		if err := json.Unmarshal([]byte(out), &res); err != nil {
-			fmt.Fprintln(cmd.OutOrStdout(), out)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 			return nil
 		}
 		w := cmd.OutOrStdout()
-		fmt.Fprintln(w, res.Description)
+		_, _ = fmt.Fprintln(w, res.Description)
 		if len(res.Next) == 0 {
-			fmt.Fprintln(w, "  no upcoming fires")
+			_, _ = fmt.Fprintln(w, "  no upcoming fires")
 		}
 		for _, n := range res.Next {
 			if ts, err := time.Parse(time.RFC3339, n); err == nil {
 				n = ts.Format("Mon 2006-01-02 15:04 MST")
 			}
-			fmt.Fprintln(w, "  "+n)
+			_, _ = fmt.Fprintln(w, "  "+n)
 		}
 		return nil
 	},
@@ -243,10 +243,10 @@ var taskRunCmd = &cobra.Command{
 		}
 		var job domain.Job
 		if json.Unmarshal([]byte(out), &job) == nil && job.ID != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "Started task %q (job %s).\n", job.TaskID, job.ID)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Started task %q (job %s).\n", job.TaskID, job.ID)
 			return nil
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), out)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 		return nil
 	},
 }
@@ -269,7 +269,7 @@ specified task (format: <agent>/<task> or <task-name>).
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), out)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 		return nil
 	},
 }
