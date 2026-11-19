@@ -14,7 +14,7 @@ Connect at `https://localhost:16677/mcp` using the bearer token from `~/.config/
 | [Browser and Channel Tools](./browser-and-channels) | `browser_open`, `browser_tabs`, `browser_navigate`, `browser_wait`, `browser_click`, `browser_keystroke`, `browser_fill`, `browser_text`, `browser_query`, `browser_screenshot`, `browser_resize`, `browser_eval`, `browser_close`, `channel_send_file` | Browser automation and file delivery to channels |
 | [Files and Notes Tools](./files-and-notes) | `agent_file_list`, `agent_file_read`, `agent_file_write`, `agent_file_delete`, `file_read`, `file_write`, `file_append`, `file_truncate`, `file_delete`, `file_copy`, `file_move`, `exec` | Workspace files, filesystem access, and command execution |
 | [Auth Tools](./auth) | `auth_set`, `auth_get`, `auth_list`, `auth_delete`, `auth_login_anthropic`, `auth_login_anthropic_complete`, `auth_login_gemini`, `auth_login_openai`, `auth_login_github_copilot`, `auth_login_github_copilot_complete` | Credential storage and OAuth login flows |
-| [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
+| [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `server_restart`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
 | [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `web_search` | Token analytics, skill discovery, and web search |
 
 ## Permissions
