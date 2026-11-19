@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -230,6 +231,29 @@ func TestEngineApplySettingsNoChangelogChangesNewDispatches(t *testing.T) {
 	}
 	if !w.runner().(CommandRunner).NoChangelog {
 		t.Fatal("runner noChangelog = false, want true")
+	}
+	cancel()
+	<-done
+}
+
+func TestEngineApplySettingsAllowedCommentersChangesNewDispatches(t *testing.T) {
+	dir := t.TempDir()
+	src := &fakeSource{batches: [][]Issue{{}}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "codex", AllowedCommenters: []string{"alice"}}, Out: &syncBuffer{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	if got := w.runner().(CommandRunner).AllowedCommenters; !reflect.DeepEqual(got, []string{"alice"}) {
+		t.Fatalf("runner allowed commenters before = %v, want [alice]", got)
+	}
+	allowed := []string{"bob", "carol"}
+	if _, err := w.ApplySettings(ctx, SettingsUpdate{AllowedCommenters: &allowed}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.runner().(CommandRunner).AllowedCommenters; !reflect.DeepEqual(got, allowed) {
+		t.Fatalf("runner allowed commenters = %v, want %v", got, allowed)
 	}
 	cancel()
 	<-done

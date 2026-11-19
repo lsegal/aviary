@@ -41,6 +41,8 @@ Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each 
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
 
+Without `yolo`, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
+
 `agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
 `aviary project cli list` reports every CLI's install, version, sign-in, quota, models and any Projects gate.
@@ -80,7 +82,7 @@ projects:
 
 ## Steering jobs
 
-Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session.
+Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the coding CLI treats comments by anyone else in the thread as untrusted information rather than instructions.
 
 Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
