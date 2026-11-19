@@ -375,12 +375,14 @@ test("system skills for coding CLIs shows versions and installs", async ({
 			skills: {},
 		},
 		config_save: async (args) => {
-			savedConfigs.push(String(args.config));
+			savedConfigs.push(String(args?.config));
 			return {};
 		},
 		skills_list: [],
 		coding_skills_list: async () => status(),
-		coding_skills_install: async (args) => {
+		coding_skills_install: async (
+			args: { skill?: string; cli?: string; update_only?: boolean } = {},
+		) => {
 			installCalls.push(args);
 			const installed: string[] = [];
 			for (const key of Object.keys(installs).concat(
@@ -409,12 +411,12 @@ test("system skills for coding CLIs shows versions and installs", async ({
 	await expect(page.getByTestId("coding-skill-gh-fix-codex")).toContainText(
 		"1.5.16",
 	);
-	await expect(
-		page.getByTestId("coding-skill-gh-discuss-codex"),
-	).toContainText("Older copy");
-	await expect(
-		page.getByTestId("coding-skill-gh-create-codex"),
-	).toContainText("Not installed");
+	await expect(page.getByTestId("coding-skill-gh-discuss-codex")).toContainText(
+		"Older copy",
+	);
+	await expect(page.getByTestId("coding-skill-gh-create-codex")).toContainText(
+		"Not installed",
+	);
 	await expect(page.getByTestId("coding-skill-gh-fix")).toContainText(
 		"run by Projects",
 	);
@@ -427,9 +429,9 @@ test("system skills for coding CLIs shows versions and installs", async ({
 		.getByRole("button", { name: "Install" })
 		.click();
 	await expect(page.getByText("Installed gh-create/codex.")).toBeVisible();
-	await expect(
-		page.getByTestId("coding-skill-gh-create-codex"),
-	).toContainText("2.0.0");
+	await expect(page.getByTestId("coding-skill-gh-create-codex")).toContainText(
+		"2.0.0",
+	);
 	expect(installCalls[0]).toEqual({ skill: "gh-create", cli: "codex" });
 
 	await page
