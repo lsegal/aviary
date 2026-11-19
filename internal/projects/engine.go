@@ -1,3 +1,6 @@
+// Package projects is the Projects engine: it watches GitHub repositories,
+// project boards and Discussions boards for ready issues and runs coding-CLI
+// jobs on them through the gh-fix and gh-discuss skills.
 package projects
 
 import (
@@ -111,10 +114,14 @@ func isCooperativeCancellation(cause error) bool {
 // Issue and its parts live in package core so the browser driver can produce
 // them without importing the root package.
 type (
-	Issue           = core.Issue
-	IssueLabel      = core.IssueLabel
+	// Issue is a GitHub issue or Discussion thread a job works.
+	Issue = core.Issue
+	// IssueLabel is one of an issue's labels.
+	IssueLabel = core.IssueLabel
+	// IssueDependency is an issue an issue is blocked by.
 	IssueDependency = core.IssueDependency
-	IssueSource     = core.IssueSource
+	// IssueSource lists a target's issues.
+	IssueSource = core.IssueSource
 )
 
 // issueRepository resolves the OWNER/REPO an issue belongs to.
@@ -131,28 +138,46 @@ type Discussion struct {
 	CreatedAt time.Time
 }
 
+// DiscussionSource lists the Discussion threads that have no reply yet.
 type DiscussionSource interface {
 	ListUnansweredDiscussions(context.Context, string) ([]Discussion, error)
 }
 
 type (
+	// PullRequestWorkState is the state of one pull request working an issue.
 	PullRequestWorkState = core.PullRequestWorkState
+	// OriginatingWorkState is the state of an issue and its pull requests.
 	OriginatingWorkState = core.OriginatingWorkState
-	WorkClosureChecker   = core.WorkClosureChecker
+	// WorkClosureChecker reads an issue's OriginatingWorkState.
+	WorkClosureChecker = core.WorkClosureChecker
 )
 
+// ProjectStateSource reads a board's state.
 type ProjectStateSource = core.ProjectStateSource
+
+// StackSource reports whether a repository allows stacked pull requests.
 type StackSource = core.StackSource
+
+// ForkSource names the fork pull requests come from when a repository is
+// not writable.
 type ForkSource = core.ForkSource
+
+// IssueStatuser moves an issue's board item to a status.
 type IssueStatuser interface {
 	SetIssueStatus(context.Context, string, Issue, string) error
 }
+
+// AgentRunner runs a coding agent on an issue.
 type AgentRunner interface {
 	Run(context.Context, Issue) error
 }
+
+// AgentOutputRunner runs a coding agent on an issue, copying its output.
 type AgentOutputRunner interface {
 	RunWithOutput(context.Context, Issue, io.Writer) error
 }
+
+// AgentSession is the coding-agent session a job runs in.
 type AgentSession struct {
 	ID                string
 	Agent             string
@@ -168,12 +193,19 @@ type AgentSession struct {
 	// rather than being noticed only after the run ends.
 	Update string
 }
+
+// SessionAgentRunner runs a coding agent in a session it can resume.
 type SessionAgentRunner interface {
 	RunSession(context.Context, Issue, AgentSession, func(AgentSession)) error
 }
+
+// SessionAgentOutputRunner runs a coding agent in a resumable session,
+// copying its output.
 type SessionAgentOutputRunner interface {
 	RunSessionWithOutput(context.Context, Issue, AgentSession, func(AgentSession), io.Writer) error
 }
+
+// AgentIdentifier picks the agent for a new job.
 type AgentIdentifier interface {
 	AgentName() string
 }
@@ -182,7 +214,12 @@ type AgentIdentifier interface {
 type TargetAgentIdentifier interface {
 	AgentNameFor(target string) string
 }
+
+// UIReporter receives the engine's published state and log lines.
 type UIReporter = core.UIReporter
+
+// Engine is the Projects engine: it watches targets for ready issues, claims
+// them, and runs coding-agent jobs on them up to a concurrency limit.
 type Engine struct {
 	Repo        string
 	Targets     []string
@@ -1888,7 +1925,7 @@ func (w *Engine) logf(format string, args ...interface{}) {
 	// Run defaults Out to io.Discard, but handoff logging also runs from code
 	// paths exercised without it; a missing writer must not panic.
 	if w.Out != nil {
-		fmt.Fprintln(w.Out, line)
+		_, _ = fmt.Fprintln(w.Out, line)
 	}
 	w.recentLogs = append(w.recentLogs, line)
 	if len(w.recentLogs) > recentLogLines {
@@ -2014,6 +2051,7 @@ func (w *Engine) watchPollProgress(ctx context.Context, interval time.Duration, 
 	}
 }
 
+// Run watches the targets and dispatches jobs until ctx is cancelled.
 func (w *Engine) Run(ctx context.Context) error {
 	// Ownership handshakes wait out their grace window off the poll loop, so
 	// a run that is shutting down waits for them here rather than leaving
@@ -2207,7 +2245,7 @@ func (w *Engine) Run(ctx context.Context) error {
 	pollOnce := func(sweep map[string]bool) error {
 		pollNumber++
 		n := pollNumber
-		running, queued, _, _ := tasks.snapshot()
+		var running, queued int
 		// Publish before listing: browser mode consults this snapshot while
 		// extracting, to avoid fetching metadata for work already in flight
 		// or already finished.
@@ -2863,7 +2901,7 @@ func (w *Engine) Run(ctx context.Context) error {
 						wakeup = nil
 						delay := w.wakeupDelay(*pending)
 						setWaiting("active", "waiting", pending.Reason, time.Now().Add(delay))
-						fmt.Fprintf(jobOutput, "Waiting %s for the scheduled wakeup before resuming the session.\n", formatWakeupDelay(delay))
+						_, _ = fmt.Fprintf(jobOutput, "Waiting %s for the scheduled wakeup before resuming the session.\n", formatWakeupDelay(delay))
 						jobMu.Lock()
 						waitingCheckout := jobs[key].CheckoutDirectory
 						jobMu.Unlock()
@@ -4545,10 +4583,6 @@ func projectItemInProgress(target string, issue Issue) bool {
 
 func remoteIssueAllowsDispatch(target string, issue Issue, readyState string) bool {
 	return core.RemoteIssueAllowsDispatch(target, issue, readyState)
-}
-
-func projectStatusAllowsDispatch(status, readyState string) bool {
-	return core.ProjectStatusAllowsDispatch(status, readyState)
 }
 
 func projectReadyState(configured, current string) string {

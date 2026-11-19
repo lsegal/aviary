@@ -241,7 +241,7 @@ func TestCheckpointAllBoundsTheWholePhase(t *testing.T) {
 	dir := t.TempDir()
 	block := make(chan struct{})
 	defer close(block)
-	hang := func(ctx context.Context, d string, args ...string) (string, error) {
+	hang := func(_ context.Context, _ string, _ ...string) (string, error) {
 		<-block // ignores cancellation, like a git that will not die
 		return "", context.Canceled
 	}
@@ -261,7 +261,7 @@ func TestCheckpointAllBoundsTheWholePhase(t *testing.T) {
 
 func TestCheckpointRunBudgetReportsTimeout(t *testing.T) {
 	dir := t.TempDir()
-	slow := func(ctx context.Context, d string, args ...string) (string, error) {
+	slow := func(ctx context.Context, _ string, _ ...string) (string, error) {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
@@ -277,7 +277,7 @@ func TestShutdownCheckpointerRunsOnce(t *testing.T) {
 	agents := &activeAgents{}
 	agents.add(Issue{Target: "o/r", Number: 4}, "")
 	var logged []string
-	s := newShutdownCheckpointer(agents, func(format string, args ...interface{}) { logged = append(logged, format) })
+	s := newShutdownCheckpointer(agents, func(format string, _ ...interface{}) { logged = append(logged, format) })
 	first := s.Checkpoint()
 	second := s.Checkpoint()
 	if len(first) != 1 || first[0].Number != 4 || first[0].Outcome != checkpointNothing {

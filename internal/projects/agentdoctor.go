@@ -421,9 +421,9 @@ const doctorFieldWidth = 8
 func writeAgentReports(out io.Writer, reports []agentReport) {
 	for i, report := range reports {
 		if i > 0 {
-			fmt.Fprintln(out)
+			_, _ = fmt.Fprintln(out)
 		}
-		fmt.Fprintf(out, "%-*s %s\n", statusWidth, report.status(), report.name)
+		_, _ = fmt.Fprintf(out, "%-*s %s\n", statusWidth, report.status(), report.name)
 		writeAgentField(out, "binary", describeBinary(report))
 		if !report.installed() {
 			continue
@@ -481,12 +481,12 @@ func writeAgentModels(out io.Writer, report agentReport) {
 	}
 	writeAgentField(out, "models", header)
 	for _, model := range report.models {
-		fmt.Fprintf(out, "  %-*s  %s\n", doctorFieldWidth, "", model)
+		_, _ = fmt.Fprintf(out, "  %-*s  %s\n", doctorFieldWidth, "", model)
 	}
 }
 
 func writeAgentField(out io.Writer, name, value string) {
-	fmt.Fprintf(out, "  %-*s  %s\n", doctorFieldWidth, name, value)
+	_, _ = fmt.Fprintf(out, "  %-*s  %s\n", doctorFieldWidth, name, value)
 }
 
 func orDefault(value, fallback string) string {

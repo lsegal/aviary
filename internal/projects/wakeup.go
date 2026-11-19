@@ -72,7 +72,7 @@ func parseScheduledWakeup(input json.RawMessage) *scheduledWakeup {
 // sentinels are resolved by Claude Code's runtime rather than by the model, so
 // they, like an empty prompt, are replaced with a plain instruction to go on.
 func wakeupPrompt(issue Issue, wakeup scheduledWakeup) string {
-	if wakeup.Prompt != "" && !(strings.HasPrefix(wakeup.Prompt, "<<") && strings.HasSuffix(wakeup.Prompt, ">>")) {
+	if wakeup.Prompt != "" && (!strings.HasPrefix(wakeup.Prompt, "<<") || !strings.HasSuffix(wakeup.Prompt, ">>")) {
 		return wakeup.Prompt
 	}
 	reason := wakeup.Reason

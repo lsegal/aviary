@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -130,7 +131,7 @@ func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
-	m.refresh()
+	_ = m.refresh()
 }
 
 // AddWatch starts watching targets until RemoveWatch or the server stops.
@@ -439,10 +440,15 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	setAgentRegistry(registry)
 	for _, spec := range allAgentSpecs(s) {
-		if _, err := parseAgentSpecIn(registry, spec); err != nil {
+		parsed, err := parseAgentSpecIn(registry, spec)
+		if err != nil {
 			return nil, fmt.Errorf("agent %q: %w", spec, err)
 		}
+		if parsed.Name == aviaryAgent && parsed.Model == "" {
+			return nil, fmt.Errorf("agent %q: name the Aviary agent to run, as aviary/<agent>", spec)
+		}
 	}
+	s.AgentBinaries = withAviaryBinary(s.AgentBinaries)
 	unblock := unblockConfig{Agent: s.UnblockAgent, Model: s.UnblockModel}
 	if err := validateUnblockAgent(registry, unblock); err != nil {
 		return nil, err
@@ -641,6 +647,27 @@ func (m *Manager) stopRun(run *engineRun) {
 	for _, cleanup := range run.cleanup {
 		cleanup()
 	}
+}
+
+// aviaryAgent is the built-in definition that runs a job on an Aviary agent:
+// aviary/<agent> runs `aviary agent run <agent>` through this executable.
+const aviaryAgent = "aviary"
+
+// withAviaryBinary points the aviary definition at the running executable
+// unless agent_binaries names another.
+func withAviaryBinary(binaries map[string]string) map[string]string {
+	if binaries[aviaryAgent] != "" {
+		return binaries
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return binaries
+	}
+	merged := map[string]string{aviaryAgent: executable}
+	for name, binary := range binaries {
+		merged[name] = binary
+	}
+	return merged
 }
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.

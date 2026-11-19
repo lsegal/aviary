@@ -25,17 +25,17 @@ func TestNgrokLogWatcherReadsTunnelURLFromOwnProcess(t *testing.T) {
 	// A second agent on the machine pushes this process's web API off 4040,
 	// which is exactly the case that used to make aviary adopt the other
 	// agent's tunnel. The URL still comes from this log.
-	watcher.Write([]byte(`{"lvl":"warn","msg":"cannot bind default web address, trying alternatives","addr":"127.0.0.1:4040"}` + "\n"))
-	watcher.Write([]byte(`{"lvl":"info","msg":"starting web service","addr":"127.0.0.1:4041"}` + "\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"warn","msg":"cannot bind default web address, trying alternatives","addr":"127.0.0.1:4040"}` + "\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"info","msg":"starting web service","addr":"127.0.0.1:4041"}` + "\n"))
 	if watcher.URL() != "" {
 		t.Fatalf("URL = %q before the tunnel started", watcher.URL())
 	}
-	watcher.Write([]byte(`{"lvl":"info","msg":"started tunnel","url":"https://mine.ngrok-free.app/"`))
-	watcher.Write([]byte(`,"addr":"http://localhost:8080"}` + "\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"info","msg":"started tunnel","url":"https://mine.ngrok-free.app/"`))
+	_, _ = watcher.Write([]byte(`,"addr":"http://localhost:8080"}` + "\n"))
 	if got := watcher.URL(); got != "https://mine.ngrok-free.app" {
 		t.Fatalf("URL = %q, want https://mine.ngrok-free.app", got)
 	}
-	watcher.Write([]byte(`{"lvl":"info","msg":"started tunnel","url":"https://other.ngrok-free.app"}` + "\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"info","msg":"started tunnel","url":"https://other.ngrok-free.app"}` + "\n"))
 	if got := watcher.URL(); got != "https://mine.ngrok-free.app" {
 		t.Fatalf("URL = %q after a later tunnel record, want the first one", got)
 	}
@@ -49,12 +49,12 @@ func TestNgrokLogWatcherReportsFailures(t *testing.T) {
 	watcher := &ngrokLogWatcher{out: &out}
 	// A recoverable error is remembered for diagnostics but kept off the UI,
 	// which only ever showed critical output.
-	watcher.Write([]byte(`{"lvl":"eror","msg":"unable to check host info","err":"exec: \"ioreg\" not found"}` + "\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"eror","msg":"unable to check host info","err":"exec: \"ioreg\" not found"}` + "\n"))
 	if out.Len() != 0 {
 		t.Fatalf("recoverable ngrok error was forwarded: %q", out.String())
 	}
-	watcher.Write([]byte(`{"lvl":"crit","msg":"command failed","err":"authentication failed\nERR_NGROK_108"}` + "\n"))
-	watcher.Write([]byte("ngrok exploded\n"))
+	_, _ = watcher.Write([]byte(`{"lvl":"crit","msg":"command failed","err":"authentication failed\nERR_NGROK_108"}` + "\n"))
+	_, _ = watcher.Write([]byte("ngrok exploded\n"))
 	if !strings.Contains(watcher.Failure(), "unable to check host info") {
 		t.Fatalf("recoverable error was not captured: %q", watcher.Failure())
 	}

@@ -136,7 +136,7 @@ func TestProbeTunnel(t *testing.T) {
 	if err := probeTunnel(context.Background(), server.URL+"/webhook"); err != nil {
 		t.Fatalf("probe of a live webhook server: %v", err)
 	}
-	offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Ngrok-Error-Code", "ERR_NGROK_3200")
 		w.WriteHeader(http.StatusNotFound)
 	}))

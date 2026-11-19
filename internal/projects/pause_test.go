@@ -378,9 +378,9 @@ func TestEngineWebUIStopClearsAnUnlistedManualPause(t *testing.T) {
 	default:
 	}
 
-	src.fakeSource.mu.Lock()
-	src.fakeSource.batches = [][]Issue{{{Number: 7, Repository: "o/r"}}}
-	src.fakeSource.mu.Unlock()
+	src.mu.Lock()
+	src.batches = [][]Issue{{{Number: 7, Repository: "o/r"}}}
+	src.mu.Unlock()
 	w.nudgePoll()
 	select {
 	case session := <-runner.sessions:

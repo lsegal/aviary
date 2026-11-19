@@ -2,8 +2,11 @@ package projects
 
 import (
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 func TestRepositoryFilterAddsTheReadyLabel(t *testing.T) {
@@ -91,5 +94,38 @@ func TestConfiguredAgentsIncludeProjectAgents(t *testing.T) {
 	}
 	if !w.agentStillConfigured("claude/opus") {
 		t.Fatal("a project's own agent was treated as no longer configured")
+	}
+}
+
+func TestAviaryAgentSpecRunsTheNamedAgent(t *testing.T) {
+	registry := agents.MustBuiltin()
+	spec, err := parseAgentSpecIn(registry, "aviary/reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, _ := registry.Lookup(spec.Name)
+	got := definition.Render(agents.ModeRun, agents.Values{Model: spec.Model, Prompt: "/gh-fix o/r#1"})
+	if want := []string{"agent", "run", "reviewer", "/gh-fix o/r#1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %#v, want %#v", got, want)
+	}
+	if _, err := parseAgentSpecIn(registry, "aviary/reviewer:high"); err == nil {
+		t.Fatal("an aviary agent accepted a level")
+	}
+	binaries := withAviaryBinary(map[string]string{"codex": "/opt/codex"})
+	if binaries["aviary"] == "" || binaries["codex"] != "/opt/codex" {
+		t.Fatalf("binaries = %v", binaries)
+	}
+	if got := withAviaryBinary(map[string]string{"aviary": "/x"})["aviary"]; got != "/x" {
+		t.Fatalf("a configured aviary binary was replaced: %q", got)
+	}
+}
+
+func TestManagerRejectsAnAviarySpecWithoutAnAgent(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.startRun(engineSettings{Targets: []string{"o/r"}, Agents: []string{"aviary"}}); err == nil || !strings.Contains(err.Error(), "aviary/<agent>") {
+		t.Fatalf("startRun error = %v", err)
 	}
 }

@@ -1,3 +1,5 @@
+// Package ngrok starts and supervises the ngrok tunnel that carries GitHub
+// webhook deliveries to the Projects engine.
 package ngrok
 
 import (
@@ -21,8 +23,10 @@ type Tunnel struct {
 	publicURL string
 }
 
+// URL is the tunnel's public URL.
 func (t *Tunnel) URL() string { return t.publicURL }
 
+// Close stops the tunnel.
 func (t *Tunnel) Close() error {
 	if t == nil || t.cmd == nil {
 		return nil
@@ -104,10 +108,11 @@ func (w *ngrokLogWatcher) consume(line string) {
 func (w *ngrokLogWatcher) record(message string, fatal bool) {
 	w.failure = append(w.failure, message)
 	if fatal && w.out != nil {
-		fmt.Fprintln(w.out, message)
+		_, _ = fmt.Fprintln(w.out, message)
 	}
 }
 
+// URL is the tunnel's public URL.
 func (w *ngrokLogWatcher) URL() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -150,13 +155,14 @@ func ngrokLogMessage(record ngrokLogRecord) string {
 	return message
 }
 
+// Start starts an ngrok tunnel to listenAddr and waits for its public URL.
 func Start(ctx context.Context, binary, listenAddr string, out io.Writer) (*Tunnel, error) {
 	invocation, err := resolveCommand(binary)
 	if err != nil {
 		return nil, err
 	}
 	if invocation.viaNpx && out != nil {
-		fmt.Fprintf(out, "no %s executable found; running ngrok through %s\n", binary, npxBinary)
+		_, _ = fmt.Fprintf(out, "no %s executable found; running ngrok through %s\n", binary, npxBinary)
 	}
 	// Agents abandoned by an earlier run hold the local ngrok API port and one
 	// of the account's simultaneous agent sessions, so clear them out before
@@ -205,6 +211,7 @@ func ngrokArgs(listenAddr string) []string {
 	return []string{"http", "--log=stdout", "--log-format=json", "--log-level=info", listenAddr}
 }
 
+// WebhookURL joins a tunnel's public URL and the webhook path.
 func WebhookURL(publicURL, webhookPath string) (string, error) {
 	u, err := url.Parse(strings.TrimRight(publicURL, "/"))
 	if err != nil || u.Scheme == "" || u.Host == "" {
@@ -220,6 +227,7 @@ func WebhookURL(publicURL, webhookPath string) (string, error) {
 	return u.String(), nil
 }
 
+// IsURL reports whether value is an http or https URL.
 func IsURL(value string) bool {
 	u, err := url.Parse(value)
 	return err == nil && strings.Contains(strings.ToLower(u.Hostname()), "ngrok")

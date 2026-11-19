@@ -28,12 +28,19 @@ func newIdentity() (Identity, error) {
 // The comment types live in package core so the browser driver can implement
 // CommentClient without importing the root package.
 type (
-	Comment             = core.Comment
-	CommentPoster       = core.CommentPoster
-	CommentLister       = core.CommentLister
-	CommentClient       = core.CommentClient
-	CommentReactor      = core.CommentReactor
-	ReviewReactor       = core.ReviewReactor
+	// Comment is a comment on an issue or pull request.
+	Comment = core.Comment
+	// CommentPoster posts comments.
+	CommentPoster = core.CommentPoster
+	// CommentLister lists comments.
+	CommentLister = core.CommentLister
+	// CommentClient posts and lists comments.
+	CommentClient = core.CommentClient
+	// CommentReactor reacts to issue comments.
+	CommentReactor = core.CommentReactor
+	// ReviewReactor reacts to pull request review comments.
+	ReviewReactor = core.ReviewReactor
+	// ReviewCommentLister lists pull request review comments.
 	ReviewCommentLister = core.ReviewCommentLister
 )
 
@@ -108,7 +115,7 @@ func commenterAllowed(login string, allowed []string) bool {
 
 // authorizedDirectMention reports whether the most recent comment on
 // repo#number is a safe, actionable direct mention of this aviary instance
-//: it must be the very last comment, so a stale mention buried
+// : it must be the very last comment, so a stale mention buried
 // under newer conversation cannot silently retrigger a run; it must contain
 // the @/aviary:ID mention syntax addressed to id; and it must be posted by an
 // allowed commenter.
@@ -308,7 +315,7 @@ func (w *Engine) claimStanding(ctx context.Context, target ownershipTarget) (cla
 // completion, and what it decided. The reap's other guards are all derived
 // from GitHub's own comments; this one is local, so a negotiation cannot be
 // re-opened just because a comment read disagrees with what already happened
-//.
+// .
 type handshakeRecord struct {
 	At time.Time
 	// Claimed reports that the negotiation ended with this instance owning
