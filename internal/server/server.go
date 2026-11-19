@@ -25,6 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -251,6 +252,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Start scheduler.
 	if s.sched != nil {
 		s.sched.Start(ctx)
+		saferestart.Register("tasks", s.sched)
+		defer saferestart.Unregister("tasks")
 	}
 
 	// Start process sampler — periodically collects CPU/RSS for all daemon PIDs.
