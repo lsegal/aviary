@@ -65,6 +65,11 @@ func TestInstallNoopWhenEmulated(t *testing.T) {
 
 func TestReplaceFileFallsBackToCopyOnCrossDeviceRename(t *testing.T) {
 	originalRename := renameFile
+	// One attempt per rename, so each injected failure is final even on
+	// Windows, where locked renames are retried.
+	originalAttempts := renameAttempts
+	renameAttempts = 1
+	t.Cleanup(func() { renameAttempts = originalAttempts })
 	renameCalls := 0
 	renameFile = func(oldpath, newpath string) error {
 		renameCalls++
@@ -92,6 +97,11 @@ func TestReplaceFileFallsBackToCopyOnCrossDeviceRename(t *testing.T) {
 
 func TestReplaceFileRestoresBackupWhenInstallFails(t *testing.T) {
 	originalRename := renameFile
+	// One attempt per rename, so each injected failure is final even on
+	// Windows, where locked renames are retried.
+	originalAttempts := renameAttempts
+	renameAttempts = 1
+	t.Cleanup(func() { renameAttempts = originalAttempts })
 	renameCalls := 0
 	renameFile = func(oldpath, newpath string) error {
 		renameCalls++
