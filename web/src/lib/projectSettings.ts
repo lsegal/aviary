@@ -2,17 +2,35 @@
 // section of aviary.yaml (read and written with config_get / config_save) and
 // hold only values that differ from the defaults below, which mirror
 // internal/config/projects.go. Most settings are shared by every watched
-// project; each project's own entry in `list` carries its coding-CLI order.
+// project; each project's own entry in `list` carries its coding-CLI order
+// and its optional job reports.
 // The add-project checks come from project_check, the coding-CLI probe from
 // project_cli_list and clones from project_clone_list; their responses are
 // normalized here so the views never depend on the raw payload shape.
 
 export type Delivery = "poll" | "webhook";
 
+/** A project's opt-in to job reports through an Aviary agent's channels. */
+export interface ProjectReportsEntry {
+	agent: string;
+	targets: string[];
+	/** Reported events; absent reports every one of REPORT_EVENTS. */
+	events?: string[];
+}
+
 /** One watched project in `projects.list`. */
 export interface ProjectEntry {
 	target: string;
 	agents?: string[];
+	reports?: ProjectReportsEntry;
+}
+
+/** The reports form. With enabled false nothing is saved. */
+export interface ProjectReports {
+	enabled: boolean;
+	agent: string;
+	targets: string[];
+	events: string[];
 }
 
 /** The `projects:` section as stored in aviary.yaml (snake_case, sparse). */
@@ -55,6 +73,7 @@ export interface ProjectSettings {
 	yolo: boolean;
 	unblockInterval: string;
 	tempDirs: string[];
+	reports: ProjectReports;
 }
 
 export const DEFAULT_CONCURRENCY = 3;
@@ -62,6 +81,13 @@ export const DEFAULT_READY_LABEL = "ready";
 export const DEFAULT_INTERVAL = "30s";
 export const DEFAULT_FILTER = ["assignee:@me author:@me"];
 export const DEFAULT_AGENT = "codex";
+
+// The job events a project can report, from config.ProjectReportEvents.
+export const REPORT_EVENTS: { key: string; label: string }[] = [
+	{ key: "merged", label: "Merged" },
+	{ key: "failed", label: "Failed" },
+	{ key: "waiting", label: "Waiting on an answer" },
+];
 
 export const DELIVERY_OPTIONS: { key: Delivery; label: string }[] = [
 	{ key: "poll", label: "Poll with gh" },
@@ -129,7 +155,83 @@ export function settingsFromSection(
 		yolo: s.yolo === true,
 		unblockInterval: (s.unblock_interval ?? "").trim(),
 		tempDirs: strings(s.temp_dirs),
+		reports: reportsFromEntry(entry?.reports),
 	};
+}
+
+function reportsFromEntry(r: ProjectReportsEntry | undefined): ProjectReports {
+	const agent = (r?.agent ?? "").trim();
+	const targets = strings(r?.targets);
+	const events = strings(r?.events).map((e) => e.toLowerCase());
+	return {
+		// Matches ProjectReportsConfig.Enabled: an agent and a target.
+		enabled: !!agent && targets.length > 0,
+		agent,
+		targets,
+		events: events.length ? events : REPORT_EVENTS.map((e) => e.key),
+	};
+}
+
+// Target rows still missing their delivery ID are left out of what's saved.
+function filledTargets(targets: string[]): string[] {
+	return clean(targets).filter((t) => splitReportTarget(t).id);
+}
+
+/** The `reports` entry to save, or undefined while reports are off. */
+function reportsEntry(r: ProjectReports): ProjectReportsEntry | undefined {
+	if (!r.enabled) return undefined;
+	const events = clean(r.events);
+	const all = REPORT_EVENTS.every((e) => events.includes(e.key));
+	return {
+		agent: r.agent.trim(),
+		targets: filledTargets(r.targets),
+		...(all ? {} : { events }),
+	};
+}
+
+/**
+ * Why the reports can't be saved, or "" when they can. Mirrors
+ * config.ValidateProjectReports: the agent must be configured and at least one
+ * target is needed. Events come from fixed checkboxes, so at least one must be
+ * picked; none would be saved as no filter, which reports every event.
+ */
+export function reportsError(r: ProjectReports, agents: string[]): string {
+	if (!r.enabled) return "";
+	const agent = r.agent.trim();
+	if (!agent) return "Choose the Aviary agent that sends reports.";
+	if (!agents.includes(agent))
+		return `Reports agent "${agent}" is not configured.`;
+	const targets = filledTargets(r.targets);
+	if (!targets.length) return "Reports need at least one target.";
+	if (targets.some((t) => !splitReportTarget(t).channel))
+		return "Choose a channel for each target.";
+	const events = clean(r.events);
+	const unknown = events.find((e) => !REPORT_EVENTS.some((k) => k.key === e));
+	if (unknown) return `Unknown report event "${unknown}".`;
+	if (!events.length) return "Choose at least one event to report.";
+	return "";
+}
+
+/** A report target split into its channel (`session` or TYPE:ID) and delivery id. */
+export function splitReportTarget(target: string): {
+	channel: string;
+	id: string;
+} {
+	const raw = target.trim();
+	if (raw.startsWith("session:"))
+		return { channel: "session", id: raw.slice("session:".length) };
+	const parts = raw.split(":");
+	if (parts.length >= 3)
+		return { channel: `${parts[0]}:${parts[1]}`, id: parts.slice(2).join(":") };
+	return { channel: "", id: raw };
+}
+
+/** Joins a channel and delivery id back into a report target. */
+export function joinReportTarget(channel: string, id: string): string {
+	const c = channel.trim();
+	const v = id.trim();
+	if (!c) return v;
+	return v ? `${c}:${v}` : "";
 }
 
 function sameList(a: string[], b: string[]): boolean {
@@ -180,16 +282,18 @@ export function withSettings(
 	set("temp_dirs", dirs, !dirs.length);
 
 	const agents = clean(s.agents);
+	const reports = reportsEntry(s.reports);
 	const list = (section?.list ?? []).filter(
 		(p) => !sameTarget(p.target, s.target),
 	);
-	if (listed || agents.length) {
+	if (listed || agents.length || reports) {
 		const at = (section?.list ?? []).findIndex((p) =>
 			sameTarget(p.target, s.target),
 		);
 		const entry: ProjectEntry = {
 			target: s.target.trim(),
 			...(agents.length ? { agents } : {}),
+			...(reports ? { reports } : {}),
 		};
 		list.splice(at >= 0 ? at : list.length, 0, entry);
 	}
