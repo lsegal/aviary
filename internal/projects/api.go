@@ -362,6 +362,9 @@ func explainJob(job core.JobSnapshot, snapshot core.Snapshot) string {
 		}
 		return text + "."
 	case "paused":
+		if job.WaitReason == core.StalledPauseReason {
+			return "Its agent kept ending turns with the issue still open and no new commits, pull requests, or comments, so Projects stopped resuming it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it once the blocker is fixed, and project_job_stop clears it."
+		}
 		if job.WaitReason == core.ManualPauseReason {
 			return "The owner paused it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it, and project_job_stop clears it."
 		}

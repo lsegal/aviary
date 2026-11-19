@@ -193,8 +193,9 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		return OriginatingWorkState{}, fmt.Errorf("read issue #%d state: %w: %s", number, err, strings.TrimSpace(string(output)))
 	}
 	var issue struct {
-		State string `json:"state"`
-		Body  string `json:"body"`
+		State    string `json:"state"`
+		Body     string `json:"body"`
+		Comments int    `json:"comments"`
 	}
 	if err := json.Unmarshal(output, &issue); err != nil {
 		return OriginatingWorkState{}, fmt.Errorf("decode issue #%d state: %w", number, err)
@@ -225,7 +226,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 	if err := json.Unmarshal(output, &events); err != nil {
 		return OriginatingWorkState{}, fmt.Errorf("decode issue #%d timeline: %w", number, err)
 	}
-	state := OriginatingWorkState{IssueState: issue.State, IssueBody: issue.Body}
+	state := OriginatingWorkState{IssueState: issue.State, IssueBody: issue.Body, IssueComments: issue.Comments}
 	for _, event := range events {
 		pullRequest := event.Source.Issue
 		if event.Event != "cross-referenced" || pullRequest.PullRequest == nil {
@@ -250,7 +251,14 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 			Body     string     `json:"body"`
 			MergedAt *time.Time `json:"merged_at"`
 			Draft    bool       `json:"draft"`
-			Base     struct {
+			// Comments and ReviewComments count the conversation and the
+			// review threads, and Head is the pushed head commit.
+			Comments       int `json:"comments"`
+			ReviewComments int `json:"review_comments"`
+			Head           struct {
+				SHA string `json:"sha"`
+			} `json:"head"`
+			Base struct {
 				Ref  string `json:"ref"`
 				Repo struct {
 					DefaultBranch string `json:"default_branch"`
@@ -263,7 +271,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		base := currentPullRequest.Base
 		stacked := base.Ref != "" && base.Repo.DefaultBranch != "" && base.Ref != base.Repo.DefaultBranch
 		tasksDone, tasksTotal := core.ChecklistProgress(currentPullRequest.Body)
-		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal})
+		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
 	}
 	return state, nil
 }
