@@ -129,6 +129,7 @@ func (r *AgentRunner) promptCore(
 		sessionID := r.resolveSessionID(promptCtx)
 		promptCtx = WithSessionID(promptCtx, sessionID)
 		promptCtx = WithSessionAgentID(promptCtx, r.agent.ID)
+		promptCtx = WithWriteGuard(promptCtx)
 		untrack := trackSessionRun(r.agent.ID, sessionID, cancel)
 		defer untrack()
 
@@ -1235,6 +1236,9 @@ func (r *AgentRunner) executeToolCall(
 	}
 
 	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Result: resultText}})
+	if change, ok := FileChangeFromToolResult(name, resultText); ok {
+		emit(StreamEvent{Type: StreamEventFile, File: change})
+	}
 	histRec := toolEventRecord{Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
 	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), "", "")
