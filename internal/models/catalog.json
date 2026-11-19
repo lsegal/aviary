@@ -84,21 +84,51 @@
     "supports_image_input": true
   },
   {
+    "id": "anthropic/claude-fable-5-2",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-fable-5-1",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
     "id": "anthropic/claude-fable-5",
-    "input_tokens": 200000,
-    "output_tokens": 64000,
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-haiku-4-5",
-    "input_tokens": 200000,
-    "output_tokens": 64000,
+    "id": "anthropic/claude-opus-5-5",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-haiku-4-5-20251001",
-    "input_tokens": 200000,
-    "output_tokens": 64000,
+    "id": "anthropic/claude-opus-5",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-8",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-7",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-opus-4-6",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
@@ -108,27 +138,21 @@
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-opus-4-5-20251101",
-    "input_tokens": 200000,
-    "output_tokens": 64000,
-    "supports_image_input": true
-  },
-  {
-    "id": "anthropic/claude-opus-4-6",
-    "input_tokens": 200000,
+    "id": "anthropic/claude-sonnet-5-5",
+    "input_tokens": 1000000,
     "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-opus-4-7",
-    "input_tokens": 264000,
-    "output_tokens": 64000,
+    "id": "anthropic/claude-sonnet-5",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-opus-4-8",
-    "input_tokens": 264000,
-    "output_tokens": 64000,
+    "id": "anthropic/claude-sonnet-4-6",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
@@ -138,21 +162,87 @@
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-sonnet-4-5-20250929",
+    "id": "anthropic/claude-haiku-5-5",
+    "input_tokens": 1000000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "anthropic/claude-haiku-4-5",
     "input_tokens": 200000,
     "output_tokens": 64000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-sonnet-4-6",
-    "input_tokens": 264000,
-    "output_tokens": 64000,
+    "id": "openai/gpt-6.2-astra",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "anthropic/claude-sonnet-5",
-    "input_tokens": 264000,
-    "output_tokens": 64000,
+    "id": "openai/gpt-6.2-sol",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-6.1-terra",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-6.1-sol",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-6-astra",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-6-sol",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-6-luna",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-5.6",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-5.6-sol",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-5.6-terra",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-5.6-luna",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai/gpt-5.5",
+    "input_tokens": 1050000,
+    "output_tokens": 128000,
     "supports_image_input": true
   },
   {
@@ -174,37 +264,37 @@
     "supports_image_input": true
   },
   {
-    "id": "openai/gpt-5.5",
-    "input_tokens": 1050000,
-    "output_tokens": 128000,
-    "supports_image_input": true
-  },
-  {
-    "id": "openai/gpt-5.6",
-    "input_tokens": 1050000,
-    "output_tokens": 128000,
-    "supports_image_input": true
-  },
-  {
-    "id": "openai-codex/gpt-5.3-codex",
+    "id": "openai-codex/gpt-6-astra",
     "input_tokens": 400000,
     "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "openai-codex/gpt-5.4",
+    "id": "openai-codex/gpt-6-sol",
     "input_tokens": 400000,
     "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "openai-codex/gpt-5.4-mini",
+    "id": "openai-codex/gpt-6-luna",
     "input_tokens": 400000,
     "output_tokens": 128000,
     "supports_image_input": true
   },
   {
-    "id": "openai-codex/gpt-5.5",
+    "id": "openai-codex/gpt-5.6-sol",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.6-terra",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-5.6-luna",
     "input_tokens": 400000,
     "output_tokens": 128000,
     "supports_image_input": true

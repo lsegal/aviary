@@ -29,6 +29,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
@@ -1832,7 +1833,16 @@ func TestServerVersionTools_Emulated(t *testing.T) {
 	err := update.ConfigureEmulation("1.2.3:1.3.0")
 	assert.NoError(t, err)
 
-	SetDeps(&Deps{})
+	var requests []saferestart.Request
+	SetDeps(&Deps{
+		Restart: func(_ context.Context, req saferestart.Request) (saferestart.Status, error) {
+			requests = append(requests, req)
+			return saferestart.Status{Phase: saferestart.PhaseWaiting, When: req.When, Upgrade: req.Upgrade, Version: req.Version}, nil
+		},
+		RestartStatus: func() saferestart.Status {
+			return saferestart.Status{Phase: saferestart.PhaseIdle, Jobs: []saferestart.Job{{Source: "projects", ID: "o/r#1", Title: "Fix it"}}}
+		},
+	})
 
 	c, err := NewInProcessClient(context.Background(), NewServer())
 	assert.NoError(t, err)
@@ -1842,10 +1852,30 @@ func TestServerVersionTools_Emulated(t *testing.T) {
 	checkText, err := c.CallToolText(context.Background(), "server_version_check", map[string]any{})
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(checkText, "\"upgradeAvailable\": true"))
+	assert.Contains(t, checkText, "\"id\": \"o/r#1\"")
 
-	upgradeText, err := c.CallToolText(context.Background(), "server_upgrade", map[string]any{})
+	upgradeText, err := c.CallToolText(context.Background(), "server_upgrade", map[string]any{"version": "1.3.0", "when": "idle"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(upgradeText, "\"emulated\": true"))
+	assert.Contains(t, upgradeText, "\"phase\": \"waiting\"")
+
+	_, err = c.CallToolText(context.Background(), "server_restart", map[string]any{"cancel": true})
+	assert.NoError(t, err)
+
+	assert.Equal(t, []saferestart.Request{
+		{When: "idle", Upgrade: true, Version: "1.3.0"},
+		{Cancel: true},
+	}, requests)
+}
+
+func TestServerRestartToolsNeedRunningServer(t *testing.T) {
+	SetDeps(&Deps{})
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	assert.NoError(t, err)
+	defer c.Close() //nolint:errcheck
+
+	out, err := c.CallToolText(context.Background(), "server_restart", map[string]any{})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "only available when the Aviary server is running")
 
 }
 
@@ -2141,7 +2171,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 		"content": "hello",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "file written")
+	assert.Contains(t, out, `"created": true`)
 
 	_, err = d.CallTool(ctx, "file_append", map[string]any{
 		"path":    "./sandbox/demo.txt",
@@ -2197,7 +2227,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 		"content": "allowed",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "file written")
+	assert.Contains(t, out, `"created": true`)
 }
 
 func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {

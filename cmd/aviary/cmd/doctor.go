@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/server"
@@ -146,6 +147,24 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			nerrs++
 		} else {
 			_, _ = fmt.Fprintln(os.Stdout, "[OK]")
+		}
+	}
+
+	// ── CLI backends ─────────────────────────────────────────────────────────
+	if backends := config.CLIBackends(cfg); len(backends) > 0 {
+		_, _ = fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout, "CLI backends")
+		_, _ = fmt.Fprintln(os.Stdout, "────────────")
+		for _, b := range backends {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			st := cliagent.Check(ctx, b)
+			cancel()
+			level := "OK"
+			if !st.OK() {
+				level = "ERROR"
+				nerrs++
+			}
+			_, _ = fmt.Fprintf(os.Stdout, "  %-12s [%s] %s\n", b, level, st)
 		}
 	}
 

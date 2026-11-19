@@ -57,6 +57,24 @@ func (p *Policy) Allows(resolvedPath string) bool {
 	return allowed
 }
 
+// MayAllowWithin reports whether the policy could allow dir itself or any path
+// beneath it, so a search rooted at dir is worth running.
+func (p *Policy) MayAllowWithin(resolvedDir string) bool {
+	if p == nil {
+		return false
+	}
+	dir := strings.TrimSuffix(normalizePath(resolvedDir), "/")
+	for _, rule := range p.rules {
+		if rule.negated {
+			continue
+		}
+		if strings.HasPrefix(rule.pattern, dir+"/") || rule.matcher.MatchString(dir) || rule.matcher.MatchString(dir+"/x") {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolvePath resolves a user-supplied path against baseDir (for relative
 // paths), expands special prefixes, and resolves any existing symlink ancestors.
 func ResolvePath(raw, baseDir string) (string, error) {

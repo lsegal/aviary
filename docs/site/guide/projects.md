@@ -55,7 +55,7 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 - Work waiting on GitHub, such as an open dependency or a stacked blocker, is paused and gives up its slot until it is unblocked.
 - A pull request closed without merging restarts the work.
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.
-- On shutdown, every running job's work is committed and pushed before its agent stops. Every subprocess dies with Aviary, even on `SIGKILL`.
+- On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards. Every subprocess dies with Aviary, even on `SIGKILL`.
 
 ## Delivery
 
