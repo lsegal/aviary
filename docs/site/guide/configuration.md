@@ -55,7 +55,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 ```
 
 An agent's `fallbacks` list is tried in order when the primary model is unavailable. Individual agents can override both `model` and `fallbacks`; a channel within an agent can override them again; and a specific sender rule within a channel can override them a final time. Each level narrows the scope of the override.
@@ -217,7 +217,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 
 agents:
   - name: coder
@@ -240,7 +240,7 @@ agents:
           - "!make deploy *"
 
   - name: lobby
-    model: anthropic/claude-haiku-4-5-20251001
+    model: anthropic/claude-haiku-5-5
     memory: shared
     verbose: true
     channels:

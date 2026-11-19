@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"strings"
+
+	"github.com/lsegal/aviary/internal/models"
 )
 
 // EstimateTokens gives a rough token count (~1.3 tokens per word).
@@ -88,12 +90,16 @@ func CompactToTokenBudget(req Request, budget int) Request {
 	return req
 }
 
-// ModelInputBudget returns a conservative input token budget for a given model.
-// This can be extended to read configurable values later.
+// ModelInputBudget returns the input token budget for a given model. Catalog
+// models get their context window minus the room reserved for output; other
+// models fall back to conservative per-family defaults.
 func ModelInputBudget(model string) int {
+	if entry, ok := models.Lookup(model); ok && entry.InputTokens > entry.OutputTokens {
+		return entry.InputTokens - entry.OutputTokens
+	}
 	m := strings.ToLower(model)
 	switch {
-	case strings.Contains(m, "gpt-5"):
+	case strings.Contains(m, "gpt-6"), strings.Contains(m, "gpt-5"):
 		return 128000
 	case strings.Contains(m, "gpt-4o") || strings.Contains(m, "gpt-4"):
 		return 32768
