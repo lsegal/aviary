@@ -174,7 +174,10 @@ type Snapshot struct {
 	Running     int
 	Queued      int
 	Completed   int
-	Failed      int
+	// Merged24h counts the pull requests of this run's jobs that merged in
+	// the last 24 hours.
+	Merged24h int
+	Failed    int
 	// Paused counts work out of the queue waiting on a GitHub merge or close,
 	// holding no agent slot.
 	Paused      int

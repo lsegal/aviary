@@ -48,7 +48,7 @@ export interface ProjectStatus {
 	slotsTotal: number;
 	activeJobs: number;
 	waitingJobs: number;
-	completed: number;
+	merged24h: number;
 	failed: number;
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
@@ -380,7 +380,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		slotsTotal: num(raw.concurrency),
 		activeJobs: num(jobs.running),
 		waitingJobs: num(jobs.queued) + num(jobs.paused),
-		completed: num(jobs.completed),
+		merged24h: num(jobs.merged_24h),
 		failed: num(jobs.failed),
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
