@@ -823,3 +823,23 @@ func TestBuiltinDefaultModelsCarryNoReasoningLevel(t *testing.T) {
 		}
 	}
 }
+
+// TestOnlyAgyIsGatedOutOfProjects pins which built-in agents cannot run a
+// Projects job: agy has no machine-readable output mode, so it cannot produce
+// the structured job transcript Projects records.
+func TestOnlyAgyIsGatedOutOfProjects(t *testing.T) {
+	registry := MustBuiltin()
+	for _, name := range registry.Names() {
+		definition, _ := registry.Lookup(name)
+		err := definition.ProjectsError()
+		if name == "agy" {
+			if err == nil || !strings.Contains(err.Error(), "agent agy is unavailable for Projects jobs: agy has no machine-readable output mode") {
+				t.Fatalf("agy ProjectsError = %v, want the gate's reason", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s ProjectsError = %v, want none", name, err)
+		}
+	}
+}

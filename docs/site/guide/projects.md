@@ -41,7 +41,9 @@ Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each 
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
 
-`aviary project cli list` reports every CLI's install, version, sign-in, quota and models.
+`agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
+
+`aviary project cli list` reports every CLI's install, version, sign-in, quota, models and any Projects gate.
 
 ### Deferred turns
 
