@@ -15,12 +15,21 @@ export interface UsageRecord {
 	tool_calls?: number;
 	has_error?: boolean;
 	has_throttle?: boolean;
+	cost_usd?: number;
 }
 
 function fmtDate(daysAgo: number): string {
 	const d = new Date();
 	d.setDate(d.getDate() - daysAgo);
 	return d.toISOString().slice(0, 10);
+}
+
+function sumCost(records: UsageRecord[]): number | null {
+	let total: number | null = null;
+	for (const r of records) {
+		if (r.cost_usd) total = (total ?? 0) + r.cost_usd;
+	}
+	return total;
 }
 
 export const useUsageStore = defineStore("usage", () => {
@@ -70,6 +79,9 @@ export const useUsageStore = defineStore("usage", () => {
 	const totalCacheWrite = computed(() =>
 		records.value.reduce((s, r) => s + (r.cache_write_tokens ?? 0), 0),
 	);
+	// Only CLI backends report a cost, so the total is null when no record in
+	// range carries one rather than a misleading $0.00.
+	const totalCost = computed(() => sumCost(records.value));
 	const totalTokens = computed(() => totalInput.value + totalOutput.value);
 	const totalMessages = computed(() => records.value.length);
 	const totalToolCalls = computed(() =>
@@ -105,15 +117,18 @@ export const useUsageStore = defineStore("usage", () => {
 	// ── Breakdowns ────────────────────────────────────────────────────────────
 
 	function tally(key: keyof UsageRecord) {
-		const m = new Map<string, number>();
+		const m = new Map<string, { tokens: number; cost: number | null }>();
 		for (const r of records.value) {
 			const k = String(r[key] ?? "");
-			m.set(k, (m.get(k) ?? 0) + r.input_tokens + r.output_tokens);
+			const v = m.get(k) ?? { tokens: 0, cost: null };
+			v.tokens += r.input_tokens + r.output_tokens;
+			if (r.cost_usd) v.cost = (v.cost ?? 0) + r.cost_usd;
+			m.set(k, v);
 		}
 		return [...m.entries()]
-			.sort((a, b) => b[1] - a[1])
+			.sort((a, b) => b[1].tokens - a[1].tokens)
 			.slice(0, 5)
-			.map(([name, tokens]) => ({ name, tokens }));
+			.map(([name, v]) => ({ name, ...v }));
 	}
 
 	const topModels = computed(() => tally("model"));
@@ -234,6 +249,7 @@ export const useUsageStore = defineStore("usage", () => {
 		totalCacheRead,
 		totalCacheWrite,
 		totalTokens,
+		totalCost,
 		totalMessages,
 		totalToolCalls,
 		totalErrors,
