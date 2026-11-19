@@ -52,40 +52,6 @@ func TestOneShotPromptHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-// oneShotRegistry registers two stand-in agents run through the test binary:
-// one that reads its prompt from stdin and one that cannot.
-func oneShotRegistry(t *testing.T) *agents.Registry {
-	t.Helper()
-	agent := func(name, stdin string) string {
-		return fmt.Sprintf(`{"name":%q,"binary":%q,"session":{"assign":"none"},"output":{"format":"plain"},"env":{%q:"1"},%s"args":{"run":[{"args":["-test.run=^TestOneShotPromptHelperProcess$","--","{prompt}"]}]}}`,
-			name, filepath.ToSlash(os.Args[0]), oneShotHelperEnv, stdin)
-	}
-	config := `{"agents":[` + agent("stdinagent", `"promptStdin":[],`) + "," + agent("argvagent", "") + `]}`
-	path := filepath.Join(t.TempDir(), agents.DefaultConfigPath)
-	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := agents.Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	return registry
-}
-
-// A short prompt to an agent that cannot read stdin still travels as the
-// argument it always did.
-func TestOneShotPromptKeepsShortPromptsInArgv(t *testing.T) {
-	definition, _ := oneShotRegistry(t).Lookup("argvagent")
-	call, err := newOneShotPrompt(definition, agents.Values{Prompt: "status?"}, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer call.cleanup()
-	if call.Stdin != nil || call.Values.Prompt != "status?" || call.Values.PromptStdin {
-		t.Errorf("short prompt call = %+v", call)
-	}
-}
-
 // Every out-of-band call is marked one-shot, so an agent definition can add
 // the flags a call outside any checkout needs, such as Codex's
 // --skip-git-repo-check.
@@ -128,5 +94,32 @@ func TestSpawnErrorNamesSizesAndLimit(t *testing.T) {
 		if got := spawnLimit(tc.goos, tc.line, tc.longest, tc.path); !strings.Contains(got, tc.want) {
 			t.Errorf("spawnLimit(%s, %d, %d, %d) = %q, want %q", tc.goos, tc.line, tc.longest, tc.path, got, tc.want)
 		}
+	}
+}
+
+// oneShotRegistry registers two stand-in agents run through the test binary:
+// one that reads its prompt from stdin and one that cannot.
+func oneShotRegistry(t *testing.T) *agents.Registry {
+	t.Helper()
+	agent := func(name, stdin string) string {
+		return fmt.Sprintf(`{"name":%q,"binary":%q,"session":{"assign":"none"},"output":{"format":"plain"},"env":{%q:"1"},%s"args":{"run":[{"args":["-test.run=^TestOneShotPromptHelperProcess$","--","{prompt}"]}]}}`,
+			name, filepath.ToSlash(os.Args[0]), oneShotHelperEnv, stdin)
+	}
+	config := `{"agents":[` + agent("stdinagent", `"promptStdin":[],`) + "," + agent("argvagent", "") + `]}`
+	registry := loadDefinitions(t, config)
+	return registry
+}
+
+// A short prompt to an agent that cannot read stdin still travels as the
+// argument it always did.
+func TestOneShotPromptKeepsShortPromptsInArgv(t *testing.T) {
+	definition, _ := oneShotRegistry(t).Lookup("argvagent")
+	call, err := newOneShotPrompt(definition, agents.Values{Prompt: "status?"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer call.cleanup()
+	if call.Stdin != nil || call.Values.Prompt != "status?" || call.Values.PromptStdin {
+		t.Errorf("short prompt call = %+v", call)
 	}
 }

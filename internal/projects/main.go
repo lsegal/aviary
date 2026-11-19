@@ -103,6 +103,10 @@ type GHCLI struct {
 	Filter     string
 	AllIssues  bool
 	ReadyState string
+	// ReadyLabel is the label a repository issue needs to be dispatched. It
+	// is added to the issue search alongside Filter; empty dispatches without
+	// one. Board targets use ReadyState instead.
+	ReadyLabel string
 	runCommand func(context.Context, ...string) ([]byte, error)
 	// publicAPI overrides the unauthenticated public GitHub API request used
 	// to poll public repositories without spending the authenticated gh
@@ -585,6 +589,23 @@ type repositoryProjectItemsPage struct {
 	} `json:"data"`
 }
 
+// repositoryFilter is the issue search a repository target runs: Filter plus
+// the ready label. The label still applies when AllIssues drops the filter.
+func (g GHCLI) repositoryFilter() (string, bool) {
+	label := strings.TrimSpace(g.ReadyLabel)
+	if label == "" {
+		return g.Filter, g.AllIssues
+	}
+	qualifier := "label:" + label
+	if strings.ContainsAny(label, " \t") {
+		qualifier = "label:" + strconv.Quote(label)
+	}
+	if g.AllIssues {
+		return qualifier, false
+	}
+	return strings.TrimSpace(g.Filter + " " + qualifier), false
+}
+
 func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 	target, err := parseTarget(repo)
 	if err != nil {
@@ -621,13 +642,14 @@ func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 
 	var issues []Issue
 	usedPublicAPI := false
+	filter, allIssues := g.repositoryFilter()
 	if g.isPublicRepo(ctx, target.Repo) {
-		if got, ok := g.listPublicIssues(ctx, target.Repo, g.Filter, g.AllIssues); ok {
+		if got, ok := g.listPublicIssues(ctx, target.Repo, filter, allIssues); ok {
 			issues, usedPublicAPI = got, true
 		}
 	}
 	if !usedPublicAPI {
-		got, err := g.listAuthenticatedIssues(ctx, target.Repo, g.Filter, g.AllIssues)
+		got, err := g.listAuthenticatedIssues(ctx, target.Repo, filter, allIssues)
 		if err != nil {
 			return nil, err
 		}
@@ -1294,6 +1316,13 @@ type CommandRunner struct {
 	// A nil registry falls back to the run's own, which is the built-in
 	// definitions until a config file replaces them.
 	Definitions *agents.Registry
+	// TargetAgents is each target's own agent specs, in fallback order:
+	// a job on that target runs on the first agent whose quota is not used
+	// up. A target without an entry load balances across Agents.
+	TargetAgents map[string][]string
+	// Quotas reports the latest quota reading of each agent, keyed by agent
+	// name, so dispatch skips an agent with none left. Nil skips nothing.
+	Quotas func() map[string]string
 	// agentCursor is shared across copies of CommandRunner (via pointer) so
 	// round robin selection advances consistently regardless of how many
 	// times the struct is copied.
@@ -1586,6 +1615,47 @@ func (r CommandRunner) specForSession(session AgentSession) agentSpec {
 // AgentName returns the agent spec (agent/model:level) to use for the next
 // newly dispatched issue, rotating round robin through Agents when more than
 // one is configured so work is load balanced evenly across concurrency.
+// AgentNameFor returns the agent spec for a new job on target. A target with
+// its own agents takes the first one whose quota is not used up; any other
+// target load balances across Agents, skipping agents with no quota left.
+// When every candidate is out of quota the first one is used anyway, so work
+// is never silently dropped.
+func (r CommandRunner) AgentNameFor(target string) string {
+	if specs := r.TargetAgents[target]; len(specs) > 0 {
+		for _, spec := range specs {
+			if !r.quotaExhausted(spec) {
+				return spec
+			}
+		}
+		return specs[0]
+	}
+	if len(r.Agents) > 1 && r.Quotas != nil {
+		for range r.Agents {
+			if spec := r.AgentName(); !r.quotaExhausted(spec) {
+				return spec
+			}
+		}
+	}
+	return r.AgentName()
+}
+
+// quotaExhausted reports whether the latest quota reading of spec's agent
+// shows a window with nothing left.
+func (r CommandRunner) quotaExhausted(spec string) bool {
+	if r.Quotas == nil {
+		return false
+	}
+	return quotaReadingExhausted(r.Quotas()[agentProvider(spec)])
+}
+
+// exhaustedQuotaPattern matches a reading's "0% left" window, as every quota
+// reader renders one.
+var exhaustedQuotaPattern = regexp.MustCompile(`(^|[^0-9])0% left`)
+
+func quotaReadingExhausted(reading string) bool {
+	return exhaustedQuotaPattern.MatchString(reading)
+}
+
 func (r CommandRunner) AgentName() string {
 	if len(r.Agents) == 0 {
 		if r.Agent != "" {

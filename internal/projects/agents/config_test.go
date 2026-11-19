@@ -1,26 +1,27 @@
 package agents
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-func writeConfig(t *testing.T, document string) string {
+// definitions decodes a cli_definitions section written as JSON, the shape
+// aviary.yaml's YAML decodes to.
+func definitions(t *testing.T, document string) map[string]any {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), DefaultConfigPath)
-	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+	var defs map[string]any
+	if err := json.Unmarshal([]byte(document), &defs); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	return defs
 }
 
-// TestLoadWithoutAConfigFile checks a run with no config file has exactly the
-// built-in agents. A missing file is the normal case, not an error.
-func TestLoadWithoutAConfigFile(t *testing.T) {
-	registry, err := Load(filepath.Join(t.TempDir(), DefaultConfigPath))
+// TestLoadWithoutDefinitions checks a run with no cli_definitions has exactly
+// the built-in agents.
+func TestLoadWithoutDefinitions(t *testing.T) {
+	registry, err := Load(nil)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -33,8 +34,7 @@ func TestLoadWithoutAConfigFile(t *testing.T) {
 func TestConfigOverridesABuiltinFieldByField(t *testing.T) {
 	// The narrowed models list has to admit the default the built-in
 	// carries, so the override names one the list allows.
-	path := writeConfig(t, `{"agents":[{"name":"claude","binary":"/opt/claude","models":["opus"],"defaultModel":"opus"}]}`)
-	registry, err := Load(path)
+	registry, err := Load(definitions(t, `{"claude":{"binary":"/opt/claude","models":["opus"],"defaultModel":"opus"}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -62,8 +62,7 @@ func TestConfigOverridesABuiltinFieldByField(t *testing.T) {
 // something a built-in declares: give the field as null rather than trying to
 // spell an empty value the schema has no syntax for.
 func TestConfigNullClearsAnInheritedField(t *testing.T) {
-	path := writeConfig(t, `{"agents":[{"name":"claude","env":null,"levels":null}]}`)
-	registry, err := Load(path)
+	registry, err := Load(definitions(t, `{"claude":{"env":null,"levels":null}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -82,12 +81,11 @@ func TestConfigNullClearsAnInheritedField(t *testing.T) {
 // TestConfigRegistersANewAgent checks an unknown name adds an agent rather
 // than being rejected for not being one of the built-ins.
 func TestConfigRegistersANewAgent(t *testing.T) {
-	path := writeConfig(t, `{"agents":[{
-		"name":"acme","binary":"acme",
+	registry, err := Load(definitions(t, `{"acme":{
+		"binary":"acme",
 		"session":{"assign":"none"},"output":{"format":"text"},
 		"args":{"run":[{"args":["run","{prompt}"]}],"resume":[{"args":["run","{prompt}"]}]}
-	}]}`)
-	registry, err := Load(path)
+	}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -98,79 +96,45 @@ func TestConfigRegistersANewAgent(t *testing.T) {
 	}
 }
 
-// TestConfigAcceptsAnObjectKeyedByName checks the second shape the agents
-// section may take, where the key names the agent instead of a "name" field.
-func TestConfigAcceptsAnObjectKeyedByName(t *testing.T) {
-	path := writeConfig(t, `{"agents":{"claude":{"binary":"/opt/claude"}}}`)
-	registry, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	claude, _ := registry.Lookup("claude")
-	if claude.Binary != "/opt/claude" {
-		t.Fatalf("binary = %q, want the override", claude.Binary)
-	}
-}
-
-// TestConfigErrorsNameTheFileTheAgentAndTheField checks every rejection is
-// loud and specific. A definition dropped quietly looks exactly like a typo in
-// --agent, which is the failure this whole file exists to avoid.
-func TestConfigErrorsNameTheFileTheAgentAndTheField(t *testing.T) {
+// TestConfigErrorsNameTheAgentAndTheField checks every rejection is loud and
+// specific. A definition dropped quietly looks exactly like a typo in an
+// agent spec.
+func TestConfigErrorsNameTheAgentAndTheField(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		document string
 		wantSubs []string
 	}{
 		{
-			name:     "malformed json",
-			document: `{"agents":[`,
-			wantSubs: []string{DefaultConfigPath},
-		},
-		{
 			name:     "unknown field",
-			document: `{"agents":[{"name":"claude","binaries":"claude"}]}`,
-			wantSubs: []string{DefaultConfigPath, `agent "claude"`, `unknown field "binaries"`},
+			document: `{"claude":{"binaries":"claude"}}`,
+			wantSubs: []string{"cli_definitions", `agent "claude"`, `unknown field "binaries"`},
 		},
 		{
 			name:     "invalid value",
-			document: `{"agents":[{"name":"claude","output":{"format":"yaml"}}]}`,
+			document: `{"claude":{"output":{"format":"yaml"}}}`,
 			wantSubs: []string{`agent "claude"`, `"output.format"`},
 		},
 		{
 			name:     "unknown condition",
-			document: `{"agents":[{"name":"claude","args":{"run":[{"when":"sandbox","args":["-x"]}],"resume":[{"args":["-x"]}]}}]}`,
+			document: `{"claude":{"args":{"run":[{"when":"sandbox","args":["-x"]}],"resume":[{"args":["-x"]}]}}}`,
 			wantSubs: []string{`agent "claude"`, `unknown condition "sandbox"`},
 		},
 		{
-			name:     "nameless definition",
-			document: `{"agents":[{"binary":"acme"}]}`,
-			wantSubs: []string{"agents[0]", `"name"`},
-		},
-		{
 			name:     "key and name disagree",
-			document: `{"agents":{"acme":{"name":"cline"}}}`,
+			document: `{"acme":{"name":"cline"}}`,
 			wantSubs: []string{`"acme"`, `"cline"`},
 		},
 		{
-			name:     "unknown section",
-			document: `{"targets":["o/r"]}`,
-			wantSubs: []string{`unknown section "targets"`, `"agents"`},
-		},
-		{
-			name:     "a work state file",
-			document: `{"12":{"status":"completed"}}`,
-			wantSubs: []string{"work-state record", "--state"},
-		},
-		{
-			name:     "a scoped work state file",
-			document: `{"o/r#12":{"status":"completed"}}`,
-			wantSubs: []string{"work-state record", "--state"},
+			name:     "not a definition",
+			document: `{"acme":["run"]}`,
+			wantSubs: []string{"cli_definitions"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Load(writeConfig(t, test.document))
+			_, err := Load(definitions(t, test.document))
 			if err == nil {
-				t.Fatal("the config was accepted")
+				t.Fatal("the definitions were accepted")
 			}
 			for _, want := range test.wantSubs {
 				if !strings.Contains(err.Error(), want) {
@@ -181,31 +145,12 @@ func TestConfigErrorsNameTheFileTheAgentAndTheField(t *testing.T) {
 	}
 }
 
-// TestConfigIsNeverWritten checks loading leaves the file exactly as the user
-// wrote it. The whole reason definitions do not live in the state file is that
-// aviary rewrites that one.
-func TestConfigIsNeverWritten(t *testing.T) {
-	document := `{"agents":[{"name":"claude","binary":"/opt/claude"}]}`
-	path := writeConfig(t, document)
-	if _, err := Load(path); err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(raw) != document {
-		t.Fatalf("config file = %q, want it untouched", raw)
-	}
-}
-
-// TestConfigEmptyAllowListDeclaresNoValue checks the config file can say what
-// a built-in says: an empty list declares that the agent takes no value for
+// TestConfigEmptyAllowListDeclaresNoValue checks the config can say what a
+// built-in says: an empty list declares that the agent takes no value for
 // that dimension, which is distinct from null, the documented way to clear an
 // inherited list back to accepting anything.
 func TestConfigEmptyAllowListDeclaresNoValue(t *testing.T) {
-	path := writeConfig(t, `{"agents":[{"name":"codex","levels":[]}]}`)
-	registry, err := Load(path)
+	registry, err := Load(definitions(t, `{"codex":{"levels":[]}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -222,11 +167,11 @@ func TestConfigEmptyAllowListDeclaresNoValue(t *testing.T) {
 	}
 }
 
-// TestConfigSetsAndDropsTheDefaultModel checks a config file owns the managed
-// default: it can point a built-in at another model, and can drop
-// the inherited one with null so the agent's own CLI chooses again.
+// TestConfigSetsAndDropsTheDefaultModel checks the config owns the managed
+// default: it can point a built-in at another model, and can drop the
+// inherited one with null so the agent's own CLI chooses again.
 func TestConfigSetsAndDropsTheDefaultModel(t *testing.T) {
-	replaced, err := Load(writeConfig(t, `{"agents":[{"name":"codex","defaultModel":"gpt-5.4"}]}`))
+	replaced, err := Load(definitions(t, `{"codex":{"defaultModel":"gpt-5.4"}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -234,7 +179,7 @@ func TestConfigSetsAndDropsTheDefaultModel(t *testing.T) {
 	if got := codex.ModelOrDefault(""); got != "gpt-5.4" {
 		t.Fatalf("default model = %q, want the config's", got)
 	}
-	dropped, err := Load(writeConfig(t, `{"agents":[{"name":"codex","defaultModel":null}]}`))
+	dropped, err := Load(definitions(t, `{"codex":{"defaultModel":null}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -244,11 +189,11 @@ func TestConfigSetsAndDropsTheDefaultModel(t *testing.T) {
 	}
 }
 
-// TestConfigRejectsADefaultModelItsOwnAllowListDenies checks the file is told
-// which field is wrong rather than aviary running a model the same document says
-// it does not accept.
+// TestConfigRejectsADefaultModelItsOwnAllowListDenies checks the config is
+// told which field is wrong rather than aviary running a model the same
+// definition says it does not accept.
 func TestConfigRejectsADefaultModelItsOwnAllowListDenies(t *testing.T) {
-	_, err := Load(writeConfig(t, `{"agents":[{"name":"codex","models":["gpt-5.4"],"defaultModel":"gpt-5.6-sol"}]}`))
+	_, err := Load(definitions(t, `{"codex":{"models":["gpt-5.4"],"defaultModel":"gpt-5.6-sol"}}`))
 	if err == nil {
 		t.Fatal("Load() error = nil, want the conflicting default rejected")
 	}

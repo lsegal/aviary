@@ -1,9 +1,7 @@
 package projects
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -96,29 +94,4 @@ func definitionEnv(definition agents.Definition) []string {
 		env = append(env, key+"="+definition.Env[key])
 	}
 	return env
-}
-
-// guardWorkStateFile rejects a --state file that holds agent definitions. The
-// two files are deliberately separate -- aviary rewrites the state file and only
-// ever reads the config file -- so definitions written into the state file
-// would be silently destroyed by the next save. Say which file they belong in
-// rather than losing them.
-func guardWorkStateFile(path string) error {
-	if path == "" {
-		return nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		// A missing or unreadable state file is not this check's business;
-		// the run reports it where the state is actually loaded.
-		return nil
-	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &top); err != nil {
-		return nil
-	}
-	if _, ok := top["agents"]; ok {
-		return fmt.Errorf("state file %s contains an %q section: agent definitions belong in %s (or the file named by --config), which aviary only ever reads, while --state is rewritten as issues are handled", path, "agents", agents.DefaultConfigPath)
-	}
-	return nil
 }
