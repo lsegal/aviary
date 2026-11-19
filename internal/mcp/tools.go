@@ -28,6 +28,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/models"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -2701,6 +2702,32 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 // ── Server tools ─────────────────────────────────────────────────────────────
 
+// serverVersionStatus is server_version_check's result: the version check plus
+// the restart state and the running jobs an upgrade would stop.
+type serverVersionStatus struct {
+	update.CheckResult
+	Restart saferestart.Status `json:"restart"`
+}
+
+func currentRestartStatus() saferestart.Status {
+	if d := GetDeps(); d.RestartStatus != nil {
+		return d.RestartStatus()
+	}
+	return saferestart.Status{Phase: saferestart.PhaseIdle, Jobs: saferestart.RunningJobs()}
+}
+
+func requestSafeRestart(ctx context.Context, req saferestart.Request) (*sdkmcp.CallToolResult, struct{}, error) {
+	d := GetDeps()
+	if d.Restart == nil {
+		return nil, struct{}{}, fmt.Errorf("safe restart is only available when the Aviary server is running")
+	}
+	st, err := d.Restart(ctx, req)
+	if err != nil {
+		return nil, struct{}{}, err
+	}
+	return jsonResult(st)
+}
+
 func registerServerTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_status",
@@ -2711,34 +2738,37 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_version_check",
-		Description: "Check the current Aviary version against the latest GitHub release",
+		Description: "Check the current Aviary version against the latest GitHub release, and list the running jobs an upgrade would stop and resume",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		check, err := update.Check(ctx, nil)
 		if err != nil && check.LatestVersion == "" {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(check)
+		return jsonResult(serverVersionStatus{CheckResult: check, Restart: currentRestartStatus()})
 	})
 
 	type serverUpgradeArgs struct {
-		Version string `json:"version,omitempty"`
+		Version string `json:"version,omitempty" jsonschema:"release to install, with or without a leading v; defaults to the latest release"`
+		When    string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and upgrades once no jobs are running"`
 	}
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
-		Description: "Upgrade Aviary to the latest release and restart the server if needed",
+		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in coding CLI, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		d := GetDeps()
-		if update.EmulationActive() {
-			return jsonResult(map[string]any{"started": true, "emulated": true})
-		}
-		if d.Upgrade == nil {
-			return nil, struct{}{}, fmt.Errorf("server upgrade is only available when the Aviary server is running")
-		}
-		if err := d.Upgrade(ctx, args.Version); err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(map[string]any{"started": true})
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version})
+	})
+
+	type serverRestartArgs struct {
+		When   string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and restarts once no jobs are running"`
+		Cancel bool   `json:"cancel,omitempty" jsonschema:"withdraw a restart or upgrade that is still waiting for jobs to finish"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "server_restart",
+		Description: "Restart Aviary safely: checkpoint running jobs, restart, and resume each job in its own session",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverRestartArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Cancel: args.Cancel})
 	})
 
 	addTool(s, &sdkmcp.Tool{
