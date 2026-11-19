@@ -2,6 +2,9 @@ package projects
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,15 +17,48 @@ const recentMergeWindow = 24 * time.Hour
 // recentMerges remembers when the pull requests of this run's jobs merged, so
 // status can report how many merged in the last recentMergeWindow. It learns
 // them from the issue states aviary already reads for active, paused, and
-// completed work.
+// completed work, and keeps them in a file beside the engine's work state so
+// the count survives a restart.
 type recentMerges struct {
 	mu sync.Mutex
 	// at maps a pull request's lowercase "repo#number" key to when it merged.
 	at map[string]time.Time
+	// path is where the merges are saved; empty keeps them in memory only.
+	path string
 }
 
-func newRecentMerges() *recentMerges {
-	return &recentMerges{at: make(map[string]time.Time)}
+// newRecentMerges restores the merges saved at path within recentMergeWindow
+// of now. A missing or unreadable file starts empty, since the count is only
+// a dashboard figure.
+func newRecentMerges(path string, now time.Time) *recentMerges {
+	m := &recentMerges{at: make(map[string]time.Time), path: path}
+	if path == "" {
+		return m
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return m
+	}
+	var saved map[string]time.Time
+	if json.Unmarshal(data, &saved) != nil {
+		return m
+	}
+	cutoff := now.Add(-recentMergeWindow)
+	for key, mergedAt := range saved {
+		if !mergedAt.Before(cutoff) {
+			m.at[key] = mergedAt
+		}
+	}
+	return m
+}
+
+// mergesPathFor names the merges file kept beside statePath, the way
+// clonesPathFor names the clone registry.
+func mergesPathFor(statePath string) string {
+	if statePath == "" {
+		return ""
+	}
+	return strings.TrimSuffix(statePath, filepath.Ext(statePath)) + ".merges.json"
 }
 
 // record notes every merged pull request in state, which belongs to issue
@@ -34,13 +70,41 @@ func (m *recentMerges) record(repo string, state OriginatingWorkState) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	changed := false
 	for _, pullRequest := range state.PullRequests {
 		if !pullRequest.Merged || pullRequest.MergedAt.IsZero() || pullRequest.Number <= 0 {
 			continue
 		}
 		key := strings.ToLower(pullRequest.RepoOr(repo)) + "#" + strconv.Itoa(pullRequest.Number)
+		if previous, ok := m.at[key]; ok && previous.Equal(pullRequest.MergedAt) {
+			continue
+		}
 		m.at[key] = pullRequest.MergedAt
+		changed = true
 	}
+	if changed {
+		m.save(time.Now())
+	}
+}
+
+// save writes the merges within recentMergeWindow of now to m.path. Callers
+// hold m.mu. A failed write only costs the count after the next restart.
+func (m *recentMerges) save(now time.Time) {
+	if m.path == "" {
+		return
+	}
+	cutoff := now.Add(-recentMergeWindow)
+	recent := make(map[string]time.Time, len(m.at))
+	for key, mergedAt := range m.at {
+		if !mergedAt.Before(cutoff) {
+			recent[key] = mergedAt
+		}
+	}
+	data, err := json.MarshalIndent(recent, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(m.path, append(data, '\n'), 0600)
 }
 
 // count returns how many recorded pull requests merged within
