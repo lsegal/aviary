@@ -10,6 +10,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -50,6 +51,19 @@ type taskPreviewArgs struct {
 	taskTriggerArgs
 }
 
+type taskUpcomingArgs struct {
+	Project string `json:"project,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+	PerTask int    `json:"per_task,omitempty"`
+}
+
+type taskUpcomingRun struct {
+	TaskID  string `json:"task_id"`
+	Name    string `json:"name"`
+	Project string `json:"project,omitempty"`
+	At      string `json:"at"`
+}
+
 type taskPreviewResult struct {
 	Description string   `json:"description,omitempty"`
 	Timezone    string   `json:"timezone,omitempty"`
@@ -57,6 +71,7 @@ type taskPreviewResult struct {
 }
 
 func registerTaskManageTools(s *sdkmcp.Server) {
+	registerTaskUpcomingTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_update",
 		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo) and cli (coding-CLI spec). Use enabled=false to pause a task without deleting it.",
@@ -202,6 +217,43 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		out := taskPreviewResult{Description: spec.Describe(), Timezone: spec.Location.String(), Next: []string{}}
 		for _, t := range next {
 			out.Next = append(out.Next, t.In(spec.Location).Format(time.RFC3339))
+		}
+		return jsonResult(out)
+	})
+}
+
+func registerTaskUpcomingTool(s *sdkmcp.Server) {
+	addTool(s, &sdkmcp.Tool{
+		Name:        "task_upcoming",
+		Description: "List the next fires across enabled scheduled tasks, soonest first (default 5, at most 3 per task). project=<owner/repo> limits it to that project's scheduled prompts.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpcomingArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		d := GetDeps()
+		if d == nil || d.Scheduler == nil {
+			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+		}
+		limit := args.Limit
+		if limit <= 0 {
+			limit = 5
+		}
+		perTask := args.PerTask
+		if perTask <= 0 {
+			perTask = 3
+		}
+		tasks := map[string]domain.ScheduledTask{}
+		for _, task := range d.Scheduler.ListTasks() {
+			tasks[task.ID] = task
+		}
+		project := strings.TrimSpace(args.Project)
+		out := []taskUpcomingRun{}
+		for _, run := range d.Scheduler.Upcoming(len(tasks)*perTask, perTask) {
+			task := tasks[run.TaskID]
+			if project != "" && task.Project != project {
+				continue
+			}
+			out = append(out, taskUpcomingRun{TaskID: run.TaskID, Name: task.Name, Project: task.Project, At: run.At.Format(time.RFC3339)})
+			if len(out) == limit {
+				break
+			}
 		}
 		return jsonResult(out)
 	})

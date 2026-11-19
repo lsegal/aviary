@@ -189,13 +189,24 @@
 								"schedule": { "type": "string" },
 								"start_at": { "type": "string", "format": "date-time" },
 								"run_once": { "type": "boolean", "default": false },
-								"trigger": { "type": "string", "enum": ["once", "interval", "daily", "weekly", "cron"] },
+								"trigger": {
+									"type": "string",
+									"enum": ["once", "interval", "daily", "weekly", "cron"]
+								},
 								"every": { "type": "string" },
 								"at": { "type": "string" },
 								"days": { "type": "string" },
 								"timezone": { "type": "string" },
-								"overlap": { "type": "string", "enum": ["queue", "skip"], "default": "queue" },
-								"missed": { "type": "string", "enum": ["skip", "run_once"], "default": "skip" },
+								"overlap": {
+									"type": "string",
+									"enum": ["queue", "skip"],
+									"default": "queue"
+								},
+								"missed": {
+									"type": "string",
+									"enum": ["skip", "run_once"],
+									"default": "skip"
+								},
 								"watch": { "type": "string" },
 								"prompt": { "type": "string" },
 								"script": { "type": "string" },

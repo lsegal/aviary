@@ -85,6 +85,10 @@ export interface ProjectJob {
 	session: string;
 	actions: JobActions;
 	output: string[];
+	/** A scheduled prompt's run, which has no issue: its number is its fire time. */
+	scheduled: boolean;
+	/** The `agent/task` key of the schedule a scheduled run fired from. */
+	scheduleID: string;
 }
 
 export type JobEvent =
@@ -237,6 +241,8 @@ export function normalizeJob(v: unknown): ProjectJob {
 			retryUnavailable: str(raw.retry_unavailable),
 		},
 		output: lines(raw.scrollback),
+		scheduled: str(raw.kind) === "schedule",
+		scheduleID: str(raw.schedule_id),
 	};
 }
 
@@ -555,4 +561,189 @@ export function encodeProject(name: string): string {
 
 export function jobPath(target: string, number: number): string {
 	return `/projects/${encodeProject(target)}/jobs/${number}`;
+}
+
+export type ScheduleTrigger = "once" | "interval" | "daily" | "weekly" | "cron";
+
+export interface ScheduleRun {
+	fireTime: string;
+	reason: string;
+	status: string;
+	summary: string;
+	durationMS: number;
+}
+
+/** A project's scheduled prompt: an Aviary task of type `project`. */
+export interface ProjectSchedule {
+	/** The task's `agent/task` key. */
+	id: string;
+	agent: string;
+	name: string;
+	project: string;
+	cli: string;
+	prompt: string;
+	enabled: boolean;
+	trigger: ScheduleTrigger;
+	schedule: string;
+	every: string;
+	at: string;
+	days: string;
+	startAt: string;
+	timezone: string;
+	overlap: "queue" | "skip";
+	missed: "skip" | "run_once";
+	description: string;
+	nextRun: string;
+	/** Most recent first, at most 20. */
+	history: ScheduleRun[];
+}
+
+const TRIGGERS: ScheduleTrigger[] = [
+	"once",
+	"interval",
+	"daily",
+	"weekly",
+	"cron",
+];
+
+function normalizeTrigger(raw: Record<string, unknown>): ScheduleTrigger {
+	const t = str(raw.trigger_type);
+	if ((TRIGGERS as string[]).includes(t)) return t as ScheduleTrigger;
+	if (str(raw.every)) return "interval";
+	if (str(raw.days)) return "weekly";
+	if (str(raw.at)) return "daily";
+	if (str(raw.schedule)) return "cron";
+	return "once";
+}
+
+export function normalizeSchedule(v: unknown): ProjectSchedule {
+	const raw = obj(v);
+	return {
+		id: str(raw.id),
+		agent: str(raw.agent_name) || str(raw.agent_id),
+		name: str(raw.name),
+		project: str(raw.project),
+		cli: str(raw.cli),
+		prompt: str(raw.prompt),
+		enabled: raw.enabled !== false,
+		trigger: normalizeTrigger(raw),
+		schedule: str(raw.schedule),
+		every: str(raw.every),
+		at: str(raw.at),
+		days: str(raw.days),
+		startAt: str(raw.start_at),
+		timezone: str(raw.timezone),
+		overlap: str(raw.overlap) === "skip" ? "skip" : "queue",
+		missed: str(raw.missed) === "run_once" ? "run_once" : "skip",
+		description: str(raw.description),
+		nextRun: str(raw.next_run),
+		history: arr(raw.history)
+			.map((h) => {
+				const run = obj(h);
+				return {
+					fireTime: str(run.fire_time),
+					reason: str(run.reason),
+					status: str(run.status),
+					summary: str(run.summary),
+					durationMS: num(run.duration_ms),
+				};
+			})
+			.reverse(),
+	};
+}
+
+/** The scheduled prompts of project from a task_list response. */
+export function projectSchedules(
+	v: unknown,
+	project: string,
+): ProjectSchedule[] {
+	return arr(v)
+		.filter((t) => str(obj(t).type) === "project")
+		.map(normalizeSchedule)
+		.filter((s) => s.project === project)
+		.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface UpcomingRun {
+	id: string;
+	name: string;
+	at: string;
+}
+
+export function normalizeUpcoming(v: unknown): UpcomingRun[] {
+	return arr(v).map((u) => {
+		const raw = obj(u);
+		return { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
+	});
+}
+
+/** A compact "in 14m" / "in 3h" countdown to an RFC 3339 timestamp. */
+export function until(iso: string, now = Date.now()): string {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return "";
+	if (t <= now) return "now";
+	return `in ${age(new Date(now - (t - now)).toISOString(), now)}`;
+}
+
+/**
+ * The task_schedule / task_update arguments for a schedule's trigger. Fields
+ * the trigger does not use are cleared, so switching triggers on an existing
+ * task does not leave the old one behind.
+ */
+export function triggerArgs(s: ProjectSchedule): Record<string, string> {
+	const args: Record<string, string> = {
+		trigger: s.trigger,
+		schedule: "",
+		every: "",
+		at: "",
+		days: "",
+		start_at: "",
+		timezone: s.timezone.trim(),
+		overlap: s.overlap,
+		missed: s.missed,
+	};
+	switch (s.trigger) {
+		case "once":
+			args.start_at = s.startAt.trim();
+			break;
+		case "interval":
+			args.every = s.every.trim();
+			break;
+		case "daily":
+			args.at = s.at.trim();
+			break;
+		case "weekly":
+			args.at = s.at.trim();
+			args.days = s.days.trim();
+			break;
+		case "cron":
+			args.trigger = "";
+			args.schedule = s.schedule.trim();
+			break;
+	}
+	return args;
+}
+
+export function emptySchedule(project: string): ProjectSchedule {
+	return {
+		id: "",
+		agent: "",
+		name: "",
+		project,
+		cli: "",
+		prompt: "",
+		enabled: true,
+		trigger: "daily",
+		schedule: "",
+		every: "",
+		at: "09:00",
+		days: "",
+		startAt: "",
+		timezone: "",
+		overlap: "queue",
+		missed: "skip",
+		description: "",
+		nextRun: "",
+		history: [],
+	};
 }

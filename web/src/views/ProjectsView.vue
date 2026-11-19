@@ -33,14 +33,21 @@
 						</p>
 					</div>
 					<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-						<div role="tablist" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
+						<div role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
+							<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
+								class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+								@click="setView(v.key)">
+								{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
+							</button>
+						</div>
+						<div v-if="view === 'board'" role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
 							<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
 								class="px-3 py-1.5" :class="filter === f.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 								@click="filter = f.key">
 								{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
 							</button>
 						</div>
-						<button type="button"
+						<button v-if="view === 'board'" type="button"
 							class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 							:disabled="checking" @click="onCheckNow">
 							{{ checking ? "Checking…" : "Check now" }}
@@ -58,6 +65,14 @@
 					<p v-if="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 						{{ error }}
 					</p>
+
+					<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
+						:schedules="schedules" :agents="scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+						:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
+						:preview="previewSchedule" />
+
+					<template v-else>
+					<UpNextStrip :runs="upcoming" :now="now" @open="openSchedule" />
 
 					<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
 						<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
@@ -90,6 +105,7 @@
 						<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
 							:disabled="page + 1 >= pageCount" @click="page++">Next</button>
 					</nav>
+					</template>
 
 					<details v-if="status" class="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
 						<summary class="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm">
@@ -118,10 +134,13 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import JobCard from "../components/projects/JobCard.vue";
+import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
+import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
 	useProjectList,
+	useProjectSchedules,
 } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
 import {
@@ -139,6 +158,12 @@ const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "failed", label: "Failed" },
 ];
 
+type ProjectView = "board" | "schedules";
+const VIEWS: { key: ProjectView; label: string }[] = [
+	{ key: "board", label: "Board" },
+	{ key: "schedules", label: "Schedules" },
+];
+
 const route = useRoute();
 const router = useRouter();
 const projectList = useProjectList();
@@ -149,6 +174,41 @@ const filter = ref<BoardFilter>("all");
 const { version } = useServerStatus();
 const { status, jobs, total, page, error, loading, checkNow, retry, stop } =
 	useProjectBoard(project, filter);
+const {
+	schedules,
+	upcoming,
+	agents: scheduleAgents,
+	error: scheduleError,
+	loaded: schedulesLoaded,
+	save: saveSchedule,
+	setEnabled: setScheduleEnabled,
+	remove: removeSchedule,
+	runNow: runScheduleNow,
+	preview: previewSchedule,
+} = useProjectSchedules(project);
+
+// The view and the schedule being edited live in the URL, so a reload or a
+// shared link opens the same place.
+const view = computed<ProjectView>(() =>
+	route.query.tab === "schedules" ? "schedules" : "board",
+);
+const selectedSchedule = computed({
+	get: () =>
+		typeof route.query.schedule === "string" ? route.query.schedule : "",
+	set: (id: string) => {
+		void router.replace({
+			query: { ...route.query, tab: "schedules", schedule: id || undefined },
+		});
+	},
+});
+function setView(next: ProjectView) {
+	void router.replace({
+		query: next === "board" ? {} : { tab: next },
+	});
+}
+function openSchedule(id: string) {
+	selectedSchedule.value = id;
+}
 
 // Without a project in the URL, open the first watched project.
 watch(
