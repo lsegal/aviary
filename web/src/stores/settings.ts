@@ -128,6 +128,11 @@ export interface SkillConfig {
 	settings?: Record<string, unknown>;
 }
 
+export interface CodingSkillsConfig {
+	auto_update?: boolean;
+	install_new_clis?: boolean;
+}
+
 export interface AppConfig {
 	server: ServerConfig;
 	agents: AgentEntry[];
@@ -136,6 +141,7 @@ export interface AppConfig {
 	search: SearchConfig;
 	scheduler: SchedulerConfig;
 	skills: Record<string, SkillConfig>;
+	coding_skills?: CodingSkillsConfig;
 }
 
 function defaultConfig(): AppConfig {

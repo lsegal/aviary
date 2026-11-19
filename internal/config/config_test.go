@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1425,4 +1426,24 @@ func TestWatcher(t *testing.T) {
 		w.Stop()
 		<-done
 	})
+}
+
+func TestCodingSkillsConfigKeepsOnlyNonDefaults(t *testing.T) {
+	on, off := true, false
+
+	assert.True(t, EffectiveCodingSkillsAutoUpdate(nil))
+	assert.True(t, EffectiveCodingSkillsAutoUpdate(&Config{}))
+	assert.True(t, EffectiveCodingSkillsInstallNewCLIs(&Config{}))
+	assert.False(t, EffectiveCodingSkillsAutoUpdate(&Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &off}}))
+	assert.False(t, EffectiveCodingSkillsInstallNewCLIs(&Config{CodingSkills: &CodingSkillsConfig{InstallNewCLIs: &off}}))
+
+	cfg := &Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &on, InstallNewCLIs: &on}}
+	normalize(cfg)
+	assert.Nil(t, cfg.CodingSkills, "defaults are not written")
+
+	cfg = &Config{CodingSkills: &CodingSkillsConfig{AutoUpdate: &on, InstallNewCLIs: &off}}
+	normalize(cfg)
+	require.NotNil(t, cfg.CodingSkills)
+	assert.Nil(t, cfg.CodingSkills.AutoUpdate)
+	assert.Equal(t, &off, cfg.CodingSkills.InstallNewCLIs)
 }

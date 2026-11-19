@@ -13,6 +13,7 @@ search:    { ... }
 scheduler: { ... }
 skills:    { ... }
 projects:  { ... }
+coding_skills: { ... }
 ```
 
 ---
@@ -354,6 +355,25 @@ skills:
 | --- | --- | --- | --- |
 | `<name>.enabled` | bool | `false` | Whether this skill is active |
 | `<name>.settings` | map | | Skill-specific key/value settings passed to the skill runtime |
+
+---
+
+## coding_skills
+
+Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`) installed and current. Both settings default to `true` and are only written when turned off.
+
+Coding-CLI skills are not listed under `skills` and are not available to Aviary's own agents.
+
+```yaml
+coding_skills:
+  auto_update: false
+  install_new_clis: false
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `auto_update` | bool | `true` | At startup, reinstall any skill whose installed copy differs from the one this release was built with |
+| `install_new_clis` | bool | `true` | Install the skills for coding CLIs found on the `PATH` later (checked every 15 minutes) |
 
 ---
 
