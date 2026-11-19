@@ -34,7 +34,9 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 	case agents.FormatJSONL:
 		return newJSONLOutputWriter(w, *output.JSONL)
 	case agents.FormatCodexJSON:
-		return newCodexJSONOutputWriter(w)
+		return newTranscriptOutputWriter(w, transcript.FormatCodexJSON)
+	case agents.FormatAviaryJSON:
+		return newTranscriptOutputWriter(w, transcript.FormatAviaryJSON)
 	}
 	return nil
 }
@@ -367,23 +369,24 @@ func firstJSONLString(values []any) string {
 	return ""
 }
 
-// codexJSONOutputWriter renders `codex exec --json` for the job's scrollback:
-// agent messages as text, commands, file changes and tool calls as progress
-// lines, and the thread id in the "session id:" form the codex definition
-// captures.
-type codexJSONOutputWriter struct {
+// transcriptOutputWriter renders a stream its transcript mapper reads, such
+// as `codex exec --json` or `aviary agent run --output-format json`, for the
+// job's scrollback: agent messages as text, commands, file changes and tool
+// calls as progress lines, and codex's thread id in the "session id:" form
+// the codex definition captures.
+type transcriptOutputWriter struct {
 	lineWriter
 	output io.Writer
 	mapper transcript.Mapper
 }
 
-func newCodexJSONOutputWriter(output io.Writer) *codexJSONOutputWriter {
-	w := &codexJSONOutputWriter{output: output, mapper: transcript.NewMapper(transcript.FormatCodexJSON)}
+func newTranscriptOutputWriter(output io.Writer, format string) *transcriptOutputWriter {
+	w := &transcriptOutputWriter{output: output, mapper: transcript.NewMapper(format)}
 	w.line = w.writeLine
 	return w
 }
 
-func (w *codexJSONOutputWriter) writeLine(line []byte) error {
+func (w *transcriptOutputWriter) writeLine(line []byte) error {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
 		return nil

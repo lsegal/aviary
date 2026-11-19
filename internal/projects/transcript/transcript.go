@@ -94,6 +94,7 @@ const (
 	FormatCodexJSON        = "codex-json"
 	FormatOpencodeJSON     = "opencode-json"
 	FormatClineJSON        = "cline-json"
+	FormatAviaryJSON       = "aviary-json"
 )
 
 // NewMapper returns the mapper for an agent definition's output format, or for
@@ -110,6 +111,8 @@ func NewMapper(format string) Mapper {
 		return opencodeMapper{}
 	case FormatClineJSON:
 		return &clineMapper{}
+	case FormatAviaryJSON:
+		return aviaryMapper{}
 	}
 	return nil
 }
