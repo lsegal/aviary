@@ -140,7 +140,9 @@ If a provider shows as unreachable:
 
 ## Upgrades
 
-**Check for a newer release:**
+Aviary checks for a new release every 5 minutes. When it finds one, every open control panel shows a notice that links the version to its release page.
+
+**Check for a newer release, and see which running jobs an upgrade would stop:**
 
 ```bash
 server_version_check {}
@@ -149,10 +151,17 @@ server_version_check {}
 **Apply the upgrade:**
 
 ```bash
-server_upgrade {}
+server_upgrade {}                  # now
+server_upgrade { when: "idle" }    # once no jobs are running
 ```
 
-Or use the upgrade prompt that appears in the control panel header when a new version is available. The server restarts automatically after a successful upgrade.
+From a terminal, `aviary upgrade` does the same. It checks first and does nothing when Aviary is current. `--version` accepts versions with or without a leading `v`, and `--when idle` waits for running jobs.
+
+An upgrade is a safe restart. Aviary installs the release, updates the skills for every signed-in coding CLI, stops running jobs at a checkpoint and saves their sessions, then restarts. Each job then resumes in its own session and is told that Aviary restarted. Waiting jobs aren't touched. The upgrade dialog in the control panel names the jobs it will stop before you confirm. It offers **Now**, or **When no jobs are running**, which holds new jobs until the restart is done. A waiting upgrade can be canceled from the panel or with `server_restart { cancel: true }`.
+
+`server_restart {}` restarts the same way without installing anything.
+
+**Automatic updates:** set `server.auto_update: true` to install new releases on their own. They are applied only while no jobs are running.
 
 ---
 
