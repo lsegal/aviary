@@ -2,7 +2,6 @@ import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import {
 	type BoardFilter,
 	filterStatuses,
-	isRunning,
 	type JobDetail,
 	normalizeJobDetail,
 	normalizeJobList,
@@ -119,7 +118,10 @@ export function useProjectBoard(
 		);
 		const all = sortJobs(lists.flatMap((l) => l.jobs));
 		const start = page.value * JOBS_PAGE_SIZE;
-		return { jobs: all.slice(start, start + JOBS_PAGE_SIZE), total: all.length };
+		return {
+			jobs: all.slice(start, start + JOBS_PAGE_SIZE),
+			total: all.length,
+		};
 	}
 
 	async function load() {
@@ -133,27 +135,26 @@ export function useProjectBoard(
 				callTool("project_status", {}),
 				listJobs(target),
 			]);
-			// Running jobs stream their terminal output onto the card.
+			// Every visible card shows its job's latest terminal output, which
+			// streams while the job runs.
 			await Promise.all(
-				list.jobs
-					.filter((j) => isRunning(j.status))
-					.map(async (j) => {
-						try {
-							const detail = normalizeJobDetail(
-								parseToolJSON(
-									await callTool("project_job_get", {
-										target: j.target,
-										number: j.number,
-										lines: CARD_OUTPUT_LINES,
-										events: 1,
-									}),
-								),
-							);
-							j.output = detail.job.output;
-						} catch {
-							// Keep the card without output until the next poll.
-						}
-					}),
+				list.jobs.map(async (j) => {
+					try {
+						const detail = normalizeJobDetail(
+							parseToolJSON(
+								await callTool("project_job_get", {
+									target: j.target,
+									number: j.number,
+									lines: CARD_OUTPUT_LINES,
+									events: 1,
+								}),
+							),
+						);
+						j.output = detail.job.output;
+					} catch {
+						// Keep the card without output until the next poll.
+					}
+				}),
 			);
 			if (target !== project.value) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
