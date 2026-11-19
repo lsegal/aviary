@@ -179,6 +179,24 @@ func LoadAgentTaskFiles(agentCfg AgentConfig) ([]TaskConfig, error) {
 	return tasks, nil
 }
 
+// FindMarkdownTask returns the path of the task file in dir that defines the
+// task named name.
+func FindMarkdownTask(dir, name string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.md"))
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		if strings.HasPrefix(filepath.Base(f), "_") {
+			continue
+		}
+		if task, err := LoadMarkdownTask(f); err == nil && task.Name == name {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("no task file defines %q in %s", name, dir)
+}
+
 // mergeTasksByName merges fileTasks onto base: file tasks override base tasks
 // with the same name; new names are appended.
 func mergeTasksByName(base []TaskConfig, fileTasks []TaskConfig) []TaskConfig {

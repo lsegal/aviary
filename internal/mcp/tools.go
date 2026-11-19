@@ -28,6 +28,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/models"
+	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -1229,9 +1230,41 @@ type taskScheduleArgs struct {
 	TriggerType  string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
 	Precompile   *bool  `json:"precompile,omitempty"`
 	RunDiscovery bool   `json:"run_discovery,omitempty"`
+	taskTriggerArgs
+}
+
+// taskTriggerArgs are the scheduler options shared by task_schedule and
+// task_preview.
+type taskTriggerArgs struct {
+	Trigger  string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron"`
+	Every    string `json:"every,omitempty"`
+	At       string `json:"at,omitempty"`
+	Days     string `json:"days,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+	StartAt  string `json:"start_at,omitempty"`
+	RunOnce  bool   `json:"run_once,omitempty"`
+	Overlap  string `json:"overlap,omitempty" schema:"enum=queue|skip"`
+	Missed   string `json:"missed,omitempty" schema:"enum=skip|run_once"`
+}
+
+// fields returns the trigger settings with cron expression cronExpr.
+func (a taskTriggerArgs) fields(cronExpr string) schedule.Fields {
+	return schedule.Fields{
+		Trigger:  a.Trigger,
+		Schedule: cronExpr,
+		StartAt:  a.StartAt,
+		RunOnce:  a.RunOnce,
+		Every:    a.Every,
+		At:       a.At,
+		Days:     a.Days,
+		Timezone: a.Timezone,
+		Overlap:  a.Overlap,
+		Missed:   a.Missed,
+	}
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
+	registerTaskManageTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
 		Description: "List configured tasks and their trigger definitions",
@@ -1262,7 +1295,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1301,8 +1334,10 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 			promptText = generatedTaskName(scriptText)
 		}
-		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
-			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
+		triggerFields := args.fields(normalizeTaskSchedule(args.Schedule))
+		recurring := triggerFields.HasTrigger()
+		if strings.TrimSpace(args.In) != "" && recurring {
+			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or a schedule trigger may be set")
 		}
 		loadedCfg, loadErr := config.Load("")
 		if loadErr != nil {
@@ -1313,7 +1348,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", args.Target)
 		}
 		effectiveTarget := target
-		if strings.TrimSpace(normalizeTaskSchedule(args.Schedule)) != "" {
+		if recurring {
 			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
 		}
 		precomputeEnabled := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
@@ -1326,7 +1361,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if strings.TrimSpace(args.In) != "" {
 				trigger = "delay"
 			}
-			if strings.TrimSpace(args.Schedule) != "" {
+			if recurring {
 				trigger = "schedule"
 			}
 			tracker := newTaskCompileTracker(args.Agent, strings.TrimSpace(args.Name), taskType, promptText, effectiveTarget, trigger, args.RunDiscovery)
@@ -1397,10 +1432,15 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
 			return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
 		}
-		normalizedSchedule := normalizeTaskSchedule(args.Schedule)
-		if strings.TrimSpace(normalizedSchedule) != "" {
-			if err := validateTaskSchedule(normalizedSchedule); err != nil {
-				return nil, struct{}{}, err
+		normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
+		if recurring {
+			spec, err := schedule.Parse(triggerFields)
+			if err != nil {
+				return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+			}
+			scheduleKey := normalizedSchedule
+			if scheduleKey == "" {
+				scheduleKey = spec.Describe()
 			}
 			if triggerType == "watch" {
 				return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
@@ -1418,8 +1458,8 @@ func registerTaskTools(s *sdkmcp.Server) {
 			taskTarget := nextTaskTarget(ctx, target, loadedCfg, args.Agent)
 			taskName := strings.TrimSpace(args.Name)
 			if taskName == "" {
-				taskName = generatedRecurringTaskName(requestedTaskType, contentText, normalizedSchedule, taskTarget)
-				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok {
+				taskName = generatedRecurringTaskName(requestedTaskType, contentText, scheduleKey, taskTarget)
+				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok && normalizedSchedule != "" {
 					taskName = existingName
 				}
 			}
@@ -1433,8 +1473,17 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Type:     taskType,
 				Name:     taskName,
 				Prompt:   body,
-				Schedule: strings.TrimSpace(normalizedSchedule),
+				Schedule: normalizedSchedule,
 				Target:   taskTarget,
+				Trigger:  strings.ToLower(strings.TrimSpace(args.Trigger)),
+				Every:    strings.TrimSpace(args.Every),
+				At:       strings.TrimSpace(args.At),
+				Days:     strings.TrimSpace(args.Days),
+				Timezone: strings.TrimSpace(args.Timezone),
+				StartAt:  strings.TrimSpace(args.StartAt),
+				RunOnce:  args.RunOnce,
+				Overlap:  strings.ToLower(strings.TrimSpace(args.Overlap)),
+				Missed:   strings.ToLower(strings.TrimSpace(args.Missed)),
 			}
 			// Check whether a task with this name already exists (for action message).
 			updated := false
@@ -1466,7 +1515,10 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if updated {
 				action = "updated"
 			}
-			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+			if nextTask.Schedule != "" {
+				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+			}
+			return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.", taskName, action, args.Agent, spec.Describe()))
 		}
 		agentID := args.Agent
 		taskID := strings.TrimSpace(args.Name)
