@@ -5,6 +5,7 @@
   "session": {"assign": "none"},
   "output": {
     "format": "jsonl",
+    "transcript": "opencode-json",
     "jsonl": {
       "type": "type",
       "text": "part.text",
