@@ -455,7 +455,7 @@ func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func
 // results keyed by agent name. A reader that has a source but no reading
 // reports itself unavailable, with the reason when it has one, so a broken
 // read is never shown as the "not tracked" of an agent with no source at all
-//.
+// .
 func combinedQuotaReader(readers []namedQuotaReader) func(context.Context) map[string]string {
 	return func(ctx context.Context) map[string]string {
 		result := make(map[string]string, len(readers))

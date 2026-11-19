@@ -655,7 +655,7 @@ func (d Doctor) validate() error {
 
 // Assign values.
 const (
-	AssignEngine   = "aviary"
+	AssignEngine  = "aviary"
 	AssignCapture = "capture"
 	AssignNone    = "none"
 )
