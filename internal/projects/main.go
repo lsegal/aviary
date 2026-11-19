@@ -2256,7 +2256,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		detector = &missingSessionDetector{output: agentOutput, patterns: definition.MissingSessionPatterns()}
 		agentOutput = detector
 	}
-	if recorder := r.transcriptRecorder(issue, definition.Output.Format); recorder != nil {
+	if recorder := r.transcriptRecorder(issue, definition.Output.TranscriptFormat()); recorder != nil {
 		agentOutput = io.MultiWriter(recorder, agentOutput)
 		defer recorder.Flush()
 	}

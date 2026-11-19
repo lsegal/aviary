@@ -220,6 +220,11 @@ type Output struct {
 	// Format selects it. Most agents with a --json or streaming mode are read
 	// by naming their field paths here rather than by new Go code.
 	JSONL *JSONL `json:"jsonl,omitempty"`
+	// Transcript names the mapper that turns a generic JSONL stream into the
+	// job's structured transcript, since the JSONL block only describes what
+	// the decoder renders. It is only meaningful when Format selects the
+	// generic decoder; the other formats have mappers of their own.
+	Transcript string `json:"transcript,omitempty"`
 }
 
 // JSONL says where in one event of a line-delimited JSON stream the decoder
@@ -667,6 +672,9 @@ const (
 	FormatStreamJSON = "stream-json"
 	FormatJSONL      = "jsonl"
 	FormatCodexJSON  = "codex-json"
+
+	TranscriptOpencodeJSON = "opencode-json"
+	TranscriptClineJSON    = "cline-json"
 
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"
