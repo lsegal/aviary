@@ -77,6 +77,11 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	if snapshot.UseWebhooks {
 		status["webhook_online"] = snapshot.WebhookOnline
 	}
+	if settings.Delivery == DeliveryBrowser {
+		// The board shows a signed-out session as a banner offering to sign
+		// in to GitHub in Aviary's browser or to switch to gh polling.
+		status["github"] = m.GitHubSession()
+	}
 	if !snapshot.LastPoll.IsZero() {
 		status["last_check"] = snapshot.LastPoll
 	}
