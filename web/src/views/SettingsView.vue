@@ -1591,6 +1591,7 @@ function emptyConfig(): AppConfig {
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
+		projects: [],
 	};
 }
 

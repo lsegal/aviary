@@ -126,6 +126,10 @@
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
               <span class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
             </router-link>
+            <router-link :to="addProjectLink" data-testid="sidebar-add-project"
+              class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+              + Add project
+            </router-link>
           </div>
           <div v-else-if="link.children && isLinkActive(link)" class="mb-3 mt-1 space-y-1 pl-2">
             <router-link v-for="child in link.children" :key="child.key" :to="child.to"
@@ -270,6 +274,17 @@ const projectChildren = computed<NavChild[]>(() =>
 	})),
 );
 
+// Opens the add-project dialog over the current board, or the first one.
+const addProjectLink = computed(() => ({
+	path:
+		route.path.startsWith("/projects/") &&
+		!route.path.includes("/jobs/") &&
+		!route.path.endsWith("/settings")
+			? route.path
+			: "/projects",
+	query: { add: "1" },
+}));
+
 const projectsRunning = computed(() =>
 	projects.value.reduce((n, p) => n + p.running, 0),
 );
@@ -326,7 +341,11 @@ function isChildActive(child: NavChild): boolean {
 		// Project names contain an encoded "/", so compare decoded paths.
 		const path = decodeURIComponent(child.to);
 		const current = decodeURIComponent(route.path);
-		return current === path || current.startsWith(`${path}/jobs/`);
+		return (
+			current === path ||
+			current.startsWith(`${path}/jobs/`) ||
+			current === `${path}/settings`
+		);
 	}
 	return route.path === child.to || route.path.startsWith(`${child.to}/`);
 }
