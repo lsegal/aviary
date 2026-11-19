@@ -27,9 +27,9 @@
 						</div>
 						<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
 							Issues labeled <b>{{ status.readyLabel }}</b>
-							<template v-if="status.deliveryMode"> · {{ status.deliveryMode }}</template>
+							<template v-if="status.delivery"> · {{ status.delivery }}</template>
 							<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
-							<template v-if="status.intervalSeconds"> every {{ status.intervalSeconds }}s</template>
+							<template v-if="status.interval"> · every {{ status.interval }}</template>
 						</p>
 					</div>
 					<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
@@ -49,6 +49,12 @@
 				</header>
 
 				<div class="space-y-4 px-4 py-4 sm:px-6">
+					<p v-if="status && !status.running" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+						The watch isn't running{{ status.error ? `: ${status.error}` : "." }}
+					</p>
+					<p v-else-if="status?.error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+						{{ status.error }}
+					</p>
 					<p v-if="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 						{{ error }}
 					</p>
@@ -66,14 +72,14 @@
 							class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 							<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
 							<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
-							<span class="text-gray-500">{{ [cli.model, cli.signedIn ? cli.quota : "signed out"].filter(Boolean).join(" · ") }}</span>
+							<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
 						</span>
 					</section>
 
 					<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 					<div v-else-if="!jobs.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 					<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
-						<JobCard v-for="job in jobs" :key="job.id" :job="job" :project="project" :now="now"
+						<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now"
 							:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)" />
 					</section>
 
@@ -99,7 +105,7 @@
 							Targets:
 							<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ t.issues }})</template>
 						</span>
-						<span v-if="status.version">Version {{ status.version }}</span>
+						<span v-if="version">Version {{ version }}</span>
 					</footer>
 				</div>
 			</template>
@@ -117,7 +123,13 @@ import {
 	useProjectBoard,
 	useProjectList,
 } from "../composables/useProjects";
-import { age, type BoardFilter, encodeProject } from "../lib/projects";
+import { useServerStatus } from "../composables/useServerStatus";
+import {
+	age,
+	type BoardFilter,
+	encodeProject,
+	type ProjectJob,
+} from "../lib/projects";
 
 const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "all", label: "All" },
@@ -134,6 +146,7 @@ const project = computed(() =>
 	typeof route.params.project === "string" ? route.params.project : "",
 );
 const filter = ref<BoardFilter>("all");
+const { version } = useServerStatus();
 const { status, jobs, total, page, error, loading, checkNow, retry, stop } =
 	useProjectBoard(project, filter);
 
@@ -171,17 +184,17 @@ const statCards = computed(() => {
 		},
 		{
 			label: "Running",
-			value: s.running,
+			value: s.activeJobs,
 			cls: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
 		},
 		{
 			label: "Waiting",
-			value: s.waiting,
+			value: s.waitingJobs,
 			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
 		},
 		{
-			label: "Merged · 24h",
-			value: s.merged24h,
+			label: "Completed",
+			value: s.completed,
 			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
 		},
 		{
@@ -193,10 +206,13 @@ const statCards = computed(() => {
 });
 
 const busyJob = ref("");
-async function onAction(fn: (id: string) => Promise<void>, id: string) {
-	busyJob.value = id;
+async function onAction(
+	fn: (job: ProjectJob) => Promise<void>,
+	job: ProjectJob,
+) {
+	busyJob.value = job.id;
 	try {
-		await fn(id);
+		await fn(job);
 	} catch (e) {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {

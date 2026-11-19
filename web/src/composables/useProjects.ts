@@ -11,6 +11,7 @@ import {
 	type ProjectSummary,
 	parseToolJSON,
 	sortJobs,
+	summarizeProjects,
 } from "../lib/projects";
 import { useMCP } from "./useMCP";
 
@@ -19,6 +20,9 @@ export const PROJECTS_POLL_MS = 2_000;
 /** Lines of terminal output shown on a board card. */
 export const CARD_OUTPUT_LINES = 12;
 export const JOBS_PAGE_SIZE = 12;
+// project_job_list's page size when the board filters by several statuses
+// and pages the merged result itself.
+const ALL_JOBS_LIMIT = 1_000;
 
 // Polls fn every interval while the component is mounted, without
 // overlapping calls, and pauses while the tab is hidden.
@@ -53,10 +57,14 @@ export function useProjectList(interval = 10_000) {
 
 	const { refresh } = usePoll(async () => {
 		try {
-			const status = normalizeStatus(
-				parseToolJSON(await callTool("project_status", {})),
+			const [statusText, listText] = await Promise.all([
+				callTool("project_status", {}),
+				callTool("project_job_list", { limit: ALL_JOBS_LIMIT }),
+			]);
+			projects.value = summarizeProjects(
+				normalizeStatus(parseToolJSON(statusText)),
+				normalizeJobList(parseToolJSON(listText)).jobs,
 			);
-			projects.value = status.projects;
 			available.value = true;
 		} catch {
 			available.value = false;
@@ -79,47 +87,78 @@ export function useProjectBoard(
 	const error = ref("");
 	const loading = ref(true);
 
+	async function listJobs(target: string) {
+		const statuses = filterStatuses(filter.value);
+		if (!statuses) {
+			const list = normalizeJobList(
+				parseToolJSON(
+					await callTool("project_job_list", {
+						target,
+						offset: page.value * JOBS_PAGE_SIZE,
+						limit: JOBS_PAGE_SIZE,
+					}),
+				),
+			);
+			return { jobs: sortJobs(list.jobs), total: list.total };
+		}
+		// project_job_list filters by one status, so a tab that shows several
+		// merges them and pages the result here.
+		const lists = await Promise.all(
+			statuses.map(async (s) =>
+				normalizeJobList(
+					parseToolJSON(
+						await callTool("project_job_list", {
+							target,
+							status: s,
+							limit: ALL_JOBS_LIMIT,
+						}),
+					),
+				),
+			),
+		);
+		const all = sortJobs(lists.flatMap((l) => l.jobs));
+		const start = page.value * JOBS_PAGE_SIZE;
+		return {
+			jobs: all.slice(start, start + JOBS_PAGE_SIZE),
+			total: all.length,
+		};
+	}
+
 	async function load() {
-		const name = project.value;
-		if (!name) {
+		const target = project.value;
+		if (!target) {
 			loading.value = false;
 			return;
 		}
 		try {
-			const [statusText, listText] = await Promise.all([
-				callTool("project_status", { project: name }),
-				callTool("project_job_list", {
-					project: name,
-					status: filterStatuses(filter.value),
-					offset: page.value * JOBS_PAGE_SIZE,
-					limit: JOBS_PAGE_SIZE,
-				}),
+			const [statusText, list] = await Promise.all([
+				callTool("project_status", {}),
+				listJobs(target),
 			]);
-			const list = normalizeJobList(parseToolJSON(listText));
-			const sorted = sortJobs(list.jobs);
-			// Running jobs stream their terminal output onto the card.
+			// Every visible card shows its job's latest terminal output, which
+			// streams while the job runs.
 			await Promise.all(
-				sorted
-					.filter((j) => j.status === "running" && j.id)
-					.map(async (j) => {
-						try {
-							const detail = normalizeJobDetail(
-								parseToolJSON(
-									await callTool("project_job_get", {
-										id: j.id,
-										lines: CARD_OUTPUT_LINES,
-									}),
-								),
-							);
-							if (detail.output.length > 0) j.output = detail.output;
-						} catch {
-							// Keep whatever output the list returned.
-						}
-					}),
+				list.jobs.map(async (j) => {
+					try {
+						const detail = normalizeJobDetail(
+							parseToolJSON(
+								await callTool("project_job_get", {
+									target: j.target,
+									number: j.number,
+									lines: CARD_OUTPUT_LINES,
+									events: 1,
+								}),
+							),
+						);
+						j.output = detail.job.output;
+					} catch {
+						// Keep the card without output until the next poll.
+					}
+				}),
 			);
-			if (name !== project.value) return;
+			if (target !== project.value) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
-			jobs.value = sorted;
+			jobs.value = list.jobs;
 			total.value = list.total;
 			error.value = "";
 		} catch (e) {
@@ -140,14 +179,14 @@ export function useProjectBoard(
 
 	async function action(
 		tool: "project_job_retry" | "project_job_stop",
-		id: string,
+		job: ProjectJob,
 	) {
-		await callTool(tool, { id });
+		await callTool(tool, { target: job.target, number: job.number });
 		await refresh();
 	}
 
 	async function checkNow() {
-		await callTool("project_refresh", { project: project.value });
+		await callTool("project_refresh", { target: project.value });
 		await refresh();
 	}
 
@@ -160,24 +199,31 @@ export function useProjectBoard(
 		loading,
 		refresh,
 		checkNow,
-		retry: (id: string) => action("project_job_retry", id),
-		stop: (id: string) => action("project_job_stop", id),
+		retry: (job: ProjectJob) => action("project_job_retry", job),
+		stop: (job: ProjectJob) => action("project_job_stop", job),
 	};
 }
 
 /** One job's state, typed event timeline and raw output, kept live. */
-export function useProjectJob(id: Ref<string>) {
+export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	const { callTool } = useMCP();
 	const detail = ref<JobDetail | null>(null);
 	const error = ref("");
 
 	const { refresh } = usePoll(async () => {
-		const jobID = id.value;
+		const key = `${target.value}#${number.value}`;
 		try {
 			const next = normalizeJobDetail(
-				parseToolJSON(await callTool("project_job_get", { id: jobID })),
+				parseToolJSON(
+					await callTool("project_job_get", {
+						target: target.value,
+						number: number.value,
+						lines: -1,
+						events: -1,
+					}),
+				),
 			);
-			if (jobID !== id.value) return;
+			if (key !== `${target.value}#${number.value}`) return;
 			detail.value = next;
 			error.value = "";
 		} catch (e) {
@@ -185,13 +231,13 @@ export function useProjectJob(id: Ref<string>) {
 		}
 	}, PROJECTS_POLL_MS);
 
-	watch(id, () => {
+	watch([target, number], () => {
 		detail.value = null;
 		void refresh();
 	});
 
 	async function action(tool: string) {
-		await callTool(tool, { id: id.value });
+		await callTool(tool, { target: target.value, number: number.value });
 		await refresh();
 	}
 

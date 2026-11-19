@@ -9,21 +9,22 @@
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
 						<h1 class="text-lg font-bold text-gray-900 dark:text-white">
-							{{ job?.issue ? `#${job.issue} ` : "" }}{{ job?.title || jobID }}
+							{{ `#${number} ` }}{{ job?.title ?? "" }}
 						</h1>
 						<JobStatusPill v-if="job" :status="job.status" />
 					</div>
 				</div>
 				<div v-if="job" class="flex flex-wrap gap-2 lg:ml-auto">
-					<a v-if="job.issue && job.repo" :href="githubURL(job.repo, 'issues', job.issue)" target="_blank" rel="noreferrer"
+					<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer"
 						class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-						Issue #{{ job.issue }} ↗
+						Issue #{{ job.number }} ↗
 					</a>
-					<a v-if="job.pr" :href="githubURL(job.prRepo, 'pull', job.pr)" target="_blank" rel="noreferrer"
+					<a v-if="job.pr" :href="prURL" target="_blank" rel="noreferrer"
 						class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-						{{ job.prDraft ? "Draft PR" : "PR" }} #{{ job.pr }} ↗
+						PR {{ job.prRepo !== job.repo ? job.prRepo : "" }}#{{ job.pr }} ↗
 					</a>
-					<button type="button" :disabled="busy"
+					<button type="button" :disabled="busy || !job.actions.retry"
+						:title="job.actions.retryUnavailable || undefined"
 						class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 						@click="run(retry)">Retry</button>
 					<button v-if="stoppable" type="button" :disabled="busy"
@@ -61,15 +62,14 @@
 					<footer v-if="job"
 						class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:flex-row sm:items-center sm:px-6">
 						<p class="flex-1">
-							Jobs only take instructions from GitHub comments<template v-if="job.allowedCommenters.length"> by allowed
-								commenters ({{ job.allowedCommenters.join(", ") }})</template>. To steer this job, comment on the issue or its
+							Jobs only take instructions from GitHub comments by allowed commenters. To steer this job, comment on the issue or its
 							pull request.
 						</p>
 						<div class="flex flex-wrap gap-2">
-							<a v-if="job.issue && job.repo" :href="`${githubURL(job.repo, 'issues', job.issue)}#new_comment_field`"
+							<a v-if="issueURL" :href="`${issueURL}#new_comment_field`"
 								target="_blank" rel="noreferrer"
-								class="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-500">Comment on #{{ job.issue }} ↗</a>
-							<a v-if="job.pr" :href="`${githubURL(job.prRepo, 'pull', job.pr)}#new_comment_field`" target="_blank"
+								class="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-500">Comment on #{{ job.number }} ↗</a>
+							<a v-if="job.pr" :href="`${prURL}#new_comment_field`" target="_blank"
 								rel="noreferrer"
 								class="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Comment on PR #{{ job.pr }} ↗</a>
 						</div>
@@ -108,18 +108,25 @@ import {
 
 const route = useRoute();
 const project = computed(() => String(route.params.project ?? ""));
-const jobID = computed(() => String(route.params.job ?? ""));
+const number = computed(() => Number(route.params.number ?? 0));
 const boardPath = computed(() => `/projects/${encodeProject(project.value)}`);
 
-const { detail, error, retry, stop } = useProjectJob(jobID);
+const { detail, error, retry, stop } = useProjectJob(project, number);
 const job = computed(() => detail.value?.job ?? null);
 const lifecycle = computed(() =>
 	detail.value ? lifecycleStep(detail.value) : { step: 0, done: false },
 );
-const stoppable = computed(
-	() =>
-		!!job.value &&
-		["running", "waiting", "paused", "queued"].includes(job.value.status),
+const stoppable = computed(() => !!job.value?.actions.stop);
+const issueURL = computed(() =>
+	job.value
+		? job.value.issueURL ||
+			githubURL(job.value.repo, "issues", job.value.number)
+		: "",
+);
+const prURL = computed(() =>
+	job.value?.pr
+		? job.value.prURL || githubURL(job.value.prRepo, "pull", job.value.pr)
+		: "",
 );
 
 const follow = ref(true);
