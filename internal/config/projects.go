@@ -55,6 +55,11 @@ type ProjectsConfig struct {
 	// means the coding agent.
 	UnblockAgent string `yaml:"unblock_agent,omitempty" json:"unblock_agent,omitempty"`
 	UnblockModel string `yaml:"unblock_model,omitempty" json:"unblock_model,omitempty"`
+	// ChatModel and ChatFallbacks pick the model of the built-in Projects
+	// agent behind the board's prompt chat. Empty uses models.defaults, as
+	// for any Aviary agent.
+	ChatModel     string   `yaml:"chat_model,omitempty" json:"chat_model,omitempty"`
+	ChatFallbacks []string `yaml:"chat_fallbacks,omitempty" json:"chat_fallbacks,omitempty"`
 	// TempDirs are where job clones go, tried in order. Empty means the
 	// system temp directory.
 	TempDirs []string `yaml:"temp_dirs,omitempty" json:"temp_dirs,omitempty"`
@@ -169,5 +174,5 @@ func (p ProjectsConfig) IsZero() bool {
 		len(p.AllowedCommenters) == 0 && len(p.Agents) == 0 && len(p.AgentBinaries) == 0 &&
 		len(p.CLIDefinitions) == 0 && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
-		len(p.TempDirs) == 0 && p.Webhook == nil
+		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }
