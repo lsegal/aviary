@@ -323,12 +323,15 @@ onMounted(async () => {
 });
 watch(target, reset);
 
-// The section as it will be saved. A project joins `list` once anything
-// differs from its defaults; one watched with defaults writes nothing.
+// The section as it will be saved. A project joins `list` once a change is
+// made on its page; one watched with defaults writes nothing.
 const next = computed<ProjectsSection>(() => {
 	if (!form.value) return section.value;
-	const unlisted = withSettings(section.value, form.value, false);
-	const changed = JSON.stringify(unlisted) !== "{}";
+	const unlisted = (s: ProjectSettings) =>
+		JSON.stringify(withSettings(section.value, s, false));
+	const changed =
+		unlisted(form.value) !==
+		unlisted(settingsFromSection(target.value, section.value));
 	return withSettings(
 		section.value,
 		form.value,
