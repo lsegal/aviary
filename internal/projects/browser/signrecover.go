@@ -287,6 +287,8 @@ func (g SignInGuard) HydrateIssue(ctx context.Context, repo string, issue *core.
 	return hydrator.HydrateIssue(ctx, repo, issue)
 }
 
+// ListIssues reads through the wrapped source, recording a signed-out read for
+// the banner and clearing it on a read that worked.
 func (g SignInGuard) ListIssues(ctx context.Context, target string) ([]core.Issue, error) {
 	issues, err := g.source.ListIssues(ctx, target)
 	if err != nil {

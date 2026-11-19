@@ -512,7 +512,7 @@ func TestWatchIssuesRoutesByTarget(t *testing.T) {
 
 // TestBoardSatisfiesTheWatchInterfaces is a compile-time check that the
 // extractor can be dropped into the watch loop in place of the API path.
-func TestBoardSatisfiesTheWatchInterfaces(t *testing.T) {
+func TestBoardSatisfiesTheWatchInterfaces(_ *testing.T) {
 	var _ core.IssueSource = &Board{}
 	var _ core.ProjectStateSource = &Board{}
 	var _ core.IssueSource = WatchIssues{}

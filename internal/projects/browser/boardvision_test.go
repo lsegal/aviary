@@ -48,7 +48,7 @@ func newVisionBoard(page *visionBoardPage, vision *Vision) *Board {
 // tick, with the fallback's clock advancing by the browser-mode poll interval.
 func pollBoardTicks(board *Board, ticks int) {
 	for i := 0; i < ticks; i++ {
-		board.ListIssues(context.Background(), boardTarget)
+		_, _ = board.ListIssues(context.Background(), boardTarget)
 	}
 }
 
@@ -108,8 +108,8 @@ func TestBoardVisionSpendsOneScreenshotPerCooldownAndStopsAtTheSharedCap(t *test
 	issues.vision = shared
 
 	for i := 0; i < 50; i++ {
-		sharedBoard.ListIssues(context.Background(), boardTarget)
-		issues.ListIssues(context.Background(), "owner/repo")
+		_, _ = sharedBoard.ListIssues(context.Background(), boardTarget)
+		_, _ = issues.ListIssues(context.Background(), "owner/repo")
 	}
 	if *sharedAsks != visionRunLimit {
 		t.Fatalf("the run cap is not shared: %d call(s), want %d", *sharedAsks, visionRunLimit)

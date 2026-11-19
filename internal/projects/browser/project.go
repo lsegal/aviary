@@ -547,7 +547,7 @@ func columnStatus(column *html.Node) string {
 // and is reported as such.
 func issueRowFromNode(node *html.Node) (boardRow, bool) {
 	link := node
-	if !(node.Data == "a" && issueLinkPattern.MatchString(linkPath(attrValue(node, "href")))) {
+	if node.Data != "a" || !issueLinkPattern.MatchString(linkPath(attrValue(node, "href"))) {
 		link = findNode(node, func(n *html.Node) bool {
 			return n.Data == "a" && issueLinkPattern.MatchString(linkPath(attrValue(n, "href")))
 		})
@@ -800,6 +800,8 @@ func (s WatchIssues) HydrateIssue(ctx context.Context, repo string, issue *core.
 	return hydrator.HydrateIssue(ctx, repo, issue)
 }
 
+// ListIssues reads a board target through the board and any other target
+// through the repository issues page.
 func (s WatchIssues) ListIssues(ctx context.Context, target string) ([]core.Issue, error) {
 	if core.IsProjectTarget(target) {
 		return s.Board.ListIssues(ctx, target)

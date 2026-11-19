@@ -211,7 +211,7 @@ func TestWaitForReadyPollsUntilReady(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		fmt.Fprint(w, `{"webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/browser/abc"}`)
+		_, _ = fmt.Fprint(w, `{"webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/browser/abc"}`)
 	}))
 	defer server.Close()
 
@@ -257,7 +257,7 @@ func TestWaitForReadyStopsWhenContextIsCanceled(t *testing.T) {
 
 func TestWebSocketURLRejectsEmptyEndpointReply(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{}`)
+		_, _ = fmt.Fprint(w, `{}`)
 	}))
 	defer server.Close()
 
@@ -274,7 +274,7 @@ func TestOpenPageTargetFindsTheWindowChromeOpened(t *testing.T) {
 		if r.URL.Path != "/json/list" {
 			t.Errorf("requested %s, want /json/list", r.URL.Path)
 		}
-		fmt.Fprint(w, `[{"id":"devtools-1","type":"other"},{"id":"page-1","type":"page"},{"id":"page-2","type":"page"}]`)
+		_, _ = fmt.Fprint(w, `[{"id":"devtools-1","type":"other"},{"id":"page-1","type":"page"},{"id":"page-2","type":"page"}]`)
 	}))
 	defer server.Close()
 	id, err := openPageTarget(context.Background(), server.URL, time.Second)
@@ -294,10 +294,10 @@ func TestOpenPageTargetPollsUntilTheWindowAppears(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		if calls < 3 {
-			fmt.Fprint(w, `[]`)
+			_, _ = fmt.Fprint(w, `[]`)
 			return
 		}
-		fmt.Fprint(w, `[{"id":"page-1","type":"page"}]`)
+		_, _ = fmt.Fprint(w, `[{"id":"page-1","type":"page"}]`)
 	}))
 	defer server.Close()
 	id, err := openPageTarget(context.Background(), server.URL, 5*time.Second)
@@ -317,7 +317,7 @@ func TestOpenPageTargetPollsUntilTheWindowAppears(t *testing.T) {
 // attaching to a target that does not exist.
 func TestOpenPageTargetFailsWithNoPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `[{"id":"worker-1","type":"service_worker"}]`)
+		_, _ = fmt.Fprint(w, `[{"id":"worker-1","type":"service_worker"}]`)
 	}))
 	defer server.Close()
 	if _, err := openPageTarget(context.Background(), server.URL, 200*time.Millisecond); err == nil {
@@ -327,7 +327,7 @@ func TestOpenPageTargetFailsWithNoPage(t *testing.T) {
 
 func TestOpenPageTargetRejectsUnreadableReply(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `not json`)
+		_, _ = fmt.Fprint(w, `not json`)
 	}))
 	defer server.Close()
 	if _, err := openPageTarget(context.Background(), server.URL, 200*time.Millisecond); err == nil {
