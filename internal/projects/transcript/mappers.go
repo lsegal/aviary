@@ -346,3 +346,20 @@ func stringValue(m map[string]any, key string) string {
 		return fmt.Sprint(v)
 	}
 }
+
+// aviaryMapper reads `aviary agent run --json`, whose lines are already
+// transcript events. Only the kinds an agent's own run produces are kept, so
+// a line cannot pass itself off as a relayed comment or a Projects event.
+type aviaryMapper struct{}
+
+func (aviaryMapper) Map(line []byte) []Event {
+	var event Event
+	if json.Unmarshal(line, &event) != nil {
+		return nil
+	}
+	switch event.Kind {
+	case KindMessage, KindToolCall, KindFileChange:
+		return []Event{event}
+	}
+	return nil
+}

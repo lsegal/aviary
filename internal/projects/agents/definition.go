@@ -667,6 +667,7 @@ const (
 	FormatStreamJSON = "stream-json"
 	FormatJSONL      = "jsonl"
 	FormatCodexJSON  = "codex-json"
+	FormatAviaryJSON = "aviary-json"
 
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"
@@ -680,6 +681,7 @@ var outputFormats = map[string]string{
 	formatClaudeJSONAlias: FormatStreamJSON,
 	FormatJSONL:           FormatJSONL,
 	FormatCodexJSON:       FormatCodexJSON,
+	FormatAviaryJSON:      FormatAviaryJSON,
 }
 
 // outputFormatNames lists the accepted spellings for an error message.
