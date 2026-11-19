@@ -510,6 +510,11 @@ export function lifecycleStep(detail: JobDetail): {
 	return { step, done: false };
 }
 
+/** The prompt chat's request for a summary of a job's session log. */
+export function summarizePrompt(job: Pick<ProjectJob, "repo" | "number">) {
+	return `Summarize the current session log of work on ${job.repo}#${job.number}`;
+}
+
 export function githubURL(repo: string, kind: "issues" | "pull", n: number) {
 	return `https://github.com/${repo}/${kind}/${n}`;
 }
