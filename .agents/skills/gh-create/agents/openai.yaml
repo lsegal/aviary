@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create GitHub Issue"
+  short_description: "File a structured, labeled issue with media attached"
+  default_prompt: "Use $gh-create to file a GitHub issue for this request: expand it into a structured issue with the original prompt quoted at the bottom, apply matching existing labels, assign it to @me, upload any referenced media, create annotated wireframes or system diagrams where they clarify the change, and scrub private data."
