@@ -35,6 +35,8 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 		return newJSONLOutputWriter(w, *output.JSONL)
 	case agents.FormatCodexJSON:
 		return newCodexJSONOutputWriter(w)
+	case agents.FormatGeminiJSON:
+		return newGeminiJSONOutputWriter(w)
 	}
 	return nil
 }
@@ -400,8 +402,15 @@ func (w *codexJSONOutputWriter) writeLine(line []byte) error {
 		_, err := fmt.Fprintf(w.output, "session id: %s\n", envelope.ThreadID)
 		return err
 	}
+	return writeTranscriptEvents(w.output, w.mapper.Map(line))
+}
+
+// writeTranscriptEvents renders mapped transcript events for the job's
+// scrollback: messages as text, and commands, file changes and tool calls as
+// the progress lines aviary shows for Claude.
+func writeTranscriptEvents(output io.Writer, events []transcript.Event) error {
 	var texts []string
-	for _, event := range w.mapper.Map(line) {
+	for _, event := range events {
 		switch {
 		case event.Kind == transcript.KindMessage:
 			if text := strings.TrimSpace(event.Text); text != "" {
@@ -420,6 +429,58 @@ func (w *codexJSONOutputWriter) writeLine(line []byte) error {
 	if len(texts) == 0 {
 		return nil
 	}
-	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
+	_, err := fmt.Fprintln(output, strings.Join(texts, "\n"))
 	return err
+}
+
+// geminiJSONOutputWriter renders `gemini --output-format stream-json` for the
+// job's scrollback through the transcript mapper, which joins the message
+// deltas Gemini streams into whole messages. A line that is not an event,
+// such as a startup error, is shown as written.
+type geminiJSONOutputWriter struct {
+	lineWriter
+	output io.Writer
+	mapper transcript.Mapper
+}
+
+func newGeminiJSONOutputWriter(output io.Writer) *geminiJSONOutputWriter {
+	w := &geminiJSONOutputWriter{output: output, mapper: transcript.NewMapper(transcript.FormatGeminiJSON)}
+	w.line = w.writeLine
+	return w
+}
+
+func (w *geminiJSONOutputWriter) writeLine(line []byte) error {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return nil
+	}
+	if !json.Valid(line) {
+		// The message being streamed ends first, so the line does not land
+		// in the middle of the sentence.
+		if err := w.flushMessage(); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(w.output, string(line))
+		return err
+	}
+	return writeTranscriptEvents(w.output, w.mapper.Map(line))
+}
+
+func (w *geminiJSONOutputWriter) flushMessage() error {
+	f, ok := w.mapper.(transcript.Flusher)
+	if !ok {
+		return nil
+	}
+	return writeTranscriptEvents(w.output, f.Flush())
+}
+
+// Flush ends the partial line the agent left, then writes the message the
+// stream stopped in the middle of.
+func (w *geminiJSONOutputWriter) Flush() error {
+	if err := w.lineWriter.Flush(); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.flushMessage()
 }
