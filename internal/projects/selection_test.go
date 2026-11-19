@@ -1,7 +1,10 @@
 package projects
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -127,5 +130,28 @@ func TestManagerRejectsAnAviarySpecWithoutAnAgent(t *testing.T) {
 	}
 	if _, err := m.startRun(engineSettings{Targets: []string{"o/r"}, Agents: []string{"aviary"}}); err == nil || !strings.Contains(err.Error(), "aviary/<agent>") {
 		t.Fatalf("startRun error = %v", err)
+	}
+}
+
+// TestGHRunParsesStdoutOnly checks a notice gh prints on stderr never reaches
+// the JSON a successful call is parsed from, while a failure still carries it.
+func TestGHRunParsesStdoutOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as gh")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gh")
+	body := "#!/bin/sh\necho 'hint: a notice' >&2\nif [ \"$1\" = fail ]; then echo 'HTTP 404' >&2; exit 1; fi\necho '[]'\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gh := GHCLI{Binary: script}
+	output, err := gh.run(t.Context(), "api", "x")
+	if err != nil || strings.TrimSpace(string(output)) != "[]" {
+		t.Fatalf("run() = %q, %v; want only stdout", output, err)
+	}
+	output, err = gh.run(t.Context(), "fail")
+	if err == nil || !strings.Contains(string(output), "HTTP 404") {
+		t.Fatalf("failed run() = %q, %v; want stderr included", output, err)
 	}
 }

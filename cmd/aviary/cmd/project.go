@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	internalmcp "github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 var projectCmd = &cobra.Command{
@@ -53,6 +56,48 @@ func projectToolArgs(positional string, args []string) []string {
 	return append([]string{"--" + positional, args[0]}, args[1:]...)
 }
 
+// globalFlagTargets are the root flags a command that disables flag parsing
+// still has to honour.
+var globalFlagTargets = map[string]*string{
+	"config":   &cfgFile,
+	"data-dir": &dataDir,
+	"server":   &serverURL,
+	"token":    &token,
+}
+
+// applyGlobalFlags takes the root flags out of args, as a command with
+// DisableFlagParsing receives them, applies them, and returns the rest.
+func applyGlobalFlags(args []string) []string {
+	var rest []string
+	changed := false
+	for i := 0; i < len(args); i++ {
+		name, inline := splitFlagToken(args[i])
+		target, ok := globalFlagTargets[name]
+		if !strings.HasPrefix(args[i], "--") || !ok {
+			rest = append(rest, args[i])
+			continue
+		}
+		switch {
+		case inline != nil:
+			*target = *inline
+		case i+1 < len(args):
+			i++
+			*target = args[i]
+		default:
+			rest = append(rest, args[i])
+			continue
+		}
+		changed = true
+	}
+	if changed {
+		if dataDir != "" {
+			store.SetDataDir(dataDir)
+		}
+		dispatcher = internalmcp.NewDispatcher(serverURL, token)
+	}
+	return rest
+}
+
 func newProjectToolCommand(spec projectToolCommand) *cobra.Command {
 	use := spec.path[len(spec.path)-1]
 	if spec.positional != "" {
@@ -65,6 +110,7 @@ func newProjectToolCommand(spec projectToolCommand) *cobra.Command {
 		Long:               fmt.Sprintf("%s.\n\nCalls the %s tool; run 'aviary tool %s --help' for its fields.", spec.short, spec.tool, spec.tool),
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			args = applyGlobalFlags(args)
 			tool, err := lookupTool(cmd.Context(), spec.tool)
 			if err != nil {
 				return err
