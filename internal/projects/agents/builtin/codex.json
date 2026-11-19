@@ -23,6 +23,7 @@
       {"args": ["exec", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
       {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"when": "!yolo", "args": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
       {"args": ["{prompt}"]}
@@ -31,6 +32,7 @@
       {"args": ["exec", "resume", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
       {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"when": "!yolo", "args": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"]},
       {"args": ["{session}", "{prompt}"]}
     ],
     "vision": [

@@ -41,6 +41,8 @@ Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each 
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
 
+Without `yolo`, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
+
 `aviary project cli list` reports every CLI's install, version, sign-in, quota and models.
 
 ## Steering jobs

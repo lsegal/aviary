@@ -47,12 +47,12 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		{
 			name: "codex fresh", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt},
-			want:   []string{"exec", "--json", prompt},
+			want:   []string{"exec", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", prompt},
 		},
 		{
 			name: "codex fresh with model and level", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt, Model: "gpt-5.6-luna", Level: "high"},
-			want:   []string{"exec", "--json", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt},
+			want:   []string{"exec", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", prompt},
 		},
 		{
 			name: "codex fresh yolo", agent: "codex", mode: ModeRun,
@@ -64,7 +64,7 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 			// continues already has them.
 			name: "codex resume", agent: "codex", mode: ModeResume,
 			values: Values{Prompt: prompt, Session: "sess-1", Model: "gpt-5.6-luna", Level: "high"},
-			want:   []string{"exec", "resume", "--json", "sess-1", prompt},
+			want:   []string{"exec", "resume", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "sess-1", prompt},
 		},
 		{
 			name: "codex vision", agent: "codex", mode: ModeVision,
@@ -102,7 +102,7 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 			// reaches its argv not at all.
 			name: "codex ignores remote control", agent: "codex", mode: ModeRun,
 			values: Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
-			want:   []string{"exec", "--json", prompt},
+			want:   []string{"exec", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", prompt},
 		},
 		{
 			name: "claude resume", agent: "claude", mode: ModeResume,
@@ -154,7 +154,7 @@ func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 		want  []string
 	}{
 		{"claude", []string{"-p", "--permission-mode", "auto", "--output-format", "stream-json", "--verbose"}},
-		{"codex", []string{"exec", "--json", "-"}},
+		{"codex", []string{"exec", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-"}},
 	} {
 		definition, _ := registry.Lookup(test.agent)
 		if !definition.ReadsPromptFromStdin() {
@@ -183,7 +183,7 @@ func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 func TestRenderCodexOneShotSkipsTheGitRepoCheck(t *testing.T) {
 	codex, _ := MustBuiltin().Lookup("codex")
 	values := Values{Prompt: "status?", Model: "gpt-5", PromptStdin: true, OneShot: true, NoCheckout: true}
-	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5", "-"}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5", "-"}
 	if got := codex.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 		t.Errorf("one-shot argv = %#v, want %#v", got, want)
 	}
@@ -199,7 +199,7 @@ func TestRenderCodexOneShotSkipsTheGitRepoCheck(t *testing.T) {
 			}
 		}
 	}
-	want = []string{"exec", "resume", "--json", "--skip-git-repo-check", "abc", "fix it"}
+	want = []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "abc", "fix it"}
 	if got := codex.Render(ModeResume, Values{Prompt: "fix it", Session: "abc", NoCheckout: true}); !reflect.DeepEqual(got, want) {
 		t.Errorf("resume argv outside a checkout = %#v, want %#v", got, want)
 	}
