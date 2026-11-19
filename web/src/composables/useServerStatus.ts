@@ -1,7 +1,39 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { useAuthStore } from "../stores/auth";
+import { useMCP } from "./useMCP";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+
+/** A running job that a restart or upgrade stops and resumes afterwards. */
+export interface RestartJob {
+	source: string;
+	id: string;
+	title: string;
+}
+
+/** Mirrors saferestart.Status on the server. */
+export interface RestartStatus {
+	phase: "idle" | "waiting" | "updating";
+	when?: "now" | "idle";
+	upgrade?: boolean;
+	version?: string;
+	jobs: RestartJob[];
+	held: boolean;
+	noop?: boolean;
+	emulated?: boolean;
+	message?: string;
+	error?: string;
+}
+
+export type RestartWhen = "now" | "idle";
+
+interface VersionCheck {
+	latestVersion?: string;
+	upgradeAvailable?: boolean;
+	message?: string;
+	releaseUrl?: string;
+	restart?: RestartStatus;
+}
 
 /**
  * Maintains a WebSocket connection to /api/ws and exposes reactive server
@@ -12,6 +44,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
  */
 export function useServerStatus() {
 	const auth = useAuthStore();
+	const { callTool } = useMCP();
 
 	const status = ref<ConnectionStatus>("connecting");
 	const version = ref<string>("");
@@ -21,6 +54,9 @@ export function useServerStatus() {
 	const versionMessage = ref("");
 	const checkingVersion = ref(false);
 	const upgrading = ref(false);
+	const releaseUrl = ref("");
+	const restart = ref<RestartStatus | null>(null);
+	const upgradeDialogOpen = ref(false);
 
 	let ws: WebSocket | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -52,12 +88,34 @@ export function useServerStatus() {
 		ws.onmessage = (e: MessageEvent) => {
 			try {
 				const data = JSON.parse(e.data as string) as {
+					type?: string;
 					ok?: boolean;
 					version?: string;
 					goos?: string;
+					restart?: RestartStatus;
+					check?: VersionCheck;
 				};
+				if (data.type === "restart" && data.restart) {
+					restart.value = data.restart;
+					return;
+				}
+				if (data.type === "version" && data.check) {
+					applyCheck(data.check);
+					return;
+				}
+				if (data.type !== "health") return;
+				const previousVersion = version.value;
 				if (data.version) version.value = data.version;
 				if (data.goos) goos.value = data.goos;
+				if (data.restart) {
+					restart.value = data.restart;
+				} else if (restart.value && restart.value.phase !== "idle") {
+					// The server came back without a pending restart: it finished.
+					restart.value = null;
+					if (previousVersion && previousVersion !== version.value) {
+						void refreshVersionStatus();
+					}
+				}
 				consecutiveFailures = 0;
 				status.value = "connected";
 			} catch {
@@ -90,21 +148,21 @@ export function useServerStatus() {
 		reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
 	}
 
+	function applyCheck(data: VersionCheck) {
+		latestVersion.value = data.latestVersion ?? "";
+		upgradeAvailable.value = data.upgradeAvailable === true;
+		versionMessage.value = data.message ?? "";
+		releaseUrl.value = data.releaseUrl ?? "";
+	}
+
 	async function refreshVersionStatus() {
 		checkingVersion.value = true;
 		try {
-			const token = auth.getToken();
-			const res = await fetch("/api/version", {
-				headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-			});
-			const data = (await res.json()) as {
-				latestVersion?: string;
-				upgradeAvailable?: boolean;
-				message?: string;
-			};
-			latestVersion.value = data.latestVersion ?? "";
-			upgradeAvailable.value = data.upgradeAvailable === true;
-			versionMessage.value = data.message ?? "";
+			const data = JSON.parse(
+				await callTool("server_version_check"),
+			) as VersionCheck;
+			applyCheck(data);
+			if (data.restart) restart.value = data.restart;
 		} catch {
 			versionMessage.value = "";
 		} finally {
@@ -112,26 +170,42 @@ export function useServerStatus() {
 		}
 	}
 
-	async function triggerUpgrade() {
+	/** Opens the upgrade dialog with a fresh list of the jobs it would stop. */
+	async function openUpgradeDialog() {
+		upgradeDialogOpen.value = true;
+		await refreshVersionStatus();
+	}
+
+	async function triggerUpgrade(when: RestartWhen) {
 		upgrading.value = true;
 		try {
-			const headers: Record<string, string> = {
-				"Content-Type": "application/json",
-			};
-			const token = auth.getToken();
-			if (token) headers.Authorization = `Bearer ${token}`;
-			const res = await fetch("/api/version/upgrade", {
-				method: "POST",
-				headers,
-				body: JSON.stringify({ version: latestVersion.value || undefined }),
-			});
-			const data = (await res.json()) as { message?: string };
-			versionMessage.value = data.message ?? "";
-			if (res.ok) {
-				upgradeAvailable.value = false;
+			const st = JSON.parse(
+				await callTool("server_upgrade", {
+					version: latestVersion.value || undefined,
+					when,
+				}),
+			) as RestartStatus;
+			upgradeDialogOpen.value = false;
+			if (st.noop) {
+				versionMessage.value = st.message ?? "";
+				if (!st.emulated) upgradeAvailable.value = false;
+				return;
 			}
+			restart.value = st;
+		} catch (err) {
+			versionMessage.value = err instanceof Error ? err.message : String(err);
 		} finally {
 			upgrading.value = false;
+		}
+	}
+
+	async function cancelRestart() {
+		try {
+			restart.value = JSON.parse(
+				await callTool("server_restart", { cancel: true }),
+			) as RestartStatus;
+		} catch (err) {
+			versionMessage.value = err instanceof Error ? err.message : String(err);
 		}
 	}
 
@@ -170,7 +244,12 @@ export function useServerStatus() {
 		versionMessage,
 		checkingVersion,
 		upgrading,
+		releaseUrl,
+		restart,
+		upgradeDialogOpen,
 		refreshVersionStatus,
+		openUpgradeDialog,
 		triggerUpgrade,
+		cancelRestart,
 	};
 }

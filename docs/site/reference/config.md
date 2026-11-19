@@ -38,6 +38,7 @@ server:
 | `external_access` | bool | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` |
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
+| `auto_update` | bool | `false` | Install new releases automatically, but only while no jobs are running. |
 | `tls.cert` | string | | Path to TLS certificate file |
 | `tls.key` | string | | Path to TLS private key file |
 
@@ -52,7 +53,7 @@ agents:
   - name: assistant
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
     memory: shared
     memory_tokens: 4096
     compact_keep: 20
@@ -138,7 +139,7 @@ channels:
     id: workspace-bot
     url: xapp-...
     token: xoxb-...
-    model: anthropic/claude-haiku-4-5-20251001
+    model: anthropic/claude-haiku-5-5
     react_to_emoji: true
     reply_to_replies: true
     send_read_receipts: true
@@ -267,7 +268,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 ```
 
 | Field | Type | Description |

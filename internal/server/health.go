@@ -10,6 +10,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/saferestart"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 // healthPayload is the JSON shape sent by both /api/health and the WebSocket heartbeat.
@@ -29,6 +31,11 @@ type wsEvent struct {
 	OK           bool   `json:"ok,omitempty"`
 	Version      string `json:"version,omitempty"`
 	GOOS         string `json:"goos,omitempty"`
+	// Restart is set on "restart" events and on health events while a
+	// restart is waiting or in progress, so every dashboard shows it.
+	Restart *saferestart.Status `json:"restart,omitempty"`
+	// Check is set on "version" events when a new release is found.
+	Check *update.CheckResult `json:"check,omitempty"`
 }
 
 type wsClient struct {
@@ -134,9 +141,14 @@ func wsHandler(token string) http.HandlerFunc {
 		defer wsUnregister(conn)
 
 		payload := wsEvent{Type: "health", OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS}
+		healthEvent := func() wsEvent {
+			ev := payload
+			ev.Restart = currentRestartSnapshot()
+			return ev
+		}
 
 		// Send the initial status immediately on connect.
-		if err := wsWriteJSON(conn, payload); err != nil {
+		if err := wsWriteJSON(conn, healthEvent()); err != nil {
 			return
 		}
 
@@ -159,7 +171,7 @@ func wsHandler(token string) http.HandlerFunc {
 			case <-done:
 				return
 			case <-ticker.C:
-				if err := wsWriteJSON(conn, payload); err != nil {
+				if err := wsWriteJSON(conn, healthEvent()); err != nil {
 					return
 				}
 			}

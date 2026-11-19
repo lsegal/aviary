@@ -192,6 +192,51 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 	return nil, nil
 }
 
+// Requeue returns a job interrupted by a safe restart to pending, without
+// counting the interrupted attempt, and records note for the resumed run.
+func (q *JobQueue) Requeue(id, note string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.Status = domain.JobStatusPending
+	if job.Attempts > 0 {
+		job.Attempts--
+	}
+	job.LockedAt = nil
+	job.NextRetryAt = nil
+	job.ResumeNote = note
+	job.UpdatedAt = time.Now()
+	return store.WriteJSON(path, &job)
+}
+
+// ClearResumeNote removes a job's resume note once the resumed run has it.
+func (q *JobQueue) ClearResumeNote(id string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	if job.ResumeNote == "" {
+		return nil
+	}
+	job.ResumeNote = ""
+	return store.WriteJSON(path, &job)
+}
+
 // Complete marks a job as completed.
 func (q *JobQueue) Complete(id string) error {
 	return q.updateStatus(id, domain.JobStatusCompleted)

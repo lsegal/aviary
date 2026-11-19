@@ -206,15 +206,15 @@ type engineSettings struct {
 	AllIssues         bool                `json:"all_issues"`
 	Yolo              bool                `json:"yolo"`
 	Webhook           config.ProjectsWebhookConfig
-	Browser           BrowserOptions      `json:"browser"`
-	Concurrency       int           `json:"-"`
-	AllowedCommenters []string      `json:"-"`
-	NoMerge           bool          `json:"-"`
-	NoChangelog       bool          `json:"-"`
-	UnblockInterval   time.Duration `json:"-"`
-	UnblockAgent      string        `json:"-"`
-	UnblockModel      string        `json:"-"`
-	TempDirs          []string      `json:"-"`
+	Browser           BrowserOptions `json:"browser"`
+	Concurrency       int            `json:"-"`
+	AllowedCommenters []string       `json:"-"`
+	NoMerge           bool           `json:"-"`
+	NoChangelog       bool           `json:"-"`
+	UnblockInterval   time.Duration  `json:"-"`
+	UnblockAgent      string         `json:"-"`
+	UnblockModel      string         `json:"-"`
+	TempDirs          []string       `json:"-"`
 }
 
 // restartKey is the part of the settings a running engine cannot change; the

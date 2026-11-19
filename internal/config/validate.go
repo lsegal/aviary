@@ -242,7 +242,7 @@ func validTaskTarget(target string) bool {
 func (v *validator) checkModel(field, model string) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-4-5\")", model)
+		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-5-5\")", model)
 		return
 	}
 
@@ -486,7 +486,7 @@ func validAuthRef(ref string) bool {
 }
 
 // UniqueProviderModels returns a map of provider name → one representative
-// model string (e.g. "anthropic" → "anthropic/claude-sonnet-4-5") drawn from
+// model string (e.g. "anthropic" → "anthropic/claude-sonnet-5-5") drawn from
 // all agents and model defaults. "cli" models are excluded because they run
 // through a local CLI rather than a remote endpoint; see CLIBackends.
 func UniqueProviderModels(cfg *Config) map[string]string {

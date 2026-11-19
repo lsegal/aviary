@@ -36,6 +36,14 @@
 									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(plain HTTP — not recommended)</span>
 								</span>
 							</label>
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.server.auto_update" type="checkbox" data-testid="auto-update"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Update automatically
+									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(only while no jobs are running)</span>
+								</span>
+							</label>
 						</div>
 						<p v-if="draft.server.external_access || draft.server.no_tls"
 							class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
