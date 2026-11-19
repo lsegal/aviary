@@ -46,13 +46,17 @@
         </div>
       </div>
       <div class="relative mt-3">
+        <UpdateStatusBanner :restart="restart" class="mb-3" @cancel="cancelRestart()" />
         <div v-if="upgradeAvailable"
           class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-3">
-            <span>New version available: {{ latestVersion }}</span>
+            <span>New version available:
+              <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
+              <template v-else>{{ latestVersion }}</template>
+            </span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading" @click="triggerUpgrade()">
+              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
@@ -127,17 +131,21 @@
         </template>
       </div>
       <div class="mt-auto flex flex-col gap-2">
+        <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
         <div v-if="upgradeAvailable"
           class="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-2">
             <span>New version available</span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-2.5 py-1 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading" @click="triggerUpgrade()">
+              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
-          <div class="mt-1 text-xs">{{ latestVersion }}</div>
+          <div class="mt-1 text-xs">
+            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
+            <template v-else>{{ latestVersion }}</template>
+          </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex flex-wrap gap-1.5 px-1">
@@ -165,6 +173,10 @@
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <slot />
     </main>
+
+    <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
+      :jobs="restart?.jobs ?? []" :busy="upgrading" @close="upgradeDialogOpen = false"
+      @confirm="triggerUpgrade($event)" />
   </div>
 </template>
 
@@ -174,6 +186,8 @@ import { type Component, computed, markRaw } from "vue";
 import { useRoute } from "vue-router";
 import { useServerStatus } from "../composables/useServerStatus";
 import { useAuthStore } from "../stores/auth";
+import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import UpgradeDialog from "./UpgradeDialog.vue";
 
 type SettingsTab = "general" | "agents" | "skills" | "sessions" | "providers";
 type NavGroup = "settings" | "system";
@@ -207,8 +221,16 @@ const {
 	upgradeAvailable,
 	versionMessage,
 	upgrading,
+	releaseUrl,
+	restart,
+	upgradeDialogOpen,
+	openUpgradeDialog,
 	triggerUpgrade,
+	cancelRestart,
 } = useServerStatus();
+const restartPending = computed(
+	() => !!restart.value && restart.value.phase !== "idle",
+);
 const logoUrl = "/logo.png";
 const brandLinks: BrandLink[] = [
 	{
