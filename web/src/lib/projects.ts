@@ -10,7 +10,7 @@ export type JobStatus =
 	| "waiting"
 	| "paused"
 	| "stopping"
-	| "completed"
+	| "complete"
 	| "failed";
 
 export type BoardFilter = "all" | "running" | "waiting" | "done" | "failed";
@@ -179,12 +179,12 @@ const STATUSES: JobStatus[] = [
 	"waiting",
 	"paused",
 	"stopping",
-	"completed",
+	"complete",
 	"failed",
 ];
 
 export function normalizeJobStatus(v: unknown): JobStatus {
-	const s = str(v) as JobStatus;
+	const s = (str(v) === "completed" ? "complete" : str(v)) as JobStatus;
 	return STATUSES.includes(s) ? s : "queued";
 }
 
@@ -426,7 +426,7 @@ const STATUS_ORDER: Record<JobStatus, number> = {
 	waiting: 2,
 	paused: 3,
 	queued: 4,
-	completed: 5,
+	complete: 5,
 };
 
 /** Orders jobs with running and errored jobs first, then newest first. */
@@ -446,7 +446,7 @@ export function filterStatuses(filter: BoardFilter): JobStatus[] | undefined {
 		case "waiting":
 			return ["waiting", "paused", "queued"];
 		case "done":
-			return ["completed"];
+			return ["complete"];
 		case "failed":
 			return ["failed"];
 		default:
@@ -460,7 +460,7 @@ const STATUS_LABELS: Record<JobStatus, string> = {
 	waiting: "Waiting",
 	paused: "Paused",
 	stopping: "Stopping",
-	completed: "Done",
+	complete: "Done",
 	failed: "Failed",
 };
 
@@ -472,7 +472,7 @@ export function statusTone(status: JobStatus): string {
 	if (isRunning(status)) return "blue";
 	if (isWaiting(status)) return "amber";
 	if (status === "failed") return "red";
-	if (status === "completed") return "green";
+	if (status === "complete") return "green";
 	return "gray";
 }
 
@@ -494,7 +494,7 @@ export function lifecycleStep(detail: JobDetail): {
 	done: boolean;
 } {
 	const { job, events } = detail;
-	if (job.status === "completed" && job.pr > 0) return { step: 5, done: true };
+	if (job.status === "complete" && job.pr > 0) return { step: 5, done: true };
 	let step = job.pr > 0 ? 1 : 0;
 	for (const e of events) {
 		if (e.kind === "system") {

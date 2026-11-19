@@ -25,7 +25,7 @@ var promptFilePattern = regexp.MustCompile(`in the file (.+?)\. Read the whole f
 // prompt arguments it got and how large a prompt reached it on stdin or
 // through the prompt file, which is all a test needs to see that the agent
 // started and was handed the whole prompt.
-func TestOneShotPromptHelperProcess(t *testing.T) {
+func TestOneShotPromptHelperProcess(_ *testing.T) {
 	if os.Getenv(oneShotHelperEnv) != "1" {
 		return
 	}
@@ -72,7 +72,7 @@ func TestOneShotPromptMarksTheCallOneShot(t *testing.T) {
 // never the prompt itself.
 func TestSpawnErrorNamesSizesAndLimit(t *testing.T) {
 	cmd := newAgentCommand(context.Background(), filepath.Join(t.TempDir(), "missing-agent"), "-p", "secret prompt text")
-	err := spawnError(cmd, errors.New("The filename or extension is too long."))
+	err := spawnError(cmd, errors.New("The filename or extension is too long.")) //nolint:revive // quotes the Windows error verbatim
 	for _, want := range []string{"The filename or extension is too long.", "3 arguments", "command line about", "environment", "executable path"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("spawn error %q is missing %q", err, want)

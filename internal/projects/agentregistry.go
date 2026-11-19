@@ -53,31 +53,6 @@ func unknownAgentError(registry *agents.Registry, name string) error {
 	return fmt.Errorf("unknown agent %q; known agents are %s", name, strings.Join(registry.Names(), ", "))
 }
 
-// configPathFromArgs finds the --config value in a raw argument list, before
-// the flag set is parsed. Agent definitions have to be loaded before --agent is
-// validated against them, and the flag package hands values over in the order
-// they were written, which would otherwise make `--agent mine --config x.json`
-// fail on an agent the config file defines.
-func configPathFromArgs(args []string, fallback string) string {
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			break
-		}
-		name, value, split := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if !strings.HasPrefix(arg, "-") || name != "config" {
-			continue
-		}
-		if split {
-			return value
-		}
-		if i+1 < len(args) {
-			return args[i+1]
-		}
-	}
-	return fallback
-}
-
 // definitionEnv renders a definition's environment as KEY=VALUE pairs, in a
 // stable order so a run's child environment does not depend on map iteration.
 func definitionEnv(definition agents.Definition) []string {

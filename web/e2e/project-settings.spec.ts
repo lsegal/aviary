@@ -172,7 +172,9 @@ test("adding a project from the single field starts a watch without writing avia
 	await dialog.getByRole("button", { name: "Start watching" }).click();
 	await expect(page).toHaveURL("/projects/lsegal%2Fzvidlib");
 	await expect(dialog).toBeHidden();
-	expect(calls.project_add).toEqual([{ target: "lsegal/zvidlib" }]);
+	expect(calls.project_add).toEqual([
+		{ target: "lsegal/zvidlib", runtime: true },
+	]);
 	expect(calls.project_check?.at(-1)).toEqual({
 		target: "https://github.com/lsegal/zvidlib",
 	});
@@ -429,7 +431,9 @@ test("change settings first saves nothing for defaults, then starts the watch", 
 	await page.getByRole("button", { name: "Save and start watching" }).click();
 	await expect(page).toHaveURL("/projects/lsegal%2Fzvidlib");
 	expect(calls.config_save).toBeUndefined();
-	expect(calls.project_add).toEqual([{ target: "lsegal/zvidlib" }]);
+	expect(calls.project_add).toEqual([
+		{ target: "lsegal/zvidlib", runtime: true },
+	]);
 });
 
 test("a new project with its own settings is written before it starts", async ({
@@ -445,5 +449,6 @@ test("a new project with its own settings is written before it starts", async ({
 		CONFIG.projects.list[0],
 		{ target: "lsegal/zvidlib", agents: ["codex/gpt-5.5"] },
 	]);
-	expect(calls.project_add).toEqual([{ target: "lsegal/zvidlib" }]);
+	// Saved to the list, so the config watcher starts it; no runtime watch.
+	expect(calls.project_add).toBeUndefined();
 });

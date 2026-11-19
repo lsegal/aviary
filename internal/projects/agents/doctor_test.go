@@ -83,7 +83,7 @@ func TestDoctorModelsFrom(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.doctor.ModelsFrom(test.output); !reflect.DeepEqual(got, test.want) && !(len(got) == 0 && len(test.want) == 0) {
+			if got := test.doctor.ModelsFrom(test.output); !reflect.DeepEqual(got, test.want) && (len(got) != 0 || len(test.want) != 0) {
 				t.Errorf("ModelsFrom() = %v, want %v", got, test.want)
 			}
 		})

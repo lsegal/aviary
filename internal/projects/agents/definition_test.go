@@ -719,7 +719,7 @@ func TestDefaultModelHasToBeOneTheAgentAccepts(t *testing.T) {
 	}
 	accepted := base()
 	accepted.Models = AllowList{}
-	accepted.Models.UnmarshalJSON([]byte(`["fast","slow"]`))
+	_ = accepted.Models.UnmarshalJSON([]byte(`["fast","slow"]`))
 	accepted.DefaultModel = "fast"
 	if err := accepted.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want a default the allow-list admits to pass", err)

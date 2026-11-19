@@ -7,6 +7,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
 
@@ -19,6 +20,7 @@ type Deps struct {
 	Browser   *browser.Manager
 	Auth      *auth.FileStore // credential store; nil until server starts
 	Upgrade   func(context.Context, string) error
+	Projects  *projects.Manager // nil outside the server
 }
 
 // globalDeps is set by the server at startup.

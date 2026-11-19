@@ -6,11 +6,8 @@ import (
 
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -346,38 +343,6 @@ func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("reading settings took %s, want it immediate", elapsed)
-	}
-}
-
-// hungIssueSource blocks every listing until its context ends, standing in
-// for a poll stuck on GitHub or the network.
-type hungIssueSource struct {
-	once    sync.Once
-	started chan struct{}
-}
-
-func (s *hungIssueSource) ListIssues(ctx context.Context, _ string) ([]Issue, error) {
-	s.once.Do(func() { close(s.started) })
-	<-ctx.Done()
-	return nil, ctx.Err()
-}
-
-// serveWithin answers one dashboard request, failing the test instead of
-// hanging when the server does not answer within a second.
-func serveWithin(t *testing.T, handler http.Handler, method, path string) *httptest.ResponseRecorder {
-	t.Helper()
-	response := httptest.NewRecorder()
-	served := make(chan struct{})
-	go func() {
-		defer close(served)
-		handler.ServeHTTP(response, httptest.NewRequest(method, path, nil))
-	}()
-	select {
-	case <-served:
-		return response
-	case <-time.After(time.Second):
-		t.Fatalf("%s %s did not answer within a second", method, path)
-		return nil
 	}
 }
 

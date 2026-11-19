@@ -162,10 +162,13 @@ export function useProjectCheck(target: Ref<string>, delay = 400) {
 	return { result, checking, error, run };
 }
 
-/** Starts watching target with its current settings (project_add). */
+/**
+ * Starts watching target with the current settings as a runtime watch
+ * (project_add with runtime), so nothing is written to aviary.yaml.
+ */
 export function useAddProject() {
 	const { callTool } = useMCP();
 	return async (target: string) => {
-		await callTool("project_add", { target });
+		await callTool("project_add", { target, runtime: true });
 	};
 }

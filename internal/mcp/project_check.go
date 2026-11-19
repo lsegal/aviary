@@ -326,7 +326,7 @@ func registerProjectCheckTool(s *sdkmcp.Server) {
 		Description: "Check whether a repository, Project board or Discussions board can be watched as a project: " +
 			"GitHub access, installed coding CLIs and their gh-fix skill, the ready label, and whether pull requests must come from a fork. " +
 			"Read-only; writes nothing.",
-		Annotations: &sdkmcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "projects", "tool", "project_check", "target", args.Target)
 		res, err := runProjectCheck(ctx, args)

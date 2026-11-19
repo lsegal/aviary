@@ -1,8 +1,116 @@
 # Projects Tools
 
-Projects settings live in the `projects:` section of `aviary.yaml` and are read and written with [`config_get` and `config_save`](./server-and-config). Only values that differ from the defaults are written, so a project watched with defaults adds nothing to the file.
+The `project_*` tools manage [Projects](/guide/projects). Every tool is also an `aviary project` subcommand that takes the same arguments as `--<field> <value>` flags. A leading positional argument fills the subcommand's main field, such as the job number or the target. The tools need a running Aviary server.
+
+A job is named by its issue `number`. `target` is needed only when several projects have a job with that number.
+
+| Tool | CLI | Hint |
+| --- | --- | --- |
+| `project_status` | `aviary project status` | read-only |
+| `project_job_list` | `aviary project job list` | read-only |
+| `project_job_get` | `aviary project job get` | read-only |
+| `project_job_explain` | `aviary project job explain` | read-only |
+| `project_job_retry` | `aviary project job retry` | |
+| `project_job_pause` | `aviary project job pause` | |
+| `project_job_resume` | `aviary project job resume` | |
+| `project_job_stop` | `aviary project job stop` | destructive |
+| `project_refresh` | `aviary project refresh` | |
+| `project_add` | `aviary project add` | |
+| `project_remove` | `aviary project remove` | destructive |
+| `project_cli_list` | `aviary project cli list` | read-only |
+| `project_clone_list` | `aviary project clone list` | read-only |
+| `project_clone_clear` | `aviary project clone clear` | destructive |
+| `project_unblock_run` | `aviary project unblock` | |
+| `project_issue_comment` | `aviary project issue comment` | |
+| `project_issue_create` | `aviary project issue create` | |
+| `project_check` | `aviary project check` | read-only |
+
+Settings have no tool of their own. They live in the `projects:` section of `aviary.yaml`, read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
 
 ---
+
+## project_status
+
+Instance identity, watched projects with issue counts, job counts, delivery mode, poll interval, ready label, last check, quota per coding CLI, the configured agent specs, and recent log lines.
+
+**Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way.
+
+## project_job_list
+
+Every job, running and errored jobs first, with the actions each accepts.
+
+**Arguments:** `target`, `status` (such as `active`, `waiting`, `queued`, `paused`, `failed`, `complete`), `offset`, `limit` (default 50), all optional.
+
+**Returns:** `jobs`, `total`, `offset`, `limit`.
+
+## project_job_get
+
+One job's state, agent session, checkout directory, structured transcript, raw CLI output, and scrollback.
+
+**Arguments:** `number`, `target`, `lines` (scrollback lines, default 200, negative for all), `events` (transcript events, default 200, negative for all).
+
+Transcript events have a `kind`: `message`, `reasoning`, `tool_call` (`name`, `input`, `call_id`), `tool_result` (`call_id`, `output`, `is_error`, `images`), `command` (`command`, `output`, `exit_code`, `status` of `running` or `done`), `file_change` (`path`, `diff`), `plan` (`items` with `text` and `status`), `usage` (tokens and cost), `comment_relay` (`author`, `text`), or `system` (claims, pull requests opened, pauses, restarts, failures).
+
+## project_job_explain
+
+Why a job is paused, blocked, waiting, queued, or looks stuck, what will wake it, and its last output.
+
+**Arguments:** `number`, `target`.
+
+## project_job_retry, project_job_pause, project_job_resume, project_job_stop
+
+Retry requeues a job so `gh-fix` reruns it with its saved session. On a paused job it clears the pause first. Pause holds an active, waiting or queued job: a running agent is stopped and its work pushed. Resume clears a pause and requeues the job. Stop stops a job's agent and waits for it to exit, or clears a paused job and releases its claim. Each refuses what the job's status does not allow.
+
+**Arguments:** `number`, `target`.
+
+## project_refresh
+
+Check GitHub for work now instead of waiting for the next poll.
+
+**Arguments:** `target` (optional).
+
+## project_add
+
+Watch a project.
+
+**Arguments:**
+
+- `target`: `owner/repo`, a repository URL, a Project board, or a Discussions board.
+- `agents` (optional): this project's coding-CLI specs, in fallback order.
+- `runtime` (optional): watch until the server stops without writing `aviary.yaml`, as `aviary watch` does.
+- `settings` (optional, runtime only): `projects:` settings that override `aviary.yaml` while the watch runs.
+
+## project_remove
+
+Stop watching a project. Running jobs are checkpointed first.
+
+**Arguments:** `target`, and `runtime` (optional) to stop only a runtime watch.
+
+## project_cli_list
+
+The coding-CLI doctor: for every CLI definition, whether it is installed, its version, sign-in state, quota, and the models it reports.
+
+## project_clone_list, project_clone_clear
+
+List every clone Projects made for a job, with its repository, issue, pull request and size, and whether a job still uses it. Clear removes the unused ones and reports the space reclaimed.
+
+## project_unblock_run
+
+Run a stuck-job watchdog round now, over every stuck job or the one named.
+
+**Arguments:** `number`, `target`, both optional.
+
+## project_issue_comment
+
+Post an update comment on an issue or pull request. The comment mentions the issue's author and this instance, so the job working it hears it. It never edits the body.
+
+**Arguments:** `number`, `text`, and `repository` (optional; defaults to the repository of the job with that number, or the only watched repository).
+
+## project_issue_create
+
+File an issue through the `gh-create` skill with this instance's identity, and return the new issue's URL.
+
+**Arguments:** `text`, and optional `repository` and `model`.
 
 ## project_check
 

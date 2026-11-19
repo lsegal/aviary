@@ -255,7 +255,7 @@ func TestNegotiateOwnershipStandsDownOnCompetingStartingClaim(t *testing.T) {
 func TestNegotiateOwnershipReturnsFalseWhenContextCancelledDuringWait(t *testing.T) {
 	comments := newFakeCommentClient()
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(ctx context.Context) bool {
+	w := &Engine{Comments: comments, Identity: "SELF", ownershipWait: func(_ context.Context) bool {
 		cancel()
 		return false
 	}}

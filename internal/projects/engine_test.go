@@ -18,9 +18,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mattn/go-isatty"
+
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/mattn/go-isatty"
 )
 
 type fakeSource struct {
@@ -243,10 +244,10 @@ func TestEngineRunsUnseenIssuesWithLimit(t *testing.T) {
 	}
 	r.mu.Lock()
 	got := append([]int(nil), r.got...)
-	max := r.max
+	peak := r.max
 	r.mu.Unlock()
-	if len(got) != 4 || max > 2 {
-		t.Fatalf("got=%v max=%d", got, max)
+	if len(got) != 4 || peak > 2 {
+		t.Fatalf("got=%v max=%d", got, peak)
 	}
 	for _, want := range []string{"discovered 2 new issue(s)", "tasks: 2 running", "shutdown requested"} {
 		if !strings.Contains(logs.String(), want) {
@@ -2011,8 +2012,8 @@ func TestCommandRunnerDisablesClaudeBackgroundWaitCeiling(t *testing.T) {
 
 func TestCommandRunnerLeavesCodexBackgroundWaitCeilingUnset(t *testing.T) {
 	if previous, ok := os.LookupEnv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"); ok {
-		os.Unsetenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")
-		t.Cleanup(func() { os.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", previous) })
+		_ = os.Unsetenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")
+		t.Cleanup(func() { _ = os.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", previous) })
 	}
 	binary, log := writeFakeAgent(t, "", 0)
 	runner := CommandRunner{Agent: "codex", CodexBinary: binary, Repo: "o/r"}

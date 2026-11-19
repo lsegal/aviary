@@ -334,7 +334,7 @@ export interface CodingCLI {
 	defaultModel: string;
 }
 
-const SIGNED_OUT = /not|out|missing|expired|none|error|unknown/i;
+// The agent doctor reports auth as "signed in", "signed out" or "unknown".
 
 export function normalizeCLIList(raw: unknown): CodingCLI[] {
 	const r = obj(raw);
@@ -348,9 +348,7 @@ export function normalizeCLIList(raw: unknown): CodingCLI[] {
 			return {
 				name,
 				installed,
-				signedIn:
-					installed &&
-					(o.signed_in === true || (auth !== "" && !SIGNED_OUT.test(auth))),
+				signedIn: installed && (o.signed_in === true || auth === "signed in"),
 				auth,
 				quota: str(o.quota),
 				models: strings(o.models).map((m) =>

@@ -383,12 +383,15 @@ async function save() {
 	saving.value = true;
 	error.value = "";
 	try {
+		const listed = isListed(next.value, target.value);
 		if (dirty.value) {
 			await store.saveConfig({ ...store.config, projects: next.value });
 			loaded.value = JSON.stringify(next.value);
 		}
 		if (adding.value) {
-			await addProject(target.value);
+			// A project saved to the list is picked up by the config watcher;
+			// one left at defaults is watched for this run only.
+			if (!listed) await addProject(target.value);
 			await router.replace(boardLink.value);
 			return;
 		}

@@ -655,7 +655,7 @@ func (d Doctor) validate() error {
 
 // Assign values.
 const (
-	AssignEngine   = "aviary"
+	AssignEngine  = "aviary"
 	AssignCapture = "capture"
 	AssignNone    = "none"
 )
@@ -756,8 +756,8 @@ func (d Definition) Validate() error {
 	if strings.TrimSpace(d.Binary) == "" {
 		return fmt.Errorf(`field "binary" is required`)
 	}
-	if min := strings.TrimSpace(d.MinVersion); min != "" {
-		if _, ok := ParseVersion(min); !ok {
+	if minVersion := strings.TrimSpace(d.MinVersion); minVersion != "" {
+		if _, ok := ParseVersion(minVersion); !ok {
 			return fmt.Errorf(`field "minVersion": %q must be a dotted version such as "0.58.0"`, d.MinVersion)
 		}
 	}
