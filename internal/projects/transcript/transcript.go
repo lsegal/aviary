@@ -92,20 +92,27 @@ type Mapper interface {
 const (
 	FormatClaudeStreamJSON = "stream-json"
 	FormatCodexJSON        = "codex-json"
+	FormatOpencodeJSON     = "opencode-json"
+	FormatClineJSON        = "cline-json"
 	// FormatAviaryJSON is what `aviary agent run --json` prints: one
 	// transcript Event per line.
 	FormatAviaryJSON = "aviary-json"
 )
 
-// NewMapper returns the mapper for an agent definition's output format, or nil
-// when the format has no structured mapping yet. Such a run still records its
-// raw output and Projects' own system events.
+// NewMapper returns the mapper for an agent definition's output format, or for
+// the transcript format a generic JSONL definition names, or nil when the
+// format has no structured mapping yet. Such a run still records its raw
+// output and Projects' own system events.
 func NewMapper(format string) Mapper {
 	switch format {
 	case FormatClaudeStreamJSON, "claude-stream-json":
 		return &claudeMapper{}
 	case FormatCodexJSON:
 		return &codexMapper{}
+	case FormatOpencodeJSON:
+		return opencodeMapper{}
+	case FormatClineJSON:
+		return &clineMapper{}
 	case FormatAviaryJSON:
 		return aviaryMapper{}
 	}

@@ -51,3 +51,21 @@ func TestCreateIssueRunsGhCreateWithTheIdentity(t *testing.T) {
 		t.Errorf("invalid requests ran the agent %d times", len(prompts)-calls)
 	}
 }
+
+func TestCreatedIssueURLMatchesWholeURLsOnly(t *testing.T) {
+	for _, test := range []struct {
+		output, want string
+	}{
+		{"Filed https://github.com/o/r/issues/12.", "https://github.com/o/r/issues/12"},
+		{"see [#3](https://github.com/o/r/issues/3) then filed (https://github.com/O/R/issues/9)", "https://github.com/O/R/issues/9"},
+		{"filed `https://github.com/o/r/issues/4`, done", "https://github.com/o/r/issues/4"},
+		{"https://github.com/o/r/issues/5 and https://github.com/x/y/issues/6", "https://github.com/o/r/issues/5"},
+		{"https://evil.example/https://github.com/o/r/issues/7", ""},
+		{"https://github.com/o/r/issues/8.evil.example", ""},
+		{"https://github.com/o/r/pull/9", ""},
+	} {
+		if got := createdIssueURL(test.output, "o/r"); got != test.want {
+			t.Errorf("createdIssueURL(%q) = %q, want %q", test.output, got, test.want)
+		}
+	}
+}

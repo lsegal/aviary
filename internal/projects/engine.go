@@ -2840,7 +2840,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				alreadyClosed := false
 				var paused *core.PausedWork
 				keepalives := 0
-				// wakeup is the ScheduleWakeup the agent's last turn left
+				// wakeup is the wakeup the agent's last turn left
 				// pending, which the next pass waits out before resuming the
 				// session with the agent's own prompt.
 				var wakeup *scheduledWakeup

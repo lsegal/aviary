@@ -167,7 +167,7 @@ func TestAgentRun_RejectsInvalidWorkdir(t *testing.T) {
 	for workdir, want := range map[string]string{
 		"relative/clone":                      "must be an absolute path",
 		file:                                  "is not a directory",
-		filepath.Join(t.TempDir(), "missing"): "does not exist",
+		filepath.Join(t.TempDir(), "missing"): "no such file",
 	} {
 		_, err := d.CallToolProgress(context.Background(), "agent_run", map[string]any{
 			"name": "bot", "message": "hi", "workdir": workdir,

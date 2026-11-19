@@ -56,6 +56,8 @@ type Manager struct {
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
+	// held is a safe restart's hold: no engine starts while it is set.
+	held bool
 
 	identity    Identity
 	transcripts *transcriptStore
@@ -373,7 +375,7 @@ func (m *Manager) refresh() error {
 	}
 	m.running = nil
 	m.lastKey = key
-	engineOff := m.engineOff
+	engineOff := m.engineOff || m.held
 	m.mu.Unlock()
 	if run != nil {
 		m.logf("projects settings changed; restarting the engine (running jobs are checkpointed and resume)")

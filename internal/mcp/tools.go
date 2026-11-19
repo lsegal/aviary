@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -275,9 +274,6 @@ func resolveAgentRunWorkdir(dir string) (string, error) {
 		return "", fmt.Errorf("workdir %q must be an absolute path", dir)
 	}
 	resolved, err := filepath.EvalSymlinks(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("workdir %q does not exist", dir)
-	}
 	if err != nil {
 		return "", fmt.Errorf("workdir %q: %w", dir, err)
 	}

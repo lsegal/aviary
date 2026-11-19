@@ -293,6 +293,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	// Start the Projects engine, with any watches `aviary watch` handed over.
 	if s.projects != nil {
+		saferestart.Register("projects", s.projects)
+		defer saferestart.Unregister("projects")
 		go s.startProjects()
 	}
 
