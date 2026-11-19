@@ -560,3 +560,10 @@ func cmpInt(a, b int) int {
 		return 0
 	}
 }
+
+// ClearCache forgets the cached version check so the next Check asks GitHub.
+func ClearCache() {
+	cacheMu.Lock()
+	cacheExpiry = time.Time{}
+	cacheMu.Unlock()
+}

@@ -196,3 +196,41 @@ func TakeMarker() (marker Marker, ok bool) {
 	_ = store.DeleteJSON(MarkerPath())
 	return marker, true
 }
+
+// When a restart happens.
+const (
+	// WhenNow stops running jobs at a checkpoint and restarts right away.
+	WhenNow = "now"
+	// WhenIdle holds new jobs and restarts once no jobs are running.
+	WhenIdle = "idle"
+)
+
+// Restart phases reported in Status.
+const (
+	PhaseIdle     = "idle"     // no restart requested
+	PhaseWaiting  = "waiting"  // holding new jobs until running jobs finish
+	PhaseUpdating = "updating" // installing, checkpointing and restarting
+)
+
+// Request asks the server for a safe restart, optionally upgrading first.
+type Request struct {
+	When    string `json:"when,omitempty"`
+	Upgrade bool   `json:"upgrade,omitempty"`
+	Version string `json:"version,omitempty"`
+	// Cancel withdraws a restart that is still waiting for jobs to finish.
+	Cancel bool `json:"cancel,omitempty"`
+}
+
+// Status describes the current restart state and the jobs a restart would stop.
+type Status struct {
+	Phase    string `json:"phase"`
+	When     string `json:"when,omitempty"`
+	Upgrade  bool   `json:"upgrade,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Jobs     []Job  `json:"jobs"`
+	Held     bool   `json:"held"`
+	Noop     bool   `json:"noop,omitempty"`
+	Emulated bool   `json:"emulated,omitempty"`
+	Message  string `json:"message,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
