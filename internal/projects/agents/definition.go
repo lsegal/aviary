@@ -62,6 +62,10 @@ type Definition struct {
 	// is written, decoded as Claude's streaming envelope, or decoded by the
 	// generic JSONL decoder configured with the agent's own field paths.
 	Output Output `json:"output"`
+	// Wakeup, when declared, describes the tool call the agent ends a turn
+	// with to ask to be woken later. aviary waits out its delay and resumes
+	// the session; an agent that declares none simply finishes its turn.
+	Wakeup *Wakeup `json:"wakeup,omitempty"`
 	// MissingSession are the phrases this agent prints, beyond the shared
 	// defaults, when asked to resume a session it no longer holds; they are
 	// matched case-insensitively anywhere in its output. Naming one here adds
@@ -809,6 +813,11 @@ func (d Definition) Validate() error {
 	}
 	if err := d.Output.validate(); err != nil {
 		return err
+	}
+	if d.Wakeup != nil {
+		if err := d.Wakeup.validate(); err != nil {
+			return err
+		}
 	}
 	for _, pattern := range d.MissingSession {
 		if strings.TrimSpace(pattern) == "" {
