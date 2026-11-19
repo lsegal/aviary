@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/core"
 )
 
 const oneShotHelperEnv = "GLORP_ONESHOT_HELPER"
@@ -71,43 +70,6 @@ func oneShotRegistry(t *testing.T) *agents.Registry {
 		t.Fatalf("Load() error = %v", err)
 	}
 	return registry
-}
-
-// A prompt agent call carrying a busy instance's context -- many jobs with
-// long scrollbacks, far past Windows' 32,767-character command line and
-// Linux's 128 KiB argument limit -- starts the agent and returns its answer,
-// for an agent that reads stdin and for one that is handed a file (issue
-// #815).
-func TestAskPromptStartsTheAgentWithALargeInstanceContext(t *testing.T) {
-	registry := oneShotRegistry(t)
-	var jobs []JobSnapshot
-	line := strings.Repeat("scrollback output ", 12)
-	for i := 1; i <= 60; i++ {
-		jobs = append(jobs, JobSnapshot{Target: "o/r", Number: i, Status: "active", Log: strings.Repeat(line+"\n", 40)})
-	}
-	for _, name := range []string{"stdinagent", "argvagent"} {
-		t.Run(name, func(t *testing.T) {
-			w := &Glorp{Registry: registry, Runner: CommandRunner{Agent: name, Agents: []string{name}, Definitions: registry}, Out: &syncBuffer{}}
-			w.published.Store(&core.Snapshot{Jobs: jobs})
-			if size := len(w.promptText(context.Background(), "status?", nil, nil)); size <= linuxArgumentLimit {
-				t.Fatalf("prompt is only %d bytes; the test needs one past every argv limit", size)
-			}
-			entry, err := w.AskPrompt(context.Background(), "status?", "")
-			if err != nil {
-				t.Fatalf("AskPrompt() error = %v", err)
-			}
-			if entry.Status != "done" {
-				t.Fatalf("answer = %+v", entry)
-			}
-			want := regexp.MustCompile(`arguments=0 stdin=(\d{6,}) file=0`)
-			if name == "argvagent" {
-				want = regexp.MustCompile(`arguments=1 stdin=0 file=(\d{6,})`)
-			}
-			if !want.MatchString(entry.Response) {
-				t.Errorf("agent saw %q, want the whole prompt off argv (%s)", entry.Response, want)
-			}
-		})
-	}
 }
 
 // A short prompt to an agent that cannot read stdin still travels as the

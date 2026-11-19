@@ -211,19 +211,6 @@ func (w *Glorp) applySettingsRequest(update SettingsUpdate, sem *concurrencySema
 		}
 		w.SetUnblockAgent(config)
 	}
-	if update.PromptAgent != nil || update.PromptModel != nil {
-		config := w.promptSettings()
-		if update.PromptAgent != nil {
-			config.Agent = strings.TrimSpace(*update.PromptAgent)
-		}
-		if update.PromptModel != nil {
-			config.Model = strings.TrimSpace(*update.PromptModel)
-		}
-		if err := validateUnblockAgent(w.registry(), config); err != nil {
-			return settingsResult{err: err}
-		}
-		w.SetPromptAgent(config)
-	}
 	if update.UnblockInterval != nil {
 		interval, _ := parseUnblockInterval(*update.UnblockInterval)
 		if interval != w.UnblockInterval() {
@@ -323,9 +310,6 @@ func (w *Glorp) settingsSnapshot() SettingsSnapshot {
 		UnblockAgent:      w.unblockSettings().Agent,
 		UnblockModel:      w.unblockSettings().Model,
 		UnblockDefault:    w.unblockDefault(),
-		PromptAgent:       w.promptSettings().Agent,
-		PromptModel:       w.promptSettings().Model,
-		PromptDefault:     w.unblockDefault(),
 	}
 }
 

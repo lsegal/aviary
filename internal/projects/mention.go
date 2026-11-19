@@ -50,8 +50,8 @@ type RecentComment struct {
 }
 
 // routed is the comment as one routed to the prompt agent, posted in repo.
-func (c RecentComment) routed(repo string) routedComment {
-	return routedComment{Kind: c.Kind, Repository: repo, Number: c.Number, ID: c.ID, Author: c.Author}
+func (c RecentComment) routed(repo string) mentionComment {
+	return mentionComment{Kind: c.Kind, Repository: repo, Number: c.Number, ID: c.ID, Author: c.Author}
 }
 
 // MentionSource is what the poll modes scan for direct @/glorp:ID mentions.
@@ -125,7 +125,7 @@ func (w *Glorp) commentRequestsRecheck(body, author string) bool {
 // qualify. A comment from glorp's own login posted while its agent ran on the
 // issue is left out: agents post as that login, so it may be the agent's own,
 // and a human's is relayed by that run's watcher.
-func (w *Glorp) queueCommentRecheck(scan *mentionScan, keys []string, comment routedComment, at time.Time, listed, directMentions map[string]bool) []string {
+func (w *Glorp) queueCommentRecheck(scan *mentionScan, keys []string, comment mentionComment, at time.Time, listed, directMentions map[string]bool) []string {
 	author := comment.Author
 	var queued []string
 	for _, key := range keys {
@@ -226,7 +226,7 @@ type mentionScan struct {
 	// comments is the latest comment that queued each "repo#number" key in
 	// the direct-mention queue, so a job's issue can route it to the prompt
 	// agent instead of restarting the job (issue #842).
-	comments map[string]routedComment
+	comments map[string]mentionComment
 	// linked is the derived watch on pull requests that work on an issue
 	// from another repository, such as a fork (issue #723).
 	linked *linkedPullRequests
@@ -245,7 +245,7 @@ type mentionScanKey struct {
 func newMentionScan(start time.Time) *mentionScan {
 	return &mentionScan{
 		start: start, since: make(map[string]time.Time), handled: make(map[mentionScanKey]bool),
-		seeded: make(map[string]bool), seen: make(map[mentionScanKey]bool), rechecks: make(map[string]bool), comments: make(map[string]routedComment),
+		seeded: make(map[string]bool), seen: make(map[mentionScanKey]bool), rechecks: make(map[string]bool), comments: make(map[string]mentionComment),
 		agentRunning: make(map[string]bool), agentEnded: make(map[string]time.Time),
 		linked: newLinkedPullRequests(),
 	}
@@ -367,12 +367,6 @@ func (w *Glorp) scanMentionStream(ctx context.Context, scan *mentionScan, repo, 
 		}
 		key := mentionScanKey{kind: comment.Kind, id: comment.ID}
 		if only != nil && !only(comment.Number) {
-			continue
-		}
-		if isPromptReply(comment.Body) {
-			// The prompt agent's own replies are never triggers, so routing
-			// a comment to it cannot loop (issue #842).
-			scan.seen[key] = true
 			continue
 		}
 		if !mentionedIdentity(comment.Body, w.Identity) {
@@ -798,4 +792,16 @@ func (g GHCLI) AddReviewReaction(ctx context.Context, repo string, nodeID string
 		return fmt.Errorf("react to review %s in %s: %w: %s", nodeID, repo, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// mentionComment is a comment that comment detection found addressed to an
+// issue's job.
+type mentionComment struct {
+	Kind CommentKind
+	// Repository and Number are where the comment was posted: the issue, or
+	// a pull request that works on it.
+	Repository string
+	Number     int
+	ID         int64
+	Author     string
 }

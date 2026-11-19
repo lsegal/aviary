@@ -184,12 +184,6 @@ func settingsUpdateFlags(update core.SettingsUpdate) map[string]any {
 	if update.UnblockModel != nil {
 		values["unblock-model"] = strings.TrimSpace(*update.UnblockModel)
 	}
-	if update.PromptAgent != nil {
-		values["prompt-agent"] = strings.TrimSpace(*update.PromptAgent)
-	}
-	if update.PromptModel != nil {
-		values["prompt-model"] = strings.TrimSpace(*update.PromptModel)
-	}
 	return values
 }
 

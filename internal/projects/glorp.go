@@ -349,39 +349,26 @@ type Glorp struct {
 	// overlap a timed round (issue #801). An empty key means every stuck job.
 	unblockTriggerOnce sync.Once
 	unblockTrigger     chan string
-	// promptOverride holds the prompt agent's agent and model override, and
-	// promptRun replaces its agent call in tests (issue #801).
-	promptOverride atomic.Pointer[unblockConfig]
-	promptRun      func(context.Context, agentSpec, string) (string, error)
-	// promptMu guards prompts, the prompt area's conversation, and
-	// promptNext, the ID its next entry gets.
-	promptMu   sync.Mutex
-	prompts    []core.PromptEntry
-	promptNext int
+	// oneShotRun replaces one-off agent calls such as issue creation in tests.
+	oneShotRun func(context.Context, agentSpec, string) (string, error)
 	// published is the run's most recently published snapshot, and
-	// recentLogs its last log lines, which the prompt agent answers from
-	// (issue #801).
+	// recentLogs its last log lines.
 	published  atomic.Pointer[core.Snapshot]
 	recentLogs []string
 	// settingsView is the settings snapshot the Run loop last published. The
 	// settings modal reads it directly, so opening settings never waits on a
 	// poll, startup, or anything else the loop is busy with (issue #803).
 	settingsView atomic.Pointer[SettingsSnapshot]
-	// SchedulesPath is the schedule store (issue #848). Empty keeps it beside
-	// the state file, as schedulesPathFor names it.
-	SchedulesPath string
-	// scheduleOnce/scheduleRequests carry schedule requests from the
-	// dashboards into the run's scheduler.
-	scheduleOnce     sync.Once
-	scheduleRequests chan scheduleRequest
-	// scheduleWakes replaces the scheduler's sleep/wake detector in tests.
-	scheduleWakes <-chan time.Duration
 }
 
 // publishHandledIssues records which issues are no longer dispatch candidates:
 // anything with a run in flight, and anything this instance already completed.
 // Failed work is deliberately absent, because it is dispatched again and so
 // still needs its metadata. Callers hold the lock guarding work and active.
+// recentLogLines is how many of the run's latest log lines are kept for
+// status reports.
+const recentLogLines = 40
+
 func (w *Glorp) publishHandledIssues(work map[string]workState, active map[string]string) {
 	handled := make(map[string]bool, len(work)+len(active))
 	for key := range active {
@@ -1885,8 +1872,8 @@ func (w *Glorp) logf(format string, args ...interface{}) {
 		fmt.Fprintln(w.Out, line)
 	}
 	w.recentLogs = append(w.recentLogs, line)
-	if len(w.recentLogs) > promptLogLines {
-		w.recentLogs = w.recentLogs[len(w.recentLogs)-promptLogLines:]
+	if len(w.recentLogs) > recentLogLines {
+		w.recentLogs = w.recentLogs[len(w.recentLogs)-recentLogLines:]
 	}
 	if w.UI != nil {
 		w.UI.Log(line)
@@ -2090,9 +2077,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 	webhookRepos := mentionScanRepos(targets, nil)
 	workFinished := make(chan struct{}, 1)
 	jobs := make(map[string]JobSnapshot)
-	// upcoming is the next scheduled runs the scheduler last reported,
-	// guarded by jobMu (issue #848).
-	var upcoming []core.UpcomingRun
 	issueCounts := make(map[string]int)
 	// lastPoll is when the most recent poll of GitHub finished, which the UIs
 	// report so a run that has stopped logging every tick (issue #413) can
@@ -2137,7 +2121,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 		}
 		polled := lastPoll
 		watched := targets
-		next := append([]core.UpcomingRun(nil), upcoming...)
 		jobMu.Unlock()
 		var quotas map[string]string
 		if w.Quota != nil {
@@ -2147,39 +2130,9 @@ func (w *Glorp) Run(ctx context.Context) error {
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
 		}
-		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs, Upcoming: next}
+		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
-	}
-	// The scheduler runs out-of-band prompts on a timer as jobs of their own
-	// (issue #848). Its runs take slots from the same semaphore as issues.
-	schedulesPath := w.SchedulesPath
-	if schedulesPath == "" {
-		schedulesPath = schedulesPathFor(w.StatePath)
-	}
-	schedules := newScheduler(schedulesPath)
-	schedules.requests = w.scheduleRequestsChan()
-	schedules.wakes = w.scheduleWakes
-	schedules.logf = w.logf
-	scheduleEnv := scheduleJobEnv{ctx: ctx, sem: sem, wg: &wg, tasks: &tasks, jobMu: &jobMu, jobs: jobs, publish: publish, runs: newScheduleRuns(), finished: schedules.finished}
-	scheduleEnv.rerun = func(id string) {
-		go func() {
-			if _, err := w.HandleSchedule(ctx, core.ScheduleRequest{Op: core.ScheduleOpRun, ID: id}); err != nil && ctx.Err() == nil {
-				w.logf("schedule %s failed to run again: %v", id, err)
-			}
-		}()
-	}
-	schedules.dispatch = func(schedule core.Schedule, fired time.Time) {
-		w.startScheduledRun(scheduleEnv, schedule, fired)
-	}
-	schedules.publish = func(runs []core.UpcomingRun) {
-		jobMu.Lock()
-		upcoming = runs
-		jobMu.Unlock()
-		publish()
-	}
-	if err := schedules.load(); err != nil {
-		return err
 	}
 	pollNumber := 0
 	// observed records the "repo#number" keys returned by the most recent
@@ -2361,29 +2314,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 			w.logf("issue #%d unpaused: %s; its paused work is finished", issue.Number, reason)
 			publish()
 		}
-		// routeToPrompt hands a direct mention's comment on a job's issue to
-		// the prompt agent, which restarts the job or replies to the comment
-		// (issue #842). Paused work is kept paused; work that staysPaused is
-		// never restarted unless the prompt agent decides to. It reports false
-		// when the comment is unknown or no prompt agent can run, leaving the
-		// mention queued.
-		routeToPrompt := func(issue Issue, key string, keepPaused, staysPaused bool, pauseReason string, own *OriginatingWorkState) bool {
-			mentionKey := issue.Repository + "#" + strconv.Itoa(issue.Number)
-			comment, known := mentions.comments[mentionKey]
-			if !known || !w.routesCommentsToPrompt() {
-				return false
-			}
-			delete(directMentions, mentionKey)
-			delete(mentions.rechecks, mentionKey)
-			delete(mentions.comments, mentionKey)
-			if keepPaused {
-				pauseJob(issue, key, pauseReason, own)
-			}
-			route := commentRoute{JobKey: key, Repository: issueRepository(issue.Target, issue), Number: issue.Number, Comment: comment, StaysPaused: staysPaused}
-			w.logf("issue #%d comment %s goes to the prompt agent to decide on, instead of restarting the job", issue.Number, comment.URL())
-			go w.routeCommentToPrompt(ctx, route)
-			return true
-		}
 		observedWork := make(map[string]bool, len(issues))
 		for _, issue := range issues {
 			observedWork[issueKey(issue)] = true
@@ -2417,11 +2347,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 					// instance, not review activity, so it is acted on below
 					// as it was before the pull request was paused.
 					w.logf("issue #%d paused work has a direct mention of instance %s; dispatching it", issue.Number, w.Identity)
-				case wake == core.PausedStay && mentioned && (paused.Kind == core.PausedBlocked || paused.Kind == core.PausedManual) && routeToPrompt(issue, key, true, true, wakeReason, pausedOwn):
-					// A direct mention on work waiting on its dependencies or
-					// paused by the owner is answered by the prompt agent while
-					// the work stays paused (issue #844).
-					continue
 				case wake == core.PausedStay:
 					w.logChanged("paused-"+key, wakeReason, "issue #%d paused: %s", issue.Number, wakeReason)
 					pauseJob(issue, key, wakeReason, pausedOwn)
@@ -2519,18 +2444,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 					w.logf("issue #%d direct mention of instance %s concerns the run in progress; relaying it into that run", issue.Number, w.Identity)
 				} else {
 					w.logChanged("mention-active-"+key, "waiting", "issue #%d direct mention of instance %s waits for the run in progress to finish: that run's session cannot be resumed to relay it", issue.Number, w.Identity)
-				}
-			}
-			// A comment on the issue of a finished or paused job goes to the
-			// prompt agent, which restarts the job or replies to the comment,
-			// instead of restarting the job from scratch (issue #842). It
-			// applies only when the comment is the one reason to dispatch.
-			if directMention && !isActive && issue.Number > 0 && (wasCompleted || (wasPaused && wake == core.PausedStay)) && rejected == 0 && !swept && !staleRestoredState && !shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) {
-				jobMu.Lock()
-				_, hasJob := jobs[key]
-				jobMu.Unlock()
-				if (hasJob || wasPaused) && routeToPrompt(issue, key, wasPaused, false, wakeReason, pausedOwn) {
-					continue
 				}
 			}
 			if issue.Number > 0 && (wasFailed || rejected > 0 || wasPaused || (staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) || (swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || (directMention && !isActive)) {
@@ -3294,10 +3207,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 	// work, when a retry that needs a poll of its own is refused.
 	serveJobAction = func(request jobActionRequest, dispatching bool) {
 		action := request.action
-		if _, scheduled := core.ScheduleIDFromTarget(action.Target); scheduled {
-			w.serveScheduleJobAction(scheduleEnv, request)
-			return
-		}
 		key := action.Target + "#" + strconv.Itoa(action.Number)
 		jobMu.Lock()
 		job, exists := jobs[key]
@@ -3524,7 +3433,6 @@ func (w *Glorp) Run(ctx context.Context) error {
 	// main.go's run() -- can take a real amount of time, and a settings or
 	// job-action request that lands during that window must not block on a
 	// channel nothing is reading yet (issue #579).
-	go schedules.loop(watchCtx)
 	close(w.readyChan())
 	if err := poll(nil); err != nil {
 		if ctx.Err() != nil {
@@ -3738,11 +3646,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 					w.logf("issue #%d direct mention is still pending; using the scheduled follow-up refresh", number)
 				}
 			}
-			promptReply := isPromptReply(event.CommentBody)
-			if promptReply {
-				w.logf("issue #%d comment is the prompt agent's own reply; it triggers nothing", event.IssueNumber)
-			}
-			if kind, ok := webhookMentionKind(event); ok && !promptReply && mentionedIdentity(event.CommentBody, w.Identity) {
+			if kind, ok := webhookMentionKind(event); ok && mentionedIdentity(event.CommentBody, w.Identity) {
 				// Acknowledge the mention was read regardless of whether it goes on
 				// to authorize a run (issue #581): a human watching the thread should
 				// see the eyes reaction even when the mention is stale or from an
@@ -3781,7 +3685,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 					for _, mentioned := range keys {
 						directMentions[mentioned] = true
 						delete(mentions.rechecks, mentioned)
-						mentions.comments[mentioned] = routedComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
+						mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
 					}
 					if event.OnPullRequest {
 						w.logf("pull request #%d directly mentioned instance %s%s; refreshing for a threaded gh-fix run on %s", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), formatIssueRefs(event.ClosesIssues))
@@ -3795,7 +3699,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 					continue
 				}
 			}
-			if kind, ok := webhookMentionKind(event); ok && !promptReply && !mentionedIdentity(event.CommentBody, w.Identity) && w.commentRequestsRecheck(event.CommentBody, event.CommentAuthor) {
+			if kind, ok := webhookMentionKind(event); ok && !mentionedIdentity(event.CommentBody, w.Identity) && w.commentRequestsRecheck(event.CommentBody, event.CommentAuthor) {
 				// The delivery marks the comment as new, so only its author, its
 				// mention of the login, and its presence on GitHub need checking
 				// (issue #708).
@@ -3814,7 +3718,7 @@ func (w *Glorp) Run(ctx context.Context) error {
 							reportPollError("comment-recheck", err)
 						}
 					}
-					if queued := w.queueCommentRecheck(mentions, keys, routedComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}, time.Now(), observed, directMentions); len(queued) > 0 {
+					if queued := w.queueCommentRecheck(mentions, keys, mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}, time.Now(), observed, directMentions); len(queued) > 0 {
 						w.reactToMention(ctx, event.Repository, kind, event.IssueNumber, event.CommentID, event.CommentNodeID)
 						if err := poll(nil); err != nil && ctx.Err() == nil {
 							reportPollError("comment-recheck", err)

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
 // maxIssueDescription is the longest description the create-issue tool takes.
-const maxIssueDescription = maxPromptRequest
+const maxIssueDescription = 4000
 
 // CreateIssue files an issue on a repository through the gh-create skill
 // (issue #807), run by the prompt agent with this instance's identity so the
@@ -27,22 +28,26 @@ func (w *Glorp) CreateIssue(ctx context.Context, request core.IssueCreate) (core
 	case len(text) > maxIssueDescription:
 		return core.IssueCreateResult{}, fmt.Errorf("the issue description is longer than %d characters", maxIssueDescription)
 	}
-	spec, err := w.promptSpec(request.Model)
-	if err != nil {
-		return core.IssueCreateResult{}, fmt.Errorf("the prompt agent cannot run: %w", err)
+	config := unblockConfig{}
+	if model := strings.TrimSpace(request.Model); model != "" {
+		config.Model = model
 	}
-	run, err := w.promptRunner()
+	spec, err := w.oneShotSpec(config)
 	if err != nil {
-		return core.IssueCreateResult{}, fmt.Errorf("the prompt agent cannot run: %w", err)
+		return core.IssueCreateResult{}, fmt.Errorf("the coding agent cannot run: %w", err)
+	}
+	run, err := w.oneShotRunner()
+	if err != nil {
+		return core.IssueCreateResult{}, fmt.Errorf("the coding agent cannot run: %w", err)
 	}
 	prompt := createIssuePrompt(request.Repository, text, w.Identity)
 	w.logf("prompt agent (%s) filing an issue on %s: %s", spec, request.Repository, truncate(text, 120))
-	callCtx, cancel := context.WithTimeout(ctx, promptCallTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, issueCreateTimeout)
 	defer cancel()
 	output, runErr := run(callCtx, spec, prompt)
 	url := createdIssueURL(output, request.Repository)
 	if url == "" {
-		detail := lastLines(promptResponse(output), promptOutputLines)
+		detail := lastLines(strings.TrimSpace(output), 15)
 		if runErr != nil {
 			return core.IssueCreateResult{}, fmt.Errorf("gh-create failed: %v: %s", runErr, detail)
 		}
@@ -76,4 +81,20 @@ func createdIssueURL(output, repository string) string {
 		}
 	}
 	return ""
+}
+
+// issueCreateTimeout bounds one gh-create call.
+const issueCreateTimeout = 15 * time.Minute
+
+// oneShotRunner is the call that runs one prompt on the coding agent outside
+// any job, such as filing an issue.
+func (w *Glorp) oneShotRunner() (func(context.Context, agentSpec, string) (string, error), error) {
+	if w.oneShotRun != nil {
+		return w.oneShotRun, nil
+	}
+	runner, ok := w.runner().(CommandRunner)
+	if !ok {
+		return nil, fmt.Errorf("no coding agent is configured")
+	}
+	return runner.runUnblock, nil
 }
