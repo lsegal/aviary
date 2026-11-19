@@ -9,10 +9,10 @@
   },
   "args": {
     "run": [
-      {"args": ["agent", "run", "--json", "--workdir", ".", "{model}", "{prompt}"]}
+      {"args": ["agent", "run", "--output-format", "json", "--workdir", ".", "{model}", "{prompt}"]}
     ],
     "vision": [
-      {"args": ["agent", "run", "--json", "--workdir", ".", "{model}", "{prompt}\n\nImage: {image}"]}
+      {"args": ["agent", "run", "--output-format", "json", "--workdir", ".", "{model}", "{prompt}\n\nImage: {image}"]}
     ]
   }
 }

@@ -110,6 +110,44 @@ func TestCodexTodoListAndToolCalls(t *testing.T) {
 	}
 }
 
+// The fixture is a real `aviary agent run --output-format json` capture from
+// an agent backed by codex-cli 0.153.2.
+func TestAviaryJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatAviaryJSON), "aviary-agent-run.jsonl")
+	want := "message,tool_call,tool_result,tool_call,tool_result,message"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	call, failed := events[1], events[2]
+	if call.Name != "shell" || call.CallID == "" || call.Input["command"] != "/bin/zsh -lc 'cat missing.txt'" {
+		t.Fatalf("tool call = %+v", call)
+	}
+	if failed.CallID != call.CallID || !failed.IsError || !strings.Contains(failed.Output, "No such file") {
+		t.Fatalf("failed result = %+v", failed)
+	}
+	if ok := events[4]; ok.CallID != events[3].CallID || ok.IsError || ok.Output != "note.txt\nout.txt\n" {
+		t.Fatalf("result = %+v", ok)
+	}
+	if !strings.HasPrefix(events[5].Text, "`cat missing.txt` failed") {
+		t.Fatalf("message = %+v", events[5])
+	}
+}
+
+func TestAviaryJSONFileChangesAndErrors(t *testing.T) {
+	mapper := NewMapper(FormatAviaryJSON)
+	change := mapper.Map([]byte(`{"type":"file_change","name":"file_write","path":"/w/a.go","diff":"+x"}`))
+	if len(change) != 1 || change[0].Kind != KindFileChange || change[0].Path != "/w/a.go" || change[0].Diff != "+x" {
+		t.Fatalf("file change = %+v", change)
+	}
+	failed := mapper.Map([]byte(`{"type":"error","text":"boom"}`))
+	if len(failed) != 1 || failed[0].Kind != KindSystem || !failed[0].IsError || failed[0].Text != "boom" {
+		t.Fatalf("error = %+v", failed)
+	}
+	if got := mapper.Map([]byte("plain text")); got != nil {
+		t.Fatalf("plain text mapped to %+v", got)
+	}
+}
+
 // The fixtures are real streams captured from opencode 1.18.27 and cline
 // 3.0.74 running the same four-step task: a shell command, a file creation, an
 // edit and a read.
@@ -238,36 +276,5 @@ func TestLogPersistsAcrossOpen(t *testing.T) {
 func TestUnknownFormatHasNoMapper(t *testing.T) {
 	if NewMapper("text") != nil {
 		t.Fatal("text output should have no structured mapper")
-	}
-}
-
-func TestAviaryJSONMapsToEvents(t *testing.T) {
-	log, _ := Open("")
-	recorder := log.Recorder(NewMapper(FormatAviaryJSON))
-	stream := strings.Join([]string{
-		`{"kind":"message","time":"2026-11-19T10:00:00Z","text":"Renaming."}`,
-		`{"kind":"tool_call","name":"file_edit","input":{"path":"main.go"}}`,
-		`{"kind":"file_change","name":"file_edit","path":"/clone/main.go","diff":"--- a\n+++ b\n@@ -1 +1 @@\n-package main\n+package app\n"}`,
-		`{"kind":"comment_relay","author":"someone","text":"not from the agent"}`,
-		`{"kind":"system","text":"not from the agent"}`,
-		`Error: agent "x" not found`,
-	}, "\n") + "\n"
-	if _, err := recorder.Write([]byte(stream)); err != nil {
-		t.Fatal(err)
-	}
-	recorder.Flush()
-	events := log.Events(0)
-	if kinds(events) != "message,tool_call,file_change" {
-		t.Fatalf("kinds = %s", kinds(events))
-	}
-	if events[0].Text != "Renaming." || events[0].Time.IsZero() {
-		t.Fatalf("message = %+v", events[0])
-	}
-	if events[1].Name != "file_edit" || events[1].Input["path"] != "main.go" {
-		t.Fatalf("tool call = %+v", events[1])
-	}
-	change := events[2]
-	if change.Name != "file_edit" || change.Path != "/clone/main.go" || !strings.Contains(change.Diff, "+package app") || change.Time.IsZero() {
-		t.Fatalf("file change = %+v", change)
 	}
 }

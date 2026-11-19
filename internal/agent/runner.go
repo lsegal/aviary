@@ -1228,14 +1228,14 @@ func (r *AgentRunner) executeToolCall(
 			emit(StreamEvent{Type: StreamEventStop})
 			return "", true
 		}
-		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error()}})
+		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
 		errRec := toolEventRecord{Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
 		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), "", "")
 		return "error: " + callErr.Error(), false
 	}
 
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Result: resultText}})
+	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
 	if change, ok := FileChangeFromToolResult(name, resultText); ok {
 		emit(StreamEvent{Type: StreamEventFile, File: change})
 	}

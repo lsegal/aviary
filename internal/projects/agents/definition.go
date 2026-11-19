@@ -62,6 +62,11 @@ type Definition struct {
 	// is written, decoded as Claude's streaming envelope, or decoded by the
 	// generic JSONL decoder configured with the agent's own field paths.
 	Output Output `json:"output"`
+	// ProjectsUnavailable, when set, gates the agent out of Projects job
+	// dispatch and says why. Projects records a structured transcript for
+	// every job, so an agent whose CLI has no machine-readable output mode
+	// cannot run one; it stays usable everywhere else aviary invokes it.
+	ProjectsUnavailable string `json:"projectsUnavailable,omitempty"`
 	// Wakeup, when declared, describes the tool call the agent ends a turn
 	// with to ask to be woken later. aviary waits out its delay and resumes
 	// the session; an agent that declares none simply finishes its turn.
@@ -217,8 +222,10 @@ type Session struct {
 type Output struct {
 	// Format selects the decoder: "text" (alias "plain") shows output as it
 	// is written, "stream-json" (alias "claude-stream-json") decodes Claude's
-	// streaming event envelope, and "jsonl" decodes a line-delimited JSON
-	// event stream described by the JSONL block below.
+	// streaming event envelope, "codex-json" decodes `codex exec --json`,
+	// "aviary-json" decodes `aviary agent run --output-format json`, and
+	// "jsonl" decodes a line-delimited JSON event stream described by the
+	// JSONL block below.
 	Format string `json:"format"`
 	// JSONL configures the generic decoder, and is only meaningful when
 	// Format selects it. Most agents with a --json or streaming mode are read
@@ -924,6 +931,14 @@ func (d Definition) LevelError() error {
 		return fmt.Errorf("agent %s takes no reasoning level", d.Name)
 	}
 	return fmt.Errorf("agent level must be %s", JoinOr(d.Levels.Values()))
+}
+
+// ProjectsError says why the agent cannot run a Projects job, nil when it can.
+func (d Definition) ProjectsError() error {
+	if reason := strings.TrimSpace(d.ProjectsUnavailable); reason != "" {
+		return fmt.Errorf("agent %s is unavailable for Projects jobs: %s", d.Name, reason)
+	}
+	return nil
 }
 
 // ModelError is LevelError for the model dimension.

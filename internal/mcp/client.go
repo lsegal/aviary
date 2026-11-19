@@ -40,10 +40,6 @@ type InProcessClient struct {
 // NewInProcessClient creates a client connected directly to srv.
 // The caller must call Close() when done.
 func NewInProcessClient(ctx context.Context, srv *sdkmcp.Server) (*InProcessClient, error) {
-	return newInProcessClient(ctx, srv, nil)
-}
-
-func newInProcessClient(ctx context.Context, srv *sdkmcp.Server, opts *sdkmcp.ClientOptions) (*InProcessClient, error) {
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 
 	connCtx, cancel := context.WithCancel(ctx)
@@ -60,7 +56,7 @@ func newInProcessClient(ctx context.Context, srv *sdkmcp.Server, opts *sdkmcp.Cl
 	c := sdkmcp.NewClient(&sdkmcp.Implementation{
 		Name:    "aviary-cli",
 		Version: buildinfo.Version,
-	}, opts)
+	}, cliClientOptions())
 
 	session, err := c.Connect(connCtx, clientTransport, nil)
 	if err != nil {
@@ -84,7 +80,12 @@ func (c *InProcessClient) CallTool(ctx context.Context, name string, args any) (
 	})
 }
 
-func (c *InProcessClient) clientSession() *sdkmcp.ClientSession { return c.session }
+// CallToolWithProgress invokes the named tool, handing its progress messages
+// to onProgress, which reports whether a message is the call's last.
+func (c *InProcessClient) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string) bool) (*sdkmcp.CallToolResult, error) {
+	logToolCall("inprocess", name, args)
+	return callToolWithProgress(ctx, c.session, name, args, onProgress)
+}
 
 // ListTools returns discoverable tools from the in-process server.
 func (c *InProcessClient) ListTools(ctx context.Context) ([]ToolInfo, error) {

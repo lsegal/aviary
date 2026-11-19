@@ -377,6 +377,9 @@ type AgentStatus struct {
 	// SkillsNote says which of aviary's installed skills are stale for the
 	// running release, empty when they are current.
 	SkillsNote string `json:"skillsNote,omitempty"`
+	// ProjectsNote says why the agent is gated out of Projects jobs, empty
+	// when it can run them.
+	ProjectsNote string `json:"projectsNote,omitempty"`
 	// Status is one of "ok", "warn", or "missing", matching the marker
 	// `aviary agents` prefixes each block with.
 	Status string `json:"status"`

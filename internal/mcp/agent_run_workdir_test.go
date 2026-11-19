@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -120,34 +119,30 @@ func TestAgentRun_WorkdirGrantsTheRunItsCloneAndStreamsFileChanges(t *testing.T)
 	require.NoError(t, err)
 
 	model.set("file_edit", map[string]any{"path": "main.go", "old_string": "main", "new_string": "app"})
-	var progress []string
-	var mu sync.Mutex
-	_, err = d.CallToolProgress(context.Background(), "agent_run", map[string]any{
-		"name": "bot", "message": "rename the package", "workdir": clone,
-		"include_tool_progress": true, "include_file_progress": true,
-	}, func(message string) {
-		mu.Lock()
-		defer mu.Unlock()
-		progress = append(progress, message)
+	var events []AgentRunEvent
+	_, isError, err := d.CallToolWithProgress(context.Background(), "agent_run", map[string]any{
+		"name": "bot", "message": "rename the package", "workdir": clone, "stream_events": true,
+	}, func(message string) bool {
+		var event AgentRunEvent
+		require.NoError(t, json.Unmarshal([]byte(message), &event))
+		events = append(events, event)
+		return event.Type == "done"
 	})
 	require.NoError(t, err)
+	require.False(t, isError)
 
 	data, err := os.ReadFile(filepath.Join(clone, "main.go"))
 	require.NoError(t, err)
 	assert.Equal(t, "package app\n", string(data), "a relative path edits the granted clone")
 
-	mu.Lock()
-	defer mu.Unlock()
-	var file agent.FileChangeEvent
-	var sawTool bool
-	for _, message := range progress {
-		if payload, ok := strings.CutPrefix(message, "[file]"); ok {
-			require.NoError(t, json.Unmarshal([]byte(payload), &file))
+	var file *AgentRunEvent
+	for i := range events {
+		if events[i].Type == "file_change" {
+			file = &events[i]
 		}
-		sawTool = sawTool || strings.HasPrefix(message, `[tool]{"args"`) || strings.HasPrefix(message, `[tool]{"name"`)
 	}
-	assert.True(t, sawTool, "tool progress: %v", progress)
-	assert.Equal(t, "file_edit", file.Tool)
+	require.NotNil(t, file, "file change event: %+v", events)
+	assert.Equal(t, "file_edit", file.Name)
 	assert.Equal(t, filepath.Join(resolved, "main.go"), file.Path)
 	assert.Contains(t, file.Diff, "+package app")
 
@@ -169,10 +164,10 @@ func TestAgentRun_RejectsInvalidWorkdir(t *testing.T) {
 		file:                                  "is not a directory",
 		filepath.Join(t.TempDir(), "missing"): "does not exist",
 	} {
-		_, err := d.CallToolProgress(context.Background(), "agent_run", map[string]any{
+		out, err := d.CallTool(context.Background(), "agent_run", map[string]any{
 			"name": "bot", "message": "hi", "workdir": workdir,
-		}, func(string) {})
-		require.Error(t, err, workdir)
-		assert.Contains(t, err.Error(), want, workdir)
+		})
+		require.NoError(t, err, workdir)
+		assert.Contains(t, out, want, workdir)
 	}
 }

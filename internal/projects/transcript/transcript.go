@@ -94,9 +94,7 @@ const (
 	FormatCodexJSON        = "codex-json"
 	FormatOpencodeJSON     = "opencode-json"
 	FormatClineJSON        = "cline-json"
-	// FormatAviaryJSON is what `aviary agent run --json` prints: one
-	// transcript Event per line.
-	FormatAviaryJSON = "aviary-json"
+	FormatAviaryJSON       = "aviary-json"
 )
 
 // NewMapper returns the mapper for an agent definition's output format, or for

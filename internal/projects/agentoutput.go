@@ -34,9 +34,9 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 	case agents.FormatJSONL:
 		return newJSONLOutputWriter(w, *output.JSONL)
 	case agents.FormatCodexJSON:
-		return newCodexJSONOutputWriter(w)
+		return newTranscriptOutputWriter(w, transcript.FormatCodexJSON)
 	case agents.FormatAviaryJSON:
-		return newAviaryJSONOutputWriter(w)
+		return newTranscriptOutputWriter(w, transcript.FormatAviaryJSON)
 	}
 	return nil
 }
@@ -369,23 +369,24 @@ func firstJSONLString(values []any) string {
 	return ""
 }
 
-// codexJSONOutputWriter renders `codex exec --json` for the job's scrollback:
-// agent messages as text, commands, file changes and tool calls as progress
-// lines, and the thread id in the "session id:" form the codex definition
-// captures.
-type codexJSONOutputWriter struct {
+// transcriptOutputWriter renders a stream its transcript mapper reads, such
+// as `codex exec --json` or `aviary agent run --output-format json`, for the
+// job's scrollback: agent messages as text, commands, file changes and tool
+// calls as progress lines, and codex's thread id in the "session id:" form
+// the codex definition captures.
+type transcriptOutputWriter struct {
 	lineWriter
 	output io.Writer
 	mapper transcript.Mapper
 }
 
-func newCodexJSONOutputWriter(output io.Writer) *codexJSONOutputWriter {
-	w := &codexJSONOutputWriter{output: output, mapper: transcript.NewMapper(transcript.FormatCodexJSON)}
+func newTranscriptOutputWriter(output io.Writer, format string) *transcriptOutputWriter {
+	w := &transcriptOutputWriter{output: output, mapper: transcript.NewMapper(format)}
 	w.line = w.writeLine
 	return w
 }
 
-func (w *codexJSONOutputWriter) writeLine(line []byte) error {
+func (w *transcriptOutputWriter) writeLine(line []byte) error {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
 		return nil
@@ -402,15 +403,8 @@ func (w *codexJSONOutputWriter) writeLine(line []byte) error {
 		_, err := fmt.Fprintf(w.output, "session id: %s\n", envelope.ThreadID)
 		return err
 	}
-	return writeTranscriptLines(w.output, w.mapper.Map(line))
-}
-
-// writeTranscriptLines renders mapped transcript events for the job's
-// scrollback: messages as text, and commands, file changes and tool calls as
-// progress lines.
-func writeTranscriptLines(output io.Writer, events []transcript.Event) error {
 	var texts []string
-	for _, event := range events {
+	for _, event := range w.mapper.Map(line) {
 		switch {
 		case event.Kind == transcript.KindMessage:
 			if text := strings.TrimSpace(event.Text); text != "" {
@@ -429,32 +423,6 @@ func writeTranscriptLines(output io.Writer, events []transcript.Event) error {
 	if len(texts) == 0 {
 		return nil
 	}
-	_, err := fmt.Fprintln(output, strings.Join(texts, "\n"))
+	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
 	return err
-}
-
-// aviaryJSONOutputWriter renders `aviary agent run --json`, whose lines are
-// transcript events, for the job's scrollback.
-type aviaryJSONOutputWriter struct {
-	lineWriter
-	output io.Writer
-	mapper transcript.Mapper
-}
-
-func newAviaryJSONOutputWriter(output io.Writer) *aviaryJSONOutputWriter {
-	w := &aviaryJSONOutputWriter{output: output, mapper: transcript.NewMapper(transcript.FormatAviaryJSON)}
-	w.line = w.writeLine
-	return w
-}
-
-func (w *aviaryJSONOutputWriter) writeLine(line []byte) error {
-	line = bytes.TrimSpace(line)
-	if len(line) == 0 {
-		return nil
-	}
-	if !json.Valid(line) {
-		_, err := fmt.Fprintln(w.output, string(line))
-		return err
-	}
-	return writeTranscriptLines(w.output, w.mapper.Map(line))
 }

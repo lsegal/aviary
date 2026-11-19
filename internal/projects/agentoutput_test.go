@@ -146,6 +146,8 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 		{format: "stream-json", want: "*projects.claudeJSONOutputWriter"},
 		{format: "claude-stream-json", want: "*projects.claudeJSONOutputWriter"},
 		{format: "jsonl", want: "*projects.jsonlOutputWriter"},
+		{format: "codex-json", want: "*projects.transcriptOutputWriter"},
+		{format: "aviary-json", want: "*projects.transcriptOutputWriter"},
 	} {
 		t.Run(test.format, func(t *testing.T) {
 			output := agents.Output{Format: test.format}
@@ -378,27 +380,5 @@ func TestJSONLOutputWriterOverridesTextDeltaStreams(t *testing.T) {
 	want := "a.txt contains hi\nRunning: read_file\n"
 	if got := output.String(); got != want {
 		t.Fatalf("decoded stream = %q, want %q", got, want)
-	}
-}
-
-func TestAviaryJSONOutputWriterRendersEvents(t *testing.T) {
-	var out bytes.Buffer
-	w := newOutputDecoder(agents.Output{Format: agents.FormatAviaryJSON}, &out)
-	if w == nil {
-		t.Fatal("aviary-json has no decoder")
-	}
-	stream := `{"kind":"message","text":"Renaming the package.\nAVIARY_CHECKOUT_DIRECTORY=/clone"}
-{"kind":"tool_call","name":"file_edit","input":{"path":"main.go"}}
-{"kind":"file_change","name":"file_edit","path":"/clone/main.go","diff":"+package app"}
-Error: agent "x" not found`
-	if _, err := io.WriteString(w, stream); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	want := "Renaming the package.\nAVIARY_CHECKOUT_DIRECTORY=/clone\nRunning: file_edit\nEditing: /clone/main.go\nError: agent \"x\" not found\n"
-	if out.String() != want {
-		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
 }
