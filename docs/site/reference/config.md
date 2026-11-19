@@ -109,6 +109,7 @@ permissions:
 | `filesystem.allowed_paths` | []string | | Ordered allow/deny glob rules for `file_*` tools. Rules use gitignore-style globbing; prefix with `!` to deny. Relative paths resolve to the agent's data directory. |
 | `exec.allowed_commands` | []string | | Ordered glob rules matched against the raw command string. Prefix with `!` to deny. |
 | `exec.shell_interpolate` | bool | `false` | Allow shell variable interpolation in commands |
+| `cli_builtin_tools` | bool | `false` | For `cli/...` models, let the Claude Code or Codex CLI use its own shell, file-edit and web tools. Requires `preset: full`. |
 | `exec.shell` | string | | Shell binary to use for command execution |
 
 **Preset levels:**

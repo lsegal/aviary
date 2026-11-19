@@ -128,3 +128,40 @@ func JobIDFromContext(ctx context.Context) (string, bool) {
 	}
 	return v, true
 }
+
+type filesystemGrantKey struct{}
+type writeGuardKey struct{}
+
+// WithFilesystemGrant grants the tool calls made with ctx read and write
+// access to root, in addition to the agent's static filesystem allowlist.
+// Relative file tool paths and exec's default cwd resolve against root. The
+// grant lasts exactly as long as calls carry ctx, so a job runtime that grants
+// its clone directory loses access when the job's context is no longer used.
+func WithFilesystemGrant(ctx context.Context, root string) context.Context {
+	if root == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, filesystemGrantKey{}, root)
+}
+
+// FilesystemGrantFromContext returns the granted root directory if present.
+func FilesystemGrantFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(filesystemGrantKey{}).(string)
+	if !ok || v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// WithWriteGuard marks ctx as a model-driven tool call, where file_write must
+// not overwrite an existing file the session has not read.
+func WithWriteGuard(ctx context.Context) context.Context {
+	return context.WithValue(ctx, writeGuardKey{}, true)
+}
+
+// WriteGuardFromContext reports whether file_write's read-before-overwrite
+// guard applies to ctx.
+func WriteGuardFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(writeGuardKey{}).(bool)
+	return v
+}

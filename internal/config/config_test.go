@@ -872,6 +872,31 @@ func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
 
 }
 
+func TestValidate_StdioProviderRejected(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "stdio/claude",
+		}},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "unknown provider \"stdio\""))
+
+}
+
+func TestValidate_CLIModel(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "a", Model: "cli/gemini/pro"},
+			{Name: "b", Model: "cli/claude"},
+		},
+	}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "unknown CLI backend \"gemini\""))
+	assert.True(t, hasIssue(issues, "expected cli/<claude|codex>/<model>"))
+
+}
+
 func TestValidate_UnknownProvider(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{
@@ -1081,6 +1106,7 @@ func TestUniqueProviderModels(t *testing.T) {
 			{Name: "a1", Model: "anthropic/claude-sonnet-4-5"},
 			{Name: "a2", Model: "openai/gpt-4"},
 			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
+			{Name: "a4", Model: "cli/claude/opus"},           // excluded
 		},
 	}
 	got := UniqueProviderModels(cfg)
@@ -1090,6 +1116,9 @@ func TestUniqueProviderModels(t *testing.T) {
 
 	_, ok = got["openai"]
 	assert.True(t, ok)
+
+	_, ok = got["cli"]
+	assert.False(t, ok)
 
 }
 

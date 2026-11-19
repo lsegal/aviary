@@ -134,6 +134,8 @@ func Register(s *sdkmcp.Server) {
 	registerTaskTools(s)
 	registerAgentContextTools(s)
 	registerFileTools(s)
+	registerFileEditTools(s)
+	registerFileSearchTools(s)
 	registerExecTools(s)
 	registerSessionTools(s)
 	registerTaskTools(s)
