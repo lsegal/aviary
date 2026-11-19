@@ -290,7 +290,7 @@ func TestEngineApplySettingsFailsFastBeforeRunIsReady(t *testing.T) {
 
 // TestEngineHandleJobActionFailsFastBeforeRunIsReady mirrors
 // TestEngineApplySettingsFailsFastBeforeRunIsReady for the job-action path
-//.
+// .
 func TestEngineHandleJobActionFailsFastBeforeRunIsReady(t *testing.T) {
 	w := &Engine{notReadyWait: 20 * time.Millisecond}
 	start := time.Now()
@@ -421,7 +421,7 @@ func TestEngineAgentStillConfigured(t *testing.T) {
 	single := CommandRunner{Agent: "claude"}
 	cases := []struct {
 		name     string
-		aviary    *Engine
+		aviary   *Engine
 		override string
 		agent    string
 		want     bool

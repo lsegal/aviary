@@ -208,7 +208,7 @@ func TestAgentDoctorFallsBackToDeclaredModels(t *testing.T) {
 // TestAgentDoctorListsKnownModels checks a definition that names no allow-list
 // but knows what its CLI takes is enumerated rather than dismissed with the
 // note that any model is accepted, which is the whole point of the field
-//. The list is labelled as aviary's rather than the CLI's, because
+// . The list is labelled as aviary's rather than the CLI's, because
 // it is not an allow-list: a model released after the definition still runs.
 func TestAgentDoctorListsKnownModels(t *testing.T) {
 	doctor := stubDoctor(t, map[string]bool{"known": true}, noProbe, noProbe, noProbe, nil)

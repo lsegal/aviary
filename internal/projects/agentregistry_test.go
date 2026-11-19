@@ -1,70 +1,11 @@
 package projects
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
 )
-
-// TestConfigPathIsReadBeforeTheFlagsAre checks --config is found in the raw
-// argument list whatever order it was written in. Definitions have to be
-// loaded before --agent is validated against them, and the flag package hands
-// values over in the order they appear, so `--agent mine --config x.json`
-// would otherwise fail on an agent the config file defines.
-func TestConfigPathIsReadBeforeTheFlagsAre(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"absent", []string{"--agent", "codex", "o/r"}, agents.DefaultConfigPath},
-		{"after another flag", []string{"--agent", "mine", "--config", "custom.json"}, "custom.json"},
-		{"single dash", []string{"-config", "custom.json"}, "custom.json"},
-		{"joined value", []string{"--config=custom.json", "--agent", "mine"}, "custom.json"},
-		{"after the terminator", []string{"--", "--config", "custom.json"}, agents.DefaultConfigPath},
-		{"trailing with no value", []string{"--config"}, agents.DefaultConfigPath},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got := configPathFromArgs(test.args, agents.DefaultConfigPath); got != test.want {
-				t.Fatalf("configPathFromArgs(%v) = %q, want %q", test.args, got, test.want)
-			}
-		})
-	}
-}
-
-// TestWorkStateFileWithAgentDefinitionsIsRejected checks definitions written
-// into the --state file are reported rather than destroyed. aviary rewrites
-// that file as issues are handled, so a hand-edited definition living there
-// would not survive the next save.
-func TestWorkStateFileWithAgentDefinitionsIsRejected(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".aviary.json")
-	if err := os.WriteFile(path, []byte(`{"agents":[{"name":"acme"}]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := guardWorkStateFile(path)
-	if err == nil {
-		t.Fatal("a state file holding agent definitions was accepted")
-	}
-	for _, want := range []string{path, agents.DefaultConfigPath, "--state"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %v, want it to mention %s", err, want)
-		}
-	}
-	// A real work-state file, and a file that is not there at all, are both
-	// none of this check's business.
-	if err := os.WriteFile(path, []byte(`{"o/r#12":{"status":"completed"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := guardWorkStateFile(path); err != nil {
-		t.Fatalf("a work-state file was rejected: %v", err)
-	}
-	if err := guardWorkStateFile(filepath.Join(t.TempDir(), "absent.json")); err != nil {
-		t.Fatalf("a missing state file was rejected: %v", err)
-	}
-}
 
 // TestUnknownAgentSpecListsTheKnownAgents checks the error --agent gives is
 // built from the registry rather than from a hardcoded pair of names.

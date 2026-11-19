@@ -243,9 +243,6 @@ func TestTempDirsSetting(t *testing.T) {
 	if result.snapshot.TempDirDefault != filepath.Clean(os.TempDir()) {
 		t.Fatalf("temp dir default = %q", result.snapshot.TempDirDefault)
 	}
-	if values := settingsUpdateFlags(SettingsUpdate{TempDirs: &update}); len(values["temp-dir"].([]string)) != 1 {
-		t.Fatalf("persisted temp-dir = %#v", values["temp-dir"])
-	}
 	relative := []string{"tmp"}
 	if result := w.applySettingsRequest(SettingsUpdate{TempDirs: &relative}, newConcurrencySemaphore(1)); result.err == nil {
 		t.Fatal("a relative temp directory was accepted")

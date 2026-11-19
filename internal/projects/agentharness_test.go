@@ -586,60 +586,6 @@ func TestGeminiResumeFailureMessagesRestartTheWork(t *testing.T) {
 	}
 }
 
-// TestConfiguredAgentDefinitionIsDispatchable proves the whole path an agent
-// nobody built in takes: declared in .aviary.config.json, accepted by --agent,
-// and dispatched through the executable its own definition names.
-func TestConfiguredAgentDefinitionIsDispatchable(t *testing.T) {
-	binary, err := fakeAgentCLI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	config := filepath.Join(dir, agents.DefaultConfigPath)
-	document := fmt.Sprintf(`{"agents":[{
-		"name": "acme",
-		"binary": %q,
-		"levels": ["fast", "thorough"],
-		"session": {"assign": "capture", "capture": "conversation ([0-9a-z-]+)", "clearOnResumeFailure": true},
-		"output": {"format": "text"},
-		"args": {
-			"run": [{"args": ["start"]}, {"when": "level", "args": ["--effort", "{level}"]}, {"args": ["{prompt}"]}],
-			"resume": [{"args": ["continue", "{session}", "{prompt}"]}]
-		}
-	}]}`, binary)
-	if err := os.WriteFile(config, []byte(document), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := agents.Load(config)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	spec, err := parseAgentSpecIn(registry, "acme:thorough")
-	if err != nil {
-		t.Fatalf("--agent acme:thorough was rejected: %v", err)
-	}
-	if want := (agentSpec{Name: "acme", Level: "thorough"}); spec != want {
-		t.Fatalf("spec = %#v, want %#v", spec, want)
-	}
-	if _, err := parseAgentSpecIn(registry, "acme:high"); err == nil {
-		t.Fatal("a level outside the definition's own list was accepted")
-	}
-	definition, ok := registry.Lookup("acme")
-	if !ok {
-		t.Fatal("the configured agent was not registered")
-	}
-	agentContract{
-		Definition: definition,
-		Repo:       "o/r",
-		Number:     7,
-		SessionID:  "abc-123",
-		Stdout:     "conversation abc-123",
-		WantRun:    []string{"start", freshPrompt("o/r", 7)},
-		WantResume: []string{"continue", "abc-123", resumePrompt()},
-		WantOutput: "conversation abc-123",
-	}.check(t)
-}
-
 // TestAgentDefinitionRunFailureIsReported checks a definition whose agent
 // exits non-zero for a reason other than a missing session is reported as a
 // failure rather than silently restarted.
@@ -758,4 +704,74 @@ func TestJSONLAgentDoesNotRestartOnAnOrdinaryFailure(t *testing.T) {
 	if got := fakeAgentInvocationRecords(t, record); len(got) != 1 {
 		t.Fatalf("agent invocations = %d, want no restart", len(got))
 	}
+}
+
+// TestConfiguredAgentDefinitionIsDispatchable proves the whole path an agent
+// nobody built in takes: declared in cli_definitions, accepted as an agent spec,
+// and dispatched through the executable its own definition names.
+func TestConfiguredAgentDefinitionIsDispatchable(t *testing.T) {
+	binary, err := fakeAgentCLI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := fmt.Sprintf(`{"agents":[{
+		"name": "acme",
+		"binary": %q,
+		"levels": ["fast", "thorough"],
+		"session": {"assign": "capture", "capture": "conversation ([0-9a-z-]+)", "clearOnResumeFailure": true},
+		"output": {"format": "text"},
+		"args": {
+			"run": [{"args": ["start"]}, {"when": "level", "args": ["--effort", "{level}"]}, {"args": ["{prompt}"]}],
+			"resume": [{"args": ["continue", "{session}", "{prompt}"]}]
+		}
+	}]}`, binary)
+	registry := loadDefinitions(t, document)
+	spec, err := parseAgentSpecIn(registry, "acme:thorough")
+	if err != nil {
+		t.Fatalf("--agent acme:thorough was rejected: %v", err)
+	}
+	if want := (agentSpec{Name: "acme", Level: "thorough"}); spec != want {
+		t.Fatalf("spec = %#v, want %#v", spec, want)
+	}
+	if _, err := parseAgentSpecIn(registry, "acme:high"); err == nil {
+		t.Fatal("a level outside the definition's own list was accepted")
+	}
+	definition, ok := registry.Lookup("acme")
+	if !ok {
+		t.Fatal("the configured agent was not registered")
+	}
+	agentContract{
+		Definition: definition,
+		Repo:       "o/r",
+		Number:     7,
+		SessionID:  "abc-123",
+		Stdout:     "conversation abc-123",
+		WantRun:    []string{"start", freshPrompt("o/r", 7)},
+		WantResume: []string{"continue", "abc-123", resumePrompt()},
+		WantOutput: "conversation abc-123",
+	}.check(t)
+}
+
+// loadDefinitions builds a registry from cli_definitions written as JSON:
+// either an object keyed by agent name, or {"agents": [...]} with each
+// definition naming itself.
+func loadDefinitions(t *testing.T, document string) *agents.Registry {
+	t.Helper()
+	var top map[string]any
+	if err := json.Unmarshal([]byte(document), &top); err != nil {
+		t.Fatal(err)
+	}
+	defs := top
+	if list, ok := top["agents"].([]any); ok {
+		defs = map[string]any{}
+		for _, raw := range list {
+			definition := raw.(map[string]any)
+			defs[definition["name"].(string)] = definition
+		}
+	}
+	registry, err := agents.Load(defs)
+	if err != nil {
+		t.Fatalf("load definitions: %v", err)
+	}
+	return registry
 }

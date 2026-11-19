@@ -212,7 +212,7 @@ func TestTunnelSupervisorRecoversWhenAProbeSucceeds(t *testing.T) {
 // TestEngineReportsTunnelHealthToTheDashboards checks the snapshot both
 // dashboards render follows the supervisor: online at startup, offline after a
 // dead tunnel fails to restart, and online again once a restart succeeds
-//.
+// .
 func TestEngineReportsTunnelHealthToTheDashboards(t *testing.T) {
 	var logs []string
 	s := newTestSupervisor(&fakeTunnel{url: "https://one.ngrok.app"}, &endpointConfigurer{}, &logs)

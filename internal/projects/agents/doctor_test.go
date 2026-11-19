@@ -148,13 +148,13 @@ func TestDoctorValidate(t *testing.T) {
 // definition through the config file's marshal-and-merge, which is what lets an
 // agent aviary has never heard of report its models without a code change.
 func TestDoctorSurvivesTheConfigRoundTrip(t *testing.T) {
-	registry, err := Load(writeConfig(t, `{"agents": [{
-		"name": "mine", "binary": "mine",
+	registry, err := Load(definitions(t, `{"mine": {
+		"binary": "mine",
 		"session": {"assign": "none"},
 		"output": {"format": "text"},
 		"doctor": {"auth": ["{binary}", "whoami"], "models": ["{binary}", "models"], "timeout": "3s"},
 		"args": {"run": [{"args": ["{prompt}"]}]}
-	}]}`))
+	}}`))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}

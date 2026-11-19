@@ -521,7 +521,7 @@ func TestEngineIgnoresDirectMentionFromDisallowedCommenter(t *testing.T) {
 
 // A mention should be acknowledged with an eyes reaction just for being read,
 // even when it goes on to be rejected as unauthorized to trigger a run
-//: the reaction tells a human watching the thread that this
+// : the reaction tells a human watching the thread that this
 // instance saw the mention, independent of whether it acted on it.
 func TestEngineReactsToDirectMentionEvenWhenUnauthorized(t *testing.T) {
 	dir := t.TempDir()
@@ -3525,7 +3525,7 @@ func (alwaysFailingStatuser) SetIssueStatus(_ context.Context, _ string, _ Issue
 // A won handshake posts a claim before the dispatch it announces happens, so a
 // dispatch skipped afterwards must withdraw that claim rather than leave the
 // ticket owned by an instance with no work record and no running agent
-//.
+// .
 func TestEngineReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Repository: "o/r", ProjectStatus: "In Progress"}}}}
@@ -4634,30 +4634,6 @@ func jsonStringBody(t *testing.T, value string) string {
 	return string(encoded[1 : len(encoded)-1])
 }
 
-// TestCommandRunnerUsesAConfiguredDefaultModel checks the managed default
-// reaches the dispatched argv end to end, from a definition a config file
-// declared rather than one aviary ships, and that a spec naming its
-// own model still overrides it.
-func TestCommandRunnerUsesAConfiguredDefaultModel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), agents.DefaultConfigPath)
-	if err := os.WriteFile(path, []byte(`{"agents":[{"name":"codex","defaultModel":"gpt-5.4"}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := agents.Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-	got := commandArgs(CommandRunner{Agent: "codex", Definitions: registry}, Issue{Number: 12})
-	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.4", prompt}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("configured default argv = %#v, want %#v", got, want)
-	}
-	explicit := commandArgs(CommandRunner{Agent: "codex/gpt-5.6-sol", Definitions: registry}, Issue{Number: 12})
-	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-sol", prompt}; !reflect.DeepEqual(explicit, want) {
-		t.Fatalf("explicit model argv = %#v, want %#v", explicit, want)
-	}
-}
-
 // TestDetectWakesReportsAClockJump checks a wall-clock gap far longer than the
 // check interval -- the machine slept through it -- is reported with roughly
 // how long it slept, while ordinary ticks are not.
@@ -4700,5 +4676,22 @@ func TestDetectWakesReportsAClockJump(t *testing.T) {
 	case slept := <-wakes:
 		t.Fatalf("an ordinary tick was reported as a %s wake", slept)
 	default:
+	}
+}
+
+// TestCommandRunnerUsesAConfiguredDefaultModel checks the managed default
+// reaches the dispatched argv end to end, from a definition the config
+// declared rather than one aviary ships, and that a spec naming its
+// own model still overrides it.
+func TestCommandRunnerUsesAConfiguredDefaultModel(t *testing.T) {
+	registry := loadDefinitions(t, `{"agents":[{"name":"codex","defaultModel":"gpt-5.4"}]}`)
+	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
+	got := commandArgs(CommandRunner{Agent: "codex", Definitions: registry}, Issue{Number: 12})
+	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.4", prompt}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("configured default argv = %#v, want %#v", got, want)
+	}
+	explicit := commandArgs(CommandRunner{Agent: "codex/gpt-5.6-sol", Definitions: registry}, Issue{Number: 12})
+	if want := []string{"exec", "--json", "--skip-git-repo-check", "--model", "gpt-5.6-sol", prompt}; !reflect.DeepEqual(explicit, want) {
+		t.Fatalf("explicit model argv = %#v, want %#v", explicit, want)
 	}
 }

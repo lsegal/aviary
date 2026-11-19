@@ -210,7 +210,7 @@ func TestEngineWebUIPausesQueuedWork(t *testing.T) {
 }
 
 // A pause on a job in any other state is refused and changes nothing
-//.
+// .
 func TestEngineWebUIRefusesPauseOfPausedWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingOn": [12]}}}`), 0600); err != nil {
@@ -295,7 +295,7 @@ func TestEngineFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 
 // The paused watch reads a manual pause's issue back like any other paused
 // work, so a closed issue finishes it even without its own state being read
-//.
+// .
 func TestEnginePausedWatchFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := manuallyPausedUnlisted(t, statePath)
@@ -336,7 +336,7 @@ func TestEnginePausedWatchFinishesAManualPauseWhoseIssueClosed(t *testing.T) {
 // Stop clears a manually paused job whose open issue the poll no longer lists,
 // which Retry cannot requeue: its record and card are dropped and its claim
 // is released, so the issue is dispatched afresh once it is listed again
-//.
+// .
 func TestEngineWebUIStopClearsAnUnlistedManualPause(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	src := manuallyPausedUnlisted(t, statePath)

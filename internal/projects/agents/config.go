@@ -2,70 +2,39 @@ package agents
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"regexp"
 	"sort"
 	"strings"
 )
 
-// DefaultConfigPath is the agent-definition config file aviary reads when
-// --config is not given. It is deliberately not .aviary.json: that file is the
-// work state the daemon rewrites as issues are handled, and a hand-edited
-// agent definition living there would be clobbered by the next state save.
-// aviary only ever reads this file.
-const DefaultConfigPath = ".aviary.config.json"
-
-// SettingsSection is the other section that file takes: default values for
-// aviary's own switches. The agent loader does not read it, but
-// it has to know the name so a file carrying it is not rejected as unknown.
-const SettingsSection = "settings"
-
-// config is the shape of that file. The top level is an object so later
-// configuration sections can be added beside the agents rather than the file
-// being a bare array of definitions.
-type config struct {
-	Agents json.RawMessage `json:"agents"`
-}
-
-// stateKeyPattern matches the keys a work-state file uses -- a bare issue
-// number, or an owner/repo#number -- so a state file handed to --config is
-// reported as the mix-up it is instead of as a pile of unknown fields.
-var stateKeyPattern = regexp.MustCompile(`^(\d+|[^#]+#\d+)$`)
-
 // Load builds the registry a run dispatches with: the built-in definitions,
-// overridden and extended by path when it exists. A missing file is not an
-// error; aviary runs on the built-ins alone. Anything else wrong with the file
-// is fatal and named: a definition silently dropped for being malformed is
-// indistinguishable, at the --agent prompt, from a typo.
-func Load(path string) (*Registry, error) {
+// overridden and extended by definitions, keyed by agent name, as the
+// projects.cli_definitions section of aviary.yaml holds them. Anything wrong
+// with a definition is fatal and named: a definition silently dropped for
+// being malformed is indistinguishable, at dispatch, from a typo.
+func Load(definitions map[string]any) (*Registry, error) {
 	registry, err := Builtin()
 	if err != nil {
 		return nil, err
 	}
-	if path == "" {
+	if len(definitions) == 0 {
 		return registry, nil
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := json.Marshal(definitions)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return registry, nil
-		}
-		return nil, fmt.Errorf("read agent config %s: %w", path, err)
+		return nil, fmt.Errorf("cli_definitions: %w", err)
 	}
-	overrides, err := parseConfig(path, raw)
+	overrides, err := parseAgents(raw)
 	if err != nil {
 		return nil, err
 	}
 	for _, override := range overrides {
 		merged, err := merge(registry, override)
 		if err != nil {
-			return nil, fmt.Errorf("agent config %s: agent %q: %w", path, override.name, err)
+			return nil, fmt.Errorf("cli_definitions: agent %q: %w", override.name, err)
 		}
 		if err := merged.Validate(); err != nil {
-			return nil, fmt.Errorf("agent config %s: agent %q: %w", path, override.name, err)
+			return nil, fmt.Errorf("cli_definitions: agent %q: %w", override.name, err)
 		}
 		registry.set(merged)
 	}
@@ -79,51 +48,11 @@ type override struct {
 	fields rawDefinition
 }
 
-func parseConfig(path string, raw []byte) ([]override, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &top); err != nil {
-		return nil, fmt.Errorf("agent config %s: %w", path, err)
-	}
-	for key := range top {
-		if stateKeyPattern.MatchString(key) {
-			return nil, fmt.Errorf("agent config %s: %q looks like a work-state record; work state belongs in the --state file (%s) and agent definitions in this file", path, key, "default .aviary.json")
-		}
-		if key != "agents" && key != SettingsSection {
-			return nil, fmt.Errorf("agent config %s: unknown section %q; the sections defined so far are \"agents\" and %q", path, key, SettingsSection)
-		}
-	}
-	var parsed config
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, fmt.Errorf("agent config %s: %w", path, err)
-	}
-	if len(parsed.Agents) == 0 {
-		return nil, nil
-	}
-	return parseAgents(path, parsed.Agents)
-}
-
-// parseAgents accepts either shape the "agents" section may take: an array of
-// definitions, each naming itself, or an object keyed by agent name.
-func parseAgents(path string, raw json.RawMessage) ([]override, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	if strings.HasPrefix(trimmed, "[") {
-		var documents []rawDefinition
-		if err := json.Unmarshal(raw, &documents); err != nil {
-			return nil, fmt.Errorf("agent config %s: section \"agents\": %w", path, err)
-		}
-		overrides := make([]override, 0, len(documents))
-		for i, fields := range documents {
-			name, err := documentName(fields)
-			if err != nil {
-				return nil, fmt.Errorf("agent config %s: agents[%d]: %w", path, i, err)
-			}
-			overrides = append(overrides, override{name: name, fields: fields})
-		}
-		return overrides, nil
-	}
+// parseAgents reads definitions keyed by agent name.
+func parseAgents(raw json.RawMessage) ([]override, error) {
 	var keyed map[string]rawDefinition
 	if err := json.Unmarshal(raw, &keyed); err != nil {
-		return nil, fmt.Errorf("agent config %s: section \"agents\" must be an array of definitions or an object keyed by agent name: %w", path, err)
+		return nil, fmt.Errorf("cli_definitions must map agent names to definitions: %w", err)
 	}
 	names := make([]string, 0, len(keyed))
 	for name := range keyed {
@@ -137,7 +66,7 @@ func parseAgents(path string, raw json.RawMessage) ([]override, error) {
 			fields = rawDefinition{}
 		}
 		if declared, err := documentName(fields); err == nil && declared != name {
-			return nil, fmt.Errorf("agent config %s: agent %q declares the name %q; the key and the name have to agree", path, name, declared)
+			return nil, fmt.Errorf("cli_definitions: agent %q declares the name %q; the key and the name have to agree", name, declared)
 		}
 		encoded, err := json.Marshal(name)
 		if err != nil {
