@@ -13,6 +13,8 @@ export type Delivery = "poll" | "webhook";
 export interface ProjectEntry {
 	target: string;
 	agents?: string[];
+	// Other per-project settings (such as reports) pass through untouched.
+	[key: string]: unknown;
 }
 
 /** The `projects:` section as stored in aviary.yaml (snake_case, sparse). */
@@ -180,14 +182,15 @@ export function withSettings(
 	set("temp_dirs", dirs, !dirs.length);
 
 	const agents = clean(s.agents);
-	const list = (section?.list ?? []).filter(
-		(p) => !sameTarget(p.target, s.target),
-	);
-	if (listed || agents.length) {
-		const at = (section?.list ?? []).findIndex((p) =>
-			sameTarget(p.target, s.target),
-		);
+	const current = section?.list ?? [];
+	const at = current.findIndex((p) => sameTarget(p.target, s.target));
+	const list = current.filter((p) => !sameTarget(p.target, s.target));
+	// Keep the entry's other fields (such as reports); only agents change here.
+	const { agents: _, ...rest } = at >= 0 ? current[at] : { target: s.target };
+	const extra = Object.keys(rest).some((k) => k !== "target");
+	if (listed || agents.length || extra) {
 		const entry: ProjectEntry = {
+			...rest,
 			target: s.target.trim(),
 			...(agents.length ? { agents } : {}),
 		};

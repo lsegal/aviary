@@ -51,7 +51,7 @@ func CLIBuiltinToolsAllowed(perms *PermissionsConfig) bool {
 // ToolGroup returns the logical tool group used by permissions presets and the UI.
 func ToolGroup(name string) string {
 	switch {
-	case name == "ping", strings.HasPrefix(name, "server_"), strings.HasPrefix(name, "config_"):
+	case name == "ping", strings.HasPrefix(name, "server_"), strings.HasPrefix(name, "config_"), strings.HasPrefix(name, "coding_skills_"):
 		return "server"
 	case strings.HasPrefix(name, "web_"):
 		return "search"

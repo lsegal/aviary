@@ -16,7 +16,7 @@ Connect at `https://localhost:16677/mcp` using the bearer token from `~/.config/
 | [Auth Tools](./auth) | `auth_set`, `auth_get`, `auth_list`, `auth_delete`, `auth_login_anthropic`, `auth_login_anthropic_complete`, `auth_login_gemini`, `auth_login_openai`, `auth_login_github_copilot`, `auth_login_github_copilot_complete` | Credential storage and OAuth login flows |
 | [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `server_restart`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
 | [Projects Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_refresh`, `project_add`, `project_remove`, `project_cli_list`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_check` | Watched GitHub projects and their coding-CLI jobs |
-| [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `web_search` | Token analytics, skill discovery, and web search |
+| [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `coding_skills_list`, `coding_skills_install`, `web_search` | Token analytics, skill discovery, coding-CLI skills, and web search |
 
 ## Permissions
 

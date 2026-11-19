@@ -452,3 +452,23 @@ test("a new project with its own settings is written before it starts", async ({
 	// Saved to the list, so the config watcher starts it; no runtime watch.
 	expect(calls.project_add).toBeUndefined();
 });
+
+test("saving keeps a project's other settings such as reports", async ({
+	page,
+}) => {
+	const reports = { agent: "atlas", targets: ["slack:#dev"] };
+	const calls = await setup(page, {
+		config: {
+			server: {},
+			projects: { list: [{ target: "lsegal/aviary", reports }] },
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	const codex = page.locator('[data-cli="codex"]');
+	await codex.getByRole("button", { name: "gpt-5.5", exact: true }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedSection(calls).list).toEqual([
+		{ target: "lsegal/aviary", reports, agents: ["codex/gpt-5.5"] },
+	]);
+});

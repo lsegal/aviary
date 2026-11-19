@@ -1,0 +1,4 @@
+interface:
+  display_name: "Answer GitHub Discussion"
+  short_description: "Read-only answer to a GitHub Discussions thread"
+  default_prompt: "Use $gh-discuss to run /gh-discuss 123 read-only: read the discussion and the repository, then post a single top-level reply only if you can answer it accurately, or stop without commenting."

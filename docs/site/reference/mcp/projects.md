@@ -77,6 +77,7 @@ Watch a project.
 
 - `target`: `owner/repo`, a repository URL, a Project board, or a Discussions board.
 - `agents` (optional): this project's coding-CLI specs, in fallback order.
+- `reports` (optional, saved projects only): send this project's job events through an Aviary agent's channels, as `{agent, targets, events}`. See [Reports](/guide/projects#reports).
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`, as `aviary watch` does.
 - `settings` (optional, runtime only): `projects:` settings that override `aviary.yaml` while the watch runs.
 

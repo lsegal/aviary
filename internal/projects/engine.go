@@ -231,7 +231,11 @@ type Engine struct {
 	StatePath   string
 	ReadyState  string
 	noMerge     atomic.Bool
-	noChangelog atomic.Bool
+	// allowedCommenters is the live allowed-commenter list for the runner's
+	// prompts. runner() reads it from job goroutines, so it is kept apart
+	// from AllowedCommenters, which only the Run loop touches.
+	allowedCommenters atomic.Pointer[[]string]
+	noChangelog       atomic.Bool
 	// autoUpdate is read by the updater each round.
 	autoUpdate atomic.Bool
 	// clones keeps the temp directories new clones go in and the record of
@@ -2184,7 +2188,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
 		}
-		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, AllowedCommenters: append([]string(nil), w.AllowedCommenters...), Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}

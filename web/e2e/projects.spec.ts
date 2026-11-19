@@ -17,6 +17,7 @@ const STATUS = {
 	delivery: "poll",
 	poll_interval: "30s",
 	ready_label: "ready",
+	allowed_commenters: ["lsegal", "octocat"],
 	quotas: {
 		claude: "38% of 5h quota left",
 		codex: "quota ok",
@@ -422,6 +423,13 @@ test("run view renders the typed event timeline read-only", async ({
 		"href",
 		"https://github.com/lsegal/aviary/issues/218#new_comment_field",
 	);
+
+	// The footer names who may steer the job by commenting.
+	const commenters = page.getByTestId("allowed-commenters");
+	await expect(commenters).toHaveText("@lsegal, @octocat");
+	await expect(
+		commenters.getByRole("link", { name: "@octocat" }),
+	).toHaveAttribute("href", "https://github.com/octocat");
 
 	// No steering: nothing on the page can send a message to the job.
 	await expect(page.getByRole("textbox")).toHaveCount(0);
