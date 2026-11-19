@@ -448,6 +448,50 @@ func (m *Manager) Install(ctx context.Context, req Request) (Result, error) {
 	return result, nil
 }
 
+// UpdateTo reinstalls every installed copy of the skills from release
+// version, the release an upgrade is installing, for every coding CLI on PATH.
+// The running binary bundles the release being replaced, so it cannot tell
+// which copies already match version and reinstalls them all. Skills a CLI
+// does not have are left to Sync after the restart. A version that is not a
+// release has no tag to install from and changes nothing.
+func (m *Manager) UpdateTo(ctx context.Context, version string) (Result, error) {
+	target := &Manager{Env: m.Env, Bundle: m.Bundle, CLIs: m.CLIs, Run: m.Run, Version: func() string { return version }}
+	result := Result{Installed: []string{}}
+	version, release := target.releaseVersion()
+	if !release {
+		return result, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	status := target.Status()
+	targets := map[string]string{}
+	for _, cli := range status.CLIs {
+		targets[cli.ID] = cli.Target
+	}
+	for _, skill := range status.Skills {
+		var agents, names []string
+		for _, install := range skill.Installs {
+			if install.Installed {
+				agents = appendUnique(agents, targets[install.CLI])
+				names = append(names, skill.Name+"/"+install.CLI)
+			}
+		}
+		if len(agents) == 0 {
+			continue
+		}
+		source := fmt.Sprintf("https://github.com/%s/tree/v%s/%s/%s", Repo, version, aviary.CodingSkillsRoot, skill.Name)
+		runCtx, cancel := context.WithTimeout(ctx, installTimeout)
+		err := m.Run(runCtx, addArgs(source, agents)...)
+		cancel()
+		if err != nil {
+			return result, fmt.Errorf("install %s: %w", skill.Name, err)
+		}
+		result.Installed = append(result.Installed, names...)
+	}
+	return result, nil
+}
+
 // addArgs is the npx command line that installs one skill globally for every
 // skills.sh target in agents.
 func addArgs(source string, agents []string) []string {
