@@ -10,7 +10,6 @@ const (
 	ProviderGoogle    Provider = "google"
 	ProviderVLLM      Provider = "vllm"
 	ProviderOllama    Provider = "ollama"
-	ProviderStdio     Provider = "stdio" // subprocess: claude CLI, codex, etc.
 )
 
 // Model represents a language model configuration.

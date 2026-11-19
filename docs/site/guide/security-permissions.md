@@ -144,6 +144,12 @@ permissions:
 If an agent only needs to run one or two repeatable commands, encode exactly those commands instead of permitting a whole toolchain.
 :::
 
+### CLI-Backed Agents
+
+Agents with a `cli/claude/...` or `cli/codex/...` model run through the Claude Code or Codex CLI. Aviary gives the CLI a loopback MCP endpoint and a per-session token that only exposes the agent's permitted tools, so a tool outside the agent's permissions is refused by Aviary rather than merely hidden from the CLI. Exec and filesystem policies still apply to those tools.
+
+The CLI's built-in shell, file-edit and web tools are turned off unless the agent has `preset: full` and `cli_builtin_tools: true`. Those built-in tools run outside Aviary's exec and filesystem policies, so leave them off for agents reachable from Slack, Discord or Signal.
+
 ### Channel-Level Safety
 
 Channels widen the audience that can reach an agent, so use the message-routing controls deliberately:
