@@ -290,6 +290,11 @@ type TaskConfig struct {
 	Watch  string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
 	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
+	// Project is the watched Projects target a "project" task runs its prompt
+	// against as a board job, and CLI the coding-CLI spec it runs with
+	// ("claude:opus"); empty uses the project's agent.
+	Project string `yaml:"project,omitempty" json:"project,omitempty"`
+	CLI     string `yaml:"cli,omitempty"     json:"cli,omitempty"`
 	// FromFile is set when the task was loaded from a markdown file rather than
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.

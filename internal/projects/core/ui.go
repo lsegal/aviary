@@ -249,6 +249,22 @@ func JobActionAvailability(status string) JobActions {
 	return actions
 }
 
+// JobActionsFor reports the job actions the run accepts for job. A scheduled
+// run has no issue to resume, so it is never paused, and Retry fires its
+// schedule again once the run has finished. The web dashboard's
+// jobActionAvailability mirrors it.
+func JobActionsFor(job JobSnapshot) JobActions {
+	if job.Kind != JobKindSchedule {
+		return JobActionAvailability(job.Status)
+	}
+	running := job.Status == "queued" || job.Status == "active" || job.Status == "waiting"
+	actions := JobActions{Stop: running, Retry: job.Status == "complete" || job.Status == "failed"}
+	if !actions.Retry {
+		actions.RetryReason = "The scheduled run has not finished"
+	}
+	return actions
+}
+
 // SettingsUpdate carries a partial update to aviary's live-editable runtime
 // settings. Nil fields are left unchanged.
 type SettingsUpdate struct {

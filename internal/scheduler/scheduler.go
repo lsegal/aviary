@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -43,9 +44,12 @@ type Scheduler struct {
 	state  *stateStore
 	mu     sync.Mutex
 	tasks  map[string]config.TaskConfig // task name → config snapshot
-	armed  map[string]*armed
-	gen    int
-	cancel context.CancelFunc
+	// disabled holds tasks turned off in config, which are listed but never
+	// fire.
+	disabled map[string]config.TaskConfig
+	armed    map[string]*armed
+	gen      int
+	cancel   context.CancelFunc
 	// now returns the wall-clock time without a monotonic reading, so
 	// comparisons stay correct across sleeps.
 	now func() time.Time
@@ -105,9 +109,11 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 	defer s.mu.Unlock()
 
 	desired := make(map[string]struct{})
+	s.disabled = make(map[string]config.TaskConfig)
 	for _, ac := range cfg.Agents {
 		for _, tc := range ac.Tasks {
 			if !config.BoolOr(tc.Enabled, true) {
+				s.disabled[taskKey(ac.Name, tc.Name)] = tc
 				continue
 			}
 			key := taskKey(ac.Name, tc.Name)
@@ -355,8 +361,11 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	out := make([]domain.ScheduledTask, 0, len(s.tasks))
-	for key, tc := range s.tasks {
+	out := make([]domain.ScheduledTask, 0, len(s.tasks)+len(s.disabled))
+	all := make(map[string]config.TaskConfig, len(s.tasks)+len(s.disabled))
+	maps.Copy(all, s.disabled)
+	maps.Copy(all, s.tasks)
+	for key, tc := range all {
 		agentName, taskName, ok := strings.Cut(key, "/")
 		if !ok {
 			continue
@@ -376,6 +385,9 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Days:      tc.Days,
 			Timezone:  tc.Timezone,
 			Watch:     tc.Watch,
+			Project:   tc.Project,
+			CLI:       tc.CLI,
+			Enabled:   config.BoolOr(tc.Enabled, true),
 		}
 		if fields := TaskFields(tc); fields.HasTrigger() {
 			task.TriggerType = domain.TriggerType(fields.InferKind())
@@ -515,6 +527,12 @@ func resolveWatchGlob(agentID, glob string) string {
 		return glob
 	}
 	return filepath.Join(store.AgentDir(agentID), glob)
+}
+
+// SetProjectRunner registers what runs "project" tasks: the Projects engine,
+// which runs each fire's prompt as a board job.
+func (s *Scheduler) SetProjectRunner(fn ProjectRunner) {
+	s.pool.projectRunner = fn
 }
 
 // SetTaskOutputDelivery registers an optional function used to deliver

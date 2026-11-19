@@ -36,7 +36,13 @@ type ScheduledTask struct {
 	Prompt      string      `json:"prompt"`
 	Script      string      `json:"script,omitempty"`
 	Target      string      `json:"target,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
+	// Project and CLI are a project task's watched project and coding-CLI
+	// spec.
+	Project string `json:"project,omitempty"`
+	CLI     string `json:"cli,omitempty"`
+	// Enabled is false for a task turned off in config, which never fires.
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
 	// Description summarizes the trigger, e.g. "daily at 09:00 (UTC)".
 	Description string     `json:"description,omitempty"`
 	NextRun     *time.Time `json:"next_run,omitempty"`

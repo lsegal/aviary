@@ -204,7 +204,7 @@
                 "name": { "type": "string" },
                 "type": {
                   "type": "string",
-                  "enum": ["prompt", "script"]
+                  "enum": ["prompt", "script", "project"]
                 },
                 "schedule": { "type": "string" },
                 "start_at": { "type": "string", "format": "date-time" },
@@ -219,7 +219,9 @@
                 "watch": { "type": "string" },
                 "prompt": { "type": "string" },
                 "script": { "type": "string" },
-                "target": { "type": "string" }
+                "target": { "type": "string" },
+                "project": { "type": "string" },
+                "cli": { "type": "string" }
               },
               "allOf": [
                 {

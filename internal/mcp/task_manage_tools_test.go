@@ -112,7 +112,10 @@ func TestTaskUpdateAndDelete(t *testing.T) {
 
 	_, err = d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "enabled": false})
 	require.NoError(t, err)
-	assert.Empty(t, s.ListTasks())
+	tasks = s.ListTasks()
+	require.Len(t, tasks, 1)
+	assert.False(t, tasks[0].Enabled)
+	assert.Nil(t, tasks[0].NextRun)
 
 	_, err = d.CallTool(context.Background(), "task_delete", map[string]any{"name": "bot/digest"})
 	require.NoError(t, err)

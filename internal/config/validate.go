@@ -173,9 +173,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				taskType = "prompt"
 			}
 			switch taskType {
-			case "prompt", "script":
+			case "prompt", "script", "project":
 			default:
-				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\" or \"script\"", t.Type)
+				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\", \"script\" or \"project\"", t.Type)
 			}
 
 			if fields.HasTrigger() {
@@ -198,6 +198,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if strings.TrimSpace(t.Prompt) == "" {
 					v.errorf(tf+".prompt", "script tasks require non-empty prompt content")
 				}
+			case "project":
+				if strings.TrimSpace(t.Project) == "" {
+					v.errorf(tf+".project", "project tasks require the watched project to run against")
+				}
+				if strings.TrimSpace(t.Prompt) == "" {
+					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
+				}
+			}
+			if taskType != "project" && (t.Project != "" || t.CLI != "") {
+				v.errorf(tf, "project and cli are only supported for project tasks")
 			}
 
 			if !validTaskTarget(t.Target) {

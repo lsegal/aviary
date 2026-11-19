@@ -487,8 +487,12 @@ func TestScheduler_ReconcileIgnoresDisabledTasks(t *testing.T) {
 	assert.NotContains(t, s.armed, "alpha/disabled")
 
 	tasks := s.ListTasks()
-	assert.Len(t, tasks, 1)
-	assert.Equal(t, "alpha/enabled", tasks[0].ID)
+	assert.Len(t, tasks, 2)
+	assert.Equal(t, "alpha/disabled", tasks[0].ID)
+	assert.False(t, tasks[0].Enabled)
+	assert.Nil(t, tasks[0].NextRun)
+	assert.Equal(t, "alpha/enabled", tasks[1].ID)
+	assert.True(t, tasks[1].Enabled)
 }
 
 func TestWorkerPool_ExecuteJob(t *testing.T) {

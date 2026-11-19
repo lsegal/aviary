@@ -32,6 +32,8 @@ type taskFileFrontmatter struct {
 	Missed   string `yaml:"missed,omitempty"`
 	Watch    string `yaml:"watch,omitempty"`
 	Target   string `yaml:"target,omitempty"`
+	Project  string `yaml:"project,omitempty"`
+	CLI      string `yaml:"cli,omitempty"`
 }
 
 // ParseMarkdownTask parses a task definition from markdown content with
@@ -76,6 +78,8 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Missed = fm.Missed
 	task.Watch = fm.Watch
 	task.Target = fm.Target
+	task.Project = fm.Project
+	task.CLI = fm.CLI
 	task.Prompt = strings.TrimSpace(rest[idx+5:])
 	return task, nil
 }
@@ -118,6 +122,8 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Overlap:  task.Overlap,
 		Missed:   task.Missed,
 		Watch:    task.Watch,
+		Project:  task.Project,
+		CLI:      task.CLI,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")
