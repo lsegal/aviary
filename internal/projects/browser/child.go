@@ -29,10 +29,17 @@ type Supervisor interface {
 // so even an exit that runs no cleanup at all takes it down.
 func (c Config) supervisor() Supervisor {
 	if c.Supervisor == nil {
-		return owned.Supervisor{}
+		return ownedSupervisor{}
 	}
 	return c.Supervisor
 }
+
+// ownedSupervisor runs the browser as one of Aviary's tracked subprocesses.
+type ownedSupervisor struct{}
+
+func (ownedSupervisor) Start(cmd *exec.Cmd) error { return owned.Start(cmd) }
+func (ownedSupervisor) Wait(cmd *exec.Cmd) error  { return owned.Wait(cmd) }
+func (ownedSupervisor) Kill(cmd *exec.Cmd) error  { return owned.Kill(cmd) }
 
 // child is a browser process Aviary started and is waiting on.
 type child struct {
