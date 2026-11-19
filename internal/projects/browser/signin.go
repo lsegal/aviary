@@ -95,9 +95,9 @@ func (e *SignedOutError) Error() string {
 		where = "the browser profile at " + e.Profile
 	}
 	if e.Status != 0 {
-		return fmt.Sprintf("GitHub returned HTTP %d for %s to %s, which is signed out of GitHub: a private repository or board is invisible to a signed-out session and is served the same 404 a missing one is. Run `aviary auth` to sign that profile in (the session persists), or point -browser-profile at a profile that already is", e.Status, e.URL, where)
+		return fmt.Sprintf("GitHub returned HTTP %d for %s to %s, which is signed out of GitHub: a private repository or board is invisible to a signed-out session and is served the same 404 a missing one is. Sign in to GitHub in Aviary's browser from the Projects board (the session persists), switch to gh polling, or set the browser profile_directory setting to a profile that is already signed in", e.Status, e.URL, where)
 	}
-	return fmt.Sprintf("read %s while %s is signed out of GitHub, so \"@me\" in the filter matches nobody and private repositories are invisible: GitHub's own empty result is not aviary's issue list. Run `aviary auth` to sign that profile in (the session persists), or point -browser-profile at a profile that already is", e.URL, where)
+	return fmt.Sprintf("read %s while %s is signed out of GitHub, so \"@me\" in the filter matches nobody and private repositories are invisible: GitHub's own empty result is not an empty issue list. Sign in to GitHub in Aviary's browser from the Projects board (the session persists), switch to gh polling, or set the browser profile_directory setting to a profile that is already signed in", e.URL, where)
 }
 
 // Is reports ErrSignedOut so callers can match the category without

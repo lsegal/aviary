@@ -61,14 +61,14 @@ type IssueSource struct {
 	logf      func(string, ...interface{})
 	// profile is the browser profile directory, named in the signed-out error
 	// so the user is told which profile to sign in rather than being left to
-	// guess whether -browser-profile was in play.
+	// guess whether the browser profile_directory setting was in play.
 	profile string
 	// Hydration is the shared candidate/memo hydration helper. It is
 	// embedded so the source's own hydrate, handled, and hydrated fields read
 	// and write the one memo the project board reader shares (issue #395).
 	*Hydration
 	// vision is the bounded screenshot-to-agent fallback, or nil when
-	// -browser-vision was not passed. It is consulted only for the
+	// the browser vision fallback was not passed. It is consulted only for the
 	// distinguishable extraction failure below, never for an empty or a
 	// successful read.
 	vision *Vision

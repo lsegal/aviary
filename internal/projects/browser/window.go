@@ -55,7 +55,7 @@ func OpenWindow(ctx context.Context, config Config) error {
 	lock, err := lockProfile(profile)
 	if err != nil {
 		if errors.Is(err, errProfileLocked) {
-			return fmt.Errorf("%w (%s): stop that run first, or pass -browser-profile to open a different directory", err, profile)
+			return fmt.Errorf("%w (%s): stop that run first, or set the browser profile_directory setting to open a different directory", err, profile)
 		}
 		return err
 	}

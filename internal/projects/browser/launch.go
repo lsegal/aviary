@@ -9,19 +9,22 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/config"
 )
 
-// Config collects the overrides that decide which browser Aviary drives
+// Config collects the overrides that decide which browser Projects drives
 // and where it keeps that browser's state. Both are empty by default, which
-// means "discover a Chromium-based browser" and "use Aviary's own profile
-// directory"; the -browser flags fill them in.
+// means "discover a Chromium-based browser" and "use Aviary's browser
+// profile"; ConfigFrom fills them in from Aviary's browser settings.
 type Config struct {
-	// Binary is an explicit browser executable (--browser-binary).
+	// Binary is an explicit browser executable (the browser `binary` setting).
 	Binary string
-	// Profile is an explicit profile directory (--browser-profile).
+	// Profile is an explicit profile directory (the browser
+	// `profile_directory` setting).
 	Profile string
 	// Headed launches a visible browser window instead of a headless one. It is
 	// how `Aviary auth` puts a login form in front of the user, on the same
@@ -34,12 +37,6 @@ type Config struct {
 }
 
 const (
-	// profileName is the directory, under Aviary's own configuration
-	// directory, that holds the browser profile Aviary owns. It is deliberately
-	// separate from the user's everyday browser profile: Aviary logs a browser
-	// into GitHub and drives it unattended, which has no business touching the
-	// profile the user browses with.
-	ProfileName = "browser-data"
 	// readyTimeout bounds the wait for a freshly launched browser to
 	// start serving the DevTools endpoint. A cold profile on a slow machine
 	// takes several seconds; anything past this is a failed launch.
@@ -81,23 +78,21 @@ var binaryNames = []string{
 var (
 	lookPath   = exec.LookPath
 	statBinary = func(path string) error { _, err := os.Stat(path); return err }
-	configDir  = os.UserConfigDir
 )
 
-// ProfileDir reports the profile directory the browser is launched
-// against: the override when one was given, otherwise Aviary's own directory
-// under the platform configuration directory (`~/Library/Application
-// Support/Aviary/browser-data` on macOS, `%AppData%\Aviary\browser-data` on
-// Windows, `~/.config/Aviary/browser-data` on Linux).
+// ProfileDir reports the profile directory the browser is launched against:
+// the override when one was given, otherwise Aviary's own browser profile, so
+// a GitHub sign-in made in Aviary's browser is the one Projects reads with.
 func ProfileDir(override string) (string, error) {
 	if override != "" {
 		return override, nil
 	}
-	dir, err := configDir()
-	if err != nil {
-		return "", fmt.Errorf("locate browser profile directory: %w", err)
-	}
-	return filepath.Join(dir, "aviary", ProfileName), nil
+	return aviarybrowser.DefaultProfileDir(), nil
+}
+
+// ConfigFrom builds the launch config from Aviary's browser settings.
+func ConfigFrom(settings config.BrowserConfig) Config {
+	return Config{Binary: settings.Binary, Profile: settings.ProfileDir}
 }
 
 // findBinary returns the browser executable to launch. An override is
@@ -125,7 +120,7 @@ func findBinary(override string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no Chrome, Chromium or Edge installation found: install Google Chrome, or pass --browser-binary with the path to a Chromium-based browser (Safari cannot be used, it has no DevTools Protocol)")
+	return "", fmt.Errorf("no Chrome, Chromium or Edge installation found: install Google Chrome, or set the browser binary setting to the path to a Chromium-based browser (Safari cannot be used, it has no DevTools Protocol)")
 }
 
 // freePort reserves a port for the browser's DevTools endpoint by

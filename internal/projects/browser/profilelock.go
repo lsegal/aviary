@@ -54,12 +54,18 @@ func (l *profileLock) release() {
 // private directory of its own, and still starts signed in because the saved
 // sign-in is read from and written to the shared profile, not the directory
 // the browser happens to run in.
+//
+// The same applies when Aviary's own browser (the one its browser tools drive)
+// is already running on the profile: Projects shares that profile by default,
+// so it runs beside that browser in a private directory instead.
 func claimProfile(profile string) (*profileLock, string, error) {
 	lock, err := lockProfile(profile)
 	if err == nil {
-		return lock, profile, nil
-	}
-	if !errors.Is(err, errProfileLocked) {
+		if !browserHoldsProfile(profile) {
+			return lock, profile, nil
+		}
+		lock.release()
+	} else if !errors.Is(err, errProfileLocked) {
 		return nil, "", err
 	}
 	dataDir, err := os.MkdirTemp("", "aviary-browser-")

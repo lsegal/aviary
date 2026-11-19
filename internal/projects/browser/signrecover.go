@@ -12,26 +12,25 @@ import (
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
-// signInBackoff is how long a run waits before offering to sign in again
-// after an attempt that did not end signed in. A watch loop polls every few
-// seconds, and a login window that was declined, timed out, or could never
-// appear must not be re-opened on the next tick.
+// signInBackoff is how long a run waits before reminding the log, again, that
+// the profile is still signed out. A watch loop polls every few seconds, and
+// the same reminder must not fill the log on every tick.
 const signInBackoff = 10 * time.Minute
 
-// signInBackoffMax caps the doubling. Past it the run keeps offering
-// occasionally rather than giving up for good, because the thing that would fix
-// it -- the user coming back to the machine -- can happen at any time.
+// signInBackoffMax caps the doubling. Past it the run keeps reminding
+// occasionally, because the user can come back to the machine at any time.
 const signInBackoffMax = time.Hour
 
-// SignInRecovery turns a signed-out read into a login window. The poll
-// that read the signed-out page has already failed by the time this runs; the
-// run stays alive either way, and the next tick reads the same page with a
-// profile that is signed in.
+// SignInRecovery handles a signed-out read without opening a window on its
+// own: it records the signed-out session for the board's banner, and opens
+// GitHub's sign-in page in a visible window only when the user asks (the
+// banner's "Sign in to GitHub"). Polling carries on throughout, so the first
+// read after a sign-in lands picks the work back up in the same run.
 //
-// Chrome allows one process per --user-data-dir, so the flow has to hand the
-// profile over rather than share it: stop the headless browser, open a headed
-// one on the same profile at GitHub's login page, wait for the sign-in, close
-// it, and start the headless browser again.
+// Chrome allows one process per --user-data-dir, so signing in has to hand
+// the profile over rather than share it: stop the headless browser, open a
+// headed one on the same profile at GitHub's login page, wait for the sign-in,
+// close it, and start the headless browser again.
 type SignInRecovery struct {
 	config  Config
 	logf    func(string, ...interface{})
@@ -47,10 +46,11 @@ type SignInRecovery struct {
 	headed func() error
 	now    func() time.Time
 
-	mu sync.Mutex
-	// next is the earliest time another attempt may be made, and backoff is
-	// how long the wait after the next failure will be.
-	next    time.Time
+	mu    sync.Mutex
+	state core.GitHubSession
+	// remind is the earliest time the signed-out reminder is logged again,
+	// and backoff is how long the wait after that reminder will be.
+	remind  time.Time
 	backoff time.Duration
 }
 
@@ -59,9 +59,7 @@ type SignInRecovery struct {
 // line to out.
 type LoginFunc func(ctx context.Context, config Config, out io.Writer, timeout time.Duration) (string, error)
 
-// SignIn is the headed login flow a recovery hands the profile to. The root
-// package supplies `Aviary auth`'s own, so the window a signed-out poll opens
-// is the one the user would have opened themselves.
+// SignIn is the headed login flow a recovery hands the profile to.
 type SignIn struct {
 	// Login opens the window and waits for the sign-in.
 	Login LoginFunc
@@ -88,7 +86,7 @@ func NewSignInRecovery(browser *Browser, config Config, signIn SignIn, logf func
 
 // writerFunc adapts a log function to the io.Writer the auth flow writes its
 // one progress line to, so that line lands in the run's log with everything
-// else instead of on a stdout the terminal UI has taken over.
+// else.
 type writerFunc func(p []byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
@@ -103,102 +101,149 @@ func (r *SignInRecovery) logWriter() writerFunc {
 	}
 }
 
-// attempt runs the recovery for an error a read just failed with. Errors that
-// are not a signed-out diagnosis are ignored, so callers can hand it every
-// failure without classifying first.
-func (r *SignInRecovery) attempt(ctx context.Context, err error) {
+// State reports the GitHub session as the board's banner shows it.
+func (r *SignInRecovery) State() core.GitHubSession {
+	if r == nil {
+		return core.GitHubSession{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.state
+	if r.headed != nil {
+		if reason := r.headed(); reason != nil {
+			state.WindowUnavailable = reason.Error()
+		}
+	}
+	return state
+}
+
+// attempt records an error a read just failed with. Errors that are not a
+// signed-out diagnosis are ignored, so callers can hand it every failure
+// without classifying first.
+func (r *SignInRecovery) attempt(_ context.Context, err error) {
 	if r == nil || err == nil || !errors.Is(err, ErrSignedOut) {
 		return
 	}
-	if !r.claim() {
-		// Already offered recently. The poll's own failure is logged by the
-		// run loop, so staying silent here is what keeps a signed-out profile
-		// from filling the log with the same offer every few seconds.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	if !r.state.SignedOut {
+		r.state.SignedOut, r.state.Since = true, now
+	}
+	r.state.URL, r.state.Status = "", 0
+	var signedOut *SignedOutError
+	if errors.As(err, &signedOut) {
+		r.state.URL, r.state.Status = signedOut.URL, signedOut.Status
+	}
+	if !r.remind.IsZero() && now.Before(r.remind) {
+		// Already said recently: a signed-out profile must not fill the log
+		// with the same line every few seconds.
 		return
 	}
+	switch {
+	case r.backoff == 0:
+		r.backoff = signInBackoff
+	case r.backoff < signInBackoffMax:
+		r.backoff = min(2*r.backoff, signInBackoffMax)
+	}
+	r.remind = now.Add(r.backoff)
 	r.logf("%s", signInAnnouncement(err))
-	if reason := r.headed(); reason != nil {
-		r.logf("browser: %v", reason)
-		r.penalize()
+}
+
+// clear records a read that worked, which ends a signed-out spell however the
+// profile came to be signed in again.
+func (r *SignInRecovery) clear() {
+	if r == nil {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.SignedOut {
+		r.logf("browser: GitHub reads are signed in again")
+	}
+	r.state = core.GitHubSession{SigningIn: r.state.SigningIn}
+	r.remind, r.backoff = time.Time{}, 0
+}
+
+// ErrSignInWindowUnavailable reports a machine where no sign-in window can
+// appear, such as a container or a server with no display.
+var ErrSignInWindowUnavailable = errors.New("no window can appear here to sign in to GitHub")
+
+// ErrSigningIn reports a sign-in window that is already open.
+var ErrSigningIn = errors.New("a GitHub sign-in window is already open")
+
+// SignIn opens GitHub's sign-in page in a visible window on the run's
+// profile, waits for the sign-in, and hands the profile back to the headless
+// browser. It is what the banner's "Sign in to GitHub" does. Where no window
+// can appear it fails with ErrSignInWindowUnavailable, naming the two ways
+// forward: gh polling, or importing a profile signed in elsewhere.
+func (r *SignInRecovery) SignIn(ctx context.Context) (string, error) {
+	if reason := r.headed(); reason != nil {
+		err := fmt.Errorf("%w: %v. Switch to gh polling, or import an Aviary browser profile that is signed in to GitHub on another machine", ErrSignInWindowUnavailable, reason)
+		r.fail(err)
+		return "", err
+	}
+	r.mu.Lock()
+	if r.state.SigningIn {
+		r.mu.Unlock()
+		return "", ErrSigningIn
+	}
+	r.state.SigningIn, r.state.LastError = true, ""
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.state.SigningIn = false
+		r.mu.Unlock()
+	}()
+
 	if err := r.suspend(); err != nil {
-		r.logf("browser: could not stop the headless browser to open a sign-in window: %v", err)
-		r.penalize()
-		return
+		err = fmt.Errorf("stop the headless browser to open a sign-in window: %w", err)
+		r.fail(err)
+		return "", err
 	}
 	login, loginErr := r.login(ctx, r.config, r.logWriter(), r.timeout)
-	// The headless browser is started again whichever way the sign-in went: a
-	// run that gave up on the login still has to keep polling.
+	// The headless browser is started again whichever way the sign-in went:
+	// a run whose sign-in was abandoned still has to keep polling.
 	if err := r.resume(); err != nil {
 		r.logf("browser: could not restart the headless browser after the sign-in window closed: %v", err)
 	}
 	if loginErr != nil {
-		r.logf("browser: sign-in did not complete: %v", loginErr)
-		r.penalize()
-		return
+		err := fmt.Errorf("sign-in did not complete: %w", loginErr)
+		r.fail(err)
+		return "", err
 	}
-	r.succeed()
+	r.clear()
 	r.logf("browser: signed in to GitHub as %s; the profile is reused by later polls and later runs", login)
+	return login, nil
 }
 
-// signInAnnouncement is the line logged before a window is opened. It names the
+// fail records why the last sign-in did not work, for the banner to show.
+func (r *SignInRecovery) fail(err error) {
+	r.mu.Lock()
+	r.state.LastError = err.Error()
+	r.mu.Unlock()
+	r.logf("browser: %v", err)
+}
+
+// signInAnnouncement is the line logged for a signed-out read. It names the
 // status when GitHub's own status is what gave the session away, so the log
 // says what Aviary saw rather than only what it decided.
 func signInAnnouncement(err error) string {
+	const next = "sign in to GitHub in Aviary's browser from the Projects board, or switch to gh polling"
 	var signedOut *SignedOutError
 	if errors.As(err, &signedOut) {
 		if signedOut.Status != 0 {
-			return fmt.Sprintf("browser: GitHub returned %d for %s — opening a browser window to sign in", signedOut.Status, signedOut.URL)
+			return fmt.Sprintf("browser: GitHub returned %d for %s to a signed-out session — %s", signedOut.Status, signedOut.URL, next)
 		}
-		return fmt.Sprintf("browser: GitHub served a signed-out page for %s — opening a browser window to sign in", signedOut.URL)
+		return fmt.Sprintf("browser: GitHub served a signed-out page for %s — %s", signedOut.URL, next)
 	}
-	return "browser: the browser profile is signed out of GitHub — opening a browser window to sign in"
-}
-
-// claim reports whether an attempt may run now, and records that one is being
-// made. It is the whole of the "do not re-prompt every tick" rule.
-func (r *SignInRecovery) claim() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.next.IsZero() && r.now().Before(r.next) {
-		return false
-	}
-	// Held until the attempt finishes, so a second target failing the same
-	// tick does not open a second window; a successful sign-in clears it.
-	r.next = r.now().Add(signInBackoffMax)
-	return true
-}
-
-// penalize schedules the next offer after an attempt that did not sign in,
-// doubling the wait each time up to the cap.
-func (r *SignInRecovery) penalize() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.backoff == 0 {
-		r.backoff = signInBackoff
-	} else if r.backoff < signInBackoffMax {
-		r.backoff *= 2
-		if r.backoff > signInBackoffMax {
-			r.backoff = signInBackoffMax
-		}
-	}
-	r.next = r.now().Add(r.backoff)
-	r.logf("browser: not offering to sign in again for %s; run `aviary auth` to sign the profile in at any time", r.backoff)
-}
-
-// succeed clears the back-off after a sign-in that worked, so a session that
-// expires later is recovered immediately rather than after the old wait.
-func (r *SignInRecovery) succeed() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.next, r.backoff = time.Time{}, 0
+	return "browser: Aviary's browser is signed out of GitHub — " + next
 }
 
 // SignInGuard wraps browser mode's issue source so a read that came back
-// signed out opens a login window before the next tick asks again. The error is
-// still returned: the poll that hit a signed-out page genuinely failed, and the
-// run loop's own retry is what makes the recovered profile take effect.
+// signed out is recorded for the board's banner, and a read that worked clears
+// it. The error is still returned: the poll that hit a signed-out page
+// genuinely failed, and is never reported as "no issues".
 type SignInGuard struct {
 	source   core.IssueSource
 	recovery *SignInRecovery
@@ -246,6 +291,8 @@ func (g SignInGuard) ListIssues(ctx context.Context, target string) ([]core.Issu
 	issues, err := g.source.ListIssues(ctx, target)
 	if err != nil {
 		g.recovery.attempt(ctx, err)
+	} else {
+		g.recovery.clear()
 	}
 	return issues, err
 }

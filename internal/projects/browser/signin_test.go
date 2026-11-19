@@ -28,7 +28,7 @@ func TestSignedOutErrorIdentity(t *testing.T) {
 	if errors.Is(&ExtractionError{URL: "u"}, ErrSignedOut) {
 		t.Fatalf("extraction error must not be mistaken for a signed-out read")
 	}
-	for _, want := range []string{"https://github.com/lsegal/aviary/issues", "/tmp/profile", "-browser-profile", "aviary auth"} {
+	for _, want := range []string{"https://github.com/lsegal/aviary/issues", "/tmp/profile", "profile_directory", "Sign in to GitHub in Aviary's browser", "gh polling"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("signed-out message %q does not mention %q", err.Error(), want)
 		}
