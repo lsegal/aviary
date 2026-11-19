@@ -18,6 +18,8 @@ const (
 	DirAuth   = "auth"
 	DirMedia  = "media"
 	DirUsage  = "usage"
+	// DirProjects holds the Projects engine's work state and job transcripts.
+	DirProjects = "projects"
 
 	// Deprecated: legacy flat directories kept for backward-compat migration.
 	DirJobs     = "jobs"     // deprecated: jobs now live under agents/<name>/jobs/
@@ -243,6 +245,7 @@ func EnsureDirs() error {
 		SubDir(DirAgents),
 		SubDir(DirCerts),
 		SubDir(DirAuth),
+		SubDir(DirProjects),
 		SubDir(DirMedia),
 		SubDir(DirUsage),
 	}

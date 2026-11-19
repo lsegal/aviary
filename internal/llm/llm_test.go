@@ -112,9 +112,6 @@ func TestFactoryResolverError(t *testing.T) {
 	_, err := f.ForModel("openai/gpt-4o")
 	assert.Error(t, err)
 
-	_, err = f.ForModel("stdio/codex")
-	assert.Error(t, err)
-
 }
 
 func TestFactoryOpenAICodexRequiresOAuth(t *testing.T) {

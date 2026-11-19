@@ -1,0 +1,18 @@
+{
+  "name": "aviary",
+  "binary": "aviary",
+  "levels": [],
+  "session": {"assign": "none"},
+  "output": {"format": "text"},
+  "doctor": {
+    "modelsNote": "the model is the name of an Aviary agent, as aviary agent list shows them"
+  },
+  "args": {
+    "run": [
+      {"args": ["agent", "run", "{model}", "{prompt}"]}
+    ],
+    "vision": [
+      {"args": ["agent", "run", "{model}", "{prompt}\n\nImage: {image}"]}
+    ]
+  }
+}
