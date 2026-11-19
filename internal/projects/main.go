@@ -1897,7 +1897,6 @@ type claudeStreamEvent struct {
 		Content []struct {
 			Type  string          `json:"type"`
 			Text  string          `json:"text"`
-			ID    string          `json:"id"`
 			Name  string          `json:"name"`
 			Input json.RawMessage `json:"input"`
 		} `json:"content"`
