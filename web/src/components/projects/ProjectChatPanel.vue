@@ -3,7 +3,7 @@
 		class="fixed inset-x-0 bottom-0 z-40 flex h-[70vh] flex-col rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950 md:relative md:inset-auto md:z-auto md:h-full md:shrink-0 md:rounded-none md:border-l md:border-t-0 md:shadow-none"
 		:style="desktop ? { width: `${width}px` } : undefined">
 		<div data-testid="project-chat-resize" role="separator" aria-orientation="vertical" aria-label="Resize prompt chat"
-			class="absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize hover:bg-blue-500/30 md:block"
+			class="absolute inset-y-0 -left-1 z-20 hidden w-2 cursor-col-resize hover:bg-blue-500/30 md:block"
 			@pointerdown="startResize" />
 		<div class="flex justify-center pt-2 md:hidden" aria-hidden="true">
 			<span class="h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-700" />
@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import type ChatView from "../../views/ChatView.vue";
+import ChatView from "../../views/ChatView.vue";
 
 /** The built-in Aviary agent behind the prompt chat (config.ProjectsAgentName). */
 const PROJECTS_AGENT = "projects";
@@ -37,7 +37,7 @@ const DEFAULT_WIDTH = 420;
 
 const emit = defineEmits<{ close: [] }>();
 
-const chat = ref<InstanceType<typeof ChatView> | null>(null);
+const chat = ref<{ sendText: (text: string) => Promise<void> } | null>(null);
 const width = ref(
 	clampWidth(Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_WIDTH),
 );

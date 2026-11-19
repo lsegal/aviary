@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
 // project_status, project_job_list and project_job_get.
@@ -207,7 +207,7 @@ interface Calls {
 	[tool: string]: Record<string, unknown>[];
 }
 
-async function setup(page: Page) {
+async function setup(page: Page, extra: ToolFixtures = {}) {
 	await setAuthToken(page);
 	const calls: Calls = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
@@ -263,6 +263,7 @@ async function setup(page: Page) {
 		project_job_retry: ok("project_job_retry"),
 		project_job_stop: ok("project_job_stop"),
 		project_refresh: ok("project_refresh"),
+		...extra,
 	});
 	return calls;
 }
@@ -428,6 +429,139 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page.getByRole("button", { name: /send/i })).toHaveCount(0);
 });
 
+const PNG =
+	"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/** Fixtures for the built-in Projects agent behind the prompt chat. */
+function chatFixtures(calls: Calls): ToolFixtures {
+	const record = (tool: string, args?: Record<string, unknown>) => {
+		calls[tool] ??= [];
+		calls[tool].push(args ?? {});
+	};
+	return {
+		agent_list: [
+			{
+				id: "projects",
+				name: "projects",
+				model: "anthropic/claude-sonnet-5-5",
+				state: "idle",
+			},
+		],
+		session_list: (args?: Record<string, unknown>) => {
+			record("session_list", args);
+			return [
+				{ id: "p1", agent_id: "projects", name: "main", created_at: at(60) },
+			];
+		},
+		session_messages: () => [
+			{
+				id: "m1",
+				session_id: "p1",
+				role: "user",
+				content: "What does the board look like?",
+				media_url: PNG,
+				timestamp: at(5),
+			},
+			{
+				id: "m2",
+				session_id: "p1",
+				role: "assistant",
+				content: "Here is the failing run.",
+				media_url: PNG,
+				timestamp: at(4),
+			},
+			// What the server persists once a prompt has run.
+			...(calls.agent_run ?? []).flatMap((run, i) => [
+				{
+					id: `r${i}`,
+					session_id: "p1",
+					role: "user",
+					content: run.message,
+					timestamp: at(0),
+				},
+				{
+					id: `a${i}`,
+					session_id: "p1",
+					role: "assistant",
+					content: "#218 is clamping the retry delay.",
+					timestamp: at(0),
+				},
+			]),
+		],
+		agent_run: (args?: Record<string, unknown>) => {
+			record("agent_run", args);
+			return { stream: ["#218 is clamping the retry delay."], result: "" };
+		},
+	};
+}
+
+test("prompt chat opens beside the board and remembers it is open", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, chatFixtures(calls)));
+	await page.goto("/projects/lsegal%2Faviary");
+
+	await expect(page.getByTestId("project-chat")).toHaveCount(0);
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	await expect(chat).toBeVisible();
+	await expect(chat).toContainText("It can't steer a running job.");
+	// It talks to the built-in Projects agent, never to a job.
+	await expect.poll(() => calls.session_list?.at(-1)?.agent).toBe("projects");
+	// Images show in both directions.
+	await expect(chat.locator("img")).toHaveCount(2);
+	await expect(chat).toContainText("Here is the failing run.");
+	// The board's cards stay visible beside the panel.
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+
+	// Dragging the handle widens the panel, and both survive a reload.
+	const before = (await chat.boundingBox())?.width ?? 0;
+	const handle = page.getByTestId("project-chat-resize");
+	const box = await handle.boundingBox();
+	if (!box) throw new Error("no resize handle");
+	await page.mouse.move(box.x + box.width / 2, box.y + 100);
+	await page.mouse.down();
+	await page.mouse.move(box.x - 80, box.y + 100);
+	await page.mouse.up();
+	const after = (await chat.boundingBox())?.width ?? 0;
+	expect(after).toBeGreaterThan(before + 60);
+
+	await page.reload();
+	await expect(page.getByTestId("project-chat")).toBeVisible();
+	expect(
+		(await page.getByTestId("project-chat").boundingBox())?.width,
+	).toBeCloseTo(after, 0);
+
+	await page.getByRole("button", { name: "Close prompt chat" }).click();
+	await expect(page.getByTestId("project-chat")).toHaveCount(0);
+	await page.reload();
+	await expect(
+		page.getByRole("heading", { name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("project-chat")).toHaveCount(0);
+});
+
+test("Summarize sends the job to the prompt chat", async ({ page }) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, chatFixtures(calls)));
+	await page.goto("/projects/lsegal%2Faviary");
+
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await card.getByTestId("job-summarize").click();
+	const chat = page.getByTestId("project-chat");
+	await expect(chat).toBeVisible();
+	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
+	expect(calls.agent_run[0]).toMatchObject({
+		name: "projects",
+		message: "Summarize the current session log of work on lsegal/aviary#218",
+	});
+	await expect(chat).toContainText(
+		"Summarize the current session log of work on lsegal/aviary#218",
+	);
+	await expect(chat).toContainText("#218 is clamping the retry delay.");
+});
+
 test.describe("phone width", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
@@ -452,4 +586,17 @@ test.describe("phone width", () => {
 			expect(overflow).toBe(false);
 		});
 	}
+
+	test("prompt chat opens as a bottom drawer", async ({ page }) => {
+		await setup(page, chatFixtures({}));
+		await page.goto("/projects/lsegal%2Faviary");
+		await page.getByTestId("prompt-chat-toggle").click();
+		const chat = page.getByTestId("project-chat");
+		await expect(chat).toBeVisible();
+		const box = await chat.boundingBox();
+		if (!box) throw new Error("no prompt chat");
+		expect(box.width).toBeCloseTo(390, 0);
+		expect(box.y + box.height).toBeCloseTo(844, 0);
+		expect(box.y).toBeGreaterThan(100);
+	});
 });

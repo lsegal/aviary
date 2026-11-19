@@ -128,7 +128,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import JobCard from "../components/projects/JobCard.vue";
-import type ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
+import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -250,7 +250,7 @@ const chatOpen = ref(localStorage.getItem(CHAT_OPEN_KEY) === "1");
 watch(chatOpen, (open) =>
 	localStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0"),
 );
-const chatPanel = ref<InstanceType<typeof ProjectChatPanel> | null>(null);
+const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 
 async function onSummarize(job: ProjectJob) {
 	chatOpen.value = true;
