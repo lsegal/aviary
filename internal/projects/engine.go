@@ -365,6 +365,11 @@ type Engine struct {
 	forks         map[string]forkProbe
 	jobActionOnce sync.Once
 	jobActions    chan jobActionRequest
+	// scheduled carries scheduled prompt runs into the Run loop, and
+	// scheduleRerun is what a board Retry on one calls.
+	scheduled       scheduledRunChannel
+	scheduleRerunMu sync.Mutex
+	scheduleRerun   func(scheduleID string) error
 	// settingsOnce/settingsRequests carry live settings updates
 	// into the Run loop, mirroring the jobActionOnce/jobActions pattern above.
 	settingsOnce     sync.Once
@@ -2230,6 +2235,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// from the run loop and while a poll waits for a slot.
 	retryAfterStop := make(map[string]bool)
 	var serveJobAction func(request jobActionRequest, dispatching bool)
+	// startScheduled queues a scheduled prompt run as a board job.
+	var startScheduled func(request scheduledRunRequest)
+	var serveScheduledAction func(request jobActionRequest, key string, job JobSnapshot)
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
 	// pause the queued job or stop a running one to free its slot (issue
@@ -2241,6 +2249,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				return false, nil
 			case request := <-w.settingsRequestsChan():
 				request.done <- w.applySettingsRequest(request.update, sem)
+			case request := <-w.scheduledRunRequests():
+				startScheduled(request)
 			case request := <-w.jobActionRequests():
 				serveJobAction(request, true)
 				workMu.Lock()
@@ -3363,6 +3373,10 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- fmt.Errorf("job not found")
 			return
 		}
+		if job.Kind == core.JobKindSchedule {
+			serveScheduledAction(request, key, job)
+			return
+		}
 		switch action.Action {
 		case "stop":
 			if !core.JobActionAvailability(job.Status).Stop {
@@ -3572,6 +3586,187 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- fmt.Errorf("unknown job action %q", action.Action)
 		}
 	}
+	// serveScheduledAction answers a dashboard action on a scheduled job:
+	// Stop cancels its run, Retry fires its schedule again, and Pause is
+	// refused, since a scheduled run has no issue to resume it from.
+	serveScheduledAction = func(request jobActionRequest, key string, job JobSnapshot) {
+		available := core.JobActionsFor(job)
+		switch request.action.Action {
+		case "stop":
+			if !available.Stop {
+				request.done <- fmt.Errorf("job cannot be stopped while %s", job.Status)
+				return
+			}
+			workMu.Lock()
+			cancel, exited := cancellations[key], runExits[key]
+			workMu.Unlock()
+			if cancel == nil {
+				request.done <- fmt.Errorf("job is not running")
+				return
+			}
+			w.logf("scheduled run %s stop requested", key)
+			w.jobSystem(key, "stopped by the owner")
+			jobMu.Lock()
+			job.Status = "stopping"
+			jobs[key] = job
+			jobMu.Unlock()
+			publish()
+			cancel(errWorkStoppedFromWebUI)
+			go func() {
+				select {
+				case <-exited:
+					request.done <- nil
+				case <-ctx.Done():
+					request.done <- fmt.Errorf("job is still stopping: %w", ctx.Err())
+				}
+			}()
+		case "retry":
+			if !available.Retry {
+				request.done <- fmt.Errorf("job cannot be retried: %s", available.RetryReason)
+				return
+			}
+			w.logf("scheduled run %s retry requested; firing schedule %s again", key, job.ScheduleID)
+			request.done <- w.rerunSchedule(job.ScheduleID)
+		case "pause":
+			request.done <- fmt.Errorf("scheduled jobs cannot be paused; stop it instead")
+		default:
+			request.done <- fmt.Errorf("unknown job action %q", request.action.Action)
+		}
+	}
+	startScheduled = func(request scheduledRunRequest) {
+		run := request.run
+		number := int(run.Fire.Unix())
+		jobMu.Lock()
+		for {
+			if _, taken := jobs[run.Target+"#"+strconv.Itoa(number)]; !taken {
+				break
+			}
+			number++
+		}
+		key := run.Target + "#" + strconv.Itoa(number)
+		session := AgentSession{Agent: run.Agent}
+		if session.Agent == "" {
+			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
+				session.Agent = identified.AgentNameFor(run.Target)
+			} else if identified, ok := w.runner().(AgentIdentifier); ok {
+				session.Agent = identified.AgentName()
+			}
+		}
+		spec, _ := parseAgentSpec(session.Agent)
+		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.ScheduleID, Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
+		jobMu.Unlock()
+		issue := Issue{Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Prompt: run.Prompt, ScheduleID: run.ScheduleID}
+		runCtx, cancelRun := context.WithCancelCause(ctx)
+		stopWatching := context.AfterFunc(request.ctx, func() { cancelRun(context.Cause(request.ctx)) })
+		exited := make(chan struct{})
+		workMu.Lock()
+		cancellations[key] = cancelRun
+		runExits[key] = exited
+		workMu.Unlock()
+		tasks.mu.Lock()
+		tasks.queued++
+		tasks.mu.Unlock()
+		w.logf("scheduled run %s queued for schedule %s", key, run.ScheduleID)
+		publish()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result := ScheduledRunResult{Job: number}
+			defer func() {
+				stopWatching()
+				cancelRun(nil)
+				workMu.Lock()
+				delete(cancellations, key)
+				delete(runExits, key)
+				workMu.Unlock()
+				close(exited)
+				request.done <- result
+			}()
+			acquired := sem.acquire(runCtx) == nil
+			tasks.mu.Lock()
+			tasks.queued--
+			if acquired {
+				tasks.running++
+			}
+			tasks.mu.Unlock()
+			var runErr error
+			if acquired {
+				defer func() {
+					sem.release()
+					select {
+					case workFinished <- struct{}{}:
+					default:
+					}
+				}()
+				if agentAssignsSessionID(session.Agent) {
+					session.ID, runErr = newSessionID()
+				}
+				jobMu.Lock()
+				job := jobs[key]
+				job.Status, job.SessionID = "active", session.ID
+				jobs[key] = job
+				jobMu.Unlock()
+				w.jobSystem(key, "scheduled run started on "+session.Agent)
+				publish()
+				output := jobOutputWriter{write: func(text string) {
+					jobMu.Lock()
+					job := jobs[key]
+					job.Log += text
+					jobs[key] = job
+					jobMu.Unlock()
+					publish()
+				}}
+				updateSession := func(update AgentSession) {
+					jobMu.Lock()
+					job := jobs[key]
+					if update.ID != "" {
+						job.SessionID = update.ID
+					}
+					if update.CheckoutDirectory != "" {
+						job.CheckoutDirectory = update.CheckoutDirectory
+					}
+					jobs[key] = job
+					jobMu.Unlock()
+					publish()
+				}
+				if runErr == nil {
+					switch runner := w.runner().(type) {
+					case SessionAgentOutputRunner:
+						runErr = runner.RunSessionWithOutput(runCtx, issue, session, updateSession, output)
+					case AgentOutputRunner:
+						runErr = runner.RunWithOutput(runCtx, issue, output)
+					default:
+						runErr = runner.Run(runCtx, issue)
+					}
+				}
+			} else {
+				runErr = context.Cause(runCtx)
+			}
+			jobMu.Lock()
+			job := jobs[key]
+			result = scheduledRunOutcome(runErr, context.Cause(runCtx), job.Log)
+			result.Job = number
+			job.Status = scheduledJobStatus(result)
+			if result.Status != ScheduledRunComplete {
+				job.Log += result.Summary
+			}
+			jobs[key] = job
+			jobMu.Unlock()
+			tasks.mu.Lock()
+			if acquired {
+				tasks.running--
+			}
+			if result.Status == ScheduledRunComplete {
+				tasks.completed++
+			} else {
+				tasks.failed++
+			}
+			tasks.mu.Unlock()
+			w.jobSystem(key, "scheduled run "+result.Status)
+			w.logf("scheduled run %s %s: %s", key, result.Status, result.Summary)
+			publish()
+		}()
+	}
 	// Signal readiness now, immediately before the first dispatch. Initial
 	// dispatch already services settingsRequestsChan and job actions itself
 	// through acquireDispatchSlot while it blocks on a full concurrency
@@ -3689,6 +3884,8 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- w.applySettingsRequest(request.update, sem)
 		case request := <-w.jobActionRequests():
 			serveJobAction(request, false)
+		case request := <-w.scheduledRunRequests():
+			startScheduled(request)
 		case <-ctx.Done():
 			w.logf("shutdown requested; waiting for running tasks to finish")
 			wg.Wait()

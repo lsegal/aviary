@@ -119,6 +119,10 @@ Targets use the same form as a scheduled task's target ([delivery targets](/guid
 
 Each job keeps a structured transcript built from the coding CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`) and Codex (`exec --json`) are mapped today. Other CLIs record their raw output and Projects' own events.
 
+## Scheduled prompts
+
+A project can also run prompts on a timer, such as a nightly triage or a weekly dependency update. They are Aviary scheduled tasks of type `project`, managed in the project's **Schedules** tab, and each run shows on the board as a Scheduled job. See [Scheduled prompts](./scheduled-tasks#scheduled-prompts).
+
 ## Managing projects
 
 Every Projects action is an MCP tool, and the `aviary project` command mirrors each one with the same arguments. See [Projects tools](/reference/mcp/projects).

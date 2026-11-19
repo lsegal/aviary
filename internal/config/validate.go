@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/cliagent"
-	"github.com/lsegal/aviary/internal/cronutil"
+	"github.com/lsegal/aviary/internal/schedule"
 )
 
 // IssueLevel indicates the severity of a validation finding.
@@ -163,8 +163,13 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			if t.Schedule == "" && t.Watch == "" {
-				v.warnf(tf, "neither 'schedule' nor 'watch' is set; task will never be triggered")
+			fields := schedule.Fields{
+				Trigger: t.Trigger, Schedule: t.Schedule, StartAt: t.StartAt, RunOnce: t.RunOnce,
+				Every: t.Every, At: t.At, Days: t.Days, Timezone: t.Timezone,
+				Overlap: t.Overlap, Missed: t.Missed,
+			}
+			if !fields.HasTrigger() && t.Watch == "" {
+				v.warnf(tf, "neither a schedule trigger nor 'watch' is set; task will never be triggered")
 			}
 
 			taskType := strings.ToLower(strings.TrimSpace(t.Type))
@@ -172,34 +177,20 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				taskType = "prompt"
 			}
 			switch taskType {
-			case "prompt", "script":
+			case "prompt", "script", "project":
 			default:
-				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\" or \"script\"", t.Type)
+				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\", \"script\" or \"project\"", t.Type)
 			}
 
-			if t.StartAt != "" {
-				if _, err := time.Parse(time.RFC3339, t.StartAt); err != nil {
-					v.errorf(tf+".start_at", "invalid RFC3339 timestamp %q: %v", t.StartAt, err)
-				}
+			if fields.HasTrigger() {
 				if t.Watch != "" {
-					v.errorf(tf+".start_at", "start_at is only supported for scheduled tasks, not watch tasks")
+					v.errorf(tf+".watch", "watch tasks cannot also have a schedule trigger")
 				}
-			}
-
-			if t.RunOnce {
-				switch {
-				case t.Watch != "":
-					v.errorf(tf+".run_once", "run_once is only supported for scheduled tasks, not watch tasks")
-				case t.Schedule == "" && t.StartAt == "":
-					v.errorf(tf+".run_once", "run_once requires either schedule or start_at")
+				if _, err := schedule.Parse(fields); err != nil {
+					v.errorf(tf+".trigger", "%v (cron accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\")", err)
 				}
-			}
-
-			if t.Schedule != "" {
-				c := cronutil.New()
-				if _, err := c.AddFunc(t.Schedule, func() {}); err != nil {
-					v.errorf(tf+".schedule", "invalid cron expression %q: %v (aviary accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\" or \"0 * * * * *\" for every minute)", t.Schedule, err)
-				}
+			} else if t.RunOnce || t.StartAt != "" || t.Timezone != "" || t.Overlap != "" || t.Missed != "" {
+				v.errorf(tf, "run_once, timezone, overlap and missed are only supported for scheduled tasks")
 			}
 
 			switch taskType {
@@ -211,6 +202,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if strings.TrimSpace(t.Prompt) == "" {
 					v.errorf(tf+".prompt", "script tasks require non-empty prompt content")
 				}
+			case "project":
+				if strings.TrimSpace(t.Project) == "" {
+					v.errorf(tf+".project", "project tasks require the watched project to run against")
+				}
+				if strings.TrimSpace(t.Prompt) == "" {
+					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
+				}
+			}
+			if taskType != "project" && (t.Project != "" || t.CLI != "") {
+				v.errorf(tf, "project and cli are only supported for project tasks")
 			}
 
 			if !validTaskTarget(t.Target) {

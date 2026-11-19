@@ -72,6 +72,10 @@ type Manager struct {
 	logs     []string
 	logTotal int
 
+	// scheduleRerun fires a schedule again for a board Retry on one of its
+	// jobs; see SetScheduleRerun.
+	scheduleRerun atomic.Pointer[func(scheduleID string) error]
+
 	snapshot atomic.Pointer[core.Snapshot]
 	reports  *reporter
 	quotas   atomic.Pointer[map[string]string]
@@ -609,6 +613,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	engine.SetTempDirs(s.TempDirs)
 	engine.SetUnblockInterval(s.UnblockInterval)
 	engine.SetUnblockAgent(unblock)
+	engine.SetScheduleRerun(m.rerunSchedule)
 	run.engine = engine
 	if engine.UseWebhooks {
 		if err := m.startWebhooks(ctx, run, gh, events); err != nil {

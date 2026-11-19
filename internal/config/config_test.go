@@ -292,29 +292,51 @@ func TestValidate(t *testing.T) {
 	t.Run("invalid start_at timestamp", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t1", Schedule: "*/1 * * * * *", StartAt: "tomorrow", Prompt: "p"}}}}}
 		issues := Validate(cfg, nil)
-		assert.True(t, hasIssue(issues, "invalid RFC3339 timestamp"))
+		assert.True(t, hasIssue(issues, "invalid start_at"))
 
 	})
 
 	t.Run("run_once with watch task is invalid", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t1", Watch: "*.md", RunOnce: true, Prompt: "p"}}}}}
 		issues := Validate(cfg, nil)
-		assert.True(t, hasIssue(issues, "run_once is only supported for scheduled tasks"))
+		assert.True(t, hasIssue(issues, "only supported for scheduled tasks"))
 
 	})
 
-	t.Run("run_once requires schedule or start_at", func(t *testing.T) {
+	t.Run("run_once requires a schedule trigger", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t1", RunOnce: true, Prompt: "p"}}}}}
 		issues := Validate(cfg, nil)
-		assert.True(t, hasIssue(issues, "run_once requires either schedule or start_at"))
+		assert.True(t, hasIssue(issues, "only supported for scheduled tasks"))
 
 	})
 
 	t.Run("start_at with watch task is invalid", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t1", Watch: "*.md", StartAt: time.Now().UTC().Format(time.RFC3339), Prompt: "p"}}}}}
 		issues := Validate(cfg, nil)
-		assert.True(t, hasIssue(issues, "start_at is only supported for scheduled tasks"))
+		assert.True(t, hasIssue(issues, "watch tasks cannot also have a schedule trigger"))
 
+	})
+
+	t.Run("trigger fields are validated", func(t *testing.T) {
+		for _, tc := range []struct {
+			task TaskConfig
+			msg  string
+		}{
+			{TaskConfig{Name: "t1", Every: "30m", Timezone: "Nowhere/Land", Prompt: "p"}, "invalid timezone"},
+			{TaskConfig{Name: "t1", Trigger: "weekly", At: "09:00", Prompt: "p"}, "weekly trigger requires days"},
+			{TaskConfig{Name: "t1", Every: "30m", Overlap: "parallel", Prompt: "p"}, "invalid overlap"},
+			{TaskConfig{Name: "t1", At: "09:00", Missed: "all", Prompt: "p"}, "invalid missed"},
+			{TaskConfig{Name: "t1", Watch: "*.md", Every: "30m", Prompt: "p"}, "watch tasks cannot also have a schedule trigger"},
+			{TaskConfig{Name: "t1", Watch: "*.md", Timezone: "UTC", Prompt: "p"}, "only supported for scheduled tasks"},
+		} {
+			issues := Validate(&Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{tc.task}}}}, nil)
+			assert.True(t, hasIssue(issues, tc.msg), "%+v: want %q in %v", tc.task, tc.msg, issues)
+		}
+		valid := TaskConfig{Name: "t1", Trigger: "weekly", Days: "mon,fri", At: "09:00", Timezone: "America/Toronto", Overlap: "skip", Missed: "run_once", Prompt: "p"}
+		issues := Validate(&Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{valid}}}}, nil)
+		for _, iss := range issues {
+			assert.NotContains(t, iss.Field, "tasks[0]", "unexpected issue %v", iss)
+		}
 	})
 
 	t.Run("openai-codex model requires openai oauth credential", func(t *testing.T) {
@@ -1475,4 +1497,21 @@ func TestCodingSkillsConfigKeepsOnlyNonDefaults(t *testing.T) {
 	require.NotNil(t, cfg.CodingSkills)
 	assert.Nil(t, cfg.CodingSkills.AutoUpdate)
 	assert.Equal(t, &off, cfg.CodingSkills.InstallNewCLIs)
+}
+
+func TestValidate_ProjectTask(t *testing.T) {
+	valid := &Config{Agents: []AgentConfig{{Name: "bot", Model: "anthropic/claude-sonnet-4-5", Tasks: []TaskConfig{{
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", CLI: "claude:opus", Prompt: "Triage new issues",
+	}}}}}
+	for _, issue := range Validate(valid, nil) {
+		assert.NotEqual(t, LevelError, issue.Level, issue.Message)
+	}
+
+	missing := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "triage", Type: "project", Every: "1h"}}}}}
+	issues := Validate(missing, nil)
+	assert.True(t, hasIssue(issues, "require the watched project"))
+	assert.True(t, hasIssue(issues, "project tasks require non-empty prompt"))
+
+	misplaced := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t", Every: "1h", Prompt: "p", Project: "o/r"}}}}}
+	assert.True(t, hasIssue(Validate(misplaced, nil), "only supported for project tasks"))
 }

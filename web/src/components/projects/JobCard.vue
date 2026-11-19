@@ -4,6 +4,10 @@
 		<div class="space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<JobStatusPill :status="job.status" />
+				<span v-if="job.scheduled" data-testid="job-scheduled"
+					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+					Scheduled
+				</span>
 				<span v-if="job.startedAt" class="text-gray-400">{{ age(job.startedAt, now) }}</span>
 				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">
 					{{ [job.skill, job.cli].filter(Boolean).join(" · ") }}
@@ -11,10 +15,13 @@
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="runPath" class="hover:underline">
-					{{ job.number ? `#${job.number} ` : "" }}{{ job.title || job.id }}
+					{{ job.number && !job.scheduled ? `#${job.number} ` : "" }}{{ job.title || job.id }}
 				</router-link>
 			</h3>
-			<p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
+			<p v-if="job.scheduled" class="text-xs text-gray-500 dark:text-gray-400">
+				Scheduled prompt<template v-if="job.scheduleID"> · <span class="font-mono">{{ job.scheduleID }}</span></template>
+			</p>
+			<p v-else class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
 				<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 				<template v-if="job.pr">

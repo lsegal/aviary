@@ -186,7 +186,7 @@ func (m *Manager) JobAction(ctx context.Context, action, target string, number i
 		return nil, err
 	}
 	key := fmt.Sprintf("%s#%d", job.Target, job.Number)
-	available := core.JobActionAvailability(job.Status)
+	available := core.JobActionsFor(job)
 	switch action {
 	case "resume":
 		if job.Status != "paused" {
@@ -468,7 +468,7 @@ func findJob(jobs []core.JobSnapshot, target string, number int) (core.JobSnapsh
 // jobSummary is a job as project_job_list reports it: its state and the
 // actions it accepts, without its scrollback.
 func jobSummary(job core.JobSnapshot) map[string]any {
-	actions := core.JobActionAvailability(job.Status)
+	actions := core.JobActionsFor(job)
 	summary := map[string]any{
 		"key":    fmt.Sprintf("%s#%d", job.Target, job.Number),
 		"target": job.Target,
@@ -490,6 +490,9 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 	}
 	if job.Repository != "" {
 		summary["repository"] = job.Repository
+	}
+	if job.ScheduleID != "" {
+		summary["schedule_id"] = job.ScheduleID
 	}
 	if url := job.IssueURL(); url != "" {
 		summary["issue_url"] = url
