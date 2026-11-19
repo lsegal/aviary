@@ -214,7 +214,7 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 }
 
 // ForModel returns a Provider for the given model string.
-// model format: "anthropic/claude-sonnet-4.5", "openai/gpt-4o", "google-gemini/gemini-2.5-pro",
+// model format: "anthropic/claude-sonnet-5-5", "openai/gpt-6.2-sol", "google-gemini/gemini-2.5-pro",
 // "google/gemini-2.5-pro" (API key), etc. "cli/..." models are not providers;
 // the agent runner hands those turns to a CLI backend instead.
 func (f *Factory) ForModel(model string) (Provider, error) {

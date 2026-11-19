@@ -30,38 +30,64 @@ Return basic server status and uptime.
 
 ## server_version_check
 
-Check the current Aviary version against the latest GitHub release.
+Check the current Aviary version against the latest GitHub release, and list the running jobs an upgrade would stop.
 
 **Arguments:** none
 
-**Returns:** JSON object with version information and whether an update is available.
+**Returns:** JSON object with version information, the release page of the latest version, and the current restart state.
 
 ```json
 {
-  "current": "0.9.1",
-  "latest": "0.9.2",
-  "update_available": true,
-  "release_url": "https://github.com/lsegal/aviary/releases/tag/v0.9.2"
+  "currentVersion": "v0.9.1",
+  "latestVersion": "v0.9.2",
+  "upgradeAvailable": true,
+  "upgradeSupported": true,
+  "releaseUrl": "https://github.com/lsegal/aviary/releases/tag/v0.9.2",
+  "restart": {
+    "phase": "idle",
+    "jobs": [{ "source": "projects", "id": "owner/repo#12", "title": "Fix the parser" }],
+    "held": false
+  }
 }
 ```
 
-**Side effects:** May trigger an asynchronous check against GitHub Releases.
+`restart.phase` is `idle`, `waiting` (holding new jobs until running jobs finish) or `updating`. `restart.jobs` lists the running jobs a restart would stop and resume. Waiting jobs are not listed and are not touched.
+
+**Side effects:** May check GitHub Releases (results are cached for 5 minutes).
 
 ---
 
 ## server_upgrade
 
-Upgrade Aviary to the latest release and restart the server if needed.
+Upgrade Aviary with a safe restart. Aviary installs the release, updates the skills for every signed-in coding CLI, stops running jobs at a checkpoint and saves their sessions, then restarts and resumes each job in its own session with a note that Aviary restarted. Does nothing when Aviary is already at the requested version.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `version` | string | | Target version to install; defaults to the latest |
+| `version` | string | | Release to install, with or without a leading `v`; defaults to the latest |
+| `when` | string | | `now` (default) restarts right away; `idle` holds new jobs and upgrades once no jobs are running |
 
-**Returns:** JSON `{ started: true, emulated?: true }`. `emulated` is set when the upgrade was simulated (e.g. in a development build).
+**Returns:** the restart state (see `server_version_check`). `noop: true` with a `message` means there was nothing to install; `emulated: true` marks a simulated upgrade in a development build.
 
-**Side effects:** Downloads and installs the new binary. May restart the server process.
+**Side effects:** Downloads the release (with `gh` when installed, otherwise directly), replaces the binary, and restarts the server process.
+
+---
+
+## server_restart
+
+Restart Aviary with the same safe-restart steps as `server_upgrade`, without installing anything.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `when` | string | | `now` (default) or `idle` (once no jobs are running; new jobs are held until then) |
+| `cancel` | boolean | | Withdraw a restart or upgrade that is still waiting for jobs to finish |
+
+**Returns:** the restart state (see `server_version_check`).
+
+**Side effects:** Stops running jobs at a checkpoint and restarts the server process.
 
 ---
 
