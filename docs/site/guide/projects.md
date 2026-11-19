@@ -94,6 +94,22 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.
 - On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards. Every subprocess dies with Aviary, even on `SIGKILL`.
 
+## Reports
+
+A project can send a short report through an Aviary agent's channels when one of its jobs finishes (`merged`), fails (`failed`), or starts waiting on CI, a wakeup, or a blocker (`waiting`). Reports are off by default. Turn them on per project by naming the agent and where to send:
+
+```yaml
+projects:
+  list:
+    - target: owner/repo
+      reports:
+        agent: assistant
+        targets: [slack:main:C0123456789, session:projects]
+        events: [merged, failed]   # optional; all events when left out
+```
+
+Targets use the same form as a scheduled task's target ([delivery targets](/guide/channels#delivery-targets)), and the agent must have the channel configured. `project_add` takes the same `reports` object when it saves a project.
+
 ## Delivery
 
 `poll` (the default) reads GitHub through `gh` every `interval` (30s). `webhook` starts an ngrok tunnel, creates repository webhooks that point at it and removes stale ones, and still syncs periodically as a fallback. Every GitHub read has a timeout, so a hung request never stops the watch.

@@ -123,6 +123,7 @@ func New(cfg *config.Config, token string) *Server {
 
 	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
 		s.projects = manager
+		manager.SetReportDelivery(s.deliverTaskOutput)
 	} else {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
 	}
