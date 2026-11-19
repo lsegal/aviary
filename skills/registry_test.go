@@ -136,3 +136,25 @@ func TestListInstalledMarksEnabledFromConfig(t *testing.T) {
 	}
 	assert.True(t, found)
 }
+
+func TestListInstalledLeavesOutCodingCLISkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	for _, name := range []string{"gh-fix", "deploy"} {
+		dir := filepath.Join(home, ".agents", "skills", name)
+		assert.NoError(t, os.MkdirAll(dir, 0o700))
+		data := "---\nname: " + name + "\ndescription: test\n---\nbody\n"
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(data), 0o600))
+	}
+
+	list, err := ListInstalled(&config.Config{})
+	assert.NoError(t, err)
+	var names []string
+	for _, skill := range list {
+		names = append(names, skill.Name)
+	}
+	assert.Contains(t, names, "deploy")
+	assert.NotContains(t, names, "gh-fix")
+}

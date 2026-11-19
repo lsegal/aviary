@@ -174,12 +174,19 @@ type Snapshot struct {
 	Running     int
 	Queued      int
 	Completed   int
-	Failed      int
+	// Merged24h counts the pull requests of this run's jobs that merged in
+	// the last 24 hours.
+	Merged24h int
+	Failed    int
 	// Paused counts work out of the queue waiting on a GitHub merge or close,
 	// holding no agent slot.
 	Paused      int
 	Concurrency int
-	NextPoll    time.Time
+	// AllowedCommenters are the GitHub logins whose comments steer jobs, as
+	// the run applies them: the authenticated gh user when none are
+	// configured.
+	AllowedCommenters []string
+	NextPoll          time.Time
 	// LastPoll is when the most recent poll of GitHub finished. The poll loop
 	// only logs what it found when that changes, so this is the
 	// run's standing evidence that it is still checking.

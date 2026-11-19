@@ -37,6 +37,8 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 		return newTranscriptOutputWriter(w, transcript.FormatCodexJSON)
 	case agents.FormatAviaryJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatAviaryJSON)
+	case agents.FormatGeminiJSON:
+		return newTranscriptOutputWriter(w, transcript.FormatGeminiJSON)
 	}
 	return nil
 }
@@ -370,10 +372,12 @@ func firstJSONLString(values []any) string {
 }
 
 // transcriptOutputWriter renders a stream its transcript mapper reads, such
-// as `codex exec --json` or `aviary agent run --output-format json`, for the
-// job's scrollback: agent messages as text, commands, file changes and tool
-// calls as progress lines, and codex's thread id in the "session id:" form
-// the codex definition captures.
+// as `codex exec --json`, `aviary agent run --output-format json` or `gemini
+// --output-format stream-json`, for the job's scrollback: agent messages as
+// text, commands, file changes and tool calls as progress lines, and codex's
+// thread id in the "session id:" form the codex definition captures. A mapper
+// that joins streamed deltas into whole messages is flushed before a line that
+// is not an event and at the end of the stream.
 type transcriptOutputWriter struct {
 	lineWriter
 	output io.Writer
@@ -396,6 +400,9 @@ func (w *transcriptOutputWriter) writeLine(line []byte) error {
 		ThreadID string `json:"thread_id"`
 	}
 	if err := json.Unmarshal(line, &envelope); err != nil {
+		if err := w.flushMapper(); err != nil {
+			return err
+		}
 		_, err = fmt.Fprintln(w.output, string(line))
 		return err
 	}
@@ -403,8 +410,31 @@ func (w *transcriptOutputWriter) writeLine(line []byte) error {
 		_, err := fmt.Fprintf(w.output, "session id: %s\n", envelope.ThreadID)
 		return err
 	}
+	return w.writeEvents(w.mapper.Map(line))
+}
+
+// flushMapper writes the message a mapper is still holding back.
+func (w *transcriptOutputWriter) flushMapper() error {
+	if f, ok := w.mapper.(transcript.Flusher); ok {
+		return w.writeEvents(f.Flush())
+	}
+	return nil
+}
+
+// Flush ends the partial line the agent left, then writes the message the
+// stream stopped in the middle of.
+func (w *transcriptOutputWriter) Flush() error {
+	if err := w.lineWriter.Flush(); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.flushMapper()
+}
+
+func (w *transcriptOutputWriter) writeEvents(events []transcript.Event) error {
 	var texts []string
-	for _, event := range w.mapper.Map(line) {
+	for _, event := range events {
 		switch {
 		case event.Kind == transcript.KindMessage:
 			if text := strings.TrimSpace(event.Text); text != "" {

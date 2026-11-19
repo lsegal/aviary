@@ -48,7 +48,7 @@ func TestOutputValidationRejectsWhatCannotBeDecoded(t *testing.T) {
 		{"jsonl without paths", Output{Format: FormatJSONL}, `"output.jsonl" is required`},
 		{"paths without jsonl", Output{Format: FormatText, JSONL: &paths}, `only meaningful`},
 		{"transcript without jsonl", Output{Format: FormatCodexJSON, Transcript: TranscriptClineJSON}, `"output.transcript" is only meaningful`},
-		{"unknown transcript", Output{Format: FormatJSONL, JSONL: &paths, Transcript: "gemini-json"}, `"output.transcript": "gemini-json" must be one of`},
+		{"unknown transcript", Output{Format: FormatJSONL, JSONL: &paths, Transcript: "ndjson"}, `"output.transcript": "ndjson" must be one of`},
 		{"nothing to read", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "event"}}, `at least one of "text" or "toolName"`},
 		{"input without a name", Output{Format: FormatJSONL, JSONL: &JSONL{Text: "text", ToolInput: "input"}}, `"output.jsonl.toolInput"`},
 		{"ignore without a type", Output{Format: FormatJSONL, JSONL: &JSONL{Text: "text", Ignore: []string{"usage"}}}, `"output.jsonl.ignore" needs`},
@@ -204,7 +204,7 @@ func TestBuiltinOutputDecoders(t *testing.T) {
 func TestBuiltinTranscriptFormats(t *testing.T) {
 	registry := MustBuiltin()
 	for name, want := range map[string]string{
-		"claude": FormatStreamJSON, "codex": FormatCodexJSON,
+		"claude": FormatStreamJSON, "codex": FormatCodexJSON, "gemini": FormatGeminiJSON,
 		"cline": TranscriptClineJSON, "opencode": TranscriptOpencodeJSON, "muse": FormatJSONL,
 		"aviary": FormatAviaryJSON,
 	} {

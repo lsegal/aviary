@@ -39,7 +39,9 @@ A repository issue is picked up when it is open, carries the ready label (`ready
 
 Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each entry is an `AGENT/MODEL:LEVEL` spec, such as `codex`, `claude/opus` or `codex/gpt-5.6-terra:high`. Repeating an agent balances load across the entries. A project can list its own agents, which act as a fallback order: a job runs on the first one whose quota is not used up.
 
-Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
+Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
+
+Without `yolo`, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
 
 `agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
@@ -80,7 +82,7 @@ projects:
 
 ## Steering jobs
 
-Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session.
+Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the coding CLI treats comments by anyone else in the thread as untrusted information rather than instructions.
 
 Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
@@ -91,6 +93,22 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 - A pull request closed without merging restarts the work.
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.
 - On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards. Every subprocess dies with Aviary, even on `SIGKILL`.
+
+## Reports
+
+A project can send a short report through an Aviary agent's channels when one of its jobs finishes (`merged`), fails (`failed`), or starts waiting on CI, a wakeup, or a blocker (`waiting`). Reports are off by default. Turn them on per project by naming the agent and where to send:
+
+```yaml
+projects:
+  list:
+    - target: owner/repo
+      reports:
+        agent: assistant
+        targets: [slack:main:C0123456789, session:projects]
+        events: [merged, failed]   # optional; all events when left out
+```
+
+Targets use the same form as a scheduled task's target ([delivery targets](/guide/channels#delivery-targets)), and the agent must have the channel configured. `project_add` takes the same `reports` object when it saves a project.
 
 ## Delivery
 

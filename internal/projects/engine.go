@@ -231,7 +231,11 @@ type Engine struct {
 	StatePath   string
 	ReadyState  string
 	noMerge     atomic.Bool
-	noChangelog atomic.Bool
+	// allowedCommenters is the live allowed-commenter list for the runner's
+	// prompts. runner() reads it from job goroutines, so it is kept apart
+	// from AllowedCommenters, which only the Run loop touches.
+	allowedCommenters atomic.Pointer[[]string]
+	noChangelog       atomic.Bool
 	// autoUpdate is read by the updater each round.
 	autoUpdate atomic.Bool
 	// clones keeps the temp directories new clones go in and the record of
@@ -2128,6 +2132,10 @@ func (w *Engine) Run(ctx context.Context) error {
 	// keeps the derived watch on its linked pull requests current (issue
 	// #723).
 	closureChecker = recordLinkedPullRequests(closureChecker, mentions.linked)
+	// Every one of those reads also notes the merged pull requests, which
+	// status counts over the last day.
+	merges := newRecentMerges()
+	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
 	// watch started. A linked pull request anywhere else delivers nothing, so
 	// push mode scans it on each poll instead.
@@ -2187,7 +2195,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
 		}
-		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Merged24h: merges.count(time.Now()), Failed: failed, Paused: paused, Concurrency: w.Concurrency, AllowedCommenters: append([]string(nil), w.AllowedCommenters...), Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
 		if w.GitHubSession != nil {
 			snapshot.GitHub = w.GitHubSession()
 		}
@@ -2855,6 +2863,12 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobMu.Unlock()
 					publish()
 				}
+				// announced holds the pull requests this job's transcript has
+				// already recorded as opened, so a checklist update, a
+				// draft-to-ready change, or a poll that briefly misses the
+				// pull request does not record it again (#405). It is guarded
+				// by jobMu.
+				announced := map[string]bool{}
 				for {
 					runCtx, cancelRun := context.WithCancelCause(ctx)
 					workMu.Lock()
@@ -2869,12 +2883,17 @@ func (w *Engine) Run(ctx context.Context) error {
 						jobMu.Lock()
 						job, ok := jobs[key]
 						changed := ok && job.SetPullRequest(state, issueRepository(i.Target, i))
+						label := ""
 						if changed {
 							jobs[key] = job
+							if label = job.PullRequestLabel(); announced[label] {
+								label = ""
+							}
+							announced[label] = true
 						}
 						jobMu.Unlock()
 						if changed {
-							if label := job.PullRequestLabel(); label != "" {
+							if label != "" {
 								w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "pull request opened: " + label, URL: job.PullRequestURL()})
 							}
 							publish()

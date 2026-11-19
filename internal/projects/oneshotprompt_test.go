@@ -62,7 +62,7 @@ func TestOneShotPromptMarksTheCallOneShot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer call.cleanup()
-	want := []string{"exec", "--json", "--skip-git-repo-check", "-"}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-"}
 	if got := codex.Render(agents.ModeRun, call.Values); !reflect.DeepEqual(got, want) {
 		t.Errorf("codex one-shot argv = %#v, want %#v", got, want)
 	}

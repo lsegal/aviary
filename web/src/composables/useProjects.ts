@@ -230,6 +230,18 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	const { callTool } = useMCP();
 	const detail = ref<JobDetail | null>(null);
 	const error = ref("");
+	// The footer names who may steer the job; the setting rarely changes, so
+	// it is read once rather than polled.
+	const allowedCommenters = ref<string[]>([]);
+	onMounted(async () => {
+		try {
+			allowedCommenters.value = normalizeStatus(
+				parseToolJSON(await callTool("project_status", {})),
+			).allowedCommenters;
+		} catch {
+			// The footer still explains how to steer without the names.
+		}
+	});
 
 	const { refresh } = usePoll(async () => {
 		const key = `${target.value}#${number.value}`;
@@ -265,6 +277,7 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	return {
 		detail,
 		error,
+		allowedCommenters,
 		refresh,
 		retry: () => action("project_job_retry"),
 		stop: () => action("project_job_stop"),

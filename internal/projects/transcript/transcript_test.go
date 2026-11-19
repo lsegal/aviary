@@ -248,6 +248,77 @@ func TestClineFailuresAndEditor(t *testing.T) {
 	}
 }
 
+// The fixture is a real stream from gemini-cli 0.58.0 running a plan, two
+// shell commands (the second failing), a file creation, an edit, a read and an
+// edit that matches nothing, then streaming its reply in three deltas. Gemini's
+// Code Assist sign-in is closed to this CLI, so the model side of the run was
+// a local stand-in served through GOOGLE_GEMINI_BASE_URL; every line is the
+// CLI's own output.
+func TestGeminiStreamJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatGeminiJSON), "gemini-run.jsonl")
+	want := "message,plan,tool_result,command,command,file_change,tool_result,file_change,tool_result,tool_call,tool_result,command,command,file_change,tool_result,plan,tool_result,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	if msg := events[0]; msg.Text != "I will plan the work first." {
+		t.Fatalf("first message = %+v", msg)
+	}
+	if plan := events[1]; len(plan.Items) != 3 || plan.Items[0] != (PlanItem{Text: "Run echo hi", Status: "in_progress"}) || plan.Items[2].Status != "pending" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	start, done := events[3], events[4]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi" || done.Status != "done" || done.IsError || done.ExitCode != nil {
+		t.Fatalf("command result = %+v", done)
+	}
+	if added := events[5]; added.Path != "/work/note.txt" || added.Diff != "+hello" {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited := events[7]; edited.Diff != "@@\n-hello\n+hello world" {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Name != "read_file" || read.Input["file_path"] != "/work/note.txt" {
+		t.Fatalf("tool call = %+v", read)
+	}
+	if missed := events[14]; !missed.IsError || !strings.Contains(missed.Output, "Could not find an exact match") || missed.CallID != events[13].CallID {
+		t.Fatalf("failed edit = %+v", missed)
+	}
+	if plan := events[15]; plan.Items[2].Status != "completed" {
+		t.Fatalf("final plan = %+v", plan)
+	}
+	if msg := events[17]; msg.Text != "Done: `note.txt` now says \"hello world\"." {
+		t.Fatalf("streamed message = %q", msg.Text)
+	}
+	if usage := events[18].Usage; usage == nil || usage.InputTokens != 3600 || usage.CacheReadTokens != 7200 || usage.OutputTokens != 180 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+func TestGeminiErrorsAndUnfinishedMessages(t *testing.T) {
+	mapper := NewMapper(FormatGeminiJSON)
+	if got := mapper.Map([]byte(`{"type":"message","role":"user","content":"do it"}`)); got != nil {
+		t.Fatalf("user message = %+v", got)
+	}
+	warning := mapper.Map([]byte(`{"type":"error","severity":"warning","message":"retrying after 429"}`))
+	if kinds(warning) != "system" || warning[0].IsError || warning[0].Text != "retrying after 429" {
+		t.Fatalf("warning = %+v", warning)
+	}
+	failed := mapper.Map([]byte(`{"type":"result","status":"error","error":{"type":"FatalTurnLimitedError","message":"Reached max session turns"},"stats":{"input_tokens":10,"output_tokens":2,"cached":0,"input":10}}`))
+	if kinds(failed) != "usage,system" || !failed[1].IsError || failed[1].Text != "Reached max session turns" {
+		t.Fatalf("failed result = %+v", failed)
+	}
+	// A stream cut off mid-message still records what was said.
+	log, _ := Open("")
+	recorder := log.Recorder(NewMapper(FormatGeminiJSON))
+	_, _ = recorder.Write([]byte(`{"type":"message","role":"assistant","content":"half ","delta":true}` + "\n" + `{"type":"message","role":"assistant","content":"a reply","delta":true}`))
+	recorder.Flush()
+	if events := log.Events(0); kinds(events) != "message" || events[0].Text != "half a reply" {
+		t.Fatalf("unfinished message = %+v", events)
+	}
+}
+
 func TestLogPersistsAcrossOpen(t *testing.T) {
 	dir := t.TempDir()
 	log, err := Open(dir)

@@ -28,7 +28,7 @@ type projectToolCommand struct {
 }
 
 var projectToolCommands = []projectToolCommand{
-	{[]string{"status"}, "project_status", "", "Show identity, projects, job counts, delivery, quotas and recent log lines"},
+	{[]string{"status"}, "project_status", "", "Show identity, projects, job counts, delivery, allowed commenters, quotas and recent log lines"},
 	{[]string{"add"}, "project_add", "target", "Watch a project, saving it to aviary.yaml unless --runtime is set"},
 	{[]string{"remove"}, "project_remove", "target", "Stop watching a project"},
 	{[]string{"refresh"}, "project_refresh", "target", "Check GitHub for work now"},
