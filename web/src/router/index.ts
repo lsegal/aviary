@@ -32,7 +32,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/projects/:project/jobs/:job",
+			path: "/projects/:project/jobs/:number(\\d+)",
 			component: () => import("../views/ProjectRunView.vue"),
 			meta: { requiresAuth: true },
 		},

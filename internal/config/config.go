@@ -26,6 +26,7 @@ type Config struct {
 	Search    SearchConfig           `yaml:"search,omitempty"    json:"search,omitempty"`
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
 }
 
 // SkillConfig configures an installed skill runtime.
