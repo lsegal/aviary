@@ -160,6 +160,7 @@ type agentRunArgs struct {
 	File                string `json:"file,omitempty"`
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	StreamEvents        bool   `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
@@ -342,10 +343,30 @@ func registerAgentTools(s *sdkmcp.Server) {
 		done := make(chan error, 1)
 		history := resolveAgentRunHistory(args)
 
+		// With stream_events, progress carries structured events in place of
+		// the text and tagged tool and media messages.
+		streamEvents := progressToken != nil && args.StreamEvents
+		if streamEvents {
+			progressToken = nil
+		}
+		events := &agentRunEvents{}
+
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
 		}, func(e agent.StreamEvent) {
+			if streamEvents {
+				if event, ok := events.fromStream(e); ok {
+					if payload, err := json.Marshal(event); err == nil {
+						progressCount++
+						_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+							ProgressToken: req.Params.GetProgressToken(),
+							Progress:      progressCount,
+							Message:       string(payload),
+						})
+					}
+				}
+			}
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)

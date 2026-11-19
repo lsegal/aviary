@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
@@ -114,6 +116,33 @@ func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (strin
 	}
 
 	return extractText(result), nil
+}
+
+// progressClient is a Client that can hand a call's progress messages back.
+type progressClient interface {
+	CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string)) (*sdkmcp.CallToolResult, error)
+}
+
+// CallToolWithProgress is CallTool for a tool that reports progress: every
+// progress message the call sends is handed to onProgress before it returns.
+// isError reports a result the tool marked as an error.
+func (d *Dispatcher) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string)) (text string, isError bool, err error) {
+	c, err := d.Resolve(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	var result *sdkmcp.CallToolResult
+	if pc, ok := c.(progressClient); ok {
+		result, err = pc.CallToolWithProgress(ctx, name, args, onProgress)
+	} else {
+		result, err = c.CallTool(ctx, name, args)
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("calling tool %q: %w", name, err)
+	}
+	return extractText(result), result != nil && result.IsError, nil
 }
 
 // ListTools is a convenience wrapper: resolves client, lists tools, closes client.
