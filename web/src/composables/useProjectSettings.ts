@@ -1,8 +1,10 @@
 import { onMounted, type Ref, ref, watch } from "vue";
 import {
+	type ClearResult,
 	type CodingCLI,
 	normalizeCheck,
 	normalizeCLIList,
+	normalizeClear,
 	normalizeClones,
 	type ProjectCheckResult,
 	type ProjectClone,
@@ -68,25 +70,26 @@ export function useCLIProbe() {
 	};
 }
 
-/** A project's clones with their sizes, and clearing unused ones. */
-export function useProjectClones(project: Ref<string>) {
+/**
+ * Every job clone on record, and clearing the ones no job needs. Clones are
+ * shared by all projects, so the list is not filtered by project.
+ */
+export function useProjectClones() {
 	const { callTool } = useMCP();
 	const clones = ref<ProjectClone[]>([]);
-	const totalBytes = ref(0);
+	const roots = ref<string[]>([]);
 	const loaded = ref(false);
 	const error = ref("");
 	const clearing = ref(false);
-	const message = ref("");
+	const cleared = ref<ClearResult | null>(null);
 
 	async function load() {
 		try {
 			const res = normalizeClones(
-				parseToolJSON(
-					await callTool("project_clone_list", { project: project.value }),
-				),
+				parseToolJSON(await callTool("project_clone_list", {})),
 			);
 			clones.value = res.clones;
-			totalBytes.value = res.totalBytes;
+			roots.value = res.roots;
 			error.value = "";
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
@@ -95,17 +98,12 @@ export function useProjectClones(project: Ref<string>) {
 		}
 	}
 
-	async function clear(path?: string) {
+	async function clear() {
 		clearing.value = true;
 		try {
-			const args: Record<string, unknown> = { project: project.value };
-			if (path) args.path = path;
-			const raw = parseToolJSON(await callTool("project_clone_clear", args));
-			const reclaimed =
-				raw && typeof raw === "object"
-					? Number((raw as Record<string, unknown>).reclaimed_bytes) || 0
-					: 0;
-			message.value = reclaimed ? `reclaimed:${reclaimed}` : "cleared";
+			cleared.value = normalizeClear(
+				parseToolJSON(await callTool("project_clone_clear", {})),
+			);
 			await load();
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
@@ -115,9 +113,8 @@ export function useProjectClones(project: Ref<string>) {
 	}
 
 	onMounted(() => void load());
-	watch(project, () => void load());
 
-	return { clones, totalBytes, loaded, error, clearing, message, load, clear };
+	return { clones, roots, loaded, error, clearing, cleared, load, clear };
 }
 
 /** project_check for a target, re-run (debounced) as the target changes. */

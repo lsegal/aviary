@@ -369,50 +369,6 @@
           }
         }
       }
-    },
-    "projects": {
-      "type": "array",
-      "description": "Watched projects. Each entry holds only the settings that differ from the defaults; a project watched with defaults has no entry.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["target"],
-        "properties": {
-          "target": { "type": "string", "description": "Repository (owner/repo), Project board or Discussions board to watch." },
-          "jobs": { "type": "integer", "minimum": 0, "default": 4, "description": "Jobs run at once. Defaults to 4." },
-          "ready_label": { "type": "string", "default": "ready", "description": "Label that marks an issue ready. Defaults to ready." },
-          "ready_state": { "type": "string", "description": "Board status that marks an item ready. Auto-detects Todo or Ready when unset." },
-          "delivery": { "type": "string", "enum": ["browser", "webhook", "poll"], "default": "browser", "description": "How the watch reads GitHub." },
-          "interval": { "type": "string", "description": "Check interval as a duration such as 30s. Defaults per delivery mode." },
-          "filters": { "type": "array", "items": { "type": "string" }, "description": "Issue-search filters. Defaults to assignee:@me author:@me." },
-          "all_issues": { "type": "boolean", "description": "Watch every ready issue instead of filtering." },
-          "commenters": { "type": "array", "items": { "type": "string" }, "description": "GitHub users whose comments can steer jobs." },
-          "merge": { "type": "boolean", "default": true, "description": "Merge pull requests when CI passes." },
-          "changelog": { "type": "boolean", "default": true, "description": "Add a changelog entry to each pull request." },
-          "stack": { "type": "boolean", "default": true, "description": "Stack work on open pull requests it depends on." },
-          "clis": { "type": "array", "items": { "type": "string" }, "description": "Coding-CLI fallback order as AGENT/MODEL:LEVEL specs, or aviary/<agent>." },
-          "temp_dirs": { "type": "array", "items": { "type": "string" }, "description": "Directories new runs clone into; the first with 2 GiB free is used." },
-          "report_to": { "type": "string", "description": "Aviary agent whose channels receive reports." },
-          "report_on": {
-            "type": "array",
-            "items": { "type": "string", "enum": ["ready", "failed", "answer_needed", "merged"] },
-            "description": "Events to report. Defaults to ready, failed and answer_needed."
-          },
-          "schedules": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["schedule", "prompt"],
-              "properties": {
-                "schedule": { "type": "string", "description": "Cron expression." },
-                "prompt": { "type": "string", "description": "Prompt run on the schedule." },
-                "paused": { "type": "boolean" }
-              }
-            }
-          }
-        }
-      }
     }
   }
 }

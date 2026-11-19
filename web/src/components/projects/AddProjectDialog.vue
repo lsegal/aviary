@@ -37,9 +37,9 @@
 				</section>
 
 				<p class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-					<span>Up to <b class="text-gray-900 dark:text-white">{{ settings.jobs }}</b> jobs at once</span>
+					<span>Up to <b class="text-gray-900 dark:text-white">{{ settings.concurrency }}</b> jobs at once</span>
 					<span>{{ settings.merge ? "Merges when CI passes" : "Leaves pull requests for you to merge" }}</span>
-					<span>Reports to <b class="text-gray-900 dark:text-white">{{ settings.reportTo || "nobody" }}</b></span>
+					<span>Runs on <b class="text-gray-900 dark:text-white">{{ (settings.agents.length ? settings.agents : sharedAgents(store.config?.projects)).join(", ") }}</b></span>
 				</p>
 				<p v-if="startError" class="mt-3 text-sm text-red-700 dark:text-red-300">{{ startError }}</p>
 
@@ -76,8 +76,8 @@ import {
 import {
 	type CheckStatus,
 	checkLabel,
-	findEntry,
-	settingsFromEntry,
+	settingsFromSection,
+	sharedAgents,
 } from "../../lib/projectSettings";
 import { encodeProject } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
@@ -102,10 +102,7 @@ onMounted(() => {
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
 const settings = computed(() =>
-	settingsFromEntry(
-		normalized.value,
-		findEntry(store.config?.projects, normalized.value),
-	),
+	settingsFromSection(normalized.value, store.config?.projects),
 );
 const canStart = computed(
 	() =>

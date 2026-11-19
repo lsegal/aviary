@@ -11,9 +11,7 @@
 					<h1 class="text-xl font-bold text-gray-900 dark:text-white">{{ adding ? "Settings for a new project" : "Settings" }}</h1>
 				</div>
 				<div class="flex flex-wrap items-center gap-2 sm:ml-auto">
-					<span data-testid="save-note" class="text-sm text-gray-500 dark:text-gray-400">
-						{{ saveNote }}
-					</span>
+					<span data-testid="save-note" class="text-sm text-gray-500 dark:text-gray-400">{{ saveNote }}</span>
 					<button type="button" :disabled="!dirty || saving"
 						class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 						@click="discard">Discard</button>
@@ -36,18 +34,17 @@
 				</nav>
 
 				<div class="min-w-0 max-w-4xl flex-1 space-y-5">
-					<!-- General -->
 					<section id="general" :class="CARD">
-						<h2 :class="CARD_HEAD">General <span :class="CARD_NOTE">Grey tags mark defaults that aren't saved to aviary.yaml</span></h2>
+						<h2 :class="CARD_HEAD">General <span :class="CARD_NOTE">Shared by every project. Grey tags mark defaults that aren't saved to aviary.yaml</span></h2>
 						<div class="space-y-4 p-5">
 							<div class="grid gap-4 sm:grid-cols-3">
 								<label class="block">
-									<span :class="LABEL">Jobs at once <DefaultTag :on="isDefault('jobs')" /></span>
-									<input v-model.number="form.jobs" type="number" min="1" :class="INPUT" data-field="jobs" />
+									<span :class="LABEL">Jobs at once <DefaultTag :on="isDefault('concurrency')" /></span>
+									<input v-model.number="form.concurrency" type="number" min="1" :class="INPUT" data-field="concurrency" />
 								</label>
 								<label class="block">
 									<span :class="LABEL">Ready label <DefaultTag :on="isDefault('readyLabel')" /></span>
-									<input v-model="form.readyLabel" type="text" :class="INPUT" data-field="ready_label" />
+									<input v-model="form.readyLabel" type="text" placeholder="Off (board status only)" :class="INPUT" data-field="ready_label" />
 								</label>
 								<label class="block">
 									<span :class="LABEL">How to read GitHub <DefaultTag :on="isDefault('delivery')" /></span>
@@ -58,15 +55,15 @@
 							</div>
 							<label class="block">
 								<span :class="LABEL">Who can steer jobs through comments</span>
-								<input v-model="commentersText" type="text" placeholder="Only you" :class="[INPUT, 'font-mono']"
-									data-field="commenters" @input="form.commenters = parseList(commentersText)" />
+								<input v-model="commentersText" type="text" placeholder="Only you (the signed-in gh user)" :class="[INPUT, 'font-mono']"
+									data-field="allowed_commenters" @input="form.commenters = parseList(commentersText)" />
 							</label>
 							<div class="space-y-3">
 								<label v-for="t in TOGGLES" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
 									<SwitchRoot :checked="form[t.key]" :aria-label="t.label" :data-field="t.key"
 										class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
 										:class="form[t.key] ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
-										@update:checked="(v: boolean) => (form![t.key] = v)">
+										@update:checked="(v: boolean) => setToggle(t.key, v)">
 										<SwitchThumb class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
 											:class="form[t.key] ? 'translate-x-[110%]' : 'translate-x-[10%]'" />
 									</SwitchRoot>
@@ -76,22 +73,28 @@
 							<details class="rounded-lg border border-gray-200 dark:border-gray-800" :open="advancedOpen">
 								<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Issue selection and checking</summary>
 								<div class="grid gap-4 border-t border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2">
-									<label class="block">
-										<span :class="LABEL">Issue filters, one per line <DefaultTag :on="isDefault('filters')" /></span>
-										<textarea v-model="filtersText" rows="2" :disabled="form.allIssues" :class="[INPUT, 'font-mono disabled:opacity-50']"
-											data-field="filters" @input="form.filters = lines(filtersText)" />
+									<div>
+										<label class="block">
+											<span :class="LABEL">Issue filter, one term group per line <DefaultTag :on="isDefault('filter')" /></span>
+											<textarea v-model="filterText" rows="2" :disabled="form.allIssues" :class="[INPUT, 'font-mono disabled:opacity-50']"
+												data-field="filter" @input="form.filter = lines(filterText)" />
+										</label>
 										<label class="mt-1 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
 											<input v-model="form.allIssues" type="checkbox" data-field="all_issues" /> Every ready issue, not just filtered ones
 										</label>
-									</label>
+									</div>
 									<div class="space-y-3">
 										<label class="block">
 											<span :class="LABEL">Check interval</span>
-											<input v-model="form.interval" type="text" placeholder="Mode default (browser 20s)" :class="INPUT" data-field="interval" />
+											<input v-model="form.interval" type="text" :placeholder="DEFAULT_INTERVAL" :class="INPUT" data-field="interval" />
 										</label>
 										<label class="block">
 											<span :class="LABEL">Board ready status</span>
 											<input v-model="form.readyState" type="text" placeholder="Auto-detect Todo or Ready" :class="INPUT" data-field="ready_state" />
+										</label>
+										<label class="block">
+											<span :class="LABEL">Stuck-job watchdog interval</span>
+											<input v-model="form.unblockInterval" type="text" placeholder="Default (0 turns it off)" :class="INPUT" data-field="unblock_interval" />
 										</label>
 									</div>
 									<label class="block sm:col-span-2">
@@ -104,10 +107,9 @@
 						</div>
 					</section>
 
-					<!-- Coding CLIs -->
 					<section id="clis" :class="CARD">
 						<h2 :class="CARD_HEAD">
-							Coding CLIs <span :class="CARD_NOTE">Jobs use the first available choice and fall back down the list when its quota runs out</span>
+							Coding CLIs <span :class="CARD_NOTE">For {{ target }}. Jobs use the first available choice and fall back down the list when its quota runs out</span>
 							<span v-if="probe.refreshing.value" data-testid="cli-refreshing"
 								class="ml-auto inline-flex items-center gap-1.5 text-xs font-normal text-gray-500">
 								<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Refreshing
@@ -118,13 +120,16 @@
 							<p v-else-if="!probe.clis.value && probe.error.value" class="text-sm text-gray-500">
 								Couldn't read the coding CLIs: {{ probe.error.value }}
 							</p>
+							<p v-if="!form.agents.length" class="text-xs text-gray-500" data-testid="cli-shared">
+								Using the shared order. Changing it here gives {{ target }} its own.
+							</p>
 							<ol class="space-y-3">
 								<li v-for="(row, i) in cliRows" :key="row.name" :data-cli="row.name"
 									class="rounded-xl border px-4 py-3"
 									:class="row.enabled ? 'border-gray-200 dark:border-gray-800' : 'border-dashed border-gray-300 dark:border-gray-700'">
 									<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 										<span class="w-4 text-sm text-gray-500">{{ row.enabled ? i + 1 : "–" }}</span>
-										<b class="text-sm text-gray-900 dark:text-white">{{ row.label }}</b>
+										<b class="text-sm text-gray-900 dark:text-white">{{ row.name }}</b>
 										<span class="inline-flex items-center gap-1 text-xs"
 											:class="row.signedIn ? 'text-green-700 dark:text-green-400' : 'text-gray-500'">
 											<span v-if="row.signedIn" class="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -132,8 +137,8 @@
 										</span>
 										<div class="ml-auto flex items-center gap-1">
 											<template v-if="row.enabled">
-												<button type="button" :class="ICON_BTN" :disabled="i === 0" :aria-label="`Move ${row.label} up`" @click="moveCLI(i, -1)">↑</button>
-												<button type="button" :class="ICON_BTN" :disabled="i === enabledCount - 1" :aria-label="`Move ${row.label} down`" @click="moveCLI(i, 1)">↓</button>
+												<button type="button" :class="ICON_BTN" :disabled="i === 0" :aria-label="`Move ${row.name} up`" @click="moveCLI(i, -1)">↑</button>
+												<button type="button" :class="ICON_BTN" :disabled="i === specs.length - 1" :aria-label="`Move ${row.name} down`" @click="moveCLI(i, 1)">↓</button>
 											</template>
 											<button type="button" class="rounded-md px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
 												@click="toggleCLI(row.spec)">{{ row.enabled ? "Remove" : "Use" }}</button>
@@ -143,7 +148,7 @@
 										<button v-for="m in [...row.models, '']" :key="m" type="button"
 											class="rounded-md border px-2.5 py-1 font-mono text-xs"
 											:class="row.model === m ? 'border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'"
-											@click="setCLIModel(row.spec, m)">{{ m || "default model" }}</button>
+											@click="setCLIModel(row.spec, m)">{{ m ? m.slice(row.name.length + 1) : "default model" }}</button>
 									</div>
 								</li>
 							</ol>
@@ -158,54 +163,8 @@
 						</div>
 					</section>
 
-					<!-- Reports -->
-					<section id="reports" :class="CARD">
-						<h2 :class="CARD_HEAD">Reports <span :class="CARD_NOTE">Optional. An agent posts updates to its channels and can answer questions about this project.</span></h2>
-						<div class="space-y-4 p-5">
-							<label class="block">
-								<span :class="LABEL">Report through</span>
-								<select v-model="form.reportTo" :class="INPUT" data-field="report_to">
-									<option value="">Nobody</option>
-									<option v-for="a in reportAgents" :key="a.name" :value="a.name">{{ a.label }}</option>
-								</select>
-							</label>
-							<fieldset v-if="form.reportTo">
-								<legend :class="LABEL">Post when</legend>
-								<div class="grid gap-2 sm:grid-cols-2">
-									<label v-for="ev in REPORT_EVENTS" :key="ev.key" class="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-										<input v-model="form.reportOn" type="checkbox" :value="ev.key" :data-event="ev.key" /> {{ ev.label }}
-									</label>
-								</div>
-							</fieldset>
-						</div>
-					</section>
-
-					<!-- Schedules -->
-					<section id="schedules" :class="CARD">
-						<h2 :class="CARD_HEAD">Schedules <span :class="CARD_NOTE">Optional. Scheduled prompts scoped to this repository.</span></h2>
-						<ul class="divide-y divide-gray-200 dark:divide-gray-800">
-							<li v-for="(sc, i) in form.schedules" :key="i" data-testid="schedule-row"
-								class="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center">
-								<input v-model="sc.schedule" type="text" placeholder="0 2 * * 1-5" aria-label="Cron schedule"
-									class="w-full rounded-md border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900 sm:w-36" />
-								<input v-model="sc.prompt" type="text" placeholder="What to do" aria-label="Prompt"
-									class="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-950" />
-								<label class="flex items-center gap-1 text-xs text-gray-500"><input v-model="sc.paused" type="checkbox" /> paused</label>
-								<button type="button" class="text-xs text-red-600 hover:underline" @click="form.schedules.splice(i, 1)">Remove</button>
-							</li>
-						</ul>
-						<div class="border-t border-gray-200 px-5 py-3 dark:border-gray-800">
-							<button type="button" class="text-sm text-blue-600 hover:underline dark:text-blue-400"
-								@click="form.schedules.push({ schedule: '', prompt: '', paused: false })">+ Add schedule</button>
-						</div>
-					</section>
-
-					<!-- Clones -->
 					<section id="clones" :class="CARD">
-						<h2 :class="CARD_HEAD">
-							Clones <span :class="CARD_NOTE">Each job works in its own clone</span>
-							<span v-if="clones.clones.value.length" class="ml-auto text-xs font-normal text-gray-500">{{ formatBytes(clones.totalBytes.value) }} total</span>
-						</h2>
+						<h2 :class="CARD_HEAD">Clones <span :class="CARD_NOTE">Each job works in its own clone, shared across projects</span></h2>
 						<div class="p-5">
 							<p v-if="!clones.loaded.value" class="text-sm text-gray-500">Reading clones…</p>
 							<p v-else-if="clones.error.value" class="text-sm text-gray-500">Couldn't list clones: {{ clones.error.value }}</p>
@@ -215,29 +174,28 @@
 									<div class="min-w-0 flex-1">
 										<p class="truncate font-mono text-xs text-gray-800 dark:text-gray-200">{{ c.path }}</p>
 										<p class="text-xs text-gray-500">
-											<template v-if="c.issue">#{{ c.issue }}</template><template v-if="c.pr"> · PR #{{ c.pr }}</template>
-											<template v-if="c.inUse"> · in use</template>
+											{{ [c.repo && c.issue ? `${c.repo}#${c.issue}` : c.repo, c.pr ? `PR #${c.pr}` : ""].filter(Boolean).join(" · ") }}
 										</p>
 									</div>
-									<span class="text-xs text-gray-600 dark:text-gray-300">{{ formatBytes(c.sizeBytes) }}</span>
-									<button type="button" class="text-xs text-red-600 hover:underline disabled:opacity-40"
-										:disabled="c.inUse || clones.clearing.value" @click="clones.clear(c.path)">Clear</button>
+									<span class="text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'" :title="c.reason">
+										{{ c.inUse ? "in use" : "unused" }}
+									</span>
 								</li>
 							</ul>
-							<div v-if="clones.clones.value.some((c) => !c.inUse)" class="mt-3 flex items-center gap-3">
-								<button type="button" :disabled="clones.clearing.value"
-									class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-									@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
-							</div>
-							<p v-if="cloneMessage" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">{{ cloneMessage }}</p>
+							<button v-if="clones.clones.value.some((c) => !c.inUse)" type="button" :disabled="clones.clearing.value"
+								class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+								@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
+							<p v-if="clones.cleared.value" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">
+								Removed {{ clones.cleared.value.removed }} {{ clones.cleared.value.removed === 1 ? "clone" : "clones" }},
+								reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }} in use</template>.
+							</p>
 						</div>
 					</section>
 
-					<!-- YAML -->
 					<section id="yaml" :class="CARD">
 						<h2 :class="CARD_HEAD">YAML <span :class="CARD_NOTE">Only what differs from defaults ends up in aviary.yaml</span></h2>
 						<pre data-testid="project-yaml"
-							class="overflow-x-auto rounded-b-xl bg-gray-50 px-5 py-4 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || `# ${target} uses only defaults, so nothing is written.` }}</pre>
+							class="overflow-x-auto rounded-b-xl bg-gray-50 px-5 py-4 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || "# Every setting is a default, so nothing is written." }}</pre>
 					</section>
 				</div>
 			</div>
@@ -256,19 +214,20 @@ import {
 	useProjectClones,
 } from "../composables/useProjectSettings";
 import {
+	DEFAULT_INTERVAL,
 	DELIVERY_OPTIONS,
 	defaultFields,
-	entryFromSettings,
-	findEntry,
 	formatBytes,
+	isListed,
 	type ProjectSettings,
+	type ProjectsSection,
 	parseList,
 	projectsYAML,
-	REPORT_EVENTS,
-	settingsFromEntry,
+	settingsFromSection,
+	sharedAgents,
 	specModel,
 	specName,
-	withEntry,
+	withSettings,
 } from "../lib/projectSettings";
 import { encodeProject } from "../lib/projects";
 import { useSettingsStore } from "../stores/settings";
@@ -288,17 +247,18 @@ const ICON_BTN =
 const SECTIONS = [
 	{ id: "general", label: "General" },
 	{ id: "clis", label: "Coding CLIs" },
-	{ id: "reports", label: "Reports" },
-	{ id: "schedules", label: "Schedules" },
 	{ id: "clones", label: "Clones" },
 	{ id: "yaml", label: "YAML" },
 ];
 
-type ToggleKey = "merge" | "changelog" | "stack";
+type ToggleKey = "merge" | "changelog" | "yolo";
 const TOGGLES: { key: ToggleKey; label: string }[] = [
 	{ key: "merge", label: "Merge pull requests when CI passes" },
 	{ key: "changelog", label: "Add a changelog entry to each pull request" },
-	{ key: "stack", label: "Stack work on open pull requests it depends on" },
+	{
+		key: "yolo",
+		label: "Run coding CLIs without their sandboxes and permission checks",
+	},
 ];
 
 function DefaultTag(p: { on: boolean }) {
@@ -319,6 +279,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useSettingsStore();
 const probe = useCLIProbe();
+const clones = useProjectClones();
 const addProject = useAddProject();
 
 const target = computed(() =>
@@ -326,15 +287,14 @@ const target = computed(() =>
 );
 const adding = computed(() => route.query.add === "1");
 const boardLink = computed(() => `/projects/${encodeProject(target.value)}`);
-const clones = useProjectClones(target);
 
 const form = ref<ProjectSettings | null>(null);
 const loaded = ref("");
 const commentersText = ref("");
-const filtersText = ref("");
+const filterText = ref("");
 const tempDirsText = ref("");
 const saving = ref(false);
-const savedAt = ref(false);
+const saved = ref(false);
 const error = ref("");
 
 const lines = (text: string) =>
@@ -343,13 +303,15 @@ const lines = (text: string) =>
 		.map((l) => l.trim())
 		.filter(Boolean);
 
+const section = computed<ProjectsSection>(() => store.config?.projects ?? {});
+
 function reset() {
-	const entry = findEntry(store.config?.projects, target.value);
-	const s = settingsFromEntry(target.value, entry);
+	const s = settingsFromSection(target.value, section.value);
 	form.value = s;
-	loaded.value = JSON.stringify(entryFromSettings(s));
+	// Baseline from the same builder that saves, so key order never reads as a change.
+	loaded.value = JSON.stringify(next.value);
 	commentersText.value = s.commenters.join(", ");
-	filtersText.value = s.filters.join("\n");
+	filterText.value = s.filter.join("\n");
 	tempDirsText.value = s.tempDirs.join("\n");
 }
 
@@ -361,46 +323,52 @@ onMounted(async () => {
 });
 watch(target, reset);
 
-const entry = computed(() =>
-	form.value ? entryFromSettings(form.value) : null,
-);
+// The section as it will be saved. A project joins `list` once anything
+// differs from its defaults; one watched with defaults writes nothing.
+const next = computed<ProjectsSection>(() => {
+	if (!form.value) return section.value;
+	const unlisted = withSettings(section.value, form.value, false);
+	const changed = JSON.stringify(unlisted) !== "{}";
+	return withSettings(
+		section.value,
+		form.value,
+		isListed(section.value, target.value) || changed,
+	);
+});
 const dirty = computed(
-	() => !!form.value && JSON.stringify(entry.value) !== loaded.value,
+	() => !!form.value && JSON.stringify(next.value) !== loaded.value,
 );
-const nextProjects = computed(() =>
-	withEntry(store.config?.projects, target.value, entry.value),
-);
-const yaml = computed(() =>
-	projectsYAML(
-		nextProjects.value.filter(
-			(p) => p.target.toLowerCase() === target.value.toLowerCase(),
-		),
-	),
-);
+const yaml = computed(() => projectsYAML(next.value));
 const defaults = computed(() =>
 	form.value ? defaultFields(form.value) : new Set<keyof ProjectSettings>(),
 );
 const isDefault = (key: keyof ProjectSettings) => defaults.value.has(key);
 const advancedOpen = computed(
 	() =>
-		!!form.value &&
 		!(
-			isDefault("filters") &&
-			isDefault("allIssues") &&
-			isDefault("interval") &&
-			isDefault("readyState") &&
-			isDefault("tempDirs")
-		),
+			[
+				"filter",
+				"allIssues",
+				"interval",
+				"readyState",
+				"unblockInterval",
+				"tempDirs",
+			] as const
+		).every(isDefault),
 );
 
 const saveNote = computed(() => {
 	if (saving.value) return "";
 	if (adding.value)
 		return "Nothing is written to aviary.yaml unless a setting differs from its default";
-	if (savedAt.value && !dirty.value)
+	if (saved.value && !dirty.value)
 		return "Saved and applied to the running watch";
 	return "Changes apply to the running watch right away";
 });
+
+function setToggle(key: ToggleKey, v: boolean) {
+	if (form.value) form.value[key] = v;
+}
 
 function discard() {
 	reset();
@@ -413,15 +381,15 @@ async function save() {
 	error.value = "";
 	try {
 		if (dirty.value) {
-			await store.saveConfig({ ...store.config, projects: nextProjects.value });
-			loaded.value = JSON.stringify(entry.value);
+			await store.saveConfig({ ...store.config, projects: next.value });
+			loaded.value = JSON.stringify(next.value);
 		}
 		if (adding.value) {
 			await addProject(target.value);
 			await router.replace(boardLink.value);
 			return;
 		}
-		savedAt.value = true;
+		saved.value = true;
 	} catch (e) {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -431,21 +399,18 @@ async function save() {
 
 // ── Coding CLIs ─────────────────────────────────────────────────────────────
 
-// With no clis configured, jobs use every signed-in CLI in definition order.
-const defaultSpecs = computed(() =>
-	(probe.clis.value ?? []).filter((c) => c.signedIn).map((c) => c.name),
-);
+// Without its own order, the project uses the shared one.
+const defaultSpecs = computed(() => sharedAgents(section.value));
 const specs = computed(() =>
-	form.value?.clis.length ? form.value.clis : defaultSpecs.value,
+	form.value?.agents.length ? form.value.agents : defaultSpecs.value,
 );
-const enabledCount = computed(() => specs.value.length);
 
-function setSpecs(next: string[]) {
+function setSpecs(list: string[]) {
 	if (!form.value) return;
 	const same =
-		next.length === defaultSpecs.value.length &&
-		next.every((s, i) => s === defaultSpecs.value[i]);
-	form.value.clis = same ? [] : next;
+		list.length === defaultSpecs.value.length &&
+		list.every((s, i) => s === defaultSpecs.value[i]);
+	form.value.agents = same ? [] : list;
 }
 
 const cliRows = computed(() => {
@@ -454,19 +419,17 @@ const cliRows = computed(() => {
 		const name = specName(spec);
 		const cli = probed.find((c) => c.name === name);
 		const isAgent = name === "aviary";
-		const status = isAgent
-			? "Aviary agent"
-			: !cli
-				? probe.clis.value
-					? "not installed"
-					: ""
-				: !cli.signedIn
-					? "signed out"
-					: ["signed in", cli.quota].filter(Boolean).join(" · ");
+		let status = "";
+		if (isAgent) status = "Aviary agent";
+		else if (cli && !cli.installed) status = "not installed";
+		else if (cli)
+			status = cli.signedIn
+				? ["signed in", cli.quota].filter(Boolean).join(" · ")
+				: cli.auth || "signed out";
+		else if (probe.clis.value) status = "unknown CLI";
 		return {
 			spec,
 			name: isAgent ? spec : name,
-			label: isAgent ? spec : name,
 			enabled,
 			model: specModel(spec),
 			models: cli?.models ?? [],
@@ -487,20 +450,15 @@ function toggleCLI(spec: string) {
 }
 
 function setCLIModel(spec: string, model: string) {
-	const name = specName(spec);
-	setSpecs(
-		specs.value.map((s) =>
-			s === spec ? (model ? `${name}/${model}` : name) : s,
-		),
-	);
+	setSpecs(specs.value.map((s) => (s === spec ? model || specName(spec) : s)));
 }
 
 function moveCLI(i: number, dir: number) {
-	const next = [...specs.value];
+	const list = [...specs.value];
 	const j = i + dir;
-	if (j < 0 || j >= next.length) return;
-	[next[i], next[j]] = [next[j], next[i]];
-	setSpecs(next);
+	if (j < 0 || j >= list.length) return;
+	[list[i], list[j]] = [list[j], list[i]];
+	setSpecs(list);
 }
 
 const unusedAgents = computed(() =>
@@ -514,32 +472,4 @@ function addAgent(e: Event) {
 	if (sel.value) setSpecs([...specs.value, sel.value]);
 	sel.value = "";
 }
-
-// ── Reports and clones ──────────────────────────────────────────────────────
-
-const reportAgents = computed(() =>
-	(store.config?.agents ?? []).map((a) => {
-		const channels = (a.channels ?? [])
-			.filter((c) => c.enabled !== false)
-			.map((c) =>
-				[c.type.charAt(0).toUpperCase() + c.type.slice(1), c.id]
-					.filter(Boolean)
-					.join(" "),
-			);
-		return {
-			name: a.name,
-			label: channels.length
-				? `${a.name} · ${channels.join(", ")}`
-				: `${a.name} · no channels`,
-		};
-	}),
-);
-
-const cloneMessage = computed(() => {
-	const m = clones.message.value;
-	if (!m) return "";
-	return m.startsWith("reclaimed:")
-		? `Reclaimed ${formatBytes(Number(m.slice("reclaimed:".length)))}`
-		: "Cleared unused clones";
-});
 </script>

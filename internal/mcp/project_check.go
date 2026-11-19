@@ -15,8 +15,6 @@ import (
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/lsegal/aviary/internal/config"
 )
 
 // Check levels reported by project_check.
@@ -25,6 +23,9 @@ const (
 	projectCheckWarn = "warn"
 	projectCheckFail = "fail"
 )
+
+// projectDefaultReadyLabel is checked when the caller names no ready label.
+const projectDefaultReadyLabel = "ready"
 
 // projectCheckTimeout bounds every gh call so a stalled GitHub read cannot
 // hang the add-project dialog.
@@ -62,7 +63,7 @@ var projectSkills = []string{"gh-fix"}
 
 type projectCheckArgs struct {
 	Target     string `json:"target" jsonschema:"repository (owner/repo or a GitHub URL), Project board or Discussions board to check"`
-	ReadyLabel string `json:"ready_label,omitempty" jsonschema:"ready label to look for; defaults to the project's configured label or ready"`
+	ReadyLabel string `json:"ready_label,omitempty" jsonschema:"ready label to look for; defaults to ready"`
 }
 
 // ProjectCheck is one add-project prerequisite and its outcome.
@@ -133,12 +134,7 @@ func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckR
 	}
 	label := strings.TrimSpace(args.ReadyLabel)
 	if label == "" {
-		if cfg, cerr := config.Load(""); cerr == nil {
-			p, _ := config.FindProject(cfg, target)
-			label = config.EffectiveProject(p).ReadyLabel
-		} else {
-			label = config.DefaultProjectReadyLabel
-		}
+		label = projectDefaultReadyLabel
 	}
 	res := &ProjectCheckResult{Target: target, Repo: repo, Kind: kind, ReadyLabel: label}
 	add := func(name, status, format string, a ...any) {

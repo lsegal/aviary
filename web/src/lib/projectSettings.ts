@@ -1,155 +1,135 @@
-// Project settings and the add-project flow. A project's settings live in
-// the `projects:` section of aviary.yaml (read and written with config_get /
-// config_save), and each entry holds only the values that differ from the
-// defaults below, which mirror internal/config/projects.go. The add-project
-// checks come from project_check, the coding-CLI probe from project_cli_list
-// and clones from project_clone_list; their responses are normalized here so
-// the views never depend on the raw payload shape.
+// Project settings and the add-project flow. Settings live in the `projects:`
+// section of aviary.yaml (read and written with config_get / config_save) and
+// hold only values that differ from the defaults below, which mirror
+// internal/config/projects.go. Most settings are shared by every watched
+// project; each project's own entry in `list` carries its coding-CLI order.
+// The add-project checks come from project_check, the coding-CLI probe from
+// project_cli_list and clones from project_clone_list; their responses are
+// normalized here so the views never depend on the raw payload shape.
 
-export type Delivery = "browser" | "webhook" | "poll";
-export type ReportEvent = "ready" | "failed" | "answer_needed" | "merged";
+export type Delivery = "poll" | "webhook";
 
-/** One `projects:` entry as stored in aviary.yaml (snake_case, sparse). */
-export interface ProjectConfigEntry {
+/** One watched project in `projects.list`. */
+export interface ProjectEntry {
 	target: string;
-	jobs?: number;
+	agents?: string[];
+}
+
+/** The `projects:` section as stored in aviary.yaml (snake_case, sparse). */
+export interface ProjectsSection {
+	list?: ProjectEntry[];
+	concurrency?: number;
+	interval?: string;
+	delivery?: string;
 	ready_label?: string;
 	ready_state?: string;
-	delivery?: Delivery;
-	interval?: string;
-	filters?: string[];
+	filter?: string[];
 	all_issues?: boolean;
-	commenters?: string[];
-	merge?: boolean;
-	changelog?: boolean;
-	stack?: boolean;
-	clis?: string[];
+	allowed_commenters?: string[];
+	agents?: string[];
+	no_merge?: boolean;
+	no_changelog?: boolean;
+	yolo?: boolean;
+	unblock_interval?: string;
 	temp_dirs?: string[];
-	report_to?: string;
-	report_on?: ReportEvent[];
-	schedules?: ProjectSchedule[];
+	// Fields this page doesn't edit (agent_binaries, cli_definitions,
+	// webhook, unblock_agent, ...) pass through untouched.
+	[key: string]: unknown;
 }
 
-export interface ProjectSchedule {
-	schedule: string;
-	prompt: string;
-	paused?: boolean;
-}
-
-/** A project's full, effective settings as edited in the form. */
+/** The settings edited on one project's page, with defaults filled in. */
 export interface ProjectSettings {
 	target: string;
-	jobs: number;
+	/** This project's coding-CLI order; empty uses the shared `agents`. */
+	agents: string[];
+	concurrency: number;
 	readyLabel: string;
 	readyState: string;
 	delivery: Delivery;
 	interval: string;
-	filters: string[];
+	filter: string[];
 	allIssues: boolean;
 	commenters: string[];
 	merge: boolean;
 	changelog: boolean;
-	stack: boolean;
-	clis: string[];
+	yolo: boolean;
+	unblockInterval: string;
 	tempDirs: string[];
-	reportTo: string;
-	reportOn: ReportEvent[];
-	schedules: ProjectSchedule[];
 }
 
-export const DEFAULT_FILTERS = ["assignee:@me author:@me"];
-export const DEFAULT_REPORT_ON: ReportEvent[] = [
-	"ready",
-	"failed",
-	"answer_needed",
-];
-
-export const REPORT_EVENTS: { key: ReportEvent; label: string }[] = [
-	{ key: "ready", label: "A pull request is ready for review" },
-	{ key: "failed", label: "A job fails" },
-	{ key: "merged", label: "A pull request merges" },
-	{ key: "answer_needed", label: "A job needs an answer from you" },
-];
+export const DEFAULT_CONCURRENCY = 3;
+export const DEFAULT_READY_LABEL = "ready";
+export const DEFAULT_INTERVAL = "30s";
+export const DEFAULT_FILTER = ["assignee:@me author:@me"];
+export const DEFAULT_AGENT = "codex";
 
 export const DELIVERY_OPTIONS: { key: Delivery; label: string }[] = [
-	{ key: "browser", label: "Browser (signed-in profile)" },
-	{ key: "webhook", label: "Webhook (ngrok tunnel)" },
 	{ key: "poll", label: "Poll with gh" },
+	{ key: "webhook", label: "Webhook (ngrok tunnel)" },
 ];
-
-export function defaultSettings(target: string): ProjectSettings {
-	return {
-		target,
-		jobs: 4,
-		readyLabel: "ready",
-		readyState: "",
-		delivery: "browser",
-		interval: "",
-		filters: [...DEFAULT_FILTERS],
-		allIssues: false,
-		commenters: [],
-		merge: true,
-		changelog: true,
-		stack: true,
-		clis: [],
-		tempDirs: [],
-		reportTo: "",
-		reportOn: [...DEFAULT_REPORT_ON],
-		schedules: [],
-	};
-}
-
-const DELIVERIES: Delivery[] = ["browser", "webhook", "poll"];
 
 function strings(v: unknown): string[] {
 	return Array.isArray(v)
-		? v.filter((s): s is string => typeof s === "string" && s.trim() !== "")
+		? v
+				.filter((s): s is string => typeof s === "string")
+				.map((s) => s.trim())
+				.filter(Boolean)
 		: [];
 }
 
-/** Finds target's entry, matching case-insensitively like the server. */
-export function findEntry(
-	projects: ProjectConfigEntry[] | undefined,
-	target: string,
-): ProjectConfigEntry | undefined {
-	const key = target.toLowerCase();
-	return (projects ?? []).find((p) => p.target?.toLowerCase() === key);
+function sameTarget(a: string | undefined, b: string): boolean {
+	return (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Fills a sparse config entry with defaults to get the form's settings. */
-export function settingsFromEntry(
+/** Whether target is in the section's list of watched projects. */
+export function isListed(
+	section: ProjectsSection | undefined,
 	target: string,
-	entry?: ProjectConfigEntry,
+): boolean {
+	return (section?.list ?? []).some((p) => sameTarget(p.target, target));
+}
+
+/** The shared coding-CLI specs a project uses when it sets none of its own. */
+export function sharedAgents(section: ProjectsSection | undefined): string[] {
+	const agents = strings(section?.agents);
+	return agents.length ? agents : [DEFAULT_AGENT];
+}
+
+/** Reads one project's settings from the section, filling in defaults. */
+export function settingsFromSection(
+	target: string,
+	section: ProjectsSection | undefined,
 ): ProjectSettings {
-	const s = defaultSettings(entry?.target || target);
-	if (!entry) return s;
-	if (typeof entry.jobs === "number" && entry.jobs > 0) s.jobs = entry.jobs;
-	if (entry.ready_label) s.readyLabel = entry.ready_label;
-	if (entry.ready_state) s.readyState = entry.ready_state;
-	if (entry.delivery && DELIVERIES.includes(entry.delivery))
-		s.delivery = entry.delivery;
-	if (entry.interval) s.interval = entry.interval;
-	s.allIssues = entry.all_issues === true;
-	const filters = strings(entry.filters);
-	if (filters.length) s.filters = filters;
-	else if (s.allIssues) s.filters = [];
-	s.commenters = strings(entry.commenters);
-	s.merge = entry.merge !== false;
-	s.changelog = entry.changelog !== false;
-	s.stack = entry.stack !== false;
-	s.clis = strings(entry.clis);
-	s.tempDirs = strings(entry.temp_dirs);
-	s.reportTo = entry.report_to ?? "";
-	const on = strings(entry.report_on) as ReportEvent[];
-	if (on.length) s.reportOn = on;
-	s.schedules = (entry.schedules ?? [])
-		.filter((sc) => sc && typeof sc === "object")
-		.map((sc) => ({
-			schedule: sc.schedule ?? "",
-			prompt: sc.prompt ?? "",
-			paused: sc.paused === true,
-		}));
-	return s;
+	const s = section ?? {};
+	const entry = (s.list ?? []).find((p) => sameTarget(p.target, target));
+	const filter = strings(s.filter);
+	return {
+		target: entry?.target ?? target,
+		agents: strings(entry?.agents),
+		concurrency:
+			typeof s.concurrency === "number" && s.concurrency > 0
+				? s.concurrency
+				: DEFAULT_CONCURRENCY,
+		// An explicit empty ready label turns label matching off.
+		readyLabel:
+			typeof s.ready_label === "string"
+				? s.ready_label.trim()
+				: DEFAULT_READY_LABEL,
+		readyState: (s.ready_state ?? "").trim(),
+		delivery:
+			(s.delivery ?? "").trim().toLowerCase() === "webhook"
+				? "webhook"
+				: "poll",
+		interval: (s.interval ?? "").trim(),
+		filter: filter.length ? filter : [...DEFAULT_FILTER],
+		allIssues: s.all_issues === true,
+		commenters: strings(s.allowed_commenters),
+		merge: s.no_merge !== true,
+		changelog: s.no_changelog !== true,
+		yolo: s.yolo === true,
+		unblockInterval: (s.unblock_interval ?? "").trim(),
+		tempDirs: strings(s.temp_dirs),
+	};
 }
 
 function sameList(a: string[], b: string[]): boolean {
@@ -161,83 +141,68 @@ function clean(list: string[]): string[] {
 }
 
 /**
- * Builds the sparse entry that records only what differs from the defaults,
- * or null when every setting is a default and nothing should be written.
+ * Writes one project's settings back into the section, keeping only values
+ * that differ from their defaults. With listed false the project is left out
+ * of `list` unless it has settings of its own, so a project watched with
+ * defaults writes nothing.
  */
-export function entryFromSettings(
+export function withSettings(
+	section: ProjectsSection | undefined,
 	s: ProjectSettings,
-): ProjectConfigEntry | null {
-	const d = defaultSettings(s.target);
-	const e: ProjectConfigEntry = { target: s.target.trim() };
-	if (s.jobs > 0 && s.jobs !== d.jobs) e.jobs = Math.floor(s.jobs);
+	listed = isListed(section, s.target),
+): ProjectsSection {
+	const out: ProjectsSection = { ...(section ?? {}) };
+	const set = (key: string, value: unknown, isDefault: boolean) => {
+		if (isDefault) delete out[key];
+		else out[key] = value;
+	};
+	set(
+		"concurrency",
+		Math.floor(s.concurrency),
+		!(s.concurrency > 0) || s.concurrency === DEFAULT_CONCURRENCY,
+	);
 	const label = s.readyLabel.trim();
-	if (label && label !== d.readyLabel) e.ready_label = label;
-	if (s.readyState.trim()) e.ready_state = s.readyState.trim();
-	if (s.delivery !== d.delivery) e.delivery = s.delivery;
-	if (s.interval.trim()) e.interval = s.interval.trim();
-	if (s.allIssues) e.all_issues = true;
-	const filters = clean(s.filters);
-	if (filters.length && !sameList(filters, d.filters)) e.filters = filters;
+	set("ready_label", label, label === DEFAULT_READY_LABEL);
+	set("ready_state", s.readyState.trim(), !s.readyState.trim());
+	set("delivery", s.delivery, s.delivery === "poll");
+	const interval = s.interval.trim();
+	set("interval", interval, !interval || interval === DEFAULT_INTERVAL);
+	const filter = clean(s.filter);
+	set("filter", filter, !filter.length || sameList(filter, DEFAULT_FILTER));
+	set("all_issues", true, !s.allIssues);
 	const commenters = clean(s.commenters);
-	if (commenters.length) e.commenters = commenters;
-	if (!s.merge) e.merge = false;
-	if (!s.changelog) e.changelog = false;
-	if (!s.stack) e.stack = false;
-	const clis = clean(s.clis);
-	if (clis.length) e.clis = clis;
+	set("allowed_commenters", commenters, !commenters.length);
+	set("no_merge", true, s.merge);
+	set("no_changelog", true, s.changelog);
+	set("yolo", true, !s.yolo);
+	set("unblock_interval", s.unblockInterval.trim(), !s.unblockInterval.trim());
 	const dirs = clean(s.tempDirs);
-	if (dirs.length) e.temp_dirs = dirs;
-	if (s.reportTo.trim()) {
-		e.report_to = s.reportTo.trim();
-		const on = REPORT_EVENTS.map((r) => r.key).filter((k) =>
-			s.reportOn.includes(k),
-		);
-		if (!sameList(on, DEFAULT_REPORT_ON)) e.report_on = on;
-	}
-	const schedules = s.schedules
-		.filter((sc) => sc.schedule.trim() || sc.prompt.trim())
-		.map((sc) => ({
-			schedule: sc.schedule.trim(),
-			prompt: sc.prompt.trim(),
-			...(sc.paused ? { paused: true } : {}),
-		}));
-	if (schedules.length) e.schedules = schedules;
-	return Object.keys(e).length > 1 ? e : null;
-}
+	set("temp_dirs", dirs, !dirs.length);
 
-/** Returns projects with target's entry replaced, added or (when null) removed. */
-export function withEntry(
-	projects: ProjectConfigEntry[] | undefined,
-	target: string,
-	entry: ProjectConfigEntry | null,
-): ProjectConfigEntry[] {
-	const key = target.toLowerCase();
-	const out: ProjectConfigEntry[] = [];
-	let placed = false;
-	for (const p of projects ?? []) {
-		if (p.target?.toLowerCase() === key) {
-			if (entry && !placed) out.push(entry);
-			placed = true;
-		} else {
-			out.push(p);
-		}
+	const agents = clean(s.agents);
+	const list = (section?.list ?? []).filter(
+		(p) => !sameTarget(p.target, s.target),
+	);
+	if (listed || agents.length) {
+		const at = (section?.list ?? []).findIndex((p) =>
+			sameTarget(p.target, s.target),
+		);
+		const entry: ProjectEntry = {
+			target: s.target.trim(),
+			...(agents.length ? { agents } : {}),
+		};
+		list.splice(at >= 0 ? at : list.length, 0, entry);
 	}
-	if (entry && !placed) out.push(entry);
+	set("list", list, !list.length);
 	return out;
 }
 
-/** Which form fields still hold their defaults, for the grey "default" tags. */
+/** Which settings still hold their defaults, for the grey "default" tags. */
 export function defaultFields(s: ProjectSettings): Set<keyof ProjectSettings> {
-	const d = defaultSettings(s.target);
+	const d = settingsFromSection(s.target, {});
 	const out = new Set<keyof ProjectSettings>();
 	for (const key of Object.keys(d) as (keyof ProjectSettings)[]) {
-		const a = s[key];
-		const b = d[key];
-		const same =
-			Array.isArray(a) && Array.isArray(b)
-				? JSON.stringify(a) === JSON.stringify(b)
-				: a === b;
-		if (same) out.add(key);
+		if (JSON.stringify(s[key]) === JSON.stringify(d[key])) out.add(key);
 	}
 	return out;
 }
@@ -250,45 +215,48 @@ export function parseList(text: string): string[] {
 		.filter(Boolean);
 }
 
-function yamlScalar(v: string | number | boolean): string {
+function yamlScalar(v: unknown): string {
 	if (typeof v !== "string") return String(v);
 	if (
 		v === "" ||
-		/^[\s]|[\s]$|[:#{}[\],&*!|>'"%@`]|^(true|false|null|yes|no|~|[-+]?\d)/i.test(
-			v,
-		)
+		/^\s|\s$|[:#{}[\],&*!|>'"%@`]|^(true|false|null|yes|no|~|[-+]?\d)/i.test(v)
 	)
 		return JSON.stringify(v);
 	return v;
 }
 
-/** Renders the `projects:` section exactly as it will be written. */
-export function projectsYAML(projects: ProjectConfigEntry[]): string {
-	if (!projects.length) return "";
-	const lines = ["projects:"];
-	for (const p of projects) {
-		let first = true;
-		for (const [key, value] of Object.entries(p)) {
-			if (value === undefined) continue;
-			const lead = first ? "  - " : "    ";
-			first = false;
-			if (key === "schedules" && Array.isArray(value)) {
-				lines.push(`${lead}schedules:`);
-				for (const sc of value as ProjectSchedule[]) {
-					lines.push(`      - schedule: ${yamlScalar(sc.schedule)}`);
-					lines.push(`        prompt: ${yamlScalar(sc.prompt)}`);
-					if (sc.paused) lines.push("        paused: true");
-				}
-			} else if (Array.isArray(value)) {
-				lines.push(
-					`${lead}${key}: [${value.map((v) => yamlScalar(String(v))).join(", ")}]`,
-				);
-			} else {
-				lines.push(`${lead}${key}: ${yamlScalar(value as string)}`);
-			}
+function yamlValue(indent: string, key: string, value: unknown): string[] {
+	if (Array.isArray(value)) {
+		if (value.every((v) => typeof v !== "object" || v === null))
+			return [`${indent}${key}: [${value.map(yamlScalar).join(", ")}]`];
+		const lines = [`${indent}${key}:`];
+		for (const item of value) {
+			const entries = Object.entries(item as Record<string, unknown>);
+			entries.forEach(([k, v], i) => {
+				const lead = i === 0 ? `${indent}  - ` : `${indent}    `;
+				lines.push(...yamlValue(lead, k, v));
+			});
 		}
+		return lines;
 	}
-	return lines.join("\n");
+	if (value && typeof value === "object") {
+		const lines = [`${indent}${key}:`];
+		const child = `${" ".repeat(indent.length)}  `;
+		for (const [k, v] of Object.entries(value))
+			lines.push(...yamlValue(child, k, v));
+		return lines;
+	}
+	return [`${indent}${key}: ${yamlScalar(value)}`];
+}
+
+/** Renders the `projects:` section as it will be written, or "" when empty. */
+export function projectsYAML(section: ProjectsSection): string {
+	const entries = Object.entries(section).filter(([, v]) => v !== undefined);
+	if (!entries.length) return "";
+	return [
+		"projects:",
+		...entries.flatMap(([k, v]) => yamlValue("  ", k, v)),
+	].join("\n");
 }
 
 // ── Add-project checks (project_check) ────────────────────────────────────
@@ -304,7 +272,6 @@ export interface ProjectCheckItem {
 export interface ProjectCheckResult {
 	target: string;
 	kind: string;
-	readyLabel: string;
 	fork: boolean;
 	ok: boolean;
 	checks: ProjectCheckItem[];
@@ -348,7 +315,6 @@ export function normalizeCheck(raw: unknown): ProjectCheckResult {
 	return {
 		target: str(r.target),
 		kind: str(r.kind),
-		readyLabel: str(r.ready_label),
 		fork: r.fork === true,
 		ok: r.ok === true && !checks.some((c) => c.status === "fail"),
 		checks,
@@ -360,87 +326,105 @@ export function normalizeCheck(raw: unknown): ProjectCheckResult {
 export interface CodingCLI {
 	name: string;
 	installed: boolean;
-	version: string;
 	signedIn: boolean;
+	auth: string;
 	quota: string;
+	/** Fully qualified model specs, such as claude/opus. */
 	models: string[];
 	defaultModel: string;
 }
 
+const SIGNED_OUT = /not|out|missing|expired|none|error|unknown/i;
+
 export function normalizeCLIList(raw: unknown): CodingCLI[] {
 	const r = obj(raw);
-	const list = Array.isArray(raw)
-		? raw
-		: Array.isArray(r.clis)
-			? r.clis
-			: Array.isArray(r.agents)
-				? r.agents
-				: [];
+	const list = Array.isArray(raw) ? raw : Array.isArray(r.clis) ? r.clis : [];
 	return list
 		.map((c) => {
 			const o = obj(c);
-			const models = strings(o.models);
+			const name = str(o.name);
+			const auth = str(o.auth);
+			const installed = o.installed !== false && str(o.status) !== "missing";
 			return {
-				name: str(o.name),
-				installed: o.installed !== false,
-				version: str(o.version),
-				signedIn: o.signed_in === true || o.signedIn === true,
+				name,
+				installed,
+				signedIn:
+					installed &&
+					(o.signed_in === true || (auth !== "" && !SIGNED_OUT.test(auth))),
+				auth,
 				quota: str(o.quota),
-				models,
-				defaultModel: str(o.default_model ?? o.defaultModel),
+				models: strings(o.models).map((m) =>
+					m.includes("/") ? m : `${name}/${m}`,
+				),
+				defaultModel: str(o.defaultModel ?? o.default_model),
 			};
 		})
 		.filter((c) => c.name);
 }
 
-/** A CLI fallback-order spec: `name`, `name/model`, or `aviary/<agent>`. */
+/** The agent name of a coding-CLI spec (AGENT/MODEL:LEVEL or aviary/<agent>). */
 export function specName(spec: string): string {
-	return spec.split("/")[0]?.split(":")[0] ?? spec;
+	const name = spec.split("/")[0] ?? spec;
+	return name.split(":")[0] ?? name;
 }
 
+/** The model a spec pins, as a fully qualified spec without the level. */
 export function specModel(spec: string): string {
-	const [name, ...rest] = spec.split("/");
-	if (name === "aviary") return "";
-	return rest.join("/").split(":")[0] ?? "";
+	if (specName(spec) === "aviary" || !spec.includes("/")) return "";
+	return spec.split(":")[0] ?? "";
 }
 
-// ── Clones (project_clone_list) ───────────────────────────────────────────
+// ── Clones (project_clone_list / project_clone_clear) ─────────────────────
 
 export interface ProjectClone {
 	path: string;
 	repo: string;
 	issue: number;
 	pr: number;
-	sizeBytes: number;
 	inUse: boolean;
+	reason: string;
+}
+
+function normalizeClone(c: unknown): ProjectClone {
+	const o = obj(c);
+	return {
+		path: str(o.path),
+		repo: str(o.repository ?? o.repo),
+		issue: Number(o.issue) || 0,
+		pr: Number(o.pullRequest ?? o.pr) || 0,
+		inUse: o.inUse === true || o.in_use === true,
+		reason: str(o.reason),
+	};
 }
 
 export function normalizeClones(raw: unknown): {
+	roots: string[];
 	clones: ProjectClone[];
-	totalBytes: number;
 } {
 	const r = obj(raw);
-	const list = Array.isArray(raw)
-		? raw
-		: Array.isArray(r.clones)
-			? r.clones
-			: [];
-	const clones = list
-		.map((c) => {
-			const o = obj(c);
-			return {
-				path: str(o.path ?? o.dir),
-				repo: str(o.repo),
-				issue: Number(o.issue) || 0,
-				pr: Number(o.pr) || 0,
-				sizeBytes: Number(o.size_bytes ?? o.size) || 0,
-				inUse: o.in_use === true || o.active === true,
-			};
-		})
-		.filter((c) => c.path);
-	const total =
-		Number(r.total_bytes) || clones.reduce((n, c) => n + c.sizeBytes, 0);
-	return { clones, totalBytes: total };
+	return {
+		roots: strings(r.roots),
+		clones: (Array.isArray(r.clones) ? r.clones : [])
+			.map(normalizeClone)
+			.filter((c) => c.path),
+	};
+}
+
+export interface ClearResult {
+	removed: number;
+	kept: number;
+	reclaimed: number;
+	errors: string[];
+}
+
+export function normalizeClear(raw: unknown): ClearResult {
+	const r = obj(raw);
+	return {
+		removed: Array.isArray(r.removed) ? r.removed.length : 0,
+		kept: Number(r.kept) || 0,
+		reclaimed: Number(r.reclaimed) || 0,
+		errors: strings(r.errors),
+	};
 }
 
 export function formatBytes(n: number): string {
