@@ -6,7 +6,10 @@
 package core
 
 import (
+	"cmp"
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -89,6 +92,11 @@ type PullRequestWorkState struct {
 	// the pull request's body, the run's plan checklist.
 	TasksDone  int
 	TasksTotal int
+	// HeadSHA is the pull request's head commit, and Comments counts its
+	// conversation and review comments, so a turn that pushed or commented
+	// counts as progress.
+	HeadSHA  string
+	Comments int
 }
 
 // RepoOr returns the repository hosting the pull request, or fallback (the
@@ -142,8 +150,27 @@ type OriginatingWorkState struct {
 	// IssueBody is the issue's description, compared between checks so an
 	// edit made while an agent is working is relayed into its session
 	//.
-	IssueBody    string
-	PullRequests []PullRequestWorkState
+	IssueBody string
+	// IssueComments counts the comments on the issue.
+	IssueComments int
+	PullRequests  []PullRequestWorkState
+}
+
+// WorkProgress fingerprints what an agent's turn can visibly change on GitHub:
+// the issue's comments, and each pull request's existence, state, head
+// commit, comments, and plan checklist. Two equal fingerprints mean nothing
+// new was committed, opened, or commented in between.
+func WorkProgress(state OriginatingWorkState) string {
+	pullRequests := slices.Clone(state.PullRequests)
+	slices.SortFunc(pullRequests, func(a, b PullRequestWorkState) int {
+		return cmp.Or(strings.Compare(a.Repository, b.Repository), cmp.Compare(a.Number, b.Number))
+	})
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s comments=%d", state.IssueState, state.IssueComments)
+	for _, p := range pullRequests {
+		fmt.Fprintf(&b, "; %s#%d %s merged=%t draft=%t head=%s comments=%d tasks=%d/%d", p.Repository, p.Number, p.State, p.Merged, p.IsDraft, p.HeadSHA, p.Comments, p.TasksDone, p.TasksTotal)
+	}
+	return b.String()
 }
 
 // WorkClosureChecker reports the current state of the issue behind active work.

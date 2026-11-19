@@ -4521,14 +4521,14 @@ func TestEngineKeepsAnAgentAliveWhileItsDraftPullRequestIsStillInProgress(t *tes
 func TestConfirmIssueClosedReportsAnUnansweredCheck(t *testing.T) {
 	w := &Engine{Out: &syncBuffer{}, closureInterval: time.Millisecond}
 	src := &fakeClosureSource{fakeSource: &fakeSource{}, err: errors.New("boom")}
-	if closed, answered, _ := w.confirmIssueClosed(context.Background(), src, Issue{Number: 7, Repository: "o/r"}); closed || answered {
+	if closed, answered, _, _ := w.confirmIssueClosed(context.Background(), src, Issue{Number: 7, Repository: "o/r"}); closed || answered {
 		t.Fatalf("confirmIssueClosed(err) = (%v, %v), want (false, false)", closed, answered)
 	}
 	src.mu.Lock()
 	src.err = nil
 	src.state = OriginatingWorkState{IssueState: "OPEN"}
 	src.mu.Unlock()
-	if closed, answered, _ := w.confirmIssueClosed(context.Background(), src, Issue{Number: 7, Repository: "o/r"}); closed || !answered {
+	if closed, answered, _, _ := w.confirmIssueClosed(context.Background(), src, Issue{Number: 7, Repository: "o/r"}); closed || !answered {
 		t.Fatalf("confirmIssueClosed(open) = (%v, %v), want (false, true)", closed, answered)
 	}
 }
