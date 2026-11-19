@@ -47,6 +47,8 @@ func TestOutputValidationRejectsWhatCannotBeDecoded(t *testing.T) {
 		{"unknown format", Output{Format: "ndjson"}, `"output.format"`},
 		{"jsonl without paths", Output{Format: FormatJSONL}, `"output.jsonl" is required`},
 		{"paths without jsonl", Output{Format: FormatText, JSONL: &paths}, `only meaningful`},
+		{"transcript without jsonl", Output{Format: FormatCodexJSON, Transcript: TranscriptClineJSON}, `"output.transcript" is only meaningful`},
+		{"unknown transcript", Output{Format: FormatJSONL, JSONL: &paths, Transcript: "ndjson"}, `"output.transcript": "ndjson" must be one of`},
 		{"nothing to read", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "event"}}, `at least one of "text" or "toolName"`},
 		{"input without a name", Output{Format: FormatJSONL, JSONL: &JSONL{Text: "text", ToolInput: "input"}}, `"output.jsonl.toolInput"`},
 		{"ignore without a type", Output{Format: FormatJSONL, JSONL: &JSONL{Text: "text", Ignore: []string{"usage"}}}, `"output.jsonl.ignore" needs`},
@@ -192,6 +194,26 @@ func TestBuiltinOutputDecoders(t *testing.T) {
 		}
 		if got := definition.MissingSessionPatterns(); !reflect.DeepEqual(got, DefaultMissingSessionPatterns) {
 			t.Fatalf("%s missing-session patterns = %#v, want the shared defaults", name, got)
+		}
+	}
+}
+
+// #390: the generic JSONL decoder only renders text and tool names, so the
+// opencode and cline definitions name the mapper that records their streams as
+// structured transcripts, and every other built-in maps with its own format.
+func TestBuiltinTranscriptFormats(t *testing.T) {
+	registry := MustBuiltin()
+	for name, want := range map[string]string{
+		"claude": FormatStreamJSON, "codex": FormatCodexJSON, "gemini": FormatGeminiJSON,
+		"cline": TranscriptClineJSON, "opencode": TranscriptOpencodeJSON, "muse": FormatJSONL,
+		"aviary": FormatAviaryJSON,
+	} {
+		definition, ok := registry.Lookup(name)
+		if !ok {
+			t.Fatalf("no built-in definition for %q", name)
+		}
+		if got := definition.Output.TranscriptFormat(); got != want {
+			t.Fatalf("%s transcripts map as %q, want %q", name, got, want)
 		}
 	}
 }

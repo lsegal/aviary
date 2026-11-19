@@ -122,6 +122,34 @@ func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
 	}
 }
 
+// TestDispatchRefusesProjectsGatedAgent proves an agent gated out of Projects
+// never runs a job: the dispatch fails with the definition's reason instead
+// of producing a job with no structured transcript.
+func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
+	agy, ok := agents.MustBuiltin().Lookup("agy")
+	if !ok {
+		t.Fatal("builtin registry has no agy definition")
+	}
+	definition, record := fakeAgentRun{Stdout: "done"}.install(t, agy)
+	registry, err := agents.NewRegistry(definition)
+	if err != nil {
+		t.Fatalf("register agy: %v", err)
+	}
+	runner := CommandRunner{Agent: "agy", Definitions: registry, Repo: "o/r"}
+	err = runner.RunSession(context.Background(), Issue{Number: 391, Target: "o/r"}, AgentSession{Agent: "agy"}, func(AgentSession) {})
+	if err == nil {
+		t.Fatal("dispatch succeeded, want agy to be refused")
+	}
+	for _, want := range []string{"agy", "unavailable for Projects", "machine-readable output"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %v, want it to mention %q", err, want)
+		}
+	}
+	if _, err := os.Stat(record); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("agent recorded invocations (%v), want none", err)
+	}
+}
+
 // TestDispatchProceedsAtMinimumVersion is the same dispatch with an install the
 // definition accepts, which has to reach the agent unchanged.
 func TestDispatchProceedsAtMinimumVersion(t *testing.T) {
