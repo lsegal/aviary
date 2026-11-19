@@ -80,7 +80,7 @@ func (c ClockTime) String() string { return fmt.Sprintf("%02d:%02d", c.Hour, c.M
 func (f Fields) HasTrigger() bool {
 	return strings.TrimSpace(f.Trigger) != "" || strings.TrimSpace(f.Schedule) != "" ||
 		strings.TrimSpace(f.Every) != "" || strings.TrimSpace(f.At) != "" ||
-		(f.RunOnce && strings.TrimSpace(f.StartAt) != "")
+		strings.TrimSpace(f.StartAt) != ""
 }
 
 // InferKind returns the trigger kind f selects, inferring it from the
