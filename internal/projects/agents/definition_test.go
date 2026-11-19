@@ -60,11 +60,11 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 			want:   []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", prompt},
 		},
 		{
-			// A resume takes neither the model nor the level: the session it
-			// continues already has them.
+			// A resume passes the model and level again: Codex otherwise
+			// resumes on the model from its own config.
 			name: "codex resume", agent: "codex", mode: ModeResume,
 			values: Values{Prompt: prompt, Session: "sess-1", Model: "gpt-5.6-luna", Level: "high"},
-			want:   []string{"exec", "resume", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "sess-1", prompt},
+			want:   []string{"exec", "resume", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-luna", "-c", "model_reasoning_effort=high", "sess-1", prompt},
 		},
 		{
 			name: "codex vision", agent: "codex", mode: ModeVision,

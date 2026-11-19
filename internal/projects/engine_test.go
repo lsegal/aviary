@@ -1848,7 +1848,7 @@ func TestCommandRunnerResumesOriginalAgentSession(t *testing.T) {
 	codex := CommandRunner{Agent: "claude/saved-model:high", Yolo: true}
 	session := AgentSession{ID: "session-7", Agent: "codex", CheckoutDirectory: dir, Resume: true}
 	resumePrompt := "continue\n\nRecover the existing work. If this issue has a draft pull request, inspect it and pull its branch before continuing."
-	wantCodex := []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "session-7", resumePrompt}
+	wantCodex := []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, "session-7", resumePrompt}
 	if got := commandArgsForSession(codex, Issue{Number: 7}, session); !reflect.DeepEqual(got, wantCodex) {
 		t.Fatalf("Codex resume args = %#v, want %#v", got, wantCodex)
 	}
@@ -1879,9 +1879,9 @@ func TestCommandRunnerSkipsCodexGitRepoCheckWithoutCheckout(t *testing.T) {
 	}{
 		{"first dispatch", AgentSession{Agent: "codex"}, []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, prompt}},
 		{"inside checkout", AgentSession{Agent: "codex", CheckoutDirectory: dir}, []string{"exec", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, prompt}},
-		{"resume inside checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: dir, Resume: true}, []string{"exec", "resume", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "s-1", resumePrompt}},
-		{"resume without checkout", AgentSession{ID: "s-1", Agent: "codex", Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "s-1", resumePrompt}},
-		{"resume with missing checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: missing, Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "s-1", resumePrompt + "\n\nThe original repository directory no longer exists. Regenerate any missing work before continuing."}},
+		{"resume inside checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: dir, Resume: true}, []string{"exec", "resume", "--json", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, "s-1", resumePrompt}},
+		{"resume without checkout", AgentSession{ID: "s-1", Agent: "codex", Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, "s-1", resumePrompt}},
+		{"resume with missing checkout", AgentSession{ID: "s-1", Agent: "codex", CheckoutDirectory: missing, Resume: true}, []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, "s-1", resumePrompt + "\n\nThe original repository directory no longer exists. Regenerate any missing work before continuing."}},
 	}
 	for _, tc := range cases {
 		if got := commandArgsForSession(runner, Issue{Number: 12}, tc.session); !reflect.DeepEqual(got, tc.want) {

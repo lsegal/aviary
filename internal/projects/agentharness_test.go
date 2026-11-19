@@ -354,7 +354,7 @@ func TestCodexDefinitionContract(t *testing.T) {
 		// session has no checkout yet, so the run starts in the temp
 		// directory and skips Codex's git repo check.
 		WantRun:    []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-terra", freshPrompt("o/r", 7)},
-		WantResume: []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
+		WantResume: []string{"exec", "resume", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-terra", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", resumePrompt()},
 		WantOutput: "working on it",
 	}.check(t)
 }
