@@ -41,7 +41,7 @@
 		</div>
 		<pre data-testid="job-output"
 			class="h-40 flex-1 overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
-		<div class="flex items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
+		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
 			<router-link :to="runPath"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				Details

@@ -395,6 +395,7 @@ projects:
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
 | `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
 | `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
+| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
 | `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
 | `webhook.listen` | string | `:0` | Webhook listener address |
 | `webhook.path` | string | `/webhook` | Webhook path |

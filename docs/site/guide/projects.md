@@ -49,6 +49,14 @@ Jobs take instructions only from GitHub comments by allowed commenters on the is
 
 Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
+On a finished or paused job, a mention goes to the Projects agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
+
+## Prompt chat
+
+**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. It answers from live state, and can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. It is limited to the `project_*` tools, cannot comment on issues or otherwise instruct a running job, and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
+
+The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `projects.chat_model` and `projects.chat_fallbacks`, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
+
 ## Keeping jobs moving
 
 - A run that exits while its issue is still open is resumed in the same session, or restarted when the session is gone.
