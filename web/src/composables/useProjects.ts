@@ -79,32 +79,45 @@ export function useProjectList(interval = 10_000) {
 	return { projects, available, refresh };
 }
 
-/** A project's live status and one page of its jobs with their recent output. */
+/**
+ * A project's live status and one page of its jobs with their recent output.
+ * A non-empty search narrows the jobs to those with the text in any field,
+ * including their output, and total then counts only the matches.
+ */
 export function useProjectBoard(
 	project: Ref<string>,
 	filter: Ref<BoardFilter>,
+	search: Ref<string> = ref(""),
 ) {
 	const { callTool } = useMCP();
 	const status = ref<ProjectStatus | null>(null);
 	const jobs = ref<ProjectJob[]>([]);
 	const total = ref(0);
+	/** The jobs in the current filter before the search narrowed them. */
+	const unfilteredTotal = ref(0);
 	const page = ref(0);
 	const error = ref("");
 	const loading = ref(true);
 
 	async function listJobs(target: string) {
 		const statuses = filterStatuses(filter.value);
+		const query = search.value.trim() || undefined;
 		if (!statuses) {
 			const list = normalizeJobList(
 				parseToolJSON(
 					await callTool("project_job_list", {
 						target,
+						query,
 						offset: page.value * JOBS_PAGE_SIZE,
 						limit: JOBS_PAGE_SIZE,
 					}),
 				),
 			);
-			return { jobs: sortJobs(list.jobs), total: list.total };
+			return {
+				jobs: sortJobs(list.jobs),
+				total: list.total,
+				unfilteredTotal: list.unfilteredTotal,
+			};
 		}
 		// project_job_list filters by one status, so a tab that shows several
 		// merges them and pages the result here.
@@ -115,6 +128,7 @@ export function useProjectBoard(
 						await callTool("project_job_list", {
 							target,
 							status: s,
+							query,
 							limit: ALL_JOBS_LIMIT,
 						}),
 					),
@@ -126,10 +140,14 @@ export function useProjectBoard(
 		return {
 			jobs: all.slice(start, start + JOBS_PAGE_SIZE),
 			total: all.length,
+			unfilteredTotal: lists.reduce((n, l) => n + l.unfilteredTotal, 0),
 		};
 	}
 
+	// Typing fires a load per keystroke, so only the latest one may land.
+	let latest = 0;
 	async function load() {
+		const call = ++latest;
 		const target = project.value;
 		if (!target) {
 			loading.value = false;
@@ -161,10 +179,11 @@ export function useProjectBoard(
 					}
 				}),
 			);
-			if (target !== project.value) return;
+			if (target !== project.value || call !== latest) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
 			jobs.value = list.jobs;
 			total.value = list.total;
+			unfilteredTotal.value = list.unfilteredTotal;
 			error.value = "";
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
@@ -179,6 +198,12 @@ export function useProjectBoard(
 		page.value = 0;
 		loading.value = true;
 		void refresh();
+	});
+	// A new search starts on the first page of its matches; when the page is
+	// already first, the page watcher stays quiet, so load here.
+	watch(search, () => {
+		if (page.value === 0) void refresh();
+		else page.value = 0;
 	});
 	watch(page, () => void refresh());
 
@@ -217,6 +242,7 @@ export function useProjectBoard(
 		status,
 		jobs,
 		total,
+		unfilteredTotal,
 		page,
 		error,
 		loading,

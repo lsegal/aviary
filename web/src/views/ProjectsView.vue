@@ -107,21 +107,35 @@
 							</span>
 						</section>
 
+						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
+							<div class="relative min-w-0 flex-1 sm:max-w-xs">
+								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
+									class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+							</div>
+							<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
+								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
+							</span>
+							<nav v-if="searching || pageCount > 1" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
+								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
+									:disabled="page === 0" @click="page--">Previous</button>
+								<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
+								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
+									:disabled="page + 1 >= pageCount" @click="page++">Next</button>
+							</nav>
+						</div>
+
 						<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
+						<div v-else-if="!jobs.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
+							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
+							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+								@click="search = ''">Clear search</button>
+						</div>
 						<div v-else-if="!jobs.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
 						</section>
-
-						<nav v-if="pageCount > 1" class="flex items-center justify-center gap-3 text-sm" aria-label="Job pages">
-							<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-								:disabled="page === 0" @click="page--">Previous</button>
-							<span class="text-gray-500">Page {{ page + 1 }} of {{ pageCount }}</span>
-							<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-								:disabled="page + 1 >= pageCount" @click="page++">Next</button>
-						</nav>
 						</template>
 
 						<details v-if="status" class="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
@@ -195,11 +209,16 @@ const project = computed(() =>
 	typeof route.params.project === "string" ? route.params.project : "",
 );
 const filter = ref<BoardFilter>("all");
+// The search narrows the jobs within the filter, across every field and the
+// whole list rather than one page.
+const search = ref("");
+const searching = computed(() => search.value.trim() !== "");
 const { version } = useServerStatus();
 const {
 	status,
 	jobs,
 	total,
+	unfilteredTotal,
 	page,
 	error,
 	loading,
@@ -209,7 +228,7 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(project, filter);
+} = useProjectBoard(project, filter, search);
 const {
 	schedules,
 	upcoming,
