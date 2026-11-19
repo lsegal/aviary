@@ -116,6 +116,12 @@ func writeTaskTable(w io.Writer, tasks []domain.ScheduledTask) {
 			run := t.History[n-1]
 			last = fmt.Sprintf("%s %s", run.Status, run.FireTime.Local().Format("2006-01-02 15:04"))
 		}
+		if t.Project != "" {
+			trigger = t.Project + ": " + trigger
+		}
+		if !t.Enabled {
+			next = "disabled"
+		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, trigger, next, last)
 	}
 	_ = tw.Flush()
@@ -131,11 +137,19 @@ Choose the trigger with --schedule (cron), or --every, --at, --days and
 
   aviary task add assistant standup "Summarize yesterday" --days mon-fri --at 09:00
   aviary task add assistant digest "Send the digest" --every 2h --overlap skip
+
+--project runs the prompt as a scheduled Projects job on that watched
+project's board, in an isolated clone, with --cli choosing the coding CLI:
+
+  aviary task add assistant triage "Triage new issues" --project lsegal/aviary --at 02:00
 `,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := map[string]any{"agent": args[0], "name": args[1], "content": args[2], "precompile": false}
-		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{"target": "target", "type": "type", "run-once": "run_once"}))
+		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{"target": "target", "type": "type", "run-once": "run_once", "project": "project", "cli": "cli"}))
+		if _, ok := params["project"]; ok && params["type"] == nil {
+			params["type"] = "project"
+		}
 		if days, ok := params["days"].(string); ok {
 			params["days"] = expandDayRange(days)
 		}
@@ -161,6 +175,7 @@ var taskUpdateCmd = &cobra.Command{
 		params := map[string]any{"name": args[0]}
 		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{
 			"prompt": "content", "target": "target", "run-once": "run_once", "enabled": "enabled", "watch": "watch",
+			"project": "project", "cli": "cli",
 		}))
 		if days, ok := params["days"].(string); ok {
 			params["days"] = expandDayRange(days)
@@ -309,7 +324,9 @@ func init() {
 
 	addTaskTriggerFlags(taskAddCmd)
 	taskAddCmd.Flags().String("target", "", "output delivery: silent, session:<name>, or <channel>:<id>:<target>")
-	taskAddCmd.Flags().String("type", "", "task type: prompt (default) or script")
+	taskAddCmd.Flags().String("type", "", "task type: prompt (default), script or project")
+	taskAddCmd.Flags().String("project", "", "watched project (owner/repo) to run the prompt on as a board job; implies --type project")
+	taskAddCmd.Flags().String("cli", "", "coding-CLI spec for a project task, such as claude:opus (default: the project's agent)")
 	taskAddCmd.Flags().Bool("run-once", false, "fire only once")
 
 	addTaskTriggerFlags(taskUpdateCmd)
@@ -318,6 +335,8 @@ func init() {
 	taskUpdateCmd.Flags().String("watch", "", "file glob that triggers the task")
 	taskUpdateCmd.Flags().Bool("run-once", false, "fire only once")
 	taskUpdateCmd.Flags().Bool("enabled", true, "enable or disable the task")
+	taskUpdateCmd.Flags().String("project", "", "watched project of a project task")
+	taskUpdateCmd.Flags().String("cli", "", "coding-CLI spec of a project task")
 
 	addTaskTriggerFlags(taskPreviewCmd)
 	taskPreviewCmd.Flags().Int("count", 3, "number of fires to show (at most 20)")
