@@ -9,7 +9,7 @@
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
 						<h1 class="text-lg font-bold text-gray-900 dark:text-white">
-							<template v-if="job?.issue">#{{ job.issue }} </template>{{ job?.title || jobID }}
+							{{ job?.issue ? `#${job.issue} ` : "" }}{{ job?.title || jobID }}
 						</h1>
 						<JobStatusPill v-if="job" :status="job.status" />
 					</div>
@@ -50,7 +50,7 @@
 			</p>
 
 			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-				<section class="flex min-h-0 flex-col lg:flex-1" aria-label="Timeline">
+				<section class="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
 					<div class="flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
 						<p v-if="job" class="mb-3 text-center text-xs text-gray-500">
 							{{ [job.skill, job.cli, job.session ? `session ${job.session}` : ""].filter(Boolean).join(" · ") }}
@@ -76,7 +76,7 @@
 					</footer>
 				</section>
 
-				<section class="flex min-h-80 flex-col bg-slate-950 text-slate-200 lg:w-[40%] lg:min-h-0" aria-label="Output">
+				<section class="flex h-80 shrink-0 flex-col bg-slate-950 text-slate-200 lg:h-auto lg:w-[40%]" aria-label="Output">
 					<div class="flex items-center gap-2 border-b border-slate-800 px-4 py-2 text-xs">
 						<b class="text-sm text-white">Output</b>
 						<span v-if="job?.cloneDir" class="truncate font-mono text-slate-400">{{ job.cloneDir }}</span>

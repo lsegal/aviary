@@ -37,7 +37,7 @@
 							<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
 								class="px-3 py-1.5" :class="filter === f.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 								@click="filter = f.key">
-								{{ f.label }}<template v-if="f.key === 'all' && total"> {{ total }}</template>
+								{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
 							</button>
 						</div>
 						<button type="button"
