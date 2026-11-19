@@ -199,35 +199,6 @@ func TestJobQueue_RecoverStuck_ExhaustedJobFailsInsteadOfRequeueing(t *testing.T
 	assert.Nil(t, recovered.LockedAt)
 }
 
-func TestCronRunner_AddRemove(t *testing.T) {
-	r := NewCronRunner()
-	called := make(chan struct{}, 1)
-	err := r.Add("task", "*/1 * * * * *", func() {
-		select {
-		case called <- struct{}{}:
-		default:
-		}
-	})
-	assert.NoError(t, err)
-
-	_, ok := r.ids["task"]
-	assert.True(t, ok)
-
-	r.Start()
-	defer r.Stop()
-
-	select {
-	case <-called:
-	case <-time.After(2500 * time.Millisecond):
-		assert.FailNow(t, "timeout")
-	}
-
-	r.Remove("task")
-	_, ok = r.ids["task"]
-	assert.False(t, ok)
-
-}
-
 func TestFileWatcher_AddStartAndRemove(t *testing.T) {
 	fw, err := NewFileWatcher()
 	assert.NoError(t, err)
@@ -293,7 +264,7 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 	}
 	s.Reconcile(cfg)
 	assert.Equal(t, 2, len(s.tasks))
-	_, ok := s.cron.ids["alpha/cronTask"]
+	_, ok := s.armed["alpha/cronTask"]
 	assert.True(t, ok)
 
 	_, ok = s.watch.handlers["alpha/watchTask"]
@@ -301,7 +272,7 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 
 	s.Reconcile(&config.Config{})
 	assert.Len(t, s.tasks, 0)
-	assert.Len(t, s.cron.ids, 0)
+	assert.Len(t, s.armed, 0)
 	assert.Len(t, s.watch.handlers, 0)
 
 }
@@ -375,10 +346,9 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
 
-	s.cron.Start()
 	t.Cleanup(s.Stop)
 
-	startAt := time.Now().UTC().Add(2 * time.Second).Format(time.RFC3339)
+	startAt := time.Now().UTC().Truncate(time.Second).Add(3 * time.Second).Format(time.RFC3339)
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{
 			Name: "alpha",
@@ -397,7 +367,7 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(before))
 
-	time.Sleep(2200 * time.Millisecond)
+	time.Sleep(3200 * time.Millisecond)
 	after, err := s.Queue().List("alpha/delayed")
 	assert.NoError(t, err)
 	assert.NotEqual(t, 0, len(after))
@@ -411,7 +381,6 @@ func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
 
-	s.cron.Start()
 	t.Cleanup(s.Stop)
 
 	cfg := &config.Config{
@@ -514,8 +483,8 @@ func TestScheduler_ReconcileIgnoresDisabledTasks(t *testing.T) {
 
 	assert.Contains(t, s.tasks, "alpha/enabled")
 	assert.NotContains(t, s.tasks, "alpha/disabled")
-	assert.Contains(t, s.cron.ids, "alpha/enabled")
-	assert.NotContains(t, s.cron.ids, "alpha/disabled")
+	assert.Contains(t, s.armed, "alpha/enabled")
+	assert.NotContains(t, s.armed, "alpha/disabled")
 
 	tasks := s.ListTasks()
 	assert.Len(t, tasks, 1)

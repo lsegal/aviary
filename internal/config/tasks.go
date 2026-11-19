@@ -23,6 +23,13 @@ type taskFileFrontmatter struct {
 	Schedule string `yaml:"schedule,omitempty"`
 	StartAt  string `yaml:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty"`
+	Trigger  string `yaml:"trigger,omitempty"`
+	Every    string `yaml:"every,omitempty"`
+	At       string `yaml:"at,omitempty"`
+	Days     string `yaml:"days,omitempty"`
+	Timezone string `yaml:"timezone,omitempty"`
+	Overlap  string `yaml:"overlap,omitempty"`
+	Missed   string `yaml:"missed,omitempty"`
 	Watch    string `yaml:"watch,omitempty"`
 	Target   string `yaml:"target,omitempty"`
 }
@@ -60,6 +67,13 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Schedule = fm.Schedule
 	task.StartAt = fm.StartAt
 	task.RunOnce = fm.RunOnce
+	task.Trigger = fm.Trigger
+	task.Every = fm.Every
+	task.At = fm.At
+	task.Days = fm.Days
+	task.Timezone = fm.Timezone
+	task.Overlap = fm.Overlap
+	task.Missed = fm.Missed
 	task.Watch = fm.Watch
 	task.Target = fm.Target
 	task.Prompt = strings.TrimSpace(rest[idx+5:])
@@ -96,6 +110,13 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Schedule: task.Schedule,
 		StartAt:  task.StartAt,
 		RunOnce:  task.RunOnce,
+		Trigger:  task.Trigger,
+		Every:    task.Every,
+		At:       task.At,
+		Days:     task.Days,
+		Timezone: task.Timezone,
+		Overlap:  task.Overlap,
+		Missed:   task.Missed,
 		Watch:    task.Watch,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.

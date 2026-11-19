@@ -13,6 +13,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 const pollInterval = 5 * time.Second
@@ -30,6 +31,9 @@ type WorkerPool struct {
 	deliver  func(agentName, route, text string) error
 	activeMu sync.Mutex
 	active   map[string]activeJob
+	// onAttemptDone, when set, receives each job as persisted after one
+	// execution attempt finishes, with the attempt's duration.
+	onAttemptDone func(job domain.Job, duration time.Duration)
 }
 
 type activeJob struct {
@@ -128,6 +132,8 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	go p.heartbeatJob(jobCtx, job.ID, stopHeartbeat)
 
 	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentID)
+	started := time.Now()
+	defer p.attemptDone(job.ID, started)
 	if err := p.executeJob(jobCtx, job); err != nil {
 		if errors.Is(err, context.Canceled) {
 			if cancelErr := p.queue.Cancel(job.ID); cancelErr != nil {
@@ -144,6 +150,21 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	if err := p.queue.Complete(job.ID); err != nil {
 		slog.Warn("marking job complete", "id", job.ID, "err", err)
 	}
+}
+
+func (p *WorkerPool) attemptDone(jobID string, started time.Time) {
+	if p.onAttemptDone == nil {
+		return
+	}
+	path := store.FindJobPath(jobID)
+	if path == "" {
+		return
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return
+	}
+	p.onAttemptDone(job, time.Since(started))
 }
 
 func (p *WorkerPool) heartbeatJob(ctx context.Context, jobID string, stop <-chan struct{}) {

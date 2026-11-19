@@ -7,8 +7,12 @@ type TriggerType string
 
 // TriggerType values.
 const (
-	TriggerTypeCron  TriggerType = "cron"
-	TriggerTypeWatch TriggerType = "watch"
+	TriggerTypeOnce     TriggerType = "once"
+	TriggerTypeInterval TriggerType = "interval"
+	TriggerTypeDaily    TriggerType = "daily"
+	TriggerTypeWeekly   TriggerType = "weekly"
+	TriggerTypeCron     TriggerType = "cron"
+	TriggerTypeWatch    TriggerType = "watch"
 )
 
 // ScheduledTask represents a task to be executed by an agent on a schedule or trigger.
@@ -22,11 +26,52 @@ type ScheduledTask struct {
 	Schedule    string      `json:"schedule,omitempty"` // cron expression
 	StartAt     *time.Time  `json:"start_at,omitempty"`
 	RunOnce     bool        `json:"run_once,omitempty"`
+	Every       string      `json:"every,omitempty"`
+	At          string      `json:"at,omitempty"`
+	Days        string      `json:"days,omitempty"`
+	Timezone    string      `json:"timezone,omitempty"`
+	Overlap     string      `json:"overlap,omitempty"`
+	Missed      string      `json:"missed,omitempty"`
 	Watch       string      `json:"watch,omitempty"` // glob pattern
 	Prompt      string      `json:"prompt"`
 	Script      string      `json:"script,omitempty"`
 	Target      string      `json:"target,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
+	// Description summarizes the trigger, e.g. "daily at 09:00 (UTC)".
+	Description string     `json:"description,omitempty"`
+	NextRun     *time.Time `json:"next_run,omitempty"`
+	LastFire    *time.Time `json:"last_fire,omitempty"`
+	// History holds the most recent fires, oldest first.
+	History []TaskRun `json:"history,omitempty"`
+}
+
+// TaskRunStatus is the outcome of one scheduled-task fire.
+type TaskRunStatus string
+
+// TaskRunStatus values.
+const (
+	TaskRunQueued    TaskRunStatus = "queued"
+	TaskRunRunning   TaskRunStatus = "running"
+	TaskRunRetrying  TaskRunStatus = "retrying"
+	TaskRunCompleted TaskRunStatus = "completed"
+	TaskRunFailed    TaskRunStatus = "failed"
+	TaskRunCanceled  TaskRunStatus = "canceled"
+	// TaskRunSkipped marks a fire dropped by the overlap policy.
+	TaskRunSkipped TaskRunStatus = "skipped"
+	// TaskRunMissed marks fires that were due while Aviary was stopped or the
+	// machine slept, and were dropped by the missed-run policy.
+	TaskRunMissed TaskRunStatus = "missed"
+)
+
+// TaskRun is one entry of a scheduled task's run history.
+type TaskRun struct {
+	FireTime time.Time `json:"fire_time"`
+	// Reason is what fired the task: schedule, missed, watch or manual.
+	Reason     string        `json:"reason"`
+	Status     TaskRunStatus `json:"status"`
+	JobID      string        `json:"job_id,omitempty"`
+	Summary    string        `json:"summary,omitempty"`
+	DurationMS int64         `json:"duration_ms,omitempty"`
 }
 
 // JobStatus represents the lifecycle state of a job.
