@@ -11,25 +11,20 @@
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="runPath" class="hover:underline">
-					{{ job.issue ? `#${job.issue} ` : "" }}{{ job.title || job.id }}
+					{{ job.number ? `#${job.number} ` : "" }}{{ job.title || job.id }}
 				</router-link>
 			</h3>
 			<p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
-				<a v-if="job.issue && job.repo" :href="githubURL(job.repo, 'issues', job.issue)" target="_blank"
-					rel="noreferrer" class="hover:underline">#{{ job.issue }}</a>
+				<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
+					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 				<template v-if="job.pr">
 					<span>·</span>
-					<a :href="githubURL(job.prRepo, 'pull', job.pr)" target="_blank" rel="noreferrer" class="hover:underline">
-						{{ job.prDraft ? "Draft PR" : "PR" }} {{ prLabel }}
-					</a>
+					<a :href="job.prURL || githubURL(job.prRepo, 'pull', job.pr)" target="_blank" rel="noreferrer"
+						class="hover:underline">PR {{ prLabel }}</a>
 				</template>
-				<template v-else-if="job.branch">
+				<template v-else-if="job.status !== 'queued' && job.number">
 					<span>·</span>
-					<span class="font-mono">{{ job.branch }}</span>
-				</template>
-				<template v-if="job.stackedOn">
-					<span>·</span>
-					<span>stacked on PR #{{ job.stackedOn }}</span>
+					<span>no PR yet</span>
 				</template>
 			</p>
 			<p v-if="waitingText" data-testid="job-waiting" class="text-xs text-amber-700 dark:text-amber-400">
@@ -51,14 +46,14 @@
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				Details
 			</router-link>
-			<button type="button" :disabled="busy"
+			<button type="button" :disabled="busy || !job.actions.retry" :title="job.actions.retryUnavailable || undefined"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-				@click="emit('retry', job.id)">
+				@click="emit('retry', job)">
 				Retry
 			</button>
-			<button v-if="stoppable" type="button" :disabled="busy"
+			<button v-if="job.actions.stop" type="button" :disabled="busy"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
-				@click="emit('stop', job.id)">
+				@click="emit('stop', job)">
 				Stop
 			</button>
 			<span v-if="job.cloneDir" class="min-w-0 flex-1 truncate text-right font-mono text-xs text-gray-400"
@@ -69,26 +64,17 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-	age,
-	encodeProject,
-	githubURL,
-	type ProjectJob,
-} from "../../lib/projects";
+import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";
 import JobStatusPill from "./JobStatusPill.vue";
 
 const props = defineProps<{
 	job: ProjectJob;
-	project: string;
 	now: number;
 	busy?: boolean;
 }>();
-const emit = defineEmits<{ retry: [id: string]; stop: [id: string] }>();
+const emit = defineEmits<{ retry: [job: ProjectJob]; stop: [job: ProjectJob] }>();
 
-const runPath = computed(
-	() =>
-		`/projects/${encodeProject(props.project)}/jobs/${encodeURIComponent(props.job.id)}`,
-);
+const runPath = computed(() => jobPath(props.job.target, props.job.number));
 
 // Fork PRs live in another repository, so name it.
 const prLabel = computed(() =>
@@ -97,15 +83,13 @@ const prLabel = computed(() =>
 		: `#${props.job.pr}`,
 );
 
-const stoppable = computed(() =>
-	["running", "waiting", "paused", "queued"].includes(props.job.status),
-);
-
 const waitingText = computed(() => {
-	if (props.job.waitingReason) return props.job.waitingReason;
-	if (props.job.checks && props.job.status !== "failed")
-		return props.job.checks;
-	return "";
+	const { waitingReason, wakeAt } = props.job;
+	if (!waitingReason) return "";
+	const wake = Date.parse(wakeAt);
+	return Number.isNaN(wake) || wake <= props.now
+		? waitingReason
+		: `${waitingReason} · wakes in ${age(new Date(props.now - (wake - props.now)).toISOString(), props.now)}`;
 });
 
 const progressPct = computed(() =>
