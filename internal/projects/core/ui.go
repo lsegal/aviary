@@ -182,7 +182,11 @@ type Snapshot struct {
 	// holding no agent slot.
 	Paused      int
 	Concurrency int
-	NextPoll    time.Time
+	// AllowedCommenters are the GitHub logins whose comments steer jobs, as
+	// the run applies them: the authenticated gh user when none are
+	// configured.
+	AllowedCommenters []string
+	NextPoll          time.Time
 	// LastPoll is when the most recent poll of GitHub finished. The poll loop
 	// only logs what it found when that changes, so this is the
 	// run's standing evidence that it is still checking.

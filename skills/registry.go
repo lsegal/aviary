@@ -8,11 +8,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/lsegal/aviary"
 	"github.com/lsegal/aviary/internal/config"
 )
 
@@ -111,6 +113,11 @@ func ListInstalled(cfg *config.Config) ([]Definition, error) {
 			return nil, err
 		}
 		for _, sk := range disk {
+			// The coding-CLI skills share ~/.agents/skills but are for coding
+			// CLIs, not Aviary's own agents.
+			if slices.Contains(aviary.CodingSkillNames, sk.Name) {
+				continue
+			}
 			byName[sk.Name] = markEnabled(sk, cfg)
 		}
 	}

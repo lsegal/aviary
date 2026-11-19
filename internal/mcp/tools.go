@@ -3582,6 +3582,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	registerConfiguredSkillTools(s)
+	registerCodingSkillTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",

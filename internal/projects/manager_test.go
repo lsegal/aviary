@@ -106,6 +106,30 @@ func TestManagerWatchesComeAndGo(t *testing.T) {
 	m.Shutdown()
 }
 
+func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
+	m := newTestManager(t)
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{}) {
+		t.Fatalf("unconfigured allowed_commenters = %#v, want an empty list", got)
+	}
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, AllowedCommenters: []string{"alice", "bob"}})
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"alice", "bob"}) {
+		t.Fatalf("configured allowed_commenters = %v", got)
+	}
+	// A running engine reports the commenters it enforces, such as the
+	// authenticated gh user it falls back to when none are configured.
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}})
+	m.snapshot.Store(&core.Snapshot{AllowedCommenters: []string{"me"}})
+	m.mu.Lock()
+	m.running = &engineRun{}
+	m.mu.Unlock()
+	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"me"}) {
+		t.Fatalf("running allowed_commenters = %v", got)
+	}
+	m.mu.Lock()
+	m.running = nil
+	m.mu.Unlock()
+}
+
 func TestManagerRejectsABadUnblockInterval(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, UnblockInterval: "soon"})

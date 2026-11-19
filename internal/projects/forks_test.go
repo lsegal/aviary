@@ -73,7 +73,7 @@ func TestCommandRunnerPassesForkAdvice(t *testing.T) {
 	prompt := "/gh-fix owner/repo#12 identity:/aviary:ABC and do not merge and use fork me/repo\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 	issue := Issue{Number: 12, Repository: "owner/repo", Target: "owner/repo", Fork: "me/repo"}
 	got := commandArgs(CommandRunner{Agent: "codex", Identity: "ABC", NoMerge: true}, issue)
-	want := []string{"exec", "--json", "--skip-git-repo-check", "--model", codexDefaultModel, prompt}
+	want := []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", codexDefaultModel, prompt}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex args = %#v, want %#v", got, want)
 	}

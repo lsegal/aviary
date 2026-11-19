@@ -42,6 +42,8 @@ export interface ProjectStatus {
 	lastChecked: string;
 	interval: string;
 	readyLabel: string;
+	/** GitHub logins whose comments may steer jobs. */
+	allowedCommenters: string[];
 	slotsUsed: number;
 	slotsTotal: number;
 	activeJobs: number;
@@ -373,6 +375,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		lastChecked: str(raw.last_check),
 		interval: str(raw.poll_interval),
 		readyLabel: str(raw.ready_label) || "ready",
+		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
 		activeJobs: num(jobs.running),
