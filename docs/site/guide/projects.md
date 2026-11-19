@@ -39,7 +39,7 @@ A repository issue is picked up when it is open, carries the ready label (`ready
 
 Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each entry is an `AGENT/MODEL:LEVEL` spec, such as `codex`, `claude/opus` or `codex/gpt-5.6-terra:high`. Repeating an agent balances load across the entries. A project can list its own agents, which act as a fallback order: a job runs on the first one whose quota is not used up.
 
-Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
+Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead: for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools), and its edits appear in the run view as diffs. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
 
 `aviary project cli list` reports every CLI's install, version, sign-in, quota and models.
 

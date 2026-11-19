@@ -44,10 +44,12 @@ Send a message to an agent and stream the response. This is the primary tool for
 | `bare` | bool | | Skip system prompt, rules, memory, and tool preamble |
 | `history` | bool | | Include prior session messages (defaults to `true`, `false` when `bare=true`) |
 | `include_tool_progress` | bool | | Emit tool-call events in MCP progress notifications (for streaming UIs) |
+| `include_file_progress` | bool | | Emit file-change events (path and unified diff) in MCP progress notifications |
+| `workdir` | string | | Absolute directory the run's file tools and `exec` may use for this call only, without a `permissions.filesystem.allowedPaths` entry; relative paths and `exec`'s default `cwd` resolve against it |
 
 **Returns:** The agent's full text response. On error, returns an error result with `isError: true`.
 
-**Streaming:** When the caller provides an MCP progress token, text chunks and (optionally) tool events are emitted as `ProgressNotification` messages before the final result is returned. Tool events are prefixed `[tool]`; media URLs are prefixed `[media]`.
+**Streaming:** When the caller provides an MCP progress token, text chunks and (optionally) tool events are emitted as `ProgressNotification` messages before the final result is returned. Tool events are prefixed `[tool]`; file changes are prefixed `[file]`; media URLs are prefixed `[media]`.
 
 **Stop shortcut:** Sending `/stop` as the `message` cancels any active work in the session instead of starting a new run.
 
