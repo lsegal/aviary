@@ -237,7 +237,7 @@ func (a visionAgent) Ask(ctx context.Context, screenshot []byte, pageURL string,
 	if err != nil {
 		return nil, fmt.Errorf("write screenshot: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "issues.png")
 	if err := os.WriteFile(path, screenshot, 0o600); err != nil {
 		return nil, fmt.Errorf("write screenshot: %w", err)
