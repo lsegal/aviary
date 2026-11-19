@@ -96,6 +96,8 @@ func TestFileEdit_PreservesCRLFModeAndBOM(t *testing.T) {
 	path := filepath.Join(workspace, "sandbox", "win.txt")
 	writeTestFile(t, path, "\ufeffone\r\ntwo\r\nthree\r\n")
 	require.NoError(t, os.Chmod(path, 0o600))
+	before, err := os.Stat(path)
+	require.NoError(t, err)
 
 	out, err := d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/win.txt", "old_string": "one\ntwo", "new_string": "one\n2\nextra"})
 	require.NoError(t, err)
@@ -106,7 +108,7 @@ func TestFileEdit_PreservesCRLFModeAndBOM(t *testing.T) {
 	assert.Equal(t, "\ufeffone\r\n2\r\nextra\r\nthree\r\n", string(data))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assert.Equal(t, before.Mode().Perm(), info.Mode().Perm())
 
 	entries, err := os.ReadDir(filepath.Dir(path))
 	require.NoError(t, err)
