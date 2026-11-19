@@ -176,3 +176,5 @@ The server is usually already running during development (`pnpm dev` starts it).
 5. **Open the PR against `main`** — provide a short summary of what changed and why. If it fixes an issue, reference it (`Closes #123`).
 
 6. **Keep CI green** — if CI fails after you open the PR, fix the failures before requesting review.
+
+   The `main` branch ruleset requires these checks by their CI job names: `Lint: Go`, `Lint: Web`, `Test: Go (<os>)`, `Test: Installer (<name>)`, and `Test: Release Build`. If you rename a job in `.github/workflows/ci.yml`, update the ruleset's required checks to match, or every PR becomes unmergeable.
