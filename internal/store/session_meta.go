@@ -15,9 +15,17 @@ type ConversationMeta struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
+// CLISessionMeta records the CLI-native session that a CLI-backed agent
+// ("cli/..." model) resumes for an Aviary session.
+type CLISessionMeta struct {
+	Backend string `json:"backend"`
+	ID      string `json:"id"`
+}
+
 // SessionMeta is the sidecar metadata stored alongside a session JSONL file.
 type SessionMeta struct {
 	Conversation *ConversationMeta `json:"conversation,omitempty"`
+	CLI          *CLISessionMeta   `json:"cli,omitempty"`
 }
 
 // ReadSessionMeta loads the sidecar metadata for a session. Returns a zero
