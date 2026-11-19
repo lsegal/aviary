@@ -25,6 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/sessiontarget"
@@ -50,6 +51,7 @@ type Server struct {
 	brw               *browser.Manager
 	sampler           *ProcSampler
 	watcher           *config.Watcher
+	projects          *projects.Manager
 	skillsWatcher     *skills.Watcher
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
@@ -119,8 +121,15 @@ func New(cfg *config.Config, token string) *Server {
 		config.EffectiveBrowserReuseTabs(cfg.Browser),
 	)
 
+	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
+		s.projects = manager
+	} else {
+		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
+	}
+
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{
+		Projects:      s.projects,
 		Agents:        s.agents,
 		Scheduler:     s.sched,
 		Channels:      s.channels,
@@ -162,6 +171,27 @@ func New(cfg *config.Config, token string) *Server {
 	return s
 }
 
+// startupWatches are the runtime watches the next server start begins with,
+// as `aviary watch` hands them over when it starts the server itself.
+var startupWatches []projects.Watch
+
+// SetStartupWatches makes the next server start watch these targets without
+// saving them to aviary.yaml.
+func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
+
+// startProjects applies the projects: section and the startup watches.
+func (s *Server) startProjects() {
+	s.projects.Reconcile(s.cfg.Projects)
+	for _, watch := range startupWatches {
+		if err := s.projects.AddWatch(watch); err != nil {
+			slog.Error("server: watch failed to start", "targets", watch.Targets, "err", err)
+		}
+	}
+}
+
+// Projects returns the server's Projects manager.
+func (s *Server) Projects() *projects.Manager { return s.projects }
+
 func (s *Server) applyConfigReload(newCfg *config.Config) {
 	oldCfg := s.cfg
 	if err := store.UpdateChannelMetadataState(oldCfg, newCfg, time.Now().UTC()); err != nil {
@@ -171,6 +201,9 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	s.agents.Reconcile(newCfg)
 	if s.sched != nil {
 		s.sched.Reconcile(newCfg)
+	}
+	if s.projects != nil {
+		go s.projects.Reconcile(newCfg.Projects)
 	}
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
 		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)
@@ -256,6 +289,13 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		defer saferestart.Unregister("tasks")
 	}
 
+	// Start the Projects engine, with any watches `aviary watch` handed over.
+	if s.projects != nil {
+		saferestart.Register("projects", s.projects)
+		defer saferestart.Unregister("projects")
+		go s.startProjects()
+	}
+
 	// Start process sampler — periodically collects CPU/RSS for all daemon PIDs.
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
@@ -325,6 +365,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 		s.watcher.Stop()
 		s.skillsWatcher.Stop()
+		if s.projects != nil {
+			// Checkpoint running jobs while their agents are still alive.
+			s.projects.Shutdown()
+		}
 		s.channels.Stop()
 		if s.sched != nil {
 			s.sched.Stop()

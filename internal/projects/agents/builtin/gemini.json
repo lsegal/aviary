@@ -1,0 +1,44 @@
+{
+  "name": "gemini",
+  "binary": "gemini",
+  "minVersion": "0.58.0",
+  "defaultModel": "gemini-3.5-flash",
+  "levels": [],
+  "env": {"GEMINI_CLI_TRUST_WORKSPACE": "true"},
+  "session": {"assign": "aviary"},
+  "output": {"format": "text"},
+  "missingSession": ["no previous sessions found", "invalid session identifier"],
+  "skills": {"target": "gemini-cli"},
+  "doctor": {
+    "models": ["{binary}", "--acp"],
+    "modelsStdin": [
+      "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1,\"clientCapabilities\":{\"fs\":{\"readTextFile\":false,\"writeTextFile\":false}}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session/new\",\"params\":{\"cwd\":\".\",\"mcpServers\":[]}}"
+    ],
+    "modelsJSON": "result.models.availableModels[].modelId",
+    "timeout": "45s"
+  },
+  "args": {
+    "run": [
+      {"when": "session", "args": ["--session-id", "{session}"]},
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"args": ["--output-format", "text"]},
+      {"args": ["-p", "{prompt}"]}
+    ],
+    "resume": [
+      {"args": ["--resume", "{session}"]},
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"args": ["--output-format", "text"]},
+      {"args": ["-p", "{prompt}"]}
+    ],
+    "vision": [
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"args": ["-p", "{prompt}"]}
+    ]
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -23,6 +24,7 @@ type Deps struct {
 	// server starts.
 	Restart       func(context.Context, saferestart.Request) (saferestart.Status, error)
 	RestartStatus func() saferestart.Status
+	Projects      *projects.Manager // nil outside the server
 }
 
 // globalDeps is set by the server at startup.
