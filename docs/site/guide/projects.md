@@ -45,6 +45,39 @@ Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `
 
 `aviary project cli list` reports every CLI's install, version, sign-in, quota, models and any Projects gate.
 
+### Deferred turns
+
+A definition's `wakeup` field describes how its CLI ends a turn asking to be woken later, such as Claude Code's `ScheduleWakeup` tool. When the CLI exits with one pending, the job shows as waiting with its reason and resume time, then resumes the same session with the agent's own prompt. Stopping the job or closing its issue cancels the wakeup, and a run stops after 48 wakeups in a row. A CLI without a `wakeup` field just finishes its turn.
+
+Every value is a field path in the CLI's JSON event stream: dot-separated keys, with `[]` stepping into each element of an array.
+
+| Field | Read from | Description |
+| --- | --- | --- |
+| `type`, `event` | the event | Path to the event's type, and the type that carries the call; empty matches every event |
+| `calls` | the event | Path to each call the event carries; empty reads the event itself |
+| `name`, `tool` | each call | Path to the tool name, and the name that marks a wakeup (required) |
+| `id` | each call | Path to the call's id, matched by `rejected` |
+| `input` | each call | Path to the call's input; empty reads the call itself |
+| `delay` | the input | Delay in seconds, clamped to 1 minute through 1 hour (required) |
+| `prompt`, `reason` | the input | The prompt the session resumes with, and the reason shown while it waits |
+| `stop` | the input | A boolean that cancels the pending wakeup instead of scheduling one |
+| `rejected` | | `{event, results, id, error}`: where a failed call's result is reported, which cancels it; needs `id` |
+
+```yaml
+projects:
+  cli_definitions:
+    acme:
+      wakeup:
+        type: kind
+        event: defer
+        name: kind
+        tool: defer
+        input: args
+        delay: after
+        prompt: then
+        reason: why
+```
+
 ## Steering jobs
 
 Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session.

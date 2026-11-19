@@ -1889,24 +1889,16 @@ type claudeJSONOutputWriter struct {
 	mu     sync.Mutex
 	output io.Writer
 	buffer []byte
-	// wakeup is the last ScheduleWakeup the agent called, and wakeupID the
-	// tool_use ID it was called with, so a call the tool rejected is dropped
-	// again.
-	wakeup   *scheduledWakeup
-	wakeupID string
 }
 
 type claudeStreamEvent struct {
 	Type    string `json:"type"`
 	Message struct {
 		Content []struct {
-			Type      string          `json:"type"`
-			Text      string          `json:"text"`
-			ID        string          `json:"id"`
-			Name      string          `json:"name"`
-			Input     json.RawMessage `json:"input"`
-			ToolUseID string          `json:"tool_use_id"`
-			IsError   bool            `json:"is_error"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 	} `json:"message"`
 	IsError bool   `json:"is_error"`
@@ -1967,15 +1959,6 @@ func (w *claudeJSONOutputWriter) writeLine(line []byte) error {
 				}
 			case "tool_use":
 				texts = append(texts, "Running: "+claudeToolUseSummary(block.Name, block.Input))
-				if block.Name == scheduleWakeupTool {
-					w.wakeup, w.wakeupID = parseScheduledWakeup(block.Input), block.ID
-				}
-			}
-		}
-	case event.Type == "user":
-		for _, block := range event.Message.Content {
-			if block.Type == "tool_result" && block.IsError && w.wakeupID != "" && block.ToolUseID == w.wakeupID {
-				w.wakeup, w.wakeupID = nil, ""
 			}
 		}
 	case event.Type == "result" && event.IsError:
@@ -1988,17 +1971,6 @@ func (w *claudeJSONOutputWriter) writeLine(line []byte) error {
 	}
 	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
 	return err
-}
-
-// PendingWakeup reports the ScheduleWakeup the agent left pending when its
-// stream ended, if any.
-func (w *claudeJSONOutputWriter) PendingWakeup() (scheduledWakeup, bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.wakeup == nil {
-		return scheduledWakeup{}, false
-	}
-	return *w.wakeup, true
 }
 
 // claudeToolUseDetailKeys are the tool input fields that carry enough context
@@ -2245,6 +2217,13 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if decoder != nil {
 		agentOutput = decoder
 	}
+	// The deferred-turn signal is read from the raw stream, beside the
+	// decoder, so it is the definition's to declare whatever the format.
+	var wakeups *wakeupDetector
+	if definition.Wakeup != nil {
+		wakeups = newWakeupDetector(*definition.Wakeup)
+		agentOutput = io.MultiWriter(wakeups, agentOutput)
+	}
 	// The checkout marker is read from the raw stream as well, upstream of the
 	// decoder, because an agent that announces the path through a shell tool
 	// leaves it in a field no definition maps. The decoded scan above still
@@ -2259,7 +2238,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		detector = &missingSessionDetector{output: agentOutput, patterns: definition.MissingSessionPatterns()}
 		agentOutput = detector
 	}
-	if recorder := r.transcriptRecorder(issue, definition.Output.Format); recorder != nil {
+	if recorder := r.transcriptRecorder(issue, definition.Output.TranscriptFormat()); recorder != nil {
 		agentOutput = io.MultiWriter(recorder, agentOutput)
 		defer recorder.Flush()
 	}
@@ -2274,6 +2253,9 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 			runErr = err
 		}
 	}
+	if wakeups != nil {
+		_ = wakeups.Flush()
+	}
 	if checkoutMarkers != nil {
 		checkoutMarkers.Flush()
 	}
@@ -2284,8 +2266,8 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		// In print mode the process exits when the turn ends, so a wakeup the
 		// agent scheduled would never fire. It is handed to the run loop
 		// instead, which waits it out and resumes the session.
-		if reporter, ok := decoder.(wakeupReporter); ok {
-			if wakeup, pending := reporter.PendingWakeup(); pending {
+		if wakeups != nil {
+			if wakeup, pending := wakeups.PendingWakeup(); pending {
 				return false, &wakeup
 			}
 		}
