@@ -369,6 +369,9 @@ projects:
     - target: owner/repo
     - target: https://github.com/orgs/acme/projects/3
       agents: [claude/opus, codex]   # fallback order for this project
+      reports:                       # off unless set
+        agent: assistant
+        targets: [slack:main:C0123456789]
   concurrency: 4
   agents: [codex, claude/sonnet]
   no_merge: true
@@ -381,6 +384,9 @@ projects:
 | --- | --- | --- | --- |
 | `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
 | `list[].agents` | string[] | `agents` | This project's coding-CLI specs (`AGENT/MODEL:LEVEL`) in fallback order: a job runs on the first one whose quota is not used up |
+| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
+| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 | `concurrency` | int | `3` | Jobs that run at once across every project |
 | `interval` | duration | `30s` | Time between GitHub polls |
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
