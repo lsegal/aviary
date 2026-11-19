@@ -45,9 +45,6 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"unblock"}, "project_unblock_run", "number", "Run a stuck-job watchdog round now"},
 	{[]string{"issue", "comment"}, "project_issue_comment", "number", "Post an update comment the job working the issue hears"},
 	{[]string{"issue", "create"}, "project_issue_create", "", "File an issue through gh-create"},
-	{[]string{"github", "signin"}, "project_github_signin", "", "Open GitHub's sign-in page in Aviary's browser for browser delivery"},
-	{[]string{"github", "use-polling"}, "project_github_use_polling", "", "Read GitHub through gh polling instead of Aviary's browser"},
-	{[]string{"github", "import"}, "project_github_import", "profile", "Import the GitHub sign-in from an Aviary browser profile signed in elsewhere"},
 }
 
 // projectToolArgs turns a leading positional argument into the --<field>

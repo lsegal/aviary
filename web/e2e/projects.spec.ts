@@ -207,7 +207,7 @@ interface Calls {
 	[tool: string]: Record<string, unknown>[];
 }
 
-async function setup(page: Page, status: () => object = () => STATUS) {
+async function setup(page: Page) {
 	await setAuthToken(page);
 	const calls: Calls = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
@@ -231,7 +231,7 @@ async function setup(page: Page, status: () => object = () => STATUS) {
 		agent_list: [],
 		project_status: (args?: Record<string, unknown>) => {
 			record("project_status", args);
-			return status();
+			return STATUS;
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
@@ -263,9 +263,6 @@ async function setup(page: Page, status: () => object = () => STATUS) {
 		project_job_retry: ok("project_job_retry"),
 		project_job_stop: ok("project_job_stop"),
 		project_refresh: ok("project_refresh"),
-		project_github_signin: ok("project_github_signin"),
-		project_github_use_polling: ok("project_github_use_polling"),
-		project_github_import: ok("project_github_import"),
 	});
 	return calls;
 }
@@ -429,111 +426,6 @@ test("run view renders the typed event timeline read-only", async ({
 	// No steering: nothing on the page can send a message to the job.
 	await expect(page.getByRole("textbox")).toHaveCount(0);
 	await expect(page.getByRole("button", { name: /send/i })).toHaveCount(0);
-});
-
-const SIGNED_OUT = {
-	signed_out: true,
-	signing_in: false,
-	url: "https://github.com/lsegal/aviary/issues?q=is%3Aissue+state%3Aopen+label%3Aready",
-	status: 404,
-	since: minutesAgo(2),
-};
-const browserStatus = (github: object) => ({
-	...STATUS,
-	delivery: "browser",
-	poll_interval: "20s",
-	github,
-});
-
-test.describe("GitHub sign-in banner", () => {
-	test("a signed-out read shows the banner, never a window", async ({
-		page,
-	}) => {
-		const calls = await setup(page, () => browserStatus(SIGNED_OUT));
-		await page.goto("/projects/lsegal%2Faviary");
-		const banner = page.getByTestId("github-signin-banner");
-		await expect(banner).toContainText(
-			"Signed out of GitHub in Aviary's browser",
-		);
-		await expect(banner).toContainText("GitHub answered 404");
-		await expect(banner).toContainText('This is not "no issues"');
-		await expect(page.getByTestId("delivery-status")).toHaveText("offline");
-		await expect(page.getByText("browser · checked")).toContainText(
-			"every 20s",
-		);
-		// The page only reads status until the user acts.
-		expect(calls.project_github_signin).toBeUndefined();
-
-		await banner.getByRole("button", { name: "Sign in to GitHub" }).click();
-		await expect.poll(() => calls.project_github_signin?.length).toBe(1);
-		await banner.getByRole("button", { name: "Switch to gh polling" }).click();
-		await expect.poll(() => calls.project_github_use_polling?.length).toBe(1);
-		await expect(banner.getByRole("textbox")).toHaveCount(0);
-	});
-
-	test("an open sign-in window replaces the buttons", async ({ page }) => {
-		await setup(page, () => browserStatus({ ...SIGNED_OUT, signing_in: true }));
-		await page.goto("/projects/lsegal%2Faviary");
-		const banner = page.getByTestId("github-signin-banner");
-		await expect(banner).toContainText("Waiting for you to sign in to GitHub");
-		await expect(banner.getByRole("button")).toHaveCount(0);
-	});
-
-	test("without a display it offers gh polling or a profile import", async ({
-		page,
-	}) => {
-		const calls = await setup(page, () =>
-			browserStatus({
-				...SIGNED_OUT,
-				window_unavailable:
-					"no display server (DISPLAY and WAYLAND_DISPLAY are both unset)",
-				last_error: "",
-			}),
-		);
-		await page.goto("/projects/lsegal%2Faviary");
-		const banner = page.getByTestId("github-signin-banner");
-		await expect(banner.getByTestId("github-signin-no-window")).toContainText(
-			"no display server",
-		);
-		await expect(
-			banner.getByRole("button", { name: "Sign in to GitHub" }),
-		).toHaveCount(0);
-		const importButton = banner.getByRole("button", { name: "Import profile" });
-		await expect(importButton).toBeDisabled();
-		await banner
-			.getByLabel("Aviary browser profile to import")
-			.fill(" /mnt/desktop/aviary/browser ");
-		await importButton.click();
-		await expect
-			.poll(() => calls.project_github_import?.[0])
-			.toEqual({ profile: "/mnt/desktop/aviary/browser" });
-		await expect(
-			banner.getByRole("button", { name: "Switch to gh polling" }),
-		).toBeVisible();
-	});
-
-	test("a signed-in session and gh polling show no banner", async ({
-		page,
-	}) => {
-		let status: object = browserStatus({
-			signed_out: false,
-			signing_in: false,
-		});
-		await setup(page, () => status);
-		await page.goto("/projects/lsegal%2Faviary");
-		await expect(page.getByTestId("job-card").first()).toBeVisible();
-		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
-		await expect(page.getByTestId("delivery-status")).toHaveText("live");
-		// Signing out mid-run raises the banner on the next poll, and signing in
-		// again clears it.
-		status = browserStatus(SIGNED_OUT);
-		await expect(page.getByTestId("github-signin-banner")).toBeVisible();
-		status = browserStatus({ signed_out: false, signing_in: false });
-		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
-		status = STATUS;
-		await expect(page.getByText("poll · checked")).toBeVisible();
-		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
-	});
 });
 
 test.describe("phone width", () => {

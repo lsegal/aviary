@@ -190,24 +190,6 @@ export function useProjectBoard(
 		await refresh();
 	}
 
-	/** Opens GitHub's sign-in page in Aviary's browser. */
-	async function signInToGitHub() {
-		await callTool("project_github_signin", {});
-		await refresh();
-	}
-
-	/** Reads GitHub through gh polling instead of Aviary's browser. */
-	async function switchToPolling() {
-		await callTool("project_github_use_polling", {});
-		await refresh();
-	}
-
-	/** Imports the GitHub sign-in from a profile signed in elsewhere. */
-	async function importProfile(profile: string) {
-		await callTool("project_github_import", { profile });
-		await refresh();
-	}
-
 	return {
 		status,
 		jobs,
@@ -217,9 +199,6 @@ export function useProjectBoard(
 		loading,
 		refresh,
 		checkNow,
-		signInToGitHub,
-		switchToPolling,
-		importProfile,
 		retry: (job: ProjectJob) => action("project_job_retry", job),
 		stop: (job: ProjectJob) => action("project_job_stop", job),
 	};

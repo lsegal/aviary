@@ -33,8 +33,6 @@ type watchOptions struct {
 	yolo              bool
 	noMerge           bool
 	noChangelog       bool
-	browserVision     bool
-	browserVisible    bool
 }
 
 var watchOpts watchOptions
@@ -62,8 +60,8 @@ func init() {
 	f := watchCmd.Flags()
 	f.StringArrayVar(&watchOpts.agents, "agent", nil, "coding CLI as AGENT/MODEL:LEVEL, such as codex or claude/opus (repeat for a fallback order)")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
-	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
-	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
+	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 30s)")
+	f.StringVar(&watchOpts.delivery, "delivery", "", "poll or webhook (default poll)")
 	f.StringVar(&watchOpts.readyLabel, "ready-label", "", `label a repository issue needs (default "ready")`)
 	f.StringVar(&watchOpts.readyState, "ready-state", "", "project board status that marks an item ready (default Todo or Ready)")
 	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me author:@me")`)
@@ -72,8 +70,6 @@ func init() {
 	f.BoolVar(&watchOpts.yolo, "yolo", false, "disable the coding CLIs' sandboxes and permission checks")
 	f.BoolVar(&watchOpts.noMerge, "no-merge", false, "leave finished pull requests ready for a human to merge")
 	f.BoolVar(&watchOpts.noChangelog, "no-changelog", false, "skip changelog entries in gh-fix pull requests")
-	f.BoolVar(&watchOpts.browserVision, "browser-vision", false, "browser delivery: read pages it no longer recognizes from capped screenshots")
-	f.BoolVar(&watchOpts.browserVisible, "browser-visible", false, "browser delivery: show the browser it reads with, for debugging")
 	rootCmd.AddCommand(watchCmd)
 }
 
@@ -110,8 +106,6 @@ func watchSettings(cmd *cobra.Command) (config.ProjectsConfig, error) {
 		Yolo:              watchOpts.yolo,
 		NoMerge:           watchOpts.noMerge,
 		NoChangelog:       watchOpts.noChangelog,
-		BrowserVision:     watchOpts.browserVision,
-		BrowserVisible:    watchOpts.browserVisible,
 	}
 	if watchOpts.concurrency < 0 {
 		return settings, errors.New("--concurrency cannot be negative")
@@ -121,16 +115,11 @@ func watchSettings(cmd *cobra.Command) (config.ProjectsConfig, error) {
 			return settings, fmt.Errorf("--interval %q is not a positive duration", watchOpts.interval)
 		}
 	}
-	switch delivery := strings.ToLower(watchOpts.delivery); delivery {
-	case "", projects.DeliveryBrowser:
-		settings.Delivery = delivery
-	case projects.DeliveryPoll, projects.DeliveryWebhook:
-		if watchOpts.browserVision || watchOpts.browserVisible {
-			return settings, fmt.Errorf("--browser-vision and --browser-visible apply only to browser delivery, not %s", delivery)
-		}
-		settings.Delivery = delivery
+	switch strings.ToLower(watchOpts.delivery) {
+	case "", "poll", "webhook":
+		settings.Delivery = strings.ToLower(watchOpts.delivery)
 	default:
-		return settings, fmt.Errorf("--delivery must be browser, poll or webhook, not %q", watchOpts.delivery)
+		return settings, fmt.Errorf("--delivery must be poll or webhook, not %q", watchOpts.delivery)
 	}
 	if cmd.Flags().Changed("ready-label") {
 		label := watchOpts.readyLabel

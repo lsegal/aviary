@@ -303,9 +303,6 @@ type Engine struct {
 	// machine wakes from sleep, such as browser mode's browser.
 	// Nil has nothing to recover.
 	Recover func(context.Context)
-	// GitHubSession reports browser delivery's GitHub sign-in, which the
-	// board shows as a signed-out banner. Nil outside browser delivery.
-	GitHubSession func() core.GitHubSession
 	// ownershipWait overrides the reap grace-period wait in tests.
 	ownershipWait func(context.Context) bool
 	// reapInterval overrides the periodic reap cadence in tests.
@@ -2188,9 +2185,6 @@ func (w *Engine) Run(ctx context.Context) error {
 			online = w.WebhookOnline()
 		}
 		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
-		if w.GitHubSession != nil {
-			snapshot.GitHub = w.GitHubSession()
-		}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}

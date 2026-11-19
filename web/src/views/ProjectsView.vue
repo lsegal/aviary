@@ -49,9 +49,6 @@
 				</header>
 
 				<div class="space-y-4 px-4 py-4 sm:px-6">
-					<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
-						@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
-						@import="onGitHub(() => importProfile($event))" />
 					<p v-if="status && !status.running" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
 						The watch isn't running{{ status.error ? `: ${status.error}` : "." }}
 					</p>
@@ -120,7 +117,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import {
 	JOBS_PAGE_SIZE,
@@ -151,20 +147,8 @@ const project = computed(() =>
 );
 const filter = ref<BoardFilter>("all");
 const { version } = useServerStatus();
-const {
-	status,
-	jobs,
-	total,
-	page,
-	error,
-	loading,
-	checkNow,
-	signInToGitHub,
-	switchToPolling,
-	importProfile,
-	retry,
-	stop,
-} = useProjectBoard(project, filter);
+const { status, jobs, total, page, error, loading, checkNow, retry, stop } =
+	useProjectBoard(project, filter);
 
 // Without a project in the URL, open the first watched project.
 watch(
@@ -185,11 +169,7 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(clock));
 
-// A signed-out browser session reads nothing, so it counts as offline.
-const online = computed(
-	() =>
-		(status.value?.deliveryOnline ?? true) && !status.value?.github?.signedOut,
-);
+const online = computed(() => status.value?.deliveryOnline ?? true);
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 
 const statCards = computed(() => {
@@ -249,21 +229,6 @@ async function onCheckNow() {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		checking.value = false;
-	}
-}
-
-// The signed-out banner's actions: sign in to GitHub in Aviary's browser,
-// switch to gh polling, or import a profile signed in elsewhere.
-const signingIn = ref(false);
-async function onGitHub(fn: () => Promise<void>) {
-	signingIn.value = true;
-	try {
-		await fn();
-		error.value = "";
-	} catch (e) {
-		error.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		signingIn.value = false;
 	}
 }
 </script>

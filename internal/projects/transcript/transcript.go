@@ -87,6 +87,13 @@ type Mapper interface {
 	Map(line []byte) []Event
 }
 
+// Flusher is a Mapper that holds events back until a later line completes
+// them, such as a message streamed as deltas. Flush returns what it still
+// holds when the stream ends.
+type Flusher interface {
+	Flush() []Event
+}
+
 // Format names that select a Mapper. They match the agent definitions'
 // output formats.
 const (
@@ -95,6 +102,7 @@ const (
 	FormatOpencodeJSON     = "opencode-json"
 	FormatClineJSON        = "cline-json"
 	FormatAviaryJSON       = "aviary-json"
+	FormatGeminiJSON       = "gemini-json"
 )
 
 // NewMapper returns the mapper for an agent definition's output format, or for
@@ -113,6 +121,8 @@ func NewMapper(format string) Mapper {
 		return &clineMapper{}
 	case FormatAviaryJSON:
 		return aviaryMapper{}
+	case FormatGeminiJSON:
+		return &geminiMapper{}
 	}
 	return nil
 }
@@ -308,7 +318,8 @@ func (r *Recorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Flush maps a final line that ended without a newline.
+// Flush maps a final line that ended without a newline, then records what
+// the mapper still held back.
 func (r *Recorder) Flush() {
 	if r == nil || r.mapper == nil {
 		return
@@ -318,6 +329,9 @@ func (r *Recorder) Flush() {
 	if len(r.buffer) > 0 {
 		r.log.Add(r.mapper.Map(r.buffer)...)
 		r.buffer = nil
+	}
+	if f, ok := r.mapper.(Flusher); ok {
+		r.log.Add(f.Flush()...)
 	}
 }
 

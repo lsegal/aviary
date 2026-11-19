@@ -684,6 +684,7 @@ const (
 	FormatJSONL      = "jsonl"
 	FormatCodexJSON  = "codex-json"
 	FormatAviaryJSON = "aviary-json"
+	FormatGeminiJSON = "gemini-json"
 
 	TranscriptOpencodeJSON = "opencode-json"
 	TranscriptClineJSON    = "cline-json"
@@ -701,6 +702,7 @@ var outputFormats = map[string]string{
 	FormatJSONL:           FormatJSONL,
 	FormatCodexJSON:       FormatCodexJSON,
 	FormatAviaryJSON:      FormatAviaryJSON,
+	FormatGeminiJSON:      FormatGeminiJSON,
 }
 
 // outputFormatNames lists the accepted spellings for an error message.

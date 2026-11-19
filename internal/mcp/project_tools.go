@@ -79,10 +79,6 @@ type projectIssueCreateArgs struct {
 	Model      string `json:"model,omitempty" jsonschema:"Model for the coding CLI that runs gh-create"`
 }
 
-type projectGitHubImportArgs struct {
-	Profile string `json:"profile" jsonschema:"Path of an Aviary browser profile directory signed in to GitHub on another machine"`
-}
-
 func projectManager() (*projects.Manager, error) {
 	if m := GetDeps().Projects; m != nil {
 		return m, nil
@@ -307,45 +303,6 @@ func registerProjectTools(s *sdkmcp.Server) {
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCreateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_issue_create", func(m *projects.Manager) (map[string]any, error) {
 			return m.IssueCreate(ctx, args.Repository, args.Text, args.Model)
-		})
-	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "project_github_signin",
-		Description: "Open GitHub's sign-in page in Aviary's browser so browser delivery reads GitHub signed in; returns once the window opens, and project_status reports the session. Fails where no window can appear, naming gh polling and profile import instead",
-		Annotations: mutatingTool,
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_signin", func(m *projects.Manager) (map[string]any, error) {
-			return m.GitHubSignIn()
-		})
-	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "project_github_use_polling",
-		Description: "Read GitHub through gh polling instead of Aviary's browser: saves projects.delivery: poll to aviary.yaml",
-		Annotations: mutatingTool,
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_use_polling", func(m *projects.Manager) (map[string]any, error) {
-			cfg, err := config.Load("")
-			if err != nil {
-				return nil, err
-			}
-			cfg.Projects.Delivery = projects.DeliveryPoll
-			if err := config.Save("", cfg); err != nil {
-				return nil, err
-			}
-			m.Reconcile(cfg.Projects)
-			return map[string]any{"delivery": projects.DeliveryPoll, "saved": true}, nil
-		})
-	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "project_github_import",
-		Description: "Import the GitHub sign-in from an Aviary browser profile signed in on another machine, for servers and containers where no sign-in window can appear",
-		Annotations: mutatingTool,
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectGitHubImportArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_import", func(m *projects.Manager) (map[string]any, error) {
-			return m.ImportBrowserProfile(strings.TrimSpace(args.Profile))
 		})
 	})
 }

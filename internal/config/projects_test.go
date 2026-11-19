@@ -10,10 +10,10 @@ import (
 
 func TestProjectsDefaults(t *testing.T) {
 	var p ProjectsConfig
-	if p.EffectiveConcurrency() != DefaultProjectsConcurrency || p.EffectiveInterval() != DefaultProjectsBrowserInterval {
+	if p.EffectiveConcurrency() != DefaultProjectsConcurrency || p.EffectiveInterval() != DefaultProjectsInterval {
 		t.Fatalf("defaults = %d, %s", p.EffectiveConcurrency(), p.EffectiveInterval())
 	}
-	if p.EffectiveDelivery() != "browser" || p.EffectiveReadyLabel() != "ready" || p.EffectiveFilter() != DefaultProjectsFilter {
+	if p.EffectiveDelivery() != "poll" || p.EffectiveReadyLabel() != "ready" || p.EffectiveFilter() != DefaultProjectsFilter {
 		t.Fatalf("defaults = %q, %q, %q", p.EffectiveDelivery(), p.EffectiveReadyLabel(), p.EffectiveFilter())
 	}
 	if got := p.EffectiveAgents(); len(got) != 1 || got[0] != "codex" {
@@ -29,21 +29,6 @@ func TestProjectsDefaults(t *testing.T) {
 	}
 	if got := p.EffectiveAgents(); len(got) != 1 || got[0] != "claude" {
 		t.Fatalf("agents = %v", got)
-	}
-}
-
-func TestProjectsDeliveryInterval(t *testing.T) {
-	if got := (ProjectsConfig{}).EffectiveInterval(); got != 20*time.Second {
-		t.Fatalf("browser delivery interval = %s, want 20s", got)
-	}
-	for _, mode := range []string{"poll", "webhook", "Poll"} {
-		p := ProjectsConfig{Delivery: mode}
-		if p.EffectiveDelivery() != strings.ToLower(mode) || p.EffectiveInterval() != DefaultProjectsInterval {
-			t.Fatalf("%s = %q every %s", mode, p.EffectiveDelivery(), p.EffectiveInterval())
-		}
-	}
-	if got := (ProjectsConfig{Delivery: "browser", Interval: "1m"}).EffectiveInterval(); got != time.Minute {
-		t.Fatalf("explicit interval = %s", got)
 	}
 }
 
