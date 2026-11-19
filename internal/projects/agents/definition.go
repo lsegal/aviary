@@ -213,8 +213,10 @@ type Session struct {
 type Output struct {
 	// Format selects the decoder: "text" (alias "plain") shows output as it
 	// is written, "stream-json" (alias "claude-stream-json") decodes Claude's
-	// streaming event envelope, and "jsonl" decodes a line-delimited JSON
-	// event stream described by the JSONL block below.
+	// streaming event envelope, "codex-json" decodes `codex exec --json`,
+	// "aviary-json" decodes `aviary agent run --output-format json`, and
+	// "jsonl" decodes a line-delimited JSON event stream described by the
+	// JSONL block below.
 	Format string `json:"format"`
 	// JSONL configures the generic decoder, and is only meaningful when
 	// Format selects it. Most agents with a --json or streaming mode are read
@@ -667,6 +669,7 @@ const (
 	FormatStreamJSON = "stream-json"
 	FormatJSONL      = "jsonl"
 	FormatCodexJSON  = "codex-json"
+	FormatAviaryJSON = "aviary-json"
 
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"
@@ -680,6 +683,7 @@ var outputFormats = map[string]string{
 	formatClaudeJSONAlias: FormatStreamJSON,
 	FormatJSONL:           FormatJSONL,
 	FormatCodexJSON:       FormatCodexJSON,
+	FormatAviaryJSON:      FormatAviaryJSON,
 }
 
 // outputFormatNames lists the accepted spellings for an error message.

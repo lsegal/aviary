@@ -351,20 +351,24 @@ func registerAgentTools(s *sdkmcp.Server) {
 		}
 		events := &agentRunEvents{}
 
+		notifyEvent := func(event AgentRunEvent) {
+			if payload, err := json.Marshal(event); err == nil {
+				progressCount++
+				_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+					ProgressToken: req.Params.GetProgressToken(),
+					Progress:      progressCount,
+					Message:       string(payload),
+				})
+			}
+		}
+
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
 		}, func(e agent.StreamEvent) {
 			if streamEvents {
 				if event, ok := events.fromStream(e); ok {
-					if payload, err := json.Marshal(event); err == nil {
-						progressCount++
-						_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
-							ProgressToken: req.Params.GetProgressToken(),
-							Progress:      progressCount,
-							Message:       string(payload),
-						})
-					}
+					notifyEvent(event)
 				}
 			}
 			switch e.Type {
@@ -415,7 +419,11 @@ func registerAgentTools(s *sdkmcp.Server) {
 				done <- e.Err
 			}
 		})
-		if err := <-done; err != nil {
+		err := <-done
+		if streamEvents {
+			notifyEvent(AgentRunEvent{Type: "done"})
+		}
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return text(buf.String())
 			}

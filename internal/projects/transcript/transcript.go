@@ -92,6 +92,7 @@ type Mapper interface {
 const (
 	FormatClaudeStreamJSON = "stream-json"
 	FormatCodexJSON        = "codex-json"
+	FormatAviaryJSON       = "aviary-json"
 )
 
 // NewMapper returns the mapper for an agent definition's output format, or nil
@@ -103,6 +104,8 @@ func NewMapper(format string) Mapper {
 		return &claudeMapper{}
 	case FormatCodexJSON:
 		return &codexMapper{}
+	case FormatAviaryJSON:
+		return aviaryMapper{}
 	}
 	return nil
 }

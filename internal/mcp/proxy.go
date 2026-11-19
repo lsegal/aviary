@@ -132,8 +132,8 @@ func (c *RemoteClient) CallTool(ctx context.Context, name string, args any) (*sd
 }
 
 // CallToolWithProgress invokes the named tool, handing its progress messages
-// to onProgress.
-func (c *RemoteClient) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string)) (*sdkmcp.CallToolResult, error) {
+// to onProgress, which reports whether a message is the call's last.
+func (c *RemoteClient) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string) bool) (*sdkmcp.CallToolResult, error) {
 	logToolCall("remote", name, args)
 	return callToolWithProgress(ctx, c.session, name, args, onProgress)
 }

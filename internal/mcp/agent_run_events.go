@@ -12,7 +12,8 @@ import (
 type AgentRunEvent struct {
 	// Type is "text" (a fragment of the agent's reply, sent only as
 	// progress), "message" (a whole reply, printed by the CLI), "tool_call",
-	// "tool_result", "file_change", "media", or "error".
+	// "tool_result", "file_change", "media", "error", or "done" (the last
+	// progress message of a run, sent only as progress).
 	Type string `json:"type"`
 	// Text is a reply or an error message.
 	Text string `json:"text,omitempty"`

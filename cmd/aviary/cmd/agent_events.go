@@ -20,20 +20,25 @@ type agentEventWriter struct {
 	errors   bool
 }
 
-// progress receives one agent_run progress message.
-func (w *agentEventWriter) progress(message string) {
+// progress receives one agent_run progress message and reports whether it is
+// the run's last.
+func (w *agentEventWriter) progress(message string) bool {
 	var event mcp.AgentRunEvent
 	if json.Unmarshal([]byte(message), &event) != nil || event.Type == "" {
-		return
+		return false
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if event.Type == "text" {
+	switch event.Type {
+	case "done":
+		return true
+	case "text":
 		w.text.WriteString(event.Text)
-		return
+		return false
 	}
 	w.flushText()
 	w.write(event)
+	return false
 }
 
 // finish prints what the run left: its last message, and the tool's result
@@ -51,9 +56,9 @@ func (w *agentEventWriter) finish(result string, isError bool) {
 }
 
 func (w *agentEventWriter) flushText() {
-	text := w.text.String()
+	text := strings.TrimSpace(w.text.String())
 	w.text.Reset()
-	if strings.TrimSpace(text) == "" {
+	if text == "" {
 		return
 	}
 	w.write(mcp.AgentRunEvent{Type: "message", Text: text})

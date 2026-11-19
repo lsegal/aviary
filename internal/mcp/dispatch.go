@@ -120,13 +120,14 @@ func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (strin
 
 // progressClient is a Client that can hand a call's progress messages back.
 type progressClient interface {
-	CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string)) (*sdkmcp.CallToolResult, error)
+	CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string) bool) (*sdkmcp.CallToolResult, error)
 }
 
 // CallToolWithProgress is CallTool for a tool that reports progress: every
-// progress message the call sends is handed to onProgress before it returns.
+// progress message the call sends is handed to onProgress before it returns;
+// onProgress reports whether a message is the call's last.
 // isError reports a result the tool marked as an error.
-func (d *Dispatcher) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string)) (text string, isError bool, err error) {
+func (d *Dispatcher) CallToolWithProgress(ctx context.Context, name string, args any, onProgress func(string) bool) (text string, isError bool, err error) {
 	c, err := d.Resolve(ctx)
 	if err != nil {
 		return "", false, err
