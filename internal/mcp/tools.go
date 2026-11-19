@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -162,6 +163,7 @@ type agentRunArgs struct {
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
 	StreamEvents        bool   `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
+	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
@@ -266,6 +268,30 @@ func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err e
 	return agentName, agentName, nil
 }
 
+// resolveAgentRunWorkdir checks that an agent_run workdir is an existing
+// absolute directory and returns it with symlinks resolved, so the granted
+// root matches the paths the file tools resolve.
+func resolveAgentRunWorkdir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("workdir %q must be an absolute path", dir)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("workdir %q does not exist", dir)
+	}
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %q is not a directory", dir)
+	}
+	return resolved, nil
+}
+
 func resolveAgentRunHistory(args agentRunArgs) bool {
 	if args.History != nil {
 		return *args.History
@@ -337,6 +363,13 @@ func registerAgentTools(s *sdkmcp.Server) {
 			return text(fmt.Sprintf("stopped session %q", sess.ID))
 		}
 		ctx = agent.WithSessionID(ctx, sess.ID)
+		if args.Workdir != "" {
+			workdir, err := resolveAgentRunWorkdir(args.Workdir)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			ctx = agent.WithFilesystemGrant(ctx, workdir)
+		}
 
 		var buf strings.Builder
 		progressToken := req.Params.GetProgressToken()
@@ -3583,6 +3616,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	registerConfiguredSkillTools(s)
+	registerCodingSkillTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",

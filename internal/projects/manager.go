@@ -65,6 +65,7 @@ type Manager struct {
 	logTotal int
 
 	snapshot atomic.Pointer[core.Snapshot]
+	reports  *reporter
 	quotas   atomic.Pointer[map[string]string]
 }
 
@@ -94,6 +95,7 @@ func NewManager(stateDir string) (*Manager, error) {
 		logger:      slog.Default().With("component", "projects"),
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
+		reports:     newReporter(),
 	}
 	return m, nil
 }
@@ -116,6 +118,7 @@ func (m *Manager) SetEngineEnabled(enabled bool) {
 
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
+	m.reports.configure(cfg)
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
@@ -461,21 +464,22 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	var engine *Engine
 	runner := CommandRunner{
-		AgentBinaries: s.AgentBinaries,
-		Agents:        s.Agents,
-		Agent:         s.Agents[0],
-		TargetAgents:  s.TargetAgents,
-		Repo:          s.Targets[0],
-		Identity:      m.identity,
-		Yolo:          s.Yolo,
-		NoMerge:       s.NoMerge,
-		NoChangelog:   s.NoChangelog,
-		Definitions:   registry,
-		agentCursor:   agentCursor,
-		Active:        active,
-		Transcripts:   m.transcripts,
-		CloneRoot:     func() (string, error) { return engine.CloneRoot() },
-		Quotas:        m.latestQuotas,
+		AgentBinaries:     s.AgentBinaries,
+		Agents:            s.Agents,
+		Agent:             s.Agents[0],
+		TargetAgents:      s.TargetAgents,
+		Repo:              s.Targets[0],
+		Identity:          m.identity,
+		Yolo:              s.Yolo,
+		NoMerge:           s.NoMerge,
+		NoChangelog:       s.NoChangelog,
+		Definitions:       registry,
+		AllowedCommenters: allowed,
+		agentCursor:       agentCursor,
+		Active:            active,
+		Transcripts:       m.transcripts,
+		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
+		Quotas:            m.latestQuotas,
 	}
 	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)
@@ -657,6 +661,13 @@ func (m *Manager) latestQuotas() map[string]string {
 // Snapshot receives the engine's published state.
 func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
+	m.reports.observe(snapshot)
+}
+
+// SetReportDelivery sets how projects that opted in to reports send them
+// through an agent's channels.
+func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
+	m.reports.setDelivery(deliver)
 }
 
 // Log receives one engine log line.

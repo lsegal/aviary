@@ -130,6 +130,11 @@ export interface SkillConfig {
 	settings?: Record<string, unknown>;
 }
 
+export interface CodingSkillsConfig {
+	auto_update?: boolean;
+	install_new_clis?: boolean;
+}
+
 export interface AppConfig {
 	server: ServerConfig;
 	agents: AgentEntry[];
@@ -140,6 +145,7 @@ export interface AppConfig {
 	skills: Record<string, SkillConfig>;
 	/** The projects: section (non-default values only); edited on project settings pages. */
 	projects: ProjectsSection;
+	coding_skills?: CodingSkillsConfig;
 }
 
 function defaultConfig(): AppConfig {

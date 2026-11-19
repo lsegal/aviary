@@ -58,7 +58,8 @@ export function toolCategory(name: string): string {
 	if (
 		name === "ping" ||
 		name.startsWith("server_") ||
-		name.startsWith("config_")
+		name.startsWith("config_") ||
+		name.startsWith("coding_skills_")
 	) {
 		return "server";
 	}

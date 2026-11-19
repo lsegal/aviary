@@ -233,3 +233,19 @@ func readFile(t *testing.T, path string) string {
 	require.NoError(t, err)
 	return strings.TrimSpace(string(data))
 }
+
+func TestProjectAddWithReports(t *testing.T) {
+	d, _ := setupProjects(t)
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "m"}}}))
+	reports := map[string]any{"agent": "bot", "targets": []any{"slack:main:C1"}, "events": []any{"merged", "failed"}}
+
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "reports": map[string]any{"agent": "ghost", "targets": []any{"slack:main:C1"}}}, `reports agent "ghost" is not configured`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "reports": reports}, "reports apply only to a saved project")
+
+	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "reports": reports})
+	assert.Equal(t, true, added["saved"])
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Len(t, cfg.Projects.List, 1)
+	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Projects.List[0].Reports)
+}

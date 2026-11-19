@@ -2,14 +2,17 @@
   <AppLayout>
     <div class="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_28%),linear-gradient(to_bottom,_rgba(255,255,255,0.96),_rgba(249,250,251,1))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_26%),linear-gradient(to_bottom,_rgba(3,7,18,0.96),_rgba(3,7,18,1))]">
       <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Skill Marketplace</h2>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Skills</h2>
             <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-              Browse installed skills, filter by activation state, and enable or disable them without leaving the system menu.
+              {{ tab === "coding"
+                ? "Skills Aviary ships for coding CLIs, and the version installed in each."
+                : "Browse installed skills, filter by activation state, and enable or disable them without leaving the system menu." }}
             </p>
           </div>
           <button
+            v-if="tab === 'agents'"
             type="button"
             class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             :disabled="loading"
@@ -19,6 +22,26 @@
           </button>
         </div>
 
+        <div class="mb-6 flex border-b border-gray-200 dark:border-gray-800" role="tablist">
+          <button
+            v-for="item in tabs"
+            :key="item.value"
+            type="button"
+            role="tab"
+            :aria-selected="tab === item.value"
+            class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
+            :class="tab === item.value
+              ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
+              : 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
+            @click="selectTab(item.value)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <CodingSkillsPanel v-if="tab === 'coding'" @count="codingCount = $event" />
+
+        <template v-else>
         <div
           v-if="errorMessage"
           class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
@@ -252,6 +275,7 @@
           </article>
         </section>
         </template>
+        </template>
       </div>
     </div>
   </AppLayout>
@@ -259,7 +283,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import CodingSkillsPanel from "../components/skills/CodingSkillsPanel.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useMCP } from "../composables/useMCP";
 import type { AppConfig, SkillConfig } from "../stores/settings";
@@ -293,8 +319,33 @@ const sourceFilters: Array<{ label: string; value: SourceFilter }> = [
 	{ label: "Disk", value: "disk" },
 ];
 
+type SkillsTab = "agents" | "coding";
+
 const { callTool } = useMCP();
 const store = useSettingsStore();
+const route = useRoute();
+const router = useRouter();
+
+const tab = computed<SkillsTab>(() =>
+	route.query.tab === "coding" ? "coding" : "agents",
+);
+const codingCount = ref<number | null>(null);
+const tabs = computed(() => [
+	{
+		value: "agents" as const,
+		label: `For Aviary agents${loading.value && !installedSkills.value.length ? "" : ` (${installedSkills.value.length})`}`,
+	},
+	{
+		value: "coding" as const,
+		label: `For coding CLIs${codingCount.value === null ? "" : ` (${codingCount.value})`}`,
+	},
+]);
+
+function selectTab(value: SkillsTab) {
+	void router.replace({
+		query: { ...route.query, tab: value === "coding" ? "coding" : undefined },
+	});
+}
 const skillsSnippet = `$ npx skills find notion
 $ npx skills add --global -a universal 4ier/notion-cli`;
 
@@ -444,5 +495,11 @@ async function toggleSkill(name: string, enabled: boolean) {
 
 onMounted(() => {
 	void loadPage();
+	callTool("coding_skills_list")
+		.then((raw) => {
+			codingCount.value ??=
+				(JSON.parse(raw) as { skills?: unknown[] }).skills?.length ?? null;
+		})
+		.catch(() => {});
 });
 </script>
