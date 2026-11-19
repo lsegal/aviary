@@ -1,0 +1,455 @@
+import { expect, type Page, test } from "@playwright/test";
+import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+
+// Fixtures follow the payloads internal/projects' Manager returns for
+// project_status, project_job_list and project_job_get.
+
+const minutesAgo = (m: number) =>
+	new Date(Date.now() - m * 60_000).toISOString();
+
+const STATUS = {
+	identity: "7F3CA91B",
+	running: true,
+	targets: ["lsegal/aviary", "lsegal/zvidlib"],
+	issue_counts: { "lsegal/aviary": 6, "lsegal/zvidlib": 0 },
+	jobs: { running: 2, queued: 0, paused: 1, completed: 7, failed: 1 },
+	concurrency: 4,
+	delivery: "poll",
+	poll_interval: "30s",
+	ready_label: "ready",
+	quotas: {
+		claude: "38% of 5h quota left",
+		codex: "quota ok",
+		gemini: "signed out",
+	},
+	agents: ["claude", "codex", "gemini"],
+	recent_logs:
+		"12:03:58 checked lsegal/aviary: 6 ready issues\n12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
+	log_offset: 2,
+	last_check: minutesAgo(0.1),
+};
+
+const actions = (status: string) => ({
+	retry: status !== "queued",
+	pause: status === "active" || status === "waiting",
+	resume: status === "paused",
+	stop: ["active", "waiting", "paused"].includes(status),
+});
+
+const job = (fields: {
+	number: number;
+	title: string;
+	status: string;
+	agent: string;
+	model: string;
+	started: number;
+	pr?: number;
+	prRepo?: string;
+	progress?: [number, number];
+	waitReason?: string;
+	target?: string;
+}) => ({
+	key: `${fields.target ?? "lsegal/aviary"}#${fields.number}`,
+	target: fields.target ?? "lsegal/aviary",
+	number: fields.number,
+	title: fields.title,
+	status: fields.status,
+	kind: "issue",
+	agent: fields.agent,
+	model: fields.model,
+	actions: actions(fields.status),
+	repository: "lsegal/aviary",
+	issue_url: `https://github.com/lsegal/aviary/issues/${fields.number}`,
+	...(fields.pr
+		? {
+				pull_request: fields.pr,
+				pull_request_url: `https://github.com/${fields.prRepo ?? "lsegal/aviary"}/pull/${fields.pr}`,
+			}
+		: {}),
+	...(fields.progress
+		? {
+				progress: {
+					done: fields.progress[0],
+					total: fields.progress[1],
+					percent: Math.round((fields.progress[0] / fields.progress[1]) * 100),
+				},
+			}
+		: {}),
+	started: minutesAgo(fields.started),
+	...(fields.waitReason ? { wait_reason: fields.waitReason } : {}),
+});
+
+const JOBS = [
+	job({
+		number: 218,
+		title: "Cap scheduler retry backoff at 10 minutes",
+		status: "active",
+		agent: "claude",
+		model: "opus",
+		started: 14,
+		pr: 233,
+		progress: [2, 5],
+	}),
+	job({
+		number: 221,
+		title: "Export a session as Markdown from the chat menu",
+		status: "active",
+		agent: "codex",
+		model: "gpt-5.5",
+		started: 3,
+	}),
+	job({
+		number: 209,
+		title: "Scoop install fails when ~/.local/bin is missing",
+		status: "failed",
+		agent: "claude",
+		model: "opus",
+		started: 60,
+		pr: 227,
+	}),
+	job({
+		number: 214,
+		title: "Show token usage per scheduled task",
+		status: "paused",
+		agent: "claude",
+		model: "opus",
+		started: 41,
+		pr: 229,
+		prRepo: "someone/aviary",
+		progress: [5, 6],
+		waitReason: "Stacked on PR #226, waiting for it to merge",
+	}),
+	job({
+		number: 200,
+		title: "Add a dark theme toggle",
+		status: "completed",
+		agent: "claude",
+		model: "opus",
+		started: 300,
+		pr: 205,
+	}),
+];
+
+const at = (m: number) => minutesAgo(m);
+
+const EVENTS_218 = [
+	{ kind: "system", time: at(14), text: "Claimed #218" },
+	{ kind: "system", time: at(13), text: "Opened draft PR #233" },
+	{
+		kind: "message",
+		time: at(12),
+		text: "I can reproduce it: retries back off **without a cap**. I'll clamp the delay at 10 minutes.",
+	},
+	{
+		kind: "reasoning",
+		time: at(12),
+		text: "The backoff doubles each attempt.",
+	},
+	{
+		kind: "plan",
+		time: at(11),
+		items: [
+			{ text: "Reproduce the unbounded backoff", status: "completed" },
+			{ text: "Clamp the delay", status: "in_progress" },
+			{ text: "Add a test", status: "pending" },
+		],
+	},
+	{
+		kind: "tool_call",
+		time: at(11),
+		call_id: "c1",
+		name: "Read",
+		input: { file_path: "internal/scheduler/queue.go" },
+	},
+	{
+		kind: "tool_result",
+		time: at(11),
+		call_id: "c1",
+		output: "package scheduler\n…",
+	},
+	{
+		kind: "file_change",
+		time: at(10),
+		path: "internal/scheduler/queue.go",
+		diff: "@@ -40,3 +40,4 @@\n delay := base << attempt\n-return delay\n+return min(delay, 10*time.Minute)\n+// capped",
+	},
+	{
+		kind: "command",
+		time: at(9),
+		command: "go test ./internal/scheduler/...",
+		output: "--- FAIL: TestBackoffCap (0.01s)",
+		exit_code: 1,
+		status: "completed",
+	},
+	{
+		kind: "comment_relay",
+		time: at(8),
+		author: "lsegal",
+		text: "Keep the jitter, please.",
+		url: "https://github.com/lsegal/aviary/issues/218#issuecomment-1",
+	},
+	{
+		kind: "command",
+		time: at(7),
+		command: "go test ./internal/scheduler/...",
+		output: "ok  internal/scheduler 2.41s",
+		exit_code: 0,
+		status: "completed",
+	},
+	{
+		kind: "usage",
+		time: at(6),
+		usage: { input_tokens: 182000, output_tokens: 9100, cost_usd: 1.42 },
+	},
+];
+
+interface Calls {
+	[tool: string]: Record<string, unknown>[];
+}
+
+async function setup(page: Page) {
+	await setAuthToken(page);
+	const calls: Calls = {};
+	const record = (tool: string, args?: Record<string, unknown>) => {
+		calls[tool] ??= [];
+		calls[tool].push(args ?? {});
+	};
+	let tick = 0;
+	const scrollback = (number: number) => {
+		tick++;
+		return [
+			`▸ read internal/scheduler/queue.go (#${number})`,
+			"$ go test ./internal/scheduler/...",
+			`ok  internal/scheduler tick ${tick}`,
+		].join("\n");
+	};
+	const ok = (tool: string) => (args?: Record<string, unknown>) => {
+		record(tool, args);
+		return { ok: true };
+	};
+	await mockMCP(page, {
+		agent_list: [],
+		project_status: (args?: Record<string, unknown>) => {
+			record("project_status", args);
+			return STATUS;
+		},
+		project_job_list: (args?: Record<string, unknown>) => {
+			record("project_job_list", args);
+			const jobs = JOBS.filter(
+				(j) =>
+					(!args?.target || j.target === args.target) &&
+					(!args?.status || j.status === args.status),
+			);
+			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
+		},
+		project_job_get: (args?: Record<string, unknown>) => {
+			record("project_job_get", args);
+			const found = JOBS.find(
+				(j) => j.target === args?.target && j.number === args?.number,
+			);
+			if (!found) throw new Error("no such job");
+			return {
+				...found,
+				checkout_directory: `~/.aviary/clones/aviary-${found.number}`,
+				session_id: "7f3c…a9",
+				scrollback: scrollback(found.number),
+				events: found.number === 218 ? EVENTS_218 : [],
+				raw_output:
+					found.number === 218
+						? '{"type":"assistant","message":{"content":[{"type":"text","text":"I can reproduce it"}]}}\n'
+						: "",
+			};
+		},
+		project_job_retry: ok("project_job_retry"),
+		project_job_stop: ok("project_job_stop"),
+		project_refresh: ok("project_refresh"),
+	});
+	return calls;
+}
+
+test("sidebar lists watched projects with live counts", async ({ page }) => {
+	await setup(page);
+	await page.goto("/overview");
+	const nav = page.locator("nav").last();
+	await expect(nav.getByRole("link", { name: /^Projects/ })).toBeVisible();
+	await expect(nav.getByTestId("projects-running-badge")).toHaveText("2");
+
+	await page.goto("/projects");
+	await expect(page).toHaveURL("/projects/lsegal%2Faviary");
+	await expect(nav.getByRole("link", { name: /lsegal\/aviary/ })).toContainText(
+		"2 running",
+	);
+	await expect(
+		nav.getByRole("link", { name: /lsegal\/zvidlib/ }),
+	).toContainText("idle");
+});
+
+test("board shows status, ordered job cards and live output", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/projects/lsegal%2Faviary");
+
+	await expect(
+		page.getByRole("heading", { name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("delivery-status")).toHaveText("live");
+	await expect(page.getByText("poll · checked")).toContainText("every 30s");
+	const stats = page.getByRole("region", { name: "Job counts" });
+	await expect(stats).toContainText("2of 4 busy");
+	await expect(stats).toContainText("Waiting1");
+	await expect(stats).toContainText("Completed7");
+	const clis = page.getByRole("region", { name: "Coding CLIs" });
+	await expect(clis).toContainText("38% of 5h quota left");
+	await expect(clis).toContainText("signed out");
+
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(5);
+	// Running and errored jobs come first, finished jobs last.
+	await expect(cards.nth(0)).toContainText("Running");
+	await expect(cards.nth(1)).toContainText("Running");
+	await expect(cards.nth(2)).toContainText("#209");
+	await expect(cards.nth(4)).toContainText("Done");
+	await expect(cards.nth(0)).toContainText("gh-fix · codex/gpt-5.5");
+
+	// Fork-aware PR link, waiting reason and checklist progress.
+	const paused = cards.filter({ hasText: "#214" });
+	await expect(
+		paused.getByRole("link", { name: "PR someone/aviary#229" }),
+	).toHaveAttribute("href", "https://github.com/someone/aviary/pull/229");
+	await expect(paused.getByTestId("job-waiting")).toHaveText(
+		"Stacked on PR #226, waiting for it to merge",
+	);
+	await expect(paused.getByTestId("job-progress")).toHaveAttribute(
+		"style",
+		/width: 83%/,
+	);
+
+	// Running cards stream output and refresh within a few seconds.
+	const running = cards.filter({ hasText: "#218" }).getByTestId("job-output");
+	await expect(running).toContainText(
+		"read internal/scheduler/queue.go (#218)",
+	);
+	const first = await running.textContent();
+	await expect(running).not.toHaveText(first ?? "", { timeout: 5_000 });
+});
+
+test("retry, stop, filters and check now call project tools", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await card.getByRole("button", { name: "Retry" }).click();
+	await expect
+		.poll(() => calls.project_job_retry?.[0])
+		.toEqual({ target: "lsegal/aviary", number: 218 });
+	await card.getByRole("button", { name: "Stop" }).click();
+	await expect
+		.poll(() => calls.project_job_stop?.[0])
+		.toEqual({ target: "lsegal/aviary", number: 218 });
+	// The engine's actions decide what each card offers.
+	const done = page.getByTestId("job-card").filter({ hasText: "#200" });
+	await expect(done.getByRole("button", { name: "Stop" })).toHaveCount(0);
+
+	await page.getByRole("tab", { name: "Waiting" }).click();
+	await expect(page.getByTestId("job-card")).toHaveCount(1);
+	await expect(page.getByTestId("job-card")).toContainText("#214");
+	const statuses = calls.project_job_list
+		.filter((c) => c.status)
+		.map((c) => c.status);
+	expect(statuses).toEqual(
+		expect.arrayContaining(["waiting", "paused", "queued"]),
+	);
+
+	await page.getByRole("button", { name: "Check now" }).click();
+	await expect
+		.poll(() => calls.project_refresh?.[0])
+		.toEqual({ target: "lsegal/aviary" });
+});
+
+test("run view renders the typed event timeline read-only", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/projects/lsegal%2Faviary");
+	await page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await expect(page).toHaveURL("/projects/lsegal%2Faviary/jobs/218");
+	await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+		"#218 Cap scheduler retry backoff at 10 minutes",
+	);
+
+	const steps = page.getByTestId("lifecycle");
+	await expect(steps.locator('[aria-current="step"]')).toContainText(
+		"Implementing",
+	);
+
+	const timeline = page.getByRole("list", { name: "Activity" });
+	await expect(timeline.locator("strong")).toHaveText("without a cap");
+	const commands = timeline.locator('[data-event="command"]');
+	await expect(commands.first()).toContainText("exit 1");
+	await expect(commands.last()).toContainText("exit 0");
+	const edit = timeline.locator('[data-event="file_change"]');
+	await expect(edit).toContainText("edit internal/scheduler/queue.go");
+	await expect(edit).toContainText("+2");
+	await expect(edit).toContainText("-1");
+	await expect(timeline.locator('[data-event="plan"]')).toContainText(
+		"Clamp the delay",
+	);
+	await timeline.getByText("Read", { exact: true }).click();
+	await expect(timeline.locator('[data-event="tool_call"]')).toContainText(
+		"package scheduler",
+	);
+	await expect(timeline.locator('[data-event="comment_relay"]')).toContainText(
+		"lsegal commented",
+	);
+	await expect(timeline.locator('[data-event="comment_relay"]')).toContainText(
+		"Keep the jitter, please.",
+	);
+	await expect(timeline.locator('[data-event="usage"]')).toContainText("$1.42");
+
+	// Raw CLI stdout sits beside the timeline.
+	await expect(page.getByTestId("run-output")).toContainText(
+		'"type":"assistant"',
+	);
+	await expect(
+		page.getByRole("link", { name: "Comment on #218 ↗" }),
+	).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/issues/218#new_comment_field",
+	);
+
+	// No steering: nothing on the page can send a message to the job.
+	await expect(page.getByRole("textbox")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /send/i })).toHaveCount(0);
+});
+
+test.describe("phone width", () => {
+	test.use({ viewport: { width: 390, height: 844 } });
+
+	for (const path of [
+		"/projects/lsegal%2Faviary",
+		"/projects/lsegal%2Faviary/jobs/218",
+	]) {
+		test(`${path} has no horizontal overflow`, async ({ page }) => {
+			await setup(page);
+			await page.goto(path);
+			await expect(page.locator("h1").last()).toBeVisible();
+			await page.waitForTimeout(500);
+			const overflow = await page.evaluate(() =>
+				[...document.querySelectorAll("main *")].some(
+					(el) =>
+						el.getBoundingClientRect().right > window.innerWidth + 1 &&
+						getComputedStyle(el).position !== "fixed" &&
+						!el.closest("[class*='overflow-x-auto']") &&
+						!el.closest("pre"),
+				),
+			);
+			expect(overflow).toBe(false);
+		});
+	}
+});

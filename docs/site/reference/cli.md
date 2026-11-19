@@ -78,6 +78,16 @@ aviary token [flags]
 
 ---
 
+## aviary ui
+
+Open the Projects board in the server's web UI. With a project argument such as `owner/repo`, open that project's board. Uses the server address from `--server`.
+
+```
+aviary ui [project]
+```
+
+---
+
 ## aviary doctor
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
