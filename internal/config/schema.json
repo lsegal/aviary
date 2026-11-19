@@ -563,13 +563,28 @@
           "x-order": 18,
           "description": "Model for the watchdog's unblock call."
         },
+        "chat_model": {
+          "type": "string",
+          "x-label": "Prompt chat model",
+          "x-order": 19,
+          "description": "Model of the built-in Projects agent behind the board's prompt chat. Defaults to models.defaults."
+        },
+        "chat_fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Prompt chat fallbacks",
+          "x-order": 20,
+          "description": "Fallback models of the built-in Projects agent, tried in order."
+        },
         "temp_dirs": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "x-label": "Clone directories",
-          "x-order": 19,
+          "x-order": 21,
           "description": "Absolute directories new clones go in, tried in order. Defaults to the system temp directory."
         },
         "webhook": {
@@ -594,7 +609,7 @@
             }
           },
           "x-label": "Webhook",
-          "x-order": 20,
+          "x-order": 22,
           "description": "Webhook delivery settings."
         }
       }

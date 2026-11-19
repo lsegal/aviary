@@ -86,6 +86,19 @@ type Manager struct {
 	loginRetryDelay time.Duration
 	// ghRunCommand replaces the engine's gh calls in tests.
 	ghRunCommand func(context.Context, ...string) ([]byte, error)
+	// mentionRouter prompts the built-in Projects agent; see
+	// SetMentionRouter.
+	mentionRouter atomic.Pointer[MentionRouter]
+}
+
+// MentionRouter sends a prompt to the built-in Projects agent.
+type MentionRouter func(ctx context.Context, prompt string) error
+
+// SetMentionRouter makes engines started from now on send direct mentions on
+// finished or paused jobs to the Projects agent through route, which must not
+// block on the agent's answer.
+func (m *Manager) SetMentionRouter(route MentionRouter) {
+	m.mentionRouter.Store(&route)
 }
 
 // The backoff between engine starts that failed to resolve the authenticated
@@ -607,6 +620,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		Transcripts:   m.transcripts,
 		Held:          m.heldForRestart,
 		RestartNotice: m.restartNotice,
+	}
+	if route := m.mentionRouter.Load(); route != nil && *route != nil {
+		engine.RouteMention = *route
 	}
 	engine.noMerge.Store(s.NoMerge)
 	engine.noChangelog.Store(s.NoChangelog)

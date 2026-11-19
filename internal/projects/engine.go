@@ -247,6 +247,10 @@ type Engine struct {
 	// never polled.
 	Discussions DiscussionSource
 	Runner      AgentRunner
+	// RouteMention hands a prompt to the built-in Projects agent. A direct
+	// mention on a finished or paused job goes to it instead of restarting
+	// the job; nil restarts the job as before.
+	RouteMention func(ctx context.Context, prompt string) error
 	// Active is the shutdown checkpoint's record of active runs (issue
 	// #741). The runner records runs whose agent is running; the run loop
 	// adds runs waiting out a scheduled wakeup, which have a checkout but no
@@ -2436,8 +2440,14 @@ func (w *Engine) Run(ctx context.Context) error {
 						wake, wakeReason = core.PausedResume, fmt.Sprintf("its blocker has pull request #%d to stack on", pullRequest)
 					}
 				}
-				mentioned := directMentions[issue.Repository+"#"+strconv.Itoa(issue.Number)]
+				mentionKey := issue.Repository + "#" + strconv.Itoa(issue.Number)
+				mentioned := directMentions[mentionKey]
 				switch {
+				case wake == core.PausedStay && mentioned && !mentions.rechecks[mentionKey] && w.routeMention(ctx, mentions, issue, "paused", directMentions):
+					// The Projects agent decides whether the comment needs
+					// work; the job stays paused until it resumes it.
+					pauseJob(issue, key, wakeReason, pausedOwn)
+					continue
 				case wake == core.PausedStay && mentioned && paused.Kind == core.PausedPullRequest:
 					// A direct mention is an instruction addressed to this
 					// instance, not review activity, so it is acted on below
@@ -2541,6 +2551,9 @@ func (w *Engine) Run(ctx context.Context) error {
 				} else {
 					w.logChanged("mention-active-"+key, "waiting", "issue #%d direct mention of instance %s waits for the run in progress to finish: that run's session cannot be resumed to relay it", issue.Number, w.Identity)
 				}
+			}
+			if addressed && wasCompleted && !isActive && w.routeMention(ctx, mentions, issue, "finished", directMentions) {
+				continue
 			}
 			if issue.Number > 0 && (wasFailed || rejected > 0 || wasPaused || (staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) || (swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || (directMention && !isActive)) {
 				seen[key] = true

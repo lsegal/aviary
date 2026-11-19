@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -691,5 +692,77 @@ func TestWebhookLoginMentionDispatchesWithoutInstanceMention(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("login mention delivered by webhook did not dispatch a run")
+	}
+}
+
+func TestPolledDirectMentionOnFinishedJobGoesToTheProjectsAgent(t *testing.T) {
+	prompts := make(chan string, 4)
+	runner, comments, mentions, stop := startPolledRunWith(t, []string{"lsegal"}, "", func(w *Engine) {
+		w.RouteMention = func(_ context.Context, prompt string) error {
+			prompts <- prompt
+			return nil
+		}
+	})
+	defer stop()
+
+	body := "Please revisit this @/aviary:SELF"
+	comments.inject("o/r", 7, Comment{Body: body, Author: "lsegal", CreatedAt: time.Now()})
+	mentions.add("o/r", RecentComment{ID: 42, Number: 7, Body: body, Author: "lsegal", UpdatedAt: time.Now()})
+	select {
+	case prompt := <-prompts:
+		if want := "look at comment https://github.com/o/r/issues/7#issuecomment-42 on issue o/r#7 and determine next steps"; prompt != want {
+			t.Fatalf("prompt = %q, want %q", prompt, want)
+		}
+	case n := <-runner.dispatched:
+		t.Fatalf("mention on the finished job restarted #%d instead of reaching the Projects agent", n)
+	case <-time.After(time.Second):
+		t.Fatal("mention on the finished job never reached the Projects agent")
+	}
+
+	// The job restarts only when the agent asks for it.
+	waitForScans(t, mentions, 5)
+	select {
+	case n := <-runner.dispatched:
+		t.Fatalf("a routed mention restarted #%d", n)
+	case prompt := <-prompts:
+		t.Fatalf("one mention reached the Projects agent twice: %q", prompt)
+	default:
+	}
+}
+
+func TestPolledDirectMentionRestartsTheJobWhenTheProjectsAgentIsUnavailable(t *testing.T) {
+	runner, comments, mentions, stop := startPolledRunWith(t, []string{"lsegal"}, "", func(w *Engine) {
+		w.RouteMention = func(context.Context, string) error { return errors.New("no agent") }
+	})
+	defer stop()
+
+	body := "Please revisit this @/aviary:SELF"
+	comments.inject("o/r", 7, Comment{Body: body, Author: "lsegal", CreatedAt: time.Now()})
+	mentions.add("o/r", RecentComment{ID: 42, Number: 7, Body: body, Author: "lsegal", UpdatedAt: time.Now()})
+	select {
+	case n := <-runner.dispatched:
+		if n != 7 {
+			t.Fatalf("direct mention dispatched issue #%d, want #7", n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("direct mention was dropped when the Projects agent could not take it")
+	}
+}
+
+func TestMentionPromptLinksTheComment(t *testing.T) {
+	issue := Issue{Repository: "o/r", Number: 7}
+	for _, test := range []struct {
+		comment mentionComment
+		link    string
+	}{
+		{mentionComment{Kind: ConversationComment, Repository: "o/r", Number: 12, ID: 5}, "https://github.com/o/r/issues/12#issuecomment-5"},
+		{mentionComment{Kind: ReviewComment, Repository: "o/r", Number: 12, ID: 6}, "https://github.com/o/r/pull/12#discussion_r6"},
+		{mentionComment{Kind: ReviewBody, Repository: "o/r", Number: 12, ID: 7}, "https://github.com/o/r/pull/12#pullrequestreview-7"},
+		{mentionComment{}, "https://github.com/o/r/issues/7"},
+	} {
+		want := "look at comment " + test.link + " on issue o/r#7 and determine next steps"
+		if got := mentionPrompt(issue, test.comment); got != want {
+			t.Errorf("mentionPrompt(%+v) = %q, want %q", test.comment, got, want)
+		}
 	}
 }

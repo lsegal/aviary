@@ -48,7 +48,7 @@
 		</div>
 		<pre data-testid="job-output"
 			class="h-40 flex-1 overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
-		<div class="flex items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
+		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
 			<router-link :to="runPath"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				Details
@@ -57,6 +57,12 @@
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('retry', job)">
 				Retry
+			</button>
+			<button v-if="job.number && job.repo" type="button" data-testid="job-summarize"
+				title="Ask the prompt chat to summarize this job's session log"
+				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				@click="emit('summarize', job)">
+				Summarize
 			</button>
 			<button v-if="job.actions.stop" type="button" :disabled="busy"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
@@ -82,6 +88,7 @@ const props = defineProps<{
 const emit = defineEmits<{
 	retry: [job: ProjectJob];
 	stop: [job: ProjectJob];
+	summarize: [job: ProjectJob];
 }>();
 
 const runPath = computed(() => jobPath(props.job.target, props.job.number));

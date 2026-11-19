@@ -16,6 +16,7 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testDataDir string
@@ -819,8 +820,11 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 	_, ok = mgr.Get("bot2")
 	assert.True(t, ok)
 
+	// The built-in Projects agent runs alongside the configured ones.
 	got := len(mgr.List())
-	assert.Equal(t, 2, got)
+	assert.Equal(t, 3, got)
+	_, ok = mgr.Get(config.ProjectsAgentName)
+	assert.True(t, ok)
 
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot1", Model: "anthropic/claude"}}})
 	_, ok = mgr.Get("bot2")
@@ -832,6 +836,26 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 	assert.NotEqual(t, r2, r1)
 
 	mgr.Stop()
+}
+
+func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
+	mgr := NewManager(nil)
+	defer mgr.Stop()
+
+	mgr.Reconcile(&config.Config{Projects: config.ProjectsConfig{ChatModel: "anthropic/claude-sonnet-5-5"}})
+	runner, ok := mgr.Get(config.ProjectsAgentName)
+	require.True(t, ok)
+	assert.Equal(t, "anthropic/claude-sonnet-5-5", runner.Agent().Model)
+	tools := runner.filterTools([]ToolInfo{{Name: "project_status"}, {Name: "project_issue_comment"}, {Name: "project_add"}, {Name: "agent_run"}, {Name: "exec"}}, nil, nil)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "project_status", tools[0].Name)
+
+	// An agent of the same name in aviary.yaml replaces the built-in one.
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: config.ProjectsAgentName, Model: "openai/gpt-5"}}})
+	runner, ok = mgr.Get(config.ProjectsAgentName)
+	require.True(t, ok)
+	assert.Equal(t, "openai/gpt-5", runner.Agent().Model)
+	assert.Len(t, mgr.List(), 1)
 }
 
 func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
