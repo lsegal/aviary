@@ -191,7 +191,7 @@
 									<span :class="LABEL">Targets</span>
 									<ul class="space-y-2">
 										<li v-for="(t, i) in reportTargets" :key="i" data-testid="report-target" class="flex flex-wrap items-center gap-2">
-											<select :value="t.channel" :class="[INPUT, 'w-auto']" :aria-label="`Target ${i + 1} channel`"
+											<select :value="t.channel" :class="TARGET_CHANNEL" :aria-label="`Target ${i + 1} channel`"
 												@change="setReportTarget(i, ($event.target as HTMLSelectElement).value, t.id)">
 												<option value="">Channel…</option>
 												<option v-for="c in reportChannels(t.channel)" :key="c.value" :value="c.value">{{ c.label }}</option>
@@ -302,6 +302,8 @@ const LABEL =
 	"mb-1 flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300";
 const INPUT =
 	"w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white";
+// INPUT without w-full, so the channel sits beside its delivery ID.
+const TARGET_CHANNEL = `${INPUT.replace("w-full ", "")} w-44 shrink-0`;
 const ICON_BTN =
 	"rounded-md px-1.5 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800";
 
