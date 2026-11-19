@@ -307,6 +307,14 @@ type Engine struct {
 	// machine wakes from sleep, such as browser mode's browser.
 	// Nil has nothing to recover.
 	Recover func(context.Context)
+	// Held reports whether a safe restart is holding new jobs. While it is,
+	// polls dispatch nothing and leave waiting jobs as they are; running jobs
+	// carry on. Nil never holds.
+	Held func() bool
+	// RestartNotice returns, once, the notice a safe restart left for the job
+	// it stopped on issue, or "" when it stopped none there. The resumed
+	// session is prompted with it. Nil has no notices.
+	RestartNotice func(Issue) string
 	// ownershipWait overrides the reap grace-period wait in tests.
 	ownershipWait func(context.Context) bool
 	// reapInterval overrides the periodic reap cadence in tests.
@@ -2241,6 +2249,13 @@ func (w *Engine) Run(ctx context.Context) error {
 	forcePausedWatch := false
 	issueHydrator, _ := w.Issues.(IssueHydrator)
 	pollOnce := func(sweep map[string]bool) error {
+		if w.Held != nil && w.Held() {
+			w.logChanged("restart-hold", "held", "a safe restart is holding new jobs; running jobs carry on")
+			return nil
+		}
+		if w.forgetLogged("restart-hold") {
+			w.logf("the safe restart's hold on new jobs was released")
+		}
 		pollNumber++
 		n := pollNumber
 		var running, queued int
@@ -2532,6 +2547,12 @@ func (w *Engine) Run(ctx context.Context) error {
 				if session.Agent != "" && !w.agentStillConfigured(session.Agent) {
 					w.logf("issue #%d discarded persisted agent %q; it is no longer configured", issue.Number, session.Agent)
 					session.ID, session.Agent, session.Resume = "", "", false
+				}
+				if session.Resume && wasActive && w.RestartNotice != nil {
+					if notice := w.RestartNotice(issue); notice != "" {
+						session.Update = notice
+						w.logf("issue #%d resuming after a safe restart in its own session", issue.Number)
+					}
 				}
 				if wake == core.PausedResume && paused.Kind != core.PausedStacked {
 					w.logf("issue #%d unpaused: %s; dispatching it", issue.Number, wakeReason)

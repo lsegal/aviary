@@ -78,8 +78,8 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	idlePoll = 10 * time.Millisecond
 	p := &fakeParticipant{log: &log}
 	saferestart.Register("test", p)
-	saferestart.RegisterSkillsUpdater("test", func(context.Context) error {
-		log = append(log, "skills")
+	saferestart.RegisterSkillsUpdater("test", func(_ context.Context, version string) error {
+		log = append(log, "skills "+version)
 		return nil
 	})
 	t.Cleanup(func() {
@@ -115,7 +115,7 @@ func TestSafeRestart_UpgradeNowCheckpointsRunningJobs(t *testing.T) {
 	assert.Equal(t, []saferestart.Job{job}, st.Jobs, "the dialog lists the jobs it will stop")
 
 	waitReexec(t, srv)
-	assert.Equal(t, []string{"install v1.3.0 /opt/aviary/bin/aviary", "skills", "checkpoint"}, *log,
+	assert.Equal(t, []string{"install v1.3.0 /opt/aviary/bin/aviary", "skills v1.3.0", "checkpoint"}, *log,
 		"replace the binary, update skills, then checkpoint")
 	assert.Equal(t, "/opt/aviary/bin/aviary", srv.ReexecPath())
 
