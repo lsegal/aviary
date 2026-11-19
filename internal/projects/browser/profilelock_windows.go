@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/sys/windows"
 )
@@ -24,4 +25,15 @@ func lockFile(file *os.File) error {
 		return fmt.Errorf("lock browser profile: %w", err)
 	}
 	return nil
+}
+
+// browserHoldsProfile reports whether another browser already runs on
+// profile. Windows Chromium keeps its profile lock as a file held open
+// exclusively, so a lockfile that cannot be removed means a live browser.
+func browserHoldsProfile(profile string) bool {
+	path := filepath.Join(profile, "lockfile")
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	return os.Remove(path) != nil
 }

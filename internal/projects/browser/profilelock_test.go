@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -156,5 +157,44 @@ func TestLaunchRunsSeveralInstancesOnOneProfile(t *testing.T) {
 		second.dataDir = private
 		second.release()
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestClaimProfileSidestepsAviarysRunningBrowser(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Chromium's profile lock is a symlink only on Unix")
+	}
+	profile := t.TempDir()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(profile, "SingletonLock")
+	if err := os.Symlink(fmt.Sprintf("%s-%d", host, os.Getpid()), link); err != nil {
+		t.Fatal(err)
+	}
+	lock, dataDir, err := claimProfile(profile)
+	if err != nil {
+		t.Fatalf("claimProfile() error = %v", err)
+	}
+	if lock != nil || dataDir == profile {
+		t.Fatalf("claimProfile() = (%v, %q), want a private directory beside the running browser", lock, dataDir)
+	}
+	(&process{profile: profile, dataDir: dataDir}).release()
+
+	// A lock left by a browser that has exited is Chromium's to take over.
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(host+"-999999999", link); err != nil {
+		t.Fatal(err)
+	}
+	lock, dataDir, err = claimProfile(profile)
+	if err != nil {
+		t.Fatalf("claimProfile() error = %v", err)
+	}
+	defer lock.release()
+	if lock == nil || dataDir != profile {
+		t.Fatalf("claimProfile() with a stale lock = (%v, %q), want the profile itself", lock, dataDir)
 	}
 }

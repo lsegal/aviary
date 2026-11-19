@@ -16,7 +16,7 @@ func (s *IssueSource) Filter() string { return s.filter }
 func (s *IssueSource) AllIssues() bool { return s.allIssues }
 
 // Vision reports the screenshot fallback attached to this source, nil when
-// -browser-vision was not passed.
+// the browser vision fallback was not passed.
 func (s *IssueSource) Vision() *Vision { return s.vision }
 
 // ReadsPages reports whether the source has a tab to read pages in.
