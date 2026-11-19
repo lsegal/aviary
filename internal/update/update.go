@@ -27,7 +27,9 @@ const (
 	DefaultRepo = "lsegal/aviary"
 	// DefaultAPIBase is the GitHub API base used for release lookups.
 	DefaultAPIBase = "https://api.github.com"
-	checkTTL       = 15 * time.Minute
+	// CheckInterval is how often the server's self-updater looks for a new release.
+	CheckInterval = 5 * time.Minute
+	checkTTL      = CheckInterval
 )
 
 // CheckResult describes the local version and the latest known release.
@@ -39,6 +41,8 @@ type CheckResult struct {
 	Emulated         bool      `json:"emulated"`
 	CheckedAt        time.Time `json:"checkedAt,omitempty"`
 	Message          string    `json:"message,omitempty"`
+	// ReleaseURL links the latest version to its release page.
+	ReleaseURL string `json:"releaseUrl,omitempty"`
 }
 
 // InstallOptions controls how a release is downloaded and installed.
@@ -172,6 +176,7 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 	if cmpErr != nil {
 		return out, cmpErr
 	}
+
 	cacheMu.Lock()
 	cachedCheck = out
 	cacheExpiry = time.Now().Add(checkTTL)
@@ -194,13 +199,13 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 		return InstallResult{}, fmt.Errorf("target path is required")
 	}
 
-	version := strings.TrimSpace(opts.Version)
+	version := NormalizeVersion(opts.Version)
 	if version == "" {
 		check, err := Check(ctx, opts.Client)
 		if err != nil && check.LatestVersion == "" {
 			return InstallResult{}, err
 		}
-		version = check.LatestVersion
+		version = NormalizeVersion(check.LatestVersion)
 	}
 	if version == "" {
 		return InstallResult{}, fmt.Errorf("unable to resolve target version")
@@ -233,7 +238,7 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	archivePath := filepath.Join(tmpDir, assetName)
-	if err := downloadFile(ctx, opts.Client, assetURL, archivePath); err != nil {
+	if err := downloadAsset(ctx, opts.Client, opts.Repo, version, assetName, assetURL, archivePath); err != nil {
 		return InstallResult{}, err
 	}
 	binaryName := "aviary"
@@ -251,6 +256,35 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 	cacheExpiry = time.Time{}
 	cacheMu.Unlock()
 	return InstallResult{Version: version}, nil
+}
+
+// NormalizeVersion returns version as a release tag with a leading "v", so
+// "1.2.3" and "v1.2.3" name the same release. Empty input stays empty.
+func NormalizeVersion(version string) string {
+	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if v == "" {
+		return ""
+	}
+	return "v" + v
+}
+
+// SameVersion reports whether a and b name the same release, ignoring a
+// leading "v". Non-semver versions compare as plain strings.
+func SameVersion(a, b string) bool {
+	pa, errA := parseSemver(a)
+	pb, errB := parseSemver(b)
+	if errA != nil || errB != nil {
+		return NormalizeVersion(a) == NormalizeVersion(b)
+	}
+	return compareSemver(pa, pb) == 0
+}
+
+// ReleaseURL returns the GitHub release page for version in repo.
+func ReleaseURL(repo, version string) string {
+	if repo == "" {
+		repo = DefaultRepo
+	}
+	return fmt.Sprintf("https://github.com/%s/releases/tag/%s", repo, NormalizeVersion(version))
 }
 
 // CheckMessage returns a short human-readable summary for a version check result.
@@ -273,6 +307,9 @@ func compareVersions(current, latest string, emulated bool) (CheckResult, error)
 		LatestVersion:  latest,
 		Emulated:       emulated,
 		CheckedAt:      time.Now().UTC(),
+	}
+	if latest != "" {
+		out.ReleaseURL = ReleaseURL(DefaultRepo, latest)
 	}
 	cur, err := parseSemver(current)
 	if err != nil {
@@ -303,7 +340,7 @@ func fetchLatestRelease(ctx context.Context, client *http.Client, repo, apiBase 
 func fetchRelease(ctx context.Context, client *http.Client, repo, apiBase, version string) (releasePayload, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(apiBase, "/"), repo)
 	if strings.TrimSpace(version) != "" {
-		url = fmt.Sprintf("%s/repos/%s/releases/tags/%s", strings.TrimRight(apiBase, "/"), repo, version)
+		url = fmt.Sprintf("%s/repos/%s/releases/tags/%s", strings.TrimRight(apiBase, "/"), repo, NormalizeVersion(version))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -403,13 +440,13 @@ func replaceFile(src, target string) error {
 	backup := target + ".bak"
 	_ = os.Remove(backup)
 	if _, err := os.Stat(target); err == nil {
-		if err := renameFile(target, backup); err != nil {
+		if err := renameWithRetry(target, backup); err != nil {
 			return fmt.Errorf("backing up existing binary: %w", err)
 		}
 	}
 	if err := installBinary(src, target); err != nil {
 		if _, statErr := os.Stat(backup); statErr == nil {
-			_ = renameFile(backup, target)
+			_ = renameWithRetry(backup, target)
 		}
 		return fmt.Errorf("installing new binary: %w", err)
 	}
@@ -418,7 +455,7 @@ func replaceFile(src, target string) error {
 }
 
 func installBinary(src, target string) error {
-	if err := renameFile(src, target); err == nil {
+	if err := renameWithRetry(src, target); err == nil {
 		return nil
 	} else if !isCrossDeviceRename(err) {
 		return err
@@ -456,7 +493,7 @@ func installBinary(src, target string) error {
 	if err := os.Chmod(tempPath, info.Mode()); err != nil {
 		return fmt.Errorf("setting staged binary mode: %w", err)
 	}
-	if err := renameFile(tempPath, target); err != nil {
+	if err := renameWithRetry(tempPath, target); err != nil {
 		return err
 	}
 	if err := os.Remove(src); err != nil && !errors.Is(err, os.ErrNotExist) {
