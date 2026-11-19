@@ -7,7 +7,7 @@
 // project_cli_list and clones from project_clone_list; their responses are
 // normalized here so the views never depend on the raw payload shape.
 
-export type Delivery = "poll" | "webhook";
+export type Delivery = "browser" | "poll" | "webhook";
 
 /** One watched project in `projects.list`. */
 export interface ProjectEntry {
@@ -23,6 +23,8 @@ export interface ProjectsSection {
 	concurrency?: number;
 	interval?: string;
 	delivery?: string;
+	browser_vision?: boolean;
+	browser_visible?: boolean;
 	ready_label?: string;
 	ready_state?: string;
 	filter?: string[];
@@ -48,6 +50,10 @@ export interface ProjectSettings {
 	readyLabel: string;
 	readyState: string;
 	delivery: Delivery;
+	/** Browser delivery's capped screenshot fallback. */
+	browserVision: boolean;
+	/** Shows the browser browser delivery reads with, for debugging. */
+	browserVisible: boolean;
 	interval: string;
 	filter: string[];
 	allIssues: boolean;
@@ -61,11 +67,19 @@ export interface ProjectSettings {
 
 export const DEFAULT_CONCURRENCY = 3;
 export const DEFAULT_READY_LABEL = "ready";
+export const DEFAULT_DELIVERY: Delivery = "browser";
 export const DEFAULT_INTERVAL = "30s";
+export const DEFAULT_BROWSER_INTERVAL = "20s";
+
+/** The poll interval a delivery mode uses when none is set. */
+export function defaultInterval(delivery: Delivery): string {
+	return delivery === "browser" ? DEFAULT_BROWSER_INTERVAL : DEFAULT_INTERVAL;
+}
 export const DEFAULT_FILTER = ["assignee:@me author:@me"];
 export const DEFAULT_AGENT = "codex";
 
 export const DELIVERY_OPTIONS: { key: Delivery; label: string }[] = [
+	{ key: "browser", label: "Aviary's browser, signed in as you" },
 	{ key: "poll", label: "Poll with gh" },
 	{ key: "webhook", label: "Webhook (ngrok tunnel)" },
 ];
@@ -97,6 +111,11 @@ export function sharedAgents(section: ProjectsSection | undefined): string[] {
 	return agents.length ? agents : [DEFAULT_AGENT];
 }
 
+function parseDelivery(v: string | undefined): Delivery {
+	const mode = (v ?? "").trim().toLowerCase();
+	return mode === "poll" || mode === "webhook" ? mode : DEFAULT_DELIVERY;
+}
+
 /** Reads one project's settings from the section, filling in defaults. */
 export function settingsFromSection(
 	target: string,
@@ -118,10 +137,9 @@ export function settingsFromSection(
 				? s.ready_label.trim()
 				: DEFAULT_READY_LABEL,
 		readyState: (s.ready_state ?? "").trim(),
-		delivery:
-			(s.delivery ?? "").trim().toLowerCase() === "webhook"
-				? "webhook"
-				: "poll",
+		delivery: parseDelivery(s.delivery),
+		browserVision: s.browser_vision === true,
+		browserVisible: s.browser_visible === true,
 		interval: (s.interval ?? "").trim(),
 		filter: filter.length ? filter : [...DEFAULT_FILTER],
 		allIssues: s.all_issues === true,
@@ -166,9 +184,17 @@ export function withSettings(
 	const label = s.readyLabel.trim();
 	set("ready_label", label, label === DEFAULT_READY_LABEL);
 	set("ready_state", s.readyState.trim(), !s.readyState.trim());
-	set("delivery", s.delivery, s.delivery === "poll");
+	set("delivery", s.delivery, s.delivery === DEFAULT_DELIVERY);
+	// The browser-only switches mean nothing for the API-backed modes.
+	const browser = s.delivery === "browser";
+	set("browser_vision", true, !browser || !s.browserVision);
+	set("browser_visible", true, !browser || !s.browserVisible);
 	const interval = s.interval.trim();
-	set("interval", interval, !interval || interval === DEFAULT_INTERVAL);
+	set(
+		"interval",
+		interval,
+		!interval || interval === defaultInterval(s.delivery),
+	);
 	const filter = clean(s.filter);
 	set("filter", filter, !filter.length || sameList(filter, DEFAULT_FILTER));
 	set("all_issues", true, !s.allIssues);

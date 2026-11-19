@@ -284,7 +284,29 @@ test("changing a setting writes only the differing values", async ({
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
+	// Browser delivery is the default and the only mode with browser switches.
+	await expect(page.locator('[data-field="delivery"]')).toHaveValue("browser");
+	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
+		"placeholder",
+		"20s",
+	);
+	await page
+		.getByRole("switch", {
+			name: "Read pages it no longer recognizes from capped screenshots",
+		})
+		.click();
+	await expect(yaml).toContainText("browser_vision: true");
 	await page.locator('[data-field="delivery"]').selectOption("webhook");
+	await expect(
+		page.getByRole("switch", {
+			name: "Show the browser it reads GitHub with, for debugging",
+		}),
+	).toHaveCount(0);
+	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
+		"placeholder",
+		"30s",
+	);
+	await expect(yaml).not.toContainText("browser_vision");
 	await expect(yaml).toContainText("concurrency: 6");
 	await expect(yaml).toContainText("no_merge: true");
 	await expect(yaml).toContainText("delivery: webhook");
@@ -310,8 +332,15 @@ test("changing a setting writes only the differing values", async ({
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
-	await page.locator('[data-field="delivery"]').selectOption("poll");
+	await page.locator('[data-field="delivery"]').selectOption("browser");
+	await page
+		.getByRole("switch", {
+			name: "Read pages it no longer recognizes from capped screenshots",
+		})
+		.click();
 	await expect(yaml).not.toContainText("concurrency:");
+	await expect(yaml).not.toContainText("delivery:");
+	await expect(yaml).not.toContainText("browser_vision");
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	await expect.poll(() => calls.config_save?.length).toBe(2);
 	expect(savedSection(calls)).toEqual(CONFIG.projects);

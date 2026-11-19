@@ -59,7 +59,7 @@
 									data-field="allowed_commenters" @input="form.commenters = parseList(commentersText)" />
 							</label>
 							<div class="space-y-3">
-								<label v-for="t in TOGGLES" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+								<label v-for="t in toggles" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
 									<SwitchRoot :checked="form[t.key]" :aria-label="t.label" :data-field="t.key"
 										class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
 										:class="form[t.key] ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
@@ -86,7 +86,7 @@
 									<div class="space-y-3">
 										<label class="block">
 											<span :class="LABEL">Check interval</span>
-											<input v-model="form.interval" type="text" :placeholder="DEFAULT_INTERVAL" :class="INPUT" data-field="interval" />
+											<input v-model="form.interval" type="text" :placeholder="defaultInterval(form.delivery)" :class="INPUT" data-field="interval" />
 										</label>
 										<label class="block">
 											<span :class="LABEL">Board ready status</span>
@@ -221,9 +221,9 @@ import {
 	useProjectClones,
 } from "../composables/useProjectSettings";
 import {
-	DEFAULT_INTERVAL,
 	DELIVERY_OPTIONS,
 	defaultFields,
+	defaultInterval,
 	formatBytes,
 	isListed,
 	type ProjectSettings,
@@ -258,7 +258,12 @@ const SECTIONS = [
 	{ id: "yaml", label: "YAML" },
 ];
 
-type ToggleKey = "merge" | "changelog" | "yolo";
+type ToggleKey =
+	| "merge"
+	| "changelog"
+	| "yolo"
+	| "browserVision"
+	| "browserVisible";
 const TOGGLES: { key: ToggleKey; label: string }[] = [
 	{ key: "merge", label: "Merge pull requests when CI passes" },
 	{ key: "changelog", label: "Add a changelog entry to each pull request" },
@@ -375,6 +380,23 @@ const saveNote = computed(() => {
 		return "Saved and applied to the running watch";
 	return "Changes apply to the running watch right away";
 });
+
+// The browser switches only apply to browser delivery.
+const BROWSER_TOGGLES: { key: ToggleKey; label: string }[] = [
+	{
+		key: "browserVision",
+		label: "Read pages it no longer recognizes from capped screenshots",
+	},
+	{
+		key: "browserVisible",
+		label: "Show the browser it reads GitHub with, for debugging",
+	},
+];
+const toggles = computed(() =>
+	form.value?.delivery === "browser"
+		? [...TOGGLES, ...BROWSER_TOGGLES]
+		: TOGGLES,
+);
 
 function setToggle(key: ToggleKey, v: boolean) {
 	if (form.value) form.value[key] = v;

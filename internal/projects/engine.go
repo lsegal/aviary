@@ -307,6 +307,9 @@ type Engine struct {
 	// machine wakes from sleep, such as browser mode's browser.
 	// Nil has nothing to recover.
 	Recover func(context.Context)
+	// GitHubSession reports browser delivery's GitHub sign-in, which the
+	// board shows as a signed-out banner. Nil outside browser delivery.
+	GitHubSession func() core.GitHubSession
 	// Held reports whether a safe restart is holding new jobs. While it is,
 	// polls dispatch nothing and leave waiting jobs as they are; running jobs
 	// carry on. Nil never holds.
@@ -2204,6 +2207,9 @@ func (w *Engine) Run(ctx context.Context) error {
 			online = w.WebhookOnline()
 		}
 		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Merged24h: merges.count(time.Now()), Failed: failed, Paused: paused, Concurrency: w.Concurrency, AllowedCommenters: append([]string(nil), w.AllowedCommenters...), Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		if w.GitHubSession != nil {
+			snapshot.GitHub = w.GitHubSession()
+		}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}

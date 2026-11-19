@@ -17,11 +17,20 @@ type ProjectsConfig struct {
 	// Concurrency is how many jobs run at once across every project. 0 means
 	// DefaultProjectsConcurrency.
 	Concurrency int `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
-	// Interval is the time between GitHub polls, as a Go duration.
+	// Interval is the time between GitHub polls, as a Go duration. Unset
+	// means DefaultProjectsBrowserInterval for browser delivery and
+	// DefaultProjectsInterval otherwise.
 	Interval string `yaml:"interval,omitempty" json:"interval,omitempty"`
-	// Delivery is how GitHub changes arrive: "poll" (the default) or
-	// "webhook".
+	// Delivery is how GitHub changes arrive: "browser" (the default) reads
+	// the rendered pages in Aviary's browser, signed in as the user; "poll"
+	// polls through gh; "webhook" takes webhook deliveries.
 	Delivery string `yaml:"delivery,omitempty" json:"delivery,omitempty"`
+	// BrowserVision turns on browser delivery's capped screenshot fallback
+	// for pages it can no longer read.
+	BrowserVision bool `yaml:"browser_vision,omitempty" json:"browser_vision,omitempty"`
+	// BrowserVisible shows the browser browser delivery reads with, for
+	// debugging. It needs a display.
+	BrowserVisible bool `yaml:"browser_visible,omitempty" json:"browser_visible,omitempty"`
 	// ReadyLabel is the label a repository issue needs to be picked up.
 	// Unset means DefaultProjectsReadyLabel; an empty string turns it off.
 	ReadyLabel *string `yaml:"ready_label,omitempty" json:"ready_label,omitempty"`
@@ -169,11 +178,13 @@ type ProjectsWebhookConfig struct {
 const (
 	DefaultProjectsConcurrency = 3
 	DefaultProjectsInterval    = 30 * time.Second
-	DefaultProjectsDelivery    = "poll"
-	DefaultProjectsReadyLabel  = "ready"
-	DefaultProjectsFilter      = "assignee:@me author:@me"
-	DefaultProjectsAgent       = "codex"
-	DefaultProjectsWebhookPath = "/webhook"
+	// DefaultProjectsBrowserInterval is browser delivery's poll interval.
+	DefaultProjectsBrowserInterval = 20 * time.Second
+	DefaultProjectsDelivery        = "browser"
+	DefaultProjectsReadyLabel      = "ready"
+	DefaultProjectsFilter          = "assignee:@me author:@me"
+	DefaultProjectsAgent           = "codex"
+	DefaultProjectsWebhookPath     = "/webhook"
 )
 
 // EffectiveConcurrency returns the job limit.
@@ -189,13 +200,17 @@ func (p ProjectsConfig) EffectiveInterval() time.Duration {
 	if d, err := time.ParseDuration(strings.TrimSpace(p.Interval)); err == nil && d > 0 {
 		return d
 	}
+	if p.EffectiveDelivery() == "browser" {
+		return DefaultProjectsBrowserInterval
+	}
 	return DefaultProjectsInterval
 }
 
-// EffectiveDelivery returns "poll" or "webhook".
+// EffectiveDelivery returns "browser", "poll" or "webhook".
 func (p ProjectsConfig) EffectiveDelivery() string {
-	if strings.EqualFold(strings.TrimSpace(p.Delivery), "webhook") {
-		return "webhook"
+	switch mode := strings.ToLower(strings.TrimSpace(p.Delivery)); mode {
+	case "poll", "webhook":
+		return mode
 	}
 	return DefaultProjectsDelivery
 }

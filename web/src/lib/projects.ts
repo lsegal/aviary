@@ -53,6 +53,25 @@ export interface ProjectStatus {
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
 	log: string[];
+	/** Browser delivery's GitHub sign-in; null in other delivery modes. */
+	github: GitHubSession | null;
+}
+
+/** What browser delivery knows about its GitHub sign-in. */
+export interface GitHubSession {
+	/** The last read was served to a signed-out session. */
+	signedOut: boolean;
+	/** A sign-in window is open in Aviary's browser now. */
+	signingIn: boolean;
+	/** The page that showed the signed-out session. */
+	url: string;
+	/** Its HTTP status when a 404 or 403 gave the session away. */
+	httpStatus: number;
+	since: string;
+	/** Why no sign-in window can appear here, such as no display. */
+	windowUnavailable: string;
+	/** Why the last sign-in attempt did not work. */
+	lastError: string;
 }
 
 export interface JobActions {
@@ -166,6 +185,20 @@ function lines(v: unknown): string[] {
 }
 
 /** Parses a tool's text result as JSON, returning null for empty or invalid text. */
+export function normalizeGitHubSession(v: unknown): GitHubSession | null {
+	if (v === undefined || v === null) return null;
+	const raw = obj(v);
+	return {
+		signedOut: raw.signed_out === true,
+		signingIn: raw.signing_in === true,
+		url: str(raw.url),
+		httpStatus: num(raw.status),
+		since: str(raw.since),
+		windowUnavailable: str(raw.window_unavailable),
+		lastError: str(raw.last_error),
+	};
+}
+
 export function parseToolJSON(text: string): unknown {
 	if (!text.trim()) return null;
 	try {
@@ -382,6 +415,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		waitingJobs: num(jobs.queued) + num(jobs.paused),
 		merged24h: num(jobs.merged_24h),
 		failed: num(jobs.failed),
+		github: normalizeGitHubSession(raw.github),
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),

@@ -50,7 +50,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"codex:high"}) {
 		t.Fatalf("a watch's agents should replace the saved project's: %v", got)
 	}
-	if s.Concurrency != 6 || s.Interval != time.Minute || s.ReadyLabel != "" || !s.NoMerge || s.Delivery != "poll" {
+	if s.Concurrency != 6 || s.Interval != time.Minute || s.ReadyLabel != "" || !s.NoMerge || s.Delivery != DeliveryBrowser {
 		t.Fatalf("settings = %+v", s)
 	}
 	if !reflect.DeepEqual(s.Agents, []string{"codex"}) {
