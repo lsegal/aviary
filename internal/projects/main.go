@@ -2170,6 +2170,9 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if !ok {
 		return false, unknownAgentError(r.registry(), agent)
 	}
+	if err := definition.ProjectsError(); err != nil {
+		return false, err
+	}
 	binary := r.binary(agent)
 	// An agent whose definition declares a minimum CLI version is checked
 	// before it is dispatched, so an install too old for the definition's
