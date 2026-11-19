@@ -120,11 +120,11 @@ func New(cfg *config.Config, token string) *Server {
 
 	// Inject deps into MCP tool handlers.
 	mcp.SetDeps(&mcp.Deps{
-		Agents:    s.agents,
-		Scheduler: s.sched,
-		Channels:  s.channels,
-		Browser:   s.brw,
-		Auth:      authStore,
+		Agents:        s.agents,
+		Scheduler:     s.sched,
+		Channels:      s.channels,
+		Browser:       s.brw,
+		Auth:          authStore,
 		Restart:       s.requestRestart,
 		RestartStatus: s.RestartStatus,
 	})

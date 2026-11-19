@@ -3,6 +3,8 @@ package update
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -119,4 +121,82 @@ func TestReplaceFileRestoresBackupWhenInstallFails(t *testing.T) {
 	data, readErr := os.ReadFile(target)
 	assert.NoError(t, readErr)
 	assert.Equal(t, "old binary", string(data))
+}
+
+func TestNormalizeVersionAcceptsLeadingV(t *testing.T) {
+	assert.Equal(t, "v1.2.3", NormalizeVersion("1.2.3"))
+	assert.Equal(t, "v1.2.3", NormalizeVersion(" v1.2.3 "))
+	assert.Equal(t, "", NormalizeVersion(""))
+	assert.True(t, SameVersion("1.2.3", "v1.2.3"))
+	assert.False(t, SameVersion("1.2.3", "v1.2.4"))
+	assert.Equal(t, "https://github.com/lsegal/aviary/releases/tag/v1.2.3", ReleaseURL("", "1.2.3"))
+}
+
+func TestReplaceFileRetriesLockedRename(t *testing.T) {
+	originalRename, originalAttempts, originalDelay := renameFile, renameAttempts, renameDelay
+	renameAttempts, renameDelay = 5, 0
+	failures := 2
+	renameFile = func(oldpath, newpath string) error {
+		if failures > 0 {
+			failures--
+			return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: errors.New("being used by another process")}
+		}
+		return originalRename(oldpath, newpath)
+	}
+	t.Cleanup(func() { renameFile, renameAttempts, renameDelay = originalRename, originalAttempts, originalDelay })
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src-bin")
+	target := filepath.Join(dir, "target-bin")
+	assert.NoError(t, os.WriteFile(src, []byte("new binary"), 0o755))
+	assert.NoError(t, os.WriteFile(target, []byte("old binary"), 0o755))
+
+	assert.NoError(t, replaceFile(src, target))
+	data, err := os.ReadFile(target)
+	assert.NoError(t, err)
+	assert.Equal(t, "new binary", string(data))
+}
+
+func TestDownloadAssetPrefersGH(t *testing.T) {
+	origLook, origRun := lookGH, runGH
+	t.Cleanup(func() { lookGH, runGH = origLook, origRun })
+	lookGH = func() (string, error) { return "gh", nil }
+	var got []string
+	runGH = func(_ context.Context, _ string, args ...string) error {
+		got = args
+		dir := args[len(args)-2]
+		return os.WriteFile(filepath.Join(dir, "aviary_v1.3.0_linux_amd64.tar.gz"), []byte("archive"), 0o600)
+	}
+
+	dest := filepath.Join(t.TempDir(), "aviary_v1.3.0_linux_amd64.tar.gz")
+	err := downloadAsset(context.Background(), nil, "lsegal/aviary", "v1.3.0", "aviary_v1.3.0_linux_amd64.tar.gz", "http://127.0.0.1:1/unused", dest)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"release", "download", "v1.3.0", "--repo", "lsegal/aviary", "--pattern", "aviary_v1.3.0_linux_amd64.tar.gz", "--dir", filepath.Dir(dest), "--clobber"}, got)
+	data, _ := os.ReadFile(dest)
+	assert.Equal(t, "archive", string(data))
+}
+
+func TestDownloadAssetFallsBackToDirectDownload(t *testing.T) {
+	origLook, origRun := lookGH, runGH
+	t.Cleanup(func() { lookGH, runGH = origLook, origRun })
+	lookGH = func() (string, error) { return "gh", nil }
+	runGH = func(context.Context, string, ...string) error { return errors.New("gh: not logged in") }
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("direct"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "asset.tar.gz")
+	assert.NoError(t, downloadAsset(context.Background(), srv.Client(), "lsegal/aviary", "v1.3.0", "asset.tar.gz", srv.URL, dest))
+	data, _ := os.ReadFile(dest)
+	assert.Equal(t, "direct", string(data))
+}
+
+func TestCleanupStagingRemovesBackup(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "aviary")
+	assert.NoError(t, os.WriteFile(target+".bak", []byte("old"), 0o755))
+	CleanupStaging(target)
+	_, err := os.Stat(target + ".bak")
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
