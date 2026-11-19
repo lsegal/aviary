@@ -103,7 +103,7 @@ func projectResult[T any](tool string, fn func(*projects.Manager) (T, error)) (*
 func registerProjectTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_status",
-		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, quota per coding CLI, and recent log lines",
+		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, allowed commenters, quota per coding CLI, and recent log lines",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectStatusArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_status", func(m *projects.Manager) (map[string]any, error) {
