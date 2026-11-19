@@ -51,12 +51,12 @@ const (
 // lifecycleSupervisor is Aviary's own supervisor, recording the browser it
 // starts so the stand-in can report it.
 type lifecycleSupervisor struct {
-	owned.Supervisor
+	ownedSupervisor
 	started chan *exec.Cmd
 }
 
 func (s lifecycleSupervisor) Start(cmd *exec.Cmd) error {
-	if err := s.Supervisor.Start(cmd); err != nil {
+	if err := s.ownedSupervisor.Start(cmd); err != nil {
 		return err
 	}
 	s.started <- cmd
@@ -325,7 +325,7 @@ func displayAvailable() bool {
 // A Config that names no supervisor once started the browser as a bare child,
 // outside every guard, and no caller ever named one (issue #773).
 func TestBrowserDefaultsToAviarysOwnSupervisor(t *testing.T) {
-	if _, ok := (Config{}).supervisor().(owned.Supervisor); !ok {
+	if _, ok := (Config{}).supervisor().(ownedSupervisor); !ok {
 		t.Fatalf("default supervisor = %T, want aviary's own process tracking", Config{}.supervisor())
 	}
 }

@@ -240,7 +240,7 @@ func GitHubSignIn(ctx context.Context, config browser.Config, out io.Writer, tim
 	if login != "" {
 		return login, nil
 	}
-	fmt.Fprintf(out, "Opened a browser window on %s. Sign in to GitHub there and Aviary will close it.\n", describeProfile(config.Profile))
+	_, _ = fmt.Fprintf(out, "Opened a browser window on %s. Sign in to GitHub there and Aviary will close it.\n", describeProfile(config.Profile))
 	return waitForGitHubLogin(ctx, session.page, timeout)
 }
 
@@ -286,7 +286,7 @@ func OpenBrowserWindow(ctx context.Context, config browser.Config, out io.Writer
 		return fmt.Errorf("cannot open a browser window: %w", err)
 	}
 	config.Headed = true
-	fmt.Fprintf(out, "Opening a browser window on %s. Close it when you are done; your changes stay on the profile.\n", describeProfile(config.Profile))
+	_, _ = fmt.Fprintf(out, "Opening a browser window on %s. Close it when you are done; your changes stay on the profile.\n", describeProfile(config.Profile))
 	return openBrowserWindow(ctx, config)
 }
 
