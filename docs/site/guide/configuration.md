@@ -55,10 +55,31 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 ```
 
 An agent's `fallbacks` list is tried in order when the primary model is unavailable. Individual agents can override both `model` and `fallbacks`; a channel within an agent can override them again; and a specific sender rule within a channel can override them a final time. Each level narrows the scope of the override.
+
+### Claude Code and Codex CLIs
+
+An agent can run its turns through the Claude Code or Codex CLI instead of calling a model API. This uses the CLI's own sign-in, such as a Claude or ChatGPT subscription, and its coding harness. Select it with a `cli/` model string:
+
+```yaml
+agents:
+  - name: coder
+    model: cli/claude/opus        # claude -p --model opus
+  - name: helper
+    model: cli/codex/gpt-6-sol    # codex exec --model gpt-6-sol
+```
+
+The CLI runs the agent loop. Aviary passes it the agent's system prompt and rules, and serves the agent's tools to it over MCP on a loopback-only endpoint with a token scoped to that session. The CLI's text, tool calls, and usage come back as ordinary chat events, so the chat UI, channels, session history and Usage work the same way.
+
+- **Sessions:** Claude Code keeps one process per active session, fed through stream-json input, and closes it after 15 idle minutes. Codex runs `codex exec` per turn and resumes its thread with `codex exec resume`. Either way the CLI session is resumed on later turns, including after a restart.
+- **Images** attached to a message reach the CLI.
+- **Permissions** are enforced by Aviary. The MCP token only exposes the tools the agent is allowed, and calls to anything else are refused. The CLI's own shell, file-edit and web tools are off unless the agent uses the `full` preset and sets `permissions.cli_builtin_tools: true`.
+- **Fallbacks** do not apply to CLI turns.
+
+`aviary doctor` reports, for each CLI in use, whether it is installed, its version, and whether it is signed in. Sign in with `claude auth login` or `codex login`.
 
 ## The Permission Model
 
@@ -217,7 +238,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 
 agents:
   - name: coder
@@ -240,7 +261,7 @@ agents:
           - "!make deploy *"
 
   - name: lobby
-    model: anthropic/claude-haiku-4-5-20251001
+    model: anthropic/claude-haiku-5-5
     memory: shared
     verbose: true
     channels:

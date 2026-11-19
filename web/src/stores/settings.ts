@@ -14,6 +14,7 @@ export interface ServerConfig {
 	tls: TLSConfig;
 	external_access: boolean;
 	no_tls: boolean;
+	auto_update?: boolean;
 }
 
 export interface AllowFromEntry {

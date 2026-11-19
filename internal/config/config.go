@@ -45,6 +45,9 @@ type ServerConfig struct {
 	// the agent gives up and notifies the session instead of resuming.
 	// Accepts Go duration strings like "6h", "30m". Defaults to 6h if unset.
 	FailedTaskTimeout string `yaml:"failed_task_timeout,omitempty" json:"failed_task_timeout,omitempty"`
+	// AutoUpdate installs new releases automatically, but only while no jobs
+	// are running.
+	AutoUpdate bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
 }
 
 // TLSConfig holds paths to TLS certificate and key.
@@ -78,6 +81,10 @@ type PermissionsConfig struct {
 	DisabledTools []string                     `yaml:"disabled_tools,omitempty" json:"disabled_tools,omitempty"`
 	Filesystem    *FilesystemPermissionsConfig `yaml:"filesystem,omitempty"    json:"filesystem,omitempty"`
 	Exec          *ExecPermissionsConfig       `yaml:"exec,omitempty"          json:"exec,omitempty"`
+	// CLIBuiltinTools lets a CLI-backed agent (model "cli/...") use the CLI's
+	// own shell, file-edit and web tools. Requires the full preset; otherwise
+	// the CLI only gets Aviary's MCP tools.
+	CLIBuiltinTools bool `yaml:"cli_builtin_tools,omitempty" json:"cli_builtin_tools,omitempty"`
 }
 
 // AgentConfig describes a single agent.
