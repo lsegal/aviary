@@ -122,7 +122,7 @@ const JOBS = [
 	job({
 		number: 200,
 		title: "Add a dark theme toggle",
-		status: "completed",
+		status: "complete",
 		agent: "claude",
 		model: "opus",
 		started: 300,
