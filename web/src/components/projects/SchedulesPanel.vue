@@ -1,5 +1,5 @@
 <template>
-	<div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+	<div class="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
 		<section aria-label="Schedules" class="space-y-2">
 			<div class="flex items-center gap-2">
 				<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Scheduled prompts</h2>
@@ -31,10 +31,12 @@
 							{{ s.description || s.trigger }}<template v-if="s.enabled && s.nextRun"> · next {{ until(s.nextRun, now) }}</template>
 							<template v-else-if="!s.enabled"> · paused</template>
 						</p>
-						<p v-if="s.history[0]" class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-gray-500 dark:text-gray-400">
-							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="lastDot(s.history[0].status)" />
-							<span class="truncate">{{ s.history[0].summary || s.history[0].status }}</span>
-							<span class="shrink-0 text-gray-400">· {{ age(s.history[0].fireTime, now) }} ago</span>
+						<p v-if="lastResult(s)" data-testid="schedule-last-result"
+							class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-gray-500 dark:text-gray-400">
+							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="lastDot(lastResult(s)?.status ?? '')" />
+							<span class="truncate">{{ lastResult(s)?.summary || lastResult(s)?.status }}</span>
+							<span class="shrink-0 text-gray-400">· {{ age(lastResult(s)?.fireTime ?? "", now) }} ago</span>
+							<span v-if="s.history[0]?.status === 'running'" class="shrink-0 text-blue-600 dark:text-blue-400">· running now</span>
 						</p>
 					</button>
 				</li>
@@ -59,7 +61,8 @@ import {
 } from "../../lib/projects";
 import ScheduleEditor from "./ScheduleEditor.vue";
 
-const NEW = "\u0000new";
+// Task ids are always "agent/task", so "new" never names one.
+const NEW = "new";
 
 const props = defineProps<{
 	project: string;
@@ -100,6 +103,13 @@ async function onToggle(s: ProjectSchedule) {
 	} finally {
 		toggling.value = "";
 	}
+}
+
+const FINISHED = ["completed", "failed", "canceled", "skipped"];
+
+/** The schedule's latest finished run, or its latest run when none finished. */
+function lastResult(s: ProjectSchedule) {
+	return s.history.find((r) => FINISHED.includes(r.status)) ?? s.history[0];
 }
 
 function lastDot(status: string) {
