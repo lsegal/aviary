@@ -29,6 +29,7 @@ type projectStatusArgs struct {
 type projectJobListArgs struct {
 	Target string `json:"target,omitempty" jsonschema:"Only list jobs of this project"`
 	Status string `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
+	Query  string `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
 }
@@ -119,11 +120,11 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_list",
-		Description: "List every Projects job, running and errored jobs first, with the actions each accepts; filter by project and status, paged",
+		Description: "List every Projects job, running and errored jobs first, with the actions each accepts; filter by project, status and search text, paged",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_job_list", func(m *projects.Manager) (map[string]any, error) {
-			return m.ListJobs(args.Target, args.Status, args.Offset, args.Limit), nil
+			return m.ListJobs(args.Target, args.Status, args.Query, args.Offset, args.Limit), nil
 		})
 	})
 

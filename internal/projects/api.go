@@ -107,17 +107,25 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by project and status and paged.
-func (m *Manager) ListJobs(target, status string, offset, limit int) map[string]any {
+// filtered by project, status and a search query, and paged. total counts
+// the jobs that match all three; with a query, unfiltered_total counts those
+// matching only the project and status.
+func (m *Manager) ListJobs(target, status, query string, offset, limit int) map[string]any {
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
+	query = strings.ToLower(strings.TrimSpace(query))
 	var matched []map[string]any
+	unfiltered := 0
 	for _, job := range m.currentSnapshot().Jobs {
 		if target != "" && job.Target != target {
 			continue
 		}
 		if status != "" && job.Status != status {
+			continue
+		}
+		unfiltered++
+		if query != "" && !jobMatches(job, query) {
 			continue
 		}
 		matched = append(matched, jobSummary(job))
@@ -128,7 +136,46 @@ func (m *Manager) ListJobs(target, status string, offset, limit int) map[string]
 	if page == nil {
 		page = []map[string]any{}
 	}
-	return map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit}
+	list := map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit}
+	if query != "" {
+		list["unfiltered_total"] = unfiltered
+	}
+	return list
+}
+
+// jobSearchKinds are the skill names the dashboards show for each job kind.
+var jobSearchKinds = map[string]string{
+	core.JobKindIssue:      "gh-fix",
+	core.JobKindDiscussion: "gh-discuss",
+}
+
+// jobMatches reports whether a lowercased query appears in any of a job's
+// fields: its numbers, title, repository, status, skill, agent and model,
+// session, schedule, wait reason, or output.
+func jobMatches(job core.JobSnapshot, query string) bool {
+	fields := []string{
+		fmt.Sprintf("%s#%d", job.Target, job.Number),
+		fmt.Sprintf("#%d", job.Number),
+		job.Repository,
+		job.Title,
+		job.Status,
+		job.Kind,
+		jobSearchKinds[job.Kind],
+		job.Agent + "/" + job.Model,
+		job.SessionID,
+		job.ScheduleID,
+		job.WaitReason,
+		job.Log,
+	}
+	if job.PullRequest > 0 {
+		fields = append(fields, fmt.Sprintf("#%d", job.PullRequest), job.PullRequestRepository)
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), query) {
+			return true
+		}
+	}
+	return false
 }
 
 // GetJob is project_job_get: one job's state, session, transcript events and
