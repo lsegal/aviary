@@ -93,6 +93,8 @@ func ProjectItemInProgress(target string, issue Issue) bool {
 	return IsProjectTarget(target) && strings.EqualFold(strings.TrimSpace(issue.ProjectStatus), "In Progress")
 }
 
+// RemoteIssueAllowsDispatch reports whether an issue as GitHub reports it may
+// be dispatched on target: open, unblocked, and ready.
 func RemoteIssueAllowsDispatch(target string, issue Issue, readyState string) bool {
 	if !IsProjectTarget(target) {
 		return true
@@ -101,6 +103,8 @@ func RemoteIssueAllowsDispatch(target string, issue Issue, readyState string) bo
 		ProjectStatusAllowsDispatch(issue.ProjectStatus, readyState)
 }
 
+// ProjectStatusAllowsDispatch reports whether a board item's status marks it
+// ready, matching readyState or, when it is empty, Todo or Ready.
 func ProjectStatusAllowsDispatch(status, readyState string) bool {
 	status = strings.TrimSpace(status)
 	readyState = strings.TrimSpace(readyState)
@@ -110,6 +114,7 @@ func ProjectStatusAllowsDispatch(status, readyState string) bool {
 	return strings.EqualFold(status, "Todo") || strings.EqualFold(status, "Ready")
 }
 
+// ProjectReadyState returns the status that marks a board item ready.
 func ProjectReadyState(configured, current string) string {
 	if configured = strings.TrimSpace(configured); configured != "" {
 		return configured

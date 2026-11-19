@@ -49,7 +49,7 @@ func reapOrphanedNgrokAgents(out io.Writer) int {
 		}
 	}
 	if stopped > 0 && out != nil {
-		fmt.Fprintf(out, "stopped %d leftover ngrok agent(s) from an earlier aviary run\n", stopped)
+		_, _ = fmt.Fprintf(out, "stopped %d leftover ngrok agent(s) from an earlier aviary run\n", stopped)
 	}
 	return stopped
 }
@@ -85,10 +85,10 @@ func aviaryNgrokCommand(command string) bool {
 	}
 	http, stdout := false, false
 	for _, field := range fields[1:] {
-		switch {
-		case field == "http":
+		switch field {
+		case "http":
 			http = true
-		case field == "--log=stdout" || field == "--log stdout":
+		case "--log=stdout", "--log stdout":
 			stdout = true
 		}
 	}

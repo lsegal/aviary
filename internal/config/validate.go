@@ -242,7 +242,7 @@ func (v *validator) checkModel(field, model string) {
 		return
 	}
 
-	provider, name := parts[0], parts[1]
+	provider := parts[0]
 
 	switch provider {
 	case "anthropic":
@@ -263,12 +263,8 @@ func (v *validator) checkModel(field, model string) {
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
 	case "vllm", "ollama":
-	case "stdio":
-		if _, err := exec.LookPath(name); err != nil {
-			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
-		}
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, ollama, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, or ollama", provider, model)
 	}
 }
 
@@ -446,8 +442,7 @@ func validAuthRef(ref string) bool {
 
 // UniqueProviderModels returns a map of provider name → one representative
 // model string (e.g. "anthropic" → "anthropic/claude-sonnet-4-5") drawn from
-// all agents and model defaults. "stdio" providers are excluded because they
-// have no remote endpoint to ping.
+// all agents and model defaults.
 func UniqueProviderModels(cfg *Config) map[string]string {
 	seen := map[string]string{}
 	add := func(model string) {
@@ -459,9 +454,6 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 			return
 		}
 		provider := model[:idx]
-		if provider == "stdio" {
-			return
-		}
 		if _, ok := seen[provider]; !ok {
 			seen[provider] = model
 		}

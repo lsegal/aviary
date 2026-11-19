@@ -1,3 +1,5 @@
+// Package process starts the subprocesses Projects owns, such as coding CLIs
+// and the ngrok tunnel, and makes sure none of them outlives Aviary.
 package process
 
 import (
@@ -302,18 +304,3 @@ func ShutdownContext(prepare func()) (context.Context, func()) {
 		cancel()
 	}
 }
-
-// Supervisor adapts the tracked child-process helpers to an interface value,
-// for callers such as the webui package that start a subprocess of their own
-// and need it reaped along with every other subprocess aviary owns.
-type Supervisor struct{}
-
-func (Supervisor) Start(cmd *exec.Cmd) error { return Start(cmd) }
-
-func (Supervisor) Run(cmd *exec.Cmd) error { return Run(cmd) }
-
-func (Supervisor) Stop(cmd *exec.Cmd) error { return Stop(cmd) }
-
-func (Supervisor) Wait(cmd *exec.Cmd) error { return Wait(cmd) }
-
-func (Supervisor) Kill(cmd *exec.Cmd) error { return Kill(cmd) }

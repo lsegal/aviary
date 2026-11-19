@@ -156,7 +156,7 @@ func TestOrphanGuardHelperProcess(t *testing.T) {
 		t.Fatalf("start child process: %v", err)
 	}
 	fmt.Printf("child-pid %d\n", cmd.Process.Pid)
-	os.Stdout.Sync()
+	_ = os.Stdout.Sync()
 	switch os.Getenv("AVIARY_ORPHAN_HELPER_EXIT") {
 	case "hangup":
 		// What a closed terminal sends, with no handler installed, so the
