@@ -93,7 +93,7 @@ The coding-CLI doctor: for every CLI definition, whether it is installed, its ve
 
 ## project_clone_list, project_clone_clear
 
-List every clone Projects made for a job, with its repository, issue, pull request and size, and whether a job still uses it. Clear removes the unused ones and reports the space reclaimed.
+List every clone Projects made for a job, with its repository, issue, pull request and on-disk size, and whether a job still uses it, plus `totalSize` across the listing. Sizes are measured concurrently for at most a few seconds; a clone not measured in time has no `size` and is counted in `unmeasured`. Clear removes the unused ones and reports the space reclaimed.
 
 ## project_unblock_run
 

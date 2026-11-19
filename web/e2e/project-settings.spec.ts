@@ -113,6 +113,7 @@ async function setup(
 					repository: "lsegal/aviary",
 					issue: 209,
 					inUse: false,
+					size: 157286400,
 				},
 				{
 					path: "/tmp/aviary-218",
@@ -123,6 +124,8 @@ async function setup(
 					reason: "job is running",
 				},
 			],
+			totalSize: 157286400,
+			unmeasured: 1,
 		},
 		project_clone_clear: (args?: Args) => {
 			record("project_clone_clear", args);
@@ -406,6 +409,13 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	await expect(rows.first()).toContainText("unused");
 	await expect(rows.nth(1)).toContainText("PR #233");
 	await expect(rows.nth(1)).toContainText("in use");
+	await expect(rows.first().getByTestId("clone-size")).toHaveText("150 MB");
+	await expect(rows.nth(1).getByTestId("clone-size")).toHaveText(
+		"size unknown",
+	);
+	await expect(page.getByTestId("clone-total")).toHaveText(
+		"2 clones, 150 MB total (1 not measured)",
+	);
 
 	await page.getByRole("button", { name: "Clear unused clones" }).click();
 	await expect(page.getByTestId("clone-message")).toHaveText(

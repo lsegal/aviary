@@ -177,11 +177,18 @@
 											{{ [c.repo && c.issue ? `${c.repo}#${c.issue}` : c.repo, c.pr ? `PR #${c.pr}` : ""].filter(Boolean).join(" · ") }}
 										</p>
 									</div>
+									<span data-testid="clone-size" class="text-xs tabular-nums text-gray-500"
+										:title="c.size === null ? 'Not measured in time' : undefined">{{ c.size === null ? "size unknown" : formatBytes(c.size) }}</span>
 									<span class="text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'" :title="c.reason">
 										{{ c.inUse ? "in use" : "unused" }}
 									</span>
 								</li>
 							</ul>
+							<p v-if="clones.loaded.value && !clones.error.value && clones.clones.value.length" data-testid="clone-total" class="mt-2 text-xs text-gray-500">
+								{{ clones.clones.value.length }} {{ clones.clones.value.length === 1 ? "clone" : "clones" }},
+								{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
+									({{ clones.unmeasured.value }} not measured)</template>
+							</p>
 							<button v-if="clones.clones.value.some((c) => !c.inUse)" type="button" :disabled="clones.clearing.value"
 								class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>

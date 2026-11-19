@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -472,14 +473,14 @@ func clearClones(reg *cloneRegistry, usage func() cloneUsage) core.ClearClonesRe
 			result.Kept++
 			continue
 		}
-		size := dirSize(entry.Path)
+		size, _ := dirSize(context.Background(), entry.Path)
 		if err := removeTree(entry.Path); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", entry.Path, err))
 			result.Kept++
 			continue
 		}
 		_ = reg.remove(entry.Path)
-		entry.Size = size
+		entry.Size = &size
 		result.Reclaimed += size
 		result.Removed = append(result.Removed, entry)
 	}
@@ -488,9 +489,13 @@ func clearClones(reg *cloneRegistry, usage func() cloneUsage) core.ClearClonesRe
 
 // dirSize totals the regular files under path. WalkDir never follows
 // symlinks or Windows junctions, so nothing outside the clone is counted.
-func dirSize(path string) int64 {
+// It stops with ctx's error when ctx ends first.
+func dirSize(ctx context.Context, path string) (int64, error) {
 	var total int64
-	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return nil
 		}
@@ -501,7 +506,77 @@ func dirSize(path string) int64 {
 		}
 		return nil
 	})
-	return total
+	return total, err
+}
+
+// cloneSizeTimeout bounds how long listing clones spends measuring them, and
+// cloneSizeWorkers how many clones are measured at once.
+const (
+	cloneSizeTimeout = 3 * time.Second
+	cloneSizeWorkers = 8
+)
+
+// measureCloneSizes fills in each clone's size and the snapshot's total,
+// measuring concurrently. A clone not measured before timeout (or ctx) ends
+// keeps a nil size and counts as unmeasured, so a slow disk or a huge clone
+// never holds the listing up for longer than timeout.
+func measureCloneSizes(ctx context.Context, snapshot *core.ClonesSnapshot, timeout time.Duration, measure func(context.Context, string) (int64, error)) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var (
+		mu       sync.Mutex
+		sizes    = make([]*int64, len(snapshot.Clones))
+		finished bool
+		wg       sync.WaitGroup
+	)
+	indexes := make(chan int)
+	for range min(cloneSizeWorkers, len(snapshot.Clones)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indexes {
+				size, err := measure(ctx, snapshot.Clones[i].Path)
+				mu.Lock()
+				if err == nil && !finished {
+					sizes[i] = &size
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	go func() {
+		defer close(indexes)
+		for i := range snapshot.Clones {
+			select {
+			case indexes <- i:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	// Workers still measuring at the deadline are not waited for; finished
+	// makes them drop their results.
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+	mu.Lock()
+	finished = true
+	mu.Unlock()
+	snapshot.TotalSize, snapshot.Unmeasured = 0, 0
+	for i := range snapshot.Clones {
+		snapshot.Clones[i].Size = sizes[i]
+		if sizes[i] == nil {
+			snapshot.Unmeasured++
+			continue
+		}
+		snapshot.TotalSize += *sizes[i]
+	}
 }
 
 // removeTree deletes a clone, clearing read-only bits (git marks its object

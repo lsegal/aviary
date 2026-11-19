@@ -6,8 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
 )
@@ -128,13 +131,21 @@ func TestClearClonesKeepsActiveAndPausedJobs(t *testing.T) {
 	if len(snapshot.Clones) != 3 {
 		t.Fatalf("listed %d clones, want 3: %+v", len(snapshot.Clones), snapshot.Clones)
 	}
+	var total int64
 	for _, clone := range snapshot.Clones {
+		if clone.Size == nil || *clone.Size < 1000 {
+			t.Fatalf("clone %s size = %v, want its measured size", clone.Path, clone.Size)
+		}
+		total += *clone.Size
 		if clone.Repository != "o/r" || clone.Issue == 0 {
 			t.Fatalf("clone %s lost its repository or issue: %+v", clone.Path, clone)
 		}
 		if clone.InUse != (clone.Path != finished) {
 			t.Fatalf("clone %s in use = %t (%s)", clone.Path, clone.InUse, clone.Reason)
 		}
+	}
+	if snapshot.TotalSize != total || snapshot.Unmeasured != 0 {
+		t.Fatalf("total %d (%d unmeasured), want %d", snapshot.TotalSize, snapshot.Unmeasured, total)
 	}
 	result, err := w.ClearClones(context.Background())
 	if err != nil {
@@ -148,8 +159,8 @@ func TestClearClonesKeepsActiveAndPausedJobs(t *testing.T) {
 	}
 	// Each removal logs its size and the round ends with the total
 	//.
-	if result.Removed[0].Size != result.Reclaimed {
-		t.Fatalf("removed size %d, reclaimed %d", result.Removed[0].Size, result.Reclaimed)
+	if result.Removed[0].Size == nil || *result.Removed[0].Size != result.Reclaimed {
+		t.Fatalf("removed size %v, reclaimed %d", result.Removed[0].Size, result.Reclaimed)
 	}
 	size := formatBytes(result.Reclaimed)
 	for _, want := range []string{"removed unused clone " + finished + " (" + size + ")", "cleared 1 unused clone, reclaimed " + size} {
@@ -251,5 +262,79 @@ func TestTempDirsSetting(t *testing.T) {
 	result = w.applySettingsRequest(SettingsUpdate{TempDirs: &empty}, newConcurrencySemaphore(1))
 	if len(result.snapshot.TempDirs) != 0 || w.CloneRoots()[0] != filepath.Clean(os.TempDir()) {
 		t.Fatalf("clearing the setting left %v (roots %v)", result.snapshot.TempDirs, w.CloneRoots())
+	}
+}
+
+// TestMeasureCloneSizesStaysResponsive lists many clones whose measurement
+// never finishes alongside ones that do: the listing returns at the timeout
+// with the fast clones' sizes and total, and the slow ones reported unknown.
+func TestMeasureCloneSizesStaysResponsive(t *testing.T) {
+	snapshot := core.ClonesSnapshot{}
+	for i := range 200 {
+		path := "fast"
+		if i%2 == 1 {
+			path = "slow"
+		}
+		snapshot.Clones = append(snapshot.Clones, core.CloneEntry{Path: path})
+	}
+	var calls atomic.Int32
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	measure := func(_ context.Context, path string) (int64, error) {
+		calls.Add(1)
+		if path == "slow" {
+			// A hung disk that does not even honour ctx.
+			<-release
+		}
+		return 10, nil
+	}
+	start := time.Now()
+	measureCloneSizes(context.Background(), &snapshot, 200*time.Millisecond, measure)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("listing took %s, want about the 200ms timeout", elapsed)
+	}
+	if calls.Load() > cloneSizeWorkers*2 {
+		t.Fatalf("measured %d clones at once, want at most %d workers busy", calls.Load(), cloneSizeWorkers)
+	}
+	var measured int
+	for _, clone := range snapshot.Clones {
+		if clone.Path == "slow" && clone.Size != nil {
+			t.Fatalf("slow clone reported size %d, want unknown", *clone.Size)
+		}
+		if clone.Size != nil {
+			measured++
+		}
+	}
+	if snapshot.TotalSize != int64(measured)*10 || snapshot.Unmeasured != len(snapshot.Clones)-measured || snapshot.Unmeasured == 0 {
+		t.Fatalf("total %d, %d unmeasured, %d measured", snapshot.TotalSize, snapshot.Unmeasured, measured)
+	}
+}
+
+// TestMeasureCloneSizesMeasuresManyClones measures every clone when they
+// all finish in time.
+func TestMeasureCloneSizesMeasuresManyClones(t *testing.T) {
+	root := t.TempDir()
+	snapshot := core.ClonesSnapshot{}
+	for i := range 40 {
+		snapshot.Clones = append(snapshot.Clones, core.CloneEntry{Path: makeClone(t, root, "r-"+strconv.Itoa(i), "o/r")})
+	}
+	measureCloneSizes(context.Background(), &snapshot, time.Minute, dirSize)
+	if snapshot.Unmeasured != 0 {
+		t.Fatalf("%d clones unmeasured", snapshot.Unmeasured)
+	}
+	want, _ := dirSize(context.Background(), snapshot.Clones[0].Path)
+	if want < 1000 || snapshot.TotalSize != want*40 {
+		t.Fatalf("total %d, want 40 x %d", snapshot.TotalSize, want)
+	}
+}
+
+// TestDirSizeStopsWhenCancelled reports an unknown size rather than a
+// partial one when the walk is cut off.
+func TestDirSizeStopsWhenCancelled(t *testing.T) {
+	dir := makeClone(t, t.TempDir(), "r", "o/r")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := dirSize(ctx, dir); !errors.Is(err, context.Canceled) {
+		t.Fatalf("dirSize after cancel err = %v", err)
 	}
 }
