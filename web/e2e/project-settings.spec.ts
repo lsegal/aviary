@@ -492,14 +492,14 @@ test("a new project with its own settings is written before it starts", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("saving keeps a project's other settings such as reports", async ({
+test("saving keeps a project's other per-project settings", async ({
 	page,
 }) => {
-	const reports = { agent: "atlas", targets: ["slack:#dev"] };
+	const other = { mode: "future" };
 	const calls = await setup(page, {
 		config: {
 			server: {},
-			projects: { list: [{ target: "lsegal/aviary", reports }] },
+			projects: { list: [{ target: "lsegal/aviary", other }] },
 		},
 	});
 	await page.goto("/projects/lsegal%2Faviary/settings");
@@ -508,6 +508,134 @@ test("saving keeps a project's other settings such as reports", async ({
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedSection(calls).list).toEqual([
-		{ target: "lsegal/aviary", reports, agents: ["codex/gpt-5.5"] },
+		{ target: "lsegal/aviary", other, agents: ["codex/gpt-5.5"] },
 	]);
+});
+
+const REPORTS_CONFIG = {
+	...CONFIG,
+	agents: [
+		{
+			name: "atlas",
+			model: "anthropic/claude-sonnet-4-5",
+			channels: [{ type: "slack", id: "main", token: "xoxb-test" }],
+		},
+		{ name: "scout", model: "anthropic/claude-sonnet-4-5" },
+	],
+};
+
+test("reports can be turned on with an agent and a target, then off", async ({
+	page,
+}) => {
+	const calls = await setup(page, { config: REPORTS_CONFIG });
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	const yaml = page.getByTestId("project-yaml");
+	const save = page.getByRole("button", { name: "Save", exact: true });
+	const toggle = page.getByRole("switch", { name: "Send job reports" });
+	await expect(toggle).toHaveAttribute("aria-checked", "false");
+	await expect(page.locator('[data-field="reports_agent"]')).toHaveCount(0);
+
+	await toggle.click();
+	await expect(page.getByTestId("reports-error")).toHaveText(
+		"Choose the Aviary agent that sends reports.",
+	);
+	await expect(save).toBeDisabled();
+	await page.locator('[data-field="reports_agent"]').selectOption("atlas");
+	await expect(page.getByTestId("reports-error")).toHaveText(
+		"Reports need at least one target.",
+	);
+
+	await page
+		.getByRole("combobox", { name: "Target 1 channel" })
+		.selectOption("slack:main");
+	await page
+		.getByRole("textbox", { name: "Target 1 delivery ID" })
+		.fill("C123");
+	await page.getByRole("button", { name: "Add a target" }).click();
+	await page
+		.getByRole("combobox", { name: "Target 2 channel" })
+		.selectOption("session");
+	await page
+		.getByRole("textbox", { name: "Target 2 delivery ID" })
+		.fill("projects");
+	await page.locator('[data-field="report_waiting"]').uncheck();
+	await expect(page.getByTestId("reports-error")).toHaveCount(0);
+	await expect(yaml).toContainText(
+		[
+			"    - target: lsegal/aviary",
+			"      agents: [claude/opus]",
+			"      reports:",
+			"        agent: atlas",
+			'        targets: ["slack:main:C123", "session:projects"]',
+			"        events: [merged, failed]",
+		].join("\n"),
+	);
+
+	await save.click();
+	await expect(page.getByTestId("save-note")).toHaveText(
+		"Saved and applied to the running watch",
+	);
+	expect(savedSection(calls).list).toEqual([
+		{
+			target: "lsegal/aviary",
+			agents: ["claude/opus"],
+			reports: {
+				agent: "atlas",
+				targets: ["slack:main:C123", "session:projects"],
+				events: ["merged", "failed"],
+			},
+		},
+	]);
+
+	// Turning reports off removes the key again.
+	await toggle.click();
+	await expect(yaml).not.toContainText("reports:");
+	await save.click();
+	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedSection(calls)).toEqual(CONFIG.projects);
+});
+
+test("saved reports load into the form and are checked like the server does", async ({
+	page,
+}) => {
+	await setup(page, {
+		config: {
+			...REPORTS_CONFIG,
+			projects: {
+				list: [
+					{
+						target: "lsegal/aviary",
+						reports: { agent: "atlas", targets: ["slack:main:C123"] },
+					},
+				],
+			},
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	await expect(
+		page.getByRole("switch", { name: "Send job reports" }),
+	).toHaveAttribute("aria-checked", "true");
+	await expect(page.locator('[data-field="reports_agent"]')).toHaveValue(
+		"atlas",
+	);
+	await expect(
+		page.getByRole("textbox", { name: "Target 1 delivery ID" }),
+	).toHaveValue("C123");
+	// No events filter means every event is reported.
+	for (const e of ["merged", "failed", "waiting"])
+		await expect(page.locator(`[data-field="report_${e}"]`)).toBeChecked();
+
+	for (const e of ["merged", "failed", "waiting"])
+		await page.locator(`[data-field="report_${e}"]`).uncheck();
+	await expect(page.getByTestId("reports-error")).toHaveText(
+		"Choose at least one event to report.",
+	);
+	await expect(
+		page.getByRole("button", { name: "Save", exact: true }),
+	).toBeDisabled();
+	await page.locator('[data-field="report_failed"]').check();
+	await page.getByRole("button", { name: "Remove target 1" }).click();
+	await expect(page.getByTestId("reports-error")).toHaveText(
+		"Reports need at least one target.",
+	);
 });

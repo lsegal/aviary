@@ -15,7 +15,7 @@
 					<button type="button" :disabled="!dirty || saving"
 						class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 						@click="discard">Discard</button>
-					<button type="button" :disabled="(!dirty && !adding) || saving || !form"
+					<button type="button" :disabled="(!dirty && !adding) || saving || !form || !!reportsProblem"
 						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
 						@click="save">{{ saving ? "Saving…" : adding ? "Save and start watching" : "Save" }}</button>
 				</div>
@@ -163,6 +163,63 @@
 						</div>
 					</section>
 
+					<section id="reports" :class="CARD">
+						<h2 :class="CARD_HEAD">Reports <span :class="CARD_NOTE">Send {{ target }}'s job events through an Aviary agent's channels</span></h2>
+						<div class="space-y-4 p-5">
+							<label class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+								<SwitchRoot :checked="form.reports.enabled" aria-label="Send job reports" data-field="reports"
+									class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+									:class="form.reports.enabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
+									@update:checked="setReports">
+									<SwitchThumb class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+										:class="form.reports.enabled ? 'translate-x-[110%]' : 'translate-x-[10%]'" />
+								</SwitchRoot>
+								Send job reports
+							</label>
+							<template v-if="form.reports.enabled">
+								<p v-if="!agentNames.length" class="text-sm text-gray-500">
+									Reports go through an Aviary agent's channels, and no agents are configured yet.
+								</p>
+								<label class="block max-w-xs">
+									<span :class="LABEL">Aviary agent</span>
+									<select v-model="form.reports.agent" :class="INPUT" data-field="reports_agent">
+										<option value="">Choose an agent…</option>
+										<option v-for="a in reportAgentOptions" :key="a" :value="a">{{ a }}</option>
+									</select>
+								</label>
+								<div>
+									<span :class="LABEL">Targets</span>
+									<ul class="space-y-2">
+										<li v-for="(t, i) in reportTargets" :key="i" data-testid="report-target" class="flex flex-wrap items-center gap-2">
+											<select :value="t.channel" :class="TARGET_CHANNEL" :aria-label="`Target ${i + 1} channel`"
+												@change="setReportTarget(i, ($event.target as HTMLSelectElement).value, t.id)">
+												<option value="">Channel…</option>
+												<option v-for="c in reportChannels(t.channel)" :key="c.value" :value="c.value">{{ c.label }}</option>
+											</select>
+											<input :value="t.id" type="text" :class="[INPUT, 'min-w-0 flex-1 font-mono']" :aria-label="`Target ${i + 1} delivery ID`"
+												:placeholder="t.channel === 'session' ? 'Session name' : 'Channel, chat or user ID'"
+												@input="setReportTarget(i, t.channel, ($event.target as HTMLInputElement).value)" />
+											<button type="button" :class="ICON_BTN" :aria-label="`Remove target ${i + 1}`" @click="removeReportTarget(i)">✕</button>
+										</li>
+									</ul>
+									<button type="button" class="mt-2 rounded-md px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+										@click="addReportTarget">Add a target</button>
+								</div>
+								<fieldset>
+									<legend :class="LABEL">Report when a job is</legend>
+									<div class="flex flex-wrap gap-4">
+										<label v-for="e in REPORT_EVENTS" :key="e.key" class="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+											<input type="checkbox" :checked="form.reports.events.includes(e.key)" :data-field="`report_${e.key}`"
+												@change="toggleReportEvent(e.key)" />
+											{{ e.label }}
+										</label>
+									</div>
+								</fieldset>
+								<p v-if="reportsProblem" data-testid="reports-error" class="text-sm text-amber-700 dark:text-amber-400">{{ reportsProblem }}</p>
+							</template>
+						</div>
+					</section>
+
 					<section id="clones" :class="CARD">
 						<h2 :class="CARD_HEAD">Clones <span :class="CARD_NOTE">Each job works in its own clone, shared across projects</span></h2>
 						<div class="p-5">
@@ -226,14 +283,18 @@ import {
 	defaultInterval,
 	formatBytes,
 	isListed,
+	joinReportTarget,
 	type ProjectSettings,
 	type ProjectsSection,
 	parseList,
 	projectsYAML,
+	REPORT_EVENTS,
+	reportsError,
 	settingsFromSection,
 	sharedAgents,
 	specModel,
 	specName,
+	splitReportTarget,
 	withSettings,
 } from "../lib/projectSettings";
 import { encodeProject } from "../lib/projects";
@@ -248,12 +309,15 @@ const LABEL =
 	"mb-1 flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300";
 const INPUT =
 	"w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white";
+// INPUT without w-full, so the channel sits beside its delivery ID.
+const TARGET_CHANNEL = `${INPUT.replace("w-full ", "")} w-44 shrink-0`;
 const ICON_BTN =
 	"rounded-md px-1.5 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800";
 
 const SECTIONS = [
 	{ id: "general", label: "General" },
 	{ id: "clis", label: "Coding CLIs" },
+	{ id: "reports", label: "Reports" },
 	{ id: "clones", label: "Clones" },
 	{ id: "yaml", label: "YAML" },
 ];
@@ -408,7 +472,7 @@ function discard() {
 }
 
 async function save() {
-	if (!form.value || !store.config) return;
+	if (!form.value || !store.config || reportsProblem.value) return;
 	saving.value = true;
 	error.value = "";
 	try {
@@ -506,5 +570,80 @@ function addAgent(e: Event) {
 	const sel = e.target as HTMLSelectElement;
 	if (sel.value) setSpecs([...specs.value, sel.value]);
 	sel.value = "";
+}
+
+// ── Reports ─────────────────────────────────────────────────────────────────
+
+const agentNames = computed(() =>
+	(store.config?.agents ?? []).map((a) => a.name),
+);
+// Keep a saved agent that is no longer configured selectable, so the error
+// below explains it instead of the picker silently showing nothing.
+const reportAgentOptions = computed(() => {
+	const cur = form.value?.reports.agent.trim() ?? "";
+	return cur && !agentNames.value.includes(cur)
+		? [...agentNames.value, cur]
+		: agentNames.value;
+});
+const reportsProblem = computed(() =>
+	form.value ? reportsError(form.value.reports, agentNames.value) : "",
+);
+const reportTargets = computed(() =>
+	(form.value?.reports.targets ?? []).map(splitReportTarget),
+);
+
+/** The reporting agent's channels as target choices, plus session. */
+function reportChannels(current: string) {
+	const agent = (store.config?.agents ?? []).find(
+		(a) => a.name === form.value?.reports.agent,
+	);
+	const options = [
+		{ value: "session", label: "session" },
+		...(agent?.channels ?? [])
+			.filter((ch) => ch.type && ch.id)
+			.map((ch) => ({
+				value: `${ch.type}:${ch.id}`,
+				label: `${ch.type}: ${ch.id}`,
+			})),
+	];
+	if (current && !options.some((o) => o.value === current))
+		options.push({ value: current, label: current });
+	return options;
+}
+
+function setReports(on: boolean) {
+	if (!form.value) return;
+	const r = form.value.reports;
+	r.enabled = on;
+	if (on && !r.agent && agentNames.value.length === 1)
+		r.agent = agentNames.value[0] ?? "";
+	if (on && !r.targets.length) r.targets = [""];
+}
+
+// Targets are edited as channel + delivery ID rows; a row with no ID is kept
+// as its bare channel prefix so it stays on screen while being filled in.
+function setReportTarget(i: number, channel: string, id: string) {
+	if (!form.value) return;
+	const list = [...form.value.reports.targets];
+	list[i] = joinReportTarget(channel, id) || (channel ? `${channel}:` : "");
+	form.value.reports.targets = list;
+}
+
+function addReportTarget() {
+	form.value?.reports.targets.push("");
+}
+
+function removeReportTarget(i: number) {
+	form.value?.reports.targets.splice(i, 1);
+}
+
+function toggleReportEvent(key: string) {
+	if (!form.value) return;
+	const r = form.value.reports;
+	r.events = r.events.includes(key)
+		? r.events.filter((e) => e !== key)
+		: REPORT_EVENTS.map((e) => e.key).filter(
+				(e) => e === key || r.events.includes(e),
+			);
 }
 </script>
