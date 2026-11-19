@@ -153,3 +153,37 @@ func toolErrorText(out string, err error) string {
 	}
 	return out
 }
+
+func TestTaskSchedule_ProjectTask(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+
+	_, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent": "bot", "name": "triage", "type": "project", "project": "o/r", "cli": "claude:opus",
+		"content": "Triage new issues", "trigger": "daily", "at": "09:00",
+	})
+	require.NoError(t, err)
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	task := cfg.Agents[0].Tasks[0]
+	assert.Equal(t, "project", task.Type)
+	assert.Equal(t, "o/r", task.Project)
+	assert.Equal(t, "claude:opus", task.CLI)
+	assert.Equal(t, "Triage new issues", task.Prompt)
+	tasks := s.ListTasks()
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "o/r", tasks[0].Project)
+
+	_, err = d.CallTool(context.Background(), "task_update", map[string]any{"name": "triage", "project": "o/other"})
+	require.NoError(t, err)
+	cfg, err = config.Load("")
+	require.NoError(t, err)
+	assert.Equal(t, "o/other", cfg.Agents[0].Tasks[0].Project)
+
+	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent": "bot", "type": "project", "content": "x", "every": "1h",
+	})), "require project")
+	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent": "bot", "type": "project", "project": "o/r", "content": "x", "in": "5m",
+	})), "need a schedule trigger")
+	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_update", map[string]any{"name": "triage", "project": ""})), "require a project")
+}

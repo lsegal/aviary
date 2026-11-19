@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
@@ -876,4 +877,38 @@ func TestJobQueue_ListCorrupted(t *testing.T) {
 	}
 	assert.True(t, found)
 
+}
+
+func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m", Tasks: []config.TaskConfig{{
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", CLI: "claude:opus", Prompt: "Triage new issues",
+	}}}}})
+	q := NewJobQueue()
+	p := NewWorkerPool(q, mgr, 1)
+
+	job, err := q.EnqueueWithType("alpha/triage", "project", "alpha", "Triage new issues", "Triage new issues", "", 1, "", "")
+	require.NoError(t, err)
+	assert.ErrorContains(t, p.executeJob(context.Background(), job), "Projects engine")
+
+	var got ProjectRun
+	p.projectRunner = func(_ context.Context, run ProjectRun) (string, error) {
+		got = run
+		return "Opened issue #12", nil
+	}
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, "alpha/triage", got.TaskID)
+	assert.Equal(t, "triage", got.Name)
+	assert.Equal(t, "o/r", got.Project)
+	assert.Equal(t, "claude:opus", got.CLI)
+	assert.Equal(t, "Triage new issues", got.Prompt)
+	persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "Opened issue #12", persisted.Output)
+
+	p.projectRunner = func(context.Context, ProjectRun) (string, error) {
+		return "agent exited 1", errors.New("agent exited 1")
+	}
+	assert.ErrorContains(t, p.executeJob(context.Background(), job), "agent exited 1")
 }

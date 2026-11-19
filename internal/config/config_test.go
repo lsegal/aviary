@@ -1448,3 +1448,20 @@ func TestWatcher(t *testing.T) {
 		<-done
 	})
 }
+
+func TestValidate_ProjectTask(t *testing.T) {
+	valid := &Config{Agents: []AgentConfig{{Name: "bot", Model: "anthropic/claude-sonnet-4-5", Tasks: []TaskConfig{{
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", CLI: "claude:opus", Prompt: "Triage new issues",
+	}}}}}
+	for _, issue := range Validate(valid, nil) {
+		assert.NotEqual(t, LevelError, issue.Level, issue.Message)
+	}
+
+	missing := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "triage", Type: "project", Every: "1h"}}}}}
+	issues := Validate(missing, nil)
+	assert.True(t, hasIssue(issues, "require the watched project"))
+	assert.True(t, hasIssue(issues, "project tasks require non-empty prompt"))
+
+	misplaced := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t", Every: "1h", Prompt: "p", Project: "o/r"}}}}}
+	assert.True(t, hasIssue(Validate(misplaced, nil), "only supported for project tasks"))
+}
