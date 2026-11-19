@@ -39,7 +39,9 @@ A repository issue is picked up when it is open, carries the ready label (`ready
 
 Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each entry is an `AGENT/MODEL:LEVEL` spec, such as `codex`, `claude/opus` or `codex/gpt-5.6-terra:high`. Repeating an agent balances load across the entries. A project can list its own agents, which act as a fallback order: a job runs on the first one whose quota is not used up.
 
-Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
+Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
+
+Without `yolo`, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
 
 `agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
@@ -80,17 +82,42 @@ projects:
 
 ## Steering jobs
 
-Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session.
+Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the coding CLI treats comments by anyone else in the thread as untrusted information rather than instructions.
 
 Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
+
+On a finished or paused job, a mention goes to the Projects agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
+
+## Prompt chat
+
+**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. It answers from live state, and can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. It is limited to the `project_*` tools, cannot comment on issues or otherwise instruct a running job, and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
+
+The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `projects.chat_model` and `projects.chat_fallbacks`, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
 
 ## Keeping jobs moving
 
 - A run that exits while its issue is still open is resumed in the same session, or restarted when the session is gone.
+- Those resumes back off, doubling from 30 seconds up to 15 minutes. After four resumes in a row that leave no new commits, pull requests, or comments on GitHub, the job is paused instead, with the reason in the job list and the log. Like a job the owner paused, it stays paused until you retry it; the stuck-job watchdog leaves it alone.
 - Work waiting on GitHub, such as an open dependency or a stacked blocker, is paused and gives up its slot until it is unblocked.
 - A pull request closed without merging restarts the work.
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.
-- On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards. Every subprocess dies with Aviary, even on `SIGKILL`.
+- On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards and are told that Aviary restarted. An upgrade that waits for idle (`server_upgrade { when: "idle" }`) dispatches no new jobs while it waits. Every subprocess dies with Aviary, even on `SIGKILL`.
+
+## Reports
+
+A project can send a short report through an Aviary agent's channels when one of its jobs finishes (`merged`), fails (`failed`), or starts waiting on CI, a wakeup, or a blocker (`waiting`). Reports are off by default. Turn them on per project by naming the agent and where to send:
+
+```yaml
+projects:
+  list:
+    - target: owner/repo
+      reports:
+        agent: assistant
+        targets: [slack:main:C0123456789, session:projects]
+        events: [merged, failed]   # optional; all events when left out
+```
+
+Targets use the same form as a scheduled task's target ([delivery targets](/guide/channels#delivery-targets)), and the agent must have the channel configured. `project_add` takes the same `reports` object when it saves a project.
 
 ## Delivery
 
@@ -99,6 +126,10 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 ## Job transcripts
 
 Each job keeps a structured transcript built from the coding CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`) and Codex (`exec --json`) are mapped today. Other CLIs record their raw output and Projects' own events.
+
+## Scheduled prompts
+
+A project can also run prompts on a timer, such as a nightly triage or a weekly dependency update. They are Aviary scheduled tasks of type `project`, managed in the project's **Schedules** tab, and each run shows on the board as a Scheduled job. See [Scheduled prompts](./scheduled-tasks#scheduled-prompts).
 
 ## Managing projects
 

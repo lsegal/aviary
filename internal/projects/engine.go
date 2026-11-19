@@ -231,7 +231,11 @@ type Engine struct {
 	StatePath   string
 	ReadyState  string
 	noMerge     atomic.Bool
-	noChangelog atomic.Bool
+	// allowedCommenters is the live allowed-commenter list for the runner's
+	// prompts. runner() reads it from job goroutines, so it is kept apart
+	// from AllowedCommenters, which only the Run loop touches.
+	allowedCommenters atomic.Pointer[[]string]
+	noChangelog       atomic.Bool
 	// autoUpdate is read by the updater each round.
 	autoUpdate atomic.Bool
 	// clones keeps the temp directories new clones go in and the record of
@@ -243,6 +247,10 @@ type Engine struct {
 	// never polled.
 	Discussions DiscussionSource
 	Runner      AgentRunner
+	// RouteMention hands a prompt to the built-in Projects agent. A direct
+	// mention on a finished or paused job goes to it instead of restarting
+	// the job; nil restarts the job as before.
+	RouteMention func(ctx context.Context, prompt string) error
 	// Active is the shutdown checkpoint's record of active runs (issue
 	// #741). The runner records runs whose agent is running; the run loop
 	// adds runs waiting out a scheduled wakeup, which have a checkout but no
@@ -303,6 +311,17 @@ type Engine struct {
 	// machine wakes from sleep, such as browser mode's browser.
 	// Nil has nothing to recover.
 	Recover func(context.Context)
+	// GitHubSession reports browser delivery's GitHub sign-in, which the
+	// board shows as a signed-out banner. Nil outside browser delivery.
+	GitHubSession func() core.GitHubSession
+	// Held reports whether a safe restart is holding new jobs. While it is,
+	// polls dispatch nothing and leave waiting jobs as they are; running jobs
+	// carry on. Nil never holds.
+	Held func() bool
+	// RestartNotice returns, once, the notice a safe restart left for the job
+	// it stopped on issue, or "" when it stopped none there. The resumed
+	// session is prompted with it. Nil has no notices.
+	RestartNotice func(Issue) string
 	// ownershipWait overrides the reap grace-period wait in tests.
 	ownershipWait func(context.Context) bool
 	// reapInterval overrides the periodic reap cadence in tests.
@@ -350,6 +369,11 @@ type Engine struct {
 	forks         map[string]forkProbe
 	jobActionOnce sync.Once
 	jobActions    chan jobActionRequest
+	// scheduled carries scheduled prompt runs into the Run loop, and
+	// scheduleRerun is what a board Retry on one calls.
+	scheduled       scheduledRunChannel
+	scheduleRerunMu sync.Mutex
+	scheduleRerun   func(scheduleID string) error
 	// settingsOnce/settingsRequests carry live settings updates
 	// into the Run loop, mirroring the jobActionOnce/jobActions pattern above.
 	settingsOnce     sync.Once
@@ -1393,43 +1417,45 @@ func unclosedWorkPrompt(issue Issue) string {
 // whether GitHub answered at all, so a check that could not be made is never
 // mistaken for an issue that is still open. A merge GitHub has not finished
 // processing is allowed for by re-reading once after the closure interval
-// before the work is treated as unfinished. When the run is done because its
+// before the work is treated as unfinished. The last state read is returned
+// too, so the keepalive loop can tell whether the turn made any progress. When
+// the run is done because its
 // ready pull request is held rather than because the issue closed, it also
 // returns the paused record for that pull request: stacked when
 // the pull request is built on a base other than the default branch, so it can
 // only merge after its blocker does, and otherwise held for a
 // human to merge or close.
-func (w *Engine) confirmIssueClosed(ctx context.Context, checker WorkClosureChecker, issue Issue) (closed, answered bool, held *core.PausedWork) {
+func (w *Engine) confirmIssueClosed(ctx context.Context, checker WorkClosureChecker, issue Issue) (closed, answered bool, held *core.PausedWork, last OriginatingWorkState) {
 	repo := issueRepository(issue.Target, issue)
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return false, false, nil
+				return false, false, nil, last
 			case <-time.After(w.activeWorkClosureInterval()):
 			}
 		}
 		state, err := checker.OriginatingWorkState(ctx, repo, issue.Number)
 		if err != nil {
 			if ctx.Err() != nil {
-				return false, false, nil
+				return false, false, nil, last
 			}
 			w.logf("issue #%d completion check failed: %v", issue.Number, err)
 			continue
 		}
-		answered = true
+		answered, last = true, state
 		if strings.EqualFold(state.IssueState, "closed") {
-			return true, true, nil
+			return true, true, nil, last
 		}
 		if pullRequestHeldForReview(state) {
 			held = &core.PausedWork{Kind: core.PausedPullRequest, PullRequests: core.OpenPullRequests(state)}
 			if pullRequestPausedOnStack(state) {
 				held.Kind = core.PausedStacked
 			}
-			return true, true, held
+			return true, true, held, last
 		}
 	}
-	return false, answered, nil
+	return false, answered, nil, last
 }
 
 // pullRequestHeldForReview reports whether state carries a pull request that
@@ -1543,7 +1569,7 @@ func (w *Engine) unlistedPausedIssues(ctx context.Context, hydrator IssueHydrato
 // pauses at the end of a run.
 func pausedJobReason(paused core.PausedWork) string {
 	if paused.Kind == core.PausedManual {
-		return core.ManualPauseReason
+		return paused.ManualReason()
 	}
 	if paused.Kind == core.PausedStacked {
 		return "its stacked pull request waits on its blocker to merge"
@@ -2125,6 +2151,11 @@ func (w *Engine) Run(ctx context.Context) error {
 	// keeps the derived watch on its linked pull requests current (issue
 	// #723).
 	closureChecker = recordLinkedPullRequests(closureChecker, mentions.linked)
+	// Every one of those reads also notes the merged pull requests, which
+	// status counts over the last day. They are saved beside the work state
+	// so the count survives a restart (issue #413).
+	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
+	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
 	// watch started. A linked pull request anywhere else delivers nothing, so
 	// push mode scans it on each poll instead.
@@ -2184,7 +2215,10 @@ func (w *Engine) Run(ctx context.Context) error {
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
 		}
-		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Failed: failed, Paused: paused, Concurrency: w.Concurrency, Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		snapshot := EngineSnapshot{Identity: string(w.Identity), Targets: watched, IssueCounts: counts, Running: running, Queued: queued, Completed: completed, Merged24h: merges.count(time.Now()), Failed: failed, Paused: paused, Concurrency: w.Concurrency, AllowedCommenters: append([]string(nil), w.AllowedCommenters...), Interval: w.Interval, UseWebhooks: w.UseWebhooks, WebhookOnline: online, WebUIURL: w.WebUIURL, LastPoll: polled, Quotas: quotas, Jobs: list, VisibleJobs: maxVisibleJobs}
+		if w.GitHubSession != nil {
+			snapshot.GitHub = w.GitHubSession()
+		}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}
@@ -2205,6 +2239,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// from the run loop and while a poll waits for a slot.
 	retryAfterStop := make(map[string]bool)
 	var serveJobAction func(request jobActionRequest, dispatching bool)
+	// startScheduled queues a scheduled prompt run as a board job.
+	var startScheduled func(request scheduledRunRequest)
+	var serveScheduledAction func(request jobActionRequest, key string, job JobSnapshot)
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
 	// pause the queued job or stop a running one to free its slot (issue
@@ -2216,6 +2253,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				return false, nil
 			case request := <-w.settingsRequestsChan():
 				request.done <- w.applySettingsRequest(request.update, sem)
+			case request := <-w.scheduledRunRequests():
+				startScheduled(request)
 			case request := <-w.jobActionRequests():
 				serveJobAction(request, true)
 				workMu.Lock()
@@ -2237,6 +2276,13 @@ func (w *Engine) Run(ctx context.Context) error {
 	forcePausedWatch := false
 	issueHydrator, _ := w.Issues.(IssueHydrator)
 	pollOnce := func(sweep map[string]bool) error {
+		if w.Held != nil && w.Held() {
+			w.logChanged("restart-hold", "held", "a safe restart is holding new jobs; running jobs carry on")
+			return nil
+		}
+		if w.forgetLogged("restart-hold") {
+			w.logf("the safe restart's hold on new jobs was released")
+		}
 		pollNumber++
 		n := pollNumber
 		var running, queued int
@@ -2394,8 +2440,14 @@ func (w *Engine) Run(ctx context.Context) error {
 						wake, wakeReason = core.PausedResume, fmt.Sprintf("its blocker has pull request #%d to stack on", pullRequest)
 					}
 				}
-				mentioned := directMentions[issue.Repository+"#"+strconv.Itoa(issue.Number)]
+				mentionKey := issue.Repository + "#" + strconv.Itoa(issue.Number)
+				mentioned := directMentions[mentionKey]
 				switch {
+				case wake == core.PausedStay && mentioned && !mentions.rechecks[mentionKey] && w.routeMention(ctx, mentions, issue, "paused", directMentions):
+					// The Projects agent decides whether the comment needs
+					// work; the job stays paused until it resumes it.
+					pauseJob(issue, key, wakeReason, pausedOwn)
+					continue
 				case wake == core.PausedStay && mentioned && paused.Kind == core.PausedPullRequest:
 					// A direct mention is an instruction addressed to this
 					// instance, not review activity, so it is acted on below
@@ -2500,6 +2552,9 @@ func (w *Engine) Run(ctx context.Context) error {
 					w.logChanged("mention-active-"+key, "waiting", "issue #%d direct mention of instance %s waits for the run in progress to finish: that run's session cannot be resumed to relay it", issue.Number, w.Identity)
 				}
 			}
+			if addressed && wasCompleted && !isActive && w.routeMention(ctx, mentions, issue, "finished", directMentions) {
+				continue
+			}
 			if issue.Number > 0 && (wasFailed || rejected > 0 || wasPaused || (staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) || (swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || (directMention && !isActive)) {
 				seen[key] = true
 				delete(restored, key)
@@ -2528,6 +2583,12 @@ func (w *Engine) Run(ctx context.Context) error {
 				if session.Agent != "" && !w.agentStillConfigured(session.Agent) {
 					w.logf("issue #%d discarded persisted agent %q; it is no longer configured", issue.Number, session.Agent)
 					session.ID, session.Agent, session.Resume = "", "", false
+				}
+				if session.Resume && wasActive && w.RestartNotice != nil {
+					if notice := w.RestartNotice(issue); notice != "" {
+						session.Update = notice
+						w.logf("issue #%d resuming after a safe restart in its own session", issue.Number)
+					}
 				}
 				if wake == core.PausedResume && paused.Kind != core.PausedStacked {
 					w.logf("issue #%d unpaused: %s; dispatching it", issue.Number, wakeReason)
@@ -2597,7 +2658,10 @@ func (w *Engine) Run(ctx context.Context) error {
 		workMu.Unlock()
 		for _, key := range manual {
 			if target, number, ok := parseIssueWorkKey(key); ok && slices.Contains(targets, target) {
-				pauseJob(Issue{Number: number, Target: target, Repository: issueRepository(target, Issue{})}, key, core.ManualPauseReason, nil)
+				workMu.Lock()
+				reason := pausedRecord(work[key]).ManualReason()
+				workMu.Unlock()
+				pauseJob(Issue{Number: number, Target: target, Repository: issueRepository(target, Issue{})}, key, reason, nil)
 			}
 		}
 		// A mention whose issue the poll did not list can never be dispatched,
@@ -2834,10 +2898,15 @@ func (w *Engine) Run(ctx context.Context) error {
 				alreadyClosed := false
 				var paused *core.PausedWork
 				keepalives := 0
-				// wakeup is the wakeup the agent's last turn left
-				// pending, which the next pass waits out before resuming the
-				// session with the agent's own prompt.
-				var wakeup *scheduledWakeup
+				// stalled counts the keepalives in a row whose turn changed
+				// nothing on GitHub, measured against progress, the
+				// fingerprint the previous turn left.
+				stalled := 0
+				progress := ""
+				// wait is what the next pass waits out before resuming the
+				// session: the wakeup the agent's last turn left pending, or
+				// the keepalive's backoff.
+				var wait *runWait
 				wakeups := 0
 				setWaiting := func(from, to, reason string, wakeAt time.Time) {
 					jobMu.Lock()
@@ -2849,6 +2918,12 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobMu.Unlock()
 					publish()
 				}
+				// announced holds the pull requests this job's transcript has
+				// already recorded as opened, so a checklist update, a
+				// draft-to-ready change, or a poll that briefly misses the
+				// pull request does not record it again (#405). It is guarded
+				// by jobMu.
+				announced := map[string]bool{}
 				for {
 					runCtx, cancelRun := context.WithCancelCause(ctx)
 					workMu.Lock()
@@ -2863,12 +2938,17 @@ func (w *Engine) Run(ctx context.Context) error {
 						jobMu.Lock()
 						job, ok := jobs[key]
 						changed := ok && job.SetPullRequest(state, issueRepository(i.Target, i))
+						label := ""
 						if changed {
 							jobs[key] = job
+							if label = job.PullRequestLabel(); announced[label] {
+								label = ""
+							}
+							announced[label] = true
 						}
 						jobMu.Unlock()
 						if changed {
-							if label := job.PullRequestLabel(); label != "" {
+							if label != "" {
 								w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "pull request opened: " + label, URL: job.PullRequestURL()})
 							}
 							publish()
@@ -2891,11 +2971,11 @@ func (w *Engine) Run(ctx context.Context) error {
 						go w.watchForCompetingClaim(runCtx, target, i.Number, time.Now(), cancelRun)
 					}
 					waitInterrupted := false
-					if pending := wakeup; pending != nil && runCtx.Err() == nil {
-						wakeup = nil
-						delay := w.wakeupDelay(*pending)
+					if pending := wait; pending != nil && runCtx.Err() == nil {
+						wait = nil
+						delay := pending.Delay
 						setWaiting("active", "waiting", pending.Reason, time.Now().Add(delay))
-						_, _ = fmt.Fprintf(jobOutput, "Waiting %s for the scheduled wakeup before resuming the session.\n", formatWakeupDelay(delay))
+						_, _ = fmt.Fprintf(jobOutput, "Waiting %s for %s before resuming the session.\n", formatWakeupDelay(delay), pending.For)
 						jobMu.Lock()
 						waitingCheckout := jobs[key].CheckoutDirectory
 						jobMu.Unlock()
@@ -2904,7 +2984,7 @@ func (w *Engine) Run(ctx context.Context) error {
 						w.Active.remove(waitingRun)
 						setWaiting("waiting", "active", "", time.Time{})
 						if closed {
-							w.logf("issue #%d closed while its agent waited for a scheduled wakeup; cancelling the wakeup", i.Number)
+							w.logf("issue #%d closed while its agent waited for %s; cancelling the wait", i.Number, pending.For)
 							cancelRun(nil)
 							workMu.Lock()
 							delete(cancellations, key)
@@ -2961,7 +3041,7 @@ func (w *Engine) Run(ctx context.Context) error {
 							}
 							if state.SessionID != "" && state.Agent != "" {
 								w.logf("issue #%d agent scheduled a wakeup in %s (%s); keeping session %s alive until then", i.Number, formatWakeupDelay(scheduled.Delay), scheduled.Reason, state.SessionID)
-								wakeup = scheduled
+								wait = &runWait{Delay: w.wakeupDelay(*scheduled), Reason: scheduled.Reason, For: "the scheduled wakeup"}
 								agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: wakeupPrompt(i, *scheduled)}
 								publish()
 								continue
@@ -2978,7 +3058,7 @@ func (w *Engine) Run(ctx context.Context) error {
 						// GitHub says the issue is closed; while it is still
 						// open the work is kept alive and continued instead of
 						// being reported as finished.
-						closed, answered, held := w.confirmIssueClosed(ctx, closureChecker, i)
+						closed, answered, held, observed := w.confirmIssueClosed(ctx, closureChecker, i)
 						if closed || !answered || ctx.Err() != nil {
 							// A run that finished with a ready pull request
 							// still open is paused on that pull request, so its
@@ -2999,13 +3079,32 @@ func (w *Engine) Run(ctx context.Context) error {
 							}
 							break
 						}
+						// An agent that keeps ending its turn on a blocker it
+						// cannot get past (auth, permissions, a broken tool)
+						// would otherwise be resumed forever, each turn a full
+						// prompt. A turn that committed, opened a pull request,
+						// or commented is progress; enough turns in a row
+						// without any pause the job for the owner instead.
+						if current := core.WorkProgress(observed); keepalives > 0 && current == progress {
+							stalled++
+						} else {
+							stalled = 0
+							progress = current
+						}
+						if stalled >= maxStalledKeepalives {
+							w.logf("issue #%d keepalive: the agent ended %d turns in a row with the issue still open and no new commits, pull requests, or comments; pausing it until it is retried", i.Number, stalled+1)
+							paused = &core.PausedWork{Kind: core.PausedManual, Reason: core.StalledPauseReason}
+							break
+						}
 						keepalives++
+						delay := w.keepaliveDelay(stalled)
+						wait = &runWait{Delay: delay, Reason: "keepalive backoff after a turn that left the issue open", For: "the keepalive backoff"}
 						if state.SessionID == "" || state.Agent == "" {
-							w.logf("issue #%d keepalive: the agent finished but the issue is still open, and its session cannot be resumed; restarting the agent (attempt %d)", i.Number, keepalives)
+							w.logf("issue #%d keepalive: the agent finished but the issue is still open, and its session cannot be resumed; restarting the agent in %s (attempt %d)", i.Number, formatWakeupDelay(delay), keepalives)
 							agentSession.Resume = false
 							agentSession.Update = ""
 						} else {
-							w.logf("issue #%d keepalive: the agent finished but the issue is still open; continuing session %s (attempt %d)", i.Number, state.SessionID, keepalives)
+							w.logf("issue #%d keepalive: the agent finished but the issue is still open; continuing session %s in %s (attempt %d)", i.Number, state.SessionID, formatWakeupDelay(delay), keepalives)
 							agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: unclosedWorkPrompt(i)}
 						}
 						runErr = nil
@@ -3144,7 +3243,9 @@ func (w *Engine) Run(ctx context.Context) error {
 					}
 					running, queued, completed, failed := tasks.running, tasks.queued, tasks.completed, tasks.failed
 					tasks.mu.Unlock()
-					if paused != nil && paused.Kind == core.PausedStacked {
+					if paused != nil && paused.Kind == core.PausedManual {
+						w.logf("issue #%d paused: %s; freeing its slot (tasks: %d running, %d queued, %d completed, %d failed)", i.Number, paused.ManualReason(), running, queued, completed, failed)
+					} else if paused != nil && paused.Kind == core.PausedStacked {
 						w.logf("issue #%d paused: its stacked pull request is ready and waits on its blocker to merge; freeing its slot (tasks: %d running, %d queued, %d completed, %d failed)", i.Number, running, queued, completed, failed)
 					} else if paused != nil {
 						w.logf("issue #%d paused: its pull request is ready and waits to be merged or closed; freeing its slot (tasks: %d running, %d queued, %d completed, %d failed)", i.Number, running, queued, completed, failed)
@@ -3283,6 +3384,10 @@ func (w *Engine) Run(ctx context.Context) error {
 		jobMu.Unlock()
 		if !exists {
 			request.done <- fmt.Errorf("job not found")
+			return
+		}
+		if job.Kind == core.JobKindSchedule {
+			serveScheduledAction(request, key, job)
 			return
 		}
 		switch action.Action {
@@ -3494,6 +3599,187 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- fmt.Errorf("unknown job action %q", action.Action)
 		}
 	}
+	// serveScheduledAction answers a dashboard action on a scheduled job:
+	// Stop cancels its run, Retry fires its schedule again, and Pause is
+	// refused, since a scheduled run has no issue to resume it from.
+	serveScheduledAction = func(request jobActionRequest, key string, job JobSnapshot) {
+		available := core.JobActionsFor(job)
+		switch request.action.Action {
+		case "stop":
+			if !available.Stop {
+				request.done <- fmt.Errorf("job cannot be stopped while %s", job.Status)
+				return
+			}
+			workMu.Lock()
+			cancel, exited := cancellations[key], runExits[key]
+			workMu.Unlock()
+			if cancel == nil {
+				request.done <- fmt.Errorf("job is not running")
+				return
+			}
+			w.logf("scheduled run %s stop requested", key)
+			w.jobSystem(key, "stopped by the owner")
+			jobMu.Lock()
+			job.Status = "stopping"
+			jobs[key] = job
+			jobMu.Unlock()
+			publish()
+			cancel(errWorkStoppedFromWebUI)
+			go func() {
+				select {
+				case <-exited:
+					request.done <- nil
+				case <-ctx.Done():
+					request.done <- fmt.Errorf("job is still stopping: %w", ctx.Err())
+				}
+			}()
+		case "retry":
+			if !available.Retry {
+				request.done <- fmt.Errorf("job cannot be retried: %s", available.RetryReason)
+				return
+			}
+			w.logf("scheduled run %s retry requested; firing schedule %s again", key, job.ScheduleID)
+			request.done <- w.rerunSchedule(job.ScheduleID)
+		case "pause":
+			request.done <- fmt.Errorf("scheduled jobs cannot be paused; stop it instead")
+		default:
+			request.done <- fmt.Errorf("unknown job action %q", request.action.Action)
+		}
+	}
+	startScheduled = func(request scheduledRunRequest) {
+		run := request.run
+		number := int(run.Fire.Unix())
+		jobMu.Lock()
+		for {
+			if _, taken := jobs[run.Target+"#"+strconv.Itoa(number)]; !taken {
+				break
+			}
+			number++
+		}
+		key := run.Target + "#" + strconv.Itoa(number)
+		session := AgentSession{Agent: run.Agent}
+		if session.Agent == "" {
+			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
+				session.Agent = identified.AgentNameFor(run.Target)
+			} else if identified, ok := w.runner().(AgentIdentifier); ok {
+				session.Agent = identified.AgentName()
+			}
+		}
+		spec, _ := parseAgentSpec(session.Agent)
+		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.ScheduleID, Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
+		jobMu.Unlock()
+		issue := Issue{Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Prompt: run.Prompt, ScheduleID: run.ScheduleID}
+		runCtx, cancelRun := context.WithCancelCause(ctx)
+		stopWatching := context.AfterFunc(request.ctx, func() { cancelRun(context.Cause(request.ctx)) })
+		exited := make(chan struct{})
+		workMu.Lock()
+		cancellations[key] = cancelRun
+		runExits[key] = exited
+		workMu.Unlock()
+		tasks.mu.Lock()
+		tasks.queued++
+		tasks.mu.Unlock()
+		w.logf("scheduled run %s queued for schedule %s", key, run.ScheduleID)
+		publish()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result := ScheduledRunResult{Job: number}
+			defer func() {
+				stopWatching()
+				cancelRun(nil)
+				workMu.Lock()
+				delete(cancellations, key)
+				delete(runExits, key)
+				workMu.Unlock()
+				close(exited)
+				request.done <- result
+			}()
+			acquired := sem.acquire(runCtx) == nil
+			tasks.mu.Lock()
+			tasks.queued--
+			if acquired {
+				tasks.running++
+			}
+			tasks.mu.Unlock()
+			var runErr error
+			if acquired {
+				defer func() {
+					sem.release()
+					select {
+					case workFinished <- struct{}{}:
+					default:
+					}
+				}()
+				if agentAssignsSessionID(session.Agent) {
+					session.ID, runErr = newSessionID()
+				}
+				jobMu.Lock()
+				job := jobs[key]
+				job.Status, job.SessionID = "active", session.ID
+				jobs[key] = job
+				jobMu.Unlock()
+				w.jobSystem(key, "scheduled run started on "+session.Agent)
+				publish()
+				output := jobOutputWriter{write: func(text string) {
+					jobMu.Lock()
+					job := jobs[key]
+					job.Log += text
+					jobs[key] = job
+					jobMu.Unlock()
+					publish()
+				}}
+				updateSession := func(update AgentSession) {
+					jobMu.Lock()
+					job := jobs[key]
+					if update.ID != "" {
+						job.SessionID = update.ID
+					}
+					if update.CheckoutDirectory != "" {
+						job.CheckoutDirectory = update.CheckoutDirectory
+					}
+					jobs[key] = job
+					jobMu.Unlock()
+					publish()
+				}
+				if runErr == nil {
+					switch runner := w.runner().(type) {
+					case SessionAgentOutputRunner:
+						runErr = runner.RunSessionWithOutput(runCtx, issue, session, updateSession, output)
+					case AgentOutputRunner:
+						runErr = runner.RunWithOutput(runCtx, issue, output)
+					default:
+						runErr = runner.Run(runCtx, issue)
+					}
+				}
+			} else {
+				runErr = context.Cause(runCtx)
+			}
+			jobMu.Lock()
+			job := jobs[key]
+			result = scheduledRunOutcome(runErr, context.Cause(runCtx), job.Log)
+			result.Job = number
+			job.Status = scheduledJobStatus(result)
+			if result.Status != ScheduledRunComplete {
+				job.Log += result.Summary
+			}
+			jobs[key] = job
+			jobMu.Unlock()
+			tasks.mu.Lock()
+			if acquired {
+				tasks.running--
+			}
+			if result.Status == ScheduledRunComplete {
+				tasks.completed++
+			} else {
+				tasks.failed++
+			}
+			tasks.mu.Unlock()
+			w.jobSystem(key, "scheduled run "+result.Status)
+			w.logf("scheduled run %s %s: %s", key, result.Status, result.Summary)
+			publish()
+		}()
+	}
 	// Signal readiness now, immediately before the first dispatch. Initial
 	// dispatch already services settingsRequestsChan and job actions itself
 	// through acquireDispatchSlot while it blocks on a full concurrency
@@ -3611,6 +3897,8 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- w.applySettingsRequest(request.update, sem)
 		case request := <-w.jobActionRequests():
 			serveJobAction(request, false)
+		case request := <-w.scheduledRunRequests():
+			startScheduled(request)
 		case <-ctx.Done():
 			w.logf("shutdown requested; waiting for running tasks to finish")
 			wg.Wait()

@@ -30,7 +30,7 @@ export interface ToolFixtures {
 	agent_list?: object[] | string;
 	job_list?: object[] | null;
 	config_validate?: object[];
-	session_list?: object[] | string;
+	session_list?: ToolHandler | object[] | string;
 	server_status?: object;
 	task_run?: ToolHandler<TaskRunArgs> | object | null;
 	tool_list?: object[] | string;

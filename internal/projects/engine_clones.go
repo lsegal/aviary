@@ -98,16 +98,18 @@ func (w *Engine) cloneUsage() cloneUsage {
 	return usage
 }
 
-// ListClones enumerates every recorded clone, adopting leftovers found on
-// disk first.
-func (w *Engine) ListClones(context.Context) (core.ClonesSnapshot, error) {
+// ListClones enumerates every recorded clone with its size, adopting
+// leftovers found on disk first.
+func (w *Engine) ListClones(ctx context.Context) (core.ClonesSnapshot, error) {
 	reg, err := w.cloneRegistry()
 	if err != nil {
 		return core.ClonesSnapshot{}, err
 	}
 	usage := w.cloneUsage()
 	reg.adopt(usage.roots, usage.work)
-	return listClones(reg, usage), nil
+	snapshot := listClones(reg, usage)
+	measureCloneSizes(ctx, &snapshot, cloneSizeTimeout, dirSize)
+	return snapshot, nil
 }
 
 // ClearClones removes every clone nothing can still need.
@@ -120,7 +122,7 @@ func (w *Engine) ClearClones(context.Context) (core.ClearClonesResult, error) {
 	reg.adopt(usage.roots, usage.work)
 	result := clearClones(reg, w.cloneUsage)
 	for _, entry := range result.Removed {
-		w.logf("removed unused clone %s (%s)", entry.Path, formatBytes(entry.Size))
+		w.logf("removed unused clone %s (%s)", entry.Path, formatBytes(*entry.Size))
 	}
 	for _, failure := range result.Errors {
 		w.logf("could not remove clone %s", failure)

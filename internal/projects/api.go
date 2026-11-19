@@ -54,28 +54,45 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	if targets == nil {
 		targets = []string{}
 	}
+	// A running engine publishes the commenters it enforces, which include
+	// the authenticated gh user it falls back to; otherwise report the
+	// configured list.
+	commenters := snapshot.AllowedCommenters
+	if !running || len(commenters) == 0 {
+		commenters = settings.AllowedCommenters
+	}
+	if commenters == nil {
+		commenters = []string{}
+	}
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
 		"targets":      targets,
 		"issue_counts": snapshot.IssueCounts,
 		"jobs": map[string]int{
-			"running":   snapshot.Running,
-			"queued":    snapshot.Queued,
-			"paused":    snapshot.Paused,
-			"completed": snapshot.Completed,
-			"failed":    snapshot.Failed,
+			"running":    snapshot.Running,
+			"queued":     snapshot.Queued,
+			"paused":     snapshot.Paused,
+			"completed":  snapshot.Completed,
+			"merged_24h": snapshot.Merged24h,
+			"failed":     snapshot.Failed,
 		},
-		"concurrency":   settings.Concurrency,
-		"delivery":      settings.Delivery,
-		"poll_interval": core.FormatInterval(settings.Interval),
-		"ready_label":   settings.ReadyLabel,
-		"quotas":        snapshot.Quotas,
-		"recent_logs":   logs,
-		"log_offset":    nextOffset,
+		"concurrency":        settings.Concurrency,
+		"delivery":           settings.Delivery,
+		"poll_interval":      core.FormatInterval(settings.Interval),
+		"ready_label":        settings.ReadyLabel,
+		"allowed_commenters": commenters,
+		"quotas":             snapshot.Quotas,
+		"recent_logs":        logs,
+		"log_offset":         nextOffset,
 	}
 	if snapshot.UseWebhooks {
 		status["webhook_online"] = snapshot.WebhookOnline
+	}
+	if settings.Delivery == DeliveryBrowser {
+		// The board shows a signed-out session as a banner offering to sign
+		// in to GitHub in Aviary's browser or to switch to gh polling.
+		status["github"] = m.GitHubSession()
 	}
 	if !snapshot.LastPoll.IsZero() {
 		status["last_check"] = snapshot.LastPoll
@@ -169,7 +186,7 @@ func (m *Manager) JobAction(ctx context.Context, action, target string, number i
 		return nil, err
 	}
 	key := fmt.Sprintf("%s#%d", job.Target, job.Number)
-	available := core.JobActionAvailability(job.Status)
+	available := core.JobActionsFor(job)
 	switch action {
 	case "resume":
 		if job.Status != "paused" {
@@ -362,6 +379,9 @@ func explainJob(job core.JobSnapshot, snapshot core.Snapshot) string {
 		}
 		return text + "."
 	case "paused":
+		if job.WaitReason == core.StalledPauseReason {
+			return "Its agent kept ending turns with the issue still open and no new commits, pull requests, or comments, so Projects stopped resuming it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it once the blocker is fixed, and project_job_stop clears it."
+		}
 		if job.WaitReason == core.ManualPauseReason {
 			return "The owner paused it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it, and project_job_stop clears it."
 		}
@@ -448,7 +468,7 @@ func findJob(jobs []core.JobSnapshot, target string, number int) (core.JobSnapsh
 // jobSummary is a job as project_job_list reports it: its state and the
 // actions it accepts, without its scrollback.
 func jobSummary(job core.JobSnapshot) map[string]any {
-	actions := core.JobActionAvailability(job.Status)
+	actions := core.JobActionsFor(job)
 	summary := map[string]any{
 		"key":    fmt.Sprintf("%s#%d", job.Target, job.Number),
 		"target": job.Target,
@@ -470,6 +490,9 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 	}
 	if job.Repository != "" {
 		summary["repository"] = job.Repository
+	}
+	if job.ScheduleID != "" {
+		summary["schedule_id"] = job.ScheduleID
 	}
 	if url := job.IssueURL(); url != "" {
 		summary["issue_url"] = url

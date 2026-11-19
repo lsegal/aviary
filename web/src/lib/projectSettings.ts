@@ -8,7 +8,7 @@
 // project_cli_list and clones from project_clone_list; their responses are
 // normalized here so the views never depend on the raw payload shape.
 
-export type Delivery = "poll" | "webhook";
+export type Delivery = "browser" | "poll" | "webhook";
 
 /** A project's opt-in to job reports through an Aviary agent's channels. */
 export interface ProjectReportsEntry {
@@ -23,6 +23,8 @@ export interface ProjectEntry {
 	target: string;
 	agents?: string[];
 	reports?: ProjectReportsEntry;
+	// Other per-project settings pass through untouched.
+	[key: string]: unknown;
 }
 
 /** The reports form. With enabled false nothing is saved. */
@@ -39,6 +41,8 @@ export interface ProjectsSection {
 	concurrency?: number;
 	interval?: string;
 	delivery?: string;
+	browser_vision?: boolean;
+	browser_visible?: boolean;
 	ready_label?: string;
 	ready_state?: string;
 	filter?: string[];
@@ -64,6 +68,10 @@ export interface ProjectSettings {
 	readyLabel: string;
 	readyState: string;
 	delivery: Delivery;
+	/** Browser delivery's capped screenshot fallback. */
+	browserVision: boolean;
+	/** Shows the browser browser delivery reads with, for debugging. */
+	browserVisible: boolean;
 	interval: string;
 	filter: string[];
 	allIssues: boolean;
@@ -78,7 +86,14 @@ export interface ProjectSettings {
 
 export const DEFAULT_CONCURRENCY = 3;
 export const DEFAULT_READY_LABEL = "ready";
+export const DEFAULT_DELIVERY: Delivery = "browser";
 export const DEFAULT_INTERVAL = "30s";
+export const DEFAULT_BROWSER_INTERVAL = "20s";
+
+/** The poll interval a delivery mode uses when none is set. */
+export function defaultInterval(delivery: Delivery): string {
+	return delivery === "browser" ? DEFAULT_BROWSER_INTERVAL : DEFAULT_INTERVAL;
+}
 export const DEFAULT_FILTER = ["assignee:@me author:@me"];
 export const DEFAULT_AGENT = "codex";
 
@@ -90,6 +105,7 @@ export const REPORT_EVENTS: { key: string; label: string }[] = [
 ];
 
 export const DELIVERY_OPTIONS: { key: Delivery; label: string }[] = [
+	{ key: "browser", label: "Aviary's browser, signed in as you" },
 	{ key: "poll", label: "Poll with gh" },
 	{ key: "webhook", label: "Webhook (ngrok tunnel)" },
 ];
@@ -121,6 +137,11 @@ export function sharedAgents(section: ProjectsSection | undefined): string[] {
 	return agents.length ? agents : [DEFAULT_AGENT];
 }
 
+function parseDelivery(v: string | undefined): Delivery {
+	const mode = (v ?? "").trim().toLowerCase();
+	return mode === "poll" || mode === "webhook" ? mode : DEFAULT_DELIVERY;
+}
+
 /** Reads one project's settings from the section, filling in defaults. */
 export function settingsFromSection(
 	target: string,
@@ -142,10 +163,9 @@ export function settingsFromSection(
 				? s.ready_label.trim()
 				: DEFAULT_READY_LABEL,
 		readyState: (s.ready_state ?? "").trim(),
-		delivery:
-			(s.delivery ?? "").trim().toLowerCase() === "webhook"
-				? "webhook"
-				: "poll",
+		delivery: parseDelivery(s.delivery),
+		browserVision: s.browser_vision === true,
+		browserVisible: s.browser_visible === true,
 		interval: (s.interval ?? "").trim(),
 		filter: filter.length ? filter : [...DEFAULT_FILTER],
 		allIssues: s.all_issues === true,
@@ -266,9 +286,17 @@ export function withSettings(
 	const label = s.readyLabel.trim();
 	set("ready_label", label, label === DEFAULT_READY_LABEL);
 	set("ready_state", s.readyState.trim(), !s.readyState.trim());
-	set("delivery", s.delivery, s.delivery === "poll");
+	set("delivery", s.delivery, s.delivery === DEFAULT_DELIVERY);
+	// The browser-only switches mean nothing for the API-backed modes.
+	const browser = s.delivery === "browser";
+	set("browser_vision", true, !browser || !s.browserVision);
+	set("browser_visible", true, !browser || !s.browserVisible);
 	const interval = s.interval.trim();
-	set("interval", interval, !interval || interval === DEFAULT_INTERVAL);
+	set(
+		"interval",
+		interval,
+		!interval || interval === defaultInterval(s.delivery),
+	);
 	const filter = clean(s.filter);
 	set("filter", filter, !filter.length || sameList(filter, DEFAULT_FILTER));
 	set("all_issues", true, !s.allIssues);
@@ -283,14 +311,19 @@ export function withSettings(
 
 	const agents = clean(s.agents);
 	const reports = reportsEntry(s.reports);
-	const list = (section?.list ?? []).filter(
-		(p) => !sameTarget(p.target, s.target),
-	);
-	if (listed || agents.length || reports) {
-		const at = (section?.list ?? []).findIndex((p) =>
-			sameTarget(p.target, s.target),
-		);
+	const current = section?.list ?? [];
+	const at = current.findIndex((p) => sameTarget(p.target, s.target));
+	const list = current.filter((p) => !sameTarget(p.target, s.target));
+	// Keep the entry's other fields; only agents and reports change here.
+	const {
+		agents: _,
+		reports: __,
+		...rest
+	} = at >= 0 ? current[at] : { target: s.target };
+	const extra = Object.keys(rest).some((k) => k !== "target");
+	if (listed || agents.length || reports || extra) {
 		const entry: ProjectEntry = {
+			...rest,
 			target: s.target.trim(),
 			...(agents.length ? { agents } : {}),
 			...(reports ? { reports } : {}),
@@ -485,6 +518,8 @@ export interface ProjectClone {
 	pr: number;
 	inUse: boolean;
 	reason: string;
+	/** Bytes on disk, or null when it could not be measured in time. */
+	size: number | null;
 }
 
 function normalizeClone(c: unknown): ProjectClone {
@@ -496,12 +531,15 @@ function normalizeClone(c: unknown): ProjectClone {
 		pr: Number(o.pullRequest ?? o.pr) || 0,
 		inUse: o.inUse === true || o.in_use === true,
 		reason: str(o.reason),
+		size: typeof o.size === "number" && o.size >= 0 ? o.size : null,
 	};
 }
 
 export function normalizeClones(raw: unknown): {
 	roots: string[];
 	clones: ProjectClone[];
+	totalSize: number;
+	unmeasured: number;
 } {
 	const r = obj(raw);
 	return {
@@ -509,6 +547,8 @@ export function normalizeClones(raw: unknown): {
 		clones: (Array.isArray(r.clones) ? r.clones : [])
 			.map(normalizeClone)
 			.filter((c) => c.path),
+		totalSize: Number(r.totalSize) || 0,
+		unmeasured: Number(r.unmeasured) || 0,
 	};
 }
 

@@ -13,6 +13,7 @@ search:    { ... }
 scheduler: { ... }
 skills:    { ... }
 projects:  { ... }
+coding_skills: { ... }
 ```
 
 ---
@@ -359,6 +360,25 @@ skills:
 
 ---
 
+## coding_skills
+
+Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`) installed and current. Both settings default to `true` and are only written when turned off.
+
+Coding-CLI skills are not listed under `skills` and are not available to Aviary's own agents.
+
+```yaml
+coding_skills:
+  auto_update: false
+  install_new_clis: false
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `auto_update` | bool | `true` | At startup, reinstall any skill whose installed copy differs from the one this release was built with |
+| `install_new_clis` | bool | `true` | Install the skills for coding CLIs found on the `PATH` later (checked every 15 minutes) |
+
+---
+
 ## projects
 
 Settings for [Projects](/guide/projects). Every field is optional and holds only a value that differs from its default; `aviary watch` with defaults writes nothing here. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
@@ -369,6 +389,9 @@ projects:
     - target: owner/repo
     - target: https://github.com/orgs/acme/projects/3
       agents: [claude/opus, codex]   # fallback order for this project
+      reports:                       # off unless set
+        agent: assistant
+        targets: [slack:main:C0123456789]
   concurrency: 4
   agents: [codex, claude/sonnet]
   no_merge: true
@@ -381,6 +404,9 @@ projects:
 | --- | --- | --- | --- |
 | `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
 | `list[].agents` | string[] | `agents` | This project's coding-CLI specs (`AGENT/MODEL:LEVEL`) in fallback order: a job runs on the first one whose quota is not used up |
+| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
+| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 | `concurrency` | int | `3` | Jobs that run at once across every project |
 | `interval` | duration | `30s` | Time between GitHub polls |
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
@@ -397,6 +423,7 @@ projects:
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
 | `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
 | `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
+| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
 | `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
 | `webhook.listen` | string | `:0` | Webhook listener address |
 | `webhook.path` | string | `/webhook` | Webhook path |

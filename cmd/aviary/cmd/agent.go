@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,7 @@ var agentListCmd = &cobra.Command{
 var agentRunFile string
 var agentRunBare bool
 var agentRunHistory bool
+var agentRunWorkdir string
 var agentRunOutputFormat string
 
 var agentRunCmd = &cobra.Command{
@@ -58,6 +60,13 @@ var agentRunCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("history") {
 			toolArgs["history"] = agentRunHistory
+		}
+		if agentRunWorkdir != "" {
+			workdir, err := filepath.Abs(agentRunWorkdir)
+			if err != nil {
+				return fmt.Errorf("resolving workdir: %w", err)
+			}
+			toolArgs["workdir"] = workdir
 		}
 		switch agentRunOutputFormat {
 		case "text":
@@ -117,6 +126,7 @@ func init() {
 	agentRunCmd.Flags().StringVar(&agentRunFile, "file", "", "read prompt from file")
 	agentRunCmd.Flags().BoolVar(&agentRunBare, "bare", false, "run without any system prompt, rules, memory, or tool preamble")
 	agentRunCmd.Flags().BoolVar(&agentRunHistory, "history", true, "include prior session history in the prompt")
+	agentRunCmd.Flags().StringVar(&agentRunWorkdir, "workdir", "", "grant the run's file tools and exec this directory for its duration, e.g. a job's clone")
 	agentRunCmd.Flags().StringVar(&agentRunOutputFormat, "output-format", "text", "text, or json for one JSON event per line: messages, tool calls and results, file changes")
 	agentCmd.AddCommand(agentListCmd, agentRunCmd, agentStopCmd, agentTemplateSyncCmd)
 	rootCmd.AddCommand(agentCmd)

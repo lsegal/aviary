@@ -59,7 +59,7 @@
 									data-field="allowed_commenters" @input="form.commenters = parseList(commentersText)" />
 							</label>
 							<div class="space-y-3">
-								<label v-for="t in TOGGLES" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+								<label v-for="t in toggles" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
 									<SwitchRoot :checked="form[t.key]" :aria-label="t.label" :data-field="t.key"
 										class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
 										:class="form[t.key] ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
@@ -86,7 +86,7 @@
 									<div class="space-y-3">
 										<label class="block">
 											<span :class="LABEL">Check interval</span>
-											<input v-model="form.interval" type="text" :placeholder="DEFAULT_INTERVAL" :class="INPUT" data-field="interval" />
+											<input v-model="form.interval" type="text" :placeholder="defaultInterval(form.delivery)" :class="INPUT" data-field="interval" />
 										</label>
 										<label class="block">
 											<span :class="LABEL">Board ready status</span>
@@ -234,11 +234,18 @@
 											{{ [c.repo && c.issue ? `${c.repo}#${c.issue}` : c.repo, c.pr ? `PR #${c.pr}` : ""].filter(Boolean).join(" · ") }}
 										</p>
 									</div>
+									<span data-testid="clone-size" class="text-xs tabular-nums text-gray-500"
+										:title="c.size === null ? 'Not measured in time' : undefined">{{ c.size === null ? "size unknown" : formatBytes(c.size) }}</span>
 									<span class="text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'" :title="c.reason">
 										{{ c.inUse ? "in use" : "unused" }}
 									</span>
 								</li>
 							</ul>
+							<p v-if="clones.loaded.value && !clones.error.value && clones.clones.value.length" data-testid="clone-total" class="mt-2 text-xs text-gray-500">
+								{{ clones.clones.value.length }} {{ clones.clones.value.length === 1 ? "clone" : "clones" }},
+								{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
+									({{ clones.unmeasured.value }} not measured)</template>
+							</p>
 							<button v-if="clones.clones.value.some((c) => !c.inUse)" type="button" :disabled="clones.clearing.value"
 								class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
@@ -271,9 +278,9 @@ import {
 	useProjectClones,
 } from "../composables/useProjectSettings";
 import {
-	DEFAULT_INTERVAL,
 	DELIVERY_OPTIONS,
 	defaultFields,
+	defaultInterval,
 	formatBytes,
 	isListed,
 	joinReportTarget,
@@ -315,7 +322,12 @@ const SECTIONS = [
 	{ id: "yaml", label: "YAML" },
 ];
 
-type ToggleKey = "merge" | "changelog" | "yolo";
+type ToggleKey =
+	| "merge"
+	| "changelog"
+	| "yolo"
+	| "browserVision"
+	| "browserVisible";
 const TOGGLES: { key: ToggleKey; label: string }[] = [
 	{ key: "merge", label: "Merge pull requests when CI passes" },
 	{ key: "changelog", label: "Add a changelog entry to each pull request" },
@@ -432,6 +444,23 @@ const saveNote = computed(() => {
 		return "Saved and applied to the running watch";
 	return "Changes apply to the running watch right away";
 });
+
+// The browser switches only apply to browser delivery.
+const BROWSER_TOGGLES: { key: ToggleKey; label: string }[] = [
+	{
+		key: "browserVision",
+		label: "Read pages it no longer recognizes from capped screenshots",
+	},
+	{
+		key: "browserVisible",
+		label: "Show the browser it reads GitHub with, for debugging",
+	},
+];
+const toggles = computed(() =>
+	form.value?.delivery === "browser"
+		? [...TOGGLES, ...BROWSER_TOGGLES]
+		: TOGGLES,
+);
 
 function setToggle(key: ToggleKey, v: boolean) {
 	if (form.value) form.value[key] = v;

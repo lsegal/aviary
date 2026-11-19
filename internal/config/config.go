@@ -27,6 +27,19 @@ type Config struct {
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
+	// CodingSkills controls how Aviary keeps the skills it ships for coding
+	// CLIs (gh-fix, gh-discuss, gh-create) installed and current.
+	CodingSkills *CodingSkillsConfig `yaml:"coding_skills,omitempty" json:"coding_skills,omitempty"`
+}
+
+// CodingSkillsConfig controls the automatic upkeep of the coding-CLI skills.
+// Both settings default to true when unset.
+type CodingSkillsConfig struct {
+	// AutoUpdate reinstalls outdated skills at startup, so each release runs
+	// the skills it was built with.
+	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
+	// InstallNewCLIs installs the skills for any coding CLI found later.
+	InstallNewCLIs *bool `yaml:"install_new_clis,omitempty" json:"install_new_clis,omitempty"`
 }
 
 // SkillConfig configures an installed skill runtime.
@@ -276,9 +289,32 @@ type TaskConfig struct {
 	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"`
 	StartAt  string `yaml:"start_at,omitempty" json:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty" json:"run_once,omitempty"`
-	Watch    string `yaml:"watch,omitempty"    json:"watch,omitempty"`
-	Prompt   string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
-	Target   string `yaml:"target,omitempty"   json:"target,omitempty"`
+	// Trigger selects how a scheduled task fires: once, interval, daily,
+	// weekly or cron. When empty it is inferred from the other fields.
+	Trigger string `yaml:"trigger,omitempty"  json:"trigger,omitempty"`
+	// Every is the interval trigger's period, e.g. "30m" or "2h".
+	Every string `yaml:"every,omitempty"    json:"every,omitempty"`
+	// At is the daily or weekly trigger's time of day ("HH:MM"); several
+	// comma-separated times fire on the same day.
+	At string `yaml:"at,omitempty"       json:"at,omitempty"`
+	// Days lists the weekly trigger's weekdays, comma-separated ("mon,wed").
+	Days string `yaml:"days,omitempty"     json:"days,omitempty"`
+	// Timezone is the IANA zone triggers are evaluated in (default: local).
+	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
+	// Overlap decides what a fire does while a previous run is still
+	// pending or running: "queue" (default) or "skip".
+	Overlap string `yaml:"overlap,omitempty"  json:"overlap,omitempty"`
+	// Missed decides what happens to fires missed while Aviary was stopped
+	// or the machine slept: "skip" (default) or "run_once".
+	Missed string `yaml:"missed,omitempty"   json:"missed,omitempty"`
+	Watch  string `yaml:"watch,omitempty"    json:"watch,omitempty"`
+	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
+	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
+	// Project is the watched Projects target a "project" task runs its prompt
+	// against as a board job, and CLI the coding-CLI spec it runs with
+	// ("claude:opus"); empty uses the project's agent.
+	Project string `yaml:"project,omitempty" json:"project,omitempty"`
+	CLI     string `yaml:"cli,omitempty"     json:"cli,omitempty"`
 	// FromFile is set when the task was loaded from a markdown file rather than
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.
@@ -417,6 +453,24 @@ func EffectiveBrowserReuseTabs(b BrowserConfig) bool {
 	return BoolOr(b.ReuseTabs, true)
 }
 
+// EffectiveCodingSkillsAutoUpdate reports whether outdated coding-CLI skills
+// are reinstalled automatically. Defaults to true when unset.
+func EffectiveCodingSkillsAutoUpdate(cfg *Config) bool {
+	if cfg == nil || cfg.CodingSkills == nil {
+		return true
+	}
+	return BoolOr(cfg.CodingSkills.AutoUpdate, true)
+}
+
+// EffectiveCodingSkillsInstallNewCLIs reports whether the coding-CLI skills
+// are installed for CLIs found later. Defaults to true when unset.
+func EffectiveCodingSkillsInstallNewCLIs(cfg *Config) bool {
+	if cfg == nil || cfg.CodingSkills == nil {
+		return true
+	}
+	return BoolOr(cfg.CodingSkills.InstallNewCLIs, true)
+}
+
 // normalize strips zero/empty fields that would produce noisy YAML output.
 // It is called automatically by Save.
 func normalize(cfg *Config) {
@@ -439,6 +493,17 @@ func normalize(cfg *Config) {
 	}
 	if len(cfg.Skills) == 0 {
 		cfg.Skills = nil
+	}
+	if cs := cfg.CodingSkills; cs != nil {
+		if BoolOr(cs.AutoUpdate, true) {
+			cs.AutoUpdate = nil
+		}
+		if BoolOr(cs.InstallNewCLIs, true) {
+			cs.InstallNewCLIs = nil
+		}
+		if cs.AutoUpdate == nil && cs.InstallNewCLIs == nil {
+			cfg.CodingSkills = nil
+		}
 	}
 	if cfg.Models.Defaults != nil && cfg.Models.Defaults.Model == "" && len(cfg.Models.Defaults.Fallbacks) == 0 {
 		cfg.Models.Defaults = nil

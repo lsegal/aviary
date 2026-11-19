@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+  The board (column) layout as GitHub actually serves it (captured 2026-08-31,
+  issue #457). A column names the status it stands for in data-board-column and
+  carries no test id; the page also ships an unrelated labelled group and a
+  <table> of its own, neither of which is the board.
+-->
+<html lang="en">
+  <body>
+    <div role="group" aria-label="Project navigation">
+      <table><tbody><tr><td>Insights</td></tr></tbody></table>
+    </div>
+    <div data-dnd-drop-type="column" class="Board-module__boardView__nwdZh">
+      <div data-dnd-drag-type="column" data-dnd-drag-index="0" data-board-column="Ready" class="column-frame-module__Box__Lwsm5 visible">
+        <div class="column-module__Heading__vbqY3"><h2 class="column-name-module__Title__kcvUx"><span data-component="Text">Ready</span></h2><span class="prc-VisuallyHidden-VisuallyHidden-Q0qSB">&nbsp;(2)</span></div>
+        <span class="column-module__SanitizedHtml__TzKwC" data-component="Text">This is ready to be picked up</span>
+        <div class="column-drop-zone column-module__Box_4__XX8e9" data-dnd-drop-type="card">
+          <div class="board-view-column-card card-base-module__CardBase__jJ0gF" data-board-card-id="237829069" data-hovercard-subject-tag="issue:5298230139" role="button" aria-roledescription="draggable">
+            <div class="header-module__Box_5__wNMnt"><svg aria-label="Open issue" role="img"></svg></div>
+            <div><span class="header-module__Text__tuFRi">zvidlib #188</span></div>
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" role="button" href="https://github.com/lsegal/zvidlib/issues/188" target="_blank" rel="noreferrer"><h3 class="d-inline f5 text-normal"><span data-component="Text">HEVC: time the SSE4.1/AVX2 kernels</span></h3></a>
+          </div>
+          <div class="board-view-column-card card-base-module__CardBase__jJ0gF" data-board-card-id="237829083" role="button" aria-roledescription="draggable">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" role="button" href="/lsegal/aviary/issues/276"><h3 class="d-inline f5 text-normal"><span data-component="Text">Remove the remaining GraphQL calls</span></h3></a>
+          </div>
+          <!-- A draft card links nowhere and must not dispatch. -->
+          <div class="board-view-column-card card-base-module__CardBase__jJ0gF" data-board-card-id="237829090" role="button" aria-roledescription="draggable">
+            <h3 class="d-inline f5 text-normal"><span data-component="Text">Untitled draft</span></h3>
+          </div>
+        </div>
+      </div>
+
+      <div data-dnd-drag-type="column" data-dnd-drag-index="1" data-board-column="In Progress" class="column-frame-module__Box__Lwsm5 visible">
+        <div class="column-module__Heading__vbqY3"><h2 class="column-name-module__Title__kcvUx"><span data-component="Text">In Progress</span></h2></div>
+        <div class="column-drop-zone column-module__Box_4__XX8e9" data-dnd-drop-type="card">
+          <div class="board-view-column-card" data-board-card-id="237842209" role="button" aria-roledescription="draggable">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" role="button" href="https://github.com/lsegal/aviary/issues/378"><h3><span data-component="Text">Browser mode: project board extraction</span></h3></a>
+          </div>
+          <!-- A pull request on the board is not an issue. -->
+          <div class="board-view-column-card" data-board-card-id="237842217" role="button" aria-roledescription="draggable">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" role="button" href="https://github.com/lsegal/aviary/pull/389"><h3><span data-component="Text">Browser mode pull request</span></h3></a>
+          </div>
+        </div>
+      </div>
+
+      <div data-dnd-drag-type="column" data-dnd-drag-index="2" data-board-column="Done" class="column-frame-module__Box__Lwsm5 visible">
+        <div class="column-module__Heading__vbqY3"><h2 class="column-name-module__Title__kcvUx"><span data-component="Text">Done</span></h2></div>
+        <div class="column-drop-zone column-module__Box_4__XX8e9" data-dnd-drop-type="card">
+          <div class="board-view-column-card" data-board-card-id="237856879" role="button" aria-roledescription="draggable">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" role="button" href="https://github.com/lsegal/aviary/issues/259"><h3><span data-component="Text">Didn't we implement subcommands?</span></h3></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

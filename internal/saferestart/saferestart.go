@@ -41,8 +41,8 @@ type Participant interface {
 }
 
 // SkillsUpdater refreshes installed skills, such as the skills of every
-// signed-in coding CLI, as part of an upgrade.
-type SkillsUpdater func(ctx context.Context) error
+// signed-in coding CLI, to match version, the release an upgrade installs.
+type SkillsUpdater func(ctx context.Context, version string) error
 
 // Marker records why Aviary restarted. It is written right before the restart
 // and read once by participants afterwards.
@@ -143,8 +143,9 @@ func Held() bool {
 	return held
 }
 
-// UpdateSkills runs every registered skills refresh and joins their errors.
-func UpdateSkills(ctx context.Context) error {
+// UpdateSkills runs every registered skills refresh for version and joins
+// their errors.
+func UpdateSkills(ctx context.Context, version string) error {
 	mu.Lock()
 	names := make([]string, 0, len(skillUpdaters))
 	for name := range skillUpdaters {
@@ -158,7 +159,7 @@ func UpdateSkills(ctx context.Context) error {
 	mu.Unlock()
 	var errs []error
 	for i, fn := range fns {
-		if err := fn(ctx); err != nil {
+		if err := fn(ctx, version); err != nil {
 			errs = append(errs, fmt.Errorf("updating %s skills: %w", names[i], err))
 		}
 	}

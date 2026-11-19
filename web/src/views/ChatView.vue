@@ -1,8 +1,8 @@
 <template>
-	<AppLayout>
+	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
 			<!-- Agent tabs -->
-			<div class="flex items-end border-b border-gray-200 dark:border-gray-800">
+			<div v-if="!props.agent" class="flex items-end border-b border-gray-200 dark:border-gray-800">
 				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
 					<button v-for="a in agentsStore.agents" :key="a.id" type="button"
 						class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
@@ -210,7 +210,7 @@
 			<img :src="expandedImageURL" class="max-h-full max-w-full rounded-xl shadow-2xl" @click.stop />
 		</div>
 
-	</AppLayout>
+	</component>
 </template>
 
 <script setup lang="ts">
@@ -270,6 +270,12 @@ interface PersistedMessage {
 	model?: string;
 	timestamp?: string;
 }
+
+const props = defineProps<{
+	/** Pins the chat to this agent and embeds it without the app layout,
+	 * agent tabs, or route changes, as the Projects board's side panel does. */
+	agent?: string;
+}>();
 
 const agentsStore = useAgentsStore();
 const authStore = useAuthStore();
@@ -524,8 +530,36 @@ const onWindowKeydown = (e: KeyboardEvent) => {
 	}
 };
 
+let mounted: Promise<void> = Promise.resolve();
 onMounted(async () => {
+	let markMounted = () => {};
+	mounted = new Promise((resolve) => {
+		markMounted = resolve;
+	});
+	try {
+		await mountChat();
+	} finally {
+		markMounted();
+	}
+});
+
+async function mountChat() {
 	await agentsStore.fetchAgents();
+	if (props.agent) {
+		selectedAgent.value = props.agent;
+		await loadSessions();
+		await loadSessionMessages();
+	} else {
+		await mountRouteChat();
+	}
+	document.addEventListener("visibilitychange", onVisible);
+	window.addEventListener("keydown", onWindowKeydown);
+	connectSessionWS();
+	await nextTick();
+	updateScrollState();
+}
+
+async function mountRouteChat() {
 	const routeAgent =
 		typeof route.params.agent === "string" ? route.params.agent : "";
 	const routeSessionId =
@@ -540,12 +574,22 @@ onMounted(async () => {
 		await loadSessionMessages();
 		router.replace(chatPath(agentName, selectedSessionId.value));
 	}
-	document.addEventListener("visibilitychange", onVisible);
-	window.addEventListener("keydown", onWindowKeydown);
-	connectSessionWS();
-	await nextTick();
-	updateScrollState();
-});
+}
+
+/** Sends text as if typed, once the chat has loaded its session. */
+async function sendText(text: string) {
+	await mounted;
+	input.value = text;
+	await send();
+}
+
+defineExpose({ sendText });
+
+/** Keeps the address bar on the selected chat, unless embedded. */
+function pushChatPath() {
+	if (!props.agent)
+		router.push(chatPath(selectedAgent.value, selectedSessionId.value));
+}
 
 onUnmounted(() => {
 	document.removeEventListener("visibilitychange", onVisible);
@@ -652,7 +696,7 @@ async function selectAgent(name: string) {
 	resetHistoryNavigation();
 	updateScrollState();
 	await loadSessions();
-	router.push(chatPath(name, selectedSessionId.value));
+	pushChatPath();
 }
 
 async function selectSession(id: string) {
@@ -662,7 +706,7 @@ async function selectSession(id: string) {
 	messages.value = [];
 	resetHistoryNavigation();
 	updateScrollState();
-	router.push(chatPath(selectedAgent.value, id));
+	pushChatPath();
 	await loadSessionMessages();
 }
 
@@ -677,7 +721,7 @@ async function createSession() {
 		const sess = JSON.parse(raw) as Session;
 		sessions.value.push(sess);
 		selectedSessionId.value = sess.id;
-		router.push(chatPath(selectedAgent.value, sess.id));
+		pushChatPath();
 		loadMessagesSeq += 1;
 		messages.value = [];
 		resetHistoryNavigation();

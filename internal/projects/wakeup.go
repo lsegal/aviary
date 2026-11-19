@@ -27,6 +27,38 @@ const (
 // cannot hold its slot forever.
 const maxConsecutiveWakeups = 48
 
+// maxStalledKeepalives is how many keepalive resumes in a row may end with the
+// issue still open and nothing new on GitHub before the job is paused for the
+// owner instead of being resumed again.
+const maxStalledKeepalives = 4
+
+// maxKeepaliveDelay caps the keepalive backoff, which doubles from the closure
+// interval with each turn in a row that made no progress.
+const maxKeepaliveDelay = 15 * time.Minute
+
+// runWait is a wait the run loop sits out before resuming its session: the
+// agent's own scheduled wakeup, or the keepalive's backoff. For names it in the
+// job's output.
+type runWait struct {
+	Delay  time.Duration
+	Reason string
+	For    string
+}
+
+// keepaliveDelay is how long the keepalive waits before resuming a turn that
+// left the issue open: the closure interval, doubled for each turn in a row
+// before it that made no progress, up to maxKeepaliveDelay.
+func (w *Engine) keepaliveDelay(stalled int) time.Duration {
+	delay := w.activeWorkClosureInterval()
+	for range stalled {
+		if delay >= maxKeepaliveDelay {
+			break
+		}
+		delay *= 2
+	}
+	return min(delay, maxKeepaliveDelay)
+}
+
 // scheduledWakeup is a wakeup call left pending when the agent's
 // process exited. It is returned as the run's error so every runner reports it
 // through the interface it already has; the run loop takes it back out before

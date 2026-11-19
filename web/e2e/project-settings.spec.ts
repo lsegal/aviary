@@ -113,6 +113,7 @@ async function setup(
 					repository: "lsegal/aviary",
 					issue: 209,
 					inUse: false,
+					size: 157286400,
 				},
 				{
 					path: "/tmp/aviary-218",
@@ -123,6 +124,8 @@ async function setup(
 					reason: "job is running",
 				},
 			],
+			totalSize: 157286400,
+			unmeasured: 1,
 		},
 		project_clone_clear: (args?: Args) => {
 			record("project_clone_clear", args);
@@ -281,7 +284,29 @@ test("changing a setting writes only the differing values", async ({
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
+	// Browser delivery is the default and the only mode with browser switches.
+	await expect(page.locator('[data-field="delivery"]')).toHaveValue("browser");
+	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
+		"placeholder",
+		"20s",
+	);
+	await page
+		.getByRole("switch", {
+			name: "Read pages it no longer recognizes from capped screenshots",
+		})
+		.click();
+	await expect(yaml).toContainText("browser_vision: true");
 	await page.locator('[data-field="delivery"]').selectOption("webhook");
+	await expect(
+		page.getByRole("switch", {
+			name: "Show the browser it reads GitHub with, for debugging",
+		}),
+	).toHaveCount(0);
+	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
+		"placeholder",
+		"30s",
+	);
+	await expect(yaml).not.toContainText("browser_vision");
 	await expect(yaml).toContainText("concurrency: 6");
 	await expect(yaml).toContainText("no_merge: true");
 	await expect(yaml).toContainText("delivery: webhook");
@@ -307,8 +332,15 @@ test("changing a setting writes only the differing values", async ({
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
-	await page.locator('[data-field="delivery"]').selectOption("poll");
+	await page.locator('[data-field="delivery"]').selectOption("browser");
+	await page
+		.getByRole("switch", {
+			name: "Read pages it no longer recognizes from capped screenshots",
+		})
+		.click();
 	await expect(yaml).not.toContainText("concurrency:");
+	await expect(yaml).not.toContainText("delivery:");
+	await expect(yaml).not.toContainText("browser_vision");
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	await expect.poll(() => calls.config_save?.length).toBe(2);
 	expect(savedSection(calls)).toEqual(CONFIG.projects);
@@ -406,6 +438,13 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	await expect(rows.first()).toContainText("unused");
 	await expect(rows.nth(1)).toContainText("PR #233");
 	await expect(rows.nth(1)).toContainText("in use");
+	await expect(rows.first().getByTestId("clone-size")).toHaveText("150 MB");
+	await expect(rows.nth(1).getByTestId("clone-size")).toHaveText(
+		"size unknown",
+	);
+	await expect(page.getByTestId("clone-total")).toHaveText(
+		"2 clones, 150 MB total (1 not measured)",
+	);
 
 	await page.getByRole("button", { name: "Clear unused clones" }).click();
 	await expect(page.getByTestId("clone-message")).toHaveText(
@@ -451,6 +490,26 @@ test("a new project with its own settings is written before it starts", async ({
 	]);
 	// Saved to the list, so the config watcher starts it; no runtime watch.
 	expect(calls.project_add).toBeUndefined();
+});
+
+test("saving keeps a project's other per-project settings", async ({
+	page,
+}) => {
+	const other = { mode: "future" };
+	const calls = await setup(page, {
+		config: {
+			server: {},
+			projects: { list: [{ target: "lsegal/aviary", other }] },
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	const codex = page.locator('[data-cli="codex"]');
+	await codex.getByRole("button", { name: "gpt-5.5", exact: true }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedSection(calls).list).toEqual([
+		{ target: "lsegal/aviary", other, agents: ["codex/gpt-5.5"] },
+	]);
 });
 
 const REPORTS_CONFIG = {

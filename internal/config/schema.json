@@ -211,20 +211,32 @@
                 "name": { "type": "string" },
                 "type": {
                   "type": "string",
-                  "enum": ["prompt", "script"]
+                  "enum": ["prompt", "script", "project"]
                 },
                 "schedule": { "type": "string" },
                 "start_at": { "type": "string", "format": "date-time" },
                 "run_once": { "type": "boolean", "default": false },
+                "trigger": { "type": "string", "enum": ["once", "interval", "daily", "weekly", "cron"] },
+                "every": { "type": "string" },
+                "at": { "type": "string" },
+                "days": { "type": "string" },
+                "timezone": { "type": "string" },
+                "overlap": { "type": "string", "enum": ["queue", "skip"], "default": "queue" },
+                "missed": { "type": "string", "enum": ["skip", "run_once"], "default": "skip" },
                 "watch": { "type": "string" },
                 "prompt": { "type": "string" },
                 "script": { "type": "string" },
-                "target": { "type": "string" }
+                "target": { "type": "string" },
+                "project": { "type": "string" },
+                "cli": { "type": "string" }
               },
               "allOf": [
                 {
-                  "oneOf": [
+                  "anyOf": [
                     { "required": ["schedule"] },
+                    { "required": ["every"] },
+                    { "required": ["at"] },
+                    { "required": ["start_at"] },
                     { "required": ["watch"] }
                   ]
                 },
@@ -400,6 +412,28 @@
                   "type": "string"
                 },
                 "description": "This project's coding-CLI specs (AGENT/MODEL:LEVEL) in fallback order; a job runs on the first whose quota is not used up."
+              },
+              "reports": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["agent", "targets"],
+                "description": "Reports this project's job lifecycle events through an Aviary agent's channels. Off when unset.",
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "description": "The Aviary agent whose channels deliver the reports."
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Where reports go: <channel type>:<configured channel id>:<delivery id>, or session:<name>."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["merged", "failed", "waiting"] },
+                    "description": "Job events to report. Empty reports all of them."
+                  }
+                }
               }
             }
           },
@@ -529,13 +563,28 @@
           "x-order": 18,
           "description": "Model for the watchdog's unblock call."
         },
+        "chat_model": {
+          "type": "string",
+          "x-label": "Prompt chat model",
+          "x-order": 19,
+          "description": "Model of the built-in Projects agent behind the board's prompt chat. Defaults to models.defaults."
+        },
+        "chat_fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Prompt chat fallbacks",
+          "x-order": 20,
+          "description": "Fallback models of the built-in Projects agent, tried in order."
+        },
         "temp_dirs": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "x-label": "Clone directories",
-          "x-order": 19,
+          "x-order": 21,
           "description": "Absolute directories new clones go in, tried in order. Defaults to the system temp directory."
         },
         "webhook": {
@@ -560,7 +609,7 @@
             }
           },
           "x-label": "Webhook",
-          "x-order": 20,
+          "x-order": 22,
           "description": "Webhook delivery settings."
         }
       }

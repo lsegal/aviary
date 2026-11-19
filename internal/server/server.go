@@ -21,6 +21,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -123,8 +124,17 @@ func New(cfg *config.Config, token string) *Server {
 
 	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
 		s.projects = manager
+		manager.SetReportDelivery(s.deliverTaskOutput)
+		manager.SetMentionRouter(s.promptProjectsAgent)
 	} else {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
+	}
+	if s.sched != nil && s.projects != nil {
+		s.sched.SetProjectRunner(s.runProjectTask)
+		s.projects.SetScheduleRerun(func(taskID string) error {
+			_, err := s.sched.Trigger(taskID)
+			return err
+		})
 	}
 
 	// Inject deps into MCP tool handlers.
@@ -181,6 +191,7 @@ func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
 
 // startProjects applies the projects: section and the startup watches.
 func (s *Server) startProjects() {
+	s.projects.SetBrowser(s.cfg.Browser)
 	s.projects.Reconcile(s.cfg.Projects)
 	for _, watch := range startupWatches {
 		if err := s.projects.AddWatch(watch); err != nil {
@@ -203,6 +214,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 		s.sched.Reconcile(newCfg)
 	}
 	if s.projects != nil {
+		s.projects.SetBrowser(newCfg.Browser)
 		go s.projects.Reconcile(newCfg.Projects)
 	}
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
@@ -260,6 +272,20 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/", webFileServer())
 }
 
+// codingSkillsSyncInterval is how often the server looks for coding CLIs set
+// up since the last check, so they get the coding-CLI skills.
+const codingSkillsSyncInterval = 15 * time.Minute
+
+// updateCodingSkills moves every signed-in coding CLI's skills to version, the
+// release an upgrade installs.
+func updateCodingSkills(ctx context.Context, version string) error {
+	result, err := codingskills.Default().UpdateTo(ctx, version)
+	if len(result.Installed) > 0 {
+		slog.Info("coding skills: updated for the upgrade", "version", version, "skills", strings.Join(result.Installed, ", "))
+	}
+	return err
+}
+
 // ListenAndServe starts the server on the configured port.
 // It returns only when the context is cancelled, an error occurs, or an
 // explicit process restart is requested.
@@ -282,6 +308,16 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	update.CleanupStaging(exe)
 	go s.runSelfUpdater(ctx)
 
+	// Keep the coding-CLI skills installed and matching this release, and
+	// move them to the new release when Aviary upgrades.
+	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	saferestart.RegisterSkillsUpdater("coding-cli", updateCodingSkills)
+	defer saferestart.UnregisterSkillsUpdater("coding-cli")
+
+	// The marker is read once, so a later start never mistakes this one for
+	// its own safe restart.
+	marker, restarted := saferestart.TakeMarker()
+
 	// Start scheduler.
 	if s.sched != nil {
 		s.sched.Start(ctx)
@@ -291,6 +327,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	// Start the Projects engine, with any watches `aviary watch` handed over.
 	if s.projects != nil {
+		// Jobs a safe restart stopped resume in their own sessions and are
+		// told that Aviary restarted.
+		if restarted {
+			s.projects.ResumeAfterRestart(marker)
+		}
 		saferestart.Register("projects", s.projects)
 		defer saferestart.Unregister("projects")
 		go s.startProjects()
@@ -1061,4 +1102,30 @@ func (s *Server) loadSessionDeliveries() {
 	if len(cfgs) > 0 {
 		slog.Info("server: loaded session channel deliveries", "sessions", len(cfgs))
 	}
+}
+
+// runProjectTask runs a "project" task's prompt as a job on its project's
+// board and waits for the agent to exit.
+func (s *Server) runProjectTask(ctx context.Context, run scheduler.ProjectRun) (string, error) {
+	result, err := s.projects.RunScheduled(ctx, projects.ScheduledRun{
+		ScheduleID: run.TaskID,
+		Name:       run.Name,
+		Target:     run.Project,
+		Prompt:     run.Prompt,
+		Agent:      run.CLI,
+		Fire:       run.Fire,
+	})
+	if err != nil {
+		return "", err
+	}
+	switch result.Status {
+	case projects.ScheduledRunComplete:
+		return result.Summary, nil
+	case projects.ScheduledRunStopped:
+		return result.Summary, context.Canceled
+	}
+	if result.Summary == "" {
+		return "", errors.New("scheduled run failed")
+	}
+	return result.Summary, errors.New(result.Summary)
 }

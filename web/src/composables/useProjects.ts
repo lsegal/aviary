@@ -6,12 +6,17 @@ import {
 	normalizeJobDetail,
 	normalizeJobList,
 	normalizeStatus,
+	normalizeUpcoming,
 	type ProjectJob,
+	type ProjectSchedule,
 	type ProjectStatus,
 	type ProjectSummary,
 	parseToolJSON,
+	projectSchedules,
 	sortJobs,
 	summarizeProjects,
+	triggerArgs,
+	type UpcomingRun,
 } from "../lib/projects";
 import { useMCP } from "./useMCP";
 
@@ -190,6 +195,24 @@ export function useProjectBoard(
 		await refresh();
 	}
 
+	/** Opens GitHub's sign-in page in Aviary's browser. */
+	async function signInToGitHub() {
+		await callTool("project_github_signin", {});
+		await refresh();
+	}
+
+	/** Reads GitHub through gh polling instead of Aviary's browser. */
+	async function switchToPolling() {
+		await callTool("project_github_use_polling", {});
+		await refresh();
+	}
+
+	/** Imports the GitHub sign-in from a profile signed in elsewhere. */
+	async function importProfile(profile: string) {
+		await callTool("project_github_import", { profile });
+		await refresh();
+	}
+
 	return {
 		status,
 		jobs,
@@ -199,6 +222,9 @@ export function useProjectBoard(
 		loading,
 		refresh,
 		checkNow,
+		signInToGitHub,
+		switchToPolling,
+		importProfile,
 		retry: (job: ProjectJob) => action("project_job_retry", job),
 		stop: (job: ProjectJob) => action("project_job_stop", job),
 	};
@@ -209,6 +235,18 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	const { callTool } = useMCP();
 	const detail = ref<JobDetail | null>(null);
 	const error = ref("");
+	// The footer names who may steer the job; the setting rarely changes, so
+	// it is read once rather than polled.
+	const allowedCommenters = ref<string[]>([]);
+	onMounted(async () => {
+		try {
+			allowedCommenters.value = normalizeStatus(
+				parseToolJSON(await callTool("project_status", {})),
+			).allowedCommenters;
+		} catch {
+			// The footer still explains how to steer without the names.
+		}
+	});
 
 	const { refresh } = usePoll(async () => {
 		const key = `${target.value}#${number.value}`;
@@ -244,8 +282,140 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	return {
 		detail,
 		error,
+		allowedCommenters,
 		refresh,
 		retry: () => action("project_job_retry"),
 		stop: () => action("project_job_stop"),
+	};
+}
+
+/** Next runs the board's "Up next" strip shows, and the most per schedule. */
+export const UP_NEXT_RUNS = 5;
+export const UP_NEXT_PER_SCHEDULE = 3;
+
+/** A project's scheduled prompts and their next runs, kept live. */
+export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
+	const { callTool } = useMCP();
+	const schedules = ref<ProjectSchedule[]>([]);
+	const upcoming = ref<UpcomingRun[]>([]);
+	const agents = ref<string[]>([]);
+	const error = ref("");
+	const loaded = ref(false);
+
+	const { refresh } = usePoll(async () => {
+		const target = project.value;
+		if (!target) return;
+		try {
+			const [taskText, upcomingText, agentText] = await Promise.all([
+				callTool("task_list", {}),
+				callTool("task_upcoming", {
+					project: target,
+					limit: UP_NEXT_RUNS,
+					per_task: UP_NEXT_PER_SCHEDULE,
+				}),
+				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
+			]);
+			if (target !== project.value) return;
+			schedules.value = projectSchedules(parseToolJSON(taskText), target);
+			upcoming.value = normalizeUpcoming(parseToolJSON(upcomingText));
+			if (agentText) {
+				const list = parseToolJSON(agentText);
+				agents.value = Array.isArray(list)
+					? list
+							.map((a) =>
+								a && typeof a === "object"
+									? String((a as { name?: unknown }).name ?? "")
+									: "",
+							)
+							.filter(Boolean)
+					: [];
+			}
+			error.value = "";
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+		} finally {
+			loaded.value = true;
+		}
+	}, interval);
+
+	watch(project, () => {
+		schedules.value = [];
+		upcoming.value = [];
+		loaded.value = false;
+		void refresh();
+	});
+
+	/** Creates the schedule when it has no id yet, otherwise updates it. */
+	async function save(s: ProjectSchedule) {
+		const fields = {
+			...triggerArgs(s),
+			content: s.prompt.trim(),
+			cli: s.cli.trim(),
+		};
+		if (s.id) {
+			await callTool("task_update", {
+				name: s.id,
+				...fields,
+				project: s.project,
+				enabled: s.enabled,
+			});
+		} else {
+			await callTool("task_schedule", {
+				...fields,
+				agent: s.agent,
+				name: s.name.trim(),
+				type: "project",
+				project: s.project,
+			});
+			if (!s.enabled) {
+				await callTool("task_update", {
+					name: `${s.agent}/${s.name.trim()}`,
+					enabled: false,
+				});
+			}
+		}
+		await refresh();
+	}
+
+	async function setEnabled(s: ProjectSchedule, enabled: boolean) {
+		await callTool("task_update", { name: s.id, enabled });
+		await refresh();
+	}
+
+	async function remove(s: ProjectSchedule) {
+		await callTool("task_delete", { name: s.id });
+		await refresh();
+	}
+
+	async function runNow(s: ProjectSchedule) {
+		await callTool("task_run", { name: s.id });
+		await refresh();
+	}
+
+	/** The next 3 fires of the schedule as edited, saved or not. */
+	async function preview(s: ProjectSchedule): Promise<string[]> {
+		const args = triggerArgs(s);
+		const result = parseToolJSON(
+			await callTool(
+				"task_preview",
+				Object.fromEntries(Object.entries(args).filter(([, v]) => v)),
+			),
+		);
+		const next = (result as { next?: unknown }).next;
+		return Array.isArray(next) ? next.map(String) : [];
+	}
+
+	return {
+		schedules,
+		upcoming,
+		agents,
+		error,
+		loaded,
+		refresh,
+		save,
+		setEnabled,
+		remove,
+		runNow,
+		preview,
 	};
 }

@@ -45,9 +45,11 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 
 	m.cfg = cfg
 
-	desired := make(map[string]*config.AgentConfig, len(cfg.Agents))
-	for i := range cfg.Agents {
-		ac := &cfg.Agents[i]
+	// The built-in Projects agent runs alongside the configured ones.
+	agents := config.EffectiveAgents(cfg)
+	desired := make(map[string]*config.AgentConfig, len(agents))
+	for i := range agents {
+		ac := &agents[i]
 		desired[ac.Name] = ac
 	}
 
@@ -61,9 +63,9 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 	}
 
 	// Rebuild order to match config entry order, dropping removed agents.
-	newOrder := make([]string, 0, len(cfg.Agents))
-	for i := range cfg.Agents {
-		newOrder = append(newOrder, cfg.Agents[i].Name)
+	newOrder := make([]string, 0, len(agents))
+	for i := range agents {
+		newOrder = append(newOrder, agents[i].Name)
 	}
 	m.order = newOrder
 

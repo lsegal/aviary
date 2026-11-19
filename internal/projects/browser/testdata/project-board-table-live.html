@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<!--
+  The table layout as GitHub actually serves it (captured 2026-08-31, issue
+  #457). Nothing on a row names the field it holds except the CSS custom
+  property each cell is sized from: the classes are hashed CSS-module names,
+  there are no test ids, and the only attribute mentioning "status" is the
+  title cell's own label, which carries the *issue's* open/closed state.
+-->
+<html lang="en">
+  <body>
+    <div class="Box-module__Box__b1Uxz">
+      <div role="grid" class="table-module__StyledTable__PWaMz" style="min-width: 1560px;">
+        <div role="row" class="table-header-module__Box_1__qQZGN" style="display: flex; width: 100%;">
+          <div colspan="1" role="cell" style="display: inline-block; width: calc(var(--column-row-drag-handle-width) * 1px);"></div>
+          <div role="columnheader" aria-colspan="1" colspan="1" aria-sort="none" style="display: inline-block; width: calc(var(--column-Title-width) * 1px);"><span class="table-header-cell-module__Text__B6uZH">Title</span></div>
+          <div role="columnheader" aria-colspan="1" colspan="1" aria-sort="none" style="display: inline-block; width: calc(var(--column-Assignees-width) * 1px);"><span class="table-header-cell-module__Text__B6uZH">Assignees</span></div>
+          <div role="columnheader" aria-colspan="1" colspan="1" aria-sort="none" style="display: inline-block; width: calc(var(--column-Status-width) * 1px);"><span class="table-header-cell-module__Text__B6uZH">Status</span></div>
+        </div>
+
+        <div class="hoverable table-row-module__StyledTableRow__U5HlV" role="row" data-hovercard-subject-tag="issue:5298230139">
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="rowheader" aria-label="HEVC: time the SSE4.1/AVX2 kernels, status: open" tabindex="0" style="display: inline-block; width: calc(var(--column-Title-width) * 1px);">
+            <div class="title-renderer-module__titleCell__EpJAw">
+              <a class="prc-Link-Link-9ZwDx" data-component="Link" target="_blank" rel="noreferrer" href="https://github.com/lsegal/zvidlib/issues/188" tabindex="-1"><span class="prc-Text-Text-9mHv3" data-component="Text">HEVC: time the SSE4.1/AVX2 kernels</span></a>
+              <div class="title-renderer-module__Box_1__KGf9s"><span class="title-renderer-module__Text__laCSW"> #188</span></div>
+              <span class="prc-TooltipV2-Tooltip-tLeuB" aria-hidden="true" popover="auto">Add sub-issue</span>
+            </div>
+          </div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" tabindex="0" style="display: inline-block; width: calc(var(--column-Assignees-width) * 1px);">
+            <div class="dropdown-cell-module__BaseCell__Psc6E"><button data-component="Button" type="button" aria-label="Dropdown button" tabindex="-1"></button></div>
+          </div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" tabindex="0" style="display: inline-block; width: calc(var(--column-Status-width) * 1px);">
+            <div class="single-select-renderer-module__DropdownCell__zUv9N"><span class="prc-Token-TokenBase-te5-F" data-size="medium" text="[object Object]"><span class="prc-Token-TokenTextContainer-cOUaD"><span class="prc-Text-Text-9mHv3" data-component="Text">Ready</span></span></span></div>
+            <button data-component="Button" type="button" aria-label="Dropdown button" tabindex="-1"></button>
+          </div>
+        </div>
+
+        <div class="hoverable table-row-module__StyledTableRow__U5HlV" role="row" data-hovercard-subject-tag="issue:5175702142">
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="rowheader" aria-label="Didn't we implement subcommands?, status: closed" tabindex="0" style="display: inline-block; width: calc(var(--column-Title-width) * 1px);">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" target="_blank" rel="noreferrer" href="https://github.com/lsegal/aviary/issues/259" tabindex="-1"><span class="prc-Text-Text-9mHv3" data-component="Text">Didn't we implement subcommands?</span></a>
+            <div class="title-renderer-module__Box_1__KGf9s"><span class="title-renderer-module__Text__laCSW"> #259</span></div>
+          </div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" tabindex="0" style="display: inline-block; width: calc(var(--column-Assignees-width) * 1px);"></div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" tabindex="0" style="display: inline-block; width: calc(var(--column-Status-width) * 1px);">
+            <div class="single-select-renderer-module__DropdownCell__zUv9N"><span class="prc-Token-TokenBase-te5-F"><span class="prc-Token-TokenTextContainer-cOUaD"><span class="prc-Text-Text-9mHv3" data-component="Text">Done</span></span></span></div>
+          </div>
+        </div>
+
+        <!-- An item that has never been given a status: the cell is there and empty. -->
+        <div class="hoverable table-row-module__StyledTableRow__U5HlV" role="row">
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="rowheader" aria-label="Remove the remaining GraphQL calls, status: open" tabindex="0" style="display: inline-block; width: calc(var(--column-Title-width) * 1px);">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" href="/lsegal/aviary/issues/276" tabindex="-1"><span data-component="Text">Remove the remaining GraphQL calls</span></a>
+          </div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" style="display: inline-block; width: calc(var(--column-Status-width) * 1px);"></div>
+        </div>
+
+        <!-- A pull request on the board is not an issue. -->
+        <div class="hoverable table-row-module__StyledTableRow__U5HlV" role="row">
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="rowheader" aria-label="Browser mode pull request, status: open" style="display: inline-block; width: calc(var(--column-Title-width) * 1px);">
+            <a class="prc-Link-Link-9ZwDx" data-component="Link" href="https://github.com/lsegal/aviary/pull/389"><span data-component="Text">Browser mode pull request</span></a>
+          </div>
+          <div class="hoverable table-cell-module__StyledTableCell__Kzgvf" role="gridcell" style="display: inline-block; width: calc(var(--column-Status-width) * 1px);">
+            <div class="single-select-renderer-module__DropdownCell__zUv9N"><span class="prc-Token-TokenBase-te5-F"><span data-component="Text">Ready</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
@@ -199,35 +200,6 @@ func TestJobQueue_RecoverStuck_ExhaustedJobFailsInsteadOfRequeueing(t *testing.T
 	assert.Nil(t, recovered.LockedAt)
 }
 
-func TestCronRunner_AddRemove(t *testing.T) {
-	r := NewCronRunner()
-	called := make(chan struct{}, 1)
-	err := r.Add("task", "*/1 * * * * *", func() {
-		select {
-		case called <- struct{}{}:
-		default:
-		}
-	})
-	assert.NoError(t, err)
-
-	_, ok := r.ids["task"]
-	assert.True(t, ok)
-
-	r.Start()
-	defer r.Stop()
-
-	select {
-	case <-called:
-	case <-time.After(2500 * time.Millisecond):
-		assert.FailNow(t, "timeout")
-	}
-
-	r.Remove("task")
-	_, ok = r.ids["task"]
-	assert.False(t, ok)
-
-}
-
 func TestFileWatcher_AddStartAndRemove(t *testing.T) {
 	fw, err := NewFileWatcher()
 	assert.NoError(t, err)
@@ -293,7 +265,7 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 	}
 	s.Reconcile(cfg)
 	assert.Equal(t, 2, len(s.tasks))
-	_, ok := s.cron.ids["alpha/cronTask"]
+	_, ok := s.armed["alpha/cronTask"]
 	assert.True(t, ok)
 
 	_, ok = s.watch.handlers["alpha/watchTask"]
@@ -301,7 +273,7 @@ func TestScheduler_NewStartStopAndReconcile(t *testing.T) {
 
 	s.Reconcile(&config.Config{})
 	assert.Len(t, s.tasks, 0)
-	assert.Len(t, s.cron.ids, 0)
+	assert.Len(t, s.armed, 0)
 	assert.Len(t, s.watch.handlers, 0)
 
 }
@@ -375,10 +347,9 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
 
-	s.cron.Start()
 	t.Cleanup(s.Stop)
 
-	startAt := time.Now().UTC().Add(2 * time.Second).Format(time.RFC3339)
+	startAt := time.Now().UTC().Truncate(time.Second).Add(3 * time.Second).Format(time.RFC3339)
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{
 			Name: "alpha",
@@ -397,7 +368,7 @@ func TestScheduler_DelayedCronStart(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(before))
 
-	time.Sleep(2200 * time.Millisecond)
+	time.Sleep(3200 * time.Millisecond)
 	after, err := s.Queue().List("alpha/delayed")
 	assert.NoError(t, err)
 	assert.NotEqual(t, 0, len(after))
@@ -411,7 +382,6 @@ func TestScheduler_RunOnceCron_OnlyEnqueuesOneJob(t *testing.T) {
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
 
-	s.cron.Start()
 	t.Cleanup(s.Stop)
 
 	cfg := &config.Config{
@@ -514,12 +484,16 @@ func TestScheduler_ReconcileIgnoresDisabledTasks(t *testing.T) {
 
 	assert.Contains(t, s.tasks, "alpha/enabled")
 	assert.NotContains(t, s.tasks, "alpha/disabled")
-	assert.Contains(t, s.cron.ids, "alpha/enabled")
-	assert.NotContains(t, s.cron.ids, "alpha/disabled")
+	assert.Contains(t, s.armed, "alpha/enabled")
+	assert.NotContains(t, s.armed, "alpha/disabled")
 
 	tasks := s.ListTasks()
-	assert.Len(t, tasks, 1)
-	assert.Equal(t, "alpha/enabled", tasks[0].ID)
+	assert.Len(t, tasks, 2)
+	assert.Equal(t, "alpha/disabled", tasks[0].ID)
+	assert.False(t, tasks[0].Enabled)
+	assert.Nil(t, tasks[0].NextRun)
+	assert.Equal(t, "alpha/enabled", tasks[1].ID)
+	assert.True(t, tasks[1].Enabled)
 }
 
 func TestWorkerPool_ExecuteJob(t *testing.T) {
@@ -903,4 +877,38 @@ func TestJobQueue_ListCorrupted(t *testing.T) {
 	}
 	assert.True(t, found)
 
+}
+
+func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m", Tasks: []config.TaskConfig{{
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", CLI: "claude:opus", Prompt: "Triage new issues",
+	}}}}})
+	q := NewJobQueue()
+	p := NewWorkerPool(q, mgr, 1)
+
+	job, err := q.EnqueueWithType("alpha/triage", "project", "alpha", "Triage new issues", "Triage new issues", "", 1, "", "")
+	require.NoError(t, err)
+	assert.ErrorContains(t, p.executeJob(context.Background(), job), "Projects engine")
+
+	var got ProjectRun
+	p.projectRunner = func(_ context.Context, run ProjectRun) (string, error) {
+		got = run
+		return "Opened issue #12", nil
+	}
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, "alpha/triage", got.TaskID)
+	assert.Equal(t, "triage", got.Name)
+	assert.Equal(t, "o/r", got.Project)
+	assert.Equal(t, "claude:opus", got.CLI)
+	assert.Equal(t, "Triage new issues", got.Prompt)
+	persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "Opened issue #12", persisted.Output)
+
+	p.projectRunner = func(context.Context, ProjectRun) (string, error) {
+		return "agent exited 1", errors.New("agent exited 1")
+	}
+	assert.ErrorContains(t, p.executeJob(context.Background(), job), "agent exited 1")
 }

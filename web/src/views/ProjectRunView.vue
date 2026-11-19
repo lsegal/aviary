@@ -9,9 +9,13 @@
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
 						<h1 class="text-lg font-bold text-gray-900 dark:text-white">
-							{{ `#${number} ` }}{{ job?.title ?? "" }}
+							{{ job?.scheduled ? "" : `#${number} ` }}{{ job?.title ?? "" }}
 						</h1>
 						<JobStatusPill v-if="job" :status="job.status" />
+						<span v-if="job?.scheduled"
+							class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+							Scheduled
+						</span>
 					</div>
 				</div>
 				<div v-if="job" class="flex flex-wrap gap-2 lg:ml-auto">
@@ -33,7 +37,7 @@
 				</div>
 			</header>
 
-			<ol v-if="detail" data-testid="lifecycle"
+			<ol v-if="detail && !job?.scheduled" data-testid="lifecycle"
 				class="flex gap-2 overflow-x-auto border-b border-gray-200 px-4 py-3 text-sm dark:border-gray-800 sm:px-6">
 				<li v-for="(label, i) in LIFECYCLE_STEPS" :key="label" class="flex shrink-0 items-center gap-2"
 					:aria-current="i === lifecycle.step && !lifecycle.done ? 'step' : undefined">
@@ -59,11 +63,15 @@
 						<div v-if="!detail && !error" class="py-12 text-center text-sm text-gray-400">Loading…</div>
 						<JobTimeline v-else-if="detail" :events="detail.events" />
 					</div>
-					<footer v-if="job"
+					<footer v-if="job && !job.scheduled"
 						class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:flex-row sm:items-center sm:px-6">
 						<p class="flex-1">
-							Jobs only take instructions from GitHub comments by allowed commenters. To steer this job, comment on the issue or its
-							pull request.
+							Jobs only take instructions from GitHub comments by allowed commenters<template
+								v-if="allowedCommenters.length">
+								(<span data-testid="allowed-commenters"><template v-for="(login, i) in allowedCommenters" :key="login">{{ i ? ", " : "" }}<a
+										:href="`https://github.com/${encodeURIComponent(login)}`" target="_blank" rel="noreferrer"
+										class="font-medium text-blue-600 hover:underline dark:text-blue-400">@{{ login }}</a></template></span>)</template>.
+							To steer this job, comment on the issue or its pull request.
 						</p>
 						<div class="flex flex-wrap gap-2">
 							<a v-if="issueURL" :href="`${issueURL}#new_comment_field`"
@@ -111,14 +119,17 @@ const project = computed(() => String(route.params.project ?? ""));
 const number = computed(() => Number(route.params.number ?? 0));
 const boardPath = computed(() => `/projects/${encodeProject(project.value)}`);
 
-const { detail, error, retry, stop } = useProjectJob(project, number);
+const { detail, error, allowedCommenters, retry, stop } = useProjectJob(
+	project,
+	number,
+);
 const job = computed(() => detail.value?.job ?? null);
 const lifecycle = computed(() =>
 	detail.value ? lifecycleStep(detail.value) : { step: 0, done: false },
 );
 const stoppable = computed(() => !!job.value?.actions.stop);
 const issueURL = computed(() =>
-	job.value
+	job.value && !job.value.scheduled
 		? job.value.issueURL ||
 			githubURL(job.value.repo, "issues", job.value.number)
 		: "",

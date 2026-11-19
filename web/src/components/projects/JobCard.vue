@@ -4,6 +4,10 @@
 		<div class="space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<JobStatusPill :status="job.status" />
+				<span v-if="job.scheduled" data-testid="job-scheduled"
+					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+					Scheduled
+				</span>
 				<span v-if="job.startedAt" class="text-gray-400">{{ age(job.startedAt, now) }}</span>
 				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">
 					{{ [job.skill, job.cli].filter(Boolean).join(" · ") }}
@@ -11,10 +15,13 @@
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="runPath" class="hover:underline">
-					{{ job.number ? `#${job.number} ` : "" }}{{ job.title || job.id }}
+					{{ job.number && !job.scheduled ? `#${job.number} ` : "" }}{{ job.title || job.id }}
 				</router-link>
 			</h3>
-			<p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
+			<p v-if="job.scheduled" class="text-xs text-gray-500 dark:text-gray-400">
+				Scheduled prompt<template v-if="job.scheduleID"> · <span class="font-mono">{{ job.scheduleID }}</span></template>
+			</p>
+			<p v-else class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
 				<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 				<template v-if="job.pr">
@@ -41,7 +48,7 @@
 		</div>
 		<pre data-testid="job-output"
 			class="h-40 flex-1 overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
-		<div class="flex items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
+		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
 			<router-link :to="runPath"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				Details
@@ -50,6 +57,12 @@
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('retry', job)">
 				Retry
+			</button>
+			<button v-if="job.number && job.repo" type="button" data-testid="job-summarize"
+				title="Ask the prompt chat to summarize this job's session log"
+				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				@click="emit('summarize', job)">
+				Summarize
 			</button>
 			<button v-if="job.actions.stop" type="button" :disabled="busy"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
@@ -75,6 +88,7 @@ const props = defineProps<{
 const emit = defineEmits<{
 	retry: [job: ProjectJob];
 	stop: [job: ProjectJob];
+	summarize: [job: ProjectJob];
 }>();
 
 const runPath = computed(() => jobPath(props.job.target, props.job.number));
