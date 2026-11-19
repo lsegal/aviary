@@ -18,16 +18,19 @@ type CloneEntry struct {
 	// Reason says why it is in use or why its status could not be verified.
 	InUse  bool   `json:"inUse"`
 	Reason string `json:"reason,omitempty"`
-	// Size is the bytes a clear reclaimed by removing the clone, measured
-	// right before removal. Listing leaves it zero.
-	Size int64 `json:"size,omitempty"`
+	// Size is the clone's bytes on disk: measured by listing, and right
+	// before removal by a clear. Nil means it could not be measured in time.
+	Size *int64 `json:"size,omitempty"`
 }
 
 // ClonesSnapshot lists every recorded clone and the temp directories new
-// clones are placed in, in the order they are tried.
+// clones are placed in, in the order they are tried. TotalSize sums the
+// clones whose size was measured; Unmeasured counts the ones left out.
 type ClonesSnapshot struct {
-	Roots  []string     `json:"roots"`
-	Clones []CloneEntry `json:"clones"`
+	Roots      []string     `json:"roots"`
+	Clones     []CloneEntry `json:"clones"`
+	TotalSize  int64        `json:"totalSize"`
+	Unmeasured int          `json:"unmeasured,omitempty"`
 }
 
 // ClearClonesResult reports what clearing unused clones removed, how many
