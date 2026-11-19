@@ -14,7 +14,7 @@ func testLoadQueue(interval time.Duration, logf func(string, ...interface{})) (*
 	queue := NewLoadQueue(interval, logf)
 	clock := time.Unix(0, 0).UTC()
 	queue.now = func() time.Time { return clock }
-	queue.sleep = func(ctx context.Context, d time.Duration) bool {
+	queue.sleep = func(_ context.Context, d time.Duration) bool {
 		clock = clock.Add(d)
 		return true
 	}
@@ -78,7 +78,7 @@ func TestLoadQueueCompressesToFitTheInterval(t *testing.T) {
 // timer rather than on every load it paces.
 func TestLoadQueueWarnsAtMostOnceAMinute(t *testing.T) {
 	var warnings []string
-	queue, clock := testLoadQueue(10*time.Second, func(format string, args ...interface{}) {
+	queue, clock := testLoadQueue(10*time.Second, func(format string, _ ...interface{}) {
 		warnings = append(warnings, format)
 	})
 	names := make([]string, 0, 40)

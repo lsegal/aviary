@@ -385,7 +385,7 @@ func TestNextIssuesURL(t *testing.T) {
 
 // TestIssueSourceImplementsIssueSource keeps the source usable as the
 // watch loop's issue source without any structural change to Aviary.
-func TestIssueSourceImplementsIssueSource(t *testing.T) {
+func TestIssueSourceImplementsIssueSource(_ *testing.T) {
 	var _ core.IssueSource = (*IssueSource)(nil)
 	var _ Page = (*Tab)(nil)
 }

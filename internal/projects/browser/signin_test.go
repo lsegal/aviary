@@ -77,7 +77,7 @@ func TestIssueSourceSignedOutEmptyList(t *testing.T) {
 		results: []issueList{{Rows: nil, Recognized: true, Empty: true}},
 		signIn:  signInState{SignedOut: true},
 	}
-	source := newTestIssueSource(page, core.DefaultIssueFilter, false, func(format string, args ...interface{}) {
+	source := newTestIssueSource(page, core.DefaultIssueFilter, false, func(format string, _ ...interface{}) {
 		logs = append(logs, format)
 	})
 	source.profile = "/tmp/aviary-profile"

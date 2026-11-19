@@ -201,7 +201,7 @@ func TestVisionCooldownHoldsUnderRepeatedFailures(t *testing.T) {
 
 	// 20 minutes of polling spans two 10-minute cooldown windows, whatever
 	// the browser-mode interval happens to be.
-	pollTicks(t, source, int(20*time.Minute/DefaultWatchInterval))
+	_ = pollTicks(t, source, int(20*time.Minute/DefaultWatchInterval))
 	if *asks != 2 {
 		t.Fatalf("expected 2 vision calls across 20 minutes of failures, got %d", *asks)
 	}
@@ -221,7 +221,7 @@ func TestVisionRunCapHoldsUnderRepeatedFailures(t *testing.T) {
 	source.pageFor = func(string) (Page, error) { return page, nil }
 	source.vision = vision
 
-	pollTicks(t, source, 50)
+	_ = pollTicks(t, source, 50)
 	if *asks != visionRunLimit {
 		t.Fatalf("expected the run capped at %d vision calls, got %d", visionRunLimit, *asks)
 	}
@@ -249,7 +249,7 @@ func TestVisionCooldownIsPerTarget(t *testing.T) {
 	source.vision = vision
 
 	for _, target := range []string{"owner/one", "owner/two", "owner/one", "owner/two"} {
-		source.ListIssues(context.Background(), target)
+		_, _ = source.ListIssues(context.Background(), target)
 	}
 	if *asks != 2 {
 		t.Fatalf("expected one call per target in the first window, got %d", *asks)
@@ -321,7 +321,7 @@ func TestVisionChargesForAFailedScreenshot(t *testing.T) {
 	source.pageFor = func(string) (Page, error) { return page, nil }
 	source.vision = vision
 
-	pollTicks(t, source, 50)
+	_ = pollTicks(t, source, 50)
 	if page.screenshots != visionRunLimit {
 		t.Fatalf("expected failed captures to count against the cap, got %d attempt(s)", page.screenshots)
 	}

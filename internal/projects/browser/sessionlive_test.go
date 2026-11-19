@@ -52,14 +52,14 @@ func liveProfile(t *testing.T, profile string) *Browser {
 func githubShapedCookieServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/echo" {
-			fmt.Fprint(w, r.Header.Get("Cookie"))
+			_, _ = fmt.Fprint(w, r.Header.Get("Cookie"))
 			return
 		}
 		w.Header().Add("Set-Cookie", "user_session=session-value; path=/; secure; HttpOnly; SameSite=Lax")
 		w.Header().Add("Set-Cookie", "__Host-user_session_same_site=same-site-value; path=/; secure; HttpOnly; SameSite=Strict")
 		w.Header().Add("Set-Cookie", "_gh_sess=gh-sess-value; path=/; secure; HttpOnly")
 		w.Header().Add("Set-Cookie", "logged_in=yes; path=/; secure; HttpOnly; SameSite=Lax; Max-Age=31536000")
-		fmt.Fprint(w, "signed in")
+		_, _ = fmt.Fprint(w, "signed in")
 	}))
 }
 
@@ -112,7 +112,7 @@ func TestCarriesSessionCookiesToTheNextProcess(t *testing.T) {
 	}
 
 	watch := liveProfile(t, profile)
-	defer watch.Close()
+	defer func() { _ = watch.Close() }()
 	// The restore rides the first tab the run opens, before it navigates.
 	restored, err := watch.Tab("watch")
 	if err != nil {
@@ -191,7 +191,7 @@ func TestRestoresCarriedSessionBeforeNavigating(t *testing.T) {
 	}
 
 	browser := liveProfile(t, profile)
-	defer browser.Close()
+	defer func() { _ = browser.Close() }()
 	tab, err := browser.Tab("watch")
 	if err != nil {
 		t.Fatalf("open tab: %v", err)
@@ -267,7 +267,7 @@ func TestCarriesExpiringCookiesFromAShortLivedProcess(t *testing.T) {
 	}
 
 	watch := liveProfile(t, profile)
-	defer watch.Close()
+	defer func() { _ = watch.Close() }()
 	restored, err := watch.Tab("watch")
 	if err != nil {
 		t.Fatalf("open tab on restored profile: %v", err)

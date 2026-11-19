@@ -25,7 +25,7 @@ func (s *IssueSource) ReadsPages() bool { return s.pageFor != nil }
 // Hydrates reports whether the source can fill in the dispatch-only fields a
 // rendered page does not carry.
 func (s *IssueSource) Hydrates() bool {
-	return s.Hydration != nil && s.Hydration.hydrate != nil && s.Hydration.handled != nil
+	return s.Hydration != nil && s.hydrate != nil && s.handled != nil
 }
 
 // ReadsPages reports whether the comment source has a tab to read conversations
