@@ -36,7 +36,7 @@ func (m *Manager) currentSnapshot() core.Snapshot {
 // Status is project_status: identity, targets with issue counts, job counts,
 // delivery and the last check, quota per CLI, and recent log lines. Passing
 // logOffset returns only the lines logged since that offset.
-func (m *Manager) Status(ctx context.Context, logOffset int) map[string]any {
+func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	snapshot := m.currentSnapshot()
 	m.mu.Lock()
 	settings, settingsErr := m.settingsLocked()
@@ -90,13 +90,7 @@ func (m *Manager) Status(ctx context.Context, logOffset int) map[string]any {
 	} else if lastError != "" {
 		status["error"] = lastError
 	}
-	if engine := m.engine(); engine != nil {
-		settingsCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if current, err := engine.CurrentSettings(settingsCtx); err == nil {
-			status["agents"] = current.Agents
-		}
-	}
+	status["agents"] = allAgentSpecs(settings)
 	return status
 }
 

@@ -50,6 +50,9 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if !reflect.DeepEqual(s.Agents, []string{"codex"}) {
 		t.Fatalf("agents = %v", s.Agents)
 	}
+	if got := m.Status(t.Context(), 0)["agents"]; !reflect.DeepEqual(got, []string{"codex", "codex:high"}) {
+		t.Fatalf("status agents = %v", got)
+	}
 }
 
 func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {

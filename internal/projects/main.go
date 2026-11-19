@@ -126,7 +126,15 @@ func (g GHCLI) run(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(runCtx, g.Binary, args...)
 	cmd.WaitDelay = ghCommandWaitDelay
-	output, err := process.CombinedOutput(cmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := process.Output(cmd)
+	if err != nil {
+		// Failures are described from everything gh printed, so callers can
+		// read its HTTP status and message; a success is parsed from stdout
+		// alone, since gh also prints notices on stderr.
+		output = append(output, stderr.Bytes()...)
+	}
 	return output, g.timedOut(ctx, runCtx, args, err)
 }
 

@@ -9,6 +9,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	internalmcp "github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 func TestProjectToolArgsFillsThePositionalField(t *testing.T) {
@@ -119,5 +120,24 @@ func TestWatchTargetsExpandShorthands(t *testing.T) {
 	}
 	if len(targets) != 2 || targets[0] != "o/r" {
 		t.Fatalf("targets = %v", targets)
+	}
+}
+
+func TestApplyGlobalFlagsHonoursRootFlags(t *testing.T) {
+	prevServer, prevToken, prevData, prevDispatcher := serverURL, token, dataDir, dispatcher
+	t.Cleanup(func() {
+		serverURL, token, dataDir, dispatcher = prevServer, prevToken, prevData, prevDispatcher
+		store.SetDataDir(prevData)
+	})
+	dir := t.TempDir()
+	rest := applyGlobalFlags([]string{"--server", "https://localhost:1", "7", "--token=abc", "--data-dir", dir, "--target", "o/r"})
+	if want := []string{"7", "--target", "o/r"}; !reflect.DeepEqual(rest, want) {
+		t.Fatalf("rest = %v, want %v", rest, want)
+	}
+	if serverURL != "https://localhost:1" || token != "abc" || dataDir != dir {
+		t.Fatalf("flags = %q %q %q", serverURL, token, dataDir)
+	}
+	if dispatcher == prevDispatcher {
+		t.Fatal("the dispatcher was not rebuilt")
 	}
 }
