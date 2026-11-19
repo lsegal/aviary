@@ -2141,7 +2141,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 		"content": "hello",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "file written")
+	assert.Contains(t, out, `"created": true`)
 
 	_, err = d.CallTool(ctx, "file_append", map[string]any{
 		"path":    "./sandbox/demo.txt",
@@ -2197,7 +2197,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 		"content": "allowed",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "file written")
+	assert.Contains(t, out, `"created": true`)
 }
 
 func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
