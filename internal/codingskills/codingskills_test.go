@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 var testBundle = fstest.MapFS{
@@ -275,4 +276,23 @@ func TestSyncSkipsDevBuilds(t *testing.T) {
 	m, npx, _ := newTestManager(t, "dev", "claude")
 	m.Sync(context.Background(), &config.Config{})
 	assert.Empty(t, npx.calls)
+}
+
+func TestCLIsFromRegistryUseSkillsTargets(t *testing.T) {
+	registry, err := agents.Builtin()
+	require.NoError(t, err)
+	clis := CLIsFromRegistry(registry)
+
+	byID := map[string]CLI{}
+	for _, cli := range clis {
+		byID[cli.ID] = cli
+	}
+	assert.Equal(t, CLI{ID: "claude", Name: "Claude", Target: "claude-code", Binary: "claude"}, byID["claude"])
+	assert.Equal(t, CLI{ID: "agy", Name: "Antigravity", Target: "antigravity-cli", Binary: "agy"}, byID["agy"])
+	assert.Equal(t, "OpenCode", byID["opencode"].Name)
+	for _, name := range registry.Names() {
+		definition, _ := registry.Lookup(name)
+		_, listed := byID[name]
+		assert.Equal(t, definition.SkillsTarget() != "", listed, name)
+	}
 }

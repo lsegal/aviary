@@ -21,6 +21,7 @@ import (
 
 	"github.com/lsegal/aviary"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/update"
 )
 
@@ -40,16 +41,44 @@ type CLI struct {
 	Binary string `json:"binary"`
 }
 
-// BuiltinCLIs are the coding CLIs with a skills.sh target, matching the
-// skills targets of the built-in coding agent definitions.
-var BuiltinCLIs = []CLI{
-	{ID: "claude", Name: "Claude", Target: "claude-code", Binary: "claude"},
-	{ID: "codex", Name: "Codex", Target: "codex", Binary: "codex"},
-	{ID: "gemini", Name: "Gemini", Target: "gemini-cli", Binary: "gemini"},
-	{ID: "opencode", Name: "OpenCode", Target: "opencode", Binary: "opencode"},
-	{ID: "cline", Name: "Cline", Target: "cline", Binary: "cline"},
-	{ID: "agy", Name: "Antigravity", Target: "antigravity-cli", Binary: "agy"},
-	{ID: "muse", Name: "Muse", Target: "universal", Binary: "muse"},
+// cliNames are display names for agent definitions whose name does not read
+// well capitalized.
+var cliNames = map[string]string{
+	"agy":      "Antigravity",
+	"opencode": "OpenCode",
+}
+
+// CLIsFromRegistry lists the coding CLIs whose agent definition names a
+// skills.sh target, in the registry's sorted order.
+func CLIsFromRegistry(registry *agents.Registry) []CLI {
+	var clis []CLI
+	for _, name := range registry.Names() {
+		definition, _ := registry.Lookup(name)
+		target := definition.SkillsTarget()
+		if target == "" {
+			continue
+		}
+		display := cliNames[name]
+		if display == "" {
+			display = strings.ToUpper(name[:1]) + name[1:]
+		}
+		binary := definition.Binary
+		if binary == "" {
+			binary = name
+		}
+		clis = append(clis, CLI{ID: name, Name: display, Target: target, Binary: binary})
+	}
+	return clis
+}
+
+// builtinCLIs lists the coding CLIs of the built-in agent definitions.
+func builtinCLIs() []CLI {
+	registry, err := agents.Builtin()
+	if err != nil {
+		slog.Warn("coding skills: could not load the built-in agent definitions", "err", err)
+		return nil
+	}
+	return CLIsFromRegistry(registry)
 }
 
 // skillInfo is the short, user-facing summary of each skill.
@@ -223,7 +252,7 @@ func Default() *Manager {
 		defaultManager = &Manager{
 			Bundle:  aviary.CodingSkills,
 			Version: update.CurrentVersion,
-			CLIs:    func() []CLI { return BuiltinCLIs },
+			CLIs:    builtinCLIs,
 			Run:     runNpx,
 		}
 	})
