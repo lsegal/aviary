@@ -1106,7 +1106,7 @@ func TestUniqueProviderModels(t *testing.T) {
 			{Name: "a1", Model: "anthropic/claude-sonnet-4-5"},
 			{Name: "a2", Model: "openai/gpt-4"},
 			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
-			{Name: "a4", Model: "cli/claude/opus"},             // excluded
+			{Name: "a4", Model: "cli/claude/opus"},           // excluded
 		},
 	}
 	got := UniqueProviderModels(cfg)

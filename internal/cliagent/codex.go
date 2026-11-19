@@ -49,7 +49,7 @@ func codexArgs(opts Options, threadID string, images []string) []string {
 		"--skip-git-repo-check",
 		"--ignore-user-config",
 		"--model", opts.Model,
-		"-c", "approval_policy=" + tomlString("never"),
+		"-c", "approval_policy="+tomlString("never"),
 	)
 	if opts.Ephemeral {
 		args = append(args, "--ephemeral")
@@ -233,17 +233,31 @@ func (m *codexMapper) handle(line []byte) (bool, error) {
 		}
 		return true, nil
 	case "turn.failed":
-		msg := stringField(mapField(ev, "error"), "message")
+		msg := codexErrorMessage(stringField(mapField(ev, "error"), "message"))
 		if msg == "" {
 			msg = "turn failed"
 		}
 		return true, fmt.Errorf("codex: %s", msg)
 	case "error":
-		if msg := stringField(ev, "message"); msg != "" {
+		if msg := codexErrorMessage(stringField(ev, "message")); msg != "" {
 			return false, fmt.Errorf("codex: %s", msg)
 		}
 	}
 	return false, nil
+}
+
+// codexErrorMessage unwraps API errors that Codex reports as a JSON string,
+// such as {"type":"error","status":400,"error":{"message":"..."}}.
+func codexErrorMessage(msg string) string {
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if strings.HasPrefix(strings.TrimSpace(msg), "{") && json.Unmarshal([]byte(msg), &body) == nil && body.Error.Message != "" {
+		return body.Error.Message
+	}
+	return msg
 }
 
 // codexTool describes a Codex item that represents a tool call, or returns nil

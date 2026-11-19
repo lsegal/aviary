@@ -15,6 +15,7 @@ type UsageRecord struct {
 	CacheReadTokens  int       `json:"cache_read_tokens,omitempty"`
 	CacheWriteTokens int       `json:"cache_write_tokens,omitempty"`
 	ToolCalls        int       `json:"tool_calls,omitempty"`
+	CostUSD          float64   `json:"cost_usd,omitempty"` // reported by CLI backends
 	HasError         bool      `json:"has_error,omitempty"`
 	HasThrottle      bool      `json:"has_throttle,omitempty"`
 }
