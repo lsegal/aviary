@@ -148,6 +148,106 @@ func TestAviaryJSONFileChangesAndErrors(t *testing.T) {
 	}
 }
 
+// The fixtures are real streams captured from opencode 1.18.27 and cline
+// 3.0.74 running the same four-step task: a shell command, a file creation, an
+// edit and a read.
+func TestOpencodeJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatOpencodeJSON), "opencode-run.jsonl")
+	want := "command,command,usage,file_change,tool_result,usage,file_change,tool_result,usage,tool_call,tool_result,usage,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	start, done := events[0], events[1]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi\n" || done.Status != "done" || done.ExitCode == nil || *done.ExitCode != 0 || done.IsError {
+		t.Fatalf("command result = %+v", done)
+	}
+	added, edited := events[3], events[6]
+	if added.Path != "/work/note.txt" || added.Status != "add" || !strings.Contains(added.Diff, "+hello") {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited.Status != "update" || !strings.Contains(edited.Diff, "-hello\n+hello world") {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Name != "read" || read.Input["filePath"] != "/work/note.txt" {
+		t.Fatalf("tool call = %+v", read)
+	}
+	if usage := events[2].Usage; usage == nil || usage.InputTokens != 9668 || usage.OutputTokens != 32 {
+		t.Fatalf("usage = %+v", usage)
+	}
+	if msg := events[12]; msg.Text != "`note.txt` now contains `hello world`." {
+		t.Fatalf("message = %+v", msg)
+	}
+}
+
+func TestOpencodeFailedToolsAndEdits(t *testing.T) {
+	mapper := NewMapper(FormatOpencodeJSON)
+	failed := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"c1","state":{"status":"completed","input":{"command":"false"},"output":"","metadata":{"exit":1}}}}`))
+	if kinds(failed) != "command,command" || !failed[1].IsError || *failed[1].ExitCode != 1 {
+		t.Fatalf("failed command = %+v", failed)
+	}
+	edit := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"edit","callID":"c2","state":{"status":"error","input":{"filePath":"/w/a.go","oldString":"a","newString":"b"},"error":"no match"}}}`))
+	if kinds(edit) != "file_change,tool_result" || edit[0].Path != "/w/a.go" || edit[0].Diff != "@@\n-a\n+b" || !edit[1].IsError || edit[1].Output != "no match" {
+		t.Fatalf("edit = %+v", edit)
+	}
+	plan := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"todowrite","callID":"c3","state":{"status":"completed","input":{"todos":[{"content":"one","status":"completed"}]}}}}`))
+	if kinds(plan) != "plan,tool_result" || plan[0].Items[0].Text != "one" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if got := mapper.Map([]byte(`{"type":"error","error":{"name":"APIError","data":{"message":"rate limited"}}}`)); len(got) != 1 || !got[0].IsError || got[0].Text != "rate limited" {
+		t.Fatalf("error = %+v", got)
+	}
+}
+
+func TestClineJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatClineJSON), "cline-run.jsonl")
+	want := "message,reasoning,command,command,file_change,tool_result,file_change,tool_result,tool_call,tool_result,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	start, done := events[2], events[3]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi\n" || done.Status != "done" || done.ExitCode == nil || *done.ExitCode != 0 {
+		t.Fatalf("command result = %+v", done)
+	}
+	if added := events[4]; added.Path != "note.txt" || added.Status != "add" || added.Diff != "+hello" {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited := events[6]; edited.Status != "update" || edited.Diff != "@@\n-hello\n+hello world" {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Output != "1 | hello world" || read.IsError {
+		t.Fatalf("tool result = %+v", read)
+	}
+	if usage := events[11].Usage; usage == nil || usage.InputTokens != 42481 || usage.CacheReadTokens != 29952 || usage.CostUSD == 0 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+func TestClineFailuresAndEditor(t *testing.T) {
+	mapper := NewMapper(FormatClineJSON)
+	edit := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_start","contentType":"tool","toolCallId":"e","toolName":"editor","input":{"path":"/w/a.go","old_text":"a","new_text":"b"}}}`))
+	if kinds(edit) != "file_change" || edit[0].Path != "/w/a.go" || edit[0].Diff != "@@\n-a\n+b" {
+		t.Fatalf("edit = %+v", edit)
+	}
+	mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_start","contentType":"tool","toolCallId":"r","toolName":"run_commands","input":{"commands":["make","go test"]}}}`))
+	failed := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"r","toolName":"run_commands","output":[{"query":"make","result":"ok","success":true},{"query":"go test","result":"FAIL","error":"exit 1","success":false}]}}`))
+	if len(failed) != 1 || failed[0].Kind != KindCommand || !failed[0].IsError || *failed[0].ExitCode != 1 || failed[0].Output != "ok\nFAIL\nexit 1" {
+		t.Fatalf("failed command = %+v", failed)
+	}
+	aborted := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"done","reason":"error","text":"provider failed","usage":{"inputTokens":5}}}`))
+	if kinds(aborted) != "usage,system" || !aborted[1].IsError || aborted[1].Text != "provider failed" {
+		t.Fatalf("done = %+v", aborted)
+	}
+	if got := mapper.Map([]byte(`{"ts":"2026-11-19T10:55:27.395Z","type":"error","message":"cline requires re-authentication."}`)); len(got) != 1 || !got[0].IsError {
+		t.Fatalf("error = %+v", got)
+	}
+}
+
 func TestLogPersistsAcrossOpen(t *testing.T) {
 	dir := t.TempDir()
 	log, err := Open(dir)

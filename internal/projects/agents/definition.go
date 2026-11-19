@@ -62,6 +62,10 @@ type Definition struct {
 	// is written, decoded as Claude's streaming envelope, or decoded by the
 	// generic JSONL decoder configured with the agent's own field paths.
 	Output Output `json:"output"`
+	// Wakeup, when declared, describes the tool call the agent ends a turn
+	// with to ask to be woken later. aviary waits out its delay and resumes
+	// the session; an agent that declares none simply finishes its turn.
+	Wakeup *Wakeup `json:"wakeup,omitempty"`
 	// MissingSession are the phrases this agent prints, beyond the shared
 	// defaults, when asked to resume a session it no longer holds; they are
 	// matched case-insensitively anywhere in its output. Naming one here adds
@@ -222,6 +226,11 @@ type Output struct {
 	// Format selects it. Most agents with a --json or streaming mode are read
 	// by naming their field paths here rather than by new Go code.
 	JSONL *JSONL `json:"jsonl,omitempty"`
+	// Transcript names the mapper that turns a generic JSONL stream into the
+	// job's structured transcript, since the JSONL block only describes what
+	// the decoder renders. It is only meaningful when Format selects the
+	// generic decoder; the other formats have mappers of their own.
+	Transcript string `json:"transcript,omitempty"`
 }
 
 // JSONL says where in one event of a line-delimited JSON stream the decoder
@@ -671,6 +680,9 @@ const (
 	FormatCodexJSON  = "codex-json"
 	FormatAviaryJSON = "aviary-json"
 
+	TranscriptOpencodeJSON = "opencode-json"
+	TranscriptClineJSON    = "cline-json"
+
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"
 )
@@ -813,6 +825,11 @@ func (d Definition) Validate() error {
 	}
 	if err := d.Output.validate(); err != nil {
 		return err
+	}
+	if d.Wakeup != nil {
+		if err := d.Wakeup.validate(); err != nil {
+			return err
+		}
 	}
 	for _, pattern := range d.MissingSession {
 		if strings.TrimSpace(pattern) == "" {
