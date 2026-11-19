@@ -100,6 +100,16 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 	if _, err := watchSettings(watchCmd); err == nil {
 		t.Fatal("an invalid interval was accepted")
 	}
+	watchOpts.interval = ""
+	watchOpts.delivery, watchOpts.browserVisible, watchOpts.browserVision = "Browser", true, true
+	settings, err = watchSettings(watchCmd)
+	if err != nil || settings.Delivery != "browser" || !settings.BrowserVisible || !settings.BrowserVision {
+		t.Fatalf("browser delivery settings = %+v, %v", settings, err)
+	}
+	watchOpts.delivery = "poll"
+	if _, err := watchSettings(watchCmd); err == nil {
+		t.Fatal("browser-only switches were accepted for gh polling")
+	}
 }
 
 func TestWatchTargetsExpandShorthands(t *testing.T) {

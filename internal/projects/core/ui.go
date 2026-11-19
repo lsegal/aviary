@@ -212,21 +212,21 @@ type GitHubSession struct {
 	// SignedOut reports that the most recent read was served to a signed-out
 	// session, so it found nothing and was reported as an error rather than
 	// as "no issues".
-	SignedOut bool
+	SignedOut bool `json:"signed_out"`
 	// URL and Status are the page that showed the signed-out session, and
 	// its HTTP status when a 404 or 403 is what gave it away.
-	URL    string
-	Status int
+	URL    string `json:"url,omitempty"`
+	Status int    `json:"status,omitempty"`
 	// Since is when the signed-out spell began.
-	Since time.Time
+	Since time.Time `json:"since,omitzero"`
 	// SigningIn reports a sign-in window that is open now.
-	SigningIn bool
+	SigningIn bool `json:"signing_in"`
 	// WindowUnavailable names why no sign-in window can appear on this
 	// machine, such as a container with no display. The banner then offers
 	// gh polling or importing a profile instead.
-	WindowUnavailable string
+	WindowUnavailable string `json:"window_unavailable,omitempty"`
 	// LastError is why the last sign-in attempt did not work.
-	LastError string
+	LastError string `json:"last_error,omitempty"`
 }
 
 // UIReporter receives the published state of a run.
@@ -245,7 +245,7 @@ type JobAction struct {
 
 // JobActions says which job actions the run accepts for a job in one state,
 // so a dashboard never enables a button whose request is guaranteed to fail
-//. RetryReason says why retry is refused, when it is.
+// . RetryReason says why retry is refused, when it is.
 type JobActions struct {
 	Retry       bool
 	RetryReason string

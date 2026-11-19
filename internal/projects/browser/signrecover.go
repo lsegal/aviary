@@ -70,8 +70,15 @@ type SignIn struct {
 	Timeout time.Duration
 }
 
+// Handover stops a browser so a sign-in window can take its profile, and
+// starts it again afterwards. *Browser is one.
+type Handover interface {
+	Suspend() error
+	Resume() error
+}
+
 // NewSignInRecovery builds the recovery for a run's browser.
-func NewSignInRecovery(browser *Browser, config Config, signIn SignIn, logf func(string, ...interface{})) *SignInRecovery {
+func NewSignInRecovery(browser Handover, config Config, signIn SignIn, logf func(string, ...interface{})) *SignInRecovery {
 	return &SignInRecovery{
 		config:  config,
 		logf:    logf,
