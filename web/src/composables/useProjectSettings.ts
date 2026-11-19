@@ -78,6 +78,8 @@ export function useProjectClones() {
 	const { callTool } = useMCP();
 	const clones = ref<ProjectClone[]>([]);
 	const roots = ref<string[]>([]);
+	const totalSize = ref(0);
+	const unmeasured = ref(0);
 	const loaded = ref(false);
 	const error = ref("");
 	const clearing = ref(false);
@@ -90,6 +92,8 @@ export function useProjectClones() {
 			);
 			clones.value = res.clones;
 			roots.value = res.roots;
+			totalSize.value = res.totalSize;
+			unmeasured.value = res.unmeasured;
 			error.value = "";
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
@@ -114,7 +118,18 @@ export function useProjectClones() {
 
 	onMounted(() => void load());
 
-	return { clones, roots, loaded, error, clearing, cleared, load, clear };
+	return {
+		clones,
+		roots,
+		totalSize,
+		unmeasured,
+		loaded,
+		error,
+		clearing,
+		cleared,
+		load,
+		clear,
+	};
 }
 
 /** project_check for a target, re-run (debounced) as the target changes. */

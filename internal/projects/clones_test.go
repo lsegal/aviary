@@ -280,7 +280,7 @@ func TestMeasureCloneSizesStaysResponsive(t *testing.T) {
 	var calls atomic.Int32
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
-	measure := func(ctx context.Context, path string) (int64, error) {
+	measure := func(_ context.Context, path string) (int64, error) {
 		calls.Add(1)
 		if path == "slow" {
 			// A hung disk that does not even honour ctx.

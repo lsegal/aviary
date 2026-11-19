@@ -384,6 +384,8 @@ export interface ProjectClone {
 	pr: number;
 	inUse: boolean;
 	reason: string;
+	/** Bytes on disk, or null when it could not be measured in time. */
+	size: number | null;
 }
 
 function normalizeClone(c: unknown): ProjectClone {
@@ -395,12 +397,15 @@ function normalizeClone(c: unknown): ProjectClone {
 		pr: Number(o.pullRequest ?? o.pr) || 0,
 		inUse: o.inUse === true || o.in_use === true,
 		reason: str(o.reason),
+		size: typeof o.size === "number" && o.size >= 0 ? o.size : null,
 	};
 }
 
 export function normalizeClones(raw: unknown): {
 	roots: string[];
 	clones: ProjectClone[];
+	totalSize: number;
+	unmeasured: number;
 } {
 	const r = obj(raw);
 	return {
@@ -408,6 +413,8 @@ export function normalizeClones(raw: unknown): {
 		clones: (Array.isArray(r.clones) ? r.clones : [])
 			.map(normalizeClone)
 			.filter((c) => c.path),
+		totalSize: Number(r.totalSize) || 0,
+		unmeasured: Number(r.unmeasured) || 0,
 	};
 }
 
