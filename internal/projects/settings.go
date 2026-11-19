@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -362,13 +364,25 @@ func (w *Engine) configuredAgents() []string {
 	if !ok {
 		return nil
 	}
+	var specs []string
 	if len(runner.Agents) > 0 {
-		return append([]string(nil), runner.Agents...)
+		specs = append(specs, runner.Agents...)
+	} else if runner.Agent != "" {
+		specs = append(specs, runner.Agent)
 	}
-	if runner.Agent != "" {
-		return []string{runner.Agent}
+	targets := make([]string, 0, len(runner.TargetAgents))
+	for target := range runner.TargetAgents {
+		targets = append(targets, target)
 	}
-	return nil
+	sort.Strings(targets)
+	for _, target := range targets {
+		for _, spec := range runner.TargetAgents[target] {
+			if !slices.Contains(specs, spec) {
+				specs = append(specs, spec)
+			}
+		}
+	}
+	return specs
 }
 
 // agentStillConfigured reports whether a persisted session's agent is one the

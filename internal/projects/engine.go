@@ -177,6 +177,11 @@ type SessionAgentOutputRunner interface {
 type AgentIdentifier interface {
 	AgentName() string
 }
+
+// TargetAgentIdentifier picks the agent for a new job on one target.
+type TargetAgentIdentifier interface {
+	AgentNameFor(target string) string
+}
 type UIReporter = core.UIReporter
 type Engine struct {
 	Repo        string
@@ -2590,7 +2595,9 @@ func (w *Engine) Run(ctx context.Context) error {
 			session := pending.session
 			if !session.Resume {
 				session.Agent = ""
-				if identified, ok := w.runner().(AgentIdentifier); ok {
+				if identified, ok := w.runner().(TargetAgentIdentifier); ok {
+					session.Agent = identified.AgentNameFor(issue.Target)
+				} else if identified, ok := w.runner().(AgentIdentifier); ok {
 					session.Agent = identified.AgentName()
 				}
 				// Some agents accept a caller-provided session ID; the rest
