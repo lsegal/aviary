@@ -123,7 +123,7 @@ func TestIsolateProcessTreeSkipsTerminalStdin(t *testing.T) {
 	if err != nil {
 		t.Skip("no controlling terminal available")
 	}
-	defer terminal.Close()
+	defer terminal.Close() //nolint:errcheck
 	cmd := exec.Command("sleep", "60")
 	cmd.Stdin = terminal
 	isolateProcessTree(cmd)

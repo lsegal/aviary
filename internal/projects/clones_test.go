@@ -70,7 +70,7 @@ func TestPickCloneRootFallsThroughOnLowSpace(t *testing.T) {
 
 func TestRunFailsWhenNoTempDirectoryHasSpace(t *testing.T) {
 	runner := CommandRunner{Agent: "claude", Repo: "o/r", CloneRoot: func() (string, error) { return "", errNoCloneSpace }}
-	err, _ := runner.runOnce(context.Background(), Issue{Number: 7, Target: "o/r"}, AgentSession{Agent: "claude"}, nil, nil)
+	_, err := runner.runOnce(context.Background(), Issue{Number: 7, Target: "o/r"}, AgentSession{Agent: "claude"}, nil, nil)
 	if !errors.Is(err, errNoCloneSpace) {
 		t.Fatalf("run error = %v, want errNoCloneSpace", err)
 	}

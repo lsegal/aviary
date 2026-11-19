@@ -143,7 +143,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checking server status: %w", err)
 	}
 	if !running {
-		fmt.Fprintf(cmd.OutOrStdout(), "Watching %s; starting the Aviary server in the foreground (Ctrl+C stops both).\n", strings.Join(targets, ", "))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Watching %s; starting the Aviary server in the foreground (Ctrl+C stops both).\n", strings.Join(targets, ", "))
 		server.SetStartupWatches([]projects.Watch{watch})
 		return runStart(nil, nil)
 	}
@@ -174,7 +174,7 @@ func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error
 	defer func() {
 		for _, target := range added {
 			if _, err := d.CallTool(context.Background(), "project_remove", map[string]any{"target": target, "runtime": true}); err != nil {
-				fmt.Fprintf(out, "stop watching %s: %v\n", target, err)
+				_, _ = fmt.Fprintf(out, "stop watching %s: %v\n", target, err)
 			}
 		}
 	}()
@@ -184,7 +184,7 @@ func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error
 		}
 		added = append(added, target)
 	}
-	fmt.Fprintf(out, "Watching %s on the running Aviary server (Ctrl+C stops the watch).\n", strings.Join(watch.Targets, ", "))
+	_, _ = fmt.Fprintf(out, "Watching %s on the running Aviary server (Ctrl+C stops the watch).\n", strings.Join(watch.Targets, ", "))
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -200,7 +200,7 @@ func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error
 			}
 			if json.Unmarshal([]byte(raw), &status) == nil {
 				for _, line := range status.Logs {
-					fmt.Fprintln(out, line)
+					_, _ = fmt.Fprintln(out, line)
 				}
 				offset = status.Offset
 			}

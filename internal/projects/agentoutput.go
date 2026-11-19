@@ -99,7 +99,7 @@ func newJSONLOutputWriter(output io.Writer, config agents.JSONL) *jsonlOutputWri
 			w.ignored[event] = true
 		}
 	}
-	w.lineWriter.line = w.writeLine
+	w.line = w.writeLine
 	return w
 }
 
@@ -185,8 +185,8 @@ func (w *jsonlOutputWriter) Flush() error {
 	if err := w.lineWriter.Flush(); err != nil {
 		return err
 	}
-	w.lineWriter.mu.Lock()
-	defer w.lineWriter.mu.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.flushPending(nil)
 }
 

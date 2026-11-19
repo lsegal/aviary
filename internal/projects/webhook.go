@@ -14,6 +14,8 @@ import (
 
 var issueReferencePattern = regexp.MustCompile(`(?:^|[\s([{,:;])#([1-9][0-9]*)\b`)
 
+// WebhookEvent is one GitHub webhook delivery, reduced to what the engine
+// acts on.
 type WebhookEvent struct {
 	Kind        string
 	Action      string

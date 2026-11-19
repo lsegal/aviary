@@ -36,29 +36,6 @@ var errProjectIssueNotFound = errors.New("project issue not found")
 // shutdown starts, after the checkpoint, before aviary stops waiting for it.
 const shutdownDrainBudget = 30 * time.Second
 
-// runUntilStopped runs the watch until it returns, or until it has had budget
-// to finish after ctx is cancelled. A run that is still unwinding then is left
-// for the deferred reaping, so a shutdown or restart always goes ahead
-// instead of waiting forever on one stuck run.
-func runUntilStopped(ctx context.Context, run func(context.Context) error, budget time.Duration, logf func(string, ...interface{})) error {
-	done := make(chan error, 1)
-	go func() { done <- run(ctx) }()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-	}
-	timer := time.NewTimer(budget)
-	defer timer.Stop()
-	select {
-	case err := <-done:
-		return err
-	case <-timer.C:
-		logf("shutdown: runs were still stopping after %s; stopping their processes and going ahead", budget)
-		return nil
-	}
-}
-
 // splitAllowedCommenters parses the comma-separated --allowed-commenters
 // value into a list of GitHub logins, dropping empty entries left by stray
 // commas or surrounding whitespace.
@@ -98,6 +75,8 @@ func ngrokTargetAddr(address string) string {
 	return net.JoinHostPort(host, port)
 }
 
+// GHCLI reads and writes GitHub through the gh CLI, and the public REST API
+// for public repositories.
 type GHCLI struct {
 	Binary     string
 	Filter     string
@@ -197,6 +176,8 @@ func (g GHCLI) ForkFor(ctx context.Context, repo string) (string, error) {
 	return fork, nil
 }
 
+// OriginatingWorkState reads the state of an issue and the pull requests
+// that work on it.
 func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int) (OriginatingWorkState, error) {
 	public := g.isPublicRepo(ctx, repo)
 	output, err := g.apiGETObject(ctx, public, "repos/"+repo+"/issues/"+strconv.Itoa(number))
@@ -606,6 +587,7 @@ func (g GHCLI) repositoryFilter() (string, bool) {
 	return strings.TrimSpace(g.Filter + " " + qualifier), false
 }
 
+// ListIssues lists the dispatchable issues of a target.
 func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 	target, err := parseTarget(repo)
 	if err != nil {
@@ -747,6 +729,16 @@ func matchesDiscussionCategory(want, slug, name string) bool {
 // browser driver.
 type target = core.Target
 
+// ExpandTarget resolves a target as `aviary watch` accepts it, expanding the
+// projects: and discussions: shorthands against the current checkout's
+// origin remote.
+func ExpandTarget(value string) (string, error) {
+	return expandTargetShorthand(value, originRemoteTarget)
+}
+
+// OriginTarget is the current checkout's origin GitHub repository.
+func OriginTarget() (string, bool) { return originRemoteTarget() }
+
 // expandTargetShorthand rewrites the compact `projects:` and `discussions:`
 // target forms into the canonical GitHub URLs parseTarget understands:
 //
@@ -758,16 +750,6 @@ type target = core.Target
 // taken from the repository the "origin" remote points at. Values without a
 // recognized prefix are returned unchanged so full URLs and OWNER/REPO
 // targets keep working.
-// ExpandTarget resolves a target as `aviary watch` accepts it, expanding the
-// projects: and discussions: shorthands against the current checkout's
-// origin remote.
-func ExpandTarget(value string) (string, error) {
-	return expandTargetShorthand(value, originRemoteTarget)
-}
-
-// OriginTarget is the current checkout's origin GitHub repository.
-func OriginTarget() (string, bool) { return originRemoteTarget() }
-
 func expandTargetShorthand(value string, originRepo func() (string, bool)) (string, error) {
 	var kind, rest string
 	switch {
@@ -872,12 +854,13 @@ const (
 // calls left in aviary; see issue #276) because GitHub Projects (v2) has no
 // REST API. It only runs for a user/org-owned project board target.
 func (g GHCLI) listProjectItemFields(ctx context.Context, target target, filter string, allIssues bool, contentFields string) ([]projectItem, error) {
-	ownerField := target.ProjectOwnerType
-	if ownerField == "users" {
+	var ownerField string
+	switch target.ProjectOwnerType {
+	case "users":
 		ownerField = "user"
-	} else if ownerField == "orgs" {
+	case "orgs":
 		ownerField = "organization"
-	} else {
+	default:
 		return nil, fmt.Errorf("unknown project owner type %q", target.ProjectOwnerType)
 	}
 	query := fmt.Sprintf(`query($login:String!,$number:Int!,$first:Int!,$after:String,$itemQuery:String!,$statusField:String!){
@@ -1103,6 +1086,7 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 	return nil
 }
 
+// PostComment posts a comment on an issue or pull request.
 func (g GHCLI) PostComment(ctx context.Context, repo string, number int, body string) error {
 	output, err := g.run(ctx, "api", "repos/"+repo+"/issues/"+strconv.Itoa(number)+"/comments", "-f", "body="+body)
 	if err != nil {
@@ -1121,6 +1105,7 @@ func (g GHCLI) AddReaction(ctx context.Context, repo string, commentID int64, co
 	return nil
 }
 
+// ListComments lists the comments on an issue or pull request.
 func (g GHCLI) ListComments(ctx context.Context, repo string, number int) ([]Comment, error) {
 	public := g.isPublicRepo(ctx, repo)
 	output, err := g.apiGETPaginated(ctx, public, "repos/"+repo+"/issues/"+strconv.Itoa(number)+"/comments")
@@ -1144,6 +1129,7 @@ func (g GHCLI) ListComments(ctx context.Context, repo string, number int) ([]Com
 	return comments, nil
 }
 
+// SetIssueStatus moves an issue's board items to status.
 func (g GHCLI) SetIssueStatus(ctx context.Context, repo string, issue Issue, status string) error {
 	parsedTarget, err := parseTarget(repo)
 	if err != nil {
@@ -1296,6 +1282,8 @@ func projectStatusError(number int, err error, detail string) error {
 	return fmt.Errorf("update project status for issue #%d: %w: %s", number, err, detail)
 }
 
+// CommandRunner runs jobs on coding-CLI processes, rendering each run's argv
+// from the agent definitions.
 type CommandRunner struct {
 	Binary, CodexBinary, ClaudeBinary string
 	// AgentBinaries holds the --agent-binary overrides, keyed by agent name.
@@ -1596,10 +1584,12 @@ func (r CommandRunner) registry() *agents.Registry {
 	return agentRegistry()
 }
 
+// Run runs a coding agent on issue.
 func (r CommandRunner) Run(ctx context.Context, issue Issue) error {
 	return r.run(ctx, issue, AgentSession{}, nil, nil)
 }
 
+// RunWithOutput runs a coding agent on issue, copying its output.
 func (r CommandRunner) RunWithOutput(ctx context.Context, issue Issue, output io.Writer) error {
 	return r.run(ctx, issue, AgentSession{}, nil, output)
 }
@@ -1622,9 +1612,6 @@ func (r CommandRunner) specForSession(session AgentSession) agentSpec {
 	return spec
 }
 
-// AgentName returns the agent spec (agent/model:level) to use for the next
-// newly dispatched issue, rotating round robin through Agents when more than
-// one is configured so work is load balanced evenly across concurrency.
 // AgentNameFor returns the agent spec for a new job on target. A target with
 // its own agents takes the first one whose quota is not used up; any other
 // target load balances across Agents, skipping agents with no quota left.
@@ -1666,6 +1653,9 @@ func quotaReadingExhausted(reading string) bool {
 	return exhaustedQuotaPattern.MatchString(reading)
 }
 
+// AgentName returns the agent spec (agent/model:level) to use for the next
+// newly dispatched issue, rotating round robin through Agents when more than
+// one is configured so work is load balanced evenly across concurrency.
 func (r CommandRunner) AgentName() string {
 	if len(r.Agents) == 0 {
 		if r.Agent != "" {
@@ -1680,10 +1670,13 @@ func (r CommandRunner) AgentName() string {
 	return r.Agents[index%uint64(len(r.Agents))]
 }
 
+// RunSession runs a coding agent on issue in session.
 func (r CommandRunner) RunSession(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession)) error {
 	return r.run(ctx, issue, session, updateSession, nil)
 }
 
+// RunSessionWithOutput runs a coding agent on issue in session, copying its
+// output.
 func (r CommandRunner) RunSessionWithOutput(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession), output io.Writer) error {
 	return r.run(ctx, issue, session, updateSession, output)
 }
@@ -2145,7 +2138,7 @@ func (d *missingSessionDetector) sessionMissing() bool {
 }
 
 func (r CommandRunner) run(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession), jobOutput io.Writer) error {
-	runErr, sessionMissing := r.runOnce(ctx, issue, session, updateSession, jobOutput)
+	sessionMissing, runErr := r.runOnce(ctx, issue, session, updateSession, jobOutput)
 	if runErr == nil || !sessionMissing {
 		return runErr
 	}
@@ -2159,15 +2152,15 @@ func (r CommandRunner) run(ctx context.Context, issue Issue, session AgentSessio
 		// stdout, so the restarted run cannot reuse the one that is gone.
 		session.ID = ""
 	}
-	runErr, _ = r.runOnce(ctx, issue, session, updateSession, jobOutput)
+	_, runErr = r.runOnce(ctx, issue, session, updateSession, jobOutput)
 	return runErr
 }
 
-func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession), jobOutput io.Writer) (error, bool) {
+func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession), jobOutput io.Writer) (sessionMissing bool, err error) {
 	agent := r.specForSession(session).Name
 	definition, ok := r.definition(agent)
 	if !ok {
-		return unknownAgentError(r.registry(), agent), false
+		return false, unknownAgentError(r.registry(), agent)
 	}
 	binary := r.binary(agent)
 	// An agent whose definition declares a minimum CLI version is checked
@@ -2176,11 +2169,11 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// unrecognized argument.
 	versionWarning, versionErr := checkAgentVersion(ctx, definition, binary)
 	if versionErr != nil {
-		return versionErr, false
+		return false, versionErr
 	}
-	session, err := r.resolveRunDir(session)
+	session, err = r.resolveRunDir(session)
 	if err != nil {
-		return err, false
+		return false, err
 	}
 	args := commandArgsForSession(r, issue, session)
 	cmd := newAgentCommand(ctx, binary, args...)
@@ -2219,7 +2212,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	outputTail := &agentOutputTailWriter{output: agentOutput, limit: agentOutputTailLimit}
 	agentOutput = outputTail
 	if versionWarning != "" {
-		fmt.Fprintln(agentOutput, versionWarning)
+		_, _ = fmt.Fprintln(agentOutput, versionWarning)
 	}
 	var metadataOutput *sessionMetadataCaptureWriter
 	var checkoutMarkers *checkoutMarkerCaptureWriter
@@ -2282,14 +2275,14 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		// instead, which waits it out and resumes the session.
 		if reporter, ok := decoder.(wakeupReporter); ok {
 			if wakeup, pending := reporter.PendingWakeup(); pending {
-				return &wakeup, false
+				return false, &wakeup
 			}
 		}
 	}
 	if runErr != nil {
 		if detector != nil && detector.sessionMissing() {
-			fmt.Fprintf(agentOutput, "Session %s no longer exists; restarting the work from scratch.\n", session.ID)
-			return runErr, true
+			_, _ = fmt.Fprintf(agentOutput, "Session %s no longer exists; restarting the work from scratch.\n", session.ID)
+			return true, runErr
 		}
 		tail := outputTail.Tail()
 		repo := r.Repo
@@ -2298,14 +2291,14 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		}
 		report, reportErr := bugReportURL(repo, issue, args, tail)
 		if reportErr != nil {
-			return fmt.Errorf("agent failed: %w (could not create bug report URL: %v)", runErr, reportErr), false
+			return false, fmt.Errorf("agent failed: %w (could not create bug report URL: %v)", runErr, reportErr)
 		}
 		if tail == "" {
-			return fmt.Errorf("agent failed: %w; bug report: %s", runErr, report), false
+			return false, fmt.Errorf("agent failed: %w; bug report: %s", runErr, report)
 		}
-		return fmt.Errorf("agent failed: %w; bug report: %s\n\nAgent output:\n%s", runErr, report, tail), false
+		return false, fmt.Errorf("agent failed: %w; bug report: %s\n\nAgent output:\n%s", runErr, report, tail)
 	}
-	return nil, false
+	return false, nil
 }
 
 // agentOutputTailLimit bounds how much of a failing agent's output is

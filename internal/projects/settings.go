@@ -90,6 +90,7 @@ func (s *concurrencySemaphore) resize(newLimit int) {
 // root package.
 type SettingsUpdate = core.SettingsUpdate
 
+// SettingsSnapshot is the engine's live settings.
 type SettingsSnapshot = core.SettingsSnapshot
 
 type settingsRequest struct {

@@ -497,16 +497,3 @@ func formatNamedQuotas(quotas map[string]string) string {
 	}
 	return strings.Join(parts, ", ")
 }
-
-func quotaText(snapshot EngineSnapshot) string {
-	if len(snapshot.Quotas) > 0 {
-		return "quota: " + formatNamedQuotas(snapshot.Quotas)
-	}
-	if strings.TrimSpace(snapshot.Quota) != "" {
-		return "quota: " + snapshot.Quota
-	}
-	if snapshot.TokenLimit > 0 {
-		return fmt.Sprintf("tokens: %d/%d", snapshot.TokensUsed, snapshot.TokenLimit)
-	}
-	return "quota: unavailable"
-}

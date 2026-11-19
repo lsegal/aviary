@@ -13,7 +13,7 @@ func TestOriginatingWorkStateCountsPullRequestChecklist(t *testing.T) {
 		[]byte(`{"state":"open","draft":true,"body":"## Plan\n- [x] parse\n- [ ] render\n- [ ] test\n\nCloses #7"}`),
 	}
 	calls := 0
-	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+	gh := GHCLI{runCommand: func(_ context.Context, _ ...string) ([]byte, error) {
 		calls++
 		return responses[calls-1], nil
 	}}

@@ -117,7 +117,7 @@ func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
-	m.refresh()
+	_ = m.refresh()
 }
 
 // AddWatch starts watching targets until RemoveWatch or the server stops.

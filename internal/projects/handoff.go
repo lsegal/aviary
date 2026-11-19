@@ -28,12 +28,19 @@ func newIdentity() (Identity, error) {
 // The comment types live in package core so the browser driver can implement
 // CommentClient without importing the root package.
 type (
-	Comment             = core.Comment
-	CommentPoster       = core.CommentPoster
-	CommentLister       = core.CommentLister
-	CommentClient       = core.CommentClient
-	CommentReactor      = core.CommentReactor
-	ReviewReactor       = core.ReviewReactor
+	// Comment is a comment on an issue or pull request.
+	Comment = core.Comment
+	// CommentPoster posts comments.
+	CommentPoster = core.CommentPoster
+	// CommentLister lists comments.
+	CommentLister = core.CommentLister
+	// CommentClient posts and lists comments.
+	CommentClient = core.CommentClient
+	// CommentReactor reacts to issue comments.
+	CommentReactor = core.CommentReactor
+	// ReviewReactor reacts to pull request review comments.
+	ReviewReactor = core.ReviewReactor
+	// ReviewCommentLister lists pull request review comments.
 	ReviewCommentLister = core.ReviewCommentLister
 )
 
