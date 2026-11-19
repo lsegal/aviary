@@ -191,8 +191,9 @@ func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 	assert.Equal(t, []any{"o/r"}, status["targets"])
 	assert.EqualValues(t, 5, status["concurrency"])
 	toolCallContains(t, d, "project_add", map[string]any{"target": "not a target!", "runtime": true}, "target must be OWNER/REPO")
-	callJSON(t, d, "project_remove", map[string]any{"target": "o/r"})
+	callJSON(t, d, "project_remove", map[string]any{"target": "o/r", "runtime": true})
 	assert.Equal(t, []any{}, callJSON(t, d, "project_status", map[string]any{})["targets"])
+	toolCallContains(t, d, "project_remove", map[string]any{"target": "o/r", "runtime": true}, "has no runtime watch")
 	assert.Equal(t, before, readFile(t, path))
 }
 

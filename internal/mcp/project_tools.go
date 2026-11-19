@@ -58,7 +58,8 @@ type projectAddArgs struct {
 }
 
 type projectRemoveArgs struct {
-	Target string `json:"target" jsonschema:"The project to stop watching"`
+	Target  string `json:"target" jsonschema:"The project to stop watching"`
+	Runtime bool   `json:"runtime,omitempty" jsonschema:"Only stop a runtime watch, leaving aviary.yaml alone"`
 }
 
 type projectUnblockArgs struct {
@@ -217,6 +218,12 @@ func registerProjectTools(s *sdkmcp.Server) {
 		return projectResult("project_remove", func(m *projects.Manager) (map[string]any, error) {
 			target := strings.TrimSpace(args.Target)
 			runtime := m.RemoveWatch(target)
+			if args.Runtime {
+				if !runtime {
+					return nil, fmt.Errorf("%s has no runtime watch", target)
+				}
+				return map[string]any{"target": target, "removed": true}, nil
+			}
 			cfg, err := config.Load("")
 			if err != nil {
 				return nil, err

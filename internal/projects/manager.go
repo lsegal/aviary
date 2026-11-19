@@ -40,6 +40,9 @@ type Manager struct {
 	stateDir string
 	logger   *slog.Logger
 
+	// refreshMu serializes refreshes, so two config changes never start two
+	// engines.
+	refreshMu sync.Mutex
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	watches   []Watch
@@ -323,6 +326,8 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 // they match, a live update when only live settings changed, and a restart
 // otherwise.
 func (m *Manager) refresh() error {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()

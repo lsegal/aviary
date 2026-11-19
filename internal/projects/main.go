@@ -758,6 +758,16 @@ type target = core.Target
 // taken from the repository the "origin" remote points at. Values without a
 // recognized prefix are returned unchanged so full URLs and OWNER/REPO
 // targets keep working.
+// ExpandTarget resolves a target as `aviary watch` accepts it, expanding the
+// projects: and discussions: shorthands against the current checkout's
+// origin remote.
+func ExpandTarget(value string) (string, error) {
+	return expandTargetShorthand(value, originRemoteTarget)
+}
+
+// OriginTarget is the current checkout's origin GitHub repository.
+func OriginTarget() (string, bool) { return originRemoteTarget() }
+
 func expandTargetShorthand(value string, originRepo func() (string, bool)) (string, error) {
 	var kind, rest string
 	switch {
