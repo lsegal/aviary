@@ -2,19 +2,20 @@ package browser
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/config"
 )
 
 // fakeLookup replaces browser discovery for the duration of a test so no
@@ -80,7 +81,7 @@ func TestFindBinaryReportsActionableErrorWhenMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when no browser is installed")
 	}
-	for _, want := range []string{"--browser-binary", "Chrome"} {
+	for _, want := range []string{"browser binary setting", "Chrome"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
@@ -123,38 +124,22 @@ func TestProfileDirUsesOverride(t *testing.T) {
 	}
 }
 
-// TestProfileDirPerPlatform checks the profile lands in Aviary's own
-// directory under whichever configuration directory this platform uses.
-func TestProfileDirPerPlatform(t *testing.T) {
-	home := t.TempDir()
-	var config string
-	switch runtime.GOOS {
-	case "windows":
-		t.Setenv("AppData", home)
-		config = home
-	case "darwin":
-		t.Setenv("HOME", home)
-		config = filepath.Join(home, "Library", "Application Support")
-	default:
-		t.Setenv("XDG_CONFIG_HOME", home)
-		config = home
-	}
+// TestProfileDirDefaultsToAviarysBrowserProfile checks Projects reads GitHub
+// with the same profile Aviary's own browser signs in with.
+func TestProfileDirDefaultsToAviarysBrowserProfile(t *testing.T) {
 	dir, err := ProfileDir("")
 	if err != nil {
 		t.Fatalf("ProfileDir: %v", err)
 	}
-	want := filepath.Join(config, "aviary", "browser-data")
-	if dir != want {
-		t.Fatalf("profile %q, want %q", dir, want)
+	if want := aviarybrowser.DefaultProfileDir(); dir != want {
+		t.Fatalf("profile %q, want Aviary's browser profile %q", dir, want)
 	}
 }
 
-func TestProfileDirReportsConfigDirFailure(t *testing.T) {
-	previous := configDir
-	t.Cleanup(func() { configDir = previous })
-	configDir = func() (string, error) { return "", errors.New("no home") }
-	if _, err := ProfileDir(""); err == nil {
-		t.Fatal("expected an error when the configuration directory is unknown")
+func TestConfigFromBrowserSettings(t *testing.T) {
+	got := ConfigFrom(config.BrowserConfig{Binary: "/opt/chrome", ProfileDir: "/data/profile", Headless: true})
+	if got.Binary != "/opt/chrome" || got.Profile != "/data/profile" || got.Headed {
+		t.Fatalf("ConfigFrom = %+v", got)
 	}
 }
 
@@ -360,10 +345,10 @@ func TestLaunchArgsHeaded(t *testing.T) {
 		}
 	}
 	want := map[string]bool{
-		"--no-first-run":                  true,
-		"--no-default-browser-check":      true,
+		"--no-first-run":                   true,
+		"--no-default-browser-check":       true,
 		"--user-data-dir=/profiles/aviary": true,
-		"--remote-debugging-port=4321":    true,
+		"--remote-debugging-port=4321":     true,
 	}
 	for _, arg := range args {
 		delete(want, arg)

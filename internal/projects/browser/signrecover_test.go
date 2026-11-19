@@ -98,7 +98,7 @@ func TestIssueSourceReportsSignedOutOn404(t *testing.T) {
 	if !errors.As(err, &signedOut) || signedOut.Status != 404 {
 		t.Fatalf("error %v does not carry the 404 that produced it", err)
 	}
-	if !strings.Contains(err.Error(), "aviary auth") || !strings.Contains(err.Error(), "/tmp/profile") {
+	if !strings.Contains(err.Error(), "Sign in to GitHub in Aviary's browser") || !strings.Contains(err.Error(), "/tmp/profile") {
 		t.Fatalf("error %q does not name the profile and the fix", err)
 	}
 }
@@ -112,55 +112,85 @@ func TestBoardReportsSignedOutOn404(t *testing.T) {
 	}
 }
 
-func TestSignInRecoveryOpensWindowAndResumes(t *testing.T) {
-	h := newRecoveryHarness(t, nil, func() (string, error) { return "lsegal", nil })
+func TestSignInRecoveryRecordsSignedOutWithoutOpeningAWindow(t *testing.T) {
+	h := newRecoveryHarness(t, nil, func() (string, error) {
+		t.Fatal("a signed-out read opened a sign-in window on its own")
+		return "", nil
+	})
 	h.recovery.attempt(context.Background(), &SignedOutError{URL: "https://github.com/lsegal/private/issues", Profile: "/tmp/profile", Status: 404})
-	if h.suspended != 1 || h.resumed != 1 || h.logins != 1 {
-		t.Fatalf("suspended %d, resumed %d, logins %d; want one of each", h.suspended, h.resumed, h.logins)
+	if h.suspended != 0 || h.logins != 0 {
+		t.Fatalf("suspended %d, logins %d; a signed-out read only records the session", h.suspended, h.logins)
 	}
-	if !h.logged("GitHub returned 404 for https://github.com/lsegal/private/issues — opening a browser window to sign in") {
-		t.Fatalf("recovery did not announce the 404 it recovered from: %v", h.logs)
+	state := h.recovery.State()
+	if !state.SignedOut || state.URL != "https://github.com/lsegal/private/issues" || state.Status != 404 || !state.Since.Equal(h.now) {
+		t.Fatalf("state %+v, want the signed-out 404 for the banner", state)
 	}
-	if h.logged("wrong profile") {
-		t.Fatalf("recovery signed in on the wrong profile: %v", h.logs)
+	if state.WindowUnavailable != "" {
+		t.Fatalf("a machine with a display reported %q", state.WindowUnavailable)
 	}
-	if !h.logged("signed in to GitHub as lsegal") {
-		t.Fatalf("recovery did not report the account it signed in as: %v", h.logs)
-	}
-	// A successful sign-in clears the back-off, so a session that expires later
-	// is recovered at once rather than after a wait it did not earn.
-	if !h.recovery.next.IsZero() {
-		t.Fatalf("a successful sign-in left a back-off of until %v", h.recovery.next)
+	if !h.logged("GitHub returned 404 for https://github.com/lsegal/private/issues") || !h.logged("gh polling") {
+		t.Fatalf("recovery did not announce the 404 and the ways forward: %v", h.logs)
 	}
 }
 
-func TestSignInRecoveryBacksOffAfterFailedLogin(t *testing.T) {
-	h := newRecoveryHarness(t, nil, func() (string, error) { return "", errors.New("timed out") })
+func TestSignInRecoveryBacksOffItsReminder(t *testing.T) {
+	h := newRecoveryHarness(t, nil, func() (string, error) { return "", nil })
 	signedOut := &SignedOutError{URL: "https://github.com/lsegal/private/issues", Profile: "/tmp/profile"}
 	h.recovery.attempt(context.Background(), signedOut)
-	if h.logins != 1 {
-		t.Fatalf("first attempt made %d login(s), want 1", h.logins)
-	}
-	if h.resumed != 1 {
-		t.Fatalf("a failed sign-in left the headless browser stopped (%d resume(s))", h.resumed)
-	}
-	// The next several ticks must not re-open a window.
+	since := h.now
 	for tick := 0; tick < 5; tick++ {
 		h.now = h.now.Add(time.Minute)
 		h.recovery.attempt(context.Background(), signedOut)
 	}
-	if h.logins != 1 {
-		t.Fatalf("re-prompted during the back-off: %d login(s)", h.logins)
+	if got := len(h.logs); got != 1 {
+		t.Fatalf("logged %d reminders during the back-off, want 1: %v", got, h.logs)
 	}
-	// Past the back-off it tries again, and the wait doubles after the second
-	// failure rather than staying where it was.
-	h.now = h.now.Add(signInBackoff)
+	if state := h.recovery.State(); !state.Since.Equal(since) {
+		t.Fatalf("Since moved to %v; it marks when the spell began (%v)", state.Since, since)
+	}
+	h.now = since.Add(signInBackoff)
 	h.recovery.attempt(context.Background(), signedOut)
-	if h.logins != 2 {
-		t.Fatalf("did not retry after the back-off elapsed: %d login(s)", h.logins)
+	if got := len(h.logs); got != 2 {
+		t.Fatalf("did not remind again after the back-off: %v", h.logs)
 	}
-	if want := h.now.Add(2 * signInBackoff); !h.recovery.next.Equal(want) {
-		t.Fatalf("next attempt at %v, want the doubled back-off at %v", h.recovery.next, want)
+	if want := h.now.Add(2 * signInBackoff); !h.recovery.remind.Equal(want) {
+		t.Fatalf("next reminder at %v, want the doubled back-off at %v", h.recovery.remind, want)
+	}
+}
+
+func TestSignInRecoverySignInOpensWindowAndResumes(t *testing.T) {
+	h := newRecoveryHarness(t, nil, func() (string, error) { return "lsegal", nil })
+	h.recovery.attempt(context.Background(), &SignedOutError{URL: "https://github.com/lsegal/private/issues"})
+	login, err := h.recovery.SignIn(context.Background())
+	if err != nil || login != "lsegal" {
+		t.Fatalf("SignIn() = %q, %v", login, err)
+	}
+	if h.suspended != 1 || h.resumed != 1 || h.logins != 1 {
+		t.Fatalf("suspended %d, resumed %d, logins %d; want one of each", h.suspended, h.resumed, h.logins)
+	}
+	if h.logged("wrong profile") {
+		t.Fatalf("signed in on the wrong profile: %v", h.logs)
+	}
+	if state := h.recovery.State(); state.SignedOut || state.SigningIn {
+		t.Fatalf("state %+v after a sign-in that worked", state)
+	}
+	if !h.logged("signed in to GitHub as lsegal") {
+		t.Fatalf("did not report the account it signed in as: %v", h.logs)
+	}
+}
+
+func TestSignInRecoverySignInFailureKeepsPolling(t *testing.T) {
+	h := newRecoveryHarness(t, nil, func() (string, error) { return "", errors.New("timed out") })
+	h.recovery.attempt(context.Background(), &SignedOutError{URL: "https://github.com/lsegal/private/issues"})
+	if _, err := h.recovery.SignIn(context.Background()); err == nil {
+		t.Fatal("SignIn() succeeded after the login timed out")
+	}
+	if h.resumed != 1 {
+		t.Fatalf("a failed sign-in left the headless browser stopped (%d resume(s))", h.resumed)
+	}
+	state := h.recovery.State()
+	if !state.SignedOut || !strings.Contains(state.LastError, "timed out") {
+		t.Fatalf("state %+v, want still signed out with the failure", state)
 	}
 }
 
@@ -169,18 +199,44 @@ func TestSignInRecoveryRefusesWithoutADisplay(t *testing.T) {
 		t.Fatal("opened a login window on a machine with no display server")
 		return "", nil
 	})
-	signedOut := &SignedOutError{URL: "https://github.com/lsegal/private/issues", Profile: "/tmp/profile"}
-	h.recovery.attempt(context.Background(), signedOut)
+	h.recovery.attempt(context.Background(), &SignedOutError{URL: "https://github.com/lsegal/private/issues"})
+	if state := h.recovery.State(); !strings.Contains(state.WindowUnavailable, "no display server") {
+		t.Fatalf("state %+v does not say why no window can appear", state)
+	}
+	_, err := h.recovery.SignIn(context.Background())
+	if !errors.Is(err, ErrSignInWindowUnavailable) {
+		t.Fatalf("SignIn() error = %v, want ErrSignInWindowUnavailable", err)
+	}
+	for _, want := range []string{"no display server", "gh polling", "import"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q does not mention %q", err, want)
+		}
+	}
 	if h.suspended != 0 {
 		t.Fatalf("stopped the headless browser for a window that can never appear (%d suspend(s))", h.suspended)
 	}
-	if !h.logged("no display server") || !h.logged("aviary auth") {
-		t.Fatalf("refusal did not explain itself or point at `aviary auth`: %v", h.logs)
+}
+
+func TestSignInRecoveryRefusesASecondWindow(t *testing.T) {
+	release := make(chan struct{})
+	opened := make(chan struct{})
+	h := newRecoveryHarness(t, nil, func() (string, error) {
+		close(opened)
+		<-release
+		return "lsegal", nil
+	})
+	done := make(chan error, 1)
+	go func() { _, err := h.recovery.SignIn(context.Background()); done <- err }()
+	<-opened
+	if _, err := h.recovery.SignIn(context.Background()); !errors.Is(err, ErrSigningIn) {
+		t.Fatalf("second SignIn() error = %v, want ErrSigningIn", err)
 	}
-	h.now = h.now.Add(time.Minute)
-	h.recovery.attempt(context.Background(), signedOut)
-	if h.logins != 0 {
-		t.Fatalf("attempted a login after refusing: %d login(s)", h.logins)
+	if !h.recovery.State().SigningIn {
+		t.Fatal("state does not report the open sign-in window")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("first SignIn() error = %v", err)
 	}
 }
 
@@ -188,8 +244,8 @@ func TestSignInRecoveryIgnoresOtherFailures(t *testing.T) {
 	h := newRecoveryHarness(t, nil, func() (string, error) { return "lsegal", nil })
 	h.recovery.attempt(context.Background(), errors.New("load issue list: GitHub returned HTTP 500"))
 	h.recovery.attempt(context.Background(), nil)
-	if h.logins != 0 || h.suspended != 0 {
-		t.Fatalf("a failure that is not a signed-out page opened a window: %d login(s), %d suspend(s)", h.logins, h.suspended)
+	if h.recovery.State().SignedOut {
+		t.Fatal("a failure that is not a signed-out page was recorded as signed out")
 	}
 }
 
@@ -205,22 +261,26 @@ func (s *guardedIssueSource) ListIssues(context.Context, string) ([]core.Issue, 
 	return nil, s.err
 }
 
-func TestSignInGuardRecoversAndStillFailsThePoll(t *testing.T) {
+func TestSignInGuardRecordsAndStillFailsThePoll(t *testing.T) {
 	h := newRecoveryHarness(t, nil, func() (string, error) { return "lsegal", nil })
 	source := &guardedIssueSource{err: &SignedOutError{URL: "https://github.com/lsegal/private/issues"}}
 	guard := SignInGuard{source: source, recovery: h.recovery}
 	if _, err := guard.ListIssues(context.Background(), "lsegal/private"); !errors.Is(err, ErrSignedOut) {
 		t.Fatalf("guard swallowed the failure: %v", err)
 	}
-	if h.logins != 1 {
-		t.Fatalf("guard made %d login attempt(s), want 1", h.logins)
+	if !h.recovery.State().SignedOut {
+		t.Fatal("guard did not record the signed-out read")
 	}
-	// A read that worked never reaches the recovery at all.
+	if h.logins != 0 {
+		t.Fatalf("guard opened %d sign-in window(s) on its own", h.logins)
+	}
+	// A read that worked ends the signed-out spell, however the profile was
+	// signed in again.
 	source.err = nil
 	if _, err := guard.ListIssues(context.Background(), "lsegal/private"); err != nil {
 		t.Fatalf("successful read reported %v", err)
 	}
-	if h.logins != 1 {
-		t.Fatalf("a successful read triggered a login: %d attempt(s)", h.logins)
+	if h.recovery.State().SignedOut {
+		t.Fatal("a successful read left the banner up")
 	}
 }

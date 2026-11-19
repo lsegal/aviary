@@ -19,7 +19,7 @@ import (
 // sessionCookieFileName is the file, inside the browser profile Aviary owns,
 // that holds the sign-in Aviary carries from one browser process to the next.
 // It lives in the profile directory because it belongs to that profile: point
-// -browser-profile somewhere else and the sign-in there is the one restored.
+// the browser profile_directory setting somewhere else and the sign-in there is the one restored.
 const sessionCookieFileName = "aviary-session-cookies.json"
 
 // sessionCookie is one cookie Aviary carries across browser processes. It is a

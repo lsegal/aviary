@@ -36,7 +36,7 @@ type Board struct {
 	AllIssues bool
 	// Vision is the bounded screenshot-to-agent fallback, shared with the
 	// repository issue source so the per-run cap is one budget for the whole
-	// run. Nil (the default, without -browser-vision) means a board that never
+	// run. Nil (the default, without the browser vision fallback) means a board that never
 	// renders is simply reported as an extraction failure.
 	Vision *Vision
 	// hydration fills in the dispatch-only fields the board page cannot show,
