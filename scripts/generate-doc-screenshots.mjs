@@ -1003,7 +1003,7 @@ async function main() {
 				browser,
 				fixtures: systemSkillsFixtures,
 				pathname: "/system/skills",
-				readySelector: 'h2:has-text("Skill Marketplace")',
+				readySelector: 'h2:has-text("Skills")',
 				outputName: "system-skills.png",
 				viewport: { width: 1040, height: 1120 },
 				theme,

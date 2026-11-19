@@ -13,6 +13,7 @@ search:    { ... }
 scheduler: { ... }
 skills:    { ... }
 projects:  { ... }
+coding_skills: { ... }
 ```
 
 ---
@@ -38,6 +39,7 @@ server:
 | `external_access` | bool | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` |
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
+| `auto_update` | bool | `false` | Install new releases automatically, but only while no jobs are running. |
 | `tls.cert` | string | | Path to TLS certificate file |
 | `tls.key` | string | | Path to TLS private key file |
 
@@ -52,7 +54,7 @@ agents:
   - name: assistant
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
     memory: shared
     memory_tokens: 4096
     compact_keep: 20
@@ -109,6 +111,7 @@ permissions:
 | `filesystem.allowed_paths` | []string | | Ordered allow/deny glob rules for `file_*` tools. Rules use gitignore-style globbing; prefix with `!` to deny. Relative paths resolve to the agent's data directory. |
 | `exec.allowed_commands` | []string | | Ordered glob rules matched against the raw command string. Prefix with `!` to deny. |
 | `exec.shell_interpolate` | bool | `false` | Allow shell variable interpolation in commands |
+| `cli_builtin_tools` | bool | `false` | For `cli/...` models, let the Claude Code or Codex CLI use its own shell, file-edit and web tools. Requires `preset: full`. |
 | `exec.shell` | string | | Shell binary to use for command execution |
 
 **Preset levels:**
@@ -137,7 +140,7 @@ channels:
     id: workspace-bot
     url: xapp-...
     token: xoxb-...
-    model: anthropic/claude-haiku-4-5-20251001
+    model: anthropic/claude-haiku-5-5
     react_to_emoji: true
     reply_to_replies: true
     send_read_receipts: true
@@ -266,7 +269,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 ```
 
 | Field | Type | Description |
@@ -357,6 +360,25 @@ skills:
 
 ---
 
+## coding_skills
+
+Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`) installed and current. Both settings default to `true` and are only written when turned off.
+
+Coding-CLI skills are not listed under `skills` and are not available to Aviary's own agents.
+
+```yaml
+coding_skills:
+  auto_update: false
+  install_new_clis: false
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `auto_update` | bool | `true` | At startup, reinstall any skill whose installed copy differs from the one this release was built with |
+| `install_new_clis` | bool | `true` | Install the skills for coding CLIs found on the `PATH` later (checked every 15 minutes) |
+
+---
+
 ## projects
 
 Settings for [Projects](/guide/projects). Every field is optional and holds only a value that differs from its default; `aviary watch` with defaults writes nothing here. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
@@ -367,6 +389,9 @@ projects:
     - target: owner/repo
     - target: https://github.com/orgs/acme/projects/3
       agents: [claude/opus, codex]   # fallback order for this project
+      reports:                       # off unless set
+        agent: assistant
+        targets: [slack:main:C0123456789]
   concurrency: 4
   agents: [codex, claude/sonnet]
   no_merge: true
@@ -379,6 +404,9 @@ projects:
 | --- | --- | --- | --- |
 | `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
 | `list[].agents` | string[] | `agents` | This project's coding-CLI specs (`AGENT/MODEL:LEVEL`) in fallback order: a job runs on the first one whose quota is not used up |
+| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
+| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 | `concurrency` | int | `3` | Jobs that run at once across every project |
 | `interval` | duration | `30s` | Time between GitHub polls |
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
@@ -389,7 +417,7 @@ projects:
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
 | `agent_binaries` | map | | Executable for a coding CLI, by agent name |
-| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs |
+| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |

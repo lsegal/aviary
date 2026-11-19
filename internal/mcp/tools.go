@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -28,6 +29,8 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/models"
+	"github.com/lsegal/aviary/internal/saferestart"
+	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -134,6 +137,8 @@ func Register(s *sdkmcp.Server) {
 	registerTaskTools(s)
 	registerAgentContextTools(s)
 	registerFileTools(s)
+	registerFileEditTools(s)
+	registerFileSearchTools(s)
 	registerExecTools(s)
 	registerSessionTools(s)
 	registerTaskTools(s)
@@ -145,6 +150,7 @@ func Register(s *sdkmcp.Server) {
 	registerSkillTools(s)
 	registerUsageTools(s)
 	registerProjectTools(s)
+	registerProjectCheckTool(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
@@ -157,6 +163,8 @@ type agentRunArgs struct {
 	File                string `json:"file,omitempty"`
 	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
 	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	StreamEvents        bool   `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
+	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 }
@@ -261,6 +269,30 @@ func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err e
 	return agentName, agentName, nil
 }
 
+// resolveAgentRunWorkdir checks that an agent_run workdir is an existing
+// absolute directory and returns it with symlinks resolved, so the granted
+// root matches the paths the file tools resolve.
+func resolveAgentRunWorkdir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("workdir %q must be an absolute path", dir)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("workdir %q does not exist", dir)
+	}
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %q is not a directory", dir)
+	}
+	return resolved, nil
+}
+
 func resolveAgentRunHistory(args agentRunArgs) bool {
 	if args.History != nil {
 		return *args.History
@@ -332,6 +364,13 @@ func registerAgentTools(s *sdkmcp.Server) {
 			return text(fmt.Sprintf("stopped session %q", sess.ID))
 		}
 		ctx = agent.WithSessionID(ctx, sess.ID)
+		if args.Workdir != "" {
+			workdir, err := resolveAgentRunWorkdir(args.Workdir)
+			if err != nil {
+				return nil, struct{}{}, err
+			}
+			ctx = agent.WithFilesystemGrant(ctx, workdir)
+		}
 
 		var buf strings.Builder
 		progressToken := req.Params.GetProgressToken()
@@ -339,10 +378,34 @@ func registerAgentTools(s *sdkmcp.Server) {
 		done := make(chan error, 1)
 		history := resolveAgentRunHistory(args)
 
+		// With stream_events, progress carries structured events in place of
+		// the text and tagged tool and media messages.
+		streamEvents := progressToken != nil && args.StreamEvents
+		if streamEvents {
+			progressToken = nil
+		}
+		events := &agentRunEvents{}
+
+		notifyEvent := func(event AgentRunEvent) {
+			if payload, err := json.Marshal(event); err == nil {
+				progressCount++
+				_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{
+					ProgressToken: req.Params.GetProgressToken(),
+					Progress:      progressCount,
+					Message:       string(payload),
+				})
+			}
+		}
+
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
 		}, func(e agent.StreamEvent) {
+			if streamEvents {
+				if event, ok := events.fromStream(e); ok {
+					notifyEvent(event)
+				}
+			}
 			switch e.Type {
 			case agent.StreamEventText:
 				buf.WriteString(e.Text)
@@ -391,7 +454,11 @@ func registerAgentTools(s *sdkmcp.Server) {
 				done <- e.Err
 			}
 		})
-		if err := <-done; err != nil {
+		err := <-done
+		if streamEvents {
+			notifyEvent(AgentRunEvent{Type: "done"})
+		}
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return text(buf.String())
 			}
@@ -1222,7 +1289,9 @@ type taskStopArgs struct {
 type taskScheduleArgs struct {
 	Agent        string `json:"agent"`
 	Name         string `json:"name,omitempty"`
-	Type         string `json:"type,omitempty" schema:"enum=prompt|script"`
+	Type         string `json:"type,omitempty" schema:"enum=prompt|script|project"`
+	Project      string `json:"project,omitempty"`
+	CLI          string `json:"cli,omitempty"`
 	Content      string `json:"content"`
 	In           string `json:"in,omitempty"`
 	Schedule     string `json:"schedule,omitempty"`
@@ -1230,9 +1299,41 @@ type taskScheduleArgs struct {
 	TriggerType  string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
 	Precompile   *bool  `json:"precompile,omitempty"`
 	RunDiscovery bool   `json:"run_discovery,omitempty"`
+	taskTriggerArgs
+}
+
+// taskTriggerArgs are the scheduler options shared by task_schedule and
+// task_preview.
+type taskTriggerArgs struct {
+	Trigger  string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron"`
+	Every    string `json:"every,omitempty"`
+	At       string `json:"at,omitempty"`
+	Days     string `json:"days,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+	StartAt  string `json:"start_at,omitempty"`
+	RunOnce  bool   `json:"run_once,omitempty"`
+	Overlap  string `json:"overlap,omitempty" schema:"enum=queue|skip"`
+	Missed   string `json:"missed,omitempty" schema:"enum=skip|run_once"`
+}
+
+// fields returns the trigger settings with cron expression cronExpr.
+func (a taskTriggerArgs) fields(cronExpr string) schedule.Fields {
+	return schedule.Fields{
+		Trigger:  a.Trigger,
+		Schedule: cronExpr,
+		StartAt:  a.StartAt,
+		RunOnce:  a.RunOnce,
+		Every:    a.Every,
+		At:       a.At,
+		Days:     a.Days,
+		Timezone: a.Timezone,
+		Overlap:  a.Overlap,
+		Missed:   a.Missed,
+	}
 }
 
 func registerTaskTools(s *sdkmcp.Server) {
+	registerTaskManageTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
 		Description: "List configured tasks and their trigger definitions",
@@ -1263,7 +1364,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Projects job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<coding-CLI spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1283,8 +1384,14 @@ func registerTaskTools(s *sdkmcp.Server) {
 			taskType = "prompt"
 		}
 		requestedTaskType := taskType
-		if taskType != "prompt" && taskType != "script" {
+		if taskType != "prompt" && taskType != "script" && taskType != "project" {
 			return nil, struct{}{}, fmt.Errorf("invalid task type %q", args.Type)
+		}
+		if taskType == "project" && strings.TrimSpace(args.Project) == "" {
+			return nil, struct{}{}, fmt.Errorf("project tasks require project=<watched project>")
+		}
+		if taskType != "project" && (args.Project != "" || args.CLI != "") {
+			return nil, struct{}{}, fmt.Errorf("project and cli are only supported for type=project tasks")
 		}
 		contentText := strings.TrimSpace(args.Content)
 		if contentText == "" {
@@ -1293,7 +1400,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		promptText := ""
 		scriptText := ""
 		switch taskType {
-		case "prompt":
+		case "prompt", "project":
 			promptText = contentText
 		case "script":
 			scriptText = contentText
@@ -1302,8 +1409,13 @@ func registerTaskTools(s *sdkmcp.Server) {
 			}
 			promptText = generatedTaskName(scriptText)
 		}
-		if strings.TrimSpace(args.In) != "" && strings.TrimSpace(args.Schedule) != "" {
-			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or \"schedule\" may be set")
+		triggerFields := args.fields(normalizeTaskSchedule(args.Schedule))
+		recurring := triggerFields.HasTrigger()
+		if strings.TrimSpace(args.In) != "" && recurring {
+			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or a schedule trigger may be set")
+		}
+		if taskType == "project" && !recurring {
+			return nil, struct{}{}, fmt.Errorf("project tasks need a schedule trigger; use trigger=once with start_at for a single run")
 		}
 		loadedCfg, loadErr := config.Load("")
 		if loadErr != nil {
@@ -1314,7 +1426,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", args.Target)
 		}
 		effectiveTarget := target
-		if strings.TrimSpace(normalizeTaskSchedule(args.Schedule)) != "" {
+		if recurring {
 			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
 		}
 		precomputeEnabled := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
@@ -1327,7 +1439,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if strings.TrimSpace(args.In) != "" {
 				trigger = "delay"
 			}
-			if strings.TrimSpace(args.Schedule) != "" {
+			if recurring {
 				trigger = "schedule"
 			}
 			tracker := newTaskCompileTracker(args.Agent, strings.TrimSpace(args.Name), taskType, promptText, effectiveTarget, trigger, args.RunDiscovery)
@@ -1398,10 +1510,15 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
 			return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
 		}
-		normalizedSchedule := normalizeTaskSchedule(args.Schedule)
-		if strings.TrimSpace(normalizedSchedule) != "" {
-			if err := validateTaskSchedule(normalizedSchedule); err != nil {
-				return nil, struct{}{}, err
+		normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
+		if recurring {
+			spec, err := schedule.Parse(triggerFields)
+			if err != nil {
+				return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+			}
+			scheduleKey := normalizedSchedule
+			if scheduleKey == "" {
+				scheduleKey = spec.Describe()
 			}
 			if triggerType == "watch" {
 				return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
@@ -1419,8 +1536,8 @@ func registerTaskTools(s *sdkmcp.Server) {
 			taskTarget := nextTaskTarget(ctx, target, loadedCfg, args.Agent)
 			taskName := strings.TrimSpace(args.Name)
 			if taskName == "" {
-				taskName = generatedRecurringTaskName(requestedTaskType, contentText, normalizedSchedule, taskTarget)
-				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok {
+				taskName = generatedRecurringTaskName(requestedTaskType, contentText, scheduleKey, taskTarget)
+				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok && normalizedSchedule != "" {
 					taskName = existingName
 				}
 			}
@@ -1434,8 +1551,19 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Type:     taskType,
 				Name:     taskName,
 				Prompt:   body,
-				Schedule: strings.TrimSpace(normalizedSchedule),
+				Schedule: normalizedSchedule,
 				Target:   taskTarget,
+				Trigger:  strings.ToLower(strings.TrimSpace(args.Trigger)),
+				Every:    strings.TrimSpace(args.Every),
+				At:       strings.TrimSpace(args.At),
+				Days:     strings.TrimSpace(args.Days),
+				Timezone: strings.TrimSpace(args.Timezone),
+				StartAt:  strings.TrimSpace(args.StartAt),
+				RunOnce:  args.RunOnce,
+				Overlap:  strings.ToLower(strings.TrimSpace(args.Overlap)),
+				Missed:   strings.ToLower(strings.TrimSpace(args.Missed)),
+				Project:  strings.TrimSpace(args.Project),
+				CLI:      strings.TrimSpace(args.CLI),
 			}
 			// Check whether a task with this name already exists (for action message).
 			updated := false
@@ -1467,7 +1595,10 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if updated {
 				action = "updated"
 			}
-			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+			if nextTask.Schedule != "" {
+				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+			}
+			return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.", taskName, action, args.Agent, spec.Describe()))
 		}
 		agentID := args.Agent
 		taskID := strings.TrimSpace(args.Name)
@@ -2702,6 +2833,32 @@ func registerAuthTools(s *sdkmcp.Server) {
 
 // ── Server tools ─────────────────────────────────────────────────────────────
 
+// serverVersionStatus is server_version_check's result: the version check plus
+// the restart state and the running jobs an upgrade would stop.
+type serverVersionStatus struct {
+	update.CheckResult
+	Restart saferestart.Status `json:"restart"`
+}
+
+func currentRestartStatus() saferestart.Status {
+	if d := GetDeps(); d.RestartStatus != nil {
+		return d.RestartStatus()
+	}
+	return saferestart.Status{Phase: saferestart.PhaseIdle, Jobs: saferestart.RunningJobs()}
+}
+
+func requestSafeRestart(ctx context.Context, req saferestart.Request) (*sdkmcp.CallToolResult, struct{}, error) {
+	d := GetDeps()
+	if d.Restart == nil {
+		return nil, struct{}{}, fmt.Errorf("safe restart is only available when the Aviary server is running")
+	}
+	st, err := d.Restart(ctx, req)
+	if err != nil {
+		return nil, struct{}{}, err
+	}
+	return jsonResult(st)
+}
+
 func registerServerTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_status",
@@ -2712,34 +2869,37 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_version_check",
-		Description: "Check the current Aviary version against the latest GitHub release",
+		Description: "Check the current Aviary version against the latest GitHub release, and list the running jobs an upgrade would stop and resume",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		check, err := update.Check(ctx, nil)
 		if err != nil && check.LatestVersion == "" {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(check)
+		return jsonResult(serverVersionStatus{CheckResult: check, Restart: currentRestartStatus()})
 	})
 
 	type serverUpgradeArgs struct {
-		Version string `json:"version,omitempty"`
+		Version string `json:"version,omitempty" jsonschema:"release to install, with or without a leading v; defaults to the latest release"`
+		When    string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and upgrades once no jobs are running"`
 	}
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
-		Description: "Upgrade Aviary to the latest release and restart the server if needed",
+		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in coding CLI, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		d := GetDeps()
-		if update.EmulationActive() {
-			return jsonResult(map[string]any{"started": true, "emulated": true})
-		}
-		if d.Upgrade == nil {
-			return nil, struct{}{}, fmt.Errorf("server upgrade is only available when the Aviary server is running")
-		}
-		if err := d.Upgrade(ctx, args.Version); err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(map[string]any{"started": true})
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version})
+	})
+
+	type serverRestartArgs struct {
+		When   string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and restarts once no jobs are running"`
+		Cancel bool   `json:"cancel,omitempty" jsonschema:"withdraw a restart or upgrade that is still waiting for jobs to finish"`
+	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "server_restart",
+		Description: "Restart Aviary safely: checkpoint running jobs, restart, and resume each job in its own session",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverRestartArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Cancel: args.Cancel})
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -3521,6 +3681,7 @@ func registerUsageTools(s *sdkmcp.Server) {
 
 func registerSkillTools(s *sdkmcp.Server) {
 	registerConfiguredSkillTools(s)
+	registerCodingSkillTools(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "skills_list",
 		Description: "List installed skills and whether they are enabled in configuration",

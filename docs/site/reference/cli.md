@@ -199,6 +199,8 @@ aviary agent run <name> [message] [flags]
 | `--file <path>` | | Read the prompt from a file instead of inline |
 | `--bare` | `false` | Run without any system prompt, rules, memory, or tool preamble |
 | `--history` | `true` | Include prior session history in the prompt |
+| `--output-format <format>` | `text` | `text` prints the reply; `json` prints one JSON event per line as the run goes: `message`, `tool_call`, `tool_result` (paired by `id`), `file_change`, `media`, and `error` |
+| `--workdir <dir>` | | Grant the run's file tools and `exec` this directory for the run only, without a `permissions.filesystem.allowedPaths` entry |
 
 ### aviary agent stop
 

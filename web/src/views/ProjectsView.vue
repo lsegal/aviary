@@ -9,8 +9,9 @@
 							Projects isn't running on this server.
 						</p>
 						<p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-							No projects are watched yet. Run <code class="font-mono">aviary watch owner/repo</code> to start one.
+							No projects are watched yet. Add one here, or run <code class="font-mono">aviary watch owner/repo</code>.
 						</p>
+						<button type="button" :class="[ADD_BTN, 'mt-4']" @click="openAdd">+ Add project</button>
 					</div>
 				</div>
 				<template v-else>
@@ -34,28 +35,43 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<div role="tablist" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
+							<div role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
+								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
+									class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+									@click="setView(v.key)">
+									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
+								</button>
+							</div>
+							<div v-if="view === 'board'" role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
 								<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
 									class="px-3 py-1.5" :class="filter === f.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 									@click="filter = f.key">
 									{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
 								</button>
 							</div>
-							<button type="button"
+							<button v-if="view === 'board'" type="button"
 								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
 								{{ checking ? "Checking…" : "Check now" }}
 							</button>
-							<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+							<router-link :to="`/projects/${encodeProject(project)}/settings`"
+								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+								Settings
+							</router-link>
+							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								class="rounded-lg border px-3 py-1.5 text-sm"
 								:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 								@click="chatOpen = !chatOpen">
 								Prompt chat
 							</button>
+							<button type="button" :class="ADD_BTN" @click="openAdd">+ Add project</button>
 						</div>
 					</header>
 
 					<div class="space-y-4 px-4 py-4 sm:px-6">
+						<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
+							@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
+							@import="onGitHub(() => importProfile($event))" />
 						<p v-if="status && !status.running" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
 							The watch isn't running{{ status.error ? `: ${status.error}` : "." }}
 						</p>
@@ -65,6 +81,14 @@
 						<p v-if="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 							{{ error }}
 						</p>
+
+						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
+							:schedules="schedules" :agents="scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
+							:preview="previewSchedule" />
+
+						<template v-else>
+						<UpNextStrip :runs="upcoming" :now="now" @open="openSchedule" />
 
 						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
 							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
@@ -98,6 +122,7 @@
 							<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
 								:disabled="page + 1 >= pageCount" @click="page++">Next</button>
 						</nav>
+						</template>
 
 						<details v-if="status" class="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
 							<summary class="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm">
@@ -118,8 +143,9 @@
 					</div>
 				</template>
 			</div>
-		<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" @close="chatOpen = false" />
+			<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" @close="chatOpen = false" />
 		</div>
+		<AddProjectDialog v-if="adding" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
 
@@ -127,12 +153,17 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
+import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
+import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
 	useProjectList,
+	useProjectSchedules,
 } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
 import {
@@ -151,6 +182,12 @@ const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "failed", label: "Failed" },
 ];
 
+type ProjectView = "board" | "schedules";
+const VIEWS: { key: ProjectView; label: string }[] = [
+	{ key: "board", label: "Board" },
+	{ key: "schedules", label: "Schedules" },
+];
+
 const route = useRoute();
 const router = useRouter();
 const projectList = useProjectList();
@@ -159,18 +196,85 @@ const project = computed(() =>
 );
 const filter = ref<BoardFilter>("all");
 const { version } = useServerStatus();
-const { status, jobs, total, page, error, loading, checkNow, retry, stop } =
-	useProjectBoard(project, filter);
+const {
+	status,
+	jobs,
+	total,
+	page,
+	error,
+	loading,
+	checkNow,
+	signInToGitHub,
+	switchToPolling,
+	importProfile,
+	retry,
+	stop,
+} = useProjectBoard(project, filter);
+const {
+	schedules,
+	upcoming,
+	agents: scheduleAgents,
+	error: scheduleError,
+	loaded: schedulesLoaded,
+	save: saveSchedule,
+	setEnabled: setScheduleEnabled,
+	remove: removeSchedule,
+	runNow: runScheduleNow,
+	preview: previewSchedule,
+} = useProjectSchedules(project);
+
+// The view and the schedule being edited live in the URL, so a reload or a
+// shared link opens the same place.
+const view = computed<ProjectView>(() =>
+	route.query.tab === "schedules" ? "schedules" : "board",
+);
+const selectedSchedule = computed({
+	get: () =>
+		typeof route.query.schedule === "string" ? route.query.schedule : "",
+	set: (id: string) => {
+		void router.replace({
+			query: { ...route.query, tab: "schedules", schedule: id || undefined },
+		});
+	},
+});
+function setView(next: ProjectView) {
+	void router.replace({
+		query: next === "board" ? {} : { tab: next },
+	});
+}
+function openSchedule(id: string) {
+	selectedSchedule.value = id;
+}
 
 // Without a project in the URL, open the first watched project.
 watch(
 	() => projectList.projects.value,
 	(list) => {
 		if (!project.value && list.length > 0) {
-			void router.replace(`/projects/${encodeProject(list[0].name)}`);
+			void router.replace({
+				path: `/projects/${encodeProject(list[0].name)}`,
+				query: route.query,
+			});
 		}
 	},
 );
+
+const ADD_BTN =
+	"rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700";
+// The add-project dialog is open while the URL carries ?add=1, so the
+// sidebar's "Add project" link can open it from anywhere.
+const adding = computed(() => route.query.add === "1");
+function openAdd() {
+	void router.push({ query: { ...route.query, add: "1" } });
+}
+function closeAdd() {
+	const { add: _, ...rest } = route.query;
+	void router.replace({ query: rest });
+}
+async function onAdded(target: string) {
+	await router.push(`/projects/${encodeProject(target)}`);
+	await projectList.refresh();
+}
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
@@ -181,7 +285,11 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(clock));
 
-const online = computed(() => status.value?.deliveryOnline ?? true);
+// A signed-out browser session reads nothing, so it counts as offline.
+const online = computed(
+	() =>
+		(status.value?.deliveryOnline ?? true) && !status.value?.github?.signedOut,
+);
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 
 const statCards = computed(() => {
@@ -205,8 +313,8 @@ const statCards = computed(() => {
 			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
 		},
 		{
-			label: "Completed",
-			value: s.completed,
+			label: "Merged (24h)",
+			value: s.merged24h,
 			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
 		},
 		{
@@ -241,6 +349,21 @@ async function onCheckNow() {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		checking.value = false;
+	}
+}
+
+// The signed-out banner's actions: sign in to GitHub in Aviary's browser,
+// switch to gh polling, or import a profile signed in elsewhere.
+const signingIn = ref(false);
+async function onGitHub(fn: () => Promise<void>) {
+	signingIn.value = true;
+	try {
+		await fn();
+		error.value = "";
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		signingIn.value = false;
 	}
 }
 

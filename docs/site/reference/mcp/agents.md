@@ -44,6 +44,7 @@ Send a message to an agent and stream the response. This is the primary tool for
 | `bare` | bool | | Skip system prompt, rules, memory, and tool preamble |
 | `history` | bool | | Include prior session messages (defaults to `true`, `false` when `bare=true`) |
 | `include_tool_progress` | bool | | Emit tool-call events in MCP progress notifications (for streaming UIs) |
+| `workdir` | string | | Absolute directory the run's file tools and `exec` may use for this call only, without a `permissions.filesystem.allowedPaths` entry; relative paths and `exec`'s default `cwd` resolve against it |
 
 **Returns:** The agent's full text response. On error, returns an error result with `isError: true`.
 

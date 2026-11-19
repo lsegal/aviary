@@ -4,13 +4,15 @@ Scheduled tasks are the core automation primitive in Aviary. They let agents do 
 
 ## Task Types
 
-Aviary runs two kinds of scheduled work:
+Aviary runs three kinds of scheduled work:
 
 **Prompt tasks** send a natural-language prompt to the agent's LLM at each trigger. The model reads the prompt, calls tools as needed, and produces a response. Every execution draws tokens.
 
 **Script tasks** run a sandboxed Lua script directly against the agent's MCP tools. No LLM is involved at runtime. Executions are deterministic and cost zero tokens.
 
-Both types support the same triggers, deliver output to the same targets, and appear identically in the job queue. The difference is entirely in how they execute.
+**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs a coding CLI on the prompt in an isolated clone of the repository (in place of `/gh-fix`), and finishes when the CLI exits. See [Scheduled prompts](#scheduled-prompts).
+
+All types support the same triggers and appear identically in the job queue. The difference is entirely in how they execute.
 
 ## Defining Tasks in Files
 
@@ -143,6 +145,78 @@ tasks:
     run_once: true
     prompt: "Post the weekly release notes to Slack."
 ```
+
+### Schedule triggers
+
+Instead of a cron expression, a task can pick its trigger with `trigger` (inferred from the other fields when omitted):
+
+| Trigger | Fields | Example |
+| --- | --- | --- |
+| `once` | `start_at` | `start_at: "2026-12-01T09:00"` |
+| `interval` | `every` (`90s`, `30m`, `2h`, `1d`), optional `start_at` anchor | `every: 2h` |
+| `daily` | `at` (`HH:MM`, comma-separate several) | `at: "09:00, 17:30"` |
+| `weekly` | `days` and `at` | `days: mon,wed,fri` |
+| `cron` | `schedule` | `schedule: "0 9 * * 1-5"` |
+
+Every trigger is evaluated in `timezone`, an IANA zone such as `America/Toronto` (default: the host's local zone). A wall-clock time skipped by a daylight-saving change fires at the first time after the jump. `start_at` also delays the first fire of a recurring trigger, and `run_once: true` makes any trigger fire once.
+
+Two policies control what happens when things do not go to plan:
+
+- **`overlap`**: what a fire does while the previous run is still pending or running. `queue` (default) queues another run; `skip` drops the fire.
+- **`missed`**: what happens to fires that were due while Aviary was stopped or the machine slept. `skip` (default) drops them; `run_once` runs a single catch-up run, however many fires were missed. Aviary persists each task's last fire, and checks for overdue fires every 30 seconds so it notices a wake from sleep.
+
+```yaml
+tasks:
+  - name: standup
+    trigger: weekly
+    days: mon,tue,wed,thu,fri
+    at: "09:15"
+    timezone: America/Toronto
+    overlap: skip
+    missed: run_once
+    prompt: "Summarize what changed yesterday."
+```
+
+Each task keeps a run history of its last 20 fires: fire time, what fired it, status, a one-line summary and duration. `task_list` returns it with the next run time.
+
+### Managing schedules
+
+| Tool | CLI | Purpose |
+| --- | --- | --- |
+| `task_schedule` | `aviary task add <agent> <name> <prompt> --every 2h` | Create or replace a task |
+| `task_list` | `aviary task list` | Tasks with next run and last result |
+| `task_update` | `aviary task update <name> --at 10:00` | Change fields; an empty value clears one, `enabled=false` pauses |
+| `task_preview` | `aviary task preview [<name>] [--every 15m]` | Next fires of a saved task or unsaved trigger (default 3) |
+| `task_run` | `aviary task run <name>` | Run now, ignoring the overlap policy |
+| `task_delete` | `aviary task rm <name>` | Delete a task file and its history |
+
+| `task_upcoming` | | Next fires across enabled tasks (default 5, at most 3 per task), optionally for one project |
+
+`aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`.
+
+### Scheduled prompts
+
+A `project` task runs its prompt on the board of a watched project. `project` names the project (its `owner/repo` target) and `cli` optionally picks the coding CLI (`claude:opus`, `codex`); without it the project's agent is used.
+
+```yaml
+tasks:
+  - name: nightly-triage
+    type: project
+    project: lsegal/aviary
+    cli: claude:opus
+    at: "02:00"
+    timezone: America/Toronto
+    overlap: skip
+    prompt: "Triage issues opened since the last run and label them."
+```
+
+```bash
+aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --at 02:00
+```
+
+Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the schedule again; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
+
+The project's **Schedules** tab lists its scheduled prompts with enable toggles and their last results, and edits every field with a preview of the next fires, the recent runs, Run now, Save and Delete. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 
 ## Output Delivery
 

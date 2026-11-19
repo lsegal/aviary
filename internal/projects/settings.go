@@ -234,6 +234,8 @@ func (w *Engine) applySettingsRequest(update SettingsUpdate, sem *concurrencySem
 	}
 	if update.AllowedCommenters != nil {
 		w.AllowedCommenters = splitAllowedCommenters(strings.Join(*update.AllowedCommenters, ","))
+		allowed := append([]string(nil), w.AllowedCommenters...)
+		w.allowedCommenters.Store(&allowed)
 	}
 	if update.NoMerge != nil {
 		w.noMerge.Store(*update.NoMerge)
@@ -345,6 +347,9 @@ func (w *Engine) runner() AgentRunner {
 	if runner, ok := w.Runner.(CommandRunner); ok {
 		runner.NoMerge = w.noMerge.Load()
 		runner.NoChangelog = w.noChangelog.Load()
+		if allowed := w.allowedCommenters.Load(); allowed != nil {
+			runner.AllowedCommenters = *allowed
+		}
 		if override != nil && len(*override) > 0 {
 			runner.Agent = (*override)[0]
 			runner.Agents = append([]string(nil), *override...)

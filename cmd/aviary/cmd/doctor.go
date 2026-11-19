@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -11,8 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -149,6 +152,37 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	// ── CLI backends ─────────────────────────────────────────────────────────
+	if backends := config.CLIBackends(cfg); len(backends) > 0 {
+		_, _ = fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout, "CLI backends")
+		_, _ = fmt.Fprintln(os.Stdout, "────────────")
+		for _, b := range backends {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			st := cliagent.Check(ctx, b)
+			cancel()
+			level := "OK"
+			if !st.OK() {
+				level = "ERROR"
+				nerrs++
+			}
+			_, _ = fmt.Fprintf(os.Stdout, "  %-12s [%s] %s\n", b, level, st)
+		}
+	}
+
+	// ── Projects agents ──────────────────────────────────────────────────────
+	// Agents gated out of Projects dispatch are listed with the reason, so a
+	// job that fails to start on one is explained before it is dispatched.
+	_, _ = fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
+	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
+	if registry, err := agents.Load(cfg.Projects.CLIDefinitions); err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", err)
+		nerrs++
+	} else {
+		writeProjectsAgentGates(os.Stdout, registry)
+	}
+
 	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
 	if !doctorDisableVersion {
 		if err := maybeRunDoctorVersionCheck(); err != nil {
@@ -159,4 +193,21 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// writeProjectsAgentGates lists every agent the registry gates out of Projects
+// dispatch, with the reason its definition gives.
+func writeProjectsAgentGates(out io.Writer, registry *agents.Registry) {
+	gated := 0
+	for _, name := range registry.Names() {
+		definition, _ := registry.Lookup(name)
+		if definition.ProjectsUnavailable == "" {
+			continue
+		}
+		gated++
+		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Projects: %s\n", name, definition.ProjectsUnavailable)
+	}
+	if gated == 0 {
+		_, _ = fmt.Fprintln(out, "  (every agent can run Projects jobs)")
+	}
 }

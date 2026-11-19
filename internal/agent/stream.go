@@ -13,14 +13,27 @@ const (
 	StreamEventError  StreamEventType = "error"  // error occurred
 	StreamEventStop   StreamEventType = "stop"   // agent was stopped mid-stream
 	StreamEventStatus StreamEventType = "status" // verbose progress message before a tool call
+	StreamEventFile   StreamEventType = "file"   // a tool changed a file
 )
 
 // ToolEvent carries structured tool execution details for debug-oriented UIs.
 type ToolEvent struct {
+	// ID ties a call to its result when the backend reports one.
+	ID     string
 	Name   string
 	Args   map[string]any
 	Result string
 	Error  string
+	// Done is set on the event reporting a call's outcome, telling it apart
+	// from the event announcing the call when the result is empty.
+	Done bool
+}
+
+// FileChangeEvent describes a file changed by a file editing tool.
+type FileChangeEvent struct {
+	Tool string // the tool that made the change
+	Path string // absolute path of the changed file
+	Diff string // unified diff of the change
 }
 
 // StreamEvent is a single event emitted during an agent response.
@@ -29,8 +42,9 @@ type StreamEvent struct {
 	AgentID  string
 	Text     string // set for StreamEventText
 	Tool     *ToolEvent
-	MediaURL string // set for StreamEventMedia (image data URL or remote URL)
-	Err      error  // set for StreamEventError
+	File     *FileChangeEvent // set for StreamEventFile
+	MediaURL string           // set for StreamEventMedia (image data URL or remote URL)
+	Err      error            // set for StreamEventError
 }
 
 // StreamConsumer receives StreamEvents.

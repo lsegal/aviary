@@ -32,6 +32,18 @@ const (
 // on.
 const ManualPauseReason = "paused by owner"
 
+// StalledPauseReason is what the dashboards say a job waits on when Projects
+// paused it because its agent kept ending turns with the issue still open and
+// nothing new on GitHub. Like a manual pause, only the owner retrying it
+// resumes it.
+const StalledPauseReason = "its agent kept ending turns without progress; retry it to resume"
+
+// HeldForOwner reports whether a paused job's reason says only the owner can
+// resume it, so nothing read from GitHub, and no watchdog, wakes it.
+func HeldForOwner(reason string) bool {
+	return reason == ManualPauseReason || reason == StalledPauseReason
+}
+
 // PausedWork is the one record every kind of paused work shares: what kind it
 // is, the issues it waits on, and the pull requests it left behind. The record
 // only saves work; whether it wakes is always read back from GitHub.
@@ -41,6 +53,18 @@ type PausedWork struct {
 	WaitingOn []int `json:"waitingOn,omitempty"`
 	// PullRequests lists the work's own open pull requests.
 	PullRequests []int `json:"pullRequests,omitempty"`
+	// Reason overrides what the dashboards say a manual pause waits on, for
+	// one Projects made itself rather than the owner.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ManualReason is what a manual pause waits on: its own reason, or the owner
+// having paused it.
+func (p PausedWork) ManualReason() string {
+	if p.Reason != "" {
+		return p.Reason
+	}
+	return ManualPauseReason
 }
 
 // PausedWake is what a paused record's wake check decided.
@@ -108,7 +132,7 @@ func WakePaused(paused PausedWork, check PausedCheck) (PausedWake, string) {
 	// Only the owner resumes a manual pause, by retrying the job, so nothing
 	// else read from GitHub wakes or finishes it.
 	if paused.Kind == PausedManual {
-		return PausedStay, ManualPauseReason
+		return PausedStay, paused.ManualReason()
 	}
 	if check.Own != nil {
 		for _, pullRequest := range check.Own.PullRequests {

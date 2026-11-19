@@ -74,6 +74,15 @@ export default defineConfig({
 						{ text: "Operations", link: "/guide/operations" },
 					],
 				},
+				{
+					text: "Skills for Coding CLIs",
+					items: [
+						{ text: "Overview", link: "/guide/skills/" },
+						{ text: "gh-fix", link: "/guide/skills/gh-fix" },
+						{ text: "gh-discuss", link: "/guide/skills/gh-discuss" },
+						{ text: "gh-create", link: "/guide/skills/gh-create" },
+					],
+				},
 			],
 			"/reference/": [
 				{
@@ -108,6 +117,10 @@ export default defineConfig({
 						{
 							text: "Server And Config Tools",
 							link: "/reference/mcp/server-and-config",
+						},
+						{
+							text: "Projects Tools",
+							link: "/reference/mcp/projects",
 						},
 						{
 							text: "Usage And Skills Tools",

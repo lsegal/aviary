@@ -30,6 +30,13 @@
           "x-order": 3,
           "description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
         },
+        "auto_update": {
+          "type": "boolean",
+          "default": false,
+          "x-label": "Update automatically",
+          "x-order": 6,
+          "description": "Install new Aviary releases automatically, but only while no jobs are running."
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,
@@ -204,20 +211,32 @@
                 "name": { "type": "string" },
                 "type": {
                   "type": "string",
-                  "enum": ["prompt", "script"]
+                  "enum": ["prompt", "script", "project"]
                 },
                 "schedule": { "type": "string" },
                 "start_at": { "type": "string", "format": "date-time" },
                 "run_once": { "type": "boolean", "default": false },
+                "trigger": { "type": "string", "enum": ["once", "interval", "daily", "weekly", "cron"] },
+                "every": { "type": "string" },
+                "at": { "type": "string" },
+                "days": { "type": "string" },
+                "timezone": { "type": "string" },
+                "overlap": { "type": "string", "enum": ["queue", "skip"], "default": "queue" },
+                "missed": { "type": "string", "enum": ["skip", "run_once"], "default": "skip" },
                 "watch": { "type": "string" },
                 "prompt": { "type": "string" },
                 "script": { "type": "string" },
-                "target": { "type": "string" }
+                "target": { "type": "string" },
+                "project": { "type": "string" },
+                "cli": { "type": "string" }
               },
               "allOf": [
                 {
-                  "oneOf": [
+                  "anyOf": [
                     { "required": ["schedule"] },
+                    { "required": ["every"] },
+                    { "required": ["at"] },
+                    { "required": ["start_at"] },
                     { "required": ["watch"] }
                   ]
                 },
@@ -265,7 +284,7 @@
             "model": {
               "type": "string",
               "x-label": "Default model",
-              "x-placeholder": "claude-opus-4-8",
+              "x-placeholder": "claude-opus-5-5",
               "x-order": 1,
               "description": "Fallback model used when an agent does not specify one."
             },
@@ -393,6 +412,28 @@
                   "type": "string"
                 },
                 "description": "This project's coding-CLI specs (AGENT/MODEL:LEVEL) in fallback order; a job runs on the first whose quota is not used up."
+              },
+              "reports": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["agent", "targets"],
+                "description": "Reports this project's job lifecycle events through an Aviary agent's channels. Off when unset.",
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "description": "The Aviary agent whose channels deliver the reports."
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Where reports go: <channel type>:<configured channel id>:<delivery id>, or session:<name>."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["merged", "failed", "waiting"] },
+                    "description": "Job events to report. Empty reports all of them."
+                  }
+                }
               }
             }
           },

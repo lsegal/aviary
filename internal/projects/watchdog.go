@@ -320,7 +320,7 @@ func detectStuckJobs(jobs []JobSnapshot, baseline map[string]string, history map
 		why := ""
 		switch job.Status {
 		case "paused":
-			if job.WaitReason == core.ManualPauseReason {
+			if core.HeldForOwner(job.WaitReason) {
 				continue
 			}
 			why = "paused"
