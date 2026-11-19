@@ -398,9 +398,11 @@ func TestWriteAgentReportsRendersEveryField(t *testing.T) {
 			models: []string{"cline/anthropic/claude-opus-5"}, modelNote: knownModelsNote,
 		},
 		{name: "muse", binary: "muse", modelNote: "any model the CLI accepts"},
+		{name: "agy", binary: "agy", projectsNote: "no machine-readable output mode"},
 	})
 	text := out.String()
 	for _, want := range []string{
+		"projects  unavailable: no machine-readable output mode",
 		statusReady + " codex", "/opt/codex, version 1.2.3", "signed in", "week 40% left",
 		"2 available", "1 " + knownModelsNote, "cline/anthropic/claude-opus-5", "\n" + strings.Repeat(" ", 12) + "codex/gpt-5.6\n",
 		statusMissing + "  muse", "muse (not installed)",
@@ -411,7 +413,7 @@ func TestWriteAgentReportsRendersEveryField(t *testing.T) {
 	}
 	// A missing binary reports nothing beyond that: the remaining fields were
 	// never probed, so printing them would be inventing answers.
-	muse := text[strings.Index(text, statusMissing):]
+	muse := text[strings.Index(text, statusMissing):strings.Index(text, "agy")]
 	if strings.Contains(muse, "auth") || strings.Contains(muse, "quota") {
 		t.Errorf("report prints unprobed fields for a missing binary:\n%s", muse)
 	}
@@ -584,5 +586,19 @@ func TestAgentDoctorFlagsStaleSkills(t *testing.T) {
 	}
 	if status := agentStatus(probed); status.SkillsNote != probed.skillsNote || status.Status != "warn" {
 		t.Fatalf("status = %+v, want the skills note and a warning", status)
+	}
+}
+
+// TestAgentReportCarriesProjectsGate checks the doctor reports why agy is
+// gated out of Projects dispatch, whether or not its CLI is installed.
+func TestAgentReportCarriesProjectsGate(t *testing.T) {
+	doctor := newAgentDoctor(agents.MustBuiltin())
+	doctor.lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	status := agentStatus(doctor.reportAgent(context.Background(), "agy"))
+	if !strings.Contains(status.ProjectsNote, "machine-readable output mode") {
+		t.Fatalf("agy projects note = %q, want the gate's reason", status.ProjectsNote)
+	}
+	if note := agentStatus(doctor.reportAgent(context.Background(), "claude")).ProjectsNote; note != "" {
+		t.Fatalf("claude projects note = %q, want none", note)
 	}
 }

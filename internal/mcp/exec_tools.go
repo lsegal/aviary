@@ -41,7 +41,7 @@ var execCommandContext = exec.CommandContext
 func registerExecTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "exec",
-		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it. Arguments: command (required), cwd (optional).",
+		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it. Arguments: command (required), cwd (optional; defaults to the agent directory, or to the job's granted directory during a job).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args execArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		perms, agentDir, err := resolveAllowedAgentExec(ctx, args.Command)
 		if err != nil {
@@ -86,6 +86,9 @@ func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecP
 	}
 	if !policy.Allows(command) {
 		return nil, "", fmt.Errorf("command is outside the exec allowlist: %s", strings.TrimSpace(command))
+	}
+	if grantRoot, ok := agent.FilesystemGrantFromContext(ctx); ok {
+		return cfg.Permissions.Exec, grantRoot, nil
 	}
 	return cfg.Permissions.Exec, store.AgentDir(agentID), nil
 }

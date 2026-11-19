@@ -30,6 +30,13 @@
           "x-order": 3,
           "description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
         },
+        "auto_update": {
+          "type": "boolean",
+          "default": false,
+          "x-label": "Update automatically",
+          "x-order": 6,
+          "description": "Install new Aviary releases automatically, but only while no jobs are running."
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,
@@ -265,7 +272,7 @@
             "model": {
               "type": "string",
               "x-label": "Default model",
-              "x-placeholder": "claude-opus-4-8",
+              "x-placeholder": "claude-opus-5-5",
               "x-order": 1,
               "description": "Fallback model used when an agent does not specify one."
             },

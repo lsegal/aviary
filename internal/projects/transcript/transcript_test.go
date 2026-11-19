@@ -110,6 +110,215 @@ func TestCodexTodoListAndToolCalls(t *testing.T) {
 	}
 }
 
+// The fixture is a real `aviary agent run --output-format json` capture from
+// an agent backed by codex-cli 0.153.2.
+func TestAviaryJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatAviaryJSON), "aviary-agent-run.jsonl")
+	want := "message,tool_call,tool_result,tool_call,tool_result,message"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	call, failed := events[1], events[2]
+	if call.Name != "shell" || call.CallID == "" || call.Input["command"] != "/bin/zsh -lc 'cat missing.txt'" {
+		t.Fatalf("tool call = %+v", call)
+	}
+	if failed.CallID != call.CallID || !failed.IsError || !strings.Contains(failed.Output, "No such file") {
+		t.Fatalf("failed result = %+v", failed)
+	}
+	if ok := events[4]; ok.CallID != events[3].CallID || ok.IsError || ok.Output != "note.txt\nout.txt\n" {
+		t.Fatalf("result = %+v", ok)
+	}
+	if !strings.HasPrefix(events[5].Text, "`cat missing.txt` failed") {
+		t.Fatalf("message = %+v", events[5])
+	}
+}
+
+func TestAviaryJSONFileChangesAndErrors(t *testing.T) {
+	mapper := NewMapper(FormatAviaryJSON)
+	change := mapper.Map([]byte(`{"type":"file_change","name":"file_write","path":"/w/a.go","diff":"+x"}`))
+	if len(change) != 1 || change[0].Kind != KindFileChange || change[0].Path != "/w/a.go" || change[0].Diff != "+x" {
+		t.Fatalf("file change = %+v", change)
+	}
+	failed := mapper.Map([]byte(`{"type":"error","text":"boom"}`))
+	if len(failed) != 1 || failed[0].Kind != KindSystem || !failed[0].IsError || failed[0].Text != "boom" {
+		t.Fatalf("error = %+v", failed)
+	}
+	if got := mapper.Map([]byte("plain text")); got != nil {
+		t.Fatalf("plain text mapped to %+v", got)
+	}
+}
+
+// The fixtures are real streams captured from opencode 1.18.27 and cline
+// 3.0.74 running the same four-step task: a shell command, a file creation, an
+// edit and a read.
+func TestOpencodeJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatOpencodeJSON), "opencode-run.jsonl")
+	want := "command,command,usage,file_change,tool_result,usage,file_change,tool_result,usage,tool_call,tool_result,usage,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	start, done := events[0], events[1]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi\n" || done.Status != "done" || done.ExitCode == nil || *done.ExitCode != 0 || done.IsError {
+		t.Fatalf("command result = %+v", done)
+	}
+	added, edited := events[3], events[6]
+	if added.Path != "/work/note.txt" || added.Status != "add" || !strings.Contains(added.Diff, "+hello") {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited.Status != "update" || !strings.Contains(edited.Diff, "-hello\n+hello world") {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Name != "read" || read.Input["filePath"] != "/work/note.txt" {
+		t.Fatalf("tool call = %+v", read)
+	}
+	if usage := events[2].Usage; usage == nil || usage.InputTokens != 9668 || usage.OutputTokens != 32 {
+		t.Fatalf("usage = %+v", usage)
+	}
+	if msg := events[12]; msg.Text != "`note.txt` now contains `hello world`." {
+		t.Fatalf("message = %+v", msg)
+	}
+}
+
+func TestOpencodeFailedToolsAndEdits(t *testing.T) {
+	mapper := NewMapper(FormatOpencodeJSON)
+	failed := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"c1","state":{"status":"completed","input":{"command":"false"},"output":"","metadata":{"exit":1}}}}`))
+	if kinds(failed) != "command,command" || !failed[1].IsError || *failed[1].ExitCode != 1 {
+		t.Fatalf("failed command = %+v", failed)
+	}
+	edit := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"edit","callID":"c2","state":{"status":"error","input":{"filePath":"/w/a.go","oldString":"a","newString":"b"},"error":"no match"}}}`))
+	if kinds(edit) != "file_change,tool_result" || edit[0].Path != "/w/a.go" || edit[0].Diff != "@@\n-a\n+b" || !edit[1].IsError || edit[1].Output != "no match" {
+		t.Fatalf("edit = %+v", edit)
+	}
+	plan := mapper.Map([]byte(`{"type":"tool_use","part":{"type":"tool","tool":"todowrite","callID":"c3","state":{"status":"completed","input":{"todos":[{"content":"one","status":"completed"}]}}}}`))
+	if kinds(plan) != "plan,tool_result" || plan[0].Items[0].Text != "one" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if got := mapper.Map([]byte(`{"type":"error","error":{"name":"APIError","data":{"message":"rate limited"}}}`)); len(got) != 1 || !got[0].IsError || got[0].Text != "rate limited" {
+		t.Fatalf("error = %+v", got)
+	}
+}
+
+func TestClineJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatClineJSON), "cline-run.jsonl")
+	want := "message,reasoning,command,command,file_change,tool_result,file_change,tool_result,tool_call,tool_result,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	start, done := events[2], events[3]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi\n" || done.Status != "done" || done.ExitCode == nil || *done.ExitCode != 0 {
+		t.Fatalf("command result = %+v", done)
+	}
+	if added := events[4]; added.Path != "note.txt" || added.Status != "add" || added.Diff != "+hello" {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited := events[6]; edited.Status != "update" || edited.Diff != "@@\n-hello\n+hello world" {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Output != "1 | hello world" || read.IsError {
+		t.Fatalf("tool result = %+v", read)
+	}
+	if usage := events[11].Usage; usage == nil || usage.InputTokens != 42481 || usage.CacheReadTokens != 29952 || usage.CostUSD == 0 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+func TestClineFailuresAndEditor(t *testing.T) {
+	mapper := NewMapper(FormatClineJSON)
+	edit := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_start","contentType":"tool","toolCallId":"e","toolName":"editor","input":{"path":"/w/a.go","old_text":"a","new_text":"b"}}}`))
+	if kinds(edit) != "file_change" || edit[0].Path != "/w/a.go" || edit[0].Diff != "@@\n-a\n+b" {
+		t.Fatalf("edit = %+v", edit)
+	}
+	mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_start","contentType":"tool","toolCallId":"r","toolName":"run_commands","input":{"commands":["make","go test"]}}}`))
+	failed := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"r","toolName":"run_commands","output":[{"query":"make","result":"ok","success":true},{"query":"go test","result":"FAIL","error":"exit 1","success":false}]}}`))
+	if len(failed) != 1 || failed[0].Kind != KindCommand || !failed[0].IsError || *failed[0].ExitCode != 1 || failed[0].Output != "ok\nFAIL\nexit 1" {
+		t.Fatalf("failed command = %+v", failed)
+	}
+	aborted := mapper.Map([]byte(`{"type":"agent_event","event":{"type":"done","reason":"error","text":"provider failed","usage":{"inputTokens":5}}}`))
+	if kinds(aborted) != "usage,system" || !aborted[1].IsError || aborted[1].Text != "provider failed" {
+		t.Fatalf("done = %+v", aborted)
+	}
+	if got := mapper.Map([]byte(`{"ts":"2026-11-19T10:55:27.395Z","type":"error","message":"cline requires re-authentication."}`)); len(got) != 1 || !got[0].IsError {
+		t.Fatalf("error = %+v", got)
+	}
+}
+
+// The fixture is a real stream from gemini-cli 0.58.0 running a plan, two
+// shell commands (the second failing), a file creation, an edit, a read and an
+// edit that matches nothing, then streaming its reply in three deltas. Gemini's
+// Code Assist sign-in is closed to this CLI, so the model side of the run was
+// a local stand-in served through GOOGLE_GEMINI_BASE_URL; every line is the
+// CLI's own output.
+func TestGeminiStreamJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatGeminiJSON), "gemini-run.jsonl")
+	want := "message,plan,tool_result,command,command,file_change,tool_result,file_change,tool_result,tool_call,tool_result,command,command,file_change,tool_result,plan,tool_result,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	if msg := events[0]; msg.Text != "I will plan the work first." {
+		t.Fatalf("first message = %+v", msg)
+	}
+	if plan := events[1]; len(plan.Items) != 3 || plan.Items[0] != (PlanItem{Text: "Run echo hi", Status: "in_progress"}) || plan.Items[2].Status != "pending" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	start, done := events[3], events[4]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi" || done.Status != "done" || done.IsError || done.ExitCode != nil {
+		t.Fatalf("command result = %+v", done)
+	}
+	if added := events[5]; added.Path != "/work/note.txt" || added.Diff != "+hello" {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited := events[7]; edited.Diff != "@@\n-hello\n+hello world" {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[9]; read.Name != "read_file" || read.Input["file_path"] != "/work/note.txt" {
+		t.Fatalf("tool call = %+v", read)
+	}
+	if missed := events[14]; !missed.IsError || !strings.Contains(missed.Output, "Could not find an exact match") || missed.CallID != events[13].CallID {
+		t.Fatalf("failed edit = %+v", missed)
+	}
+	if plan := events[15]; plan.Items[2].Status != "completed" {
+		t.Fatalf("final plan = %+v", plan)
+	}
+	if msg := events[17]; msg.Text != "Done: `note.txt` now says \"hello world\"." {
+		t.Fatalf("streamed message = %q", msg.Text)
+	}
+	if usage := events[18].Usage; usage == nil || usage.InputTokens != 3600 || usage.CacheReadTokens != 7200 || usage.OutputTokens != 180 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+func TestGeminiErrorsAndUnfinishedMessages(t *testing.T) {
+	mapper := NewMapper(FormatGeminiJSON)
+	if got := mapper.Map([]byte(`{"type":"message","role":"user","content":"do it"}`)); got != nil {
+		t.Fatalf("user message = %+v", got)
+	}
+	warning := mapper.Map([]byte(`{"type":"error","severity":"warning","message":"retrying after 429"}`))
+	if kinds(warning) != "system" || warning[0].IsError || warning[0].Text != "retrying after 429" {
+		t.Fatalf("warning = %+v", warning)
+	}
+	failed := mapper.Map([]byte(`{"type":"result","status":"error","error":{"type":"FatalTurnLimitedError","message":"Reached max session turns"},"stats":{"input_tokens":10,"output_tokens":2,"cached":0,"input":10}}`))
+	if kinds(failed) != "usage,system" || !failed[1].IsError || failed[1].Text != "Reached max session turns" {
+		t.Fatalf("failed result = %+v", failed)
+	}
+	// A stream cut off mid-message still records what was said.
+	log, _ := Open("")
+	recorder := log.Recorder(NewMapper(FormatGeminiJSON))
+	_, _ = recorder.Write([]byte(`{"type":"message","role":"assistant","content":"half ","delta":true}` + "\n" + `{"type":"message","role":"assistant","content":"a reply","delta":true}`))
+	recorder.Flush()
+	if events := log.Events(0); kinds(events) != "message" || events[0].Text != "half a reply" {
+		t.Fatalf("unfinished message = %+v", events)
+	}
+}
+
 func TestLogPersistsAcrossOpen(t *testing.T) {
 	dir := t.TempDir()
 	log, err := Open(dir)

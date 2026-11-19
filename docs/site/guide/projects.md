@@ -41,7 +41,42 @@ Jobs run on the coding CLIs listed in `projects.agents` (default `codex`). Each 
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead. Override a built-in field by field, or add a new CLI, under `projects.cli_definitions`. A `null` field drops the built-in's value.
 
-`aviary project cli list` reports every CLI's install, version, sign-in, quota and models.
+`agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
+
+`aviary project cli list` reports every CLI's install, version, sign-in, quota, models and any Projects gate.
+
+### Deferred turns
+
+A definition's `wakeup` field describes how its CLI ends a turn asking to be woken later, such as Claude Code's `ScheduleWakeup` tool. When the CLI exits with one pending, the job shows as waiting with its reason and resume time, then resumes the same session with the agent's own prompt. Stopping the job or closing its issue cancels the wakeup, and a run stops after 48 wakeups in a row. A CLI without a `wakeup` field just finishes its turn.
+
+Every value is a field path in the CLI's JSON event stream: dot-separated keys, with `[]` stepping into each element of an array.
+
+| Field | Read from | Description |
+| --- | --- | --- |
+| `type`, `event` | the event | Path to the event's type, and the type that carries the call; empty matches every event |
+| `calls` | the event | Path to each call the event carries; empty reads the event itself |
+| `name`, `tool` | each call | Path to the tool name, and the name that marks a wakeup (required) |
+| `id` | each call | Path to the call's id, matched by `rejected` |
+| `input` | each call | Path to the call's input; empty reads the call itself |
+| `delay` | the input | Delay in seconds, clamped to 1 minute through 1 hour (required) |
+| `prompt`, `reason` | the input | The prompt the session resumes with, and the reason shown while it waits |
+| `stop` | the input | A boolean that cancels the pending wakeup instead of scheduling one |
+| `rejected` | | `{event, results, id, error}`: where a failed call's result is reported, which cancels it; needs `id` |
+
+```yaml
+projects:
+  cli_definitions:
+    acme:
+      wakeup:
+        type: kind
+        event: defer
+        name: kind
+        tool: defer
+        input: args
+        delay: after
+        prompt: then
+        reason: why
+```
 
 ## Steering jobs
 
@@ -55,7 +90,7 @@ Every Aviary server has a random instance identity. A comment that mentions `@/a
 - Work waiting on GitHub, such as an open dependency or a stacked blocker, is paused and gives up its slot until it is unblocked.
 - A pull request closed without merging restarts the work.
 - The stuck-job watchdog runs every 15 minutes (`unblock_interval`) and runs one agent call that unblocks paused and silent jobs.
-- On shutdown, every running job's work is committed and pushed before its agent stops. Every subprocess dies with Aviary, even on `SIGKILL`.
+- On shutdown, and before a safe restart or upgrade (`server_restart`, `server_upgrade`), every running job's work is committed and pushed before its agent stops; the jobs resume in their sessions afterwards. Every subprocess dies with Aviary, even on `SIGKILL`.
 
 ## Delivery
 

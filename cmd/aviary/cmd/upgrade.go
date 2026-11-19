@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,60 +11,36 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lsegal/aviary/internal/saferestart"
+	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/update"
 )
 
 var (
 	upgradeVersion       string
+	upgradeWhen          string
 	doctorDisableVersion bool
-	helperTargetPath     string
-	helperWaitPID        int
-	helperRestartArgs    string
-	helperRepo           string
-	helperAPIBase        string
 )
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade Aviary to the latest release",
-	RunE:  runUpgrade,
-}
+	Long: `Upgrade Aviary to the latest release, or to --version (with or without a
+leading v). Does nothing when Aviary is already at that version.
 
-var upgradeHelperCmd = &cobra.Command{
-	Use:    "__upgrade-helper",
-	Hidden: true,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		restartArgs, err := update.DecodeRestartArgs(helperRestartArgs)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		return update.RunHelper(ctx, update.HelperRequest{
-			TargetPath:  helperTargetPath,
-			WaitPID:     helperWaitPID,
-			Version:     upgradeVersion,
-			RestartArgs: restartArgs,
-			Repo:        helperRepo,
-			APIBase:     helperAPIBase,
-		}, os.Stdout, os.Stderr)
-	},
+When the server is running, the upgrade is a safe restart: running jobs are
+stopped at a checkpoint and resumed in their own sessions after the restart.
+--when idle instead holds new jobs and upgrades once no jobs are running.`,
+	RunE: runUpgrade,
 }
 
 func init() {
-	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Upgrade to a specific release tag instead of the latest release")
+	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Upgrade to a specific release instead of the latest release")
+	upgradeCmd.Flags().StringVar(&upgradeWhen, "when", saferestart.WhenNow, "When the running server restarts: now, or idle (once no jobs are running)")
 	rootCmd.AddCommand(upgradeCmd)
-
-	upgradeHelperCmd.Flags().StringVar(&helperTargetPath, "target-path", "", "target binary path")
-	upgradeHelperCmd.Flags().IntVar(&helperWaitPID, "wait-pid", 0, "wait for this PID to exit before upgrading")
-	upgradeHelperCmd.Flags().StringVar(&upgradeVersion, "version", "", "target release version")
-	upgradeHelperCmd.Flags().StringVar(&helperRestartArgs, "restart-args", "", "base64-encoded restart arguments")
-	upgradeHelperCmd.Flags().StringVar(&helperRepo, "repo", update.DefaultRepo, "release repository")
-	upgradeHelperCmd.Flags().StringVar(&helperAPIBase, "api-base", update.DefaultAPIBase, "release API base")
-	rootCmd.AddCommand(upgradeHelperCmd)
 }
 
-func runUpgrade(_ *cobra.Command, _ []string) error {
+func runUpgrade(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -71,15 +48,33 @@ func runUpgrade(_ *cobra.Command, _ []string) error {
 	if err != nil && check.LatestVersion == "" {
 		return err
 	}
-	targetVersion := strings.TrimSpace(upgradeVersion)
-	if targetVersion == "" {
-		targetVersion = check.LatestVersion
+	targetVersion, upToDate := resolveUpgradeTarget(check, upgradeVersion)
+	if upToDate {
+		fmt.Printf("Aviary is already up to date (%s).\n", check.CurrentVersion)
+		return nil
 	}
 	if targetVersion == "" {
 		return fmt.Errorf("unable to determine a target version")
 	}
-	if strings.TrimSpace(upgradeVersion) == "" && !check.UpgradeAvailable {
-		fmt.Printf("Aviary is already up to date (%s).\n", check.CurrentVersion)
+
+	if running, _, _ := server.IsRunning(); running {
+		out, err := dispatcher.CallTool(cmd.Context(), "server_upgrade", map[string]any{
+			"version": targetVersion,
+			"when":    upgradeWhen,
+		})
+		if err != nil {
+			return err
+		}
+		var st saferestart.Status
+		if json.Unmarshal([]byte(out), &st) == nil && st.Message != "" {
+			fmt.Println(st.Message)
+			return nil
+		}
+		if upgradeWhen == saferestart.WhenIdle {
+			fmt.Printf("Aviary will upgrade to %s once no jobs are running. New jobs are held until then.\n", targetVersion)
+		} else {
+			fmt.Printf("Upgrading the running Aviary server to %s. Running jobs resume after the restart.\n", targetVersion)
+		}
 		return nil
 	}
 
@@ -87,23 +82,40 @@ func runUpgrade(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Emulated upgrade to %s completed. No files were changed.\n", targetVersion)
 		return nil
 	}
-
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locating executable: %w", err)
 	}
-	if err := update.StartHelper(update.HelperRequest{
-		TargetPath: exePath,
-		WaitPID:    os.Getpid(),
+	update.CleanupStaging(exePath)
+	installCtx, installCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer installCancel()
+	result, err := update.Install(installCtx, update.InstallOptions{
 		Version:    targetVersion,
-		Repo:       update.DefaultRepo,
-		APIBase:    update.DefaultAPIBase,
-	}); err != nil {
+		TargetPath: exePath,
+		Client:     &http.Client{Timeout: 2 * time.Minute},
+	})
+	if err != nil {
 		return err
 	}
-	fmt.Printf("Starting Aviary upgrade to %s.\n", targetVersion)
-	fmt.Println("This process will exit; the helper will replace the binary in place.")
+	fmt.Printf("Aviary upgraded to %s.\n", result.Version)
 	return nil
+}
+
+// resolveUpgradeTarget picks the release to install. upToDate is true when
+// there is nothing to do: no newer release, or the requested version is the
+// one already running.
+func resolveUpgradeTarget(check update.CheckResult, requested string) (target string, upToDate bool) {
+	target = update.NormalizeVersion(requested)
+	if target == "" {
+		if !check.UpgradeAvailable {
+			return "", check.LatestVersion != ""
+		}
+		target = update.NormalizeVersion(check.LatestVersion)
+	}
+	if update.SameVersion(check.CurrentVersion, target) {
+		return target, true
+	}
+	return target, false
 }
 
 func maybeRunDoctorVersionCheck() error {

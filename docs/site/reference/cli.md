@@ -78,6 +78,16 @@ aviary token [flags]
 
 ---
 
+## aviary ui
+
+Open the Projects board in the server's web UI. With a project argument such as `owner/repo`, open that project's board. Uses the server address from `--server`.
+
+```
+aviary ui [project]
+```
+
+---
+
 ## aviary doctor
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
@@ -189,6 +199,7 @@ aviary agent run <name> [message] [flags]
 | `--file <path>` | | Read the prompt from a file instead of inline |
 | `--bare` | `false` | Run without any system prompt, rules, memory, or tool preamble |
 | `--history` | `true` | Include prior session history in the prompt |
+| `--output-format <format>` | `text` | `text` prints the reply; `json` prints one JSON event per line as the run goes: `message`, `tool_call`, `tool_result` (paired by `id`), `file_change`, `media`, and `error` |
 
 ### aviary agent stop
 

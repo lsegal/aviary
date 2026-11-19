@@ -25,7 +25,7 @@ Set a value:
   aviary config browser.cdp_port 9333
   aviary config browser.reuse_tabs false
   aviary config server.port 8080
-  aviary config models.defaults.model anthropic/claude-sonnet-4-5
+  aviary config models.defaults.model anthropic/claude-sonnet-5-5
   aviary config scheduler.concurrency 4`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runConfigGetSet,
