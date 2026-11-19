@@ -805,3 +805,45 @@ type mentionComment struct {
 	ID         int64
 	Author     string
 }
+
+// commentURL is the GitHub link to the comment.
+func (c mentionComment) commentURL() string {
+	base := "https://github.com/" + c.Repository
+	switch c.Kind {
+	case ReviewComment:
+		return fmt.Sprintf("%s/pull/%d#discussion_r%d", base, c.Number, c.ID)
+	case ReviewBody:
+		return fmt.Sprintf("%s/pull/%d#pullrequestreview-%d", base, c.Number, c.ID)
+	default:
+		return fmt.Sprintf("%s/issues/%d#issuecomment-%d", base, c.Number, c.ID)
+	}
+}
+
+// mentionPrompt is what the Projects agent is asked about a direct mention on
+// a finished or paused job.
+func mentionPrompt(issue Issue, comment mentionComment) string {
+	link := fmt.Sprintf("https://github.com/%s/issues/%d", issue.Repository, issue.Number)
+	if comment.Repository != "" && comment.ID != 0 {
+		link = comment.commentURL()
+	}
+	return fmt.Sprintf("look at comment %s on issue %s#%d and determine next steps", link, issue.Repository, issue.Number)
+}
+
+// routeMention hands a direct mention on a finished or paused job to the
+// Projects agent instead of restarting the job, and reports whether it did.
+// The agent restarts the job only when the comment needs work.
+func (w *Engine) routeMention(ctx context.Context, scan *mentionScan, issue Issue, state string, directMentions map[string]bool) bool {
+	if w.RouteMention == nil {
+		return false
+	}
+	key := issue.Repository + "#" + strconv.Itoa(issue.Number)
+	if err := w.RouteMention(ctx, mentionPrompt(issue, scan.comments[key])); err != nil {
+		w.logf("issue #%d direct mention of instance %s could not reach the Projects agent: %v; handling it as before", issue.Number, w.Identity, err)
+		return false
+	}
+	delete(directMentions, key)
+	delete(scan.rechecks, key)
+	delete(scan.comments, key)
+	w.logf("issue #%d direct mention of instance %s on its %s job sent to the Projects agent", issue.Number, w.Identity, state)
+	return true
+}

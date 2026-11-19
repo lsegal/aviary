@@ -64,6 +64,19 @@ type Manager struct {
 
 	snapshot atomic.Pointer[core.Snapshot]
 	quotas   atomic.Pointer[map[string]string]
+	// mentionRouter prompts the built-in Projects agent; see
+	// SetMentionRouter.
+	mentionRouter atomic.Pointer[MentionRouter]
+}
+
+// MentionRouter sends a prompt to the built-in Projects agent.
+type MentionRouter func(ctx context.Context, prompt string) error
+
+// SetMentionRouter makes engines started from now on send direct mentions on
+// finished or paused jobs to the Projects agent through route, which must not
+// block on the agent's answer.
+func (m *Manager) SetMentionRouter(route MentionRouter) {
+	m.mentionRouter.Store(&route)
 }
 
 // engineRun is one running engine and what it needs to shut down.
@@ -506,6 +519,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		Registry:    registry,
 		Out:         io.Discard,
 		Transcripts: m.transcripts,
+	}
+	if route := m.mentionRouter.Load(); route != nil && *route != nil {
+		engine.RouteMention = *route
 	}
 	engine.noMerge.Store(s.NoMerge)
 	engine.noChangelog.Store(s.NoChangelog)
