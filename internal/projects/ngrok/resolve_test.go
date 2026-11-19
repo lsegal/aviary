@@ -117,13 +117,13 @@ func TestStartReportsAnUnresolvableCommand(t *testing.T) {
 // npx puts its own progress on the streams aviary reads the tunnel URL from.
 func TestNgrokLogWatcherIgnoresNpmProgress(t *testing.T) {
 	watcher := &ngrokLogWatcher{}
-	watcher.Write([]byte("npm warn deprecated uuid@8.3.2: no longer supported\n"))
-	watcher.Write([]byte("npm notice New major version of npm available!\n"))
+	_, _ = watcher.Write([]byte("npm warn deprecated uuid@8.3.2: no longer supported\n"))
+	_, _ = watcher.Write([]byte("npm notice New major version of npm available!\n"))
 	if failure := watcher.Failure(); failure != "" {
 		t.Fatalf("npm chatter was taken for an ngrok failure: %q", failure)
 	}
 	// A package that cannot be fetched is why no tunnel came up, so it stays.
-	watcher.Write([]byte("npm error 404 Not Found - GET https://registry.npmjs.org/ngrok\n"))
+	_, _ = watcher.Write([]byte("npm error 404 Not Found - GET https://registry.npmjs.org/ngrok\n"))
 	if failure := watcher.Failure(); !strings.Contains(failure, "404") {
 		t.Fatalf("failure = %q, want the npm error kept", failure)
 	}

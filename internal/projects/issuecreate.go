@@ -14,7 +14,7 @@ import (
 const maxIssueDescription = 4000
 
 // CreateIssue files an issue on a repository through the gh-create skill
-//, run by the prompt agent with this instance's identity so the
+// , run by the prompt agent with this instance's identity so the
 // issue carries gh-create's created-by marker. A non-empty model
 // overrides the configured prompt-agent model for this call. It waits for the
 // skill to finish and reports the new issue's URL.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -40,6 +41,9 @@ type Manager struct {
 	stateDir string
 	logger   *slog.Logger
 
+	// refreshMu serializes refreshes, so two config changes never start two
+	// engines.
+	refreshMu sync.Mutex
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	watches   []Watch
@@ -47,6 +51,9 @@ type Manager struct {
 	lastKey   string
 	lastError string
 	stopped   bool
+	// engineOff keeps the manager tracking settings without starting an
+	// engine; see SetEngineEnabled.
+	engineOff bool
 
 	identity    Identity
 	transcripts *transcriptStore
@@ -96,12 +103,21 @@ func (m *Manager) Identity() string { return string(m.identity) }
 // statePath is the engine's work state file.
 func (m *Manager) statePath() string { return filepath.Join(m.stateDir, "state.json") }
 
+// SetEngineEnabled turns starting the engine on or off. With it off the
+// manager still tracks projects and settings, which lets callers exercise the
+// API without reaching GitHub. It is on by default.
+func (m *Manager) SetEngineEnabled(enabled bool) {
+	m.mu.Lock()
+	m.engineOff = !enabled
+	m.mu.Unlock()
+}
+
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
-	m.refresh()
+	_ = m.refresh()
 }
 
 // AddWatch starts watching targets until RemoveWatch or the server stops.
@@ -311,6 +327,8 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 // they match, a live update when only live settings changed, and a restart
 // otherwise.
 func (m *Manager) refresh() error {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()
@@ -331,12 +349,13 @@ func (m *Manager) refresh() error {
 	}
 	m.running = nil
 	m.lastKey = key
+	engineOff := m.engineOff
 	m.mu.Unlock()
 	if run != nil {
 		m.logf("projects settings changed; restarting the engine (running jobs are checkpointed and resume)")
 		m.stopRun(run)
 	}
-	if len(settings.Targets) == 0 {
+	if len(settings.Targets) == 0 || engineOff {
 		m.setError("")
 		m.snapshot.Store(nil)
 		return nil
@@ -397,10 +416,15 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	setAgentRegistry(registry)
 	for _, spec := range allAgentSpecs(s) {
-		if _, err := parseAgentSpecIn(registry, spec); err != nil {
+		parsed, err := parseAgentSpecIn(registry, spec)
+		if err != nil {
 			return nil, fmt.Errorf("agent %q: %w", spec, err)
 		}
+		if parsed.Name == aviaryAgent && parsed.Model == "" {
+			return nil, fmt.Errorf("agent %q: name the Aviary agent to run, as aviary/<agent>", spec)
+		}
 	}
+	s.AgentBinaries = withAviaryBinary(s.AgentBinaries)
 	unblock := unblockConfig{Agent: s.UnblockAgent, Model: s.UnblockModel}
 	if err := validateUnblockAgent(registry, unblock); err != nil {
 		return nil, err
@@ -574,6 +598,27 @@ func (m *Manager) stopRun(run *engineRun) {
 	for _, cleanup := range run.cleanup {
 		cleanup()
 	}
+}
+
+// aviaryAgent is the built-in definition that runs a job on an Aviary agent:
+// aviary/<agent> runs `aviary agent run <agent>` through this executable.
+const aviaryAgent = "aviary"
+
+// withAviaryBinary points the aviary definition at the running executable
+// unless agent_binaries names another.
+func withAviaryBinary(binaries map[string]string) map[string]string {
+	if binaries[aviaryAgent] != "" {
+		return binaries
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return binaries
+	}
+	merged := map[string]string{aviaryAgent: executable}
+	for name, binary := range binaries {
+		merged[name] = binary
+	}
+	return merged
 }
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.

@@ -100,16 +100,6 @@ func (a *activeAgents) setCheckout(run *activeAgent, checkout string) {
 	a.mu.Unlock()
 }
 
-// count reports how many agent runs are in flight.
-func (a *activeAgents) count() int {
-	if a == nil {
-		return 0
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.runs)
-}
-
 func (a *activeAgents) remove(run *activeAgent) {
 	if a == nil || run == nil {
 		return

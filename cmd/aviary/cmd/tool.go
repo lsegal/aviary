@@ -21,6 +21,7 @@ var toolCmd = &cobra.Command{
 	Long:               "Run any MCP tool by name using schema-driven flags. Use --args for unsupported or complex payloads.",
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		args = applyGlobalFlags(args)
 		if len(args) == 0 || isHelpArg(args[0]) {
 			return writeToolHelp(cmd.Context(), cmd.OutOrStdout())
 		}

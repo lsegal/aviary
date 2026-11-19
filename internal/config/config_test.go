@@ -872,18 +872,6 @@ func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
 
 }
 
-func TestValidate_StdioModelMissingCommand(t *testing.T) {
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name:  "bot",
-			Model: "stdio/nonexistent-cmd-xyz-12345",
-		}},
-	}
-	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "not found in PATH"))
-
-}
-
 func TestValidate_UnknownProvider(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{{
@@ -1093,7 +1081,6 @@ func TestUniqueProviderModels(t *testing.T) {
 			{Name: "a1", Model: "anthropic/claude-sonnet-4-5"},
 			{Name: "a2", Model: "openai/gpt-4"},
 			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
-			{Name: "a4", Model: "stdio/mycommand"},           // excluded
 		},
 	}
 	got := UniqueProviderModels(cfg)
@@ -1103,9 +1090,6 @@ func TestUniqueProviderModels(t *testing.T) {
 
 	_, ok = got["openai"]
 	assert.True(t, ok)
-
-	_, ok = got["stdio"]
-	assert.False(t, ok)
 
 }
 

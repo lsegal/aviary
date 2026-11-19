@@ -24,7 +24,7 @@ func TestListenForWebhooksAssignsRandomPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer listener.Close() //nolint:errcheck
 
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
@@ -279,7 +279,7 @@ func TestGHCLIAddReactionReturnsError(t *testing.T) {
 }
 
 func TestGHCLIListComments(t *testing.T) {
-	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+	gh := GHCLI{runCommand: func(_ context.Context, _ ...string) ([]byte, error) {
 		return []byte(`[{"body":"Starting work on this issue /aviary:AAA","created_at":"2026-07-20T12:00:00Z"}]`), nil
 	}}
 	comments, err := gh.ListComments(context.Background(), "owner/repo", 7)
@@ -502,7 +502,7 @@ func TestOriginRemoteTarget(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(wd)
+	defer os.Chdir(wd) //nolint:errcheck
 
 	repo, ok := originRemoteTarget()
 	if !ok || repo != "lsegal/aviary" {
@@ -933,13 +933,13 @@ func runFakeAgent(log string, args []string) int {
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		file.Close()
+		_ = file.Close()
 		return 1
 	}
 	ceiling, ceilingSet := os.LookupEnv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")
 	if _, err := fmt.Fprintf(file, "cwd=%s\nbg_wait_ceiling_set=%t bg_wait_ceiling=%s\n%s\n<<<END>>>\n", cwd, ceilingSet, ceiling, strings.Join(args, " ")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		file.Close()
+		_ = file.Close()
 		return 1
 	}
 	if err := file.Close(); err != nil {
@@ -989,7 +989,7 @@ func TestCommandArgsPromptResumedSessionWithIssueUpdate(t *testing.T) {
 func TestGHCLIBoundsEveryCommand(t *testing.T) {
 	var deadline time.Time
 	var bounded bool
-	gh := GHCLI{runCommand: func(ctx context.Context, args ...string) ([]byte, error) {
+	gh := GHCLI{runCommand: func(ctx context.Context, _ ...string) ([]byte, error) {
 		deadline, bounded = ctx.Deadline()
 		return nil, nil
 	}}
@@ -1011,7 +1011,7 @@ func TestGHCLIReportsATimedOutCommand(t *testing.T) {
 	previous := ghCommandTimeout
 	ghCommandTimeout = 20 * time.Millisecond
 	defer func() { ghCommandTimeout = previous }()
-	gh := GHCLI{runCommand: func(ctx context.Context, args ...string) ([]byte, error) {
+	gh := GHCLI{runCommand: func(ctx context.Context, _ ...string) ([]byte, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}

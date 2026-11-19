@@ -10,7 +10,7 @@ import (
 
 // TestPauseHelperProcess is not a real test: TestPauseStopsAndResumesChild
 // runs the test binary as a child that appends to a file until it is killed.
-func TestPauseHelperProcess(t *testing.T) {
+func TestPauseHelperProcess(_ *testing.T) {
 	path := os.Getenv("AVIARY_PAUSE_HELPER_FILE")
 	if path == "" {
 		return

@@ -455,7 +455,7 @@ func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func
 // results keyed by agent name. A reader that has a source but no reading
 // reports itself unavailable, with the reason when it has one, so a broken
 // read is never shown as the "not tracked" of an agent with no source at all
-//.
+// .
 func combinedQuotaReader(readers []namedQuotaReader) func(context.Context) map[string]string {
 	return func(ctx context.Context) map[string]string {
 		result := make(map[string]string, len(readers))
@@ -496,17 +496,4 @@ func formatNamedQuotas(quotas map[string]string) string {
 		parts[i] = name + ": " + text
 	}
 	return strings.Join(parts, ", ")
-}
-
-func quotaText(snapshot EngineSnapshot) string {
-	if len(snapshot.Quotas) > 0 {
-		return "quota: " + formatNamedQuotas(snapshot.Quotas)
-	}
-	if strings.TrimSpace(snapshot.Quota) != "" {
-		return "quota: " + snapshot.Quota
-	}
-	if snapshot.TokenLimit > 0 {
-		return fmt.Sprintf("tokens: %d/%d", snapshot.TokensUsed, snapshot.TokenLimit)
-	}
-	return "quota: unavailable"
 }

@@ -1,9 +1,7 @@
 package projects
 
 import (
-	"fmt"
 	"slices"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -18,6 +16,7 @@ const maxVisibleJobs = 6
 // dashboards render the same published state.
 type JobSnapshot = core.JobSnapshot
 
+// EngineSnapshot is the engine's published state.
 type EngineSnapshot = core.Snapshot
 
 func formatInterval(d time.Duration) string { return core.FormatInterval(d) }
@@ -72,54 +71,4 @@ func truncate(s string, width int) string {
 		return string(runes[:width])
 	}
 	return string(runes[:width-3]) + "..."
-}
-
-// deliveryText describes how the engine hears about GitHub changes and when it
-// last checked GitHub.
-func deliveryText(snapshot EngineSnapshot) string {
-	text := "polling every " + formatInterval(snapshot.Interval)
-	if snapshot.UseWebhooks {
-		text = "push"
-		if snapshot.WebhookURL != "" {
-			text += " " + snapshot.WebhookURL
-		}
-		if !snapshot.WebhookOnline {
-			text += " (offline)"
-		}
-	}
-	if !snapshot.LastPoll.IsZero() {
-		text += "; checked " + snapshot.LastPoll.Format("15:04:05")
-	}
-	return text
-}
-
-// jobAgentSummary names the agent, model and effort a job runs with.
-func jobAgentSummary(job JobSnapshot) string {
-	if job.Agent == "" {
-		return "pending"
-	}
-	summary := job.Agent
-	if job.Model != "" {
-		summary += " (" + job.Model
-		if job.Effort != "" {
-			summary += ", " + job.Effort
-		}
-		summary += ")"
-	} else if job.Effort != "" {
-		summary += " (" + job.Effort + ")"
-	}
-	return summary
-}
-
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return lines[len(lines)-1]
-}
-
-func formatTargets(targets []string, counts map[string]int) []string {
-	result := make([]string, len(targets))
-	for i, target := range targets {
-		result[i] = fmt.Sprintf("%s (%d issues)", target, counts[target])
-	}
-	return result
 }

@@ -73,7 +73,7 @@ func buildFakeAgentCLI() (string, error) {
 // has finished.
 func removeFakeAgentCLI() {
 	if fakeAgentCLIDir != "" {
-		os.RemoveAll(fakeAgentCLIDir)
+		_ = os.RemoveAll(fakeAgentCLIDir)
 	}
 }
 

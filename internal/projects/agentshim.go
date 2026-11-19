@@ -18,7 +18,7 @@ const agentShimMaxSize = 64 << 10
 // On Windows a .cmd or .bat file can only run through cmd.exe, and cmd.exe
 // ends each argument at its first newline, so a multi-line prompt handed to
 // an npm shim such as claude.cmd reached the agent as its first line only
-//. The shim is therefore replaced by the program it launches,
+// . The shim is therefore replaced by the program it launches,
 // which receives the prompt intact. A batch file aviary cannot read through is
 // still run as is, unless the prompt has a line break it would lose: that is
 // refused with an error naming --agent-binary as the way to point aviary at

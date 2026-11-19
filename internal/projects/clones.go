@@ -351,7 +351,7 @@ func gitOriginRepository(dir string) string {
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 	scanner := bufio.NewScanner(file)
 	inOrigin := false
 	for scanner.Scan() {
@@ -517,30 +517,4 @@ func removeTree(path string) error {
 		return nil
 	})
 	return os.RemoveAll(path)
-}
-
-// tempDirFlag is the repeatable --temp-dir switch: the ordered temp
-// directories new clones are placed in.
-type tempDirFlag struct {
-	values []string
-}
-
-func (f *tempDirFlag) String() string {
-	if f == nil {
-		return ""
-	}
-	return strings.Join(f.values, ", ")
-}
-
-func (f *tempDirFlag) Set(value string) error {
-	dirs, err := normalizeTempDirs([]string{value})
-	if err != nil {
-		return err
-	}
-	f.values = append(f.values, dirs...)
-	return nil
-}
-
-func (f *tempDirFlag) Get() any {
-	return append([]string{}, f.values...)
 }

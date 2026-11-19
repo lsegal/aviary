@@ -220,7 +220,7 @@ type JobAction struct {
 
 // JobActions says which job actions the run accepts for a job in one state,
 // so a dashboard never enables a button whose request is guaranteed to fail
-//. RetryReason says why retry is refused, when it is.
+// . RetryReason says why retry is refused, when it is.
 type JobActions struct {
 	Retry       bool
 	RetryReason string

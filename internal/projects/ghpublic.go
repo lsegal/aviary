@@ -37,7 +37,7 @@ func doPublicGitHubRequest(ctx context.Context, requestURL string) ([]byte, http
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, 0, err
@@ -220,8 +220,6 @@ func (g GHCLI) resolveSelfLogin(ctx context.Context) (string, error) {
 	}
 	return login, nil
 }
-
-func issueFilterTerms(filter string) []string { return core.IssueFilterTerms(filter) }
 
 func issueSearchTerms(filter string, allIssues bool) []string {
 	return core.IssueSearchTerms(filter, allIssues)
