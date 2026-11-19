@@ -108,6 +108,10 @@ export default defineConfig({
 							link: "/reference/mcp/server-and-config",
 						},
 						{
+							text: "Projects Tools",
+							link: "/reference/mcp/projects",
+						},
+						{
 							text: "Usage And Skills Tools",
 							link: "/reference/mcp/usage-and-skills",
 						},

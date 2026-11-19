@@ -179,7 +179,7 @@ func TestProjectCheckToolOverMCP(t *testing.T) {
 	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "c"}, nil)
 	sess, err := client.Connect(context.Background(), ct, nil)
 	require.NoError(t, err)
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	tools, err := sess.ListTools(context.Background(), nil)
 	require.NoError(t, err)
