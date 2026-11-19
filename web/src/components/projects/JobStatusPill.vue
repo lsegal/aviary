@@ -1,6 +1,6 @@
 <template>
 	<span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold" :class="toneClass">
-		<span class="h-1.5 w-1.5 rounded-full" :class="[dotClass, status === 'running' ? 'animate-pulse' : '']" />
+		<span class="h-1.5 w-1.5 rounded-full" :class="[dotClass, status === 'active' ? 'animate-pulse' : '']" />
 		{{ statusLabel(status) }}
 	</span>
 </template>

@@ -1,17 +1,17 @@
 // View models for the Projects board and run view, normalized from the
-// project_* MCP tools (project_status, project_job_list, project_job_get).
-// Every tool response passes through the normalizers here so the views
-// never depend on the raw payload shape.
+// project_* MCP tools (project_status, project_job_list, project_job_get)
+// served by internal/projects. Every tool response passes through the
+// normalizers here so the views never depend on the raw payload shape.
 
+/** Job states as internal/projects/core reports them. */
 export type JobStatus =
 	| "queued"
-	| "running"
+	| "active"
 	| "waiting"
 	| "paused"
+	| "stopping"
 	| "completed"
-	| "merged"
-	| "failed"
-	| "stopped";
+	| "failed";
 
 export type BoardFilter = "all" | "running" | "waiting" | "done" | "failed";
 
@@ -19,14 +19,13 @@ export interface ProjectSummary {
 	name: string;
 	running: number;
 	waiting: number;
-	jobs: number;
+	issues: number;
 }
 
 export interface CLIStatus {
 	name: string;
-	model: string;
-	signedIn: boolean;
 	quota: string;
+	signedIn: boolean;
 }
 
 export interface ProjectTarget {
@@ -36,47 +35,55 @@ export interface ProjectTarget {
 
 export interface ProjectStatus {
 	instanceID: string;
-	version: string;
-	deliveryMode: string;
+	running: boolean;
+	error: string;
+	delivery: string;
 	deliveryOnline: boolean;
 	lastChecked: string;
-	intervalSeconds: number;
+	interval: string;
 	readyLabel: string;
 	slotsUsed: number;
 	slotsTotal: number;
-	running: number;
-	waiting: number;
-	merged24h: number;
+	activeJobs: number;
+	waitingJobs: number;
+	completed: number;
 	failed: number;
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
 	log: string[];
-	projects: ProjectSummary[];
+}
+
+export interface JobActions {
+	retry: boolean;
+	stop: boolean;
+	retryUnavailable: string;
 }
 
 export interface ProjectJob {
+	/** The engine's job key, `<target>#<number>`. */
 	id: string;
-	project: string;
+	/** The watched target the job belongs to, which is also its project. */
+	target: string;
+	/** The OWNER/REPO hosting the issue. */
 	repo: string;
-	issue: number;
+	number: number;
 	title: string;
 	status: JobStatus;
 	skill: string;
 	cli: string;
-	branch: string;
+	issueURL: string;
 	pr: number;
+	prURL: string;
+	/** The OWNER/REPO hosting the pull request, which differs for forks. */
 	prRepo: string;
-	prDraft: boolean;
-	stackedOn: number;
 	waitingReason: string;
-	checks: string;
+	wakeAt: string;
 	progressDone: number;
 	progressTotal: number;
 	startedAt: string;
-	updatedAt: string;
 	cloneDir: string;
 	session: string;
-	allowedCommenters: string[];
+	actions: JobActions;
 	output: string[];
 }
 
@@ -116,7 +123,6 @@ export type JobEvent =
 			kind: "comment_relay";
 			time: string;
 			author: string;
-			target: string;
 			body: string;
 			url: string;
 	  }
@@ -125,6 +131,7 @@ export type JobEvent =
 export interface JobDetail {
 	job: ProjectJob;
 	events: JobEvent[];
+	/** Raw CLI stdout, falling back to the job's scrollback. */
 	output: string[];
 }
 
@@ -138,33 +145,22 @@ function arr(v: unknown): unknown[] {
 	return Array.isArray(v) ? v : [];
 }
 
-function str(...vals: unknown[]): string {
-	for (const v of vals) {
-		if (typeof v === "string" && v !== "") return v;
-		if (typeof v === "number") return String(v);
-	}
+function str(v: unknown): string {
+	if (typeof v === "string") return v;
+	if (typeof v === "number") return String(v);
 	return "";
 }
 
-function num(...vals: unknown[]): number {
-	for (const v of vals) {
-		if (typeof v === "number" && Number.isFinite(v)) return v;
-		if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v)))
-			return Number(v);
-	}
-	return 0;
-}
-
-function bool(...vals: unknown[]): boolean {
-	for (const v of vals) {
-		if (typeof v === "boolean") return v;
-	}
-	return false;
+function num(v: unknown): number {
+	return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
 function lines(v: unknown): string[] {
-	if (typeof v === "string") return v === "" ? [] : v.split("\n");
-	return arr(v).map((l) => (typeof l === "string" ? l : str(obj(l).text)));
+	if (typeof v === "string") {
+		const text = v.replaceAll("\r\n", "\n").replace(/\n$/, "");
+		return text === "" ? [] : text.split("\n");
+	}
+	return arr(v).map(str);
 }
 
 /** Parses a tool's text result as JSON, returning null for empty or invalid text. */
@@ -177,67 +173,70 @@ export function parseToolJSON(text: string): unknown {
 	}
 }
 
-const STATUS_ALIASES: Record<string, JobStatus> = {
-	queued: "queued",
-	pending: "queued",
-	running: "running",
-	active: "running",
-	waiting: "waiting",
-	blocked: "waiting",
-	paused: "paused",
-	completed: "completed",
-	done: "completed",
-	succeeded: "completed",
-	merged: "merged",
-	failed: "failed",
-	error: "failed",
-	errored: "failed",
-	stopped: "stopped",
-	cancelled: "stopped",
-	canceled: "stopped",
-};
+const STATUSES: JobStatus[] = [
+	"queued",
+	"active",
+	"waiting",
+	"paused",
+	"stopping",
+	"completed",
+	"failed",
+];
 
 export function normalizeJobStatus(v: unknown): JobStatus {
-	return STATUS_ALIASES[str(v).toLowerCase()] ?? "queued";
+	const s = str(v) as JobStatus;
+	return STATUSES.includes(s) ? s : "queued";
 }
 
-function normalizeProgress(raw: Raw): { done: number; total: number } {
-	const p = obj(raw.progress);
-	if (Object.keys(p).length > 0) {
-		return { done: num(p.done, p.checked), total: num(p.total) };
-	}
-	return { done: num(raw.tasks_done), total: num(raw.tasks_total) };
+const SKILLS: Record<string, string> = {
+	issue: "gh-fix",
+	discussion: "gh-discuss",
+	schedule: "schedule",
+};
+
+/** The OWNER/REPO of a github.com issue or pull request URL. */
+function repoOf(url: string): string {
+	const m = /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(url);
+	return m ? m[1] : "";
 }
 
 export function normalizeJob(v: unknown): ProjectJob {
 	const raw = obj(v);
-	const pr = obj(raw.pr);
-	const progress = normalizeProgress(raw);
-	const repo = str(raw.repo, raw.repository);
+	const progress = obj(raw.progress);
+	const actions = obj(raw.actions);
+	const target = str(raw.target);
+	const number = num(raw.number);
+	const issueURL = str(raw.issue_url);
+	const repo = str(raw.repository) || repoOf(issueURL) || target;
+	const prURL = str(raw.pull_request_url);
+	const agent = str(raw.agent);
+	const model = str(raw.model);
 	return {
-		id: str(raw.id, raw.job_id),
-		project: str(raw.project, repo),
+		id: str(raw.key) || `${target}#${number}`,
+		target,
 		repo,
-		issue: num(raw.issue, raw.issue_number, raw.number),
-		title: str(raw.title, raw.issue_title),
-		status: normalizeJobStatus(raw.status ?? raw.state),
-		skill: str(raw.skill),
-		cli: str(raw.cli, raw.agent),
-		branch: str(raw.branch, pr.branch),
-		pr: num(pr.number, raw.pr_number, typeof raw.pr === "number" ? raw.pr : 0),
-		prRepo: str(pr.repo, raw.pr_repo, repo),
-		prDraft: bool(pr.draft, raw.pr_draft),
-		stackedOn: num(raw.stacked_on, pr.stacked_on),
-		waitingReason: str(raw.waiting_reason, raw.reason, raw.blocked_reason),
-		checks: str(raw.checks, raw.ci_summary),
-		progressDone: progress.done,
-		progressTotal: progress.total,
-		startedAt: str(raw.started_at, raw.created_at),
-		updatedAt: str(raw.updated_at),
-		cloneDir: str(raw.clone_dir, raw.checkout_dir),
-		session: str(raw.session, raw.session_id),
-		allowedCommenters: arr(raw.allowed_commenters).map((c) => str(c)),
-		output: lines(raw.output ?? raw.scrollback ?? raw.output_tail),
+		number,
+		title: str(raw.title),
+		status: normalizeJobStatus(raw.status),
+		skill: SKILLS[str(raw.kind)] ?? str(raw.kind),
+		cli: model ? `${agent}/${model}` : agent,
+		issueURL,
+		pr: num(raw.pull_request),
+		prURL,
+		prRepo: repoOf(prURL) || repo,
+		waitingReason: str(raw.wait_reason),
+		wakeAt: str(raw.wake_at),
+		progressDone: num(progress.done),
+		progressTotal: num(progress.total),
+		startedAt: str(raw.started),
+		cloneDir: str(raw.checkout_directory),
+		session: str(raw.session_id),
+		actions: {
+			retry: actions.retry !== false,
+			stop: actions.stop === true,
+			retryUnavailable: str(raw.retry_unavailable),
+		},
+		output: lines(raw.scrollback),
 	};
 }
 
@@ -246,39 +245,34 @@ export function normalizeJobList(v: unknown): {
 	total: number;
 } {
 	const raw = obj(v);
-	const list = Array.isArray(v) ? v : arr(raw.jobs);
-	const jobs = list.map(normalizeJob);
+	const jobs = arr(raw.jobs).map(normalizeJob);
 	return { jobs, total: num(raw.total) || jobs.length };
 }
 
 function normalizeEvent(v: unknown): JobEvent | null {
 	const raw = obj(v);
-	const time = str(raw.time, raw.timestamp, raw.at);
-	switch (str(raw.type, raw.kind)) {
+	const time = str(raw.time);
+	switch (str(raw.kind)) {
 		case "message":
-			return { kind: "message", time, text: str(raw.text, raw.content) };
+			return { kind: "message", time, text: str(raw.text) };
 		case "reasoning":
-			return { kind: "reasoning", time, text: str(raw.text, raw.content) };
+			return { kind: "reasoning", time, text: str(raw.text) };
 		case "tool_call":
 			return {
 				kind: "tool_call",
 				time,
-				callID: str(raw.call_id, raw.id),
-				name: str(raw.name, raw.tool),
-				input: raw.input ?? raw.args,
+				callID: str(raw.call_id),
+				name: str(raw.name),
+				input: raw.input,
 			};
-		case "tool_result":
-			// Merged into its tool_call by normalizeEvents.
-			return null;
 		case "command":
 			return {
 				kind: "command",
 				time,
 				command: str(raw.command),
 				output: str(raw.output),
-				exitCode:
-					typeof raw.exit_code === "number" ? (raw.exit_code as number) : null,
-				running: str(raw.status) === "running" || bool(raw.running),
+				exitCode: typeof raw.exit_code === "number" ? raw.exit_code : null,
+				running: str(raw.status) === "running",
 			};
 		case "file_change":
 			return {
@@ -294,34 +288,31 @@ function normalizeEvent(v: unknown): JobEvent | null {
 				items: arr(raw.items).map((i) => {
 					const item = obj(i);
 					return {
-						text: str(item.text, item.content, item.step),
+						text: str(item.text),
 						status: str(item.status) || "pending",
 					};
 				}),
 			};
-		case "usage":
+		case "usage": {
+			const usage = obj(raw.usage);
 			return {
 				kind: "usage",
 				time,
-				inputTokens: num(raw.input_tokens),
-				outputTokens: num(raw.output_tokens),
-				cost: num(raw.cost, raw.cost_usd),
+				inputTokens: num(usage.input_tokens),
+				outputTokens: num(usage.output_tokens),
+				cost: num(usage.cost_usd),
 			};
+		}
 		case "comment_relay":
 			return {
 				kind: "comment_relay",
 				time,
 				author: str(raw.author),
-				target: str(raw.target),
-				body: str(raw.body, raw.text),
+				body: str(raw.text),
 				url: str(raw.url),
 			};
 		case "system":
-			return {
-				kind: "system",
-				time,
-				text: str(raw.text, raw.message, raw.event),
-			};
+			return { kind: "system", time, text: str(raw.text) };
 		default:
 			return null;
 	}
@@ -333,13 +324,13 @@ export function normalizeEvents(v: unknown): JobEvent[] {
 	const calls = new Map<string, Extract<JobEvent, { kind: "tool_call" }>>();
 	for (const item of arr(v)) {
 		const raw = obj(item);
-		if (str(raw.type, raw.kind) === "tool_result") {
-			const call = calls.get(str(raw.call_id, raw.id));
+		if (str(raw.kind) === "tool_result") {
+			const call = calls.get(str(raw.call_id));
 			if (call) {
 				call.result = {
-					output: str(raw.output, raw.content),
-					error: bool(raw.error, raw.is_error),
-					images: arr(raw.images).map((i) => str(i, obj(i).url)),
+					output: str(raw.output),
+					error: raw.is_error === true,
+					images: arr(raw.images).map(str),
 				};
 			}
 			continue;
@@ -355,77 +346,87 @@ export function normalizeEvents(v: unknown): JobEvent[] {
 
 export function normalizeJobDetail(v: unknown): JobDetail {
 	const raw = obj(v);
-	const jobRaw = Object.keys(obj(raw.job)).length > 0 ? obj(raw.job) : raw;
-	const job = normalizeJob(jobRaw);
-	const output = lines(raw.output ?? raw.scrollback ?? raw.raw_output);
-	job.output = output.length > 0 ? output : job.output;
+	const job = normalizeJob(raw);
+	const rawOutput = lines(raw.raw_output);
 	return {
 		job,
-		events: normalizeEvents(raw.events ?? jobRaw.events),
-		output: job.output,
+		events: normalizeEvents(raw.events),
+		output: rawOutput.length > 0 ? rawOutput : job.output,
 	};
 }
 
 export function normalizeStatus(v: unknown): ProjectStatus {
 	const raw = obj(v);
-	const delivery = obj(raw.delivery);
-	const slots = obj(raw.slots);
-	const counts = obj(raw.counts ?? raw.jobs);
+	const jobs = obj(raw.jobs);
+	const counts = obj(raw.issue_counts);
+	const quotas = obj(raw.quotas);
+	const cliNames = [
+		...new Set([...arr(raw.agents).map(str), ...Object.keys(quotas)]),
+	].filter(Boolean);
 	return {
-		instanceID: str(raw.instance_id, raw.identity),
-		version: str(raw.version),
-		deliveryMode: str(delivery.mode, raw.delivery_mode),
-		deliveryOnline:
-			typeof delivery.online === "boolean"
-				? (delivery.online as boolean)
-				: str(delivery.status, raw.delivery_status) !== "offline",
-		lastChecked: str(raw.last_checked, delivery.last_checked),
-		intervalSeconds: num(raw.interval_seconds, delivery.interval_seconds),
+		instanceID: str(raw.identity),
+		running: raw.running !== false,
+		error: str(raw.error),
+		delivery: str(raw.delivery),
+		// Only webhook delivery reports whether its tunnel is up.
+		deliveryOnline: raw.webhook_online !== false,
+		lastChecked: str(raw.last_check),
+		interval: str(raw.poll_interval),
 		readyLabel: str(raw.ready_label) || "ready",
-		slotsUsed: num(slots.used, raw.slots_used),
-		slotsTotal: num(slots.total, raw.slots_total, raw.concurrency),
-		running: num(counts.running),
-		waiting: num(counts.waiting),
-		merged24h: num(counts.merged_24h, counts.merged),
-		failed: num(counts.failed),
-		targets: arr(raw.targets).map((t) => {
-			const target = obj(t);
+		slotsUsed: num(jobs.running),
+		slotsTotal: num(raw.concurrency),
+		activeJobs: num(jobs.running),
+		waitingJobs: num(jobs.queued) + num(jobs.paused),
+		completed: num(jobs.completed),
+		failed: num(jobs.failed),
+		targets: arr(raw.targets).map((t) => ({
+			name: str(t),
+			issues: num(counts[str(t)]),
+		})),
+		clis: cliNames.map((name) => {
+			const quota = str(quotas[name]);
 			return {
-				name: str(target.name, target.target, t),
-				issues: num(target.issues, target.issue_count),
+				name,
+				quota,
+				signedIn: !/signed out|not signed in|unauthenticated/i.test(quota),
 			};
 		}),
-		clis: arr(raw.clis ?? raw.quota).map((c) => {
-			const cli = obj(c);
-			return {
-				name: str(cli.name, cli.cli, cli.agent),
-				model: str(cli.model),
-				signedIn: bool(cli.signed_in, cli.authenticated),
-				quota: str(cli.quota, cli.quota_summary),
-			};
-		}),
-		log: lines(raw.log ?? raw.recent_log),
-		projects: arr(raw.projects).map((p) => {
-			const project = obj(p);
-			return {
-				name: str(project.name, project.project, p),
-				running: num(project.running),
-				waiting: num(project.waiting),
-				jobs: num(project.jobs, project.total),
-			};
-		}),
+		log: lines(raw.recent_logs),
 	};
 }
 
+/** Per-target live counts for the sidebar, from status plus the job list. */
+export function summarizeProjects(
+	status: ProjectStatus,
+	jobs: ProjectJob[],
+): ProjectSummary[] {
+	return status.targets.map((t) => {
+		const mine = jobs.filter((j) => j.target === t.name);
+		return {
+			name: t.name,
+			issues: t.issues,
+			running: mine.filter((j) => isRunning(j.status)).length,
+			waiting: mine.filter((j) => isWaiting(j.status)).length,
+		};
+	});
+}
+
+export function isRunning(status: JobStatus): boolean {
+	return status === "active" || status === "stopping";
+}
+
+export function isWaiting(status: JobStatus): boolean {
+	return status === "waiting" || status === "paused" || status === "queued";
+}
+
 const STATUS_ORDER: Record<JobStatus, number> = {
-	running: 0,
+	active: 0,
+	stopping: 0,
 	failed: 1,
 	waiting: 2,
 	paused: 3,
 	queued: 4,
-	stopped: 5,
-	completed: 6,
-	merged: 7,
+	completed: 5,
 };
 
 /** Orders jobs with running and errored jobs first, then newest first. */
@@ -433,19 +434,19 @@ export function sortJobs(jobs: ProjectJob[]): ProjectJob[] {
 	return [...jobs].sort(
 		(a, b) =>
 			STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-			(b.updatedAt || b.startedAt).localeCompare(a.updatedAt || a.startedAt),
+			b.startedAt.localeCompare(a.startedAt),
 	);
 }
 
-/** The project_job_list status filter for a board tab, or undefined for all. */
+/** The engine statuses a board tab shows, or undefined for every job. */
 export function filterStatuses(filter: BoardFilter): JobStatus[] | undefined {
 	switch (filter) {
 		case "running":
-			return ["running"];
+			return ["active", "stopping"];
 		case "waiting":
 			return ["waiting", "paused", "queued"];
 		case "done":
-			return ["completed", "merged", "stopped"];
+			return ["completed"];
 		case "failed":
 			return ["failed"];
 		default:
@@ -453,26 +454,26 @@ export function filterStatuses(filter: BoardFilter): JobStatus[] | undefined {
 	}
 }
 
+const STATUS_LABELS: Record<JobStatus, string> = {
+	queued: "Queued",
+	active: "Running",
+	waiting: "Waiting",
+	paused: "Paused",
+	stopping: "Stopping",
+	completed: "Done",
+	failed: "Failed",
+};
+
 export function statusLabel(status: JobStatus): string {
-	return status.charAt(0).toUpperCase() + status.slice(1);
+	return STATUS_LABELS[status];
 }
 
 export function statusTone(status: JobStatus): string {
-	switch (status) {
-		case "running":
-			return "blue";
-		case "waiting":
-		case "paused":
-		case "queued":
-			return "amber";
-		case "failed":
-			return "red";
-		case "completed":
-		case "merged":
-			return "green";
-		default:
-			return "gray";
-	}
+	if (isRunning(status)) return "blue";
+	if (isWaiting(status)) return "amber";
+	if (status === "failed") return "red";
+	if (status === "completed") return "green";
+	return "gray";
 }
 
 export const LIFECYCLE_STEPS = [
@@ -493,22 +494,19 @@ export function lifecycleStep(detail: JobDetail): {
 	done: boolean;
 } {
 	const { job, events } = detail;
-	if (job.status === "merged") return { step: 5, done: true };
-	let step = 0;
-	if (job.pr > 0 || job.branch) step = 1;
+	if (job.status === "completed" && job.pr > 0) return { step: 5, done: true };
+	let step = job.pr > 0 ? 1 : 0;
 	for (const e of events) {
 		if (e.kind === "system") {
 			const t = e.text.toLowerCase();
-			if (/\bci\b|checks?/.test(t)) step = Math.max(step, 4);
+			if (t.includes("merged")) return { step: 5, done: true };
+			if (/\bci\b|checks?\b/.test(t)) step = Math.max(step, 4);
 			else if (t.includes("ready")) step = Math.max(step, 3);
-			else if (t.includes("pr") || t.includes("branch"))
-				step = Math.max(step, 1);
+			else if (/\bpr\b|pull request|branch/.test(t)) step = Math.max(step, 1);
 		} else if (step >= 1 && e.kind !== "comment_relay") {
 			step = Math.max(step, 2);
 		}
 	}
-	if (job.pr > 0 && !job.prDraft) step = Math.max(step, 3);
-	if (job.checks && step >= 3) step = 4;
 	return { step, done: false };
 }
 
@@ -553,4 +551,8 @@ export function diffStat(diff: string): { added: number; removed: number } {
 
 export function encodeProject(name: string): string {
 	return encodeURIComponent(name);
+}
+
+export function jobPath(target: string, number: number): string {
+	return `/projects/${encodeProject(target)}/jobs/${number}`;
 }
