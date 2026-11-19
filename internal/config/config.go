@@ -27,6 +27,19 @@ type Config struct {
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
+	// CodingSkills controls how Aviary keeps the skills it ships for coding
+	// CLIs (gh-fix, gh-discuss, gh-create) installed and current.
+	CodingSkills *CodingSkillsConfig `yaml:"coding_skills,omitempty" json:"coding_skills,omitempty"`
+}
+
+// CodingSkillsConfig controls the automatic upkeep of the coding-CLI skills.
+// Both settings default to true when unset.
+type CodingSkillsConfig struct {
+	// AutoUpdate reinstalls outdated skills at startup, so each release runs
+	// the skills it was built with.
+	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
+	// InstallNewCLIs installs the skills for any coding CLI found later.
+	InstallNewCLIs *bool `yaml:"install_new_clis,omitempty" json:"install_new_clis,omitempty"`
 }
 
 // SkillConfig configures an installed skill runtime.
@@ -410,6 +423,24 @@ func EffectiveBrowserReuseTabs(b BrowserConfig) bool {
 	return BoolOr(b.ReuseTabs, true)
 }
 
+// EffectiveCodingSkillsAutoUpdate reports whether outdated coding-CLI skills
+// are reinstalled automatically. Defaults to true when unset.
+func EffectiveCodingSkillsAutoUpdate(cfg *Config) bool {
+	if cfg == nil || cfg.CodingSkills == nil {
+		return true
+	}
+	return BoolOr(cfg.CodingSkills.AutoUpdate, true)
+}
+
+// EffectiveCodingSkillsInstallNewCLIs reports whether the coding-CLI skills
+// are installed for CLIs found later. Defaults to true when unset.
+func EffectiveCodingSkillsInstallNewCLIs(cfg *Config) bool {
+	if cfg == nil || cfg.CodingSkills == nil {
+		return true
+	}
+	return BoolOr(cfg.CodingSkills.InstallNewCLIs, true)
+}
+
 // normalize strips zero/empty fields that would produce noisy YAML output.
 // It is called automatically by Save.
 func normalize(cfg *Config) {
@@ -432,6 +463,17 @@ func normalize(cfg *Config) {
 	}
 	if len(cfg.Skills) == 0 {
 		cfg.Skills = nil
+	}
+	if cs := cfg.CodingSkills; cs != nil {
+		if BoolOr(cs.AutoUpdate, true) {
+			cs.AutoUpdate = nil
+		}
+		if BoolOr(cs.InstallNewCLIs, true) {
+			cs.InstallNewCLIs = nil
+		}
+		if cs.AutoUpdate == nil && cs.InstallNewCLIs == nil {
+			cfg.CodingSkills = nil
+		}
 	}
 	if cfg.Models.Defaults != nil && cfg.Models.Defaults.Model == "" && len(cfg.Models.Defaults.Fallbacks) == 0 {
 		cfg.Models.Defaults = nil

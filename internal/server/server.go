@@ -21,6 +21,7 @@ import (
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -259,6 +260,10 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/", webFileServer())
 }
 
+// codingSkillsSyncInterval is how often the server looks for coding CLIs set
+// up since the last check, so they get the coding-CLI skills.
+const codingSkillsSyncInterval = 15 * time.Minute
+
 // ListenAndServe starts the server on the configured port.
 // It returns only when the context is cancelled, an error occurs, or an
 // explicit process restart is requested.
@@ -276,6 +281,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			_ = err // Non-fatal; skill hot-reload just won't work.
 		}
 	}()
+
+	// Keep the coding-CLI skills installed and matching this release.
+	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
 
 	// Start scheduler.
 	if s.sched != nil {

@@ -6,6 +6,8 @@
 /gh-discuss 123
 ```
 
+Run it inside a checkout of the repository, or add a `Repository: owner/repo` line to name it.
+
 [Read the skill](https://github.com/lsegal/aviary/tree/main/.agents/skills/gh-discuss/SKILL.md)
 
 ## How It Works
