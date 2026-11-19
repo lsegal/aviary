@@ -242,6 +242,41 @@ aviary task stop
 
 ---
 
+## aviary watch
+
+Watch GitHub projects and fix ready issues with a coding CLI. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
+
+```
+aviary watch [TARGET ...] [--agent SPEC ...] [--concurrency N] [--interval D]
+             [--delivery poll|webhook] [--ready-label L] [--ready-state S]
+             [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
+             [--yolo] [--no-merge] [--no-changelog]
+```
+
+With no `TARGET`, the current checkout's `origin` repository is watched. Flags override the `projects:` section while the watch runs.
+
+---
+
+## aviary project
+
+Manage Projects. Each subcommand calls the `project_*` tool of the same name with the same arguments, given as `--<field> <value>` flags; a leading positional argument fills the main field. See [Projects tools](/reference/mcp/projects).
+
+```
+aviary project status
+aviary project add <target> [--agents SPEC,...] [--runtime]
+aviary project remove <target> [--runtime]
+aviary project refresh [target]
+aviary project job list [--target T] [--status S] [--offset N] [--limit N]
+aviary project job get|explain|retry|pause|resume|stop <number> [--target T]
+aviary project cli list
+aviary project clone list|clear
+aviary project unblock [number] [--target T]
+aviary project issue comment <number> --text TEXT [--repository R]
+aviary project issue create --text TEXT [--repository R] [--model M]
+```
+
+---
+
 ## aviary job
 
 View job history and logs.

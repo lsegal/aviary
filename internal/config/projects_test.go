@@ -68,3 +68,15 @@ func TestProjectsSectionOnlyHoldsChangedValues(t *testing.T) {
 		t.Fatalf("loaded projects = %+v", loaded.Projects)
 	}
 }
+
+func TestProjectToolsByPreset(t *testing.T) {
+	if ToolGroup("project_job_stop") != "project" {
+		t.Fatalf("group = %q", ToolGroup("project_job_stop"))
+	}
+	if !IsToolAllowedByPreset(PermissionsPresetStandard, "project_status") || !IsToolAllowedByPreset(PermissionsPresetFull, "project_job_stop") {
+		t.Fatal("standard and full presets should allow project tools")
+	}
+	if IsToolAllowedByPreset(PermissionsPresetMinimal, "project_job_stop") {
+		t.Fatal("the minimal preset should block project tools")
+	}
+}
