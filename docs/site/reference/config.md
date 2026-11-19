@@ -52,7 +52,7 @@ agents:
   - name: assistant
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
     memory: shared
     memory_tokens: 4096
     compact_keep: 20
@@ -138,7 +138,7 @@ channels:
     id: workspace-bot
     url: xapp-...
     token: xoxb-...
-    model: anthropic/claude-haiku-4-5-20251001
+    model: anthropic/claude-haiku-5-5
     react_to_emoji: true
     reply_to_replies: true
     send_read_receipts: true
@@ -267,7 +267,7 @@ models:
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
-      - openai/gpt-4o
+      - openai/gpt-6.2-sol
 ```
 
 | Field | Type | Description |
