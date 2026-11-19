@@ -77,6 +77,10 @@ type PermissionsConfig struct {
 	DisabledTools []string                     `yaml:"disabled_tools,omitempty" json:"disabled_tools,omitempty"`
 	Filesystem    *FilesystemPermissionsConfig `yaml:"filesystem,omitempty"    json:"filesystem,omitempty"`
 	Exec          *ExecPermissionsConfig       `yaml:"exec,omitempty"          json:"exec,omitempty"`
+	// CLIBuiltinTools lets a CLI-backed agent (model "cli/...") use the CLI's
+	// own shell, file-edit and web tools. Requires the full preset; otherwise
+	// the CLI only gets Aviary's MCP tools.
+	CLIBuiltinTools bool `yaml:"cli_builtin_tools,omitempty" json:"cli_builtin_tools,omitempty"`
 }
 
 // AgentConfig describes a single agent.

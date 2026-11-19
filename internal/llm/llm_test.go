@@ -112,7 +112,7 @@ func TestFactoryResolverError(t *testing.T) {
 	_, err := f.ForModel("openai/gpt-4o")
 	assert.Error(t, err)
 
-	_, err = f.ForModel("stdio/codex")
+	_, err = f.ForModel("cli/codex/gpt-6-sol")
 	assert.Error(t, err)
 
 }
