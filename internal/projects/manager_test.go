@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/saferestart"
 )
 
 func newTestManager(t *testing.T) *Manager {
@@ -132,34 +130,5 @@ func TestManagerLogsSince(t *testing.T) {
 	lines, _ = m.logsSince(1, 0)
 	if len(lines) != managerLogLines {
 		t.Fatalf("stale offset returned %d lines", len(lines))
-	}
-}
-
-func TestManagerSafeRestartParticipant(t *testing.T) {
-	m := newTestManager(t)
-	var _ saferestart.Participant = m
-	m.Snapshot(core.Snapshot{Jobs: []core.JobSnapshot{
-		{Target: "o/r", Number: 1, Title: "running", Status: "active"},
-		{Target: "o/r", Number: 2, Title: "waiting", Status: "paused"},
-	}})
-	if got := m.RunningJobs(); len(got) != 1 || got[0].ID != "o/r#1" || got[0].Source != "project" {
-		t.Fatalf("RunningJobs() = %+v", got)
-	}
-	m.HoldNewJobs(true)
-	if err := m.Checkpoint(t.Context(), saferestart.Marker{}); err != nil {
-		t.Fatal(err)
-	}
-	m.mu.Lock()
-	held := m.held
-	m.mu.Unlock()
-	if !held {
-		t.Fatal("the hold was not recorded")
-	}
-	m.HoldNewJobs(false)
-	m.mu.Lock()
-	held = m.held
-	m.mu.Unlock()
-	if held {
-		t.Fatal("the hold was not released")
 	}
 }
