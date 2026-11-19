@@ -22,6 +22,16 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
+			path: "/projects/:project?",
+			component: () => import("../views/ProjectsView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/projects/:project/jobs/:job",
+			component: () => import("../views/ProjectRunView.vue"),
+			meta: { requiresAuth: true },
+		},
+		{
 			path: "/agents",
 			redirect: "/settings/agents",
 			meta: { requiresAuth: true },
