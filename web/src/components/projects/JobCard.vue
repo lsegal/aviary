@@ -72,7 +72,10 @@ const props = defineProps<{
 	now: number;
 	busy?: boolean;
 }>();
-const emit = defineEmits<{ retry: [job: ProjectJob]; stop: [job: ProjectJob] }>();
+const emit = defineEmits<{
+	retry: [job: ProjectJob];
+	stop: [job: ProjectJob];
+}>();
 
 const runPath = computed(() => jobPath(props.job.target, props.job.number));
 

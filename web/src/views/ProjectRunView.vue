@@ -119,7 +119,8 @@ const lifecycle = computed(() =>
 const stoppable = computed(() => !!job.value?.actions.stop);
 const issueURL = computed(() =>
 	job.value
-		? job.value.issueURL || githubURL(job.value.repo, "issues", job.value.number)
+		? job.value.issueURL ||
+			githubURL(job.value.repo, "issues", job.value.number)
 		: "",
 );
 const prURL = computed(() =>
