@@ -71,6 +71,9 @@ type agentReport struct {
 	// skillsNote says which of aviary's installed skills are stale, empty when
 	// they match the running release or the agent installs none.
 	skillsNote string
+	// projectsNote says why the agent is gated out of Projects jobs, empty
+	// when it can run them.
+	projectsNote string
 }
 
 // installed reports whether the agent's CLI was found on PATH.
@@ -253,6 +256,7 @@ func agentStatus(report agentReport) core.AgentStatus {
 		ModelNote:    report.modelNote,
 		DefaultModel: report.defaultModel,
 		SkillsNote:   report.skillsNote,
+		ProjectsNote: report.projectsNote,
 		Status:       report.statusKey(),
 	}
 	if report.quotaErr != nil {
@@ -282,6 +286,7 @@ func (d *agentDoctor) reportAgent(ctx context.Context, name string) agentReport 
 		return report
 	}
 	report.binary = definition.Binary
+	report.projectsNote = definition.ProjectsUnavailable
 	report.defaultModel = definition.ModelOrDefault("")
 	path, err := d.lookPath(definition.Binary)
 	if err != nil {
@@ -425,6 +430,9 @@ func writeAgentReports(out io.Writer, reports []agentReport) {
 		}
 		_, _ = fmt.Fprintf(out, "%-*s %s\n", statusWidth, report.status(), report.name)
 		writeAgentField(out, "binary", describeBinary(report))
+		if report.projectsNote != "" {
+			writeAgentField(out, "projects", "unavailable: "+report.projectsNote)
+		}
 		if !report.installed() {
 			continue
 		}

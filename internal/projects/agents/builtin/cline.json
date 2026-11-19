@@ -5,6 +5,7 @@
   "session": {"assign": "none"},
   "output": {
     "format": "jsonl",
+    "transcript": "cline-json",
     "jsonl": {
       "type": "event.type",
       "text": "event.text",

@@ -155,13 +155,13 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		case cliagent.EventToolStart:
 			sawOutput = true
 			in.usage.ToolCalls++
-			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: ev.Tool.Name, Args: ev.Tool.Args}})
+			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args}})
 			if r.IsVerbose() {
 				in.emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(ev.Tool.Name, ev.Tool.Args)})
 			}
 		case cliagent.EventToolResult:
 			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
-				Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error,
+				ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
 			}})
 			rec, _ := json.Marshal(toolEventRecord{Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
 			r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), "", "")

@@ -397,7 +397,7 @@ projects:
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
 | `agent_binaries` | map | | Executable for a coding CLI, by agent name |
-| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs |
+| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
