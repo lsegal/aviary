@@ -40,6 +40,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
+	v.checkProjects(cfg.Projects)
 	return v.issues
 }
 

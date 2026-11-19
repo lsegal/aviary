@@ -26,6 +26,7 @@ type Config struct {
 	Search    SearchConfig           `yaml:"search,omitempty"    json:"search,omitempty"`
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Projects  []ProjectConfig        `yaml:"projects,omitempty"  json:"projects,omitempty"`
 }
 
 // SkillConfig configures an installed skill runtime.
@@ -420,6 +421,7 @@ func normalize(cfg *Config) {
 	if len(cfg.Agents) == 0 {
 		cfg.Agents = nil
 	}
+	normalizeProjects(cfg)
 	if len(cfg.Models.Providers) == 0 {
 		cfg.Models.Providers = nil
 	}
