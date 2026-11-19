@@ -69,6 +69,7 @@ export default defineConfig({
 							link: "/guide/sessions-conversations",
 						},
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
+						{ text: "Projects", link: "/guide/projects" },
 						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Operations", link: "/guide/operations" },
 					],
@@ -103,6 +104,7 @@ export default defineConfig({
 							link: "/reference/mcp/files-and-notes",
 						},
 						{ text: "Auth Tools", link: "/reference/mcp/auth" },
+						{ text: "Projects Tools", link: "/reference/mcp/projects" },
 						{
 							text: "Server And Config Tools",
 							link: "/reference/mcp/server-and-config",

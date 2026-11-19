@@ -1,0 +1,44 @@
+{
+  "name": "codex",
+  "binary": "codex",
+  "levels": ["low", "medium", "high"],
+  "defaultModel": "gpt-5.6-terra",
+  "session": {
+    "assign": "capture",
+    "capture": "(?i)session id:\\s*([0-9a-f]{8}-[0-9a-f-]{27,})",
+    "clearOnResumeFailure": true
+  },
+  "output": {"format": "codex-json"},
+  "quota": {"reader": "codex"},
+  "skills": {"target": "codex"},
+  "doctor": {
+    "auth": ["{binary}", "login", "status"],
+    "signedIn": "(?im)^\\s*Logged in",
+    "models": ["{binary}", "debug", "models"],
+    "modelsJSON": "models[visibility=list].slug"
+  },
+  "promptStdin": ["-"],
+  "args": {
+    "run": [
+      {"args": ["exec", "--json"]},
+      {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
+      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
+      {"args": ["{prompt}"]}
+    ],
+    "resume": [
+      {"args": ["exec", "resume", "--json"]},
+      {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
+      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"args": ["{session}", "{prompt}"]}
+    ],
+    "vision": [
+      {"args": ["exec", "--skip-git-repo-check", "--image", "{image}"]},
+      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
+      {"args": ["{prompt}"]}
+    ]
+  }
+}

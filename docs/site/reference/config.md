@@ -12,6 +12,7 @@ browser:   { ... }
 search:    { ... }
 scheduler: { ... }
 skills:    { ... }
+projects:  { ... }
 ```
 
 ---
@@ -354,6 +355,52 @@ skills:
 | --- | --- | --- | --- |
 | `<name>.enabled` | bool | `false` | Whether this skill is active |
 | `<name>.settings` | map | | Skill-specific key/value settings passed to the skill runtime |
+
+---
+
+## projects
+
+Settings for [Projects](/guide/projects). Every field is optional and holds only a value that differs from its default; `aviary watch` with defaults writes nothing here. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
+
+```yaml
+projects:
+  list:
+    - target: owner/repo
+    - target: https://github.com/orgs/acme/projects/3
+      agents: [claude/opus, codex]   # fallback order for this project
+  concurrency: 4
+  agents: [codex, claude/sonnet]
+  no_merge: true
+  cli_definitions:
+    claude:
+      binary: /opt/claude/bin/claude
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
+| `list[].agents` | string[] | `agents` | This project's coding-CLI specs (`AGENT/MODEL:LEVEL`) in fallback order: a job runs on the first one whose quota is not used up |
+| `concurrency` | int | `3` | Jobs that run at once across every project |
+| `interval` | duration | `30s` | Time between GitHub polls |
+| `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
+| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
+| `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
+| `filter` | string[] | `assignee:@me author:@me` | Issue search filter |
+| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
+| `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
+| `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
+| `agent_binaries` | map | | Executable for a coding CLI, by agent name |
+| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs |
+| `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
+| `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
+| `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
+| `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
+| `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
+| `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
+| `webhook.listen` | string | `:0` | Webhook listener address |
+| `webhook.path` | string | `/webhook` | Webhook path |
+| `webhook.secret` | string | | Webhook signature secret |
+| `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
 
 ---
 

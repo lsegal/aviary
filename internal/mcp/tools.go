@@ -146,6 +146,7 @@ func Register(s *sdkmcp.Server) {
 	registerServerTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)
+	registerProjectTools(s)
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
