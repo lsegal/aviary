@@ -1213,6 +1213,11 @@ func (r *AgentRunner) executeToolCall(
 	name string,
 	args map[string]any,
 ) (string, bool) {
+	// A held turn starts no new tool call until its hold is released.
+	if err := TurnHoldFromContext(promptCtx).Wait(promptCtx); err != nil {
+		emit(StreamEvent{Type: StreamEventStop})
+		return "", true
+	}
 	args = normalizeSessionToolArguments(name, sessionID, args)
 	streamRec.Args = args
 	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args}})

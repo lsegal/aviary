@@ -50,6 +50,7 @@ func (s *Server) runProjectsJobTurn(ctx context.Context, run projects.AviaryAgen
 	if run.Workdir != "" {
 		ctx = agent.WithFilesystemGrant(ctx, run.Workdir)
 	}
+	ctx = agent.WithTurnHold(ctx, run.Hold)
 	done := make(chan error, 1)
 	finish := func(err error) {
 		select {
