@@ -86,8 +86,9 @@ type Definition struct {
 	// Quota names the quota source for the agent.
 	Quota Quota `json:"quota,omitempty"`
 	// Skills names the skills.sh target the agent's copy of the gh-fix,
-	// gh-discuss, and gh-create skills is installed for, so the installers
-	// derive their --agent list from the registry instead of a hand-edited one.
+	// gh-discuss, gh-create, and gh-safe-merge skills is installed for, so the
+	// installers derive their --agent list from the registry instead of a
+	// hand-edited one.
 	Skills Skills `json:"skills,omitempty"`
 	// PromptStdin, when declared, says the agent can read its prompt from
 	// stdin instead of argv: an argument that is exactly {prompt} renders as

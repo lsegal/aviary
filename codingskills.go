@@ -9,10 +9,10 @@ const CodingSkillsRoot = ".agents/skills"
 
 // CodingSkillNames are the skills Aviary ships for coding CLIs, in display
 // order.
-var CodingSkillNames = []string{"gh-fix", "gh-discuss", "gh-create"}
+var CodingSkillNames = []string{"gh-fix", "gh-discuss", "gh-create", "gh-safe-merge"}
 
 // CodingSkills is the coding-CLI skill text this binary was built with.
 // Installed copies are compared against it to find outdated ones.
 //
-//go:embed .agents/skills/gh-fix .agents/skills/gh-discuss .agents/skills/gh-create
+//go:embed .agents/skills/gh-fix .agents/skills/gh-discuss .agents/skills/gh-create .agents/skills/gh-safe-merge
 var CodingSkills embed.FS

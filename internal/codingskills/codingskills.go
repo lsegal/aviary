@@ -1,6 +1,6 @@
 // Package codingskills installs and tracks the skills Aviary ships for coding
-// CLIs (gh-fix, gh-discuss and gh-create). They install into each CLI through
-// skills.sh, so they keep working without Aviary.
+// CLIs (gh-fix, gh-discuss, gh-create and gh-safe-merge). They install into
+// each CLI through skills.sh, so they keep working without Aviary.
 package codingskills
 
 import (
@@ -96,6 +96,9 @@ var skillInfo = map[string]struct {
 	},
 	"gh-create": {
 		Summary: "Files a well-formed issue from a short request. Projects never runs it, but the issues it files are what Projects picks up.",
+	},
+	"gh-safe-merge": {
+		Summary: "Safety-checks an unowned pull request, such as an external contribution, before anything runs, then drives CI green and merges it. Projects never runs it.",
 	},
 }
 
