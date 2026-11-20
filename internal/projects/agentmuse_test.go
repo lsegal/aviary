@@ -33,8 +33,8 @@ const museDecoded = "Running: read_file\na.txt contains hi"
 // TestMuseDefinitionContract proves the shipped Meta Muse Code definition
 // against the fake CLI. Muse takes a caller-assigned session ID like Claude
 // does, so a resume is the same `muse exec` invocation carrying the ID aviary
-// already holds, and its
-// JSONL stream is decoded by the field paths its own definition names.
+// already holds, and its JSONL stream is decoded by the field paths its own
+// definition names. A job that names no model runs the definition's default.
 func TestMuseDefinitionContract(t *testing.T) {
 	agentContract{
 		Definition: builtinDefinition(t, "muse"),
@@ -44,11 +44,11 @@ func TestMuseDefinitionContract(t *testing.T) {
 		Stdout:     museStream,
 		WantRun: []string{
 			"exec", "--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--approval-mode", "never", "--user-input-auto-resolve", "--json", freshPrompt("o/r", 7),
+			"--approval-mode", "never", "--model", "muse-spark-1.3", "--user-input-auto-resolve", "--json", freshPrompt("o/r", 7),
 		},
 		WantResume: []string{
 			"exec", "--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--approval-mode", "never", "--user-input-auto-resolve", "--json", resumePrompt(),
+			"--approval-mode", "never", "--model", "muse-spark-1.3", "--user-input-auto-resolve", "--json", resumePrompt(),
 		},
 		WantOutput: museDecoded,
 	}.check(t)
@@ -66,11 +66,11 @@ func TestMuseYoloDefinitionContract(t *testing.T) {
 		Stdout:     museStream,
 		WantRun: []string{
 			"exec", "--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--yolo", "--user-input-auto-resolve", "--json", freshPrompt("o/r", 7),
+			"--yolo", "--model", "muse-spark-1.3", "--user-input-auto-resolve", "--json", freshPrompt("o/r", 7),
 		},
 		WantResume: []string{
 			"exec", "--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			"--yolo", "--user-input-auto-resolve", "--json", resumePrompt(),
+			"--yolo", "--model", "muse-spark-1.3", "--user-input-auto-resolve", "--json", resumePrompt(),
 		},
 		WantOutput: museDecoded,
 	}.check(t)

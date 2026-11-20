@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -930,6 +931,26 @@ func TestValidate_UnknownProvider(t *testing.T) {
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "unknown provider"))
 
+}
+
+func TestValidate_MetaModelNeedsItsAPIKey(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{
+			Name:  "bot",
+			Model: "meta/muse-spark-1.3",
+		}},
+	}
+	missing := Validate(cfg, func(string) (string, error) { return "", errors.New("not found") })
+	assert.False(t, hasIssue(missing, "unknown provider"))
+	assert.True(t, hasIssue(missing, "meta:default"))
+
+	stored := Validate(cfg, func(key string) (string, error) {
+		if key == "meta:default" {
+			return "LLM_key", nil
+		}
+		return "", errors.New("not found")
+	})
+	assert.False(t, hasIssue(stored, "meta:default"))
 }
 
 func TestValidate_VLLMAcceptsDefaultBaseURI(t *testing.T) {

@@ -518,13 +518,13 @@ type Doctor struct {
 	// It needs Models.
 	ModelPattern string `json:"modelPattern,omitempty"`
 	// KnownModels are model names the definition itself carries, for a CLI
-	// with no way at all to be asked. No built-in declares any: a list
-	// written into aviary is stale the morning after a vendor ships, which is
-	// what issue #566 was, so a definition that can reach its CLI declares
-	// Models instead. It survives for a config file describing a CLI aviary
-	// has never seen, and it is deliberately not an allow-list -- nothing
-	// validates against it -- so the report labels it as what aviary was told
-	// rather than as what the CLI takes.
+	// with no way at all to be asked, or as the fallback for one whose probe
+	// only answers once it is signed in. A list written into aviary is stale
+	// the morning after a vendor ships, which is what issue #566 was, so a
+	// definition that can reach its CLI declares Models first and the probe's
+	// answer wins whenever it gives one. It is deliberately not an allow-list
+	// -- nothing validates against it -- so the report labels it as what
+	// aviary was told rather than as what the CLI takes.
 	KnownModels []string `json:"knownModels,omitempty"`
 	// ModelsNote replaces the label the report puts on the models field. It
 	// is what a definition says instead of a list: the caveat on a known list

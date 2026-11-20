@@ -169,7 +169,7 @@ func runWizard(cfg *config.Config, cfgPath string, st authpkg.Store) error {
 
 func configureProvidersSummary(st authpkg.Store) string {
 	connected := 0
-	for _, key := range []string{"anthropic:oauth", "anthropic:default", "openai:oauth", "openai:default", "gemini:oauth", "gemini:default"} {
+	for _, key := range []string{"anthropic:oauth", "anthropic:default", "openai:oauth", "openai:default", "gemini:oauth", "gemini:default", "meta:default"} {
 		if _, err := st.Get(key); err == nil {
 			connected++
 		}
@@ -181,7 +181,7 @@ func configureProvidersSummary(st authpkg.Store) string {
 	if err == nil && strings.TrimSpace(cfg.Models.Providers["ollama"].BaseURI) != "" {
 		connected++
 	}
-	total := 5
+	total := 6
 	if connected > total {
 		connected = total
 	}

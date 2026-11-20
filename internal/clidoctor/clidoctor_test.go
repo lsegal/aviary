@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -400,5 +401,36 @@ func builtinDoctor(t *testing.T, name string, run func(argv []string) ([]byte, b
 			return []byte("2.1.312 (" + name + ")\n"), nil
 		},
 		Run: func(_ context.Context, argv []string, _ clidefs.Doctor, _ []string) ([]byte, bool) { return run(argv) },
+	}
+}
+
+// TestMuseFallsBackToItsKnownLineup checks the built-in muse definition reports
+// the live model/list answer when its CLI gives one, and the published lineup
+// it carries when the CLI is signed out and answers with no catalog.
+func TestMuseFallsBackToItsKnownLineup(t *testing.T) {
+	live := builtinDoctor(t, "muse", func(argv []string) ([]byte, bool) {
+		if len(argv) > 1 && argv[1] == "serve" {
+			return []byte(`{"id":1,"result":{"models":[{"modelId":"muse-spark-1.4"}]}}`), true
+		}
+		return nil, false
+	}).Probe(context.Background(), "muse")
+	if got := strings.Join(live.Models, ","); got != "muse/muse-spark-1.4" {
+		t.Errorf("live models = %q, want the CLI's own answer", got)
+	}
+
+	signedOut := builtinDoctor(t, "muse", func(argv []string) ([]byte, bool) {
+		if len(argv) > 1 && argv[1] == "serve" {
+			return []byte(`{"id":0,"result":{"serverInfo":{"name":"muse"}}}`), true
+		}
+		return nil, false
+	}).Probe(context.Background(), "muse")
+	if !slices.Contains(signedOut.Models, "muse/muse-spark-1.3") || !slices.Contains(signedOut.Models, "muse/muse-ember-1.0") {
+		t.Errorf("signed-out models = %v, want the known Muse lineup", signedOut.Models)
+	}
+	if signedOut.ModelNote != KnownModelsNote {
+		t.Errorf("signed-out models note = %q, want %q", signedOut.ModelNote, KnownModelsNote)
+	}
+	if signedOut.DefaultModel != "muse-spark-1.3" {
+		t.Errorf("default model = %q, want muse-spark-1.3", signedOut.DefaultModel)
 	}
 }

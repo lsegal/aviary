@@ -266,6 +266,8 @@ models:
       auth: auth:gemini:default
     github-copilot:
       auth: auth:github-copilot:default
+    meta:
+      auth: auth:meta:default
   defaults:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
@@ -282,7 +284,9 @@ models:
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
 | `cli_definitions` | map | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 
-**Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`
+**Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`, `meta`
+
+`meta` serves the Muse models (`meta/muse-spark-1.3` and the rest of the lineup) straight from Meta's Model API with an API key, so they work without the `muse` CLI installed. Store the key with `aviary auth set meta:default <your-api-key>`; `providers.meta.base_uri` overrides the default `https://api.meta.ai/v1`.
 
 ---
 

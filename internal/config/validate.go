@@ -267,11 +267,14 @@ func (v *validator) checkModel(field, model string) {
 	case "github-copilot":
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
+	case "meta":
+		v.checkAuthCredential(field, "meta:default",
+			"run 'aviary auth set meta:default <your-api-key>'")
 	case "vllm", "ollama":
 	case "cli":
 		v.checkCLIModel(field, model, name)
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, google, google-gemini, github-copilot, vllm, ollama, or cli", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, google, google-gemini, github-copilot, meta, vllm, ollama, or cli", provider, model)
 	}
 }
 
