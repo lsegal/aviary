@@ -4648,51 +4648,6 @@ func jsonStringBody(t *testing.T, value string) string {
 	return string(encoded[1 : len(encoded)-1])
 }
 
-// TestDetectWakesReportsAClockJump checks a wall-clock gap far longer than the
-// check interval -- the machine slept through it -- is reported with roughly
-// how long it slept, while ordinary ticks are not.
-func TestDetectWakesReportsAClockJump(t *testing.T) {
-	interval := 15 * time.Second
-	// The detector reads the clock once to start and once per tick, so it is
-	// handed each reading in turn: three ordinary ticks, one after two hours
-	// asleep, and one ordinary tick after waking.
-	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	readings := make(chan time.Time, 6)
-	readings <- clock
-	for _, step := range []time.Duration{interval + time.Second, interval, interval - time.Second, interval + 2*time.Hour, interval} {
-		clock = clock.Add(step)
-		readings <- clock
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ticks := make(chan time.Time)
-	wakes := make(chan time.Duration, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		detectWakes(ctx, ticks, interval, func() time.Time { return <-readings }, wakes)
-	}()
-	for i := 0; i < 4; i++ {
-		ticks <- time.Time{}
-	}
-	select {
-	case slept := <-wakes:
-		if slept != 2*time.Hour {
-			t.Fatalf("slept %s, want 2h", slept)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the clock jump was not reported as a wake")
-	}
-	ticks <- time.Time{}
-	cancel()
-	<-done
-	select {
-	case slept := <-wakes:
-		t.Fatalf("an ordinary tick was reported as a %s wake", slept)
-	default:
-	}
-}
-
 // TestCommandRunnerUsesAConfiguredDefaultModel checks the managed default
 // reaches the dispatched argv end to end, from a definition the config
 // declared rather than one aviary ships, and that a spec naming its

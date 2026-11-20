@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
+
 	owned "github.com/lsegal/aviary/internal/projects/process"
 )
 
@@ -117,7 +119,7 @@ func runLifecycleAviary(mode string) {
 	case err := <-done:
 		fail(fmt.Errorf("browser never started: %v", err))
 	}
-	if _, err := waitForReady(ctx, debugURL(debugPort(cmd.Args)), readyTimeout); err != nil {
+	if _, err := aviarybrowser.WaitForReady(ctx, aviarybrowser.DebugURL(debugPort(cmd.Args)), aviarybrowser.OwnedReadyTimeout, aviarybrowser.OwnedReadyInterval); err != nil {
 		fail(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, lifecycleReady), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
@@ -164,7 +166,7 @@ func lifecycleBrowsers(t *testing.T) []lifecycleBrowser {
 		t.Fatalf("os.Executable() error = %v", err)
 	}
 	browsers := []lifecycleBrowser{{name: "fake", binary: executable, fake: true}}
-	if binary, err := findBinary(""); err == nil {
+	if binary, err := aviarybrowser.FindBinary(""); err == nil {
 		browsers = append(browsers, lifecycleBrowser{name: "real", binary: binary})
 	}
 	return browsers
@@ -297,11 +299,11 @@ func awaitLifecycleBrowser(t *testing.T, dir string, browser lifecycleBrowser, e
 // survivor of the last one.
 func assertProfileFree(t *testing.T, browser lifecycleBrowser, profile string) {
 	t.Helper()
-	lock, err := lockProfile(profile)
+	lock, err := aviarybrowser.LockProfile(profile)
 	if err != nil {
 		t.Fatalf("profile still locked after aviary exited: %v", err)
 	}
-	lock.release()
+	lock.Release()
 	if browser.fake {
 		return
 	}
@@ -311,9 +313,9 @@ func assertProfileFree(t *testing.T, browser lifecycleBrowser, profile string) {
 	if err != nil {
 		t.Fatalf("relaunch on the profile: %v", err)
 	}
-	defer func() { _ = next.stop() }()
-	if next.dataDir != profile {
-		t.Fatalf("relaunch ran in %q, not the profile", next.dataDir)
+	defer next.Stop()
+	if next.DataDir != profile {
+		t.Fatalf("relaunch ran in %q, not the profile", next.DataDir)
 	}
 }
 
@@ -343,7 +345,7 @@ func TestLaunchStartsNothingOnceTheRunIsShuttingDown(t *testing.T) {
 	config := Config{Binary: executable, Profile: t.TempDir()}
 	if proc, err := launch(ctx, config); !errors.Is(err, context.Canceled) {
 		if proc != nil {
-			_ = proc.stop()
+			proc.Stop()
 		}
 		t.Fatalf("launch() error = %v, want context.Canceled", err)
 	}

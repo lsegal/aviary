@@ -16,16 +16,13 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/wake"
 )
 
 // missedGrace is how late a fire may run before it counts as missed. A timer
 // that fires later than this, or a wake check that finds an overdue fire,
 // means the machine slept or Aviary was stopped through the due time.
 const missedGrace = time.Minute
-
-// wakeCheckInterval is how often the scheduler looks for fires that a sleep
-// delayed past their due time.
-const wakeCheckInterval = 30 * time.Second
 
 // armed is a task's pending time-based fire.
 type armed struct {
@@ -85,7 +82,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 	s.pool.Start(ctx)
 	go s.watch.Start()
-	go s.wakeLoop(ctx)
+	go s.wakeLoop(ctx, wake.Subscribe(ctx))
 }
 
 // Stop halts all scheduling and waits for workers to finish.
@@ -242,16 +239,14 @@ func (s *Scheduler) onTimer(key string, gen int) {
 	}
 }
 
-// wakeLoop periodically catches up fires that a sleep delayed past their due
-// time, since timers may not advance while the machine sleeps.
-func (s *Scheduler) wakeLoop(ctx context.Context) {
-	ticker := time.NewTicker(wakeCheckInterval)
-	defer ticker.Stop()
+// wakeLoop catches up fires that a sleep delayed past their due time each time
+// the machine wakes, since timers may not advance while the machine sleeps.
+func (s *Scheduler) wakeLoop(ctx context.Context, wakes <-chan time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-wakes:
 			s.checkOverdue()
 		}
 	}
