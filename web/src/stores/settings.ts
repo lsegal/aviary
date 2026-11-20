@@ -90,8 +90,8 @@ export interface AgentTask {
 	target?: string;
 	/** The watched project a "project" task runs its prompt against. */
 	project?: string;
-	/** The agent, optionally with a model, a "project" task runs with; empty uses the project's agent. */
-	run_agent?: string;
+	/** Overrides the project agent's model for a "project" task's runs; empty uses the agent's own. */
+	model?: string;
 	from_file?: boolean;
 	file?: string;
 }

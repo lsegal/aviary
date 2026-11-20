@@ -196,14 +196,14 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 ### Scheduled prompts
 
-A `project` task runs its prompt on the board of a watched project. `project` names the project (its `owner/repo` target) and `run_agent` optionally overrides the agent that runs it, with an optional model (`claude:opus`, `codex`); without it the project's agent is used. Task files and configuration written with the older `cli` key still load, and are saved back as `run_agent`.
+A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A model of a provider reached through a CLI runs the job on that CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load into `model` (a value naming only a CLI, such as `codex`, loads as `cli/codex`), and are saved back as `model`.
 
 ```yaml
 tasks:
   - name: nightly-triage
     type: project
     project: lsegal/aviary
-    run_agent: claude:opus
+    model: claude/opus
     at: "02:00"
     timezone: America/Toronto
     overlap: skip
@@ -211,12 +211,12 @@ tasks:
 ```
 
 ```bash
-aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --at 02:00
+aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --model claude/opus --at 02:00
 ```
 
 Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
 
-Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, an **Agent override** (the agent that runs the task, optionally with a model).
+Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a **Model override**, the same model picker channels use, which the project's agent runs the task with instead of its own model.
 
 The project's **Schedules** tab lists its scheduled prompts with enable toggles and their last results, and edits every field with a preview of the next fires, the recent runs, Run now, Save and Delete. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 

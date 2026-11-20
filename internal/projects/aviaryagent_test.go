@@ -67,6 +67,27 @@ func TestAviaryAgentJobRunsInProcess(t *testing.T) {
 	}
 }
 
+// #507: a scheduled run's model override reaches the in-process turn, so the
+// project's agent runs it with the overridden model.
+func TestAviaryAgentJobPassesTheModelOverride(t *testing.T) {
+	var got AviaryAgentRun
+	runner := CommandRunner{
+		Agent: "aviary/reviewer", Repo: "o/r",
+		Aviary: func(_ context.Context, run AviaryAgentRun) error {
+			got = run
+			run.Event(agent.StreamEvent{Type: agent.StreamEventDone})
+			return nil
+		},
+	}
+	session := AgentSession{RunDir: t.TempDir(), Agent: "aviary/reviewer", Model: "anthropic/claude-opus-4-5"}
+	if _, err := runner.runOnce(context.Background(), Issue{Number: 7}, session, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.Agent != "reviewer" || got.Model != "anthropic/claude-opus-4-5" {
+		t.Fatalf("run = %+v, want reviewer with the overridden model", got)
+	}
+}
+
 // Stopping a job cancels its turn, which reports context.Canceled.
 func TestAviaryAgentJobStopsWithItsContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

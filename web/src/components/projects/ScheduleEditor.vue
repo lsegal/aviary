@@ -18,11 +18,14 @@
 				placeholder="Triage issues opened since the last run and label them." />
 			<span class="text-xs text-gray-500">Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</span>
 		</label>
-		<label class="block text-sm">
-			<span class="font-medium text-gray-700 dark:text-gray-200">Agent override</span>
-			<input v-model="draft.runAgent" name="run_agent" :class="INPUT" placeholder="The project's agent, or e.g. claude:opus" />
-			<span class="text-xs text-gray-500">The agent that runs this task, optionally with a model. Leave empty to use the project's agent.</span>
-		</label>
+		<div data-testid="schedule-model" class="block text-sm">
+			<span class="font-medium text-gray-700 dark:text-gray-200">Model override (optional)</span>
+			<div class="mt-1">
+				<ModelSelector :model-value="draft.model" :options="availableModelOptions" placeholder="Default project agent model"
+					@update:model-value="draft.model = typeof $event === 'string' ? $event : ''" />
+			</div>
+			<span class="text-xs text-gray-500">The project's agent runs this task with this model instead of its own. Leave empty to use the agent's model.</span>
+		</div>
 
 		<fieldset class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
 			<legend class="px-1 text-sm font-medium text-gray-700 dark:text-gray-200">Trigger</legend>
@@ -127,8 +130,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useAvailableModels } from "../../composables/useAvailableModels";
 import type { ProjectSchedule, ScheduleTrigger } from "../../lib/projects";
+import ModelSelector from "../ModelSelector.vue";
 
 const props = defineProps<{
 	schedule: ProjectSchedule;
@@ -139,6 +144,8 @@ const props = defineProps<{
 	preview: (s: ProjectSchedule) => Promise<string[]>;
 }>();
 const emit = defineEmits<{ saved: [id: string]; deleted: [] }>();
+const { availableModelOptions, refreshCredentials } = useAvailableModels();
+onMounted(() => void refreshCredentials());
 
 const INPUT =
 	"mt-1 block w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800";

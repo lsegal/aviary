@@ -872,9 +872,11 @@
 <option v-for="target in projectTargetOptions(selectedTask)" :key="target" :value="target">{{ target }}</option>
 </select>
 </div>
-<div>
-<label class="field-label">Agent override</label>
-<input v-model="selectedTask.run_agent" type="text" class="field-input font-mono" placeholder="Default: the project's agent (e.g. claude:opus)" aria-label="Agent override" />
+<div data-testid="task-model">
+<label class="field-label">Model override (optional)</label>
+<ModelSelector :model-value="selectedTask.model ?? ''" :options="availableModelOptions"
+placeholder="Default project agent model"
+@update:model-value="selectedTask.model = typeof $event === 'string' ? ($event || undefined) : undefined" />
 </div>
 </div>
 

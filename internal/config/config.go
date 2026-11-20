@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/testenv"
 )
 
@@ -311,22 +312,24 @@ type TaskConfig struct {
 	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
 	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
 	// Project is the watched Projects target a "project" task runs its prompt
-	// against as a board job, and RunAgent the agent that runs it, optionally
-	// with a model ("claude:opus"); empty uses the project's agent.
-	Project  string `yaml:"project,omitempty"   json:"project,omitempty"`
-	RunAgent string `yaml:"run_agent,omitempty" json:"run_agent,omitempty"`
+	// against as a board job.
+	Project string `yaml:"project,omitempty"  json:"project,omitempty"`
+	// Model overrides the project agent's default model for a project task's
+	// runs; empty runs them with the agent's own model.
+	Model string `yaml:"model,omitempty"    json:"model,omitempty"`
 	// FromFile is set when the task was loaded from a markdown file rather than
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.
 	FromFile bool `yaml:"-" json:"from_file,omitempty"`
 }
 
-// UnmarshalYAML reads a task, accepting the old "cli" key for RunAgent, which
-// it was named before #501. Saving the task writes it back as run_agent.
+// UnmarshalYAML reads a task, accepting the old "run_agent" and "cli" keys
+// (see LegacyTaskModel) for Model. Saving the task writes it back as model.
 func (t *TaskConfig) UnmarshalYAML(value *yaml.Node) error {
 	type plain TaskConfig
 	var legacy struct {
-		CLI string `yaml:"cli"`
+		RunAgent string `yaml:"run_agent"`
+		CLI      string `yaml:"cli"`
 	}
 	if err := value.Decode((*plain)(t)); err != nil {
 		return err
@@ -334,10 +337,27 @@ func (t *TaskConfig) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&legacy); err != nil {
 		return err
 	}
-	if t.RunAgent == "" {
-		t.RunAgent = legacy.CLI
+	if t.Model == "" {
+		t.Model = LegacyTaskModel(legacy.RunAgent, legacy.CLI)
 	}
 	return nil
+}
+
+// LegacyTaskModel returns the model override a project task stored under one
+// of its old keys holds: run_agent, or cli before #501, whichever is set
+// first. Both held a CLI provider's model spec. One naming a model ("claude/opus") is
+// already that CLI's model; a bare CLI ("codex") is the model cli/codex, as
+// an agent's model names it.
+func LegacyTaskModel(specs ...string) string {
+	for _, spec := range specs {
+		if spec = strings.TrimSpace(spec); spec != "" {
+			if strings.Contains(spec, "/") {
+				return spec
+			}
+			return cliagent.ModelPrefix + spec
+		}
+	}
+	return ""
 }
 
 // ModelsConfig holds model provider configuration and defaults.

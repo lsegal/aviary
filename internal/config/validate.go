@@ -212,8 +212,11 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
 				}
 			}
-			if taskType != "project" && (t.Project != "" || t.RunAgent != "") {
-				v.errorf(tf, "project and run_agent are only supported for project tasks")
+			if taskType != "project" && (t.Project != "" || t.Model != "") {
+				v.errorf(tf, "project and model are only supported for project tasks")
+			}
+			if model := strings.TrimSpace(t.Model); model != "" && taskType == "project" {
+				v.checkProjectTaskModel(tf+".model", model)
 			}
 
 			if !validTaskTarget(t.Target) {
@@ -283,6 +286,17 @@ func (v *validator) checkModel(field, model string) {
 		}
 		v.errorf(field, "%v", llm.UnknownProviderError(registry, provider, model))
 	}
+}
+
+// checkProjectTaskModel validates a project task's model override as any
+// model is checked, except that a provider reached through a CLI that only
+// Projects jobs run on, such as cli/gemini/<model>, is fine: the task runs as
+// a Projects job, never as an agent prompt.
+func (v *validator) checkProjectTaskModel(field, model string) {
+	if _, ok := v.projectsOnlyCLI(model); ok {
+		return
+	}
+	v.checkModel(field, model)
 }
 
 // cliRegistry returns the CLI providers models names: the built-in

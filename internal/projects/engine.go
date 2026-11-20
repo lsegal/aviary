@@ -196,6 +196,10 @@ type AgentSession struct {
 	// or new comment reaches the agent that is already holding the work
 	// rather than being noticed only after the run ends.
 	Update string
+	// Model overrides the model an in-process agent (an aviary/<agent> spec)
+	// runs the turn with, as a scheduled run's model override does; empty
+	// runs it with the agent's own.
+	Model string
 }
 
 // SessionAgentRunner runs a coding agent in a session it can resume.
@@ -3610,7 +3614,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			number++
 		}
 		key := target + "#" + strconv.Itoa(number)
-		session := AgentSession{Agent: run.RunAgent}
+		session := AgentSession{Agent: request.session.Agent, Model: request.session.Model}
 		if session.Agent == "" {
 			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
 				session.Agent = identified.AgentNameFor(target)

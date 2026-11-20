@@ -2817,14 +2817,14 @@ function normalizedDraftConfig(): AppConfig {
 			name: (task.name ?? "").trim(),
 			type: agentTaskType(task.type),
 			prompt: task.prompt ?? "",
-			// project and run_agent belong to project tasks only.
+			// project and model belong to project tasks only.
 			project:
 				agentTaskType(task.type) === "project"
 					? (task.project ?? "").trim() || undefined
 					: undefined,
-			run_agent:
+			model:
 				agentTaskType(task.type) === "project"
-					? (task.run_agent ?? "").trim() || undefined
+					? (task.model ?? "").trim() || undefined
 					: undefined,
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
