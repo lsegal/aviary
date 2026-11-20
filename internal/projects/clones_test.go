@@ -180,7 +180,7 @@ func TestClearClonesKeepsLiveAgentCheckouts(t *testing.T) {
 	usage := func() cloneUsage {
 		return cloneUsage{roots: []string{root}, work: map[string]workState{"o/r#5": {Status: "completed"}}, live: agents.checkouts()}
 	}
-	if result := clearClones(reg, usage); len(result.Removed) != 0 || !isDir(dir) {
+	if result, err := clearClones(reg, usage); err != nil || len(result.Removed) != 0 || !isDir(dir) {
 		t.Fatalf("clear removed a clone a live agent works in: %+v", result)
 	}
 }
@@ -216,27 +216,94 @@ func TestClonesSurviveRestartAndAdoptLeftovers(t *testing.T) {
 	if clone := byPath[leftover]; clone.InUse || clone.Repository != "o/r" || clone.Issue != 9 || clone.Job != "o/r#9" {
 		t.Fatalf("leftover clone of a finished job = %+v, want adopted and unused", clone)
 	}
-	if clone := byPath[unknown]; !clone.InUse || clone.Reason == "" {
-		t.Fatalf("clone no job records = %+v, want kept with a reason", clone)
+	if clone := byPath[unknown]; clone.InUse || clone.Kept || !strings.Contains(clone.Reason, "not owned by this instance") {
+		t.Fatalf("clone no job records = %+v, want unused and not owned by this instance", clone)
 	}
 }
 
-func TestClassifyCloneKeepsWhatItCannotVerify(t *testing.T) {
+// TestClonesNoJobRecordsAreNotInUse is #518's acceptance case: with no job
+// ever run, leftover clones in the temp directory are listed with their true
+// state and cleared, while a paused job's clone stays in use.
+func TestClonesNoJobRecordsAreNotInUse(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), ".aviary.json")
+	var leftovers []string
+	for _, name := range []string{"glorp-gh-fix-755", "nupp-gh-fix-139", "aviary-gh-fix-12"} {
+		leftovers = append(leftovers, makeClone(t, root, name, "o/"+strings.Split(name, "-")[0]))
+	}
+	w := &Engine{Targets: []string{"o/r"}, StatePath: statePath, Out: os.Stderr}
+	w.SetTempDirs([]string{root})
+	snapshot, err := w.ListClones(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Clones) != len(leftovers) {
+		t.Fatalf("listed %+v, want every leftover", snapshot.Clones)
+	}
+	for _, clone := range snapshot.Clones {
+		if clone.InUse || clone.Kept || clone.Reason == "" {
+			t.Fatalf("leftover %+v, want unused with a reason", clone)
+		}
+	}
+
+	paused := makeClone(t, root, "r-gh-fix-2", "o/r")
+	if err := saveScopedWorkState(statePath, map[string]workState{"o/r#2": {Status: "paused", CheckoutDirectory: paused}}, []string{"o/r"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := w.ClearClones(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Removed) != len(leftovers) || result.Kept != 1 {
+		t.Fatalf("clear = %+v, want every leftover removed and the paused clone kept", result)
+	}
+	for _, dir := range leftovers {
+		if isDir(dir) {
+			t.Fatalf("clear left %s", dir)
+		}
+	}
+	if !isDir(paused) {
+		t.Fatal("clear removed a paused job's clone")
+	}
+}
+
+func TestClonesUnreadableWorkStateIsAnError(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), ".aviary.json")
+	dir := makeClone(t, root, "r-gh-fix-1", "o/r")
+	if err := os.WriteFile(statePath, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := &Engine{Targets: []string{"o/r"}, StatePath: statePath, Out: os.Stderr}
+	w.SetTempDirs([]string{root})
+	if _, err := w.ListClones(context.Background()); !errors.Is(err, errWorkStateUnreadable) {
+		t.Fatalf("list with unreadable work state = %v, want %v", err, errWorkStateUnreadable)
+	}
+	if _, err := w.ClearClones(context.Background()); !errors.Is(err, errWorkStateUnreadable) {
+		t.Fatalf("clear with unreadable work state = %v, want %v", err, errWorkStateUnreadable)
+	}
+	if !isDir(dir) {
+		t.Fatal("clear removed a clone without reading the work state")
+	}
+}
+
+func TestClassifyClone(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	rec := cloneRecord{Path: filepath.Join(outside, "r-gh-fix-1"), Job: "o/r#1"}
 	work := map[string]workState{"o/r#1": {Status: "completed"}}
-	if inUse, reason := classifyClone(rec, cloneUsage{roots: []string{root}, work: work}); !inUse || !strings.Contains(reason, "outside") {
-		t.Fatalf("clone outside the temp directories = %t, %q; want kept", inUse, reason)
+	if verdict, reason := classifyClone(rec, cloneUsage{roots: []string{root}, work: work}); verdict != cloneKept || !strings.Contains(reason, "outside") {
+		t.Fatalf("clone outside the temp directories = %d, %q; want kept", verdict, reason)
 	}
 	rec.Path = filepath.Join(root, "r-gh-fix-1")
-	if inUse, reason := classifyClone(rec, cloneUsage{roots: []string{root}, workErr: errors.New("boom")}); !inUse || !strings.Contains(reason, "boom") {
-		t.Fatalf("clone with unreadable work state = %t, %q; want kept", inUse, reason)
-	}
-	for _, status := range []string{"active", "waiting", "queued", "paused"} {
+	for _, status := range []string{"active", "waiting", "queued", "paused", "stopping"} {
 		work := map[string]workState{"o/r#1": {Status: status}}
-		if inUse, _ := classifyClone(rec, cloneUsage{roots: []string{root}, work: work}); !inUse {
-			t.Fatalf("clone of a %s job was not in use", status)
+		if verdict, reason := classifyClone(rec, cloneUsage{roots: []string{root}, work: work}); verdict != cloneInUse || reason != "job is "+status {
+			t.Fatalf("clone of a %s job = %d, %q; want in use", status, verdict, reason)
 		}
+	}
+	rec.Adopted = true
+	if verdict, reason := classifyClone(rec, cloneUsage{roots: []string{root}}); verdict != cloneUnused || !strings.Contains(reason, "not owned") {
+		t.Fatalf("adopted clone no job records = %d, %q; want unused", verdict, reason)
 	}
 }
 

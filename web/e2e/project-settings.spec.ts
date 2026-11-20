@@ -82,11 +82,45 @@ const READY_CHECK = {
 type Args = Record<string, unknown>;
 type Calls = Record<string, Args[]>;
 
+const CLONES = {
+	roots: ["/tmp"],
+	clones: [
+		{
+			path: "/tmp/aviary-209",
+			repository: "lsegal/aviary",
+			issue: 209,
+			inUse: false,
+			reason: "not owned by this instance: no job here records it",
+			size: 157286400,
+		},
+		{
+			path: "/tmp/aviary-218",
+			repository: "lsegal/aviary",
+			issue: 218,
+			pullRequest: 233,
+			inUse: true,
+			reason: "job is paused",
+		},
+		{
+			path: "/elsewhere/aviary-230",
+			repository: "lsegal/aviary",
+			issue: 230,
+			inUse: false,
+			kept: true,
+			reason: "outside the configured temp directories; remove it by hand",
+			size: 0,
+		},
+	],
+	totalSize: 157286400,
+	unmeasured: 1,
+};
+
 async function setup(
 	page: Page,
 	opts: {
 		check?: unknown;
 		config?: unknown;
+		clonesError?: string;
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -123,33 +157,15 @@ async function setup(
 			return { ok: true };
 		},
 		provider_cli_list: async () => CLIS,
-		project_clone_list: {
-			roots: ["/tmp"],
-			clones: [
-				{
-					path: "/tmp/aviary-209",
-					repository: "lsegal/aviary",
-					issue: 209,
-					inUse: false,
-					size: 157286400,
-				},
-				{
-					path: "/tmp/aviary-218",
-					repository: "lsegal/aviary",
-					issue: 218,
-					pullRequest: 233,
-					inUse: true,
-					reason: "job is running",
-				},
-			],
-			totalSize: 157286400,
-			unmeasured: 1,
+		project_clone_list: () => {
+			if (opts.clonesError) throw new Error(opts.clonesError);
+			return CLONES;
 		},
 		project_clone_clear: (args?: Args) => {
 			record("project_clone_clear", args);
 			return {
 				removed: [{ path: "/tmp/aviary-209", size: 157286400 }],
-				kept: 1,
+				kept: 2,
 				reclaimed: 157286400,
 			};
 		},
@@ -505,24 +521,46 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	const calls = await setup(page);
 	await page.goto("/settings/agents/coder/projects");
 	const rows = page.getByTestId("clone-row");
-	await expect(rows).toHaveCount(2);
+	await expect(rows).toHaveCount(3);
 	await expect(rows.first()).toContainText("lsegal/aviary#209");
-	await expect(rows.first()).toContainText("unused");
+	await expect(rows.first().getByTestId("clone-state")).toHaveText(
+		"unused: not owned by this instance: no job here records it",
+	);
 	await expect(rows.nth(1)).toContainText("PR #233");
-	await expect(rows.nth(1)).toContainText("in use");
+	await expect(rows.nth(1).getByTestId("clone-state")).toHaveText(
+		"in use: job is paused",
+	);
+	await expect(rows.nth(2).getByTestId("clone-state")).toHaveText(
+		"kept: outside the configured temp directories; remove it by hand",
+	);
 	await expect(rows.first().getByTestId("clone-size")).toHaveText("150 MB");
 	await expect(rows.nth(1).getByTestId("clone-size")).toHaveText(
 		"size unknown",
 	);
 	await expect(page.getByTestId("clone-total")).toHaveText(
-		"2 clones, 150 MB total (1 not measured)",
+		"3 clones, 150 MB total (1 not measured)",
 	);
 
 	await page.getByRole("button", { name: "Clear unused clones" }).click();
 	await expect(page.getByTestId("clone-message")).toHaveText(
-		"Removed 1 clone, reclaimed 150 MB, kept 1 in use.",
+		"Removed 1 clone, reclaimed 150 MB, kept 2.",
 	);
 	expect(calls.project_clone_clear).toEqual([{}]);
+});
+
+test("an unreadable work state shows an error instead of clones", async ({
+	page,
+}) => {
+	await setup(page, {
+		clonesError: "work state could not be read: unexpected end of JSON",
+	});
+	await page.goto("/settings/agents/coder/projects");
+	await expect(
+		page.getByText(
+			"Couldn't list clones: work state could not be read: unexpected end of JSON",
+		),
+	).toBeVisible();
+	await expect(page.getByTestId("clone-row")).toHaveCount(0);
 });
 
 test("change settings first opens the agent's projects with the new one listed", async ({

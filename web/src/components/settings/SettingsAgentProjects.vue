@@ -199,8 +199,8 @@
 						</div>
 						<span data-testid="clone-size" class="text-xs tabular-nums text-gray-500"
 							:title="c.size === null ? 'Not measured in time' : undefined">{{ c.size === null ? "size unknown" : formatBytes(c.size) }}</span>
-						<span class="text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'" :title="c.reason">
-							{{ c.inUse ? "in use" : "unused" }}
+						<span data-testid="clone-state" class="max-w-xs text-right text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'">
+							{{ cloneState(c) }}<template v-if="c.reason">: <span data-testid="clone-reason">{{ c.reason }}</span></template>
 						</span>
 					</li>
 				</ul>
@@ -209,12 +209,12 @@
 					{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
 						({{ clones.unmeasured.value }} not measured)</template>
 				</p>
-				<button v-if="clones.clones.value.some((c) => !c.inUse)" type="button" :disabled="clones.clearing.value"
+				<button v-if="clones.clones.value.some((c) => cloneState(c) === 'unused')" type="button" :disabled="clones.clearing.value"
 					class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 					@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
 				<p v-if="clones.cleared.value" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">
 					Removed {{ clones.cleared.value.removed }} {{ clones.cleared.value.removed === 1 ? "clone" : "clones" }},
-					reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }} in use</template>.
+					reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }}</template>.
 				</p>
 			</div>
 		</section>
@@ -237,6 +237,7 @@ import {
 } from "../../composables/useProjectSettings";
 import { useProviderStatus } from "../../composables/useProviderAuth";
 import {
+	cloneState,
 	DELIVERY_OPTIONS,
 	defaultFields,
 	defaultInterval,

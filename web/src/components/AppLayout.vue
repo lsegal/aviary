@@ -314,7 +314,7 @@ const projectsRunning = computed(() =>
 const links: NavLink[] = [
 	{ to: "/overview", label: "Overview" },
 	{ to: "/chat", label: "Chat" },
-	{ to: "/projects", label: "Projects", group: "projects" },
+	{ to: "/projects", label: "GitHub", group: "projects" },
 	{
 		to: "/settings",
 		label: "Settings",

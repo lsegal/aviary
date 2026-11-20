@@ -563,7 +563,11 @@ export interface ProjectClone {
 	repo: string;
 	issue: number;
 	pr: number;
+	/** A live job of this instance holds it, so clearing keeps it. */
 	inUse: boolean;
+	/** Nothing holds it, but clearing leaves it alone (e.g. outside the temp directories). */
+	kept: boolean;
+	/** Why it is in use, kept, or unused. */
 	reason: string;
 	/** Bytes on disk, or null when it could not be measured in time. */
 	size: number | null;
@@ -577,9 +581,16 @@ function normalizeClone(c: unknown): ProjectClone {
 		issue: Number(o.issue) || 0,
 		pr: Number(o.pullRequest ?? o.pr) || 0,
 		inUse: o.inUse === true || o.in_use === true,
+		kept: o.kept === true,
 		reason: str(o.reason),
 		size: typeof o.size === "number" && o.size >= 0 ? o.size : null,
 	};
+}
+
+/** The state a clone row shows beside its reason. */
+export function cloneState(c: ProjectClone): "in use" | "kept" | "unused" {
+	if (c.inUse) return "in use";
+	return c.kept ? "kept" : "unused";
 }
 
 export function normalizeClones(raw: unknown): {
