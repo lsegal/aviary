@@ -86,6 +86,9 @@ type GHCLI struct {
 	// is added to the issue search alongside Filter; empty dispatches without
 	// one. Board targets use ReadyState instead.
 	ReadyLabel string
+	// Timeout bounds each `gh` call; zero uses ghCommandTimeout. Interactive
+	// callers that must answer quickly set a shorter one.
+	Timeout    time.Duration
 	runCommand func(context.Context, ...string) ([]byte, error)
 	// publicAPI overrides the unauthenticated public GitHub API request used
 	// to poll public repositories without spending the authenticated gh
@@ -113,12 +116,33 @@ var ghCommandTimeout = 2 * time.Minute
 // let go of its output pipe before the read gives up on it.
 const ghCommandWaitDelay = time.Second
 
+// commandTimeout is the deadline of each of g's `gh` calls.
+func (g GHCLI) commandTimeout() time.Duration {
+	if g.Timeout > 0 {
+		return g.Timeout
+	}
+	return ghCommandTimeout
+}
+
+// Run runs gh with args and returns its standard output. A failure's error
+// carries whatever gh printed, so callers can show its message.
+func (g GHCLI) Run(ctx context.Context, args ...string) ([]byte, error) {
+	output, err := g.run(ctx, args...)
+	if err != nil {
+		if detail := strings.TrimSpace(string(output)); detail != "" {
+			return nil, fmt.Errorf("%w: %s", err, detail)
+		}
+		return nil, err
+	}
+	return output, nil
+}
+
 func (g GHCLI) run(ctx context.Context, args ...string) ([]byte, error) {
 	// The deadline is the command's own, and is applied before the runner is
 	// chosen so every implementation of the call is bounded by it. For the
 	// real one it is also the child process's: CommandContext kills it when
 	// the deadline expires, so a hung `gh` is reaped rather than left behind.
-	runCtx, cancel := context.WithTimeout(ctx, ghCommandTimeout)
+	runCtx, cancel := context.WithTimeout(ctx, g.commandTimeout())
 	defer cancel()
 	if g.runCommand != nil {
 		output, err := g.runCommand(runCtx, args...)
@@ -143,7 +167,7 @@ func (g GHCLI) run(ctx context.Context, args ...string) ([]byte, error) {
 // alone. A run being shut down is not a timeout, however the command ended.
 func (g GHCLI) timedOut(ctx, runCtx context.Context, args []string, err error) error {
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-		return fmt.Errorf("gh %s did not finish within %s", strings.Join(args, " "), formatInterval(ghCommandTimeout))
+		return fmt.Errorf("gh %s did not finish within %s", strings.Join(args, " "), formatInterval(g.commandTimeout()))
 	}
 	return err
 }

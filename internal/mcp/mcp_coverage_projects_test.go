@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -220,12 +221,20 @@ func TestProjectCLIListReportsEveryDefinition(t *testing.T) {
 
 func TestProjectStatusLogOffset(t *testing.T) {
 	d, m := setupProjects(t)
-	m.Log("first")
-	m.Log("second")
+	var logged []string
+	m.SetLogSource(func(component string, offset, limit int) ([]string, int) {
+		assert.Equal(t, "projects", component)
+		lines := slices.Clone(logged[min(max(offset, 0), len(logged)):])
+		if limit > 0 && len(lines) > limit {
+			lines = lines[len(lines)-limit:]
+		}
+		return lines, len(logged)
+	})
+	logged = append(logged, "first", "second")
 	status := callJSON(t, d, "project_status", map[string]any{})
 	offset := status["log_offset"].(float64)
 	assert.Equal(t, []any{"first", "second"}, status["recent_logs"])
-	m.Log("third")
+	logged = append(logged, "third")
 	next := callJSON(t, d, "project_status", map[string]any{"log_offset": offset})
 	assert.Equal(t, []any{"third"}, next["recent_logs"])
 	assert.Equal(t, offset+1, next["log_offset"])

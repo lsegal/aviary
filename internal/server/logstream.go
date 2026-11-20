@@ -63,6 +63,10 @@ func (h *logHub) Handle(_ context.Context, r slog.Record) error {
 	entry := h.recordToEntry(r)
 
 	h.mu.Lock()
+	// Numbering under the same lock as the append keeps the ring in sequence
+	// order, so since never skips a record still being appended.
+	h.seq++
+	entry.Seq = h.seq
 	h.ring = append(h.ring, entry)
 	if len(h.ring) > h.ringCap {
 		h.ring = h.ring[len(h.ring)-h.ringCap:]
@@ -108,11 +112,6 @@ func (h *logHub) WithGroup(name string) slog.Handler {
 }
 
 func (h *logHub) recordToEntry(r slog.Record) logEntry {
-	h.mu.Lock()
-	h.seq++
-	seq := h.seq
-	h.mu.Unlock()
-
 	attrs := map[string]string{}
 	r.Attrs(func(a slog.Attr) bool {
 		attrs[a.Key] = fmt.Sprintf("%v", a.Value.Any())
@@ -137,7 +136,6 @@ func (h *logHub) recordToEntry(r slog.Record) logEntry {
 	}
 
 	return logEntry{
-		Seq:       seq,
 		Timestamp: r.Time.UTC().Format(time.RFC3339Nano),
 		Level:     level,
 		Component: comp,
@@ -167,6 +165,34 @@ func extractComponent(msg string, attrs map[string]string) string {
 		}
 	}
 	return "server"
+}
+
+// since pages the ring for one component: its lines after sequence number
+// offset, oldest first, each prefixed with its local time, and the offset to
+// ask from next time. An offset of zero or less returns the latest limit
+// lines; a limit of zero or less returns every line.
+func (h *logHub) since(component string, offset, limit int) ([]string, int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	// An offset past the newest record came from before a restart.
+	if int64(offset) > h.seq {
+		offset = 0
+	}
+	lines := []string{}
+	for _, e := range h.ring {
+		if e.Component != component || (offset > 0 && e.Seq <= int64(offset)) {
+			continue
+		}
+		line := e.Message
+		if ts, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil {
+			line = ts.Local().Format("2006-01-02 15:04:05") + " " + line
+		}
+		lines = append(lines, line)
+	}
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines, int(h.seq)
 }
 
 // ── child handlers (WithAttrs / WithGroup) ───────────────────────────────────

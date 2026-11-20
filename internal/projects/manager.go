@@ -15,12 +15,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
 	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Watch is a set of targets watched for the life of the server without being
@@ -39,7 +41,6 @@ type Watch struct {
 // change needs a new one, such as a new target.
 type Manager struct {
 	stateDir string
-	logger   *slog.Logger
 
 	// refreshMu serializes refreshes, so two config changes never start two
 	// engines.
@@ -67,9 +68,8 @@ type Manager struct {
 	identity    Identity
 	transcripts *transcriptStore
 
-	logMu    sync.Mutex
-	logs     []string
-	logTotal int
+	// logSource pages core's log ring for project_status; see SetLogSource.
+	logSource atomic.Pointer[LogSource]
 
 	// scheduleRerun fires a schedule again for a board Retry on one of its
 	// jobs; see SetScheduleRerun.
@@ -128,10 +128,6 @@ type engineRun struct {
 	driver browser.Handover
 }
 
-// managerLogLines is how many engine log lines the manager keeps for
-// project_status.
-const managerLogLines = 500
-
 // NewManager returns a manager that keeps its work state and job transcripts
 // under stateDir.
 func NewManager(stateDir string) (*Manager, error) {
@@ -141,7 +137,6 @@ func NewManager(stateDir string) (*Manager, error) {
 	}
 	m := &Manager{
 		stateDir:    stateDir,
-		logger:      slog.Default().With("component", "projects"),
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
 		reports:     newReporter(),
@@ -662,11 +657,15 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 // repository webhooks that point at it.
 func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, events chan WebhookEvent) error {
 	s := run.settings.Webhook
+	secret, err := resolveWebhookSecret(s.Secret)
+	if err != nil {
+		return err
+	}
 	listener, err := listenForWebhooks(s.Listen)
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: WebhookHandler{Events: events, Secret: s.Secret, WebhookPath: s.Path}, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: WebhookHandler{Events: events, Secret: secret, WebhookPath: s.Path}, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			m.logf("webhook server: %v", err)
@@ -689,7 +688,7 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 	}
 	m.logf("ngrok tunnel ready at %s", tunnel.URL())
 	for _, target := range run.settings.Targets {
-		if _, err := gh.ConfigureWebhook(ctx, target, endpoint, s.Secret); err != nil {
+		if _, err := gh.ConfigureWebhook(ctx, target, endpoint, secret); err != nil {
 			if errors.Is(err, errProjectWebhookUnavailable) || errors.Is(err, errWebhookPartiallyConfigured) {
 				m.logf("%v", err)
 				continue
@@ -699,7 +698,7 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 		m.logf("configured GitHub webhook for %s", target)
 	}
 	supervisor.webhookPath = s.Path
-	supervisor.reconciler = newWebhookReconciler(gh, run.settings.Targets, endpoint, s.Secret, m.logf)
+	supervisor.reconciler = newWebhookReconciler(gh, run.settings.Targets, endpoint, secret, m.logf)
 	supervisor.start = func(ctx context.Context) (webhookTunnel, error) {
 		tunnel, err := ngrok.Start(ctx, s.NgrokBinary, ngrokAddr, output)
 		if err != nil {
@@ -716,6 +715,30 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 // startBrowserDriver launches the browser browser delivery reads through. It
 // is a variable so tests can run the manager without a browser.
 var startBrowserDriver = browser.Start
+
+// openWebhookAuthStore opens the credential store that auth:<key> webhook
+// secrets resolve from; tests replace it.
+var openWebhookAuthStore = func() (auth.Store, error) {
+	return auth.NewFileStore(filepath.Join(store.SubDir(store.DirAuth), "credentials.json"))
+}
+
+// resolveWebhookSecret resolves an auth:<key> webhook secret through the
+// credential store, the same way core resolves its other secrets. A plain
+// value is returned unchanged.
+func resolveWebhookSecret(secret string) (string, error) {
+	if !strings.HasPrefix(secret, "auth:") {
+		return secret, nil
+	}
+	st, err := openWebhookAuthStore()
+	if err != nil {
+		return "", fmt.Errorf("projects webhook secret: %w", err)
+	}
+	resolved, err := auth.Resolve(st, secret)
+	if err != nil {
+		return "", fmt.Errorf("projects webhook secret: %w", err)
+	}
+	return resolved, nil
+}
 
 // startBrowser starts Aviary's browser for browser delivery and points the
 // engine's GitHub reads at it.
@@ -798,37 +821,39 @@ func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
 	m.reports.setDelivery(deliver)
 }
 
+// logComponent is the slog component Projects logs under, which is how
+// project_status picks its lines out of core's log ring.
+const logComponent = "projects"
+
+// LogSource pages core's log ring: the lines component logged after offset,
+// oldest first, and the offset to ask from next time. An offset of zero or
+// less asks for the latest limit lines; a limit of zero or less asks for every
+// line.
+type LogSource func(component string, offset, limit int) ([]string, int)
+
+// SetLogSource sets where project_status reads Projects log lines from.
+// Without one it reports none.
+func (m *Manager) SetLogSource(source LogSource) {
+	m.logSource.Store(&source)
+}
+
 // Log receives one engine log line.
 func (m *Manager) Log(line string) {
-	m.logMu.Lock()
-	m.logs = append(m.logs, line)
-	if len(m.logs) > managerLogLines {
-		m.logs = append([]string(nil), m.logs[len(m.logs)-managerLogLines:]...)
-	}
-	m.logTotal++
-	m.logMu.Unlock()
-	m.logger.Info(line)
+	slog.Info(line, "component", logComponent)
 }
 
 func (m *Manager) logf(format string, args ...any) {
-	m.Log(time.Now().Format("2006-01-02 15:04:05") + " " + fmt.Sprintf(format, args...))
+	m.Log(fmt.Sprintf(format, args...))
 }
 
-// logsSince returns the log lines after the first offset ever logged, and the
-// offset to ask from next time.
+// logsSince returns the Projects log lines after offset, and the offset to ask
+// from next time.
 func (m *Manager) logsSince(offset, limit int) ([]string, int) {
-	m.logMu.Lock()
-	defer m.logMu.Unlock()
-	first := m.logTotal - len(m.logs)
-	start := max(offset-first, 0)
-	if offset <= 0 {
-		start = max(len(m.logs)-limit, 0)
+	source := m.logSource.Load()
+	if source == nil {
+		return nil, offset
 	}
-	lines := append([]string{}, m.logs[min(start, len(m.logs)):]...)
-	if limit > 0 && len(lines) > limit {
-		lines = lines[len(lines)-limit:]
-	}
-	return lines, m.logTotal
+	return (*source)(logComponent, offset, limit)
 }
 
 // engine returns the running engine, or nil.

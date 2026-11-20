@@ -3,7 +3,6 @@ package projects
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // cloneMinFreeBytes is the free space a temp directory must have before a new
@@ -167,16 +167,12 @@ func loadCloneRegistry(path string) (*cloneRegistry, error) {
 	if path == "" {
 		return reg, nil
 	}
-	raw, err := os.ReadFile(path)
+	list, err := store.ReadJSON[[]cloneRecord](path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return reg, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	var list []cloneRecord
-	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, fmt.Errorf("decode clones %s: %w", path, err)
 	}
 	for _, rec := range list {
 		if rec.Path != "" {
@@ -199,12 +195,7 @@ func (r *cloneRegistry) saveLocked() error {
 	if r.path == "" {
 		return nil
 	}
-	list := r.listLocked()
-	raw, err := json.MarshalIndent(list, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(r.path, append(raw, '\n'), 0o600)
+	return store.WriteJSON(r.path, r.listLocked())
 }
 
 func (r *cloneRegistry) listLocked() []cloneRecord {

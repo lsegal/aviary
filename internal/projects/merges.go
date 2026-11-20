@@ -2,13 +2,14 @@ package projects
 
 import (
 	"context"
-	"encoding/json"
-	"os"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // recentMergeWindow is how far back the dashboards count merged pull requests.
@@ -35,12 +36,8 @@ func newRecentMerges(path string, now time.Time) *recentMerges {
 	if path == "" {
 		return m
 	}
-	data, err := os.ReadFile(path)
+	saved, err := store.ReadJSON[map[string]time.Time](path)
 	if err != nil {
-		return m
-	}
-	var saved map[string]time.Time
-	if json.Unmarshal(data, &saved) != nil {
 		return m
 	}
 	cutoff := now.Add(-recentMergeWindow)
@@ -88,7 +85,8 @@ func (m *recentMerges) record(repo string, state OriginatingWorkState) {
 }
 
 // save writes the merges within recentMergeWindow of now to m.path. Callers
-// hold m.mu. A failed write only costs the count after the next restart.
+// hold m.mu. A failed write only costs the count after the next restart, so
+// it is logged rather than returned.
 func (m *recentMerges) save(now time.Time) {
 	if m.path == "" {
 		return
@@ -100,11 +98,9 @@ func (m *recentMerges) save(now time.Time) {
 			recent[key] = mergedAt
 		}
 	}
-	data, err := json.MarshalIndent(recent, "", "  ")
-	if err != nil {
-		return
+	if err := store.WriteJSON(m.path, recent); err != nil {
+		slog.Warn("projects: saving recent merges failed", "component", "projects", "path", m.path, "err", err)
 	}
-	_ = os.WriteFile(m.path, append(data, '\n'), 0600)
 }
 
 // count returns how many recorded pull requests merged within
