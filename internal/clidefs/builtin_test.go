@@ -8,8 +8,14 @@ import (
 // TestBuiltinAgentsAskTheirCLIForModels holds every shipped agent that exposes
 // a model catalog to reading it from the CLI, which avoids carrying stale
 // lists. Claude Code has no listing command, so its maintained aliases are the
-// exception and remain suggestions rather than an allow-list.
+// exception and remain suggestions rather than an allow-list. Muse probes its
+// CLI too, but its model/list answers only once the CLI is signed in, so it
+// carries the published lineup as the fallback the report shows until then.
 func TestBuiltinAgentsAskTheirCLIForModels(t *testing.T) {
+	known := map[string]string{
+		"claude": "opus,sonnet,haiku,claude-opus-5-5",
+		"muse":   "muse-spark-1.3,muse-spark-1.3-contributor,muse-spark-1.2,muse-spark-1.2-contributor,muse-spark-1.1,muse-wonder-1.0,muse-ember-1.0",
+	}
 	registry := MustBuiltin()
 	for _, name := range registry.Names() {
 		definition, ok := registry.Lookup(name)
@@ -17,11 +23,16 @@ func TestBuiltinAgentsAskTheirCLIForModels(t *testing.T) {
 			t.Fatalf("registry has no definition for %q", name)
 		}
 		if len(definition.Doctor.KnownModels) > 0 {
-			if name != "claude" || len(definition.Doctor.Models) > 0 {
+			want, ok := known[name]
+			if !ok {
+				t.Errorf("built-in %q hardcodes doctor.knownModels", name)
+				continue
+			}
+			if name == "claude" && len(definition.Doctor.Models) > 0 {
 				t.Errorf("built-in %q hardcodes doctor.knownModels despite having a model probe", name)
 			}
-			if got := strings.Join(definition.Doctor.KnownModels, ","); got != "opus,sonnet,haiku,claude-opus-5-5" {
-				t.Errorf("Claude known models = %q, want opus,sonnet,haiku,claude-opus-5-5", got)
+			if got := strings.Join(definition.Doctor.KnownModels, ","); got != want {
+				t.Errorf("%s known models = %q, want %q", name, got, want)
 			}
 			continue
 		}
