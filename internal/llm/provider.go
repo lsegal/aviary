@@ -215,8 +215,9 @@ func (f *Factory) refreshOAuthToken(providerKey string, tok *auth.OAuthToken) *a
 
 // ForModel returns a Provider for the given model string.
 // model format: "anthropic/claude-sonnet-5-5", "openai/gpt-6.2-sol", "google-gemini/gemini-2.5-pro",
-// "google/gemini-2.5-pro" (API key), "meta/muse-spark-1.3" (API key), etc. "cli/..." models are not providers;
-// the agent runner hands those turns to a CLI backend instead.
+// "google/gemini-2.5-pro" (API key), "meta/muse-spark-1.3" (API key), etc. CLI provider models ("claude/opus",
+// "cli/claude/opus") are not API providers; the agent runner hands those turns
+// to a CLI backend instead.
 func (f *Factory) ForModel(model string) (Provider, error) {
 	return f.forModel(model, false)
 }
@@ -319,7 +320,10 @@ func (f *Factory) forModel(model string, forceRefresh bool) (Provider, error) {
 		return NewOllamaProvider(apiKey, name, opts.BaseURI), nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider %q", provider)
+		if _, ok := CLIProvider(provider); ok {
+			return nil, fmt.Errorf("model %q is on the %s CLI provider, which runs through its CLI rather than a model API", model, provider)
+		}
+		return nil, UnknownProviderError(CLIProviders(), provider, model)
 	}
 }
 

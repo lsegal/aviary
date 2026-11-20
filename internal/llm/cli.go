@@ -3,6 +3,7 @@ package llm
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -104,4 +105,31 @@ func CLIProvider(name string) (clidefs.Definition, bool) {
 // define, listing what it does define so a typo is obvious.
 func UnknownCLIProviderError(registry *clidefs.Registry, name string) error {
 	return fmt.Errorf("unknown agent %q; known agents are %s", name, strings.Join(registry.Names(), ", "))
+}
+
+// apiProviders are the providers Factory reaches over a model API, in the
+// order validation messages list them. forModel handles every one of them.
+var apiProviders = []string{
+	"anthropic", "openai", "openai-codex", "google", "google-gemini",
+	"gemini-code-assist", "github-copilot", "meta", "vllm", "ollama",
+}
+
+// APIProviders lists the providers reached over a model API rather than
+// through a coding CLI.
+func APIProviders() []string {
+	return slices.Clone(apiProviders)
+}
+
+// IsAPIProvider reports whether name is one of APIProviders.
+func IsAPIProvider(name string) bool {
+	return slices.Contains(apiProviders, name)
+}
+
+// UnknownProviderError reports a model string whose provider segment is
+// neither an API provider, a CLI provider in registry, nor "cli". The list it
+// gives is the one validation and the runtime resolve against, so it cannot
+// fall out of step with them.
+func UnknownProviderError(registry *clidefs.Registry, provider, model string) error {
+	return fmt.Errorf("unknown provider %q in model %q; must be an API provider (%s), a CLI provider (%s), or cli",
+		provider, model, strings.Join(apiProviders, ", "), strings.Join(registry.Providers(), ", "))
 }
