@@ -1,4 +1,4 @@
-// Package agents describes the coding-agent CLIs aviary can dispatch work to as
+// Package clidefs describes the coding-agent CLIs aviary can dispatch work to as
 // data rather than as code. Every place that has to know how to talk to an
 // agent -- the argv for a fresh run, a resume, and a one-shot vision call, the
 // environment its child process needs, how its session ID is established, and
