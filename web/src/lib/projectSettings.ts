@@ -144,7 +144,7 @@ export interface JobModelsConfig {
 
 /** One model a project's jobs run on, in fallback order. */
 export interface JobModel {
-	/** The coding-CLI spec (AGENT/MODEL:LEVEL), or aviary/<agent>. */
+	/** The model spec (AGENT/MODEL:LEVEL), or aviary/<agent>. */
 	spec: string;
 	/** The agent model it comes from, such as cli/claude/opus. */
 	model: string;
@@ -462,7 +462,7 @@ export interface ProjectCheckResult {
 
 const CHECK_LABELS: Record<string, string> = {
 	github: "GitHub",
-	clis: "Coding CLIs",
+	clis: "CLI providers",
 	skills: "Skills",
 	ready_label: "Ready label",
 	fork: "Fork",

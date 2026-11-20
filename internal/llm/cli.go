@@ -9,7 +9,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-// Providers reached through a coding CLI (claude, codex, cline, muse, gemini,
+// Providers reached through a CLI (claude, codex, cline, muse, gemini,
 // aviary and any in models.cli_definitions) sit in the provider layer beside
 // the API and OAuth providers above. Their definitions say how to invoke the
 // CLI; their installed, version, sign-in, quota and model state is read by

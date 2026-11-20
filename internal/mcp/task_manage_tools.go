@@ -74,7 +74,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 	registerTaskUpcomingTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_update",
-		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo) and cli (coding-CLI spec). Use enabled=false to pause a task without deleting it.",
+		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo) and cli (model spec). Use enabled=false to pause a task without deleting it.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		_, agentCfg, task, err := findConfiguredTask(args.Agent, args.Name)
 		if err != nil {

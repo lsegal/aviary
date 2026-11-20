@@ -7,7 +7,7 @@
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Skills</h2>
             <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
               {{ tab === "coding"
-                ? "Skills Aviary ships for coding CLIs, and the version installed in each."
+                ? "Skills Aviary ships for providers, and the version installed in each."
                 : "Browse installed skills, filter by activation state, and enable or disable them without leaving the system menu." }}
             </p>
           </div>
@@ -337,7 +337,7 @@ const tabs = computed(() => [
 	},
 	{
 		value: "coding" as const,
-		label: `For coding CLIs${codingCount.value === null ? "" : ` (${codingCount.value})`}`,
+		label: `For providers${codingCount.value === null ? "" : ` (${codingCount.value})`}`,
 	},
 ]);
 

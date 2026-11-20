@@ -1463,5 +1463,5 @@ func TestCodingSkillsTools(t *testing.T) {
 	require.Len(t, calls, 1)
 	assert.Equal(t, "https://github.com/lsegal/aviary/tree/v2.0.0/.agents/skills/gh-fix", calls[0][3])
 
-	toolCallContains(t, d, "coding_skills_install", map[string]any{"skill": "nope"}, "unknown coding-CLI skill")
+	toolCallContains(t, d, "coding_skills_install", map[string]any{"skill": "nope"}, "unknown skill")
 }

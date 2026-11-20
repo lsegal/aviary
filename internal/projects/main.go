@@ -1292,7 +1292,7 @@ func projectStatusError(number int, err error, detail string) error {
 	return fmt.Errorf("update project status for issue #%d: %w: %s", number, err, detail)
 }
 
-// CommandRunner runs jobs on coding-CLI processes, rendering each run's argv
+// CommandRunner runs jobs on CLI processes, rendering each run's argv
 // from the agent definitions.
 type CommandRunner struct {
 	Binary, CodexBinary, ClaudeBinary string

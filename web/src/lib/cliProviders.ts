@@ -1,11 +1,11 @@
-// Coding-CLI providers, as core Aviary's provider_cli_list reports them: the
-// agent doctor's view of every coding-CLI definition. Settings → Providers
+// Providers reached through a CLI, as core Aviary's provider_cli_list reports them: the
+// agent doctor's view of every CLI definition. Settings → Providers
 // renders them, and Projects reads the same list to choose a job's CLI.
 
 /** The doctor's overall verdict: ready, installed but needing attention, or not installed. */
 export type CLIStatus = "ok" | "warn" | "missing";
 
-export interface CodingCLI {
+export interface CLIProvider {
 	name: string;
 	installed: boolean;
 	status: CLIStatus;
@@ -43,11 +43,11 @@ function strings(v: unknown): string[] {
 		: [];
 }
 
-export function normalizeCLIList(raw: unknown): CodingCLI[] {
+export function normalizeCLIList(raw: unknown): CLIProvider[] {
 	const r = obj(raw);
 	const list = Array.isArray(raw) ? raw : Array.isArray(r.clis) ? r.clis : [];
 	return list
-		.map((c): CodingCLI => {
+		.map((c): CLIProvider => {
 			const o = obj(c);
 			const name = str(o.name);
 			const auth = str(o.auth);
@@ -83,7 +83,7 @@ export function normalizeCLIList(raw: unknown): CodingCLI[] {
 }
 
 /** The one-line sign-in state a CLI row shows. */
-export function cliAuthLabel(cli: CodingCLI): string {
+export function cliAuthLabel(cli: CLIProvider): string {
 	if (!cli.installed) return "not installed";
 	if (cli.signedIn) return "signed in";
 	return cli.auth || "unknown";

@@ -134,7 +134,7 @@
 							<p class="text-xs text-gray-500 dark:text-gray-400">
 								The models come from the agent<template v-if="effectiveAgent">: change them on
 									<RouterLink :to="`/settings/agents/${encodeURIComponent(effectiveAgent)}`" class="text-blue-600 hover:underline dark:text-blue-400">{{ effectiveAgent }}'s settings</RouterLink></template><template v-else>, or models.defaults when none is attached</template>.
-								Coding CLIs are providers, as <code class="font-mono">cli/&lt;cli&gt;/&lt;model&gt;</code> models.
+								Providers reached through a CLI are listed as <code class="font-mono">cli/&lt;cli&gt;/&lt;model&gt;</code> models.
 							</p>
 						</div>
 					</section>
@@ -307,7 +307,7 @@ const TOGGLES: { key: ToggleKey; label: string }[] = [
 	{ key: "changelog", label: "Add a changelog entry to each pull request" },
 	{
 		key: "yolo",
-		label: "Run coding CLIs without their sandboxes and permission checks",
+		label: "Run CLI providers without their sandboxes and permission checks",
 	},
 ];
 

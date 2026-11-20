@@ -137,7 +137,7 @@ func TestListInstalledMarksEnabledFromConfig(t *testing.T) {
 	assert.True(t, found)
 }
 
-func TestListInstalledLeavesOutCodingCLISkills(t *testing.T) {
+func TestListInstalledLeavesOutShippedSkills(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

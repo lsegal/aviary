@@ -37,4 +37,4 @@ When an Aviary job files an issue, the issue ends with a `**Created by Aviary:**
 npx skills add lsegal/aviary@gh-create --global --agent claude-code -y
 ```
 
-See [Skills for Coding CLIs](./) for other CLIs and for how Aviary keeps the skill current.
+See [Skills for providers](./) for other CLIs and for how Aviary keeps the skill current.

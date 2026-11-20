@@ -324,7 +324,7 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async ({
 	await expect(page.getByText("Unexpected end of JSON input")).toHaveCount(0);
 });
 
-test("system skills for coding CLIs shows versions and installs", async ({
+test("system skills for providers shows versions and installs", async ({
 	page,
 }) => {
 	const installs: Record<string, { version?: string; current: boolean }> = {
@@ -403,7 +403,7 @@ test("system skills for coding CLIs shows versions and installs", async ({
 	await page.goto("/system/skills?tab=coding");
 
 	await expect(
-		page.getByRole("tab", { name: "For coding CLIs (3)" }),
+		page.getByRole("tab", { name: "For providers (3)" }),
 	).toHaveAttribute("aria-selected", "true");
 	await expect(page.getByTestId("coding-skill-gh-fix-claude")).toContainText(
 		"2.0.0",

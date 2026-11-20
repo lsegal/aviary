@@ -1,5 +1,5 @@
 // Package projects is the Projects engine: it watches GitHub repositories,
-// project boards and Discussions boards for ready issues and runs coding-CLI
+// project boards and Discussions boards for ready issues and runs CLI
 // jobs on them through the gh-fix and gh-discuss skills.
 package projects
 

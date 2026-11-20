@@ -73,7 +73,7 @@ Enabled skills register additional MCP tools at server startup. See the [Configu
 
 ## coding_skills_list
 
-List the [skills Aviary ships for coding CLIs](/guide/skills/) and the copy installed in each coding CLI on the `PATH`.
+List the [skills Aviary ships for providers](/guide/skills/) and the copy installed in each CLI provider on the `PATH`.
 
 **Arguments:** none
 
@@ -101,14 +101,14 @@ List the [skills Aviary ships for coding CLIs](/guide/skills/) and the copy inst
 
 ## coding_skills_install
 
-Install or update the coding-CLI skills with `npx skills add`. A release installs from its own tag; a development build installs the copies bundled with it. Copies that are already current are skipped.
+Install or update the skills Aviary ships with `npx skills add`. A release installs from its own tag; a development build installs the copies bundled with it. Copies that are already current are skipped.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `skill` | string | | `gh-fix`, `gh-discuss`, `gh-create` or `gh-safe-merge`. Omit for every skill. |
-| `cli` | string | | Coding CLI id from `coding_skills_list`. Omit for every coding CLI on the `PATH`. |
+| `cli` | string | | CLI provider id from `coding_skills_list`. Omit for every CLI provider on the `PATH`. |
 | `update_only` | bool | | Only update outdated copies; skip CLIs that don't have the skill yet. |
 
 **Returns:** the copies installed, as `skill/cli`.

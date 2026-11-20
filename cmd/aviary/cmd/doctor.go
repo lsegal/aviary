@@ -153,7 +153,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// The coding-CLI registry drives both the CLI backends probe and the
+	// The CLI registry drives both the CLI backends probe and the
 	// Projects agents gates, so the doctor reports from the same definitions
 	// Settings → Providers and the Projects doctor read.
 	registry, registryErr := clidefs.FromConfig(cfg.Models.CLIDefinitions)

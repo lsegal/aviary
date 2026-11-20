@@ -54,7 +54,7 @@
       v-else-if="status && !status.clis.length"
       class="rounded-2xl border border-dashed border-gray-300 bg-white/80 px-5 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-400"
     >
-      No coding CLIs were found on the PATH. Install Claude Code, Codex, Gemini CLI or another supported CLI, then check again.
+      No CLI providers were found on the PATH. Install Claude Code, Codex, Gemini CLI or another supported CLI, then check again.
     </div>
 
     <div
@@ -149,7 +149,7 @@
             :disabled="savingSettings"
             @change="saveSetting('install_new_clis', ($event.target as HTMLInputElement).checked)"
           />
-          <span>Install for any coding CLI I set up later</span>
+          <span>Install for any CLI provider I set up later</span>
         </label>
         <p class="mt-3 text-xs leading-5 text-gray-500 dark:text-gray-400">
           Running jobs keep the version they started with.
@@ -174,7 +174,7 @@ import type { AppConfig, CodingSkillsConfig } from "../../stores/settings";
 import { useSettingsStore } from "../../stores/settings";
 import { Skeleton } from "../ui/skeleton";
 
-interface CodingCLI {
+interface CLIProvider {
 	id: string;
 	name: string;
 	target: string;
@@ -200,7 +200,7 @@ interface CodingSkillsStatus {
 	version: string;
 	source: string;
 	release: boolean;
-	clis: CodingCLI[];
+	clis: CLIProvider[];
 	skills: CodingSkill[];
 	outdated: number;
 }

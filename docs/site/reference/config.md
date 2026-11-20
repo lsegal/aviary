@@ -253,7 +253,7 @@ tasks:
 
 ## models
 
-Provider credentials, default model settings, and the coding-CLI providers.
+Provider credentials, default model settings, and the providers reached through a CLI.
 
 ```yaml
 models:
@@ -282,7 +282,7 @@ models:
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
-| `cli_definitions` | map | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
+| `cli_definitions` | map | CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 
 **Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`, `meta`
 
@@ -370,9 +370,9 @@ skills:
 
 ## coding_skills
 
-Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`, `gh-safe-merge`) installed and current. Both settings default to `true` and are only written when turned off.
+Controls how Aviary keeps the [skills for providers](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`, `gh-safe-merge`) installed and current. Both settings default to `true` and are only written when turned off.
 
-Coding-CLI skills are not listed under `skills` and are not available to Aviary's own agents.
+The skills Aviary ships are not listed under `skills` and are not available to Aviary's own agents.
 
 ```yaml
 coding_skills:
@@ -383,7 +383,7 @@ coding_skills:
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `auto_update` | bool | `true` | At startup, reinstall any skill whose installed copy differs from the one this release was built with |
-| `install_new_clis` | bool | `true` | Install the skills for coding CLIs found on the `PATH` later (checked every 15 minutes) |
+| `install_new_clis` | bool | `true` | Install the skills for providers found on the `PATH` later (checked every 15 minutes) |
 
 ---
 
@@ -420,8 +420,8 @@ projects:
 | `filter` | string[] | `assignee:@me` | Issue search filter |
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `cli/<cli>/<model>` model runs jobs on that coding CLI; any other model runs them on the agent itself. |
-| `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
+| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `cli/<cli>/<model>` model runs jobs on that CLI provider; any other model runs them on the agent itself. |
+| `yolo` | bool | `false` | Disable the CLI providers' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
 | `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |

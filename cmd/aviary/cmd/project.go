@@ -12,7 +12,7 @@ import (
 
 var projectCmd = &cobra.Command{
 	Use:   "project",
-	Short: "Manage Projects: watched GitHub issues fixed by coding CLIs",
+	Short: "Manage Projects: watched GitHub issues fixed by CLI providers",
 	Long: `Manage Projects. Every subcommand calls the project_* MCP tool of the same
 name with the same arguments, given as --<field> <value> flags. A leading
 positional argument fills the subcommand's main field, such as the job number
@@ -32,7 +32,7 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"add"}, "project_add", "target", "Watch a project, saving it to aviary.yaml unless --runtime is set"},
 	{[]string{"remove"}, "project_remove", "target", "Stop watching a project"},
 	{[]string{"refresh"}, "project_refresh", "target", "Check GitHub for work now"},
-	{[]string{"check"}, "project_check", "target", "Check what watching a project needs: GitHub access, coding CLIs, skills, ready label and fork"},
+	{[]string{"check"}, "project_check", "target", "Check what watching a project needs: GitHub access, CLI providers, skills, ready label and fork"},
 	{[]string{"job", "list"}, "project_job_list", "", "List jobs, running and errored first"},
 	{[]string{"job", "get"}, "project_job_get", "number", "Show one job's state, transcript and scrollback"},
 	{[]string{"job", "explain"}, "project_job_explain", "number", "Explain why a job is where it is and what moves it on"},

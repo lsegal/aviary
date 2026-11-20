@@ -157,7 +157,7 @@ server_upgrade { when: "idle" }    # once no jobs are running
 
 From a terminal, `aviary upgrade` does the same. It checks first and does nothing when Aviary is current. `--version` accepts versions with or without a leading `v`, and `--when idle` waits for running jobs.
 
-An upgrade is a safe restart. Aviary installs the release, updates the skills for every signed-in coding CLI, stops running jobs at a checkpoint and saves their sessions, then restarts. Each job then resumes in its own session and is told that Aviary restarted. Waiting jobs aren't touched. The upgrade dialog in the control panel names the jobs it will stop before you confirm. It offers **Now**, or **When no jobs are running**, which holds new jobs until the restart is done. A waiting upgrade can be canceled from the panel or with `server_restart { cancel: true }`.
+An upgrade is a safe restart. Aviary installs the release, updates the skills for every signed-in CLI provider, stops running jobs at a checkpoint and saves their sessions, then restarts. Each job then resumes in its own session and is told that Aviary restarted. Waiting jobs aren't touched. The upgrade dialog in the control panel names the jobs it will stop before you confirm. It offers **Now**, or **When no jobs are running**, which holds new jobs until the restart is done. A waiting upgrade can be canceled from the panel or with `server_restart { cancel: true }`.
 
 `server_restart {}` restarts the same way without installing anything.
 

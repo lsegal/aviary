@@ -1,5 +1,5 @@
-// Package clidoctor is aviary's one probe for coding CLIs. It reads a CLI's
-// agent definition and asks the installed binary what the definition says to
+// Package clidoctor is aviary's one probe for providers reached through a
+// CLI. It reads a CLI's agent definition and asks the installed binary what the definition says to
 // ask -- where it is, its version against the declared minimum, whether it is
 // signed in, which models it takes, and its quota -- so `aviary doctor`,
 // Settings → Providers and the Projects doctor all report from the same code.

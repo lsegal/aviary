@@ -1,5 +1,5 @@
 // Package version is aviary's one version parser. It reads the version a
-// coding CLI reports from `--version` and the release tags `aviary update`
+// CLI provider reports from `--version` and the release tags `aviary update`
 // compares, so the doctor, the Projects minimum-version gate, and the updater
 // never disagree about what a version is.
 package version

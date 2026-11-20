@@ -81,7 +81,7 @@ async function setup(
 	return calls;
 }
 
-test("one providers list holds the API providers and every coding CLI with its doctor status", async ({
+test("one providers list holds the API providers and every CLI provider with its doctor status", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -96,7 +96,7 @@ test("one providers list holds the API providers and every coding CLI with its d
 	await page.goto("/settings/providers");
 	const card = page.getByTestId("providers-list");
 	await expect(card).toBeVisible();
-	await expect(page.getByText("Coding CLIs", { exact: true })).toHaveCount(0);
+	await expect(page.getByText("CLI providers", { exact: true })).toHaveCount(0);
 
 	const codex = card.locator('[data-cli="codex"]');
 	await expect(codex).toHaveAttribute("data-status", "ok");
@@ -164,7 +164,7 @@ test("one providers list holds the API providers and every coding CLI with its d
 	await expect(card.locator("tbody tr").first()).toContainText("Anthropic");
 });
 
-test("saving settings keeps the coding-CLI definitions", async ({ page }) => {
+test("saving settings keeps the CLI definitions", async ({ page }) => {
 	let saved: Record<string, unknown> | null = null;
 	await setup(page, (config) => {
 		saved = config;

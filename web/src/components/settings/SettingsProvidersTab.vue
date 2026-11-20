@@ -10,7 +10,7 @@
 							</span>
 						</div>
 						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">How Aviary reaches models: API keys, OAuth sign-ins
-							and endpoints configured here, and coding CLIs that sign in with their own command-line tool. OAuth tokens
+							and endpoints configured here, and CLI providers that sign in with their own command-line tool. OAuth tokens
 							are stored securely and refreshed automatically.</p>
 
 						<!-- Every provider: configured credentials, then the providers reached through a CLI -->
@@ -191,9 +191,9 @@
 									@click="providerAddSelection = ''">Cancel</button>
 							</div>
 						</div>
-						<p v-else-if="cliRefreshing" class="mb-4 text-xs text-gray-500">Checking coding CLIs…</p>
+						<p v-else-if="cliRefreshing" class="mb-4 text-xs text-gray-500">Checking CLI providers…</p>
 						<p v-if="cliError && !cliProviders.length" class="mb-4 text-xs text-red-600 dark:text-red-400">
-							Couldn't read the coding CLIs: {{ cliError }}
+							Couldn't read the CLI providers: {{ cliError }}
 						</p>
 						<button type="button" data-testid="providers-check-again"
 							class="mt-2 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"

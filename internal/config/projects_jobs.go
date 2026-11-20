@@ -7,10 +7,10 @@ import (
 	"github.com/lsegal/aviary/internal/cliagent"
 )
 
-// aviarySpecPrefix marks a coding-CLI spec that runs a job on an Aviary agent.
+// aviarySpecPrefix marks a model spec that runs a job on an Aviary agent.
 const aviarySpecPrefix = "aviary/"
 
-// ProjectJobSpecs returns the coding-CLI specs, in fallback order, that jobs
+// ProjectJobSpecs returns the model specs, in fallback order, that jobs
 // of a project attached to the named agent run on: the agent's model and
 // fallbacks, after models.defaults, each cli/ model as its spec. A model
 // that is not a CLI runs the job on the agent itself, as aviary/<agent>. An

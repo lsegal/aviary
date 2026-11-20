@@ -918,7 +918,7 @@ func TestValidate_CLIModel(t *testing.T) {
 	}
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
-	// gemini is a coding-CLI provider Projects jobs run on, so it only warns.
+	// gemini is a provider reached through a CLI that Projects jobs run on, so it only warns.
 	assert.True(t, hasIssue(issues, "only claude and codex can answer agent prompts"))
 	assert.True(t, hasIssue(issues, "expected cli/<claude|codex>/<model>"))
 

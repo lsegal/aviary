@@ -256,7 +256,7 @@ aviary task stop
 
 ## aviary watch
 
-Watch GitHub projects and fix ready issues with a coding CLI. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
+Watch GitHub projects and fix ready issues with a CLI provider. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
 
 ```
 aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
@@ -265,7 +265,7 @@ aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
              [--yolo] [--no-merge] [--no-changelog]
 ```
 
-With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` attaches the targets to an Aviary agent, whose model and fallbacks pick the jobs' coding CLIs. Flags override the `projects:` section while the watch runs.
+With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` attaches the targets to an Aviary agent, whose model and fallbacks pick the jobs' CLI providers. Flags override the `projects:` section while the watch runs.
 
 ---
 

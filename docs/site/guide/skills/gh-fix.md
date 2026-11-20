@@ -42,4 +42,4 @@ For browser work, the finished pull request includes a representative screenshot
 npx skills add lsegal/aviary@gh-fix --global --agent claude-code -y
 ```
 
-See [Skills for Coding CLIs](./) for other CLIs and for how Aviary keeps the skill current.
+See [Skills for providers](./) for other CLIs and for how Aviary keeps the skill current.

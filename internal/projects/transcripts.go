@@ -12,7 +12,7 @@ import (
 // transcriptStore keeps every job's transcript, keyed by the job's
 // "target#number" key, under one directory. It is shared by pointer between
 // the engine, which records Projects' own events, and the runner, which
-// records the coding CLI's output.
+// records the CLI's output.
 type transcriptStore struct {
 	dir  string
 	mu   sync.Mutex

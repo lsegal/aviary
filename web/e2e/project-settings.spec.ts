@@ -215,12 +215,12 @@ test("add-project checks report each failing prerequisite", async ({
 					name: "clis",
 					status: "fail",
 					message:
-						"No coding CLI found; install one of claude, codex, gemini, opencode or cline",
+						"No CLI provider found; install one of claude, codex, gemini, opencode or cline",
 				},
 				{
 					name: "skills",
 					status: "fail",
-					message: "gh-fix cannot be installed until a coding CLI is found",
+					message: "gh-fix cannot be installed until a CLI provider is found",
 				},
 			],
 		},

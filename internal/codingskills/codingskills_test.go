@@ -169,7 +169,7 @@ func TestStaleNoteNamesStaleSkillsForOneCLI(t *testing.T) {
 	writeSkill(t, claudeDir, "gh-discuss", "discuss v2\n")
 	writeSkill(t, claudeDir, "gh-create", "create v1\n")
 
-	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under Skills > For coding CLIs", m.StaleNote(testCLIs[0]))
+	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under Skills > For providers", m.StaleNote(testCLIs[0]))
 	assert.Empty(t, m.StaleNote(testCLIs[1]), "a CLI with no skills installed has nothing stale")
 
 	m.Version = func() string { return "dev" }
@@ -277,9 +277,9 @@ func TestInstallRejectsUnknownSkillOrCLI(t *testing.T) {
 	m, npx, _ := newTestManager(t, "2.0.0", "claude")
 
 	_, err := m.Install(context.Background(), Request{Skill: "commit", Missing: true})
-	assert.ErrorContains(t, err, `unknown coding-CLI skill "commit"`)
+	assert.ErrorContains(t, err, `unknown skill "commit"`)
 	_, err = m.Install(context.Background(), Request{CLI: "gemini", Missing: true})
-	assert.ErrorContains(t, err, `coding CLI "gemini" is not installed`)
+	assert.ErrorContains(t, err, `CLI provider "gemini" is not installed`)
 	assert.Empty(t, npx.calls)
 }
 
