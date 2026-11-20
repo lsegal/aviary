@@ -127,3 +127,48 @@ func TestAviaryAgentOneShotCallsRunInProcess(t *testing.T) {
 		t.Fatalf("runs = %+v", runs)
 	}
 }
+
+// #459: the shutdown checkpoint holds in-process turns, which have no process
+// to pause: a turn already running is held by pauseAll, and one that starts
+// while the checkpoint has everything paused is held from its start.
+func TestCheckpointHoldsInProcessTurns(t *testing.T) {
+	active := &activeAgents{}
+	holds := make(chan *agent.TurnHold, 2)
+	release := make(chan struct{})
+	runner := CommandRunner{
+		Agent: "aviary/reviewer", Repo: "o/r", Active: active,
+		Aviary: func(_ context.Context, run AviaryAgentRun) error {
+			holds <- run.Hold
+			<-release
+			return nil
+		},
+	}
+	errs := make(chan error, 2)
+	start := func(number int) {
+		go func() {
+			_, err := runner.runOnce(context.Background(), Issue{Number: number}, AgentSession{RunDir: t.TempDir()}, nil, nil)
+			errs <- err
+		}()
+	}
+	start(1)
+	running := <-holds
+	if running == nil || running.Engaged() {
+		t.Fatalf("running turn hold = %+v, want a released hold", running)
+	}
+	if runs := active.pauseAll(); len(runs) != 1 {
+		t.Fatalf("paused runs = %+v", runs)
+	}
+	if !running.Engaged() {
+		t.Fatal("checkpoint did not hold the running in-process turn")
+	}
+	start(2)
+	if late := <-holds; late == nil || !late.Engaged() {
+		t.Fatal("in-process turn started during the checkpoint is not held")
+	}
+	close(release)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
