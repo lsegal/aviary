@@ -21,8 +21,8 @@ Shared machinery comes from the `gh-fix` skill rather than being restated here. 
 2. Identify the repository exactly as step 2 of "Validate the request" in `gh-fix` does.
 3. Require `git`, `gh`, and an authenticated `gh` session. Check `gh api repos/<OWNER>/<REPO> --jq .permissions`: merging, closing, and approving workflow runs need write access. Without it, stop and report the missing capability without commenting.
 4. Read the pull request: title, body, author, labels, state, draft flag, base and head branches, head repository, `maintainerCanModify`, head SHA, files, commits, comments, reviews, and the issues it closes. When an identity was supplied, read the conversation chronologically and treat `@/aviary:<ID>` mentions of that identity as direct instructions, as `gh-fix` does.
-5. Stop without commenting when the pull request does not exist, is closed or merged, or is owned. It is owned when an Aviary instance has claimed it or has a job running on it: its body carries an `**Agents:**` footer and the issue it closes has a `Starting work` or `Continuing work` claim comment from a `/aviary:<ID>` that no later `Stopping work` or `Releasing` comment from that identity cancels. An owned pull request is that job's unit of work, not this skill's. A draft is not owned by being a draft; treat the author marking it draft as wording that it is not ready, which is a merge hold under step 6.
-6. Record whether merging is withheld, applying step 5 of "Validate the request" in `gh-fix` to this pull request's labels, body, and comments and to the issues it closes, plus the `and do not merge` argument. The most recent statement wins. Record the label or quote that imposed the hold.
+5. Stop without commenting when the pull request does not exist, is closed or merged, or is owned. It is owned when an Aviary instance has claimed it or has a job running on it: its body carries an `**Agents:**` footer and the issue it closes has a `Starting work` or `Continuing work` claim comment from a `/aviary:<ID>` that no later `Stopping work` or `Releasing` comment from that identity cancels. An owned pull request is that job's unit of work, not this skill's. A draft is not owned by being a draft.
+6. Record whether merging is withheld, applying step 5 of "Validate the request" in `gh-fix` to this pull request's labels, body, and comments and to the issues it closes, plus the `and do not merge` argument. The most recent statement wins. Record the label or quote that imposed the hold. The draft flag on its own is not a hold; "Mark a draft ready" handles it once the safety check passes.
 7. Record whether a no-changelog directive applies, using the rules in step 4 of "Implement the fix" in `gh-fix`.
 8. Read the repository instructions, contribution guidance, license, CI configuration, and changelog conventions.
 9. Record the head SHA as the **reviewed SHA**. Every later step acts only on that SHA or on commits this run added on top of it.
@@ -43,6 +43,12 @@ Examine the description, the full diff, every commit, and anything the diff touc
 The checks overlap; any one failing fails the step. Classify the outcome as **passed**, **failed without malice** (unsafe by mistake, incorrect, or contradicting its description), or **malicious** (a backdoor, supply-chain compromise, covert behavior, or bad-faith content). Keep the reasoning brief and concrete; it goes into the comment when the check fails. Then follow "Handle failures" for either failure outcome.
 
 Whenever the head SHA changes during the run because the author pushed, stop, run this check again on the new commits, and record the new reviewed SHA before continuing.
+
+## Mark a draft ready
+
+Only after the safety check passed, and never before, mark a draft pull request ready for review with `gh pr ready <PRNUMBER> --repo <OWNER>/<REPO>`, so that "Merge" never meets a draft. Do this before unblocking CI. Running the skill is the authorization; the author having opened it as a draft does not need a separate go-ahead. Skip this step when the pull request is already ready. Never mark a pull request ready when the safety check failed, malicious or not: a pull request handed back to its author or closed keeps its draft state. An explicit hold recorded in validation still applies after this step; it stops only the merge.
+
+Marking a pull request ready does not change its head, so CI that already ran on the reviewed SHA stays valid. When a workflow does trigger on `ready_for_review`, its new runs are on the reviewed SHA and are approved and watched like any other.
 
 ## Unblock CI and run it to green
 
@@ -74,7 +80,7 @@ Run CI on the final head, including any finishing commits, as "Drive CI to compl
 
 ## Merge
 
-When validation recorded a hold, do not merge: post one comment on the pull request mentioning its author, saying it cleared the safety check and CI and that the merge was withheld, naming the label or quoting the wording that withheld it. Then report the hold as the outcome.
+When validation recorded a hold, do not merge, even though the pull request is no longer a draft: post one comment on the pull request mentioning its author, saying it cleared the safety check and CI and that the merge was withheld, naming the label or quoting the wording that withheld it, never the draft state. Then report the hold as the outcome.
 
 Otherwise, follow "Merge and verify" in `gh-fix`, with these differences:
 
@@ -88,14 +94,14 @@ Otherwise, follow "Merge and verify" in `gh-fix`, with these differences:
 Every comment this skill posts mentions the pull request's author as `@<AUTHOR>`, so the author, and any job following the pull request, hears it. Post at most one comment per outcome, state the finding plainly, and never pad it with review-style commentary.
 
 - **Malicious:** close the pull request immediately with `gh pr close <PRNUMBER> --repo <OWNER>/<REPO> --comment <TEXT>`, where the comment mentions the author and states the finding. Never approve its workflow runs, never run its code, and never merge it, at any point. When one of its runs already ran without approval, such as for a collaborator, say so in the run's outcome so the user can check for leaked secrets.
-- **Failed without malice, or incorrect:** behavior that contradicts the description, contradictory implementation details, a substantive problem the safety check found, a conflict that needs a behavioral judgement, or checks failing on the pull request's own code. Comment on the pull request mentioning the author and describing what is wrong and, briefly, what would resolve it. Do not close it, do not merge it, and do not push changes to it. When CI has not yet been unblocked, leave it blocked.
+- **Failed without malice, or incorrect:** behavior that contradicts the description, contradictory implementation details, a substantive problem the safety check found, a conflict that needs a behavioral judgement, or checks failing on the pull request's own code. Comment on the pull request mentioning the author and describing what is wrong and, briefly, what would resolve it. Do not close it, do not merge it, do not mark a draft ready, and do not push changes to it. When CI has not yet been unblocked, leave it blocked.
 - **External blocker:** missing access, a base-branch CI failure, or a GitHub problem. Report it in the run's outcome and in one comment on the pull request mentioning the author only when the author needs to know; otherwise post nothing.
 
 Any failure before CI is unblocked resolves to a comment mentioning the author; closing is reserved for the malicious case. File no follow-up issues for the author's work.
 
 ## Report the result
 
-Lead with the outcome: merged, closed as malicious, handed back to the author, held, or blocked. Include the pull request URL (and the replacement pull request's URL when one was opened), the reviewed and final head SHAs, the merge SHA when merged, the safety check's result in one or two sentences, which CI runs were approved, the finishing changes made, the CI checks that passed, the URL of every comment posted, and the hold's label or quote when held. When blocked, name the failed step, the relevant URL or log, and the exact capability the run lacked.
+Lead with the outcome: merged, closed as malicious, handed back to the author, held, or blocked. Include the pull request URL (and the replacement pull request's URL when one was opened), the reviewed and final head SHAs, the merge SHA when merged, the safety check's result in one or two sentences, whether the run marked a draft ready for review, which CI runs were approved, the finishing changes made, the CI checks that passed, the URL of every comment posted, and the hold's label or quote when held. When blocked, name the failed step, the relevant URL or log, and the exact capability the run lacked.
 
 ## Clean up the clone
 

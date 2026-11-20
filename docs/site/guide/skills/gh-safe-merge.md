@@ -11,10 +11,11 @@
 ## How It Works
 
 1. **Run the safety check before anything runs.** Nothing from the pull request is built, tested, installed or run until the check passes.
-2. **Unblock CI and run it to green.** Only after the check passes does it approve workflow runs GitHub is holding for the pull request, and only for the commit it checked.
-3. **Finish superficially.** It resolves merge conflicts, applies formatting and auto-fixable linter passes, and adds a changelog entry and any README or docs updates the change plainly requires.
-4. **Run CI to completion.** Every required check must pass on the final head, including its own finishing commits.
-5. **Merge, unless told not to.** The merge is the acceptance; a safe, working pull request merges with no comment.
+2. **Mark a draft ready.** Once the check passes, a draft pull request is marked ready for review so it can merge. A pull request that fails the check stays a draft.
+3. **Unblock CI and run it to green.** Only after the check passes does it approve workflow runs GitHub is holding for the pull request, and only for the commit it checked.
+4. **Finish superficially.** It resolves merge conflicts, applies formatting and auto-fixable linter passes, and adds a changelog entry and any README or docs updates the change plainly requires.
+5. **Run CI to completion.** Every required check must pass on the final head, including its own finishing commits.
+6. **Merge, unless told not to.** The merge is the acceptance; a safe, working pull request merges with no comment.
 
 ## The Safety Check Gates Everything
 
@@ -37,7 +38,7 @@ Every comment the skill posts mentions the pull request's author, and it posts a
 - **Merely incorrect.** Behavior that contradicts the description, a substantive problem, or tests failing on the pull request's own code goes back to the author: one comment says what is wrong and, briefly, what would fix it. The pull request is not merged and not closed.
 - **Malicious.** The pull request is closed at once with a comment. Its code never runs and its CI is never approved.
 
-Closing is reserved for bad faith; incorrect is not malicious. Holds work the way they do in [`gh-fix`](./gh-fix): a `do-not-merge` label, the author marking the pull request a draft, or `and do not merge` stops it short of the merge, with one comment saying it cleared the safety check and CI.
+Closing is reserved for bad faith; incorrect is not malicious. Holds work the way they do in [`gh-fix`](./gh-fix): a `do-not-merge` label, wording in the pull request or its comments, or `and do not merge` stops it short of the merge, with one comment saying it cleared the safety check and CI and naming what held it. Being a draft is not a hold.
 
 ## Not a Review
 
