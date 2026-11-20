@@ -31,3 +31,29 @@ type RunCheckpoint struct {
 	// LastRecoveredAt is when the checkpoint was last re-issued.
 	LastRecoveredAt time.Time `json:"last_recovered_at,omitempty"`
 }
+
+// claimCheckpoint marks path as owned by one of r's in-flight prompts.
+func (r *AgentRunner) claimCheckpoint(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.liveCheckpoints == nil {
+		r.liveCheckpoints = map[string]struct{}{}
+	}
+	r.liveCheckpoints[path] = struct{}{}
+}
+
+// releaseCheckpoint ends the claim on path once its prompt has finished.
+func (r *AgentRunner) releaseCheckpoint(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.liveCheckpoints, path)
+}
+
+// ownsCheckpoint reports whether path belongs to one of r's in-flight
+// prompts rather than to an interrupted run.
+func (r *AgentRunner) ownsCheckpoint(path string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.liveCheckpoints[path]
+	return ok
+}

@@ -45,6 +45,9 @@ type AgentRunner struct {
 	mu       sync.Mutex
 	active   sync.WaitGroup
 	canceled bool
+	// liveCheckpoints holds the checkpoint paths of this runner's in-flight
+	// prompts, which checkpoint recovery must not re-issue. Guarded by mu.
+	liveCheckpoints map[string]struct{}
 }
 
 type providerFactory interface {
@@ -263,11 +266,20 @@ func (r *AgentRunner) promptCore(
 				CreatedAt: time.Now(),
 			}
 			cpath := store.CheckpointPath(r.agent.ID, promptMsgID)
+			// Claim it before the file exists, so recovery never finds it unclaimed.
+			r.claimCheckpoint(cpath)
 			if err := store.WriteJSON(cpath, cp); err != nil {
 				slog.Warn("agent: failed to write run checkpoint", "agent", r.agent.Name, "err", err)
+				r.releaseCheckpoint(cpath)
 			} else {
 				checkpointPath = cpath
 			}
+		} else if checkpointPath != "" {
+			r.claimCheckpoint(checkpointPath)
+		}
+		if checkpointPath != "" {
+			// Deferred first, so it runs after the checkpoint is deleted below.
+			defer r.releaseCheckpoint(checkpointPath)
 		}
 		// Delete checkpoint at goroutine exit unless the server stopped this runner
 		// (in which case the checkpoint is kept for recovery on restart).
