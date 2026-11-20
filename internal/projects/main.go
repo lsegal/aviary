@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -1763,6 +1764,17 @@ func (r CommandRunner) RunSessionWithOutput(ctx context.Context, issue Issue, se
 // open after its process tree is killed before Wait gives up on them.
 const agentCommandWaitDelay = 5 * time.Second
 
+// launchEnv is the environment an agent launch adds to aviary's own. When the
+// definition's settings overlay cannot be built, the agent still runs, against
+// the user's own settings directory, and the reason is logged.
+func launchEnv(definition clidefs.Definition) ([]string, func()) {
+	env, cleanup, err := definition.LaunchEnv()
+	if err != nil {
+		slog.Warn("projects: running agent against its own settings directory", "agent", definition.Name, "err", err)
+	}
+	return env, cleanup
+}
+
 func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.Cmd {
 	binary, args, shimErr := agentShimArgv(binary, args)
 	cmd := exec.CommandContext(ctx, binary, args...)
@@ -2144,7 +2156,13 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// it waits for in-flight background shell tasks before terminating them
 	// (10 minutes by default), and aviary dispatches it for long-lived
 	// autonomous work.
-	if env := definition.EnvList(); len(env) > 0 {
+	//
+	// The launch env also points a CLI that writes bookkeeping into its own
+	// settings file, as codex records trusted workspaces, at a private
+	// overlay of its settings directory, so the user's file is left alone.
+	env, cleanupEnv := launchEnv(definition)
+	defer cleanupEnv()
+	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.Dir, _ = sessionRunDir(session)
