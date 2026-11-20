@@ -316,7 +316,7 @@ type Quota struct {
 	Reader string `json:"reader,omitempty"`
 	// Command is the argv the "command" reader runs, whose stdout it parses
 	// as JSON. The {binary} placeholder substitutes the executable the agent
-	// itself was resolved to, so --agent-binary reaches the quota call too.
+	// itself was resolved to, so a binary override reaches the quota call too.
 	Command []string `json:"command,omitempty"`
 	// PercentUsed and ResetAt are dotted paths into that JSON naming the
 	// percentage of the window already consumed and the time it resets.
@@ -388,7 +388,7 @@ func (q Quota) TimeoutDuration() time.Duration {
 func (q Quota) Argv(binary string) []string { return substituteBinary(q.Command, binary) }
 
 // substituteBinary renders an argv template that names the agent's executable
-// as {binary}, so a --agent-binary override reaches every command a definition
+// as {binary}, so a binary override reaches every command a definition
 // declares rather than only the one it was written for.
 func substituteBinary(argv []string, binary string) []string {
 	if len(argv) == 0 {

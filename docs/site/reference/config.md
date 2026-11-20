@@ -280,7 +280,7 @@ models:
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
-| `cli_definitions` | map | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
+| `cli_definitions` | map | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 
 **Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`
 
@@ -417,7 +417,6 @@ projects:
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
-| `agent_binaries` | map | | Executable for a coding CLI, by agent name |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |

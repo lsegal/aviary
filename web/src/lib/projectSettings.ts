@@ -54,8 +54,7 @@ export interface ProjectsSection {
 	yolo?: boolean;
 	unblock_interval?: string;
 	temp_dirs?: string[];
-	// Fields this page doesn't edit (agent_binaries,
-	// webhook, unblock_agent, ...) pass through untouched.
+	// Fields this page doesn't edit (webhook, unblock_agent, ...) pass through untouched.
 	[key: string]: unknown;
 }
 
