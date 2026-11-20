@@ -262,6 +262,9 @@
 							@click="refreshCredentials">? Refresh</button>
 					</div>
 
+					<!-- Mounted with the tab, so the slow CLI probe runs only when Providers is opened. -->
+					<SettingsCLIProviders v-if="activeTab === 'providers'" />
+
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Token</h3>
 						<p class="text-xs text-gray-500 dark:text-gray-400">
@@ -280,6 +283,7 @@
 <script lang="ts">
 import { computed, defineComponent, inject, ref, toRefs } from "vue";
 import { settingsViewContextKey } from "./context";
+import SettingsCLIProviders from "./SettingsCLIProviders.vue";
 
 interface ConfiguredProviderEntry {
 	key: string;
@@ -336,6 +340,7 @@ interface SettingsProvidersContext {
 
 export default defineComponent({
 	name: "SettingsProvidersTab",
+	components: { SettingsCLIProviders },
 	setup() {
 		const settings = inject<SettingsProvidersContext>(settingsViewContextKey);
 		if (!settings) {

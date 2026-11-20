@@ -153,7 +153,7 @@
 								</li>
 							</ol>
 							<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-								<span>Each CLI comes from an agent definition. Jobs can also run on an Aviary agent, listed as <code class="font-mono">aviary/&lt;agent&gt;</code>.</span>
+								<span>CLIs, their install and sign-in come from <RouterLink to="/settings/providers" class="text-blue-600 hover:underline dark:text-blue-400">Settings → Providers</RouterLink>. Jobs can also run on an Aviary agent, listed as <code class="font-mono">aviary/&lt;agent&gt;</code>.</span>
 								<select v-if="unusedAgents.length" class="rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
 									aria-label="Add an Aviary agent" @change="addAgent($event)">
 									<option value="">Add an Aviary agent…</option>
@@ -272,9 +272,9 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import { useCLIProviders } from "../composables/useCLIProviders";
 import {
 	useAddProject,
-	useCLIProbe,
 	useProjectClones,
 } from "../composables/useProjectSettings";
 import {
@@ -354,7 +354,7 @@ DefaultTag.props = ["on"];
 const route = useRoute();
 const router = useRouter();
 const store = useSettingsStore();
-const probe = useCLIProbe();
+const probe = useCLIProviders();
 const clones = useProjectClones();
 const addProject = useAddProject();
 

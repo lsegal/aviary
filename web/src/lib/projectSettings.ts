@@ -54,7 +54,7 @@ export interface ProjectsSection {
 	yolo?: boolean;
 	unblock_interval?: string;
 	temp_dirs?: string[];
-	// Fields this page doesn't edit (agent_binaries, cli_definitions,
+	// Fields this page doesn't edit (agent_binaries,
 	// webhook, unblock_agent, ...) pass through untouched.
 	[key: string]: unknown;
 }
@@ -458,44 +458,7 @@ export function normalizeCheck(raw: unknown): ProjectCheckResult {
 	};
 }
 
-// ── Coding-CLI probe (project_cli_list) ───────────────────────────────────
-
-export interface CodingCLI {
-	name: string;
-	installed: boolean;
-	signedIn: boolean;
-	auth: string;
-	quota: string;
-	/** Fully qualified model specs, such as claude/opus. */
-	models: string[];
-	defaultModel: string;
-}
-
-// The agent doctor reports auth as "signed in", "signed out" or "unknown".
-
-export function normalizeCLIList(raw: unknown): CodingCLI[] {
-	const r = obj(raw);
-	const list = Array.isArray(raw) ? raw : Array.isArray(r.clis) ? r.clis : [];
-	return list
-		.map((c) => {
-			const o = obj(c);
-			const name = str(o.name);
-			const auth = str(o.auth);
-			const installed = o.installed !== false && str(o.status) !== "missing";
-			return {
-				name,
-				installed,
-				signedIn: installed && (o.signed_in === true || auth === "signed in"),
-				auth,
-				quota: str(o.quota),
-				models: strings(o.models).map((m) =>
-					m.includes("/") ? m : `${name}/${m}`,
-				),
-				defaultModel: str(o.defaultModel ?? o.default_model),
-			};
-		})
-		.filter((c) => c.name);
-}
+// ── Coding-CLI specs ──────────────────────────────────────────────────────
 
 /** The agent name of a coding-CLI spec (AGENT/MODEL:LEVEL or aviary/<agent>). */
 export function specName(spec: string): string {
