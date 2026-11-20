@@ -392,11 +392,6 @@ type Engine struct {
 	ready     chan struct{}
 	// notReadyWait overrides notReadyTimeout in tests.
 	notReadyWait time.Duration
-	// agentOverride holds a live-updated set of active agent specs (issue
-	// #341, extended to a multiselect in issue #572). It is read from
-	// goroutines the Run loop spawns, so it is a pointer stored atomically
-	// rather than a plain field owned by the loop's goroutine.
-	agentOverride atomic.Pointer[[]string]
 	// handledIssues snapshots the issue keys this instance already has in
 	// flight or has finished, taken from .aviary.json and the active set at
 	// the top of every poll. Browser mode reads it through issueHandled to

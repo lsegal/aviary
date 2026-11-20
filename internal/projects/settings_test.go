@@ -78,15 +78,10 @@ func TestValidateSettingsUpdateRejectsBadValues(t *testing.T) {
 	}{
 		{"concurrency too low", SettingsUpdate{Concurrency: intPtr(0)}},
 		{"concurrency too high", SettingsUpdate{Concurrency: intPtr(maxConcurrencyPermits + 1)}},
-		{"no active agents", SettingsUpdate{ActiveAgents: agentsPtr()}},
-		{"empty agent", SettingsUpdate{ActiveAgents: agentsPtr("   ")}},
-		{"unknown agent provider", SettingsUpdate{ActiveAgents: agentsPtr("bogus")}},
-		{"bad agent level", SettingsUpdate{ActiveAgents: agentsPtr("codex:extreme")}},
-		{"one good one bad agent", SettingsUpdate{ActiveAgents: agentsPtr("codex", "bogus")}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateSettingsUpdate(agentRegistry(), tc.update); err == nil {
+			if err := validateSettingsUpdate(tc.update); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})
@@ -370,40 +365,8 @@ func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
 	}
 }
 
-func TestEngineRunnerAppliesLiveAgentOverride(t *testing.T) {
-	w := &Engine{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
-	if got := w.runner().(CommandRunner).AgentName(); got != "codex" {
-		t.Fatalf("agent before override = %q", got)
-	}
-	override := []string{"claude/opus"}
-	w.agentOverride.Store(&override)
-	runner, ok := w.runner().(CommandRunner)
-	if !ok {
-		t.Fatal("runner() did not return a CommandRunner")
-	}
-	if got := runner.AgentName(); got != "claude/opus" {
-		t.Fatalf("agent after override = %q, want claude/opus", got)
-	}
-}
-
-// TestEngineRunnerAppliesLiveMultiAgentOverride checks a multiselect override
-// round robins across every agent it names, not just the first.
-func TestEngineRunnerAppliesLiveMultiAgentOverride(t *testing.T) {
-	w := &Engine{Runner: CommandRunner{Agent: "codex", Agents: []string{"codex"}}}
-	override := []string{"codex", "claude/opus", "muse"}
-	w.agentOverride.Store(&override)
-	runner, ok := w.runner().(CommandRunner)
-	if !ok {
-		t.Fatal("runner() did not return a CommandRunner")
-	}
-	if got := strings.Join(runner.Agents, ","); got != "codex,claude/opus,muse" {
-		t.Fatalf("runner.Agents = %q, want every overridden agent", got)
-	}
-}
-
 func intPtr(v int) *int               { return &v }
 func strPtr(v string) *string         { return &v }
-func agentsPtr(v ...string) *[]string { return &v }
 
 func TestEngineAgentStillConfigured(t *testing.T) {
 	commandRunner := CommandRunner{Agent: "codex", Agents: []string{"codex", "claude/opus:high"}}
@@ -411,7 +374,6 @@ func TestEngineAgentStillConfigured(t *testing.T) {
 	cases := []struct {
 		name     string
 		aviary   *Engine
-		override string
 		agent    string
 		want     bool
 	}{
@@ -421,16 +383,10 @@ func TestEngineAgentStillConfigured(t *testing.T) {
 		{name: "empty", aviary: &Engine{Runner: commandRunner}, agent: "", want: false},
 		{name: "single agent", aviary: &Engine{Runner: single}, agent: "claude", want: true},
 		{name: "single agent mismatch", aviary: &Engine{Runner: single}, agent: "codex", want: false},
-		{name: "override wins", aviary: &Engine{Runner: commandRunner}, override: "claude", agent: "codex", want: false},
-		{name: "override matches", aviary: &Engine{Runner: commandRunner}, override: "claude", agent: "claude", want: true},
 		{name: "unconfigured runner", aviary: &Engine{Runner: &fakeSessionRunner{agent: "claude"}}, agent: "codex", want: true},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			if test.override != "" {
-				override := []string{test.override}
-				test.aviary.agentOverride.Store(&override)
-			}
 			if got := test.aviary.agentStillConfigured(test.agent); got != test.want {
 				t.Fatalf("agentStillConfigured(%q) = %t, want %t", test.agent, got, test.want)
 			}
@@ -486,27 +442,6 @@ func TestSettingsSnapshotListsEveryRegisteredAgent(t *testing.T) {
 	}
 	if got := strings.Join(snapshot.AgentOptions[1].Models, ","); got != "muse-1,muse-2" {
 		t.Fatalf("muse models = %q", got)
-	}
-}
-
-// TestSettingsValidatesAgainstTheRunsRegistry checks the live --agent override
-// accepts a config-defined agent and rejects an unknown one with the list the
-// CLI would print, so the dashboard and the settings API answer a typo the
-// same way the command line does.
-func TestSettingsValidatesAgainstTheRunsRegistry(t *testing.T) {
-	registry := registryForSettings(t)
-	if err := validateSettingsUpdate(registry, SettingsUpdate{ActiveAgents: agentsPtr("muse/muse-2")}); err != nil {
-		t.Fatalf("config-defined agent rejected: %v", err)
-	}
-	err := validateSettingsUpdate(registry, SettingsUpdate{ActiveAgents: agentsPtr("claude")})
-	if err == nil {
-		t.Fatal("expected an agent outside the run's registry to be rejected")
-	}
-	if !strings.Contains(err.Error(), "known agents are codex, muse") {
-		t.Fatalf("error = %v, want it to list the registry's agents", err)
-	}
-	if err := validateSettingsUpdate(registry, SettingsUpdate{ActiveAgents: agentsPtr("muse/muse-9")}); err == nil {
-		t.Fatal("expected a model outside the agent's list to be rejected")
 	}
 }
 

@@ -272,18 +272,13 @@ func TestUnblockSpecDefaultsToTheCodingAgentAndTakesOverrides(t *testing.T) {
 	if err != nil || spec.Name != "claude" || spec.Model != "opus" {
 		t.Fatalf("default unblock spec = %+v, %v; want claude/opus", spec, err)
 	}
-	override := []string{"codex"}
-	w.agentOverride.Store(&override)
-	if spec, _ := w.unblockSpec(); spec.Name != "codex" {
-		t.Fatalf("unblock spec after a live agent change = %+v, want codex", spec)
-	}
 	w.SetUnblockAgent(unblockConfig{Agent: "claude", Model: "sonnet"})
 	if spec, err := w.unblockSpec(); err != nil || spec.Name != "claude" || spec.Model != "sonnet" {
 		t.Fatalf("overridden unblock spec = %+v, %v; want claude/sonnet", spec, err)
 	}
-	w.SetUnblockAgent(unblockConfig{Model: "gpt-5.5"})
-	if spec, err := w.unblockSpec(); err != nil || spec.Name != "codex" || spec.Model != "gpt-5.5" {
-		t.Fatalf("model-only override = %+v, %v; want codex/gpt-5.5", spec, err)
+	w.SetUnblockAgent(unblockConfig{Model: "haiku"})
+	if spec, err := w.unblockSpec(); err != nil || spec.Name != "claude" || spec.Model != "haiku" {
+		t.Fatalf("model-only override = %+v, %v; want claude/haiku", spec, err)
 	}
 }
 

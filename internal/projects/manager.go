@@ -453,7 +453,14 @@ func (m *Manager) jobSpecsLocked(cfg config.ProjectsConfig, targets []string, wa
 			name = cfg.AgentFor(target)
 		}
 		if name == "" {
-			return nil, nil, fmt.Errorf("projects: %s is not attached to an agent; set projects.agent or the project's agent", target)
+			// Like any Aviary agent without a model, an unattached project
+			// takes models.defaults; only its coding-CLI models can run a job.
+			specs := config.ProjectJobSpecs(agents, "")
+			if len(specs) == 0 {
+				return nil, nil, fmt.Errorf("projects: %s is not attached to an agent and models.defaults names no cli/ model; set projects.agent or the project's agent", target)
+			}
+			targetAgents[target] = specs
+			continue
 		}
 		specs, err := resolve(name, target)
 		if err != nil {

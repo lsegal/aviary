@@ -24,18 +24,25 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	m.SetEngineEnabled(false)
+	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}})
 	return m
 }
 
 func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	m := newTestManager(t)
+	m.SetAgents([]config.AgentConfig{
+		{Name: "shared", Model: "cli/codex"},
+		{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}},
+		{Name: "high", Model: "cli/codex:high"},
+	}, config.ModelsConfig{})
 	m.Reconcile(config.ProjectsConfig{
-		List:        []config.ProjectConfig{{Target: "o/a", Agents: []string{"claude/opus", "codex"}}, {Target: "o/b"}},
+		List:        []config.ProjectConfig{{Target: "o/a", Agent: "opus"}, {Target: "o/b"}},
+		Agent:       "shared",
 		Concurrency: 2,
 		Interval:    "1m",
 	})
 	label := ""
-	if err := m.AddWatch(Watch{Targets: []string{"o/c", "o/a"}, Agents: []string{"codex:high"}, Settings: config.ProjectsConfig{Concurrency: 6, ReadyLabel: &label, NoMerge: true}}); err != nil {
+	if err := m.AddWatch(Watch{Targets: []string{"o/c", "o/d"}, Agent: "high", Settings: config.ProjectsConfig{Concurrency: 6, ReadyLabel: &label, NoMerge: true}}); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
@@ -44,14 +51,17 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"o/a", "o/b", "o/c"}; !reflect.DeepEqual(s.Targets, want) {
+	if want := []string{"o/a", "o/b", "o/c", "o/d"}; !reflect.DeepEqual(s.Targets, want) {
 		t.Fatalf("targets = %v, want %v", s.Targets, want)
+	}
+	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"claude/opus", "codex"}) {
+		t.Fatalf("a project's jobs should run on its agent's model and fallbacks: %v", got)
+	}
+	if got := s.TargetAgents["o/b"]; !reflect.DeepEqual(got, []string{"codex"}) {
+		t.Fatalf("a project without an agent should use the section's: %v", got)
 	}
 	if got := s.TargetAgents["o/c"]; !reflect.DeepEqual(got, []string{"codex:high"}) {
 		t.Fatalf("watch agents = %v", got)
-	}
-	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"codex:high"}) {
-		t.Fatalf("a watch's agents should replace the saved project's: %v", got)
 	}
 	if s.Concurrency != 6 || s.Interval != time.Minute || s.ReadyLabel != "" || !s.NoMerge || s.Delivery != DeliveryBrowser {
 		t.Fatalf("settings = %+v", s)
@@ -59,8 +69,48 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if !reflect.DeepEqual(s.Agents, []string{"codex"}) {
 		t.Fatalf("agents = %v", s.Agents)
 	}
-	if got := m.Status(t.Context(), 0)["agents"]; !reflect.DeepEqual(got, []string{"codex", "codex:high"}) {
+	if got := m.Status(t.Context(), 0)["agents"]; !reflect.DeepEqual(got, []string{"codex", "claude/opus", "codex:high"}) {
 		t.Fatalf("status agents = %v", got)
+	}
+}
+
+func TestManagerSettingsRejectUnattachedProjects(t *testing.T) {
+	m := newTestManager(t)
+	m.SetAgents([]config.AgentConfig{{Name: "nomodel"}}, config.ModelsConfig{})
+	for name, cfg := range map[string]config.ProjectsConfig{
+		"no agent":      {List: []config.ProjectConfig{{Target: "o/r"}}}, // and no models.defaults
+		"unknown agent": {List: []config.ProjectConfig{{Target: "o/r", Agent: "nobody"}}},
+		"no model":      {List: []config.ProjectConfig{{Target: "o/r"}}, Agent: "nomodel"},
+	} {
+		m.mu.Lock()
+		m.cfg = cfg
+		_, err := m.settingsLocked()
+		m.mu.Unlock()
+		if err == nil || !strings.Contains(err.Error(), "o/r") && !strings.Contains(err.Error(), "section") {
+			t.Errorf("%s: err = %v, want the unattached project named", name, err)
+		}
+	}
+}
+
+func TestManagerAgentModelsDefaultFromModelsSection(t *testing.T) {
+	m := newTestManager(t)
+	m.SetAgents([]config.AgentConfig{{Name: "plain"}, {Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}}},
+		config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}})
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a", Agent: "plain"}, {Target: "o/b", Agent: "api"}}})
+	m.mu.Lock()
+	s, err := m.settingsLocked()
+	m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"gemini/pro", "codex"}) {
+		t.Fatalf("an agent without a model should take models.defaults: %v", got)
+	}
+	if got := s.TargetAgents["o/b"]; !reflect.DeepEqual(got, []string{"aviary/api", "claude/opus"}) {
+		t.Fatalf("an API model should run the job on the agent itself: %v", got)
+	}
+	if !reflect.DeepEqual(s.Agents, []string{"gemini/pro"}) {
+		t.Fatalf("agents = %v", s.Agents)
 	}
 }
 
@@ -257,6 +307,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Shutdown)
+	m.SetAgents([]config.AgentConfig{{Name: "coder", Model: "cli/codex"}}, config.ModelsConfig{})
 	recordLogs(t, m)
 	var lookups atomic.Int32
 	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
@@ -268,7 +319,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		}
 		return nil, errors.New("gh is unavailable in tests")
 	}
-	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agents: []string{"codex"}, Settings: config.ProjectsConfig{Delivery: DeliveryPoll}}); !errors.Is(err, errLoginLookup) {
+	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agent: "coder", Settings: config.ProjectsConfig{Delivery: DeliveryPoll}}); !errors.Is(err, errLoginLookup) {
 		t.Fatalf("AddWatch error = %v, want the login lookup failure", err)
 	}
 	if logs, _ := m.logsSince(0, 0); !slices.ContainsFunc(logs, func(line string) bool { return strings.Contains(line, "waiting 10ms to retry starting") }) {

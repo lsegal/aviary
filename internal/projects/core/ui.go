@@ -311,11 +311,6 @@ type SettingsUpdate struct {
 	// TempDirs replaces the ordered temp directories new clones are placed in
 	//. An empty list means the system temp directory.
 	TempDirs *[]string `json:"tempDirs,omitempty"`
-	// ActiveAgents replaces the live set of agent specs new dispatches
-	// round-robin across, overriding what --agent configured at
-	// startup. When given it must name at least one valid agent spec; the
-	// result is reported back as SettingsSnapshot.ConfiguredAgents.
-	ActiveAgents *[]string `json:"activeAgents,omitempty"`
 	// UnblockInterval is how often the stuck-job watchdog runs, as a
 	// duration such as "5m", or "0" to turn it off.
 	UnblockInterval *string `json:"unblockInterval,omitempty"`
@@ -354,14 +349,13 @@ type SettingsSnapshot struct {
 	TempDirs       []string `json:"tempDirs"`
 	TempDirDefault string   `json:"tempDirDefault"`
 	// Agents lists every agent the run's registry defines, built-in and
-	// config-defined alike, which is the set ActiveAgents may be set from.
+	// config-defined alike.
 	Agents []string `json:"agents"`
 	// AgentOptions carries the same agents with their model and level
 	// allow-lists, for a selector that offers more than a bare name.
 	AgentOptions []AgentOption `json:"agentOptions,omitempty"`
-	// ConfiguredAgents lists the agent specs this run dispatches with, which
-	// is a subset of Agents chosen by --agent or the live ActiveAgents
-	// override.
+	// ConfiguredAgents lists the agent specs this run dispatches with, as
+	// the Aviary agents its projects are attached to resolve them.
 	ConfiguredAgents []string `json:"configuredAgents"`
 	// UnblockInterval, UnblockAgent, and UnblockModel are the stuck-job
 	// watchdog's settings, and UnblockDefault is the agent spec

@@ -161,25 +161,9 @@ func (w *Engine) publishSettings() SettingsSnapshot {
 // validateSettingsUpdate checks update in isolation, before it reaches the
 // Run loop, so malformed requests fail fast with a useful message instead of
 // silently corrupting state owned by that loop.
-func validateSettingsUpdate(registry *clidefs.Registry, update SettingsUpdate) error {
+func validateSettingsUpdate(update SettingsUpdate) error {
 	if update.Concurrency != nil && (*update.Concurrency < 1 || *update.Concurrency > maxConcurrencyPermits) {
 		return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrencyPermits)
-	}
-	if update.ActiveAgents != nil {
-		if len(*update.ActiveAgents) == 0 {
-			return fmt.Errorf("activeAgents must not be empty")
-		}
-		for _, spec := range *update.ActiveAgents {
-			if strings.TrimSpace(spec) == "" {
-				return fmt.Errorf("agent must not be empty")
-			}
-			// The registry answers an unknown agent with the agents that do
-			// exist, so the dashboard and the settings API reject a typo with
-			// the same list the CLI prints.
-			if _, err := parseAgentSpecIn(registry, spec); err != nil {
-				return err
-			}
-		}
 	}
 	if update.TempDirs != nil {
 		if _, err := normalizeTempDirs(*update.TempDirs); err != nil {
@@ -198,7 +182,7 @@ func validateSettingsUpdate(registry *clidefs.Registry, update SettingsUpdate) e
 // the resulting snapshot. It must only be called from the Run loop's
 // goroutine, the same rule handleJobAction's callers already follow.
 func (w *Engine) applySettingsRequest(update SettingsUpdate, sem *concurrencySemaphore) settingsResult {
-	if err := validateSettingsUpdate(w.registry(), update); err != nil {
+	if err := validateSettingsUpdate(update); err != nil {
 		return settingsResult{err: err}
 	}
 	if update.UnblockAgent != nil || update.UnblockModel != nil {
@@ -249,13 +233,6 @@ func (w *Engine) applySettingsRequest(update SettingsUpdate, sem *concurrencySem
 	if update.TempDirs != nil {
 		dirs, _ := normalizeTempDirs(*update.TempDirs)
 		w.SetTempDirs(dirs)
-	}
-	if update.ActiveAgents != nil {
-		trimmed := make([]string, len(*update.ActiveAgents))
-		for i, spec := range *update.ActiveAgents {
-			trimmed[i] = strings.TrimSpace(spec)
-		}
-		w.agentOverride.Store(&trimmed)
 	}
 	return settingsResult{snapshot: w.publishSettings()}
 }
@@ -336,36 +313,28 @@ func (w *Engine) unblockDefault() string {
 	return runner.specForSession(AgentSession{}).String()
 }
 
-// runner returns the AgentRunner new dispatches should use, applying any
-// live agent override on top of the configured CommandRunner.
-// Unlike the fields applySettingsRequest owns, this is read from goroutines
-// spawned by the Run loop as well as the loop itself, so the override is
-// stored behind an atomic pointer rather than left to single-goroutine
-// ownership.
+// runner returns the AgentRunner new dispatches should use, applying the
+// live settings on top of the configured CommandRunner. Unlike the fields
+// applySettingsRequest owns, this is read from goroutines spawned by the Run
+// loop as well as the loop itself, so those settings are stored atomically
+// rather than left to single-goroutine ownership.
 func (w *Engine) runner() AgentRunner {
-	override := w.agentOverride.Load()
 	if runner, ok := w.Runner.(CommandRunner); ok {
 		runner.NoMerge = w.noMerge.Load()
 		runner.NoChangelog = w.noChangelog.Load()
 		if allowed := w.allowedCommenters.Load(); allowed != nil {
 			runner.AllowedCommenters = *allowed
 		}
-		if override != nil && len(*override) > 0 {
-			runner.Agent = (*override)[0]
-			runner.Agents = append([]string(nil), *override...)
-		}
 		return runner
 	}
 	return w.Runner
 }
 
-// configuredAgents returns the agent specs new dispatches may use: the live
-// override when one is set, otherwise the CommandRunner's configured clidefs.
-// It reports nothing for runners that carry no agent configuration at all.
+// configuredAgents returns the agent specs new dispatches may use: the
+// CommandRunner's default and every target's, as the Aviary agents projects
+// are attached to resolve them. It reports nothing for runners that carry no
+// agent configuration at all.
 func (w *Engine) configuredAgents() []string {
-	if override := w.agentOverride.Load(); override != nil && len(*override) > 0 {
-		return append([]string(nil), *override...)
-	}
 	runner, ok := w.Runner.(CommandRunner)
 	if !ok {
 		return nil
