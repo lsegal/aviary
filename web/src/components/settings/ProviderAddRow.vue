@@ -1,14 +1,11 @@
 <template>
 	<div ref="root" data-testid="provider-add" class="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
-		<button v-if="!open" ref="toggle" type="button" data-testid="provider-add-row" aria-expanded="false"
-			aria-controls="provider-add-kinds"
-			class="group m-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-2.5 text-left text-sm font-semibold text-blue-600 transition hover:border-blue-300 hover:bg-blue-50/60 focus:outline-none focus-visible:border-blue-400 focus-visible:bg-blue-50/60 dark:border-gray-600 dark:text-blue-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30 dark:focus-visible:bg-blue-950/30"
-			@click="expand">
-			<span
-				class="flex h-6 w-6 items-center justify-center rounded-full border-2 border-dashed border-blue-400 text-base leading-none transition group-hover:rotate-90 group-hover:border-solid motion-reduce:transition-none motion-reduce:group-hover:rotate-0 dark:border-blue-500"
-				aria-hidden="true">+</span>
-			Add provider
-		</button>
+		<div v-if="!open" class="p-3">
+			<button ref="toggle" type="button" data-testid="provider-add-row" aria-expanded="false"
+				aria-controls="provider-add-kinds"
+				class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2 active:bg-blue-700 dark:focus-visible:ring-offset-gray-900"
+				@click="expand">+ Add provider</button>
+		</div>
 		<div v-else id="provider-add-kinds" class="provider-add-panel bg-gray-50/70 p-3 dark:bg-gray-800/40"
 			@keydown="onKeydown">
 			<div class="mb-2 flex items-center justify-between">

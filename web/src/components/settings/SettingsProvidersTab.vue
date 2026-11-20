@@ -160,7 +160,7 @@
 									</tr>
 								</tbody>
 							</table>
-							<!-- Add a provider: a dashed row that expands into tiles, then the chosen kind's form -->
+							<!-- Add a provider: a button that expands into tiles, then the chosen kind's form -->
 							<ProviderAddRow v-if="availableProviderOptions.length && !providerAddSelection"
 								:options="availableProviderOptions" @select="providerAddSelection = $event" />
 							<div v-if="providerAddSelection" data-testid="provider-add-form"
