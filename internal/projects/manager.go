@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
@@ -258,7 +256,6 @@ type engineSettings struct {
 	Targets           []string            `json:"targets"`
 	TargetAgents      map[string][]string `json:"target_agents"`
 	Agents            []string            `json:"agents"`
-	AgentBinaries     map[string]string   `json:"agent_binaries"`
 	Definitions       map[string]any      `json:"definitions"`
 	Interval          time.Duration       `json:"interval"`
 	Delivery          string              `json:"delivery"`
@@ -362,7 +359,6 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Targets:           targets,
 		TargetAgents:      targetAgents,
 		Agents:            cfg.EffectiveAgents(),
-		AgentBinaries:     cfg.AgentBinaries,
 		Definitions:       m.definitions,
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
@@ -536,7 +532,7 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 
 // startRun builds and starts an engine.
 func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
-	registry, err := agents.Load(s.Definitions)
+	registry, err := LoadCLIDefinitions(s.Definitions)
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +546,6 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 			return nil, fmt.Errorf("agent %q: name the Aviary agent to run, as aviary/<agent>", spec)
 		}
 	}
-	s.AgentBinaries = withAviaryBinary(s.AgentBinaries)
 	unblock := unblockConfig{Agent: s.UnblockAgent, Model: s.UnblockModel}
 	if err := validateUnblockAgent(registry, unblock); err != nil {
 		return nil, err
@@ -585,7 +580,6 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	var engine *Engine
 	runner := CommandRunner{
-		AgentBinaries:     s.AgentBinaries,
 		Agents:            s.Agents,
 		Agent:             s.Agents[0],
 		TargetAgents:      s.TargetAgents,
@@ -795,23 +789,6 @@ func (m *Manager) stopRun(run *engineRun) {
 // aviaryAgent is the built-in definition that runs a job on an Aviary agent:
 // aviary/<agent> runs `aviary agent run <agent>` through this executable.
 const aviaryAgent = "aviary"
-
-// withAviaryBinary points the aviary definition at the running executable
-// unless agent_binaries names another.
-func withAviaryBinary(binaries map[string]string) map[string]string {
-	if binaries[aviaryAgent] != "" {
-		return binaries
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return binaries
-	}
-	merged := map[string]string{aviaryAgent: executable}
-	for name, binary := range binaries {
-		merged[name] = binary
-	}
-	return merged
-}
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.
 func allAgentSpecs(s engineSettings) []string {

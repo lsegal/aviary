@@ -36,7 +36,7 @@ func TestVersionSupported(t *testing.T) {
 func TestVersionTooOldError(t *testing.T) {
 	definition := Definition{Name: "gemini", Binary: "gemini", MinVersion: "0.58.0"}
 	message := definition.VersionTooOldError("/opt/bin/gemini", "0.2.2").Error()
-	for _, want := range []string{"gemini", "0.58.0", "0.2.2", "/opt/bin/gemini", "--agent-binary"} {
+	for _, want := range []string{"gemini", "0.58.0", "0.2.2", "/opt/bin/gemini", "cli_definitions"} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("error %q does not mention %q", message, want)
 		}

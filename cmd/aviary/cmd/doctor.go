@@ -15,6 +15,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/store"
@@ -156,7 +157,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// The coding-CLI registry drives both the CLI backends probe and the
 	// Projects agents gates, so the doctor reports from the same definitions
 	// Settings → Providers and the Projects doctor read.
-	registry, registryErr := agents.Load(cfg.Models.CLIDefinitions)
+	registry, registryErr := projects.LoadCLIDefinitions(cfg.Models.CLIDefinitions)
 
 	// ── CLI backends ─────────────────────────────────────────────────────────
 	if backends := config.CLIBackends(cfg); len(backends) > 0 && registryErr == nil {

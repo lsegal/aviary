@@ -10,7 +10,8 @@ import (
 )
 
 // cliNames returns the names provider_cli_list reported, failing the test on
-// any CLI the empty PATH should have left uninstalled.
+// any CLI the empty PATH should have left uninstalled. The aviary CLI is the
+// running executable, which Projects dispatches to, so it is always installed.
 func cliNames(t *testing.T, result map[string]any) []string {
 	t.Helper()
 	clis, ok := result["clis"].([]any)
@@ -19,6 +20,10 @@ func cliNames(t *testing.T, result map[string]any) []string {
 	for _, raw := range clis {
 		cli := raw.(map[string]any)
 		names = append(names, cli["name"].(string))
+		if cli["name"] == "aviary" {
+			assert.Equal(t, true, cli["installed"], cli)
+			continue
+		}
 		assert.Equal(t, false, cli["installed"], cli["name"])
 		assert.Equal(t, "missing", cli["status"], cli["name"])
 	}

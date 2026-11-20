@@ -114,13 +114,6 @@ func TestAviaryAgentSpecRunsTheNamedAgent(t *testing.T) {
 	if _, err := parseAgentSpecIn(registry, "aviary/reviewer:high"); err == nil {
 		t.Fatal("an aviary agent accepted a level")
 	}
-	binaries := withAviaryBinary(map[string]string{"codex": "/opt/codex"})
-	if binaries["aviary"] == "" || binaries["codex"] != "/opt/codex" {
-		t.Fatalf("binaries = %v", binaries)
-	}
-	if got := withAviaryBinary(map[string]string{"aviary": "/x"})["aviary"]; got != "/x" {
-		t.Fatalf("a configured aviary binary was replaced: %q", got)
-	}
 }
 
 func TestManagerRejectsAnAviarySpecWithoutAnAgent(t *testing.T) {
