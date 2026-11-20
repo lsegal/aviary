@@ -18,25 +18,27 @@
     "modelsJSON": "result.models.availableModels[].modelId",
     "timeout": "45s"
   },
+  "approval": {
+    "read-only": ["--approval-mode", "plan"],
+    "auto": ["--approval-mode", "auto_edit"],
+    "full": ["--yolo"]
+  },
   "args": {
     "run": [
       {"when": "session", "args": ["--session-id", "{session}"]},
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"args": ["--output-format", "stream-json"]},
       {"args": ["-p", "{prompt}"]}
     ],
     "resume": [
       {"args": ["--resume", "{session}"]},
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"args": ["{approval}"]},
       {"args": ["--output-format", "stream-json"]},
       {"args": ["-p", "{prompt}"]}
     ],
     "vision": [
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "auto_edit"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"args": ["-p", "{prompt}"]}
     ]

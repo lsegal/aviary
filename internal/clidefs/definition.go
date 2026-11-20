@@ -98,6 +98,11 @@ type Definition struct {
 	// (Codex's exec). Out-of-band calls send their large payload this way, so
 	// no OS command-line limit can stop the agent from starting.
 	PromptStdin *[]string `json:"promptStdin,omitempty"`
+	// Approval translates aviary's approval modes into this CLI's native
+	// permission flags: an argument that is exactly {approval} in a template
+	// renders as the arguments listed for the run's mode. A mode left out
+	// falls back to the closest less permissive mode declared.
+	Approval map[ApprovalMode][]string `json:"approval,omitempty"`
 	// Doctor names the read-only probes `aviary agents` runs to report on the
 	// agent: whether its CLI is signed in, and which models it accepts. An
 	// agent that declares none is reported from what the definition already
@@ -807,17 +812,20 @@ const (
 	placeholderImage       = "image"
 	placeholderSettings    = "settings"
 	placeholderSessionName = "sessionName"
+	// placeholderApproval expands to the definition's approval arguments for
+	// the run's mode. It must be a whole argument.
+	placeholderApproval = "approval"
 )
 
 // knownPlaceholders is every {name} a fragment may substitute.
 var knownPlaceholders = []string{
 	placeholderPrompt, placeholderSession, placeholderModel, placeholderLevel,
-	placeholderImage, placeholderSettings, placeholderSessionName,
+	placeholderImage, placeholderSettings, placeholderSessionName, placeholderApproval,
 }
 
 // knownConditions is every name a fragment's `when` may test. The value
-// placeholders test as present when non-empty; yolo and remoteControl test the
-// run's own settings, oneShot tests for an out-of-band call, and noCheckout
+// placeholders test as present when non-empty; yolo (the full approval mode)
+// and remoteControl test the run's own settings, oneShot tests for an out-of-band call, and noCheckout
 // tests for a call running outside any checkout.
 var knownConditions = append([]string{"yolo", "remoteControl", "oneShot", "noCheckout"}, knownPlaceholders...)
 
@@ -935,6 +943,9 @@ func (d Definition) Validate() error {
 	if model := strings.TrimSpace(d.DefaultModel); model != "" && !d.AcceptsModel(model) {
 		return fmt.Errorf(`field "defaultModel": %q is not one this agent accepts; %s`, model, d.ModelError())
 	}
+	if err := d.validateApproval(); err != nil {
+		return err
+	}
 	if err := d.Quota.validate(); err != nil {
 		return err
 	}
@@ -978,6 +989,9 @@ func validateFragments(mode string, fragments []Fragment) error {
 			for _, match := range placeholderPattern.FindAllStringSubmatch(arg, -1) {
 				if !contains(knownPlaceholders, match[1]) {
 					return fmt.Errorf(`field %q[%d].args: unknown placeholder %s; known placeholders are {%s}`, mode, i, match[0], strings.Join(sorted(knownPlaceholders), "}, {"))
+				}
+				if match[1] == placeholderApproval && arg != match[0] {
+					return fmt.Errorf(`field %q[%d].args: %s must be a whole argument`, mode, i, match[0])
 				}
 			}
 		}

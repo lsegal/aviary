@@ -33,8 +33,11 @@ type Values struct {
 	// Settings and SessionName carry Claude's Remote Control payload and the
 	// name a run appears under.
 	Settings, SessionName string
-	// Yolo and RemoteControl mirror the run's own flags.
-	Yolo, RemoteControl bool
+	// Approval is the run's approval mode, rendered through the definition's
+	// approval arguments; empty means DefaultApprovalMode.
+	Approval ApprovalMode
+	// RemoteControl mirrors the run's own flag.
+	RemoteControl bool
 	// PromptStdin renders the prompt argument as the definition's
 	// promptStdin arguments, because the caller writes the prompt to stdin.
 	PromptStdin bool
@@ -71,7 +74,7 @@ func (v Values) value(name string) string {
 func (v Values) holds(condition string) bool {
 	switch condition {
 	case "yolo":
-		return v.Yolo
+		return v.Approval.Effective() == ApprovalFull
 	case "remoteControl":
 		return v.RemoteControl
 	case "oneShot":
@@ -106,6 +109,10 @@ func (d Definition) Render(mode Mode, values Values) []string {
 		for _, arg := range fragment.Args {
 			if values.PromptStdin && d.PromptStdin != nil && arg == "{"+placeholderPrompt+"}" {
 				args = append(args, (*d.PromptStdin)...)
+				continue
+			}
+			if arg == "{"+placeholderApproval+"}" {
+				args = append(args, d.ApprovalArgs(values.Approval)...)
 				continue
 			}
 			args = append(args, substitute(arg, values))
