@@ -29,7 +29,7 @@
 			<div v-if="!form" class="py-12 text-center text-sm text-gray-400">Loading settings…</div>
 			<div v-else class="flex gap-6 px-4 py-4 sm:px-6">
 				<nav class="sticky top-24 hidden h-fit w-44 shrink-0 space-y-1 text-sm lg:block" aria-label="Settings sections">
-					<a v-for="s in SECTIONS" :key="s.id" :href="`#${s.id}`"
+					<a v-for="s in sections" :key="s.id" :href="`#${s.id}`"
 						class="block rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{{ s.label }}</a>
 				</nav>
 
@@ -237,6 +237,8 @@
 						<pre data-testid="project-yaml"
 							class="overflow-x-auto rounded-b-xl bg-gray-50 px-5 py-4 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || "# Every setting is a default, so nothing is written." }}</pre>
 					</section>
+
+					<DeleteProjectSection v-if="!adding" :target="target" @deleted="onDeleted" />
 				</div>
 			</div>
 		</div>
@@ -248,6 +250,7 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import DeleteProjectSection from "../components/projects/DeleteProjectSection.vue";
 import {
 	useAddProject,
 	useProjectClones,
@@ -296,6 +299,7 @@ const SECTIONS = [
 	{ id: "reports", label: "Reports" },
 	{ id: "clones", label: "Clones" },
 	{ id: "yaml", label: "YAML" },
+	{ id: "delete", label: "Delete" },
 ];
 
 type ToggleKey =
@@ -344,6 +348,10 @@ const target = computed(() =>
 	typeof route.params.project === "string" ? route.params.project : "",
 );
 const adding = computed(() => route.query.add === "1");
+// A project being added is not watched yet, so there is nothing to delete.
+const sections = computed(() =>
+	adding.value ? SECTIONS.filter((s) => s.id !== "delete") : SECTIONS,
+);
 const boardLink = computed(() => `/projects/${encodeProject(target.value)}`);
 
 const form = ref<ProjectSettings | null>(null);
@@ -475,6 +483,12 @@ async function save() {
 	} finally {
 		saving.value = false;
 	}
+}
+
+// project_remove already stopped the watch; reload the config it rewrote.
+async function onDeleted() {
+	await store.fetchConfig();
+	await router.push("/projects");
 }
 
 // ── Agent ───────────────────────────────────────────────────────────────────

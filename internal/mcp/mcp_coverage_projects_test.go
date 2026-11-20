@@ -158,7 +158,7 @@ func TestProjectStatusAndJobsWithNothingWatched(t *testing.T) {
 }
 
 func TestProjectAddAndRemoveSavedProject(t *testing.T) {
-	d, _ := setupProjects(t)
+	d, m := setupProjects(t)
 	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus"}}}))
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "agent": "nobody"}, `agent "nobody" is not configured`)
 	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agent": "coder"})
@@ -179,8 +179,16 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	toolCallContains(t, d, "project_add", map[string]any{"target": " "}, "target is required")
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/s", "settings": map[string]any{"no_merge": true}}, "only to a runtime watch")
 
+	// Removing a project stops its jobs that still hold work and names them;
+	// finished jobs and other projects' jobs are not counted.
+	jobs := []projects.JobSnapshot{{Number: 1, Target: "o/r", Status: "active"}, {Number: 2, Target: "o/r", Status: "waiting"},
+		{Number: 3, Target: "o/r", Status: "queued"}, {Number: 4, Target: "o/r", Status: "paused"},
+		{Number: 5, Target: "o/r", Status: "complete"}, {Number: 6, Target: "o/r", Status: "failed"},
+		{Number: 7, Target: "o/other", Status: "active"}}
+	m.Snapshot(projects.EngineSnapshot{Jobs: jobs})
 	removed := callJSON(t, d, "project_remove", map[string]any{"target": "o/r"})
 	assert.Equal(t, true, removed["removed"])
+	assert.Equal(t, []any{1.0, 2.0, 3.0, 4.0}, removed["stopped_jobs"])
 	cfg, err = config.Load("")
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Projects.List)
