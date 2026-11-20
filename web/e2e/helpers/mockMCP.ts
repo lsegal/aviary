@@ -118,10 +118,33 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 		if (body.method === "tools/call") {
 			const toolName = body.params?.name ?? "";
 			const fixture = toolName in fixtures ? fixtures[toolName] : [];
-			const data =
-				typeof fixture === "function"
-					? await fixture(body.params?.arguments)
-					: fixture;
+			let data: unknown;
+			try {
+				data =
+					typeof fixture === "function"
+						? await fixture(body.params?.arguments)
+						: fixture;
+			} catch (e) {
+				// A throwing fixture is a failed tool call, as the server
+				// reports one.
+				return route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: body.id,
+						result: {
+							isError: true,
+							content: [
+								{
+									type: "text",
+									text: e instanceof Error ? e.message : String(e),
+								},
+							],
+						},
+					}),
+				});
+			}
 			if (isMCPStreamFixture(data)) {
 				const events: MCPStreamEvent[] = data.stream.map((message) => ({
 					jsonrpc: "2.0",
