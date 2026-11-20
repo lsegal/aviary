@@ -8,12 +8,12 @@ import (
 )
 
 // VersionSupported reports whether a binary reporting this version satisfies
-// the definition's declared minimum. comparable is false when the definition
+// the definition's declared minimum. canCompare is false when the definition
 // declares no minimum, or when the reported text carries no version aviary can
 // read; in both cases the dispatch goes ahead, in the second one with a
 // warning, because refusing to run an agent whose version cannot be read
 // would break every CLI that prints its version some way aviary has not seen.
-func (d Definition) VersionSupported(reported string) (supported, comparable bool) {
+func (d Definition) VersionSupported(reported string) (supported, canCompare bool) {
 	if strings.TrimSpace(d.MinVersion) == "" {
 		return true, false
 	}

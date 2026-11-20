@@ -85,7 +85,7 @@ func getReflectField(v reflect.Value, parts []string, idx int) string {
 		return reflectToString(v)
 	}
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return ""
 		}
@@ -118,7 +118,7 @@ func reflectToString(v reflect.Value) string {
 		return strconv.FormatInt(v.Int(), 10)
 	case reflect.Bool:
 		return strconv.FormatBool(v.Bool())
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return ""
 		}
@@ -137,7 +137,7 @@ func setReflectField(v reflect.Value, parts []string, idx int, value string) err
 		return setReflectValue(v, value)
 	}
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}

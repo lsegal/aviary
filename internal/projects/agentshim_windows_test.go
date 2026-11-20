@@ -20,7 +20,7 @@ const shimHelperEnv = "AVIARY_SHIM_HELPER"
 // TestAgentShimHelperProcess is not a real test: the shim tests run the test
 // binary behind a .cmd shim as a stand-in agent that prints the arguments it
 // received.
-func TestAgentShimHelperProcess(t *testing.T) {
+func TestAgentShimHelperProcess(_ *testing.T) {
 	if os.Getenv(shimHelperEnv) != "1" {
 		return
 	}
