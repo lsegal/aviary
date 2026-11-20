@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 )
 
 // The tests here drive a real Chromium-based browser, which is what the fake
@@ -31,7 +33,7 @@ import (
 // what the first one left behind.
 func liveProfile(t *testing.T, profile string) *Browser {
 	t.Helper()
-	if _, err := findBinary(""); err != nil {
+	if _, err := aviarybrowser.FindBinary(""); err != nil {
 		t.Skipf("no Chromium-based browser installed: %v", err)
 	}
 	browser, err := Start(context.Background(), Config{Profile: profile})

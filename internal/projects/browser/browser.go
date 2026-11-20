@@ -14,10 +14,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"strings"
 	"sync"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 
 	"github.com/lsegal/aviary/internal/projects/core"
 
@@ -82,7 +82,7 @@ func Start(ctx context.Context, config Config) (*Browser, error) {
 	}
 	// The endpoint reported by the browser is already a complete WebSocket URL,
 	// so chromedp is told not to rewrite it.
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, process.wsURL, chromedp.NoModifyURL)
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, process.WSURL, chromedp.NoModifyURL)
 	browser := &Browser{
 		ctx:         ctx,
 		config:      config,
@@ -145,7 +145,7 @@ func (b *Browser) relaunch() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(b.ctx, process.wsURL, chromedp.NoModifyURL)
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(b.ctx, process.WSURL, chromedp.NoModifyURL)
 	b.cmd, b.allocCtx, b.cancelAlloc = process, allocCtx, cancelAlloc
 	b.tabs = map[string]*Tab{}
 	b.used, b.resume = map[string]time.Time{}, map[string]string{}
@@ -171,12 +171,12 @@ func (b *Browser) responsive(cmd *process, closed bool) bool {
 	}
 	ctx, cancel := context.WithTimeout(b.ctx, unresponsiveProbeTimeout)
 	defer cancel()
-	_, err := probeWebSocketURL(ctx, debugURL(cmd.port))
+	_, err := probeWebSocketURL(ctx, cmd.BaseURL())
 	return err == nil || b.ctx.Err() != nil
 }
 
 // probeWebSocketURL is the DevTools check responsive makes, which tests replace.
-var probeWebSocketURL = webSocketURL
+var probeWebSocketURL = aviarybrowser.WebSocketURL
 
 // Recover restarts the browser when it has stopped answering, which is how a
 // run picks itself up after the machine wakes from sleep (issue #683). A
@@ -230,7 +230,7 @@ func (b *Browser) Profile() string {
 	if b == nil || b.cmd == nil {
 		return ""
 	}
-	return b.cmd.profile
+	return b.cmd.Profile
 }
 
 // Tab returns the tab Aviary drives for a target, opening it on first use and
@@ -439,7 +439,7 @@ func (b *Browser) adoptsExistingWindow() bool {
 // than failing to sign in at all.
 func (b *Browser) openTab() (*Tab, error) {
 	if b.adoptsExistingWindow() {
-		if id, err := openPageTarget(b.ctx, debugURL(b.cmd.port), targetTimeout); err == nil {
+		if id, err := aviarybrowser.WaitForPageTarget(b.ctx, b.cmd.BaseURL(), targetTimeout, aviarybrowser.OwnedReadyInterval); err == nil {
 			if tab, err := newTab(b.allocCtx, chromedp.WithTargetID(cdptarget.ID(id))); err == nil {
 				return tab, nil
 			}
@@ -478,7 +478,8 @@ func (b *Browser) Close() error {
 	if b.cmd == nil {
 		return nil
 	}
-	return b.cmd.stop()
+	b.cmd.Stop()
+	return nil
 }
 
 // Tab is one reusable tab. Its methods serialize on the tab because a
@@ -568,7 +569,7 @@ func (t *Tab) awaitLoadSlot(url string) {
 // newTab opens a tab and starts watching it for the status of its
 // main-frame navigations.
 func newTab(allocCtx context.Context, opts ...chromedp.ContextOption) (*Tab, error) {
-	ctx, cancel := chromedp.NewContext(allocCtx, append([]chromedp.ContextOption{chromedp.WithErrorf(errorf)}, opts...)...)
+	ctx, cancel := chromedp.NewContext(allocCtx, append([]chromedp.ContextOption{chromedp.WithErrorf(aviarybrowser.FilteredChromeDPErrorf)}, opts...)...)
 	tab := &Tab{ctx: ctx, cancel: cancel}
 	// Network events carry the status code, and the frame tree identifies which
 	// of them belong to the tab itself rather than to an embedded frame.
@@ -843,17 +844,4 @@ func (t *Tab) close() {
 	if t.cancel != nil {
 		t.cancel()
 	}
-}
-
-// chromedp logs an error for every DOM event it has no case for in its own
-// node-tree bookkeeping, and browsers keep adding events it does not model:
-// `dom.topLayerElementsUpdated`, for instance, fires whenever a dialog or a
-// popover enters the top layer. Those events say nothing about Aviary's own
-// work, so they are dropped instead of being printed to the terminal a user is
-// watching (issue #438). Anything else chromedp reports is still surfaced.
-func errorf(s string, v ...any) {
-	if strings.HasPrefix(s, "unhandled node event") {
-		return
-	}
-	slog.Error(fmt.Sprintf(s, v...), "component", "browser")
 }

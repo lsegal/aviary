@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 )
 
 // fixtureTab serves the captured issues-page fixtures over loopback and
@@ -14,7 +16,7 @@ import (
 // test is skipped when no Chromium-based browser can be launched.
 func fixtureTab(t *testing.T) (*Tab, string) {
 	t.Helper()
-	if _, err := findBinary(""); err != nil {
+	if _, err := aviarybrowser.FindBinary(""); err != nil {
 		t.Skipf("no Chromium-based browser available: %v", err)
 	}
 	server := httptest.NewServer(http.FileServer(http.Dir("testdata")))
