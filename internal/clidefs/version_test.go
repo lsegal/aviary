@@ -23,9 +23,9 @@ func TestVersionSupported(t *testing.T) {
 		{name: "no minimum declared", definition: Definition{Name: "codex", Binary: "codex"}, reported: "0.0.1", wantSupported: true, wantComparable: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			supported, comparable := tc.definition.VersionSupported(tc.reported)
-			if supported != tc.wantSupported || comparable != tc.wantComparable {
-				t.Fatalf("VersionSupported(%q) = (%v, %v), want (%v, %v)", tc.reported, supported, comparable, tc.wantSupported, tc.wantComparable)
+			supported, canCompare := tc.definition.VersionSupported(tc.reported)
+			if supported != tc.wantSupported || canCompare != tc.wantComparable {
+				t.Fatalf("VersionSupported(%q) = (%v, %v), want (%v, %v)", tc.reported, supported, canCompare, tc.wantSupported, tc.wantComparable)
 			}
 		})
 	}

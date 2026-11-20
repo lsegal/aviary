@@ -40,8 +40,8 @@ func checkAgentVersion(ctx context.Context, definition clidefs.Definition, binar
 	if runErr != nil {
 		return fmt.Sprintf("Warning: could not read %s's version (%v); %s requires %s %s or newer.", binary, runErr, definition.Name, definition.Binary, definition.MinVersion), nil
 	}
-	supported, comparable := definition.VersionSupported(reported)
-	if !comparable {
+	supported, canCompare := definition.VersionSupported(reported)
+	if !canCompare {
 		return fmt.Sprintf("Warning: could not read a version from %s --version; %s requires %s %s or newer.", binary, definition.Name, definition.Binary, definition.MinVersion), nil
 	}
 	if !supported {

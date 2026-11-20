@@ -199,9 +199,9 @@ func (d *Doctor) probeVersion(ctx context.Context, definition clidefs.Definition
 	if strings.TrimSpace(definition.MinVersion) == "" {
 		return reported, ""
 	}
-	supported, comparable := definition.VersionSupported(strings.TrimSpace(string(out)))
+	supported, canCompare := definition.VersionSupported(strings.TrimSpace(string(out)))
 	switch {
-	case !comparable:
+	case !canCompare:
 		return reported, fmt.Sprintf("could not be compared with the required %s or newer", definition.MinVersion)
 	case !supported:
 		return reported, fmt.Sprintf("older than the required %s", definition.MinVersion)

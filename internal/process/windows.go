@@ -97,7 +97,7 @@ func processTreeIDs(root uint32) []uint32 {
 	if err != nil {
 		return ids
 	}
-	defer windows.CloseHandle(snapshot)
+	defer func() { _ = windows.CloseHandle(snapshot) }()
 	children := map[uint32][]uint32{}
 	var entry windows.ProcessEntry32
 	entry.Size = uint32(unsafe.Sizeof(entry))
