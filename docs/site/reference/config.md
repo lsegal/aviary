@@ -396,19 +396,19 @@ projects:
   list:
     - target: owner/repo
     - target: https://github.com/orgs/acme/projects/3
-      agents: [claude/opus, codex]   # fallback order for this project
+      agent: opus-coder              # this project's agent
       reports:                       # off unless set
         agent: assistant
         targets: [slack:main:C0123456789]
   concurrency: 4
-  agents: [codex, claude/sonnet]
+  agent: coder                     # projects without their own
   no_merge: true
 ```
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
-| `list[].agents` | string[] | `agents` | This project's coding-CLI specs (`AGENT/MODEL:LEVEL`) in fallback order: a job runs on the first one whose quota is not used up |
+| `list[].agent` | string | `agent` | The Aviary agent this project is attached to; its model and fallbacks are the jobs' provider and model defaults, in fallback order |
 | `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
 | `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
 | `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
@@ -420,7 +420,7 @@ projects:
 | `filter` | string[] | `assignee:@me` | Issue search filter |
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
+| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `cli/<cli>/<model>` model runs jobs on that coding CLI; any other model runs them on the agent itself. Lists of coding-CLI specs under the old `agents` keys are moved onto agents when the file loads |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |

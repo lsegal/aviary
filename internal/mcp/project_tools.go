@@ -51,9 +51,9 @@ type projectTargetArgs struct {
 }
 
 type projectAddArgs struct {
-	Target  string   `json:"target" jsonschema:"owner/repo, a repository URL, a GitHub Project board, or a Discussions board"`
-	Agent   string   `json:"agent,omitempty" jsonschema:"The Aviary agent to attach the project to; its model and fallbacks are the provider and model defaults of the project's jobs. Leave out to use the agent the projects: section attaches projects to"`
-	Runtime bool     `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
+	Target  string `json:"target" jsonschema:"owner/repo, a repository URL, a GitHub Project board, or a Discussions board"`
+	Agent   string `json:"agent,omitempty" jsonschema:"The Aviary agent to attach the project to; its model and fallbacks are the provider and model defaults of the project's jobs. Leave out to use the agent the projects: section attaches projects to"`
+	Runtime bool   `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
 	// Settings overrides the projects: section for a runtime watch.

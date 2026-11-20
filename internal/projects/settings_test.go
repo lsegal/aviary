@@ -365,17 +365,17 @@ func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
 	}
 }
 
-func intPtr(v int) *int               { return &v }
-func strPtr(v string) *string         { return &v }
+func intPtr(v int) *int       { return &v }
+func strPtr(v string) *string { return &v }
 
 func TestEngineAgentStillConfigured(t *testing.T) {
 	commandRunner := CommandRunner{Agent: "codex", Agents: []string{"codex", "claude/opus:high"}}
 	single := CommandRunner{Agent: "claude"}
 	cases := []struct {
-		name     string
-		aviary   *Engine
-		agent    string
-		want     bool
+		name   string
+		aviary *Engine
+		agent  string
+		want   bool
 	}{
 		{name: "listed", aviary: &Engine{Runner: commandRunner}, agent: "codex", want: true},
 		{name: "listed with spec", aviary: &Engine{Runner: commandRunner}, agent: "claude/opus:high", want: true},

@@ -107,59 +107,35 @@
 						</div>
 					</section>
 
-					<section id="clis" :class="CARD">
+					<section id="agent" :class="CARD">
 						<h2 :class="CARD_HEAD">
-							Coding CLIs <span :class="CARD_NOTE">For {{ target }}. Jobs use the first available choice and fall back down the list when its quota runs out</span>
-							<span v-if="probe.refreshing.value" data-testid="cli-refreshing"
-								class="ml-auto inline-flex items-center gap-1.5 text-xs font-normal text-gray-500">
-								<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Refreshing
-							</span>
+							Agent <span :class="CARD_NOTE">{{ target }}'s jobs run on its agent's model and fall back down its fallbacks when quota runs out</span>
 						</h2>
 						<div class="space-y-3 p-5">
-							<p v-if="!probe.clis.value && probe.refreshing.value" class="text-sm text-gray-500">Checking coding CLIs…</p>
-							<p v-else-if="!probe.clis.value && probe.error.value" class="text-sm text-gray-500">
-								Couldn't read the coding CLIs: {{ probe.error.value }}
+							<label class="block max-w-xs">
+								<span :class="LABEL">Aviary agent</span>
+								<select v-model="form.agent" :class="INPUT" data-field="agent">
+									<option value="">{{ sharedLabel }}</option>
+									<option v-for="a in projectAgentOptions" :key="a" :value="a">{{ a }}</option>
+								</select>
+							</label>
+							<p v-if="!form.agent" class="text-xs text-gray-500" data-testid="agent-shared">
+								Using the shared agent. Choosing one here attaches {{ target }} to it.
 							</p>
-							<p v-if="!form.agents.length" class="text-xs text-gray-500" data-testid="cli-shared">
-								Using the shared order. Changing it here gives {{ target }} its own.
-							</p>
-							<ol class="space-y-3">
-								<li v-for="(row, i) in cliRows" :key="row.name" :data-cli="row.name"
-									class="rounded-xl border px-4 py-3"
-									:class="row.enabled ? 'border-gray-200 dark:border-gray-800' : 'border-dashed border-gray-300 dark:border-gray-700'">
-									<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-										<span class="w-4 text-sm text-gray-500">{{ row.enabled ? i + 1 : "–" }}</span>
-										<b class="text-sm text-gray-900 dark:text-white">{{ row.name }}</b>
-										<span class="inline-flex items-center gap-1 text-xs"
-											:class="row.signedIn ? 'text-green-700 dark:text-green-400' : 'text-gray-500'">
-											<span v-if="row.signedIn" class="h-1.5 w-1.5 rounded-full bg-green-500" />
-											{{ row.status }}
-										</span>
-										<div class="ml-auto flex items-center gap-1">
-											<template v-if="row.enabled">
-												<button type="button" :class="ICON_BTN" :disabled="i === 0" :aria-label="`Move ${row.name} up`" @click="moveCLI(i, -1)">↑</button>
-												<button type="button" :class="ICON_BTN" :disabled="i === specs.length - 1" :aria-label="`Move ${row.name} down`" @click="moveCLI(i, 1)">↓</button>
-											</template>
-											<button type="button" class="rounded-md px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
-												@click="toggleCLI(row.spec)">{{ row.enabled ? "Remove" : "Use" }}</button>
-										</div>
-									</div>
-									<div v-if="row.enabled && row.models.length" class="mt-2 flex flex-wrap gap-2 pl-7">
-										<button v-for="m in [...row.models, '']" :key="m" type="button"
-											class="rounded-md border px-2.5 py-1 font-mono text-xs"
-											:class="row.model === m ? 'border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'"
-											@click="setCLIModel(row.spec, m)">{{ m ? m.slice(row.name.length + 1) : "default model" }}</button>
-									</div>
+							<p v-if="agentProblem" class="text-sm text-red-600 dark:text-red-400" data-testid="agent-problem">{{ agentProblem }}</p>
+							<ol v-else class="space-y-2" data-testid="job-models">
+								<li v-for="(m, i) in models" :key="m.spec" :data-spec="m.spec"
+									class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-gray-200 px-4 py-2 dark:border-gray-800">
+									<span class="w-4 text-sm text-gray-500">{{ i + 1 }}</span>
+									<b class="font-mono text-sm text-gray-900 dark:text-white">{{ m.spec }}</b>
+									<span class="text-xs text-gray-500">{{ i === 0 ? "model" : "fallback" }}<template v-if="m.spec.startsWith('aviary/')"> · runs on the agent itself</template></span>
 								</li>
 							</ol>
-							<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-								<span>CLIs, their install and sign-in come from <RouterLink to="/settings/providers" class="text-blue-600 hover:underline dark:text-blue-400">Settings → Providers</RouterLink>. Jobs can also run on an Aviary agent, listed as <code class="font-mono">aviary/&lt;agent&gt;</code>.</span>
-								<select v-if="unusedAgents.length" class="rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
-									aria-label="Add an Aviary agent" @change="addAgent($event)">
-									<option value="">Add an Aviary agent…</option>
-									<option v-for="a in unusedAgents" :key="a" :value="a">{{ a }}</option>
-								</select>
-							</div>
+							<p class="text-xs text-gray-500 dark:text-gray-400">
+								The models come from the agent<template v-if="effectiveAgent">: change them on
+									<RouterLink :to="`/settings/agents/${encodeURIComponent(effectiveAgent)}`" class="text-blue-600 hover:underline dark:text-blue-400">{{ effectiveAgent }}'s settings</RouterLink></template><template v-else>, or models.defaults when none is attached</template>.
+								Coding CLIs are providers, as <code class="font-mono">cli/&lt;cli&gt;/&lt;model&gt;</code> models.
+							</p>
 						</div>
 					</section>
 
@@ -272,7 +248,6 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import { useCLIProviders } from "../composables/useCLIProviders";
 import {
 	useAddProject,
 	useProjectClones,
@@ -283,6 +258,7 @@ import {
 	defaultInterval,
 	formatBytes,
 	isListed,
+	jobModels,
 	joinReportTarget,
 	type ProjectSettings,
 	type ProjectsSection,
@@ -291,9 +267,7 @@ import {
 	REPORT_EVENTS,
 	reportsError,
 	settingsFromSection,
-	sharedAgents,
-	specModel,
-	specName,
+	sharedAgent,
 	splitReportTarget,
 	withSettings,
 } from "../lib/projectSettings";
@@ -316,7 +290,7 @@ const ICON_BTN =
 
 const SECTIONS = [
 	{ id: "general", label: "General" },
-	{ id: "clis", label: "Coding CLIs" },
+	{ id: "agent", label: "Agent" },
 	{ id: "reports", label: "Reports" },
 	{ id: "clones", label: "Clones" },
 	{ id: "yaml", label: "YAML" },
@@ -354,7 +328,6 @@ DefaultTag.props = ["on"];
 const route = useRoute();
 const router = useRouter();
 const store = useSettingsStore();
-const probe = useCLIProviders();
 const clones = useProjectClones();
 const addProject = useAddProject();
 
@@ -392,7 +365,6 @@ function reset() {
 }
 
 onMounted(async () => {
-	// Settings load straight from config; nothing waits on the CLI probe.
 	if (!store.config) await store.fetchConfig();
 	if (store.error) error.value = store.error;
 	reset();
@@ -496,81 +468,31 @@ async function save() {
 	}
 }
 
-// ── Coding CLIs ─────────────────────────────────────────────────────────────
+// ── Agent ───────────────────────────────────────────────────────────────────
 
-// Without its own order, the project uses the shared one.
-const defaultSpecs = computed(() => sharedAgents(section.value));
-const specs = computed(() =>
-	form.value?.agents.length ? form.value.agents : defaultSpecs.value,
+// Without its own agent, the project is attached to the shared one.
+const shared = computed(() => sharedAgent(section.value));
+const effectiveAgent = computed(() => form.value?.agent || shared.value);
+const sharedLabel = computed(() =>
+	shared.value ? `Shared: ${shared.value}` : "Shared: models.defaults",
 );
-
-function setSpecs(list: string[]) {
-	if (!form.value) return;
-	const same =
-		list.length === defaultSpecs.value.length &&
-		list.every((s, i) => s === defaultSpecs.value[i]);
-	form.value.agents = same ? [] : list;
-}
-
-const cliRows = computed(() => {
-	const probed = probe.clis.value ?? [];
-	const row = (spec: string, enabled: boolean) => {
-		const name = specName(spec);
-		const cli = probed.find((c) => c.name === name);
-		const isAgent = name === "aviary";
-		let status = "";
-		if (isAgent) status = "Aviary agent";
-		else if (cli && !cli.installed) status = "not installed";
-		else if (cli)
-			status = cli.signedIn
-				? ["signed in", cli.quota].filter(Boolean).join(" · ")
-				: cli.auth || "signed out";
-		else if (probe.clis.value) status = "unknown CLI";
-		return {
-			spec,
-			name: isAgent ? spec : name,
-			enabled,
-			model: specModel(spec),
-			models: cli?.models ?? [],
-			signedIn: isAgent || !!cli?.signedIn,
-			status,
-		};
-	};
-	const used = new Set(specs.value.map(specName));
-	return [
-		...specs.value.map((s) => row(s, true)),
-		...probed.filter((c) => !used.has(c.name)).map((c) => row(c.name, false)),
-	];
+// Keep a saved agent that is no longer configured selectable, so the problem
+// below explains it instead of the picker silently showing nothing.
+const projectAgentOptions = computed(() => {
+	const names = (store.config?.agents ?? []).map((a) => a.name);
+	const cur = form.value?.agent ?? "";
+	return cur && !names.includes(cur) ? [...names, cur] : names;
 });
-
-function toggleCLI(spec: string) {
-	const cur = specs.value;
-	setSpecs(cur.includes(spec) ? cur.filter((s) => s !== spec) : [...cur, spec]);
-}
-
-function setCLIModel(spec: string, model: string) {
-	setSpecs(specs.value.map((s) => (s === spec ? model || specName(spec) : s)));
-}
-
-function moveCLI(i: number, dir: number) {
-	const list = [...specs.value];
-	const j = i + dir;
-	if (j < 0 || j >= list.length) return;
-	[list[i], list[j]] = [list[j], list[i]];
-	setSpecs(list);
-}
-
-const unusedAgents = computed(() =>
-	(store.config?.agents ?? [])
-		.map((a) => `aviary/${a.name}`)
-		.filter((spec) => !specs.value.includes(spec)),
-);
-
-function addAgent(e: Event) {
-	const sel = e.target as HTMLSelectElement;
-	if (sel.value) setSpecs([...specs.value, sel.value]);
-	sel.value = "";
-}
+const models = computed(() => jobModels(effectiveAgent.value, store.config));
+const agentProblem = computed(() => {
+	if (models.value.length) return "";
+	const name = effectiveAgent.value;
+	if (!name)
+		return "No agent is attached and models.defaults names no cli/ model, so jobs cannot run. Choose an agent.";
+	if (!(store.config?.agents ?? []).some((a) => a.name === name))
+		return `Agent "${name}" is not configured.`;
+	return `Agent "${name}" has no model.`;
+});
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 
