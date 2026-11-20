@@ -45,7 +45,7 @@ Without `yolo`, Codex runs in its `workspace-write` sandbox with network access,
 
 `agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
-Settings → Providers lists every CLI with its install, version, sign-in, quota and models, including CLIs that are not installed; `aviary models clis` (the `provider_cli_list` tool) reports the same, plus any Projects gate.
+Settings → Providers shows the coding CLIs in its one Providers list, tagged CLI beside the API, OAuth and endpoint providers, with each CLI's install, version, sign-in, quota and models, including CLIs that are not installed; `aviary models clis` (the `provider_cli_list` tool) reports the same, plus any Projects gate.
 
 ### Deferred turns
 

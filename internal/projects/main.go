@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
-	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/transcript"

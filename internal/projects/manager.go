@@ -17,9 +17,9 @@ import (
 
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/clidefs"
-	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -50,11 +50,11 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	browser   config.BrowserConfig
-	watches     []Watch
-	running     *engineRun
-	lastKey     string
-	lastError   string
-	stopped     bool
+	watches   []Watch
+	running   *engineRun
+	lastKey   string
+	lastError string
+	stopped   bool
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
@@ -248,19 +248,19 @@ func (m *Manager) Shutdown() {
 
 // engineSettings is everything the engine is built from.
 type engineSettings struct {
-	Targets           []string            `json:"targets"`
-	TargetAgents      map[string][]string `json:"target_agents"`
-	Agents            []string            `json:"agents"`
+	Targets      []string            `json:"targets"`
+	TargetAgents map[string][]string `json:"target_agents"`
+	Agents       []string            `json:"agents"`
 	// Definitions are core's cli_definitions when the settings were built, so
 	// a change to them restarts the run on the new CLI providers.
-	Definitions       map[string]any      `json:"definitions"`
-	Interval          time.Duration       `json:"interval"`
-	Delivery          string              `json:"delivery"`
-	ReadyLabel        string              `json:"ready_label"`
-	ReadyState        string              `json:"ready_state"`
-	Filter            string              `json:"filter"`
-	AllIssues         bool                `json:"all_issues"`
-	Yolo              bool                `json:"yolo"`
+	Definitions       map[string]any `json:"definitions"`
+	Interval          time.Duration  `json:"interval"`
+	Delivery          string         `json:"delivery"`
+	ReadyLabel        string         `json:"ready_label"`
+	ReadyState        string         `json:"ready_state"`
+	Filter            string         `json:"filter"`
+	AllIssues         bool           `json:"all_issues"`
+	Yolo              bool           `json:"yolo"`
 	Webhook           config.ProjectsWebhookConfig
 	Browser           BrowserOptions `json:"browser"`
 	Concurrency       int            `json:"-"`

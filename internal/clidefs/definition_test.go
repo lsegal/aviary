@@ -896,4 +896,3 @@ func TestDefinitionEnvIsStable(t *testing.T) {
 		t.Fatalf("env = %v, want none", got)
 	}
 }
-
