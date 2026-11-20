@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/projects"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Check levels reported by project_check.

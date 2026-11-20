@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/codingskills"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lsegal/aviary/internal/codingskills"
 )
 
 // stubProjectCheck replaces gh, PATH lookups and the home directory for one
