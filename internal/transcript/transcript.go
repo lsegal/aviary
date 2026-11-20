@@ -289,6 +289,9 @@ type Recorder struct {
 	mapper Mapper
 	mu     sync.Mutex
 	buffer []byte
+	usage  Usage
+	tools  int
+	calls  map[string]bool
 }
 
 // Write records p as raw output and maps every line it completes.
@@ -309,7 +312,7 @@ func (r *Recorder) Write(p []byte) (int, error) {
 			break
 		}
 		line := r.buffer[:i]
-		r.log.Add(r.mapper.Map(line)...)
+		r.add(r.mapper.Map(line))
 		r.buffer = r.buffer[i+1:]
 	}
 	return len(p), nil
@@ -324,12 +327,50 @@ func (r *Recorder) Flush() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if len(r.buffer) > 0 {
-		r.log.Add(r.mapper.Map(r.buffer)...)
+		r.add(r.mapper.Map(r.buffer))
 		r.buffer = nil
 	}
 	if f, ok := r.mapper.(Flusher); ok {
-		r.log.Add(f.Flush()...)
+		r.add(f.Flush())
 	}
+}
+
+// add records mapped events and totals the usage and tool calls they report.
+// r.mu must be held.
+func (r *Recorder) add(events []Event) {
+	for _, event := range events {
+		switch {
+		case event.Kind == KindUsage && event.Usage != nil:
+			r.usage.InputTokens += event.Usage.InputTokens
+			r.usage.OutputTokens += event.Usage.OutputTokens
+			r.usage.CacheReadTokens += event.Usage.CacheReadTokens
+			r.usage.CacheWriteTokens += event.Usage.CacheWriteTokens
+			r.usage.CostUSD += event.Usage.CostUSD
+		case event.Kind == KindToolCall, event.Kind == KindFileChange, event.Kind == KindCommand:
+			// A call is counted once however many events report on it.
+			if event.CallID == "" {
+				r.tools++
+			} else if !r.calls[event.CallID] {
+				if r.calls == nil {
+					r.calls = map[string]bool{}
+				}
+				r.calls[event.CallID] = true
+				r.tools++
+			}
+		}
+	}
+	r.log.Add(events...)
+}
+
+// Usage returns the token use and cost the run's stream has reported so far,
+// summed across its turns, and how many tool calls it made.
+func (r *Recorder) Usage() (Usage, int) {
+	if r == nil {
+		return Usage{}, 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.usage, r.tools
 }
 
 func indexNewline(b []byte) int {

@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/transcript"
+
 	"github.com/mattn/go-isatty"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
@@ -2158,9 +2160,9 @@ func TestSessionMetadataCaptureWriterIgnoresInvalidCheckout(t *testing.T) {
 	}
 }
 
-func TestClaudeJSONOutputWriterDecodesStreamEvents(t *testing.T) {
+func TestClaudeStreamOutputDecodesStreamEvents(t *testing.T) {
 	var output bytes.Buffer
-	w := newClaudeJSONOutputWriter(&output)
+	w := newTranscriptOutputWriter(&output, transcript.FormatClaudeStreamJSON)
 	lines := []string{
 		`{"type":"system","subtype":"init"}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"Looking into the issue."}]}}`,
@@ -2222,9 +2224,9 @@ func TestClaudeToolUseSummaryAddsContext(t *testing.T) {
 	}
 }
 
-func TestClaudeJSONOutputWriterSurfacesErrorResults(t *testing.T) {
+func TestClaudeStreamOutputSurfacesErrorResults(t *testing.T) {
 	var output bytes.Buffer
-	w := newClaudeJSONOutputWriter(&output)
+	w := newTranscriptOutputWriter(&output, transcript.FormatClaudeStreamJSON)
 	if _, err := io.WriteString(w, `{"type":"result","is_error":true,"result":"context deadline exceeded"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -2234,9 +2236,9 @@ func TestClaudeJSONOutputWriterSurfacesErrorResults(t *testing.T) {
 	}
 }
 
-func TestClaudeJSONOutputWriterPassesThroughNonJSONLines(t *testing.T) {
+func TestClaudeStreamOutputPassesThroughNonJSONLines(t *testing.T) {
 	var output bytes.Buffer
-	w := newClaudeJSONOutputWriter(&output)
+	w := newTranscriptOutputWriter(&output, transcript.FormatClaudeStreamJSON)
 	if _, err := io.WriteString(w, "not json\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -2246,9 +2248,9 @@ func TestClaudeJSONOutputWriterPassesThroughNonJSONLines(t *testing.T) {
 	}
 }
 
-func TestClaudeJSONOutputWriterFlushesTrailingPartialLine(t *testing.T) {
+func TestClaudeStreamOutputFlushesTrailingPartialLine(t *testing.T) {
 	var output bytes.Buffer
-	w := newClaudeJSONOutputWriter(&output)
+	w := newTranscriptOutputWriter(&output, transcript.FormatClaudeStreamJSON)
 	if _, err := io.WriteString(w, `{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}`); err != nil {
 		t.Fatal(err)
 	}

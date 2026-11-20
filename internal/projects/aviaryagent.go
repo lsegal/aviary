@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/lsegal/aviary/internal/agent"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // AviaryAgentRun is one turn an in-process agent definition, such as the

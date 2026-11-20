@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/transcript"
+
 	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
@@ -29,7 +31,7 @@ func claudeWakeupDetector(t *testing.T) *wakeupDetector {
 func TestClaudeDefinitionRecordsTrailingScheduleWakeup(t *testing.T) {
 	var output bytes.Buffer
 	detector := claudeWakeupDetector(t)
-	w := io.MultiWriter(detector, newClaudeJSONOutputWriter(&output))
+	w := io.MultiWriter(detector, newTranscriptOutputWriter(&output, transcript.FormatClaudeStreamJSON))
 	lines := []string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"The rest is still running; I'll wait for it to finish."}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"ScheduleWakeup","input":{"delaySeconds":240,"prompt":"/gh-fix o/r#7 identity:/aviary:ABC","reason":"watching CI run"}}]}}`,

@@ -128,6 +128,11 @@ func New(cfg *config.Config, token string) *Server {
 		manager.SetReportDelivery(s.deliverTaskOutput)
 		manager.SetMentionRouter(s.promptProjectsAgent)
 		manager.SetAviaryAgentRunner(s.runProjectsJobTurn)
+		manager.SetUsageRecorder(func(rec domain.UsageRecord) {
+			if err := store.AppendJSONL(store.UsagePath(), rec); err != nil {
+				slog.Warn("server: failed to record projects usage", "err", err)
+			}
+		})
 	} else {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
 	}

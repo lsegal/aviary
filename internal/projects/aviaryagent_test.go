@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/agent"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // #435: an aviary/<agent> job runs its turn through the injected core runner

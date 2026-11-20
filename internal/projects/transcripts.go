@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // transcriptStore keeps every job's transcript, keyed by the job's
