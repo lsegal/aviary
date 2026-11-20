@@ -276,7 +276,10 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("engine did not start after %d lookups", lookups.Load())
+			m.mu.Lock()
+			lastError := m.lastError
+			m.mu.Unlock()
+			t.Fatalf("engine did not start after %d lookups: %s", lookups.Load(), lastError)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
