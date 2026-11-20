@@ -9,7 +9,7 @@ import (
 
 // Load builds the registry a run dispatches with: the built-in definitions,
 // overridden and extended by definitions, keyed by agent name, as the
-// projects.cli_definitions section of aviary.yaml holds them. Anything wrong
+// models.cli_definitions section of aviary.yaml holds them. Anything wrong
 // with a definition is fatal and named: a definition silently dropped for
 // being malformed is indistinguishable, at dispatch, from a typo.
 func Load(definitions map[string]any) (*Registry, error) {

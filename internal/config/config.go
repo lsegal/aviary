@@ -325,6 +325,11 @@ type TaskConfig struct {
 type ModelsConfig struct {
 	Providers map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
 	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
+	// CLIDefinitions overrides built-in coding-CLI definitions field by field
+	// and adds new ones, keyed by agent name. A null field drops it. The
+	// coding CLIs are providers like any other, so Projects reads them from
+	// here rather than owning a registry of its own.
+	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 }
 
 // ProviderConfig holds auth for a model provider.

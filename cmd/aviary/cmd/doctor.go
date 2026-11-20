@@ -176,7 +176,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintln(os.Stdout)
 	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
 	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
-	if registry, err := agents.Load(cfg.Projects.CLIDefinitions); err != nil {
+	if registry, err := agents.Load(cfg.Models.CLIDefinitions); err != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", err)
 		nerrs++
 	} else {

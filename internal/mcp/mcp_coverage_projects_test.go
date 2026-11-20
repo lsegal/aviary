@@ -21,7 +21,7 @@ import (
 var projectToolNames = []string{
 	"project_status", "project_job_list", "project_job_get", "project_job_explain",
 	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop",
-	"project_refresh", "project_add", "project_remove", "project_cli_list",
+	"project_refresh", "project_add", "project_remove",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create",
 	"project_github_signin", "project_github_use_polling", "project_github_import",
@@ -115,7 +115,7 @@ func TestProjectTools_SchemasAndHints(t *testing.T) {
 			assert.NotNil(t, tool.Annotations.DestructiveHint, "%s needs an explicit destructive hint", name)
 		}
 	}
-	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_cli_list", "project_clone_list"} {
+	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_clone_list"} {
 		assert.True(t, tools[name].Annotations.ReadOnlyHint, name)
 	}
 	for _, name := range []string{"project_job_stop", "project_remove", "project_clone_clear"} {
@@ -200,23 +200,6 @@ func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 	assert.Equal(t, []any{}, callJSON(t, d, "project_status", map[string]any{})["targets"])
 	toolCallContains(t, d, "project_remove", map[string]any{"target": "o/r", "runtime": true}, "has no runtime watch")
 	assert.Equal(t, before, readFile(t, path))
-}
-
-func TestProjectCLIListReportsEveryDefinition(t *testing.T) {
-	d, _ := setupProjects(t)
-	t.Setenv("PATH", t.TempDir())
-	result := callJSON(t, d, "project_cli_list", map[string]any{})
-	clis, ok := result["clis"].([]any)
-	require.True(t, ok, result)
-	var names []string
-	for _, raw := range clis {
-		cli := raw.(map[string]any)
-		names = append(names, cli["name"].(string))
-		assert.Equal(t, false, cli["installed"], cli["name"])
-	}
-	for _, want := range []string{"claude", "codex", "gemini"} {
-		assert.Contains(t, names, want)
-	}
 }
 
 func TestProjectStatusLogOffset(t *testing.T) {

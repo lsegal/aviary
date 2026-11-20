@@ -293,6 +293,14 @@
               "items": { "type": "string" }
             }
           }
+        },
+        "cli_definitions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          },
+          "x-label": "CLI definitions",
+          "description": "Coding-CLI definitions keyed by agent name: overrides of the built-ins field by field (null drops a field) and new agents."
         }
       }
     },
@@ -517,15 +525,6 @@
           "x-label": "CLI executables",
           "x-order": 11,
           "description": "Executable for a coding CLI, by agent name."
-        },
-        "cli_definitions": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object"
-          },
-          "x-label": "CLI definitions",
-          "x-order": 12,
-          "description": "Coding-CLI definitions keyed by agent name: overrides of the built-ins field by field (null drops a field) and new agents."
         },
         "yolo": {
           "type": "boolean",

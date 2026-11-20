@@ -104,7 +104,7 @@ async function setup(
 			record("project_add", args);
 			return { ok: true };
 		},
-		project_cli_list: async () => (opts.cliList ? opts.cliList() : CLIS),
+		provider_cli_list: async () => (opts.cliList ? opts.cliList() : CLIS),
 		project_clone_list: {
 			roots: ["/tmp"],
 			clones: [
@@ -369,7 +369,7 @@ test("CLI probe shows its cached result and refreshes in the background", async 
 	});
 	await page.addInitScript(
 		(clis) =>
-			localStorage.setItem("aviary.projects.cli-probe", JSON.stringify(clis)),
+			localStorage.setItem("aviary.providers.clis", JSON.stringify(clis)),
 		{
 			clis: [
 				{

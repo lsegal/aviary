@@ -257,6 +257,7 @@ func agentStatus(report agentReport) core.AgentStatus {
 		Name:         report.name,
 		Installed:    report.installed(),
 		Binary:       report.binary,
+		Path:         report.path,
 		Version:      report.version,
 		VersionNote:  report.versionNote,
 		Auth:         report.auth,
@@ -273,6 +274,18 @@ func agentStatus(report agentReport) core.AgentStatus {
 		status.QuotaError = report.quotaErr.Error()
 	}
 	return status
+}
+
+// CLIStatuses is the coding-CLI doctor core Aviary's providers report: every
+// definition -- the built-ins overlaid with definitions, the models:
+// section's cli_definitions -- probed for install, version, sign-in, quota
+// and models.
+func CLIStatuses(ctx context.Context, definitions map[string]any) ([]core.AgentStatus, error) {
+	registry, err := agents.Load(definitions)
+	if err != nil {
+		return nil, err
+	}
+	return agentStatuses(ctx, registry)
 }
 
 // agentStatuses probes every agent in registry and reports it in the shape
