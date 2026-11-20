@@ -193,7 +193,7 @@ func TestShutdownCheckpointerRescindsAfterTheCheckpoint(t *testing.T) {
 		events = append(events, event)
 		mu.Unlock()
 	}
-	s := newShutdownCheckpointer(agents, func(format string, args ...interface{}) {
+	s := newShutdownCheckpointer(agents, func(_ string, args ...interface{}) {
 		if len(args) >= 3 {
 			record(fmt.Sprintf("checkpoint #%v %v", args[1], args[2]))
 		}
