@@ -72,7 +72,7 @@
 		"autoprefixer": "^10.6.1",
 		"concurrently": "^10.0.5",
 		"cross-env": "^10.1.0",
-		"execa": "^10.0.1",
+		"execa": "^10.2.1",
 		"postcss": "^8.5.29",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
