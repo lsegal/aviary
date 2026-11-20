@@ -28,7 +28,7 @@ type Config struct {
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
 	// CodingSkills controls how Aviary keeps the skills it ships for coding
-	// CLIs (gh-fix, gh-discuss, gh-create) installed and current.
+	// CLIs (gh-fix, gh-discuss, gh-create, gh-safe-merge) installed and current.
 	CodingSkills *CodingSkillsConfig `yaml:"coding_skills,omitempty" json:"coding_skills,omitempty"`
 }
 

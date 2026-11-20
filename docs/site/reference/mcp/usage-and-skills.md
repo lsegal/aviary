@@ -107,7 +107,7 @@ Install or update the coding-CLI skills with `npx skills add`. A release install
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `skill` | string | | `gh-fix`, `gh-discuss` or `gh-create`. Omit for every skill. |
+| `skill` | string | | `gh-fix`, `gh-discuss`, `gh-create` or `gh-safe-merge`. Omit for every skill. |
 | `cli` | string | | Coding CLI id from `coding_skills_list`. Omit for every coding CLI on the `PATH`. |
 | `update_only` | bool | | Only update outdated copies; skip CLIs that don't have the skill yet. |
 

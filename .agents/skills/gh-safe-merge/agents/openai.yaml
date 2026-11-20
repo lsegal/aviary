@@ -1,0 +1,4 @@
+interface:
+  display_name: "Safely Merge GitHub PR"
+  short_description: "Safety-check an unowned PR, drive CI green, and merge"
+  default_prompt: "Use $gh-safe-merge to run /gh-safe-merge 123: safety-check the unowned pull request before anything runs, then unblock CI, make only superficial finishing changes, drive CI green, and merge it, closing malicious PRs and commenting on incorrect ones with the author mentioned."

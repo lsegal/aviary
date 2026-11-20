@@ -370,7 +370,7 @@ skills:
 
 ## coding_skills
 
-Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`) installed and current. Both settings default to `true` and are only written when turned off.
+Controls how Aviary keeps the [skills for coding CLIs](/guide/skills/) (`gh-fix`, `gh-discuss`, `gh-create`, `gh-safe-merge`) installed and current. Both settings default to `true` and are only written when turned off.
 
 Coding-CLI skills are not listed under `skills` and are not available to Aviary's own agents.
 
