@@ -25,7 +25,7 @@ List all configured task definitions across all agents.
 
 **Arguments:** none
 
-**Returns:** JSON array of tasks, disabled ones included with `enabled: false`, with their trigger fields, `project` and `cli` for project tasks, a `description` of the trigger, `next_run`, `last_fire`, and `history` (the last 20 fires, each with `fire_time`, `reason`, `status`, `summary` and `duration_ms`).
+**Returns:** JSON array of tasks, disabled ones included with `enabled: false`, with their trigger fields, `project` and `run_agent` for project tasks, a `description` of the trigger, `next_run`, `last_fire`, and `history` (the last 20 fires, each with `fire_time`, `reason`, `status`, `summary` and `duration_ms`).
 
 ```json
 [
@@ -68,7 +68,7 @@ Schedule a one-time or recurring task.
 | `content` | string | yes | Prompt text (for `type=prompt` and `type=project`) or Lua source (for `type=script`) |
 | `type` | string | | `"prompt"` (default), `"script"` or `"project"` |
 | `project` | string | | For `type=project`: the watched project (`owner/repo`) whose board runs the prompt |
-| `cli` | string | | For `type=project`: coding-CLI spec such as `claude:opus` (default: the project's agent) |
+| `run_agent` | string | | For `type=project`: the agent that runs the task, optionally with a model, such as `claude:opus` (default: the project's agent) |
 | `in` | string | | Delay for a one-time run (e.g. `"5m"`, `"2h"`) |
 | `schedule` | string | | Cron expression for recurring runs (5-field or 6-field with leading seconds) |
 | `name` | string | | Task name (required to persist as a recurring task in config) |
@@ -98,7 +98,7 @@ Schedule a one-time or recurring task.
 
 Change fields of an existing task. Only the fields passed change; an empty string clears a field.
 
-**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `cli`.
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `run_agent`.
 
 **Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
 

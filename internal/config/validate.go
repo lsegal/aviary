@@ -211,8 +211,8 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
 				}
 			}
-			if taskType != "project" && (t.Project != "" || t.CLI != "") {
-				v.errorf(tf, "project and cli are only supported for project tasks")
+			if taskType != "project" && (t.Project != "" || t.RunAgent != "") {
+				v.errorf(tf, "project and run_agent are only supported for project tasks")
 			}
 
 			if !validTaskTarget(t.Target) {

@@ -381,7 +381,7 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Timezone:  tc.Timezone,
 			Watch:     tc.Watch,
 			Project:   tc.Project,
-			CLI:       tc.CLI,
+			RunAgent:  tc.RunAgent,
 			Enabled:   config.BoolOr(tc.Enabled, true),
 		}
 		if fields := TaskFields(tc); fields.HasTrigger() {

@@ -376,7 +376,7 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		const fields = {
 			...triggerArgs(s),
 			content: s.prompt.trim(),
-			cli: s.cli.trim(),
+			run_agent: s.runAgent.trim(),
 		};
 		if (s.id) {
 			await callTool("task_update", {

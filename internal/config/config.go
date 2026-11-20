@@ -311,14 +311,33 @@ type TaskConfig struct {
 	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
 	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
 	// Project is the watched Projects target a "project" task runs its prompt
-	// against as a board job, and CLI the coding-CLI spec it runs with
-	// ("claude:opus"); empty uses the project's agent.
-	Project string `yaml:"project,omitempty" json:"project,omitempty"`
-	CLI     string `yaml:"cli,omitempty"     json:"cli,omitempty"`
+	// against as a board job, and RunAgent the agent that runs it, optionally
+	// with a model ("claude:opus"); empty uses the project's agent.
+	Project  string `yaml:"project,omitempty"   json:"project,omitempty"`
+	RunAgent string `yaml:"run_agent,omitempty" json:"run_agent,omitempty"`
 	// FromFile is set when the task was loaded from a markdown file rather than
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.
 	FromFile bool `yaml:"-" json:"from_file,omitempty"`
+}
+
+// UnmarshalYAML reads a task, accepting the old "cli" key for RunAgent, which
+// it was named before #501. Saving the task writes it back as run_agent.
+func (t *TaskConfig) UnmarshalYAML(value *yaml.Node) error {
+	type plain TaskConfig
+	var legacy struct {
+		CLI string `yaml:"cli"`
+	}
+	if err := value.Decode((*plain)(t)); err != nil {
+		return err
+	}
+	if err := value.Decode(&legacy); err != nil {
+		return err
+	}
+	if t.RunAgent == "" {
+		t.RunAgent = legacy.CLI
+	}
+	return nil
 }
 
 // ModelsConfig holds model provider configuration and defaults.

@@ -36,10 +36,11 @@ type ScheduledTask struct {
 	Prompt      string      `json:"prompt"`
 	Script      string      `json:"script,omitempty"`
 	Target      string      `json:"target,omitempty"`
-	// Project and CLI are a project task's watched project and coding-CLI
-	// spec.
-	Project string `json:"project,omitempty"`
-	CLI     string `json:"cli,omitempty"`
+	// Project and RunAgent are a project task's watched project and the agent
+	// that runs it, optionally with a model ("claude:opus"); an empty RunAgent
+	// uses the project's agent.
+	Project  string `json:"project,omitempty"`
+	RunAgent string `json:"run_agent,omitempty"`
 	// Enabled is false for a task turned off in config, which never fires.
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`

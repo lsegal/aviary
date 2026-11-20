@@ -49,12 +49,12 @@ type WorkerPool struct {
 type ProjectRun struct {
 	// TaskID is the task's "agent/task" key, which a board Retry passes back
 	// to Trigger.
-	TaskID  string
-	Name    string
-	Project string
-	CLI     string
-	Prompt  string
-	Fire    time.Time
+	TaskID   string
+	Name     string
+	Project  string
+	RunAgent string
+	Prompt   string
+	Fire     time.Time
 }
 
 // ProjectRunner runs a project task and waits for its agent to exit. It
@@ -403,7 +403,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	if cfg != nil {
 		for _, task := range cfg.Tasks {
 			if task.Name == run.Name {
-				run.Project, run.CLI = strings.TrimSpace(task.Project), strings.TrimSpace(task.CLI)
+				run.Project, run.RunAgent = strings.TrimSpace(task.Project), strings.TrimSpace(task.RunAgent)
 				if strings.TrimSpace(run.Prompt) == "" {
 					run.Prompt = task.Prompt
 				}

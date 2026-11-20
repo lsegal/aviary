@@ -33,7 +33,10 @@ type taskFileFrontmatter struct {
 	Watch    string `yaml:"watch,omitempty"`
 	Target   string `yaml:"target,omitempty"`
 	Project  string `yaml:"project,omitempty"`
-	CLI      string `yaml:"cli,omitempty"`
+	RunAgent string `yaml:"run_agent,omitempty"`
+	// LegacyCLI reads the old "cli" key, which named RunAgent before #501.
+	// It is never written: saving a task moves the value to run_agent.
+	LegacyCLI string `yaml:"cli,omitempty"`
 }
 
 // ParseMarkdownTask parses a task definition from markdown content with
@@ -79,7 +82,10 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Watch = fm.Watch
 	task.Target = fm.Target
 	task.Project = fm.Project
-	task.CLI = fm.CLI
+	task.RunAgent = fm.RunAgent
+	if task.RunAgent == "" {
+		task.RunAgent = fm.LegacyCLI
+	}
 	task.Prompt = strings.TrimSpace(rest[idx+5:])
 	return task, nil
 }
@@ -123,7 +129,7 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Missed:   task.Missed,
 		Watch:    task.Watch,
 		Project:  task.Project,
-		CLI:      task.CLI,
+		RunAgent: task.RunAgent,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")

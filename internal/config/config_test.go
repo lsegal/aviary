@@ -1525,7 +1525,7 @@ func TestCodingSkillsConfigKeepsOnlyNonDefaults(t *testing.T) {
 
 func TestValidate_ProjectTask(t *testing.T) {
 	valid := &Config{Agents: []AgentConfig{{Name: "bot", Model: "anthropic/claude-sonnet-4-5", Tasks: []TaskConfig{{
-		Name: "triage", Type: "project", Every: "1h", Project: "o/r", CLI: "claude:opus", Prompt: "Triage new issues",
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", RunAgent: "claude:opus", Prompt: "Triage new issues",
 	}}}}}
 	for _, issue := range Validate(valid, nil) {
 		assert.NotEqual(t, LevelError, issue.Level, issue.Message)
@@ -1538,4 +1538,39 @@ func TestValidate_ProjectTask(t *testing.T) {
 
 	misplaced := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t", Every: "1h", Prompt: "p", Project: "o/r"}}}}}
 	assert.True(t, hasIssue(Validate(misplaced, nil), "only supported for project tasks"))
+}
+
+func TestMarkdownTask_LegacyCLIKeyLoadsAndSavesAsRunAgent(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "triage.md")
+	require.NoError(t, os.WriteFile(legacy, []byte("---\ntype: project\nproject: o/r\ncli: claude:opus\nevery: 1h\n---\n\nTriage new issues\n"), 0o600))
+
+	task, err := LoadMarkdownTask(legacy)
+	require.NoError(t, err)
+	assert.Equal(t, "claude:opus", task.RunAgent)
+
+	_, err = SaveMarkdownTask(dir, task)
+	require.NoError(t, err)
+	data, err := os.ReadFile(legacy)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "run_agent: claude:opus")
+	assert.NotContains(t, string(data), "cli:")
+}
+
+func TestTaskConfig_LegacyCLIKeyLoadsAndSavesAsRunAgent(t *testing.T) {
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte("agents:\n  - name: bot\n    tasks:\n      - name: triage\n        type: project\n        project: o/r\n        cli: codex\n        every: 1h\n        prompt: Triage\n"), &cfg))
+	task := cfg.Agents[0].Tasks[0]
+	assert.Equal(t, "codex", task.RunAgent)
+	assert.Equal(t, "o/r", task.Project)
+	assert.Equal(t, "Triage", task.Prompt)
+
+	out, err := yaml.Marshal(task)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "run_agent: codex")
+	assert.NotContains(t, string(out), "cli:")
+
+	var current TaskConfig
+	require.NoError(t, yaml.Unmarshal([]byte("name: t\nrun_agent: claude\ncli: codex\n"), &current))
+	assert.Equal(t, "claude", current.RunAgent, "run_agent wins over the legacy key")
 }
