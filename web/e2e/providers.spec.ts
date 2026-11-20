@@ -120,17 +120,41 @@ test("one providers list holds the API providers and every coding CLI with its d
 	await expect(gemini).toHaveAttribute("data-status", "warn");
 	await expect(gemini.locator('[data-field="auth"]')).toHaveText("signed out");
 
-	// Absent CLIs, built-in or user-defined, are rows marked as not installed.
-	for (const name of ["muse", "acme"]) {
-		const row = card.locator(`[data-cli="${name}"]`);
+	// Absent CLIs, built-in or user-defined, share one compact line that
+	// names each of them and expands to their per-CLI detail.
+	const missing = card.getByTestId("providers-missing-clis");
+	await expect(missing).toHaveCount(1);
+	await expect(missing.locator("summary")).toHaveText(
+		/Not installed:\s*acme, muse/,
+	);
+	await expect(card.locator('[data-cli="muse"]')).toBeHidden();
+	await missing.locator("summary").click();
+	for (const [name, binary] of [
+		["muse", "muse"],
+		["acme", "acme-cli"],
+	]) {
+		const row = missing.locator(`[data-cli="${name}"]`);
+		await expect(row).toBeVisible();
 		await expect(row).toHaveAttribute("data-status", "missing");
 		await expect(row.locator('[data-field="install"]')).toContainText(
-			"Not installed",
+			`${binary} not on PATH`,
 		);
 		await expect(row.locator('[data-field="auth"]')).toHaveText(
 			"not installed",
 		);
 	}
+	await expect(missing.locator('[data-cli="muse"]')).toContainText(
+		"any model the CLI accepts",
+	);
+
+	// Only installed CLIs keep full rows; the compact line is the last row,
+	// so the Add provider row follows it directly.
+	await expect(card.locator("tbody > tr[data-cli]")).toHaveCount(2);
+	await expect(card.locator("tbody > tr").last()).toHaveAttribute(
+		"data-testid",
+		"providers-missing-clis",
+	);
+	await expect(card.getByTestId("provider-add-row")).toBeVisible();
 
 	// The API providers sit in the same list, ahead of the CLI providers.
 	await expect(card.locator("table")).toHaveCount(1);
