@@ -23,6 +23,8 @@ const CLIS = {
 			tracksQuota: true,
 			models: ["codex/gpt-5.5", "codex/gpt-5.5-mini"],
 			defaultModel: "gpt-5.5",
+			skillsNote:
+				"gh-fix stale for this aviary dev build; update them under Skills > For coding CLIs",
 			status: "ok",
 		},
 		{
@@ -33,6 +35,17 @@ const CLIS = {
 			version: "0.40.1",
 			auth: "signed out",
 			status: "warn",
+			statusNote: "signed out",
+		},
+		{
+			name: "agy",
+			installed: true,
+			binary: "agy",
+			path: "/usr/local/bin/agy",
+			version: "1.0.0",
+			auth: "unknown",
+			status: "unknown",
+			statusNote: "sign-in state unknown",
 		},
 		{
 			name: "muse",
@@ -112,6 +125,35 @@ test("one providers list holds the API providers and every coding CLI with its d
 	const gemini = card.locator('[data-cli="gemini"]');
 	await expect(gemini).toHaveAttribute("data-status", "warn");
 	await expect(gemini.locator('[data-field="auth"]')).toHaveText("signed out");
+
+	// The dot follows the state the row shows (#495): a signed-in CLI is green
+	// even with stale skills, which the row notes on their own; a warning names
+	// its problem on the row and the dot; an unknown sign-in is never green.
+	const dot = (row: typeof codex) => row.locator('[data-field="status-dot"]');
+	await expect(dot(codex)).toHaveClass(/bg-green-500/);
+	await expect(dot(codex)).toHaveAttribute(
+		"title",
+		"Ready: installed and signed in",
+	);
+	await expect(codex.locator('[data-field="skills-note"]')).toContainText(
+		"gh-fix stale",
+	);
+	await expect(codex.locator('[data-field="status-note"]')).toHaveCount(0);
+	await expect(dot(gemini)).toHaveClass(/bg-amber-500/);
+	await expect(dot(gemini)).toHaveAttribute(
+		"title",
+		"Needs attention: signed out",
+	);
+	await expect(gemini.locator('[data-field="status-note"]')).toHaveText(
+		"signed out",
+	);
+	const agy = card.locator('[data-cli="agy"]');
+	await expect(agy).toHaveAttribute("data-status", "unknown");
+	await expect(dot(agy)).not.toHaveClass(/bg-green-500|bg-amber-500/);
+	await expect(dot(agy)).toHaveAttribute(
+		"title",
+		"Not confirmed: sign-in state unknown",
+	);
 
 	// Absent CLIs, built-in or user-defined, are rows marked as not installed.
 	for (const name of ["muse", "acme"]) {
