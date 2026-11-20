@@ -61,7 +61,7 @@ func (l *ProfileLock) Release() {
 func ClaimProfile(profile string) (*ProfileLock, string, error) {
 	lock, err := LockProfile(profile)
 	if err == nil {
-		if !BrowserHoldsProfile(profile) {
+		if !chromeHoldsProfile(profile) {
 			return lock, profile, nil
 		}
 		lock.Release()

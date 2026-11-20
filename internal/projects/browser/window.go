@@ -155,4 +155,4 @@ func (w *openWindow) watch(ctx context.Context) error {
 
 // stop shuts the window's browser down cleanly, so the preferences it is still
 // holding in memory are written out, and kills it only if it will not go.
-func (w *openWindow) stop() { w.OwnedChild.Stop(w.wsURL) }
+func (w *openWindow) stop() { w.Stop(w.wsURL) }

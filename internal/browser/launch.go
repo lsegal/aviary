@@ -102,7 +102,7 @@ func waitForChrome(ctx context.Context, cdpBaseURL string) (string, error) {
 // launch to that browser and exit without ever serving this DevTools port, so
 // the launch would only time out. The lock is released again at once: the
 // detached browser outlives this process, so it cannot hold the claim, and an
-// owned browser started later sees it through BrowserHoldsProfile instead.
+// owned browser started later sees it through chromeHoldsProfile instead.
 func checkProfileFree(profile string) error {
 	lock, err := LockProfile(profile)
 	if errors.Is(err, ErrProfileLocked) {
