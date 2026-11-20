@@ -278,6 +278,46 @@ test("settings can disable browser tab reuse", async ({ page }) => {
 	});
 });
 
+test("settings sets the general and chat approval modes", async ({ page }) => {
+	const saved: Record<string, unknown>[] = [];
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: { port: 16677 },
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "" },
+			scheduler: { concurrency: "" },
+			skills: {},
+			approval: { mode: "read-only" },
+		},
+		config_save: (args) => {
+			saved.push(JSON.parse(String(args?.config ?? "{}")));
+			return {};
+		},
+		skills_list: [],
+		tool_list: [],
+	});
+
+	await page.goto("/settings");
+	const mode = page.getByTestId("approval-mode");
+	const chat = page.getByTestId("approval-chat");
+	await expect(mode).toHaveValue("read-only");
+	await expect(chat).toHaveValue("");
+
+	await chat.selectOption("full");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => saved.length).toBe(1);
+	expect(saved[0].approval).toEqual({ mode: "read-only", chat: "full" });
+
+	// Back to the defaults, the section drops out.
+	await mode.selectOption("");
+	await chat.selectOption("");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => saved.length).toBe(2);
+	expect(saved[1].approval).toBeUndefined();
+});
+
 test("settings tolerates an empty config payload", async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {

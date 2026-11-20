@@ -353,6 +353,34 @@ test("changing a setting writes only the differing values", async ({
 	expect(savedSection(calls)).toEqual(CONFIG.projects);
 });
 
+test("yolo loads as the full approval mode and saves as the Projects override", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: { ...CONFIG, projects: { ...CONFIG.projects, yolo: true } },
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	const mode = page.locator('[data-field="approval_mode"]');
+	await expect(mode).toHaveValue("full");
+
+	await mode.selectOption("read-only");
+	const yaml = page.getByTestId("project-yaml");
+	await expect(yaml).toContainText("approval_mode: read-only");
+	await expect(yaml).not.toContainText("yolo");
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedSection(calls)).toEqual({
+		...CONFIG.projects,
+		approval_mode: "read-only",
+	});
+
+	// Following the general mode writes nothing.
+	await mode.selectOption("");
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedSection(calls)).toEqual(CONFIG.projects);
+});
+
 test("discard restores the saved settings", async ({ page }) => {
 	await setup(page);
 	await page.goto("/projects/lsegal%2Faviary/settings");

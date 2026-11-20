@@ -13,6 +13,7 @@ search:    { ... }
 scheduler: { ... }
 skills:    { ... }
 projects:  { ... }
+approval:  { ... }
 coding_skills: { ... }
 ```
 
@@ -387,6 +388,68 @@ coding_skills:
 
 ---
 
+## approval
+
+How much CLI providers may do without asking. Aviary owns the mode: every CLI launch (chat turns, Projects jobs, one-shot prompts) works out its surface's mode and translates it into that CLI's own permission flags at launch. Aviary never creates or edits a CLI's settings files to set it, so the CLI behaves as configured when you use it yourself.
+
+```yaml
+approval:
+  mode: auto        # the general setting
+  chat: read-only   # override for chat turns
+projects:
+  approval_mode: full  # override for Projects jobs
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `mode` | string | `auto` | The general setting, used by every surface without its own override |
+| `chat` | string | `mode` | Override for agent chat turns run through a CLI provider: the web UI chat, including the Projects board's prompt chat |
+
+`projects.approval_mode` (or `projects.yolo`, which means `full`) is the Projects override.
+
+| Mode | Meaning |
+| --- | --- |
+| `read-only` | Read and inspect, but change nothing |
+| `auto` | Work inside the workspace without asking; the CLI's own sandbox or safety checks refuse riskier actions |
+| `full` | No sandbox or permission checks |
+
+Each CLI definition's `approval` field maps the modes to flags. Where a CLI has nothing that matches a mode exactly, the mapping takes the closest mode that is not more permissive. The built-in mappings:
+
+| CLI | `read-only` | `auto` | `full` |
+| --- | --- | --- | --- |
+| `claude` | `--permission-mode dontAsk` | `--permission-mode auto` | `--dangerously-skip-permissions` |
+| `codex` | `-c sandbox_mode=read-only` | `-c sandbox_mode=workspace-write` with network access | `--dangerously-bypass-approvals-and-sandbox` |
+| `gemini` | `--approval-mode plan` | `--approval-mode auto_edit` | `--yolo` |
+| `muse` | `--approval-mode untrusted --disable-write` | `--approval-mode never` | `--yolo` |
+| `agy` | `--mode plan` | `--mode auto` | `--dangerously-skip-permissions` |
+| `cline` | `--plan --auto-approve true` | `--auto-approve true` | same as `auto` |
+| `opencode` | `--agent plan` | `--auto` | same as `auto` |
+
+Claude's `dontAsk` runs only pre-approved tools and refuses the rest, so reads work but edits and shell commands do not. Cline and opencode have no sandbox and no partial-approval mode that can run unattended: the only way to keep them from changing files is their plan mode, so `auto` is their default auto-approving mode, the same as `full`. Pick `read-only` to keep them from making changes.
+
+In a chat turn, Aviary's own MCP tools are always pre-approved for the CLI, so a mode never blocks them behind a separate prompt. The agent's [permissions](#agents-permissions) still decide which Aviary tools it gets, and Aviary checks every call. The mode governs the CLI's own tools, which a chat turn only gets with the `full` preset and `cli_builtin_tools`.
+
+A `cli_definitions` entry declares its own mapping under `approval` and renders it with an argument that is exactly `{approval}` in its templates:
+
+```yaml
+models:
+  cli_definitions:
+    mycli:
+      binary: mycli
+      approval:
+        read-only: [--sandbox, read-only]
+        auto: [--sandbox, workspace]
+        full: [--no-sandbox]
+      args:
+        run:
+          - args: ["{approval}"]
+          - args: ["{prompt}"]
+```
+
+A mode a definition leaves out falls back to the closest less permissive mode it declares. If it declares none of those, the flag is left off. The `yolo` fragment condition still holds in the `full` mode.
+
+---
+
 ## projects
 
 Settings for [Projects](/guide/projects). Every field is optional and holds only a value that differs from its default; `aviary watch` with defaults writes nothing here. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
@@ -421,7 +484,8 @@ projects:
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself. |
-| `yolo` | bool | `false` | Disable the CLI providers' sandboxes and permission checks |
+| `approval_mode` | string | `approval.mode` | Projects' [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
+| `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
 | `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |

@@ -67,6 +67,32 @@
 						</div>
 					</div>
 
+					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900" data-testid="approval-settings">
+						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Approval</h3>
+						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">How much CLI providers may do without asking. Each
+							CLI launch translates the mode into that CLI's own permission flags; its settings files are never
+							changed. Projects has its own override in Projects settings.</p>
+						<div class="grid gap-4 lg:grid-cols-2">
+							<div>
+								<label class="field-label" for="approval-mode">Approval mode</label>
+								<select id="approval-mode" v-model="draft.approval!.mode" class="field-input" data-testid="approval-mode">
+									<option value="">Auto (default)</option>
+									<option v-for="m in approvalModes" :key="m.value" :value="m.value">{{ m.label }}</option>
+								</select>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Used everywhere without its own override.</p>
+							</div>
+							<div>
+								<label class="field-label" for="approval-chat">Chat approval mode</label>
+								<select id="approval-chat" v-model="draft.approval!.chat" class="field-input" data-testid="approval-chat">
+									<option value="">Same as approval mode</option>
+									<option v-for="m in approvalModes" :key="m.value" :value="m.value">{{ m.label }}</option>
+								</select>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Override for CLI-backed chat, including the
+									Projects prompt chat.</p>
+							</div>
+						</div>
+					</div>
+
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Browser</h3>
 						<div class="grid gap-4 lg:grid-cols-2">
