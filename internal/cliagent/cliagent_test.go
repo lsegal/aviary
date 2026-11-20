@@ -198,6 +198,9 @@ func TestClaudeArgs_BuiltinToolsOnAndResume(t *testing.T) {
 	assert.Equal(t, "sess-1", args[slices.Index(args, "--resume")+1])
 	assert.Equal(t, `{"mcpServers":{}}`, args[slices.Index(args, "--mcp-config")+1])
 
+	args = claudeArgs(Options{Model: "opus", Approval: []string{"--permission-mode", "auto"}, ExtraDir: []string{"--add-dir", "/data/agents/a"}}, "")
+	assert.Equal(t, "/data/agents/a", args[slices.Index(args, "--add-dir")+1], "the agent's own directory is granted (#534)")
+
 	args = claudeArgs(Options{Model: "opus", Ephemeral: true, NewSessionID: "x"}, "")
 	assert.Contains(t, args, "--no-session-persistence")
 	assert.NotContains(t, args, "--session-id")
@@ -228,6 +231,13 @@ func TestCodexArgs(t *testing.T) {
 	assert.Contains(t, joined, `sandbox_mode="workspace-write"`)
 	assert.NotContains(t, joined, "--disable")
 	assert.NotContains(t, joined, "mcp_servers")
+
+	// The agent's own directory is writable beside the workspace (#534),
+	// including on resume, where codex takes no --add-dir.
+	extra := []string{"-c", `sandbox_workspace_write.writable_roots=["/data/agents/a"]`}
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, ExtraDir: extra}, "thread-1", nil)
+	assert.Contains(t, args, extra[1])
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", ExtraDir: extra}, "", nil), extra[1], "without its own tools nothing is made writable")
 }
 
 func TestClaudeMapper(t *testing.T) {

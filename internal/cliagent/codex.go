@@ -61,6 +61,7 @@ func codexArgs(opts Options, threadID string, images []string) []string {
 	}
 	if opts.BuiltinTools {
 		args = append(args, opts.Approval...)
+		args = append(args, opts.ExtraDir...)
 	} else {
 		args = append(args,
 			"-c", "sandbox_mode="+tomlString("read-only"),
