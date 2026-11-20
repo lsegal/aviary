@@ -260,16 +260,6 @@ func registerProjectTools(s *sdkmcp.Server) {
 	})
 
 	addTool(s, &sdkmcp.Tool{
-		Name:        "project_cli_list",
-		Description: "The coding-CLI doctor: for each coding-CLI definition, whether it is installed, its version, sign-in, quota, and the models it reports",
-		Annotations: readOnlyTool,
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_cli_list", func(m *projects.Manager) (map[string]any, error) {
-			return m.CLIList(ctx)
-		})
-	})
-
-	addTool(s, &sdkmcp.Tool{
 		Name:        "project_clone_list",
 		Description: "List every clone Projects made for a job, with its repository, issue, pull request and size, and whether it is still in use",
 		Annotations: readOnlyTool,

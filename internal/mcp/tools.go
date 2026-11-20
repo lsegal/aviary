@@ -146,6 +146,7 @@ func Register(s *sdkmcp.Server) {
 	registerBrowserTools(s)
 	registerSearchTools(s)
 	registerAuthTools(s)
+	registerProviderTools(s)
 	registerServerTools(s)
 	registerSkillTools(s)
 	registerUsageTools(s)

@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // outputDecoder wraps the writer an agent's stdout is forwarded to, turning
@@ -30,7 +30,7 @@ type outputDecoder interface {
 func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 	switch output.Decoder() {
 	case agents.FormatStreamJSON:
-		return newClaudeJSONOutputWriter(w)
+		return newTranscriptOutputWriter(w, transcript.FormatClaudeStreamJSON)
 	case agents.FormatJSONL:
 		return newJSONLOutputWriter(w, *output.JSONL)
 	case agents.FormatCodexJSON:
@@ -441,11 +441,11 @@ func (w *transcriptOutputWriter) writeEvents(events []transcript.Event) error {
 				texts = append(texts, text)
 			}
 		case event.Kind == transcript.KindCommand && event.Status == "running":
-			texts = append(texts, "Running: "+event.Command)
+			texts = append(texts, "Running: "+toolEventSummary(event.Name, map[string]any{"command": event.Command}))
 		case event.Kind == transcript.KindFileChange:
 			texts = append(texts, "Editing: "+event.Path)
 		case event.Kind == transcript.KindToolCall:
-			texts = append(texts, "Running: "+event.Name)
+			texts = append(texts, "Running: "+toolEventSummary(event.Name, event.Input))
 		case event.Kind == transcript.KindSystem && event.IsError:
 			texts = append(texts, "Agent error: "+event.Text)
 		}
@@ -455,4 +455,11 @@ func (w *transcriptOutputWriter) writeEvents(events []transcript.Event) error {
 	}
 	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
 	return err
+}
+
+// toolEventSummary renders a mapped tool call the way the JSONL decoder renders
+// one, so a progress line reads the same whichever agent produced it.
+func toolEventSummary(name string, input map[string]any) string {
+	encoded, _ := json.Marshal(input)
+	return claudeToolUseSummary(name, encoded)
 }

@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // ErrNotWatching is returned by calls that need a running engine when no
@@ -280,34 +279,6 @@ func (m *Manager) Refresh(target string) (map[string]any, error) {
 	}
 	engine.nudgePoll()
 	return map[string]any{"requested": true, "targets": engine.Targets}, nil
-}
-
-// registry returns the coding-CLI definitions in effect.
-func (m *Manager) registry() (*agents.Registry, error) {
-	if engine := m.engine(); engine != nil && engine.Registry != nil {
-		return engine.Registry, nil
-	}
-	m.mu.Lock()
-	definitions := m.cfg.CLIDefinitions
-	m.mu.Unlock()
-	return agents.Load(definitions)
-}
-
-// CLIList is project_cli_list: the agent doctor for every coding-CLI
-// definition.
-func (m *Manager) CLIList(ctx context.Context) (map[string]any, error) {
-	registry, err := m.registry()
-	if err != nil {
-		return nil, err
-	}
-	statuses, err := agentStatuses(ctx, registry)
-	if err != nil {
-		return nil, err
-	}
-	if statuses == nil {
-		statuses = []core.AgentStatus{}
-	}
-	return map[string]any{"clis": statuses}, nil
 }
 
 // CloneList is project_clone_list.

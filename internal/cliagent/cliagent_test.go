@@ -307,6 +307,28 @@ func TestCodexMapper(t *testing.T) {
 	assert.Equal(t, &Usage{InputTokens: 6, OutputTokens: 2, CacheReadTokens: 4}, usage)
 }
 
+func TestCodexMapper_ExternalTools(t *testing.T) {
+	var events []Event
+	m := newCodexMapper(collect(&events))
+	for _, l := range []string{
+		`{"type":"item.started","item":{"id":"w","type":"web_search","query":"go"}}`,
+		`{"type":"item.completed","item":{"id":"w","type":"web_search","query":"go","status":"completed"}}`,
+		`{"type":"item.completed","item":{"id":"g","type":"mcp_tool_call","server":"gh","tool":"view","arguments":{"n":1},"result":{"content":[{"type":"text","text":"body"}]}}}`,
+	} {
+		_, err := m.handle([]byte(l))
+		require.NoError(t, err)
+	}
+	var tools []ToolEvent
+	for _, e := range events {
+		tools = append(tools, *e.Tool)
+	}
+	require.Len(t, tools, 4)
+	assert.Equal(t, ToolEvent{ID: "w", Name: "web_search", Args: map[string]any{"query": "go"}}, tools[0])
+	assert.Equal(t, "completed", tools[1].Result)
+	assert.Equal(t, ToolEvent{ID: "g", Name: "gh.view", Args: map[string]any{"n": float64(1)}}, tools[2], "a tool that never reported item.started still starts")
+	assert.Equal(t, "body", tools[3].Result)
+}
+
 func TestCodexMapper_Errors(t *testing.T) {
 	m := newCodexMapper(nil)
 	_, err := m.handle([]byte(`{"type":"error","message":"{\"type\":\"error\",\"status\":400,\"error\":{\"message\":\"model not supported\"}}"}`))

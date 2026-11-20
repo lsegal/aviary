@@ -49,11 +49,13 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	browser   config.BrowserConfig
-	watches   []Watch
-	running   *engineRun
-	lastKey   string
-	lastError string
-	stopped   bool
+	// definitions are the coding-CLI definitions from the models: section.
+	definitions map[string]any
+	watches     []Watch
+	running     *engineRun
+	lastKey     string
+	lastError   string
+	stopped     bool
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
@@ -89,6 +91,9 @@ type Manager struct {
 	// mentionRouter prompts the built-in Projects agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]
+	// usageRecorder receives each job run's token use; see
+	// SetUsageRecorder.
+	usageRecorder atomic.Pointer[UsageRecorder]
 }
 
 // MentionRouter sends a prompt to the built-in Projects agent.
@@ -99,6 +104,12 @@ type MentionRouter func(ctx context.Context, prompt string) error
 // block on the agent's answer.
 func (m *Manager) SetMentionRouter(route MentionRouter) {
 	m.mentionRouter.Store(&route)
+}
+
+// SetUsageRecorder makes engines started from now on report each agent run's
+// token use to record, so Projects jobs count toward core usage tracking.
+func (m *Manager) SetUsageRecorder(record UsageRecorder) {
+	m.usageRecorder.Store(&record)
 }
 
 // The backoff between engine starts that failed to resolve the authenticated
@@ -163,6 +174,15 @@ func (m *Manager) SetEngineEnabled(enabled bool) {
 func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 	m.mu.Lock()
 	m.browser = cfg
+	m.mu.Unlock()
+}
+
+// SetCLIDefinitions records the coding-CLI definitions from core Aviary's
+// models: section, the one registry Projects reads its CLIs from. It takes
+// effect on the next Reconcile.
+func (m *Manager) SetCLIDefinitions(definitions map[string]any) {
+	m.mu.Lock()
+	m.definitions = definitions
 	m.mu.Unlock()
 }
 
@@ -343,7 +363,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		TargetAgents:      targetAgents,
 		Agents:            cfg.EffectiveAgents(),
 		AgentBinaries:     cfg.AgentBinaries,
-		Definitions:       cfg.CLIDefinitions,
+		Definitions:       m.definitions,
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
 		ReadyLabel:        cfg.EffectiveReadyLabel(),
@@ -581,6 +601,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		Transcripts:       m.transcripts,
 		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
 		Quotas:            m.latestQuotas,
+	}
+	if record := m.usageRecorder.Load(); record != nil {
+		runner.RecordUsage = *record
 	}
 	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)

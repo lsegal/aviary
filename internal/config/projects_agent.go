@@ -22,7 +22,7 @@ var ProjectsAgentTools = []string{
 	"project_job_resume",
 	"project_job_stop",
 	"project_refresh",
-	"project_cli_list",
+	"provider_cli_list",
 	"project_clone_list",
 	"project_unblock_run",
 	"project_issue_create",

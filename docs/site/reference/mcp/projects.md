@@ -17,7 +17,6 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_refresh` | `aviary project refresh` | |
 | `project_add` | `aviary project add` | |
 | `project_remove` | `aviary project remove` | destructive |
-| `project_cli_list` | `aviary project cli list` | read-only |
 | `project_clone_list` | `aviary project clone list` | read-only |
 | `project_clone_clear` | `aviary project clone clear` | destructive |
 | `project_unblock_run` | `aviary project unblock` | |
@@ -86,10 +85,6 @@ Watch a project.
 Stop watching a project. Running jobs are checkpointed first.
 
 **Arguments:** `target`, and `runtime` (optional) to stop only a runtime watch.
-
-## project_cli_list
-
-The coding-CLI doctor: for every CLI definition, whether it is installed, its version, sign-in state, quota, and the models it reports.
 
 ## project_clone_list, project_clone_clear
 

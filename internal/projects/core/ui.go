@@ -376,9 +376,11 @@ type SettingsSnapshot struct {
 // state, mirroring what `aviary agents` prints, for the settings dashboard's
 // agents tab.
 type AgentStatus struct {
-	Name        string `json:"name"`
-	Installed   bool   `json:"installed"`
-	Binary      string `json:"binary"`
+	Name      string `json:"name"`
+	Installed bool   `json:"installed"`
+	Binary    string `json:"binary"`
+	// Path is where Binary was found on PATH, empty when it is not installed.
+	Path        string `json:"path,omitempty"`
 	Version     string `json:"version,omitempty"`
 	VersionNote string `json:"versionNote,omitempty"`
 	Auth        string `json:"auth"`

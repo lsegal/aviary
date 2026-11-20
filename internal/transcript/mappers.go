@@ -105,7 +105,7 @@ func claudeToolUse(block claudeBlock) Event {
 	input := block.Input
 	switch block.Name {
 	case "Bash", "PowerShell":
-		return Event{Kind: KindCommand, CallID: block.ID, Name: block.Name, Command: stringValue(input, "command"), Status: "running"}
+		return Event{Kind: KindCommand, CallID: block.ID, Name: block.Name, Input: input, Command: stringValue(input, "command"), Status: "running"}
 	case "Edit", "Write", "MultiEdit", "NotebookEdit":
 		path := stringValue(input, "file_path")
 		if path == "" {
@@ -120,15 +120,15 @@ func claudeToolUse(block claudeBlock) Event {
 				items = append(items, PlanItem{Text: stringValue(todo, "content"), Status: stringValue(todo, "status")})
 			}
 		}
-		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Items: items}
+		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Input: input, Items: items}
 	case "TaskCreate":
-		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Items: []PlanItem{{Text: stringValue(input, "subject"), Status: "pending"}}}
+		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Input: input, Items: []PlanItem{{Text: stringValue(input, "subject"), Status: "pending"}}}
 	case "TaskUpdate":
 		text := stringValue(input, "subject")
 		if text == "" {
 			text = "task " + stringValue(input, "taskId")
 		}
-		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Items: []PlanItem{{Text: text, Status: stringValue(input, "status")}}}
+		return Event{Kind: KindPlan, CallID: block.ID, Name: block.Name, Input: input, Items: []PlanItem{{Text: text, Status: stringValue(input, "status")}}}
 	}
 	return Event{Kind: KindToolCall, CallID: block.ID, Name: block.Name, Input: input}
 }
@@ -217,7 +217,11 @@ func claudeToolResultContent(raw json.RawMessage) (string, []string) {
 // codexMapper maps `codex exec --json`: item.started and item.completed
 // events carry agent messages, reasoning, command executions, file changes,
 // tool calls and todo lists, and turn.completed carries usage.
-type codexMapper struct{}
+type codexMapper struct {
+	// started remembers the web searches whose call was already mapped, so a
+	// search that never reported item.started still gets one.
+	started map[string]bool
+}
 
 type codexEnvelope struct {
 	Type     string         `json:"type"`
@@ -235,19 +239,22 @@ type codexEnvelope struct {
 	} `json:"error"`
 }
 
-func (codexMapper) Map(line []byte) []Event {
+func (m *codexMapper) Map(line []byte) []Event {
 	var envelope codexEnvelope
 	if json.Unmarshal(line, &envelope) != nil {
 		return nil
 	}
 	switch envelope.Type {
 	case "item.started", "item.updated":
-		return codexItem(envelope.Item, false)
+		return m.item(envelope.Item, false)
 	case "item.completed":
-		return codexItem(envelope.Item, true)
+		return m.item(envelope.Item, true)
 	case "turn.completed":
+		// Codex counts cached tokens inside input_tokens. Usage reports
+		// uncached input, as Claude and Gemini do, so cache reads are not
+		// counted twice.
 		u := envelope.Usage
-		return []Event{{Kind: KindUsage, Usage: &Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CacheReadTokens: u.CachedInputTokens, CacheWriteTokens: u.CacheWriteTokens}}}
+		return []Event{{Kind: KindUsage, Usage: &Usage{InputTokens: max(u.InputTokens-u.CachedInputTokens, 0), OutputTokens: u.OutputTokens, CacheReadTokens: u.CachedInputTokens, CacheWriteTokens: u.CacheWriteTokens}}}
 	case "turn.failed":
 		return []Event{{Kind: KindSystem, Text: envelope.Error.Message, IsError: true}}
 	case "error":
@@ -256,18 +263,20 @@ func (codexMapper) Map(line []byte) []Event {
 	return nil
 }
 
-func codexItem(item map[string]any, completed bool) []Event {
+func (m *codexMapper) item(item map[string]any, completed bool) []Event {
 	id := stringValue(item, "id")
+	failed := stringValue(item, "status") == "failed"
 	switch stringValue(item, "type") {
 	case "command_execution":
 		event := Event{Kind: KindCommand, CallID: id, Command: stringValue(item, "command"), Status: "running"}
 		if completed {
 			event.Status = "done"
 			event.Output = stringValue(item, "aggregated_output")
+			event.IsError = failed
 			if code, ok := item["exit_code"].(float64); ok {
 				exit := int(code)
 				event.ExitCode = &exit
-				event.IsError = exit != 0
+				event.IsError = event.IsError || exit != 0
 			}
 		}
 		return []Event{event}
@@ -295,22 +304,35 @@ func codexItem(item map[string]any, completed bool) []Event {
 		if server := stringValue(item, "server"); server != "" {
 			name = server + "." + name
 		}
+		args, _ := item["arguments"].(map[string]any)
 		if !completed {
-			args, _ := item["arguments"].(map[string]any)
 			return []Event{{Kind: KindToolCall, CallID: id, Name: name, Input: args}}
 		}
-		result := Event{Kind: KindToolResult, CallID: id, Name: name}
+		result := Event{Kind: KindToolResult, CallID: id, Name: name, Input: args, IsError: failed}
 		if errValue, ok := item["error"].(map[string]any); ok {
 			result.IsError, result.Output = true, stringValue(errValue, "message")
+		} else if value, ok := item["result"].(map[string]any); ok && value["content"] != nil {
+			raw, _ := json.Marshal(value["content"])
+			result.Output, result.Images = claudeToolResultContent(raw)
 		} else if item["result"] != nil {
 			data, _ := json.Marshal(item["result"])
 			result.Output = string(data)
 		}
 		return []Event{result}
 	case "web_search":
-		if completed {
-			return []Event{{Kind: KindToolCall, CallID: id, Name: "web_search", Input: map[string]any{"query": stringValue(item, "query")}}}
+		if m.started == nil {
+			m.started = map[string]bool{}
 		}
+		var events []Event
+		if !m.started[id] {
+			m.started[id] = true
+			events = append(events, Event{Kind: KindToolCall, CallID: id, Name: "web_search", Input: map[string]any{"query": stringValue(item, "query")}})
+		}
+		if completed {
+			delete(m.started, id)
+			events = append(events, Event{Kind: KindToolResult, CallID: id, Name: "web_search", Output: stringValue(item, "status"), IsError: failed})
+		}
+		return events
 	case "todo_list":
 		var items []PlanItem
 		list, _ := item["items"].([]any)

@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // claudeMCPToolPrefix prefixes Claude Code's names for tools served by
@@ -271,19 +273,28 @@ func splitDataURL(u string) (string, string, error) {
 	return strings.TrimSuffix(header, ";base64"), data, nil
 }
 
-// claudeMapper turns Claude Code stream-json lines into Events.
+// claudeMapper turns Claude Code stream-json lines into Events. The shared
+// stream parser decodes messages, tools and usage; claudeMapper reads only
+// the session ID, streamed text deltas and the turn's outcome.
 type claudeMapper struct {
 	emit      func(Event)
 	sessionID string
 	streamed  bool // text deltas seen for the current message
-	pending   map[string]*ToolEvent
+	stream    transcript.Mapper
+	tools     *toolTranslator
 }
 
 func newClaudeMapper(emit func(Event)) *claudeMapper {
 	if emit == nil {
 		emit = func(Event) {}
 	}
-	return &claudeMapper{emit: emit, pending: map[string]*ToolEvent{}}
+	return &claudeMapper{
+		emit:   emit,
+		stream: transcript.NewMapper(transcript.FormatClaudeStreamJSON),
+		tools: newToolTranslator(emit, func(name string) bool {
+			return strings.HasPrefix(name, claudeMCPToolPrefix) // reported by Aviary's MCP boundary
+		}),
+	}
 }
 
 // handle processes one line. It returns done once the turn's result arrives.
@@ -296,8 +307,7 @@ func (m *claudeMapper) handle(line []byte) (Result, bool, error) {
 		m.sessionID = id
 		m.emit(Event{Type: EventSession, SessionID: id})
 	}
-	switch stringField(ev, "type") {
-	case "stream_event":
+	if stringField(ev, "type") == "stream_event" {
 		inner := mapField(ev, "event")
 		switch stringField(inner, "type") {
 		case "message_start":
@@ -311,56 +321,16 @@ func (m *claudeMapper) handle(line []byte) (Result, bool, error) {
 				}
 			}
 		}
-	case "assistant":
-		for _, block := range contentBlocks(mapField(ev, "message")) {
-			switch stringField(block, "type") {
-			case "text":
-				if !m.streamed {
-					if text := stringField(block, "text"); text != "" {
-						m.emit(Event{Type: EventText, Text: text})
-					}
-				}
-			case "tool_use":
-				name := stringField(block, "name")
-				if strings.HasPrefix(name, claudeMCPToolPrefix) {
-					continue // reported by Aviary's MCP boundary
-				}
-				tool := &ToolEvent{ID: stringField(block, "id"), Name: name, Args: mapField(block, "input")}
-				m.pending[tool.ID] = tool
-				m.emit(Event{Type: EventToolStart, Tool: tool})
-			}
+		return Result{}, false, nil
+	}
+	events := m.stream.Map(line)
+	for _, event := range events {
+		if event.Kind == transcript.KindMessage && !m.streamed {
+			m.emit(Event{Type: EventText, Text: event.Text})
 		}
-	case "user":
-		for _, block := range contentBlocks(mapField(ev, "message")) {
-			if stringField(block, "type") != "tool_result" {
-				continue
-			}
-			id := stringField(block, "tool_use_id")
-			tool, ok := m.pending[id]
-			if !ok {
-				continue
-			}
-			delete(m.pending, id)
-			done := *tool
-			text := toolResultText(block["content"])
-			if isErr, _ := block["is_error"].(bool); isErr {
-				done.Error = text
-			} else {
-				done.Result = text
-			}
-			m.emit(Event{Type: EventToolResult, Tool: &done})
-		}
-	case "result":
-		if usage := mapField(ev, "usage"); usage != nil {
-			cost, _ := ev["total_cost_usd"].(float64)
-			m.emit(Event{Type: EventUsage, Usage: &Usage{
-				InputTokens:      intField(usage, "input_tokens"),
-				OutputTokens:     intField(usage, "output_tokens"),
-				CacheReadTokens:  intField(usage, "cache_read_input_tokens"),
-				CacheWriteTokens: intField(usage, "cache_creation_input_tokens"),
-				CostUSD:          cost,
-			}})
-		}
+	}
+	m.tools.translate(events)
+	if stringField(ev, "type") == "result" {
 		text := stringField(ev, "result")
 		if isErr, _ := ev["is_error"].(bool); isErr || (stringField(ev, "subtype") != "" && stringField(ev, "subtype") != "success") {
 			return Result{}, true, claudeResultError(ev, text)
@@ -382,33 +352,6 @@ func claudeResultError(ev map[string]any, text string) error {
 		return fmt.Errorf("claude: %s", strings.Join(parts, "; "))
 	}
 	return fmt.Errorf("claude: turn failed (%s)", stringField(ev, "subtype"))
-}
-
-func contentBlocks(msg map[string]any) []map[string]any {
-	raw, _ := msg["content"].([]any)
-	out := make([]map[string]any, 0, len(raw))
-	for _, b := range raw {
-		if m, ok := b.(map[string]any); ok {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func toolResultText(content any) string {
-	switch c := content.(type) {
-	case string:
-		return c
-	case []any:
-		var parts []string
-		for _, b := range c {
-			if m, ok := b.(map[string]any); ok && stringField(m, "type") == "text" {
-				parts = append(parts, stringField(m, "text"))
-			}
-		}
-		return strings.Join(parts, "\n")
-	}
-	return ""
 }
 
 // tailBuffer keeps the last max bytes written to it.
