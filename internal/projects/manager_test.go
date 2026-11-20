@@ -3,9 +3,11 @@ package projects
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -142,24 +144,94 @@ func TestManagerRejectsABadUnblockInterval(t *testing.T) {
 	}
 }
 
-func TestManagerLogsSince(t *testing.T) {
+// logRecorder is a slog handler standing in for core's log ring: it keeps
+// every record's message and component, and pages them as a LogSource.
+type logRecorder struct {
+	mu      sync.Mutex
+	records [][2]string
+	attrs   []slog.Attr
+	root    *logRecorder
+}
+
+func (r *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (r *logRecorder) Handle(_ context.Context, rec slog.Record) error {
+	component := ""
+	for _, a := range r.attrs {
+		if a.Key == "component" {
+			component = a.Value.String()
+		}
+	}
+	rec.Attrs(func(a slog.Attr) bool {
+		if a.Key == "component" {
+			component = a.Value.String()
+		}
+		return true
+	})
+	root := r.root
+	root.mu.Lock()
+	root.records = append(root.records, [2]string{component, rec.Message})
+	root.mu.Unlock()
+	return nil
+}
+
+func (r *logRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &logRecorder{attrs: append(slices.Clone(r.attrs), attrs...), root: r.root}
+}
+
+func (r *logRecorder) WithGroup(string) slog.Handler { return r }
+
+func (r *logRecorder) since(component string, offset, limit int) ([]string, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	lines := []string{}
+	for i, rec := range r.records {
+		if rec[0] == component && i+1 > offset {
+			lines = append(lines, rec[1])
+		}
+	}
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines, len(r.records)
+}
+
+// recordLogs routes slog through a logRecorder for the test and makes it m's
+// log source.
+func recordLogs(t *testing.T, m *Manager) *logRecorder {
+	t.Helper()
+	recorder := &logRecorder{}
+	recorder.root = recorder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(recorder))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	m.SetLogSource(recorder.since)
+	return recorder
+}
+
+// TestManagerLogsThroughSlog checks Projects keeps no log buffer of its own:
+// its lines go to slog under the projects component, without a timestamp in
+// the text, and project_status pages them back from the log source.
+func TestManagerLogsThroughSlog(t *testing.T) {
 	m := newTestManager(t)
-	for i := range managerLogLines + 5 {
-		m.Log(string(rune('a' + i%26)))
+	if lines, offset := m.logsSince(7, 0); lines != nil || offset != 7 {
+		t.Fatalf("without a source: lines = %v, offset = %d", lines, offset)
 	}
-	lines, offset := m.logsSince(0, 3)
-	if len(lines) != 3 || offset != managerLogLines+5 {
-		t.Fatalf("lines = %v, offset = %d", lines, offset)
+	recorder := recordLogs(t, m)
+	slog.Info("unrelated", "component", "server")
+	m.logf("engine %s", "started")
+	if !slices.Contains(recorder.records, [2]string{"projects", "engine started"}) {
+		t.Fatalf("records = %v, want the line under the projects component", recorder.records)
 	}
+	status := m.Status(t.Context(), 0)
+	if logs := status["recent_logs"]; !reflect.DeepEqual(logs, []string{"engine started"}) {
+		t.Fatalf("recent_logs = %v", logs)
+	}
+	offset := status["log_offset"].(int)
 	m.Log("new")
-	lines, next := m.logsSince(offset, 100)
-	if !reflect.DeepEqual(lines, []string{"new"}) || next != offset+1 {
-		t.Fatalf("lines = %v, next = %d", lines, next)
-	}
-	// An offset older than the kept lines returns every kept line.
-	lines, _ = m.logsSince(1, 0)
-	if len(lines) != managerLogLines {
-		t.Fatalf("stale offset returned %d lines", len(lines))
+	status = m.Status(t.Context(), offset)
+	if logs := status["recent_logs"]; !reflect.DeepEqual(logs, []string{"new"}) || status["log_offset"] != offset+1 {
+		t.Fatalf("recent_logs = %v, log_offset = %v", logs, status["log_offset"])
 	}
 }
 
@@ -175,6 +247,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Shutdown)
+	recordLogs(t, m)
 	var lookups atomic.Int32
 	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
 		if slices.Equal(args, []string{"api", "user", "--jq", ".login"}) {
@@ -188,7 +261,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agents: []string{"codex"}}); !errors.Is(err, errLoginLookup) {
 		t.Fatalf("AddWatch error = %v, want the login lookup failure", err)
 	}
-	if logs, _ := m.logsSince(0, managerLogLines); !slices.ContainsFunc(logs, func(line string) bool { return strings.Contains(line, "waiting 10ms to retry starting") }) {
+	if logs, _ := m.logsSince(0, 0); !slices.ContainsFunc(logs, func(line string) bool { return strings.Contains(line, "waiting 10ms to retry starting") }) {
 		t.Fatalf("logs = %q, want the retry wait", logs)
 	}
 	deadline := time.Now().Add(5 * time.Second)
