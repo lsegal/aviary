@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 const CLI_DEFINITIONS = { acme: { binary: "acme-cli" } };
 
@@ -48,6 +48,7 @@ const CLIS = {
 async function setup(
 	page: import("@playwright/test").Page,
 	onSave?: (config: Record<string, unknown>) => void,
+	extra: ToolFixtures = {},
 ) {
 	const calls: string[] = [];
 	await setAuthToken(page);
@@ -75,6 +76,7 @@ async function setup(
 			calls.push("provider_cli_list");
 			return CLIS;
 		},
+		...extra,
 	});
 	return calls;
 }
@@ -146,15 +148,13 @@ test("one providers list holds the API providers and every coding CLI with its d
 	);
 
 	// Only installed CLIs keep full rows; the compact line is the last row,
-	// so the Add provider dropdown follows it directly.
+	// so the Add provider row follows it directly.
 	await expect(card.locator("tbody > tr[data-cli]")).toHaveCount(2);
 	await expect(card.locator("tbody > tr").last()).toHaveAttribute(
 		"data-testid",
 		"providers-missing-clis",
 	);
-	await expect(
-		page.getByRole("combobox").filter({ hasText: "Add provider…" }),
-	).toBeVisible();
+	await expect(card.getByTestId("provider-add-row")).toBeVisible();
 
 	// The API providers sit in the same list, ahead of the CLI providers.
 	await expect(card.locator("table")).toHaveCount(1);
@@ -245,4 +245,77 @@ test("the default model pickers offer the models of installed CLI providers", as
 	expect(saved).toMatchObject({
 		models: { defaults: { model: "codex/gpt-5.5-mini" } },
 	});
+});
+
+test("an Add provider row expands into tiles of provider kinds that start the add flow", async ({
+	page,
+}) => {
+	const toolCalls: Array<Record<string, unknown>> = [];
+	await setup(page, undefined, {
+		auth_set: (args?: Record<string, unknown>) => {
+			toolCalls.push(args ?? {});
+			return {};
+		},
+	});
+	await page.goto("/settings/providers");
+	const card = page.getByTestId("providers-list");
+	await expect(card.locator("select")).toHaveCount(0);
+
+	// The add row sits in the providers list itself, after the last provider.
+	const row = card.getByTestId("provider-add-row");
+	await expect(row).toHaveText(/Add provider/);
+	await row.click();
+	const tiles = card
+		.getByRole("group", { name: "Provider kinds" })
+		.getByRole("button");
+	// The same kinds the select offered: Anthropic's stored API key is not offered again.
+	await expect(card.locator('[data-kind="anthropic:oauth"]')).toBeVisible();
+	await expect(card.locator('[data-kind="openai:apikey"]')).toContainText(
+		"API Key",
+	);
+	await expect(card.locator('[data-kind="vllm:endpoint"]')).toContainText(
+		"Endpoint",
+	);
+	await expect(card.locator('[data-kind="anthropic:apikey"]')).toHaveCount(0);
+
+	// Arrow keys move between tiles; Escape collapses back to the focused row.
+	await expect(tiles.first()).toBeFocused();
+	await page.keyboard.press("ArrowRight");
+	await expect(tiles.nth(1)).toBeFocused();
+	await page.keyboard.press("End");
+	await expect(tiles.last()).toBeFocused();
+	await page.keyboard.press("Home");
+	await expect(tiles.first()).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(tiles).toHaveCount(0);
+	await expect(row).toBeFocused();
+
+	// An outside click collapses it too.
+	await row.click();
+	await expect(tiles.first()).toBeVisible();
+	await page.getByText("Extra Secrets", { exact: true }).click();
+	await expect(tiles).toHaveCount(0);
+
+	// Choosing a kind from the keyboard opens that kind's form in place.
+	await row.focus();
+	await page.keyboard.press("Enter");
+	await card.locator('[data-kind="openai:apikey"]').focus();
+	await page.keyboard.press("Enter");
+	const form = card.getByTestId("provider-add-form");
+	await expect(form).toContainText("OpenAI (API Key)");
+	await expect(row).toHaveCount(0);
+	await form.getByPlaceholder("API key…").fill("sk-test");
+	await form.getByRole("button", { name: "Add", exact: true }).click();
+	await expect
+		.poll(() => toolCalls)
+		.toEqual([{ name: "openai:default", value: "sk-test" }]);
+	await expect(form).toHaveCount(0);
+	await expect(row).toBeVisible();
+
+	// Cancel drops the chosen kind without adding anything.
+	await row.click();
+	await card.locator('[data-kind="vllm:endpoint"]').click();
+	await expect(form.getByPlaceholder("Base URI (optional)")).toBeVisible();
+	await form.getByTestId("provider-add-cancel").click();
+	await expect(form).toHaveCount(0);
 });

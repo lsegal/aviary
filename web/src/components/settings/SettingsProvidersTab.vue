@@ -14,9 +14,10 @@
 							are stored securely and refreshed automatically.</p>
 
 						<!-- Every provider: configured credentials, then the providers reached through a CLI -->
-						<div v-if="configuredProviders.length || cliProviders.length" data-testid="providers-list"
+						<div v-if="configuredProviders.length || cliProviders.length || availableProviderOptions.length || providerAddSelection"
+							data-testid="providers-list"
 							class="mb-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-							<table class="w-full text-xs">
+							<table v-if="configuredProviders.length || cliProviders.length" class="w-full text-xs">
 								<thead>
 									<tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
 										<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Provider</th>
@@ -156,19 +157,12 @@
 									</tr>
 								</tbody>
 							</table>
-						</div>
-						<p v-else-if="cliRefreshing" class="mb-4 text-xs text-gray-500">Checking coding CLIs…</p>
-						<p v-if="cliError && !cliProviders.length" class="mb-4 text-xs text-red-600 dark:text-red-400">
-							Couldn't read the coding CLIs: {{ cliError }}
-						</p>
-
-						<!-- Add provider credential -->
-						<div v-if="availableProviderOptions.length" class="flex flex-wrap items-center gap-2">
-							<select v-model="providerAddSelection" class="field-input max-w-[220px]">
-								<option value="">Add provider…</option>
-								<option v-for="opt in availableProviderOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</option>
-							</select>
-							<template v-if="providerAddSelection">
+							<!-- Add a provider: a dashed row that expands into tiles, then the chosen kind's form -->
+							<ProviderAddRow v-if="availableProviderOptions.length && !providerAddSelection"
+								:options="availableProviderOptions" @select="providerAddSelection = $event" />
+							<div v-if="providerAddSelection" data-testid="provider-add-form"
+								class="flex flex-wrap items-center gap-2 border-t border-gray-200 bg-gray-50/70 p-3 first:border-t-0 dark:border-gray-700 dark:bg-gray-800/40">
+								<span class="mr-1 text-xs font-semibold text-gray-700 dark:text-gray-200">{{ providerAddLabel }}</span>
 								<template v-if="providerAddSelection.endsWith(':endpoint')">
 									<input v-model="providerBaseURIValue" type="text" class="field-input min-w-[260px] max-w-[320px]"
 										placeholder="Base URI (optional)" />
@@ -192,11 +186,15 @@
 									:disabled="oauthBusy" @click="addProviderOAuth">
 									{{ oauthBusy ? 'Authorizing…' : 'Authorize' }}
 								</button>
-							</template>
+								<button type="button" data-testid="provider-add-cancel"
+									class="text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+									@click="providerAddSelection = ''">Cancel</button>
+							</div>
 						</div>
-						<p v-else-if="!configuredProviders.length" class="text-xs text-gray-400 dark:text-gray-500">No providers
-							configured yet.
-							Use the dropdown above to add one.</p>
+						<p v-else-if="cliRefreshing" class="mb-4 text-xs text-gray-500">Checking coding CLIs…</p>
+						<p v-if="cliError && !cliProviders.length" class="mb-4 text-xs text-red-600 dark:text-red-400">
+							Couldn't read the coding CLIs: {{ cliError }}
+						</p>
 						<button type="button" data-testid="providers-check-again"
 							class="mt-2 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
 							:disabled="cliRefreshing" @click="refreshCLIProviders">↻ Check CLIs again</button>
@@ -369,6 +367,7 @@ import { computed, defineComponent, inject, ref, toRefs, watch } from "vue";
 import { useProviderStatus } from "../../composables/useProviderAuth";
 import { type CLIStatus, cliAuthLabel } from "../../lib/cliProviders";
 import { settingsViewContextKey } from "./context";
+import ProviderAddRow from "./ProviderAddRow.vue";
 
 const CLI_DOT: Record<CLIStatus, string> = {
 	ok: "bg-green-500",
@@ -431,6 +430,7 @@ interface SettingsProvidersContext {
 
 export default defineComponent({
 	name: "SettingsProvidersTab",
+	components: { ProviderAddRow },
 	setup() {
 		const settings = inject<SettingsProvidersContext>(settingsViewContextKey);
 		if (!settings) {
@@ -483,8 +483,20 @@ export default defineComponent({
 			{ immediate: true },
 		);
 		const cliProviders = computed(() => cliStatus.clis.value ?? []);
+		const providerAddLabel = computed(() => {
+			const selection = resolvedSettings.providerAddSelection;
+			return (
+				resolvedSettings.availableProviderOptions.find(
+					(opt) => opt.key === selection,
+				)?.label ??
+				resolvedSettings.configuredProviders.find(
+					(entry) => `${entry.provider}:endpoint` === selection,
+				)?.providerLabel ??
+				selection
+			);
+		});
 		// Presentation only: installed CLIs keep full rows, missing ones collapse
-		// into one line so they don't bury the Add provider dropdown.
+		// into one line so the list stays short.
 		const installedCLIs = computed(() =>
 			cliProviders.value.filter((cli) => cli.status !== "missing"),
 		);
@@ -497,6 +509,7 @@ export default defineComponent({
 			CLI_DOT,
 			cliAuthLabel,
 			cliProviders,
+			providerAddLabel,
 			installedCLIs,
 			missingCLIs,
 			cliRefreshing: cliStatus.refreshing,
