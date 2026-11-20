@@ -394,9 +394,9 @@ func TestEngineAgentStillConfigured(t *testing.T) {
 	}
 }
 
-// registryForSettings builds a registry holding a built-in agent and one an
-// imaginary config file added, so the settings surfaces can be checked to
-// report both.
+// registryForSettings builds a registry holding a built-in agent, one an
+// imaginary config file added, and the in-process aviary backend, so the
+// settings surfaces can be checked to report the first two and not the last.
 func registryForSettings(t *testing.T) *clidefs.Registry {
 	t.Helper()
 	definition := func(name string) clidefs.Definition {
@@ -411,7 +411,11 @@ func registryForSettings(t *testing.T) *clidefs.Registry {
 	codex.Levels = clidefs.NewAllowList("low", "medium", "high")
 	muse := definition("muse")
 	muse.Models = clidefs.NewAllowList("muse-1", "muse-2")
-	registry, err := clidefs.NewRegistry(codex, muse)
+	aviary := clidefs.Definition{
+		Name: clidefs.Aviary, Binary: clidefs.Aviary, InProcess: true,
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+	}
+	registry, err := clidefs.NewRegistry(codex, muse, aviary)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +425,8 @@ func registryForSettings(t *testing.T) *clidefs.Registry {
 // TestSettingsSnapshotListsEveryRegisteredAgent checks the settings API
 // reports the registry rather than the agents this run happens to dispatch
 // with, which is what makes a .aviary.config.json agent selectable in the
-// dashboard with no code change.
+// dashboard with no code change. The in-process aviary backend is not a
+// provider, so it is not offered (issue #494).
 func TestSettingsSnapshotListsEveryRegisteredAgent(t *testing.T) {
 	w := &Engine{
 		Registry: registryForSettings(t),

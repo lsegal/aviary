@@ -348,8 +348,8 @@ type SettingsSnapshot struct {
 	//.
 	TempDirs       []string `json:"tempDirs"`
 	TempDirDefault string   `json:"tempDirDefault"`
-	// Agents lists every agent the run's registry defines, built-in and
-	// config-defined alike.
+	// Agents lists every CLI provider the run's registry defines, built-in
+	// and config-defined alike; the in-process aviary backend is not one.
 	Agents []string `json:"agents"`
 	// AgentOptions carries the same agents with their model and level
 	// allow-lists, for a selector that offers more than a bare name.

@@ -96,7 +96,12 @@ test("one providers list holds the API providers and every coding CLI with its d
 	page,
 }) => {
 	const calls = await setup(page);
+	// With a cached CLI list, the General tab reuses it instead of probing.
+	await page.addInitScript((clis) => {
+		localStorage.setItem("aviary.providers.clis", JSON.stringify(clis));
+	}, CLIS.clis);
 	await page.goto("/settings/general");
+	await expect(page.getByTestId("default-model-selector")).toBeVisible();
 	expect(calls).toEqual([]);
 
 	await page.goto("/settings/providers");
@@ -188,5 +193,72 @@ test("saving settings keeps the coding-CLI definitions", async ({ page }) => {
 	await expect.poll(() => saved).not.toBeNull();
 	expect(saved).toMatchObject({
 		models: { cli_definitions: CLI_DEFINITIONS },
+	});
+});
+
+test("the default model pickers offer the models of installed CLI providers", async ({
+	page,
+}) => {
+	let saved: Record<string, unknown> | null = null;
+	const calls: string[] = [];
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: { tls: { cert: "", key: "" } },
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "", reuse_tabs: true },
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		config_save: (args) => {
+			saved = JSON.parse(String(args?.config ?? "{}"));
+			return {};
+		},
+		auth_list: [],
+		skills_list: [],
+		tool_list: [],
+		provider_cli_list: () => {
+			calls.push("provider_cli_list");
+			return {
+				clis: [
+					...CLIS.clis,
+					{
+						name: "claude",
+						installed: false,
+						binary: "claude",
+						models: ["claude/opus"],
+						status: "missing",
+					},
+				],
+			};
+		},
+	});
+
+	// No CLI list is cached yet, so the General tab probes for one.
+	await page.goto("/settings/general");
+	await expect.poll(() => calls).toEqual(["provider_cli_list"]);
+
+	const offered = ["codex/gpt-5.5", "codex/gpt-5.5-mini"];
+	for (const testId of [
+		"default-model-selector",
+		"default-fallbacks-selector",
+	]) {
+		const selector = page.getByTestId(testId);
+		await selector.locator("input").click();
+		const options = selector.locator(".truncate.font-medium");
+		// Only installed CLIs with models contribute: codex, not the missing
+		// claude, acme and muse, nor gemini, which reports no models.
+		await expect(options).toHaveText(offered);
+		await page.keyboard.press("Escape");
+	}
+
+	const defaultModel = page.getByTestId("default-model-selector");
+	await defaultModel.locator("input").click();
+	await defaultModel.getByText("codex/gpt-5.5-mini", { exact: true }).click();
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => saved).not.toBeNull();
+	expect(saved).toMatchObject({
+		models: { defaults: { model: "codex/gpt-5.5-mini" } },
 	});
 });

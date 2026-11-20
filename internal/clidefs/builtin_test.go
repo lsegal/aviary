@@ -1,6 +1,7 @@
 package clidefs
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -85,5 +86,21 @@ func TestClineAndGeminiAskOverTheAgentProtocol(t *testing.T) {
 		if !strings.Contains(stdin, "initialize") || !strings.Contains(stdin, "session/new") {
 			t.Errorf("%s probe writes %q, want the ACP handshake that produces a model list", name, stdin)
 		}
+	}
+}
+
+// TestBuiltinProvidersLeaveOutAviary checks the in-process aviary backend
+// stays resolvable for jobs but is not listed among the providers (#494).
+func TestBuiltinProvidersLeaveOutAviary(t *testing.T) {
+	registry := MustBuiltin()
+	if _, ok := registry.Lookup(Aviary); !ok {
+		t.Fatalf("registry has no %q definition to run Aviary agents", Aviary)
+	}
+	providers := registry.Providers()
+	if slices.Contains(providers, Aviary) {
+		t.Fatalf("providers = %v, want no %q", providers, Aviary)
+	}
+	if len(providers) != len(registry.Names())-1 {
+		t.Fatalf("providers = %v, want every other built-in of %v", providers, registry.Names())
 	}
 }

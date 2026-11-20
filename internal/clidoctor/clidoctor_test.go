@@ -116,6 +116,32 @@ func TestDoctorReportsEveryRegisteredAgent(t *testing.T) {
 	}
 }
 
+// TestDoctorLeavesOutInProcessAgents checks the in-process aviary backend,
+// whose model names one of aviary's own agents, is not reported as a CLI
+// provider (issue #494).
+func TestDoctorLeavesOutInProcessAgents(t *testing.T) {
+	registry, err := clidefs.NewRegistry(
+		clidefs.Definition{
+			Name: "probed", Binary: "probed",
+			Session: clidefs.Session{Assign: clidefs.AssignNone},
+			Output:  clidefs.Output{Format: clidefs.FormatText},
+			Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		},
+		clidefs.Definition{
+			Name: clidefs.Aviary, Binary: clidefs.Aviary, InProcess: true,
+			Session: clidefs.Session{Assign: clidefs.AssignNone},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doctor := &Doctor{Registry: registry, LookPath: func(string) (string, error) { return "", errors.New("not found") }}
+	reports := doctor.Report(context.Background())
+	if len(reports) != 1 || reports[0].Name != "probed" {
+		t.Fatalf("reports = %+v, want only probed", reports)
+	}
+}
+
 // TestDoctorSkipsProbesForAMissingBinary checks nothing is run for an
 // agent whose CLI is not installed: every remaining question is about that
 // binary, and running them would only produce the same failure five times.
