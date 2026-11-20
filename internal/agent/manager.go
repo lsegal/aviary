@@ -26,6 +26,8 @@ type Manager struct {
 	session *SessionManager
 	factory *llm.Factory
 	cfg     *config.Config // latest reconciled config, for checkpoint timeout
+
+	recovery sync.WaitGroup // background checkpoint recoveries started by Reconcile
 }
 
 // NewManager creates a new Manager with an optional LLM factory.
@@ -110,7 +112,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 		}
 		runner := NewAgentRunner(a, ac, provider, m.factory)
 		m.runners[name] = runner
-		go m.recoverCheckpoints(runner)
+		m.recovery.Go(func() { m.recoverCheckpoints(runner) })
 	}
 }
 
@@ -216,6 +218,10 @@ func (m *Manager) List() []*domain.Agent {
 	}
 	return out
 }
+
+// WaitRecovery blocks until the checkpoint recoveries started by Reconcile
+// have finished.
+func (m *Manager) WaitRecovery() { m.recovery.Wait() }
 
 // Stop stops all agents.
 func (m *Manager) Stop() {

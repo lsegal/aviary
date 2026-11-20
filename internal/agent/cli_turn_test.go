@@ -319,7 +319,7 @@ func TestCLITurn_ChatApprovalModeReachesTheCLI(t *testing.T) {
 	t.Cleanup(func() { SetToolClientFactory(nil) })
 	fb := useFakeCLI(t)
 
-	m := NewManager(nil)
+	m := newTestManager(t)
 	m.Reconcile(&config.Config{
 		Agents:   []config.AgentConfig{{Name: "agent_cli_approval", Model: "cli/claude/opus"}},
 		Approval: config.ApprovalConfig{Mode: clidefs.ApprovalFull, Chat: clidefs.ApprovalReadOnly},
