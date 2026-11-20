@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 const oneShotHelperEnv = "AVIARY_ONESHOT_HELPER"
@@ -56,14 +56,14 @@ func TestOneShotPromptHelperProcess(_ *testing.T) {
 // the flags a call outside any checkout needs, such as Codex's
 // --skip-git-repo-check.
 func TestOneShotPromptMarksTheCallOneShot(t *testing.T) {
-	codex, _ := agents.MustBuiltin().Lookup("codex")
-	call, err := newOneShotPrompt(codex, agents.Values{Prompt: "status?"}, t.TempDir())
+	codex, _ := clidefs.MustBuiltin().Lookup("codex")
+	call, err := newOneShotPrompt(codex, clidefs.Values{Prompt: "status?"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer call.cleanup()
 	want := []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-"}
-	if got := codex.Render(agents.ModeRun, call.Values); !reflect.DeepEqual(got, want) {
+	if got := codex.Render(clidefs.ModeRun, call.Values); !reflect.DeepEqual(got, want) {
 		t.Errorf("codex one-shot argv = %#v, want %#v", got, want)
 	}
 }
@@ -99,7 +99,7 @@ func TestSpawnErrorNamesSizesAndLimit(t *testing.T) {
 
 // oneShotRegistry registers two stand-in agents run through the test binary:
 // one that reads its prompt from stdin and one that cannot.
-func oneShotRegistry(t *testing.T) *agents.Registry {
+func oneShotRegistry(t *testing.T) *clidefs.Registry {
 	t.Helper()
 	agent := func(name, stdin string) string {
 		return fmt.Sprintf(`{"name":%q,"binary":%q,"session":{"assign":"none"},"output":{"format":"plain"},"env":{%q:"1"},%s"args":{"run":[{"args":["-test.run=^TestOneShotPromptHelperProcess$","--","{prompt}"]}]}}`,
@@ -114,7 +114,7 @@ func oneShotRegistry(t *testing.T) *agents.Registry {
 // argument it always did.
 func TestOneShotPromptKeepsShortPromptsInArgv(t *testing.T) {
 	definition, _ := oneShotRegistry(t).Lookup("argvagent")
-	call, err := newOneShotPrompt(definition, agents.Values{Prompt: "status?"}, t.TempDir())
+	call, err := newOneShotPrompt(definition, clidefs.Values{Prompt: "status?"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

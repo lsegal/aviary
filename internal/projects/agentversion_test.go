@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // stubAgentVersion answers `binary --version` for the test instead of running
@@ -31,10 +31,10 @@ func stubAgentVersion(t *testing.T, output string, err error) *[]string {
 // -- either because the output carries none or because asking failed -- warns
 // and proceeds.
 func TestCheckAgentVersion(t *testing.T) {
-	definition := agents.Definition{Name: "gemini", Binary: "gemini", MinVersion: "0.58.0"}
+	definition := clidefs.Definition{Name: "gemini", Binary: "gemini", MinVersion: "0.58.0"}
 	for _, tc := range []struct {
 		name        string
-		definition  agents.Definition
+		definition  clidefs.Definition
 		output      string
 		err         error
 		wantErr     []string
@@ -60,7 +60,7 @@ func TestCheckAgentVersion(t *testing.T) {
 			wantWarning: []string{"could not read", "not found"}, wantAsked: true,
 		},
 		{
-			name: "no minimum declared", definition: agents.Definition{Name: "codex", Binary: "codex"}, output: "0.0.1",
+			name: "no minimum declared", definition: clidefs.Definition{Name: "codex", Binary: "codex"}, output: "0.0.1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,15 +94,15 @@ func TestCheckAgentVersion(t *testing.T) {
 // run reports the version rather than the CLI reporting an unrecognized
 // argument.
 func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
-	definition, record := fakeAgentRun{}.install(t, agents.Definition{
+	definition, record := fakeAgentRun{}.install(t, clidefs.Definition{
 		Name: "gemini", Binary: "gemini", MinVersion: "0.58.0",
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignEngine}, Output: agents.Output{Format: agents.FormatText},
+		Session: clidefs.Session{Assign: clidefs.AssignEngine}, Output: clidefs.Output{Format: clidefs.FormatText},
 	})
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register gemini: %v", err)
 	}
@@ -126,12 +126,12 @@ func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
 // never runs a job: the dispatch fails with the definition's reason instead
 // of producing a job with no structured transcript.
 func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
-	agy, ok := agents.MustBuiltin().Lookup("agy")
+	agy, ok := clidefs.MustBuiltin().Lookup("agy")
 	if !ok {
 		t.Fatal("builtin registry has no agy definition")
 	}
 	definition, record := fakeAgentRun{Stdout: "done"}.install(t, agy)
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register agy: %v", err)
 	}
@@ -153,15 +153,15 @@ func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
 // TestDispatchProceedsAtMinimumVersion is the same dispatch with an install the
 // definition accepts, which has to reach the agent unchanged.
 func TestDispatchProceedsAtMinimumVersion(t *testing.T) {
-	definition, record := fakeAgentRun{Stdout: "done"}.install(t, agents.Definition{
+	definition, record := fakeAgentRun{Stdout: "done"}.install(t, clidefs.Definition{
 		Name: "gemini", Binary: "gemini", MinVersion: "0.58.0",
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"--session-id", "{session}", "-p", "{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"--resume", "{session}", "-p", "{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignEngine}, Output: agents.Output{Format: agents.FormatText},
+		Session: clidefs.Session{Assign: clidefs.AssignEngine}, Output: clidefs.Output{Format: clidefs.FormatText},
 	})
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register gemini: %v", err)
 	}
@@ -178,15 +178,15 @@ func TestDispatchProceedsAtMinimumVersion(t *testing.T) {
 // TestDispatchWarnsOnUnreadableVersion proves an install whose version cannot
 // be read still runs, with the warning shown in the run's own output.
 func TestDispatchWarnsOnUnreadableVersion(t *testing.T) {
-	definition, record := fakeAgentRun{Stdout: "done"}.install(t, agents.Definition{
+	definition, record := fakeAgentRun{Stdout: "done"}.install(t, clidefs.Definition{
 		Name: "gemini", Binary: "gemini", MinVersion: "0.58.0",
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"-p", "{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"-p", "{prompt}"}}},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"-p", "{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"-p", "{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignNone}, Output: agents.Output{Format: agents.FormatText},
+		Session: clidefs.Session{Assign: clidefs.AssignNone}, Output: clidefs.Output{Format: clidefs.FormatText},
 	})
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register gemini: %v", err)
 	}

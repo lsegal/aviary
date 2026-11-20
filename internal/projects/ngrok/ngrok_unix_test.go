@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // waitFor polls until done reports true or the limit runs out.

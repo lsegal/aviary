@@ -14,14 +14,14 @@ import (
 
 	"github.com/lsegal/aviary/internal/transcript"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // claudeWakeupDetector reads a stream for the deferred-turn signal the
 // built-in claude definition declares.
 func claudeWakeupDetector(t *testing.T) *wakeupDetector {
 	t.Helper()
-	definition, ok := agents.MustBuiltin().Lookup("claude")
+	definition, ok := clidefs.MustBuiltin().Lookup("claude")
 	if !ok || definition.Wakeup == nil {
 		t.Fatal("the built-in claude definition declares no wakeup signal")
 	}
@@ -351,7 +351,7 @@ func TestEngineCapsConsecutiveWakeups(t *testing.T) {
 // signal in cli_definitions: a flat event rather than a tool call nested in a
 // message, decoded as plain text. The fake agent prints the resume output on
 // any invocation naming "resume", so both templates name it.
-func acmeWakeupDefinition(t *testing.T, binary string) *agents.Registry {
+func acmeWakeupDefinition(t *testing.T, binary string) *clidefs.Registry {
 	t.Helper()
 	return loadDefinitions(t, fmt.Sprintf(`{"agents":[{
 		"name": "acme",

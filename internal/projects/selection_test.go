@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 func TestRepositoryFilterAddsTheReadyLabel(t *testing.T) {
@@ -101,7 +101,7 @@ func TestConfiguredAgentsIncludeProjectAgents(t *testing.T) {
 }
 
 func TestAviaryAgentSpecRunsTheNamedAgent(t *testing.T) {
-	registry := agents.MustBuiltin()
+	registry := clidefs.MustBuiltin()
 	spec, err := parseAgentSpecIn(registry, "aviary/reviewer")
 	if err != nil {
 		t.Fatal(err)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -94,7 +94,7 @@ func awaitLog(t *testing.T, logs *syncBuffer, want string) {
 }
 
 func watchdogEngine(calls *unblockCalls, logs *syncBuffer) *Engine {
-	w := &Engine{Identity: "ABCD1234", SelfLogin: "octo", Out: logs, Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, unblockRun: calls.run}
+	w := &Engine{Identity: "ABCD1234", SelfLogin: "octo", Out: logs, Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, unblockRun: calls.run}
 	w.SetUnblockInterval(30 * time.Millisecond)
 	return w
 }
@@ -267,7 +267,7 @@ func TestWatchdogIntervalChangesTakeEffect(t *testing.T) {
 }
 
 func TestUnblockSpecDefaultsToTheCodingAgentAndTakesOverrides(t *testing.T) {
-	w := &Engine{Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}}
+	w := &Engine{Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}}
 	spec, err := w.unblockSpec()
 	if err != nil || spec.Name != "claude" || spec.Model != "opus" {
 		t.Fatalf("default unblock spec = %+v, %v; want claude/opus", spec, err)
@@ -304,7 +304,7 @@ func TestParseUnblockInterval(t *testing.T) {
 func TestEngineApplySettingsChangesTheWatchdog(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{{}}}
-	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Registry: agents.MustBuiltin(), Out: &syncBuffer{}}
+	w := &Engine{Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: filepath.Join(dir, "state"), Issues: src, Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Registry: clidefs.MustBuiltin(), Out: &syncBuffer{}}
 	w.SetUnblockInterval(defaultUnblockInterval)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

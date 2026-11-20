@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -161,7 +161,7 @@ func (w *Engine) publishSettings() SettingsSnapshot {
 // validateSettingsUpdate checks update in isolation, before it reaches the
 // Run loop, so malformed requests fail fast with a useful message instead of
 // silently corrupting state owned by that loop.
-func validateSettingsUpdate(registry *agents.Registry, update SettingsUpdate) error {
+func validateSettingsUpdate(registry *clidefs.Registry, update SettingsUpdate) error {
 	if update.Concurrency != nil && (*update.Concurrency < 1 || *update.Concurrency > maxConcurrencyPermits) {
 		return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrencyPermits)
 	}
@@ -265,7 +265,7 @@ func (w *Engine) applySettingsRequest(update SettingsUpdate, sem *concurrencySem
 // surface reads the agent list from here rather than from the two names aviary
 // used to ship, so a .aviary.config.json agent is selectable without a code
 // change.
-func (w *Engine) registry() *agents.Registry {
+func (w *Engine) registry() *clidefs.Registry {
 	if w.Registry != nil {
 		return w.Registry
 	}
@@ -360,7 +360,7 @@ func (w *Engine) runner() AgentRunner {
 }
 
 // configuredAgents returns the agent specs new dispatches may use: the live
-// override when one is set, otherwise the CommandRunner's configured agents.
+// override when one is set, otherwise the CommandRunner's configured clidefs.
 // It reports nothing for runners that carry no agent configuration at all.
 func (w *Engine) configuredAgents() []string {
 	if override := w.agentOverride.Load(); override != nil && len(*override) > 0 {

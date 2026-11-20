@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
-	"github.com/lsegal/aviary/internal/projects/process"
 )
 
 var errProjectWebhookUnavailable = errors.New("project push webhook unavailable")

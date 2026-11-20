@@ -22,7 +22,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -1645,7 +1645,7 @@ var (
 )
 
 func builtinDefaultModel(name string) string {
-	definition, ok := agents.MustBuiltin().Lookup(name)
+	definition, ok := clidefs.MustBuiltin().Lookup(name)
 	if !ok {
 		panic("no built-in agent " + name)
 	}

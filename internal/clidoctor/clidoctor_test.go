@@ -10,41 +10,41 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // testDoctorRegistry builds a registry of agents with the probe blocks the
 // report reads, without touching the built-in definitions: the report has to
 // work for an agent declared in a config file too.
-func testDoctorRegistry(t *testing.T) *agents.Registry {
+func testDoctorRegistry(t *testing.T) *clidefs.Registry {
 	t.Helper()
-	base := func(name string) agents.Definition {
-		return agents.Definition{
+	base := func(name string) clidefs.Definition {
+		return clidefs.Definition{
 			Name: name, Binary: name,
-			Session: agents.Session{Assign: agents.AssignNone},
-			Output:  agents.Output{Format: agents.FormatText},
-			Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}},
+			Session: clidefs.Session{Assign: clidefs.AssignNone},
+			Output:  clidefs.Output{Format: clidefs.FormatText},
+			Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
 		}
 	}
 	probed := base("probed")
-	probed.Doctor = agents.Doctor{
+	probed.Doctor = clidefs.Doctor{
 		Auth:   []string{"{binary}", "login", "status"},
 		Models: []string{"{binary}", "models"},
 	}
-	probed.Quota = agents.Quota{Reader: agents.QuotaClaude}
-	probed.Skills = agents.Skills{Target: "probed"}
+	probed.Quota = clidefs.Quota{Reader: clidefs.QuotaClaude}
+	probed.Skills = clidefs.Skills{Target: "probed"}
 	declared := base("declared")
-	declared.Models = agents.NewAllowList("opus", "sonnet")
+	declared.Models = clidefs.NewAllowList("opus", "sonnet")
 	silent := base("silent")
 	known := base("known")
-	known.Doctor = agents.Doctor{KnownModels: []string{"opus", "sonnet"}}
+	known.Doctor = clidefs.Doctor{KnownModels: []string{"opus", "sonnet"}}
 	noted := base("noted")
-	noted.Doctor = agents.Doctor{KnownModels: []string{"vendor/one"}, ModelsNote: "known for the default provider"}
+	noted.Doctor = clidefs.Doctor{KnownModels: []string{"vendor/one"}, ModelsNote: "known for the default provider"}
 	nomodel := base("nomodel")
-	nomodel.Models = agents.NewAllowList()
+	nomodel.Models = clidefs.NewAllowList()
 	old := base("old")
 	old.MinVersion = "2.0.0"
-	registry, err := agents.NewRegistry(probed, declared, silent, known, noted, nomodel, old)
+	registry, err := clidefs.NewRegistry(probed, declared, silent, known, noted, nomodel, old)
 	if err != nil {
 		t.Fatalf("NewRegistry() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func stubDoctor(t *testing.T, installed map[string]bool, version, auth, models f
 			}
 			return []byte(text), nil
 		},
-		Run: func(_ context.Context, argv []string, _ agents.Doctor, _ []string) ([]byte, bool) {
+		Run: func(_ context.Context, argv []string, _ clidefs.Doctor, _ []string) ([]byte, bool) {
 			probe := auth
 			if argv[len(argv)-1] == "models" {
 				probe = models
@@ -274,7 +274,7 @@ func TestDoctorPrefersTheDefinitionsOwnModelsNote(t *testing.T) {
 // waiting for a server that never exits, which is what every CLI answering
 // over a stdio protocol is.
 func TestRunProbeConversationAsksAndStopsAtTheAnswer(t *testing.T) {
-	spec := agents.Doctor{
+	spec := clidefs.Doctor{
 		Models:      []string{os.Args[0]},
 		ModelsStdin: []string{`{"id":0,"method":"initialize"}`, `{"id":1,"method":"model/list"}`},
 		ModelsJSON:  "result.models[].modelId",
@@ -298,7 +298,7 @@ func TestRunProbeConversationAsksAndStopsAtTheAnswer(t *testing.T) {
 // runProbeConversation is driven through the same entry point the report uses,
 // with the helper's environment carried over so it runs as the child half of
 // the test rather than as the whole suite.
-func runDoctorProbeAsHelper(t *testing.T, argv []string, spec agents.Doctor) ([]byte, bool) {
+func runDoctorProbeAsHelper(t *testing.T, argv []string, spec clidefs.Doctor) ([]byte, bool) {
 	t.Helper()
 	t.Setenv("AVIARY_DOCTOR_PROBE_HELPER", "1")
 	return RunProbe(context.Background(), argv, spec, spec.ModelsStdinLines(argv[0]))
@@ -394,11 +394,11 @@ func TestDoctorReadsCodexLoginStatus(t *testing.T) {
 func builtinDoctor(t *testing.T, name string, run func(argv []string) ([]byte, bool)) *Doctor {
 	t.Helper()
 	return &Doctor{
-		Registry: agents.MustBuiltin(),
+		Registry: clidefs.MustBuiltin(),
 		LookPath: func(binary string) (string, error) { return "/opt/" + binary, nil },
 		Version: func(context.Context, string) ([]byte, error) {
 			return []byte("2.1.312 (" + name + ")\n"), nil
 		},
-		Run: func(_ context.Context, argv []string, _ agents.Doctor, _ []string) ([]byte, bool) { return run(argv) },
+		Run: func(_ context.Context, argv []string, _ clidefs.Doctor, _ []string) ([]byte, bool) { return run(argv) },
 	}
 }

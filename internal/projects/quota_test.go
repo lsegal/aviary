@@ -10,23 +10,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // definitionWithQuota builds a minimal valid definition carrying quota.
-func definitionWithQuota(t *testing.T, name string, quota agents.Quota) agents.Definition {
+func definitionWithQuota(t *testing.T, name string, quota clidefs.Quota) clidefs.Definition {
 	t.Helper()
-	return agents.Definition{
+	return clidefs.Definition{
 		Name: name, Binary: name, Quota: quota,
-		Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
 	}
 }
 
-func registryWith(t *testing.T, definitions ...agents.Definition) *agents.Registry {
+func registryWith(t *testing.T, definitions ...clidefs.Definition) *clidefs.Registry {
 	t.Helper()
-	registry, err := agents.NewRegistry(definitions...)
+	registry, err := clidefs.NewRegistry(definitions...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,10 +53,10 @@ func fakeQuotaBinary(t *testing.T, body string) string {
 // config-defined agent report a quota at all.
 func TestNamedQuotaReadersComeFromTheDefinition(t *testing.T) {
 	registry := registryWith(t,
-		definitionWithQuota(t, "codex", agents.Quota{Reader: agents.QuotaCodex}),
-		definitionWithQuota(t, "claude", agents.Quota{Reader: agents.QuotaClaude}),
-		definitionWithQuota(t, "muse", agents.Quota{Reader: agents.QuotaCommand, Command: []string{"muse", "usage"}, PercentUsed: "used"}),
-		definitionWithQuota(t, "quiet", agents.Quota{}),
+		definitionWithQuota(t, "codex", clidefs.Quota{Reader: clidefs.QuotaCodex}),
+		definitionWithQuota(t, "claude", clidefs.Quota{Reader: clidefs.QuotaClaude}),
+		definitionWithQuota(t, "muse", clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{"muse", "usage"}, PercentUsed: "used"}),
+		definitionWithQuota(t, "quiet", clidefs.Quota{}),
 	)
 	readers := namedQuotaReaders(registry, []string{"codex", "claude", "muse", "quiet", "codex", "stranger"}, func(string) string { return "bin" })
 	var names []string
@@ -74,7 +74,7 @@ func TestNamedQuotaReadersComeFromTheDefinition(t *testing.T) {
 // that shelled out would be visible here as a non-empty reading, since the
 // executable named does not exist.
 func TestQuotaReadersWithoutASourceSpawnNothing(t *testing.T) {
-	registry := registryWith(t, definitionWithQuota(t, "quiet", agents.Quota{}))
+	registry := registryWith(t, definitionWithQuota(t, "quiet", clidefs.Quota{}))
 	binaryCalls := 0
 	readers := namedQuotaReaders(registry, []string{"quiet", "stranger"}, func(string) string {
 		binaryCalls++
@@ -98,8 +98,8 @@ func TestQuotaReadersWithoutASourceSpawnNothing(t *testing.T) {
 // against a fake binary and checks the configured fields reach the template.
 func TestCommandQuotaReaderFormatsConfiguredFields(t *testing.T) {
 	binary := fakeQuotaBinary(t, `printf '{"limits":{"used":37,"resets":"Fri 3pm"}}'`)
-	spec := agents.Quota{
-		Reader: agents.QuotaCommand, Command: []string{"{binary}", "usage", "--json"},
+	spec := clidefs.Quota{
+		Reader: clidefs.QuotaCommand, Command: []string{"{binary}", "usage", "--json"},
 		PercentUsed: "limits.used", ResetAt: "limits.resets",
 		Format: "{percentLeft}% left ({percentUsed}% used) until {resetAt}",
 	}
@@ -116,7 +116,7 @@ func TestCommandQuotaReaderFormatsConfiguredFields(t *testing.T) {
 // an agent only has to name the field its CLI reports.
 func TestCommandQuotaReaderDefaultsToPercentLeft(t *testing.T) {
 	binary := fakeQuotaBinary(t, `printf '{"used":"12.4%%"}'`)
-	spec := agents.Quota{Reader: agents.QuotaCommand, Command: []string{"{binary}"}, PercentUsed: "used"}
+	spec := clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{"{binary}"}, PercentUsed: "used"}
 	got, err := readCommandQuota(context.Background(), binary, spec)
 	if err != nil {
 		t.Fatal(err)
@@ -130,8 +130,8 @@ func TestCommandQuotaReaderDefaultsToPercentLeft(t *testing.T) {
 // broken agent CLI takes: output that is not JSON, output missing the field
 // the definition points at, and a command that fails outright.
 func TestCommandQuotaReaderRejectsMalformedOutput(t *testing.T) {
-	spec := func(binary string) agents.Quota {
-		return agents.Quota{Reader: agents.QuotaCommand, Command: []string{binary}, PercentUsed: "limits.used"}
+	spec := func(binary string) clidefs.Quota {
+		return clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{binary}, PercentUsed: "limits.used"}
 	}
 	cases := []struct {
 		name, body, want string
@@ -159,7 +159,7 @@ func TestCommandQuotaReaderRejectsMalformedOutput(t *testing.T) {
 // abandoned rather than allowed to hold up the poll that asked for it.
 func TestCommandQuotaReaderTimesOut(t *testing.T) {
 	binary := fakeQuotaBinary(t, "sleep 30")
-	spec := agents.Quota{Reader: agents.QuotaCommand, Command: []string{binary}, PercentUsed: "used", Timeout: "150ms"}
+	spec := clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{binary}, PercentUsed: "used", Timeout: "150ms"}
 	start := time.Now()
 	if got, err := readCommandQuota(context.Background(), binary, spec); err == nil {
 		t.Fatalf("quota = %q, want a timeout error", got)
@@ -176,8 +176,8 @@ func TestCommandQuotaReaderKeepsTheLastGoodReading(t *testing.T) {
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "runs")
 	binary := fakeQuotaBinary(t, fmt.Sprintf(`printf 'x' >> %q; printf '{"used":25}'`, counter))
-	reader := &commandQuotaReader{Binary: binary, Spec: agents.Quota{
-		Reader: agents.QuotaCommand, Command: []string{"{binary}"}, PercentUsed: "used",
+	reader := &commandQuotaReader{Binary: binary, Spec: clidefs.Quota{
+		Reader: clidefs.QuotaCommand, Command: []string{"{binary}"}, PercentUsed: "used",
 	}}
 	if got, err := reader.Read(context.Background()); got != "75% left" || err != nil {
 		t.Fatalf("first read = %q (err %v)", got, err)
@@ -301,9 +301,9 @@ func TestClaudeQuotaReaderReadsTheCLIReport(t *testing.T) {
 // and render exactly like an agent aviary has no reader for.
 func TestCombinedQuotaReaderSaysWhyATrackedReadFailed(t *testing.T) {
 	registry := registryWith(t,
-		definitionWithQuota(t, "claude", agents.Quota{Reader: agents.QuotaClaude}),
-		definitionWithQuota(t, "codex", agents.Quota{Reader: agents.QuotaCodex}),
-		definitionWithQuota(t, "quiet", agents.Quota{}),
+		definitionWithQuota(t, "claude", clidefs.Quota{Reader: clidefs.QuotaClaude}),
+		definitionWithQuota(t, "codex", clidefs.Quota{Reader: clidefs.QuotaCodex}),
+		definitionWithQuota(t, "quiet", clidefs.Quota{}),
 	)
 	missing := filepath.Join(t.TempDir(), "definitely-not-installed")
 	read := combinedQuotaReader(namedQuotaReaders(registry, []string{"claude", "codex", "quiet", "stranger"}, func(string) string { return missing }))

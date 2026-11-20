@@ -1,4 +1,4 @@
-package agents
+package clidefs
 
 import (
 	"encoding/json"

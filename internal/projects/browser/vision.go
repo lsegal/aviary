@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // The screenshot fallback exists for one situation only: GitHub changed its
@@ -182,7 +182,7 @@ type AgentSpec struct {
 	// template the invocation is rendered from. The root package supplies the
 	// one the run was configured with; a spec that names only an agent falls
 	// back to the built-in definition of that name.
-	Definition *agents.Definition
+	Definition *clidefs.Definition
 	// Binary is the executable that provider is invoked through.
 	Binary string
 	// Model and Level are the model and reasoning level to ask for. Both are
@@ -196,7 +196,7 @@ type AgentSpec struct {
 // AgentRunner supplies and runs that invocation. The root package implements
 // it over the same runner that dispatches issues, so a screenshot is read by
 // the agent the run is already configured for, and so the browser driver needs
-// to know nothing about how Aviary spawns agents.
+// to know nothing about how Aviary spawns clidefs.
 type AgentRunner interface {
 	// VisionAgent reports the agent to ask, read without advancing the
 	// round-robin cursor that load balances real issue dispatch.
@@ -272,7 +272,7 @@ func visionArgs(spec AgentSpec, imagePath, pageURL string, qualified bool) []str
 	if definition == nil {
 		return nil
 	}
-	return definition.Render(agents.ModeVision, agents.Values{
+	return definition.Render(clidefs.ModeVision, clidefs.Values{
 		Prompt: visionPrompt(imagePath, pageURL, qualified),
 		Image:  imagePath,
 		Model:  spec.Model,
@@ -283,10 +283,10 @@ func visionArgs(spec AgentSpec, imagePath, pageURL string, qualified bool) []str
 
 // builtinAgents is the fallback registry for a spec that names an agent
 // without carrying its definition, which is every spec built by a test.
-var builtinAgents = sync.OnceValue(agents.MustBuiltin)
+var builtinAgents = sync.OnceValue(clidefs.MustBuiltin)
 
 // definition resolves the definition the invocation is rendered from.
-func (s AgentSpec) definition() *agents.Definition {
+func (s AgentSpec) definition() *clidefs.Definition {
 	if s.Definition != nil {
 		return s.Definition
 	}

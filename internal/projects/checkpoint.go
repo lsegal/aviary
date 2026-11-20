@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/process"
 )
 
 // The shutdown checkpoint is bounded so a slow or unreachable

@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/codingskills"
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -31,7 +31,7 @@ const (
 // newAgentDoctor builds core's CLI doctor with the two answers only Projects
 // can give: the agent's quota, read through the same readers the watch status
 // bar uses, and which of aviary's skills installed for it are stale.
-func newAgentDoctor(registry *agents.Registry) *clidoctor.Doctor {
+func newAgentDoctor(registry *clidefs.Registry) *clidoctor.Doctor {
 	doctor := clidoctor.New(registry)
 	doctor.Quota = func(ctx context.Context, name, binary string) (string, error) {
 		return readAgentQuota(ctx, registry, name, binary)
@@ -61,7 +61,7 @@ func status(report clidoctor.Report) string {
 
 // readAgentQuota reads one agent's quota through the same readers the watch
 // status bar uses, so the report never grows a second opinion about quota.
-func readAgentQuota(ctx context.Context, registry *agents.Registry, name, binary string) (string, error) {
+func readAgentQuota(ctx context.Context, registry *clidefs.Registry, name, binary string) (string, error) {
 	readers := namedQuotaReaders(registry, []string{name}, func(string) string { return binary })
 	if len(readers) == 0 {
 		return "", nil
@@ -102,8 +102,8 @@ func agentStatus(report clidoctor.Report) core.AgentStatus {
 // here, so a binary override in a definition is the executable the doctor
 // probes and the one jobs run. The aviary definition points at the running
 // executable unless cli_definitions names another.
-func LoadCLIDefinitions(definitions map[string]any) (*agents.Registry, error) {
-	return agents.Load(withAviaryExecutable(definitions))
+func LoadCLIDefinitions(definitions map[string]any) (*clidefs.Registry, error) {
+	return clidefs.Load(withAviaryExecutable(definitions))
 }
 
 // withAviaryExecutable sets the aviary definition's binary to the running
@@ -145,7 +145,7 @@ func CLIStatuses(ctx context.Context, definitions map[string]any) ([]core.AgentS
 
 // agentStatuses probes every agent in registry and reports it in the shape
 // the settings dashboard's agents tab reads.
-func agentStatuses(ctx context.Context, registry *agents.Registry) ([]core.AgentStatus, error) {
+func agentStatuses(ctx context.Context, registry *clidefs.Registry) ([]core.AgentStatus, error) {
 	reports := newAgentDoctor(registry).Report(ctx)
 	statuses := make([]core.AgentStatus, len(reports))
 	for i, report := range reports {

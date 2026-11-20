@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // The delay an agent asks for is clamped to the range Claude Code's own
@@ -79,14 +79,14 @@ func (w *scheduledWakeup) Error() string {
 // turn, whichever format its output is decoded as.
 type wakeupDetector struct {
 	*lineWriter
-	config agents.Wakeup
+	config clidefs.Wakeup
 	// wakeup is the last wakeup the agent called, and id the id it was
 	// called with, so a call reported as failed is dropped again.
 	wakeup *scheduledWakeup
 	id     string
 }
 
-func newWakeupDetector(config agents.Wakeup) *wakeupDetector {
+func newWakeupDetector(config clidefs.Wakeup) *wakeupDetector {
 	d := &wakeupDetector{lineWriter: &lineWriter{}, config: config}
 	d.line = d.scan
 	return d
@@ -152,7 +152,7 @@ func (d *wakeupDetector) PendingWakeup() (scheduledWakeup, bool) {
 // parseScheduledWakeup reads a wakeup call's input through the paths its
 // definition names. A call that stops the loop, or whose input is not an
 // object, returns nil, which clears any wakeup scheduled before it.
-func parseScheduledWakeup(config agents.Wakeup, input any) *scheduledWakeup {
+func parseScheduledWakeup(config clidefs.Wakeup, input any) *scheduledWakeup {
 	if _, ok := input.(map[string]any); !ok {
 		return nil
 	}

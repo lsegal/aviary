@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 func TestWriteProjectsAgentGates_ListsAgy(t *testing.T) {
-	registry, err := agents.Load(nil)
+	registry, err := clidefs.Load(nil)
 	require.NoError(t, err)
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)
@@ -22,7 +22,7 @@ func TestWriteProjectsAgentGates_ListsAgy(t *testing.T) {
 }
 
 func TestWriteProjectsAgentGates_UngatedByConfig(t *testing.T) {
-	registry, err := agents.Load(map[string]any{"agy": map[string]any{"projectsUnavailable": nil}})
+	registry, err := clidefs.Load(map[string]any{"agy": map[string]any{"projectsUnavailable": nil}})
 	require.NoError(t, err)
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)

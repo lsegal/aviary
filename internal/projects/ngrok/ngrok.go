@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // Tunnel owns the ngrok process and the public URL it assigned.

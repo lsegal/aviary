@@ -1,7 +1,7 @@
 package projects
 
 import (
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
 
 	"context"
@@ -441,21 +441,21 @@ func TestEngineAgentStillConfigured(t *testing.T) {
 // registryForSettings builds a registry holding a built-in agent and one an
 // imaginary config file added, so the settings surfaces can be checked to
 // report both.
-func registryForSettings(t *testing.T) *agents.Registry {
+func registryForSettings(t *testing.T) *clidefs.Registry {
 	t.Helper()
-	definition := func(name string) agents.Definition {
-		return agents.Definition{
+	definition := func(name string) clidefs.Definition {
+		return clidefs.Definition{
 			Name: name, Binary: name,
-			Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-			Session: agents.Session{Assign: agents.AssignNone},
-			Output:  agents.Output{Format: agents.FormatText},
+			Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+			Session: clidefs.Session{Assign: clidefs.AssignNone},
+			Output:  clidefs.Output{Format: clidefs.FormatText},
 		}
 	}
 	codex := definition("codex")
-	codex.Levels = agents.NewAllowList("low", "medium", "high")
+	codex.Levels = clidefs.NewAllowList("low", "medium", "high")
 	muse := definition("muse")
-	muse.Models = agents.NewAllowList("muse-1", "muse-2")
-	registry, err := agents.NewRegistry(codex, muse)
+	muse.Models = clidefs.NewAllowList("muse-1", "muse-2")
+	registry, err := clidefs.NewRegistry(codex, muse)
 	if err != nil {
 		t.Fatal(err)
 	}

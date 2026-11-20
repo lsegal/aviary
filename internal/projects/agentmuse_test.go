@@ -3,7 +3,7 @@ package projects
 import (
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // museStream is a captured `muse exec --json` stream, the sample recorded on
@@ -109,14 +109,14 @@ func TestMuseAsksForItsJSONStreamOnlyWhereItIsDecoded(t *testing.T) {
 	definition := builtinDefinition(t, "muse")
 	// The vision call reads a board screenshot and its answer is parsed as
 	// prose, so that mode alone stays on Muse's plain output.
-	for _, arg := range definition.Render(agents.ModeVision, agents.Values{Prompt: "do it", Image: "/tmp/shot.png"}) {
+	for _, arg := range definition.Render(clidefs.ModeVision, clidefs.Values{Prompt: "do it", Image: "/tmp/shot.png"}) {
 		if arg == "--json" {
 			t.Fatal("the vision argv asks for --json, but its answer is read as prose")
 		}
 	}
-	for _, mode := range []agents.Mode{agents.ModeRun, agents.ModeResume} {
+	for _, mode := range []clidefs.Mode{clidefs.ModeRun, clidefs.ModeResume} {
 		asked := false
-		for _, arg := range definition.Render(mode, agents.Values{Prompt: "do it"}) {
+		for _, arg := range definition.Render(mode, clidefs.Values{Prompt: "do it"}) {
 			asked = asked || arg == "--json"
 		}
 		if !asked {

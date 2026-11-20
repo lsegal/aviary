@@ -17,10 +17,10 @@ import (
 
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
-	"github.com/lsegal/aviary/internal/projects/process"
 	"github.com/lsegal/aviary/internal/store"
 )
 

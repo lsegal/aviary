@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -27,15 +27,15 @@ type outputDecoder interface {
 // agent's output is shown exactly as it is written. The definition has already
 // been validated, so a format that selects the generic decoder carries its
 // configuration.
-func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
+func newOutputDecoder(output clidefs.Output, w io.Writer) outputDecoder {
 	switch output.Decoder() {
-	case agents.FormatStreamJSON:
+	case clidefs.FormatStreamJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatClaudeStreamJSON)
-	case agents.FormatJSONL:
+	case clidefs.FormatJSONL:
 		return newJSONLOutputWriter(w, *output.JSONL)
-	case agents.FormatCodexJSON:
+	case clidefs.FormatCodexJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatCodexJSON)
-	case agents.FormatGeminiJSON:
+	case clidefs.FormatGeminiJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatGeminiJSON)
 	}
 	return nil
@@ -84,7 +84,7 @@ func (w *lineWriter) Flush() error {
 // event, which is configuration rather than code.
 type jsonlOutputWriter struct {
 	*lineWriter
-	config  agents.JSONL
+	config  clidefs.JSONL
 	output  io.Writer
 	ignored map[string]bool
 	// pending holds the text fragments of a message still being streamed,
@@ -93,7 +93,7 @@ type jsonlOutputWriter struct {
 	pending []string
 }
 
-func newJSONLOutputWriter(output io.Writer, config agents.JSONL) *jsonlOutputWriter {
+func newJSONLOutputWriter(output io.Writer, config clidefs.JSONL) *jsonlOutputWriter {
 	w := &jsonlOutputWriter{lineWriter: &lineWriter{}, config: config, output: output}
 	if len(config.Ignore) > 0 {
 		w.ignored = make(map[string]bool, len(config.Ignore))
@@ -149,7 +149,7 @@ func (w *jsonlOutputWriter) writeLine(line []byte) error {
 // fragments. Buffering them and ending the line only when the text stops is
 // what turns "a.txt ", "contains ", "hi" into the sentence it spells, rather
 // than the three lines the event-per-line decoder would write.
-func (w *jsonlOutputWriter) writeDelta(event any, paths agents.JSONLEvent) error {
+func (w *jsonlOutputWriter) writeDelta(event any, paths clidefs.JSONLEvent) error {
 	fragments := jsonlFragments(event, paths.Text)
 	w.pending = append(w.pending, fragments...)
 	calls := w.toolCalls(event, paths)
@@ -207,7 +207,7 @@ func (w *jsonlOutputWriter) skips(event any) bool {
 
 // toolCalls renders the event's tool calls the way Claude's decoder renders
 // its own, so a progress line reads the same whichever agent produced it.
-func (w *jsonlOutputWriter) toolCalls(event any, paths agents.JSONLEvent) []string {
+func (w *jsonlOutputWriter) toolCalls(event any, paths clidefs.JSONLEvent) []string {
 	if paths.ToolName == "" {
 		return nil
 	}
@@ -245,8 +245,8 @@ func (w *jsonlOutputWriter) toolCalls(event any, paths agents.JSONLEvent) []stri
 // shared ones, with the override for the event's own type laid over them. It
 // is what lets a stream that spreads a logical event over several typed events
 // describe each of them, rather than pointing one path at all of them.
-func (w *jsonlOutputWriter) paths(event any) agents.JSONLEvent {
-	paths := agents.JSONLEvent{
+func (w *jsonlOutputWriter) paths(event any) clidefs.JSONLEvent {
+	paths := clidefs.JSONLEvent{
 		Text: w.config.Text, ToolName: w.config.ToolName,
 		ToolInput: w.config.ToolInput, ToolNamePrefix: w.config.ToolNamePrefix,
 	}

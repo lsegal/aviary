@@ -22,10 +22,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/domain"
-	agents "github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -385,7 +385,7 @@ func parseAgentSpec(value string) (agentSpec, error) {
 // name, and the models and levels it accepts, come from the registry rather
 // than from a hardcoded list, so an agent declared in .aviary.config.json is
 // accepted by --agent on the same terms as a built-in one.
-func parseAgentSpecIn(registry *agents.Registry, value string) (agentSpec, error) {
+func parseAgentSpecIn(registry *clidefs.Registry, value string) (agentSpec, error) {
 	name := strings.TrimSpace(value)
 	var spec agentSpec
 	level, hasLevel := "", false
@@ -1310,7 +1310,7 @@ type CommandRunner struct {
 	// Definitions is the agent registry this runner renders invocations from.
 	// A nil registry falls back to the run's own, which is the built-in
 	// definitions until a config file replaces them.
-	Definitions *agents.Registry
+	Definitions *clidefs.Registry
 	// TargetAgents is each target's own agent specs, in fallback order:
 	// a job on that target runs on the first agent whose quota is not used
 	// up. A target without an entry load balances across Agents.
@@ -1582,9 +1582,9 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	if !ok {
 		return nil
 	}
-	mode := agents.ModeRun
+	mode := clidefs.ModeRun
 	if session.Resume {
-		mode = agents.ModeResume
+		mode = clidefs.ModeResume
 	}
 	// Every argument the agent takes -- which flag carries the model, whether
 	// approvals are bypassed, how a session is named and resumed, whether the
@@ -1594,7 +1594,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	// outside any git repository, which Codex refuses without
 	// --skip-git-repo-check.
 	_, inCheckout := sessionRunDir(session)
-	return definition.Render(mode, agents.Values{
+	return definition.Render(mode, clidefs.Values{
 		Prompt:     prompt,
 		Session:    session.ID,
 		Model:      spec.Model,
@@ -1636,12 +1636,12 @@ func scheduledRunPrompt(r CommandRunner, issue Issue, session AgentSession) stri
 
 // definition resolves the agent a run is dispatching to. Runners built without
 // their own registry read the one the run was configured with.
-func (r CommandRunner) definition(name string) (agents.Definition, bool) {
+func (r CommandRunner) definition(name string) (clidefs.Definition, bool) {
 	return r.registry().Lookup(name)
 }
 
 // registry returns the agent definitions this runner dispatches from.
-func (r CommandRunner) registry() *agents.Registry {
+func (r CommandRunner) registry() *clidefs.Registry {
 	if r.Definitions != nil {
 		return r.Definitions
 	}
@@ -2067,7 +2067,7 @@ func (d *missingSessionDetector) Write(p []byte) (int, error) {
 
 func (d *missingSessionDetector) missingSessionPatterns() []string {
 	if len(d.patterns) == 0 {
-		return agents.DefaultMissingSessionPatterns
+		return clidefs.DefaultMissingSessionPatterns
 	}
 	return d.patterns
 }

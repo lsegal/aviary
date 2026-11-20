@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 // TestBuiltinAgentsAskTheirCLIForModels holds every shipped agent that exposes
@@ -17,7 +17,7 @@ import (
 // lists. Claude Code has no listing command, so its maintained aliases are the
 // exception and remain suggestions rather than an allow-list.
 func TestBuiltinAgentsAskTheirCLIForModels(t *testing.T) {
-	registry := agents.MustBuiltin()
+	registry := clidefs.MustBuiltin()
 	for _, name := range registry.Names() {
 		definition, ok := registry.Lookup(name)
 		if !ok {
@@ -46,7 +46,7 @@ func TestBuiltinAgentsAskTheirCLIForModels(t *testing.T) {
 // it is sent, and one that answers in JSON names where the ids are, because a
 // probe missing either half runs and extracts nothing.
 func TestBuiltinModelProbesReadTheirOwnAnswers(t *testing.T) {
-	registry := agents.MustBuiltin()
+	registry := clidefs.MustBuiltin()
 	for _, name := range registry.Names() {
 		definition, _ := registry.Lookup(name)
 		doctor := definition.Doctor
@@ -126,11 +126,11 @@ func TestAgentStatusReportsQuotaError(t *testing.T) {
 // uninstalled agent's CLI gets, which the dashboard uses to grey it out
 // rather than parsing the ASCII marker the terminal report uses.
 func TestAgentStatusesReportsMissingAgentAsSuch(t *testing.T) {
-	registry, err := agents.NewRegistry(agents.Definition{
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
 		Name: "missing", Binary: "aviary-test-missing-cli",
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
-		Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestAgentReportShowsWhyAQuotaIsUnavailable(t *testing.T) {
 // whose session answers with its available models -- rather than carrying a
 // provider-scoped list that goes stale, which is what issue #566 was.
 func TestClineAndGeminiAskOverTheAgentProtocol(t *testing.T) {
-	registry := agents.MustBuiltin()
+	registry := clidefs.MustBuiltin()
 	for _, name := range []string{"cline", "gemini"} {
 		definition, ok := registry.Lookup(name)
 		if !ok {
@@ -292,7 +292,7 @@ func TestNewAgentDoctorReportsStaleSkills(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("an old gh-fix\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	doctor := newAgentDoctor(agents.MustBuiltin())
+	doctor := newAgentDoctor(clidefs.MustBuiltin())
 	if note := doctor.SkillsNote("claude"); !strings.HasPrefix(note, "gh-fix stale for ") {
 		t.Fatalf("claude skillsNote = %q, want gh-fix reported stale", note)
 	}
@@ -304,7 +304,7 @@ func TestNewAgentDoctorReportsStaleSkills(t *testing.T) {
 // TestAgentReportCarriesProjectsGate checks the doctor reports why agy is
 // gated out of Projects dispatch, whether or not its CLI is installed.
 func TestAgentReportCarriesProjectsGate(t *testing.T) {
-	doctor := newAgentDoctor(agents.MustBuiltin())
+	doctor := newAgentDoctor(clidefs.MustBuiltin())
 	doctor.LookPath = func(string) (string, error) { return "", errors.New("not found") }
 	status := agentStatus(doctor.Probe(context.Background(), "agy"))
 	if !strings.Contains(status.ProjectsNote, "machine-readable output mode") {
@@ -332,7 +332,7 @@ func TestDoctorAndDispatchResolveTheSameOverride(t *testing.T) {
 		return binary, nil
 	}
 	doctor.Version = func(context.Context, string) ([]byte, error) { return nil, errors.New("no version") }
-	doctor.Run = func(context.Context, []string, agents.Doctor, []string) ([]byte, bool) { return nil, false }
+	doctor.Run = func(context.Context, []string, clidefs.Doctor, []string) ([]byte, bool) { return nil, false }
 	doctor.Quota = func(context.Context, string, string) (string, error) { return "", nil }
 	doctor.SkillsNote = nil
 	status := agentStatus(doctor.Probe(context.Background(), "codex"))

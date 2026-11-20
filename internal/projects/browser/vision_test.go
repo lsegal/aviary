@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // visionPage is a tab that always answers with the same extraction result and
@@ -505,15 +505,15 @@ func TestVisionCapHoldsAcrossConcurrentTargets(t *testing.T) {
 // agent through that agent's own definition, so browser mode gains nothing
 // hardcoded when a new CLI is declared in configuration.
 func TestVisionArgsComeFromTheAgentDefinition(t *testing.T) {
-	definition := agents.Definition{
+	definition := clidefs.Definition{
 		Name: "acme", Binary: "acme",
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"{prompt}"}}},
-			Vision: []agents.Fragment{{Args: []string{"look", "--picture", "{image}"}}, {When: "level", Args: []string{"--care", "{level}"}}, {Args: []string{"{prompt}"}}},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}},
+			Vision: []clidefs.Fragment{{Args: []string{"look", "--picture", "{image}"}}, {When: "level", Args: []string{"--care", "{level}"}}, {Args: []string{"{prompt}"}}},
 		},
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
 	}
 	args := visionArgs(AgentSpec{Name: "acme", Definition: &definition, Level: "thorough"}, "/tmp/shot.png", "https://github.com/o/r/issues", false)
 	if len(args) != 6 || args[0] != "look" || args[1] != "--picture" || args[2] != "/tmp/shot.png" || args[3] != "--care" || args[4] != "thorough" {
@@ -556,7 +556,7 @@ func (r *visionRunner) RunInProcess(_ context.Context, _ AgentSpec, _ string, me
 // #435: an in-process agent reads the screenshot as the turn's media rather
 // than through a spawned CLI.
 func TestVisionRunsInProcessAgentsWithTheScreenshotAsMedia(t *testing.T) {
-	inProcess := &agents.Definition{Name: "aviary", Binary: "aviary", InProcess: true}
+	inProcess := &clidefs.Definition{Name: "aviary", Binary: "aviary", InProcess: true}
 	runner := &visionRunner{spec: AgentSpec{Name: "aviary", Definition: inProcess, Binary: "aviary", Model: "reviewer"}}
 	refs, err := visionAgent{Runner: runner}.Ask(context.Background(), []byte{0x89, 'P'}, "https://github.com/o/r/issues", false)
 	if err != nil || len(refs) != 1 || refs[0].Number != 2 {

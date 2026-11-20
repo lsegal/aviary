@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // oneShotArgvPromptLimit is the largest prompt an out-of-band call still
@@ -29,7 +29,7 @@ const linuxArgumentLimit = 128 * 1024
 // oneShotPrompt is how an out-of-band call hands its prompt to the agent.
 type oneShotPrompt struct {
 	// Values are the render values, with Prompt or PromptStdin set.
-	Values agents.Values
+	Values clidefs.Values
 	// Stdin is the prompt itself when the agent reads it from stdin.
 	Stdin io.Reader
 	// cleanup removes the prompt file, when one was written.
@@ -41,7 +41,7 @@ type oneShotPrompt struct {
 // carry assembled instance context that grows with the number of jobs and
 // their scrollback, so it never travels in argv when the agent can read stdin,
 // and travels through a file in dir when it is too large for argv otherwise.
-func newOneShotPrompt(definition agents.Definition, values agents.Values, dir string) (oneShotPrompt, error) {
+func newOneShotPrompt(definition clidefs.Definition, values clidefs.Values, dir string) (oneShotPrompt, error) {
 	call := oneShotPrompt{Values: values, cleanup: func() {}}
 	call.Values.OneShot = true
 	call.Values.NoCheckout = true

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // Text a report carries where a probe could not answer. Unknown is a real
@@ -94,13 +94,13 @@ func (r Report) StatusKey() string {
 // a function field so tests can answer for a machine with no CLI installed at
 // all, which is every machine CI runs on.
 type Doctor struct {
-	Registry *agents.Registry
+	Registry *clidefs.Registry
 	// LookPath resolves an executable, Version reads its reported version,
 	// and Run executes one probe and returns its output and whether it
 	// succeeded.
 	LookPath func(string) (string, error)
 	Version  func(ctx context.Context, binary string) ([]byte, error)
-	Run      func(ctx context.Context, argv []string, spec agents.Doctor, stdin []string) ([]byte, bool)
+	Run      func(ctx context.Context, argv []string, spec clidefs.Doctor, stdin []string) ([]byte, bool)
 	// Quota reads one agent's quota text, and SkillsNote reports which of
 	// aviary's skills installed for the agent are stale. Either may be nil,
 	// and the report then leaves that field empty.
@@ -109,7 +109,7 @@ type Doctor struct {
 }
 
 // New builds the doctor that talks to the real machine.
-func New(registry *agents.Registry) *Doctor {
+func New(registry *clidefs.Registry) *Doctor {
 	return &Doctor{
 		Registry: registry,
 		LookPath: exec.LookPath,
@@ -161,7 +161,7 @@ func (d *Doctor) Probe(ctx context.Context, name string) Report {
 	}
 	report.Path = path
 	report.Version, report.VersionNote = d.probeVersion(ctx, definition, path)
-	report.TracksQuota = definition.Quota.ReaderName() != agents.QuotaNone
+	report.TracksQuota = definition.Quota.ReaderName() != clidefs.QuotaNone
 	if d.Quota != nil {
 		report.Quota, report.QuotaErr = d.Quota(ctx, name, path)
 	}
@@ -176,7 +176,7 @@ func (d *Doctor) Probe(ctx context.Context, name string) Report {
 // probeVersion reads the CLI's version and says whether it clears the
 // definition's declared minimum. An unreadable version is reported as unknown
 // rather than as too old, matching how a dispatch treats it.
-func (d *Doctor) probeVersion(ctx context.Context, definition agents.Definition, binary string) (version, note string) {
+func (d *Doctor) probeVersion(ctx context.Context, definition clidefs.Definition, binary string) (version, note string) {
 	out, err := d.Version(ctx, binary)
 	reported := FirstLine(string(out))
 	if err != nil || reported == "" {
@@ -199,7 +199,7 @@ func (d *Doctor) probeVersion(ctx context.Context, definition agents.Definition,
 // failing that, a quota reading is proof enough, because every quota reader
 // aviary has asks the CLI something only a signed-in account can answer. A
 // CLI with neither is reported as unknown rather than guessed at.
-func (d *Doctor) probeAuth(ctx context.Context, definition agents.Definition, binary, quota string) (state, detail string) {
+func (d *Doctor) probeAuth(ctx context.Context, definition clidefs.Definition, binary, quota string) (state, detail string) {
 	if argv := definition.Doctor.AuthArgv(binary); len(argv) > 0 {
 		out, ok := d.Run(ctx, argv, definition.Doctor, nil)
 		if ok && definition.Doctor.ReportsSignedIn(string(out)) {
@@ -217,7 +217,7 @@ func (d *Doctor) probeAuth(ctx context.Context, definition agents.Definition, bi
 // what the definition declares: a provider-agnostic CLI's model list is
 // whatever it is configured with today, which no static allow-list can keep
 // up with.
-func (d *Doctor) probeModels(ctx context.Context, definition agents.Definition, binary string) ([]string, string) {
+func (d *Doctor) probeModels(ctx context.Context, definition clidefs.Definition, binary string) ([]string, string) {
 	argv := definition.Doctor.ModelsArgv(binary)
 	if len(argv) == 0 {
 		return declaredModels(definition)
@@ -244,7 +244,7 @@ func (d *Doctor) probeModels(ctx context.Context, definition agents.Definition, 
 // The known list is qualified with a note rather than presented as the whole
 // truth: it is what aviary has been told, not what the CLI enforces, and a
 // model that shipped after this definition did still works.
-func declaredModels(definition agents.Definition) ([]string, string) {
+func declaredModels(definition clidefs.Definition) ([]string, string) {
 	switch {
 	case definition.Models.AcceptsNothing():
 		return nil, "not accepted by this agent"
@@ -267,7 +267,7 @@ const KnownModelsNote = "known to aviary; the CLI may accept others"
 // modelsNote is the label the report puts on that list: the definition's own
 // when it wrote one, because a CLI that routes to a provider needs to say
 // which provider the list belongs to, and the general caveat otherwise.
-func modelsNote(doctor agents.Doctor) string {
+func modelsNote(doctor clidefs.Doctor) string {
 	if note := strings.TrimSpace(doctor.ModelsNote); note != "" {
 		return note
 	}
@@ -299,7 +299,7 @@ const probeWaitDelay = time.Second
 // RunProbe runs one probe under the definition's timeout, reporting its
 // combined output and whether it exited zero. A probe that fails is not an
 // error the report stops for: it is the answer.
-func RunProbe(ctx context.Context, argv []string, spec agents.Doctor, stdin []string) ([]byte, bool) {
+func RunProbe(ctx context.Context, argv []string, spec clidefs.Doctor, stdin []string) ([]byte, bool) {
 	if len(argv) == 0 {
 		return nil, false
 	}
@@ -330,7 +330,7 @@ const probeLineLimit = 4 << 20
 // It stops at that first answer rather than waiting for the process to end,
 // because it never will: these commands are servers, and a report that waited
 // for one would wait for its whole timeout every time it succeeded.
-func runProbeConversation(cmd *exec.Cmd, spec agents.Doctor, lines []string) ([]byte, bool) {
+func runProbeConversation(cmd *exec.Cmd, spec clidefs.Doctor, lines []string) ([]byte, bool) {
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, false

@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 type codexPrimaryRateLimit struct {
@@ -68,7 +68,7 @@ func codexQuotaArgv(binary string) []string {
 // read on the poll loop, so a CLI stuck on a connection that went dead while
 // the machine slept would otherwise stop the watch for good. It
 // is a variable only so tests need not spend it.
-var builtinQuotaTimeout = agents.DefaultQuotaTimeout
+var builtinQuotaTimeout = clidefs.DefaultQuotaTimeout
 
 func readCodexQuota(ctx context.Context, binary string) (string, error) {
 	argv := codexQuotaArgv(binary)
@@ -271,7 +271,7 @@ const quotaCommandWaitDelay = time.Second
 // same one-minute terms as the built-in readers so a poll never re-runs it.
 type commandQuotaReader struct {
 	Binary string
-	Spec   agents.Quota
+	Spec   clidefs.Quota
 	mu     sync.Mutex
 	quota  string
 	err    error
@@ -296,7 +296,7 @@ func (r *commandQuotaReader) Read(ctx context.Context) (string, error) {
 // readCommandQuota runs one quota command under the definition's timeout. A
 // quota is a status-bar nicety, so a command that hangs is abandoned rather
 // than allowed to hold up the poll that asked for it.
-func readCommandQuota(ctx context.Context, binary string, spec agents.Quota) (string, error) {
+func readCommandQuota(ctx context.Context, binary string, spec clidefs.Quota) (string, error) {
 	argv := spec.Argv(binary)
 	if len(argv) == 0 {
 		return "", fmt.Errorf("quota command is empty")
@@ -323,7 +323,7 @@ func readCommandQuota(ctx context.Context, binary string, spec agents.Quota) (st
 // document. A field the template asks for and the document does not have is
 // an error rather than an empty substitution, so a changed output format
 // leaves the last good reading up instead of replacing it with nonsense.
-func formatCommandQuota(spec agents.Quota, document any) (string, error) {
+func formatCommandQuota(spec clidefs.Quota, document any) (string, error) {
 	text := spec.FormatTemplate()
 	if strings.Contains(text, "{percent") {
 		used, ok := quotaNumberAt(document, spec.PercentUsed)
@@ -421,7 +421,7 @@ type namedQuotaReader struct {
 // the default, and what an agent the registry does not know falls back to --
 // still gets an entry so the UI can show that its quota is not tracked, but
 // that entry never spawns a process.
-func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func(string) string) []namedQuotaReader {
+func namedQuotaReaders(registry *clidefs.Registry, names []string, binaryFor func(string) string) []namedQuotaReader {
 	seen := make(map[string]bool, len(names))
 	readers := make([]namedQuotaReader, 0, len(names))
 	untracked := func(context.Context) (string, error) { return "", nil }
@@ -438,11 +438,11 @@ func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func
 		var read func(context.Context) (string, error)
 		tracked := true
 		switch definition.Quota.ReaderName() {
-		case agents.QuotaCodex:
+		case clidefs.QuotaCodex:
 			read = (&codexQuotaReader{Binary: binaryFor(name)}).Read
-		case agents.QuotaClaude:
+		case clidefs.QuotaClaude:
 			read = (&claudeQuotaReader{Binary: binaryFor(name)}).Read
-		case agents.QuotaCommand:
+		case clidefs.QuotaCommand:
 			read = (&commandQuotaReader{Binary: binaryFor(name), Spec: definition.Quota}).Read
 		default:
 			read, tracked = untracked, false

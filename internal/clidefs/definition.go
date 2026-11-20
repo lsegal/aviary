@@ -5,7 +5,7 @@
 // how its output is decoded -- reads a Definition instead of branching on the
 // agent's name, so supporting another CLI is a JSON document rather than a set
 // of new `if name == ...` arms.
-package agents
+package clidefs
 
 import (
 	"encoding/json"

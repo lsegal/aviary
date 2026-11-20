@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/transcript"
@@ -281,7 +281,7 @@ type Engine struct {
 	// settings API reports the agents it holds, so the dashboard's agent
 	// selector offers a config-defined agent without a code change. A nil
 	// registry falls back to the run's own.
-	Registry *agents.Registry
+	Registry *clidefs.Registry
 	Quota    func(context.Context) map[string]string
 	// Identity names this instance in cooperative handoff comments. It is
 	// generated once at startup and never persisted.
@@ -2667,7 +2667,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 				// Some agents accept a caller-provided session ID; the rest
 				// assign their own and report it after launch, and their
-				// definition says which (agents.Definition.Session).
+				// definition says which (clidefs.Definition.Session).
 				if agentAssignsSessionID(session.Agent) {
 					session.ID, err = newSessionID()
 					if err != nil {
