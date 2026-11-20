@@ -1106,13 +1106,14 @@ test("a task can target a watched project and keeps it when saved", async ({
 		agents: [
 			{
 				...CONFIG.agents[0],
+				fallbacks: ["cli/claude/opus"],
 				tasks: [
 					...CONFIG.agents[0].tasks,
 					{
 						name: "nightly-triage",
 						type: "project",
 						project: "o/gone",
-						run_agent: "codex",
+						model: "cli/codex",
 						schedule: "0 3 * * *",
 						prompt: "Triage new issues",
 					},
@@ -1153,11 +1154,15 @@ test("a task can target a watched project and keeps it when saved", async ({
 		"o/other",
 		"o/gone",
 	]);
-	await expect(page.getByLabel("Agent override")).toHaveValue("codex");
+	const model = page.getByTestId("task-model");
+	await expect(model).toContainText("cli/codex");
 	await expect(page.getByPlaceholder("./docs/**/*.md")).toHaveCount(0);
 
 	await project.selectOption("o/r");
-	await page.getByLabel("Agent override").fill(" claude:opus ");
+	await model.getByRole("button").click();
+	await model.getByRole("textbox").fill("cli/claude/opus");
+	await model.getByRole("textbox").press("Enter");
+	await expect(model).toContainText("cli/claude/opus");
 
 	// Turning the first task into a project task offers the watched projects.
 	await page.getByRole("button", { name: "daily-briefing" }).click();
@@ -1182,7 +1187,7 @@ test("a task can target a watched project and keeps it when saved", async ({
 						name: "nightly-triage",
 						type: "project",
 						project: "o/r",
-						run_agent: "claude:opus",
+						model: "cli/claude/opus",
 					},
 				],
 			},

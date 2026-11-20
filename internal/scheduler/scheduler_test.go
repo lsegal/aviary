@@ -883,7 +883,7 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	setupSchedulerDataDir(t)
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m", Tasks: []config.TaskConfig{{
-		Name: "triage", Type: "project", Every: "1h", Project: "o/r", RunAgent: "claude:opus", Prompt: "Triage new issues",
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", Model: "cli/claude/opus", Prompt: "Triage new issues",
 	}}}}})
 	q := NewJobQueue()
 	p := NewWorkerPool(q, mgr, 1)
@@ -901,7 +901,7 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	assert.Equal(t, "alpha/triage", got.TaskID)
 	assert.Equal(t, "triage", got.Name)
 	assert.Equal(t, "o/r", got.Project)
-	assert.Equal(t, "claude:opus", got.RunAgent)
+	assert.Equal(t, "cli/claude/opus", got.Model)
 	assert.Equal(t, "Triage new issues", got.Prompt)
 	persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
 	require.NoError(t, err)

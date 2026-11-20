@@ -158,7 +158,7 @@ func TestTaskSchedule_ProjectTask(t *testing.T) {
 	d, s := setupDispatcherWithScheduler(t)
 
 	_, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent": "bot", "name": "triage", "type": "project", "project": "o/r", "run_agent": "claude:opus",
+		"agent": "bot", "name": "triage", "type": "project", "project": "o/r", "model": "cli/claude/opus",
 		"content": "Triage new issues", "trigger": "daily", "at": "09:00",
 	})
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestTaskSchedule_ProjectTask(t *testing.T) {
 	task := cfg.Agents[0].Tasks[0]
 	assert.Equal(t, "project", task.Type)
 	assert.Equal(t, "o/r", task.Project)
-	assert.Equal(t, "claude:opus", task.RunAgent)
+	assert.Equal(t, "cli/claude/opus", task.Model)
 	assert.Equal(t, "Triage new issues", task.Prompt)
 	tasks := s.ListTasks()
 	require.Len(t, tasks, 1)

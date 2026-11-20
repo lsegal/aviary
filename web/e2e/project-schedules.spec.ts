@@ -55,7 +55,7 @@ const TASKS = [
 		id: "assistant/nightly-triage",
 		name: "nightly-triage",
 		prompt: "Triage issues opened since the last run and label them.",
-		run_agent: "claude:opus",
+		model: "cli/claude/opus",
 		enabled: true,
 		trigger_type: "daily",
 		at: "02:00",
@@ -135,6 +135,8 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 	};
 	await mockMCP(page, {
 		agent_list: [{ name: "assistant" }, { name: "reviewer" }],
+		auth_list: [],
+		config_get: { agents: [{ name: "assistant", model: "cli/codex/gpt-5.5" }] },
 		project_status: STATUS,
 		project_job_list: { jobs: [SCHEDULED_JOB], total: 1 },
 		project_job_get: {
@@ -270,7 +272,13 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 			timezone: "America/Toronto",
 		});
 
-	await editor.getByLabel("Agent override").fill("codex");
+	// The model override is the shared model picker, holding the task's model.
+	const model = editor.getByTestId("schedule-model");
+	await expect(model).toContainText("cli/claude/opus");
+	await model.getByRole("button").click();
+	await model.getByRole("textbox").fill("cli/codex/gpt-5.5");
+	await model.getByRole("textbox").press("Enter");
+	await expect(model).toContainText("cli/codex/gpt-5.5");
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -286,7 +294,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 			overlap: "skip",
 			missed: "run_once",
 			content: "Triage issues opened since the last run and label them.",
-			run_agent: "codex",
+			model: "cli/codex/gpt-5.5",
 			project: "lsegal/aviary",
 			enabled: true,
 		});
@@ -328,7 +336,7 @@ test("new schedule creates a project task", async ({ page }) => {
 			overlap: "skip",
 			missed: "skip",
 			content: "Rerun flaky CI jobs on open PRs.",
-			run_agent: "",
+			model: "",
 			agent: "reviewer",
 			name: "hourly-ci-watch",
 			type: "project",

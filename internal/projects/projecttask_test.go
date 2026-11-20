@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -69,7 +70,7 @@ func TestEngineRunsProjectTaskAsBoardJob(t *testing.T) {
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)
 
-	summary, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", Name: "triage", Project: "o/r", Prompt: "Triage new issues", Fire: fire}, "o/r")
+	summary, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", Name: "triage", Project: "o/r", Prompt: "Triage new issues", Fire: fire}, "o/r", AgentSession{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestEngineProjectTasksGetDistinctJobs(t *testing.T) {
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Now()
 	for _, id := range []string{"bot/a", "bot/b"} {
-		if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: id, Project: "o/r", Prompt: id, Fire: fire}, "o/r"); err != nil {
+		if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: id, Project: "o/r", Prompt: id, Fire: fire}, "o/r", AgentSession{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -114,7 +115,7 @@ func TestEngineStopsProjectTaskAndRefusesPauseAndRetry(t *testing.T) {
 	fire := time.Now()
 	errs := make(chan error, 1)
 	go func() {
-		_, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/watch", Project: "o/r", Prompt: "watch", Fire: fire}, "o/r")
+		_, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/watch", Project: "o/r", Prompt: "watch", Fire: fire}, "o/r", AgentSession{})
 		errs <- err
 	}()
 	select {
@@ -146,7 +147,7 @@ func TestEngineProjectTaskStopsWithItsCaller(t *testing.T) {
 	callerCtx, cancel := context.WithCancel(ctx)
 	errs := make(chan error, 1)
 	go func() {
-		_, err := w.runProjectTask(callerCtx, scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x"}, "o/r")
+		_, err := w.runProjectTask(callerCtx, scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x"}, "o/r", AgentSession{})
 		errs <- err
 	}()
 	<-runner.started
@@ -180,6 +181,44 @@ func TestManagerRunProjectTaskNeedsAWatchedProject(t *testing.T) {
 	m := newTestManager(t)
 	if _, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/unwatched", Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "not watched") {
 		t.Fatalf("err = %v, want the unwatched project refused", err)
+	}
+}
+
+// #507: a project task's model override runs on the project's agent with that
+// model: a cli/ model as its spec, any other as the agent's in-process turn.
+func TestEngineRunsProjectTaskWithModelOverride(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1)}
+	w, ctx := startScheduledEngine(t, runner)
+	fire := time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)
+	if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", Name: "triage", Project: "o/r", Prompt: "Triage", Fire: fire}, "o/r", AgentSession{Agent: "claude/opus"}); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+	job, ok := scheduledJob(w, int(fire.Unix()))
+	if !ok || job.Agent != "claude" || job.Model != "opus" {
+		t.Fatalf("job = %+v, want it run on claude/opus rather than the runner's codex", job)
+	}
+}
+
+func TestManagerProjectAgentResolvesTheAttachedAgent(t *testing.T) {
+	m := newTestManager(t)
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a", Agent: "opus"}, {Target: "o/b"}}, Agent: "shared"})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if got := m.projectAgentLocked("o/a"); got != "opus" {
+		t.Fatalf("o/a agent = %q, want its own", got)
+	}
+	if got := m.projectAgentLocked("o/b"); got != "shared" {
+		t.Fatalf("o/b agent = %q, want the projects default", got)
+	}
+}
+
+func TestManagerRunProjectTaskRefusesAProviderModelWithoutAnAgent(t *testing.T) {
+	m := newTestManager(t)
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}})
+	_, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x", Model: "anthropic/claude-opus-4-5"})
+	if err == nil || !strings.Contains(err.Error(), "attached to no agent") {
+		t.Fatalf("err = %v, want the unattached project refused", err)
 	}
 }
 

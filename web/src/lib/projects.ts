@@ -630,8 +630,8 @@ export interface ProjectSchedule {
 	agent: string;
 	name: string;
 	project: string;
-	/** The agent, optionally with a model, that runs the task; empty uses the project's agent. */
-	runAgent: string;
+	/** Overrides the project agent's model for the task's runs; empty uses the agent's own. */
+	model: string;
 	prompt: string;
 	enabled: boolean;
 	trigger: ScheduleTrigger;
@@ -674,7 +674,7 @@ export function normalizeSchedule(v: unknown): ProjectSchedule {
 		agent: str(raw.agent_name) || str(raw.agent_id),
 		name: str(raw.name),
 		project: str(raw.project),
-		runAgent: str(raw.run_agent),
+		model: str(raw.model),
 		prompt: str(raw.prompt),
 		enabled: raw.enabled !== false,
 		trigger: normalizeTrigger(raw),
@@ -781,7 +781,7 @@ export function emptySchedule(project: string): ProjectSchedule {
 		agent: "",
 		name: "",
 		project,
-		runAgent: "",
+		model: "",
 		prompt: "",
 		enabled: true,
 		trigger: "daily",
