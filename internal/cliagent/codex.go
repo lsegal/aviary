@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -17,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -89,23 +87,6 @@ func codexArgs(opts Options, threadID string, images []string) []string {
 	return append(args, "-")
 }
 
-// codexLaunchEnv is the environment the codex CLI definition gives every
-// launch. Codex records each workspace it runs with write access in as a
-// trusted project in config.toml, and the definition's settings overlay keeps
-// that write out of the user's own file. When the overlay cannot be built,
-// codex runs against the user's directory and the reason is logged.
-func codexLaunchEnv() ([]string, func()) {
-	definition, ok := clidefs.MustBuiltin().Lookup(string(Codex))
-	if !ok {
-		return nil, func() {}
-	}
-	env, cleanup, err := definition.LaunchEnv()
-	if err != nil {
-		slog.Warn("cliagent: running codex against its own settings directory", "err", err)
-	}
-	return env, cleanup
-}
-
 // tomlString quotes s as a TOML basic string. JSON string escapes are a
 // subset of TOML's.
 func tomlString(s string) string {
@@ -129,9 +110,7 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 
 	cmd := exec.CommandContext(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, images)...) //nolint:gosec // binary is a fixed backend name
 	cmd.Dir = s.opts.WorkDir
-	env, cleanupEnv := codexLaunchEnv()
-	defer cleanupEnv()
-	cmd.Env = append(cliEnv(s.opts), env...)
+	cmd.Env = cliEnv(s.opts)
 	text := turn.Text
 	if strings.TrimSpace(text) == "" {
 		text = "(see attached image)"

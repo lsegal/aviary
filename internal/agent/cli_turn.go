@@ -100,6 +100,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		BuiltinTools: r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions),
 		Approval:     cliApprovalArgs(backend, r.approvalMode()),
 		Ephemeral:    !in.useHistory,
+		Env:          cliLaunchEnv(backend),
 	}
 	key := r.agent.ID + "\x00" + in.sessionID
 	if opts.Ephemeral {
@@ -371,6 +372,23 @@ func cliApprovalArgs(backend cliagent.Backend, mode clidefs.ApprovalMode) []stri
 		return nil
 	}
 	return definition.ApprovalArgs(mode)
+}
+
+// cliLaunchEnv points the backend's CLI at the settings overlay its provider
+// definition declares, as every Projects launch does. For codex that is
+// CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
+// trusted-project bookkeeping out of the user's config.toml (#528). When the
+// overlay cannot be prepared, the CLI runs against the user's directory.
+func cliLaunchEnv(backend cliagent.Backend) []string {
+	definition, ok := llm.CLIProvider(string(backend))
+	if !ok {
+		return nil
+	}
+	env, err := definition.HomeEnv(store.CLIHomesDir())
+	if err != nil {
+		slog.Warn("agent: running CLI against its own settings directory", "backend", backend, "err", err)
+	}
+	return env
 }
 
 // cliFingerprint identifies the options a CLI process was started with.

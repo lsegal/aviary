@@ -28,6 +28,7 @@ import (
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -1767,12 +1768,12 @@ const agentCommandWaitDelay = 5 * time.Second
 // launchEnv is the environment an agent launch adds to aviary's own. When the
 // definition's settings overlay cannot be built, the agent still runs, against
 // the user's own settings directory, and the reason is logged.
-func launchEnv(definition clidefs.Definition) ([]string, func()) {
-	env, cleanup, err := definition.LaunchEnv()
+func launchEnv(definition clidefs.Definition) []string {
+	env, err := definition.LaunchEnv(store.CLIHomesDir())
 	if err != nil {
 		slog.Warn("projects: running agent against its own settings directory", "agent", definition.Name, "err", err)
 	}
-	return env, cleanup
+	return env
 }
 
 func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.Cmd {
@@ -2160,9 +2161,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// The launch env also points a CLI that writes bookkeeping into its own
 	// settings file, as codex records trusted workspaces, at a private
 	// overlay of its settings directory, so the user's file is left alone.
-	env, cleanupEnv := launchEnv(definition)
-	defer cleanupEnv()
-	if len(env) > 0 {
+	if env := launchEnv(definition); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.Dir, _ = sessionRunDir(session)

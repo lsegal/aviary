@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -342,4 +344,24 @@ func TestCLITurn_ChatApprovalModeReachesTheCLI(t *testing.T) {
 
 	assert.Equal(t, []string{"-c", "sandbox_mode=read-only"}, cliApprovalArgs(cliagent.Codex, clidefs.ApprovalReadOnly))
 	assert.Equal(t, []string{"--permission-mode", "auto"}, cliApprovalArgs(cliagent.Claude, ""), "no setting means auto")
+}
+
+// TestCLILaunchEnvOverlaysCodexHome shows chat turns launch codex with
+// CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
+// trusted-project writes out of the user's config.toml (#528).
+func TestCLILaunchEnvOverlaysCodexHome(t *testing.T) {
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte("model = \"gpt-5\"\n"), 0o600))
+	t.Setenv("CODEX_HOME", home)
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	env := cliLaunchEnv(cliagent.Codex)
+	require.Len(t, env, 1)
+	overlay, ok := strings.CutPrefix(env[0], "CODEX_HOME=")
+	require.True(t, ok, env[0])
+	assert.Equal(t, store.CLIHomesDir(), filepath.Dir(overlay))
+	assert.FileExists(t, filepath.Join(overlay, "config.toml"))
+
+	assert.Empty(t, cliLaunchEnv(cliagent.Claude), "claude declares no settings overlay")
 }

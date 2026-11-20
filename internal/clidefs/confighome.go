@@ -1,6 +1,8 @@
 package clidefs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,10 +16,11 @@ import (
 // Codex, for one, records every workspace it runs with write access in as a
 // trusted project in config.toml, and offers no way to turn that off.
 //
-// aviary launches such a CLI with Env pointing at a fresh overlay of the
-// user's directory: each Private file is a copy, so the CLI reads the user's
-// settings but its writes stay in the overlay, and every other entry links
-// back to the user's, so sign-in, token refreshes and sessions are shared.
+// aviary launches such a CLI with Env pointing at an overlay of the user's
+// directory that aviary keeps in its own data directory: each Private file is
+// a copy, so the CLI reads the user's settings but its writes stay in the
+// overlay, and every other entry links back to the user's, so sign-in, token
+// refreshes and sessions are shared.
 type ConfigHome struct {
 	// Env is the variable the CLI reads its directory from, such as
 	// CODEX_HOME.
@@ -52,21 +55,25 @@ func (c *ConfigHome) validate() error {
 }
 
 // LaunchEnv is the environment a launch of the CLI adds to aviary's own: the
-// definition's Env, plus the overlay directory when it declares a
-// ConfigHome. cleanup removes the overlay once the process has exited and
-// is never nil. When the overlay cannot be built, the error says why and env
-// still carries the definition's Env, so the caller can launch against the
-// user's directory instead.
-func (d Definition) LaunchEnv() (env []string, cleanup func(), err error) {
-	env = d.EnvList()
+// definition's Env plus HomeEnv. When the overlay cannot be prepared, the
+// error says why and the definition's Env is still returned, so the caller
+// can launch against the user's directory instead.
+func (d Definition) LaunchEnv(base string) ([]string, error) {
+	home, err := d.HomeEnv(base)
+	return append(d.EnvList(), home...), err
+}
+
+// HomeEnv points the CLI at its overlay under base when the definition
+// declares a ConfigHome, and is empty otherwise.
+func (d Definition) HomeEnv(base string) ([]string, error) {
 	if d.ConfigHome == nil {
-		return env, func() {}, nil
+		return nil, nil
 	}
-	dir, cleanup, err := d.ConfigHome.Overlay()
+	dir, err := d.ConfigHome.Overlay(base)
 	if err != nil {
-		return env, cleanup, err
+		return nil, err
 	}
-	return append(env, d.ConfigHome.Env+"="+dir), cleanup, nil
+	return []string{d.ConfigHome.Env + "=" + dir}, nil
 }
 
 // Home is the user's directory: Env when set, otherwise Default.
@@ -84,63 +91,102 @@ func (c ConfigHome) Home() (string, error) {
 	return filepath.Abs(c.Default)
 }
 
-// Overlay builds a fresh overlay of the user's directory and returns its
-// path. cleanup is never nil; it moves anything the CLI created at the top of
-// the overlay, other than the Private files, into the user's directory when
-// that has no entry of the same name, so a first run's sessions are kept,
-// and then removes the overlay.
-func (c ConfigHome) Overlay() (dir string, cleanup func(), err error) {
-	cleanup = func() {}
+// Overlay prepares the overlay of the user's directory under base and returns
+// its path. The overlay is kept between launches rather than made fresh for
+// each: a CLI can record absolute paths through it, as codex does for every
+// session's rollout file, and those have to keep resolving for the session
+// to be resumed. Each call refreshes it: the Private files are copied again,
+// so edits the user made since are seen and the CLI's own writes from earlier
+// launches are dropped; an entry the CLI created in the overlay itself is
+// moved into the user's directory when that has none of the same name; and
+// every other entry of the user's directory is linked.
+func (c ConfigHome) Overlay(base string) (string, error) {
 	home, err := c.Home()
 	if err != nil {
-		return "", cleanup, fmt.Errorf("locating the %s directory: %w", c.Env, err)
+		return "", fmt.Errorf("locating the %s directory: %w", c.Env, err)
 	}
+	sum := sha256.Sum256([]byte(home))
+	dir := filepath.Join(base, strings.ToLower(c.Env)+"-"+hex.EncodeToString(sum[:6]))
 	if err := os.MkdirAll(home, 0o700); err != nil {
-		return "", cleanup, err
+		return "", err
 	}
-	entries, err := os.ReadDir(home)
-	if err != nil {
-		return "", cleanup, err
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
 	}
-	dir, err = os.MkdirTemp("", "aviary-"+strings.ToLower(c.Env)+"-*")
-	if err != nil {
-		return "", cleanup, err
-	}
-	remove := func() { _ = os.RemoveAll(dir) }
 	private := make(map[string]bool, len(c.Private))
 	for _, name := range c.Private {
 		private[name] = true
 	}
-	linked := make(map[string]bool, len(entries))
+	existing, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range existing {
+		name := entry.Name()
+		path, target := filepath.Join(dir, name), filepath.Join(home, name)
+		if private[name] || strings.HasPrefix(name, ".aviary-") {
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+				_ = os.Remove(path) // the user removed it
+			}
+			continue
+		}
+		if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+			_ = os.Rename(path, target)
+		}
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		return "", err
+	}
+	for _, name := range c.Private {
+		if err := refreshCopy(filepath.Join(home, name), filepath.Join(dir, name)); err != nil {
+			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
+		}
+	}
 	for _, entry := range entries {
 		name := entry.Name()
-		src, dst := filepath.Join(home, name), filepath.Join(dir, name)
 		if private[name] {
-			err = copyFile(src, dst)
-		} else {
-			err = os.Symlink(src, dst)
-			linked[name] = true
+			continue
 		}
-		if err != nil {
-			remove()
-			return "", cleanup, fmt.Errorf("building the %s overlay: %w", c.Env, err)
+		path := filepath.Join(dir, name)
+		if _, err := os.Lstat(path); err == nil {
+			continue // linked already, or the CLI's own when both have one
+		}
+		if err := os.Symlink(filepath.Join(home, name), path); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
 		}
 	}
-	cleanup = func() {
-		adopted, _ := os.ReadDir(dir)
-		for _, entry := range adopted {
-			name := entry.Name()
-			if private[name] || linked[name] {
-				continue
-			}
-			target := filepath.Join(home, name)
-			if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
-				_ = os.Rename(filepath.Join(dir, name), target)
-			}
+	return dir, nil
+}
+
+// refreshCopy replaces dst with a copy of src, or removes it when src does not
+// exist. The copy is renamed into place, so a CLI already running against the
+// overlay reads either the old copy or the new one.
+func refreshCopy(src, dst string) error {
+	if _, err := os.Stat(src); errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
-		remove()
+		return nil
 	}
-	return dir, cleanup, nil
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".aviary-"+filepath.Base(dst)+"-*")
+	if err != nil {
+		return err
+	}
+	_ = tmp.Close()
+	_ = os.Remove(tmp.Name())
+	if err := copyFile(src, tmp.Name()); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), dst); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
 
 // copyFile copies a regular file, keeping its permission bits. Anything else
