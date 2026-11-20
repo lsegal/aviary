@@ -17,12 +17,14 @@ import (
 )
 
 var testBundle = fstest.MapFS{
-	".agents/skills/gh-fix/SKILL.md":               {Data: []byte("fix v2\n")},
-	".agents/skills/gh-fix/agents/openai.yaml":     {Data: []byte("fix agent\n")},
-	".agents/skills/gh-discuss/SKILL.md":           {Data: []byte("discuss v2\n")},
-	".agents/skills/gh-discuss/agents/openai.yaml": {Data: []byte("discuss agent\n")},
-	".agents/skills/gh-create/SKILL.md":            {Data: []byte("create v2\n")},
-	".agents/skills/gh-create/agents/openai.yaml":  {Data: []byte("create agent\n")},
+	".agents/skills/gh-fix/SKILL.md":                  {Data: []byte("fix v2\n")},
+	".agents/skills/gh-fix/agents/openai.yaml":        {Data: []byte("fix agent\n")},
+	".agents/skills/gh-discuss/SKILL.md":              {Data: []byte("discuss v2\n")},
+	".agents/skills/gh-discuss/agents/openai.yaml":    {Data: []byte("discuss agent\n")},
+	".agents/skills/gh-create/SKILL.md":               {Data: []byte("create v2\n")},
+	".agents/skills/gh-create/agents/openai.yaml":     {Data: []byte("create agent\n")},
+	".agents/skills/gh-safe-merge/SKILL.md":           {Data: []byte("safe-merge v2\n")},
+	".agents/skills/gh-safe-merge/agents/openai.yaml": {Data: []byte("safe-merge agent\n")},
 }
 
 var testCLIs = []CLI{
@@ -141,7 +143,7 @@ func TestStatusReportsVersionPerSkillPerCLI(t *testing.T) {
 	require.Len(t, status.CLIs, 2, "only CLIs on PATH are listed")
 	assert.Equal(t, "claude", status.CLIs[0].ID)
 	assert.Equal(t, "codex", status.CLIs[1].ID)
-	require.Len(t, status.Skills, 3)
+	require.Len(t, status.Skills, 4)
 
 	fix := status.Skills[0]
 	assert.Equal(t, "gh-fix", fix.Name)
@@ -212,11 +214,13 @@ func TestInstallFromReleaseTag(t *testing.T) {
 		{"--yes", "skills", "add", tree + "gh-fix", "--global", "--agent", "claude-code", "--agent", "gemini-cli", "-y"},
 		{"--yes", "skills", "add", tree + "gh-discuss", "--global", "--agent", "claude-code", "--agent", "codex", "--agent", "gemini-cli", "-y"},
 		{"--yes", "skills", "add", tree + "gh-create", "--global", "--agent", "claude-code", "--agent", "codex", "--agent", "gemini-cli", "-y"},
+		{"--yes", "skills", "add", tree + "gh-safe-merge", "--global", "--agent", "claude-code", "--agent", "codex", "--agent", "gemini-cli", "-y"},
 	}, npx.calls)
 	assert.Equal(t, []string{
 		"gh-fix/claude", "gh-fix/gemini",
 		"gh-discuss/claude", "gh-discuss/codex", "gh-discuss/gemini",
 		"gh-create/claude", "gh-create/codex", "gh-create/gemini",
+		"gh-safe-merge/claude", "gh-safe-merge/codex", "gh-safe-merge/gemini",
 	}, result.Installed)
 }
 
@@ -302,7 +306,7 @@ func TestInstallOnDevBuildUsesBundledCopy(t *testing.T) {
 
 	_, err := m.Install(context.Background(), Request{Missing: true})
 	require.NoError(t, err)
-	require.Len(t, sources, 3)
+	require.Len(t, sources, 4)
 	_, err = os.Stat(sources[0])
 	assert.True(t, os.IsNotExist(err), "the extracted copy is removed afterwards")
 }
@@ -323,12 +327,13 @@ func TestSyncFollowsConfig(t *testing.T) {
 
 	npx.calls = nil
 	m.Sync(context.Background(), &config.Config{CodingSkills: &config.CodingSkillsConfig{AutoUpdate: &off}})
-	require.Len(t, npx.calls, 1)
+	require.Len(t, npx.calls, 2)
 	assert.Contains(t, npx.calls[0][3], "gh-create")
+	assert.Contains(t, npx.calls[1][3], "gh-safe-merge")
 
 	npx.calls = nil
 	m.Sync(context.Background(), &config.Config{})
-	assert.Len(t, npx.calls, 2, "defaults update and install")
+	assert.Len(t, npx.calls, 3, "defaults update and install")
 }
 
 func TestSyncSkipsDevBuilds(t *testing.T) {

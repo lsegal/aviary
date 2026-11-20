@@ -1448,7 +1448,7 @@ func TestCodingSkillsTools(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &status))
 	assert.Equal(t, "2.0.0", status.Version)
 	require.Len(t, status.CLIs, 1)
-	require.Len(t, status.Skills, 3)
+	require.Len(t, status.Skills, 4)
 	assert.Equal(t, "gh-fix", status.Skills[0].Name)
 	assert.False(t, status.Skills[0].Installs[0].Installed)
 
