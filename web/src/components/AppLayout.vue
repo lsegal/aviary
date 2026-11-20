@@ -56,11 +56,15 @@
             </span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
+              :disabled="upgrading || restartPending || !upgradeSupported" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
-          <div v-if="versionMessage" class="mt-1 text-xs opacity-80">{{ versionMessage }}</div>
+          <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+        </div>
+        <div v-else-if="updateNotice" data-testid="update-notice"
+          class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
+          {{ updateNotice }}
         </div>
         <nav class="flex flex-wrap gap-2">
           <div v-for="link in links" :key="link.to" class="relative">
@@ -151,7 +155,7 @@
             <span>New version available</span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-2.5 py-1 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
-              :disabled="upgrading || restartPending" @click="openUpgradeDialog()">
+              :disabled="upgrading || restartPending || !upgradeSupported" @click="openUpgradeDialog()">
               {{ upgrading ? "Upgrading..." : "Upgrade" }}
             </button>
           </div>
@@ -159,7 +163,11 @@
             <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
             <template v-else>{{ latestVersion }}</template>
           </div>
-          <div v-if="versionMessage" class="mt-1 text-xs opacity-80">{{ versionMessage }}</div>
+          <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+        </div>
+        <div v-else-if="updateNotice" data-testid="update-notice"
+          class="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
+          {{ updateNotice }}
         </div>
         <div class="flex flex-wrap gap-1.5 px-1">
           <span
@@ -188,7 +196,7 @@
     </main>
 
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
-      :jobs="restart?.jobs ?? []" :busy="upgrading" @close="upgradeDialogOpen = false"
+      :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
       @confirm="triggerUpgrade($event)" />
   </div>
 </template>
@@ -235,6 +243,9 @@ const {
 	version,
 	latestVersion,
 	upgradeAvailable,
+	upgradeSupported,
+	git,
+	updateNotice,
 	versionMessage,
 	upgrading,
 	releaseUrl,

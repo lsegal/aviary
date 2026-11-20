@@ -27,9 +27,22 @@ export interface RestartStatus {
 
 export type RestartWhen = "now" | "idle";
 
+/** Mirrors update.GitState: set when a dev build updates its source checkout. */
+export interface GitState {
+	dir: string;
+	branch: string;
+	upstream?: string;
+	behind: number;
+	ahead: number;
+	dirty: boolean;
+	hotReload: boolean;
+}
+
 interface VersionCheck {
 	latestVersion?: string;
 	upgradeAvailable?: boolean;
+	upgradeSupported?: boolean;
+	git?: GitState;
 	message?: string;
 	releaseUrl?: string;
 	restart?: RestartStatus;
@@ -51,6 +64,12 @@ export function useServerStatus() {
 	const goos = ref<string>("");
 	const latestVersion = ref<string>("");
 	const upgradeAvailable = ref(false);
+	// False when an update exists but cannot be applied, e.g. a dev checkout
+	// with local changes; versionMessage says why.
+	const upgradeSupported = ref(true);
+	const git = ref<GitState | null>(null);
+	// Result of a git-mode update, shown once the update banner is gone.
+	const updateNotice = ref("");
 	const versionMessage = ref("");
 	const checkingVersion = ref(false);
 	const upgrading = ref(false);
@@ -151,6 +170,9 @@ export function useServerStatus() {
 	function applyCheck(data: VersionCheck) {
 		latestVersion.value = data.latestVersion ?? "";
 		upgradeAvailable.value = data.upgradeAvailable === true;
+		upgradeSupported.value = data.upgradeSupported !== false;
+		git.value = data.git ?? null;
+		if (upgradeAvailable.value) updateNotice.value = "";
 		versionMessage.value = data.message ?? "";
 		releaseUrl.value = data.releaseUrl ?? "";
 	}
@@ -189,6 +211,7 @@ export function useServerStatus() {
 			if (st.noop) {
 				versionMessage.value = st.message ?? "";
 				if (!st.emulated) upgradeAvailable.value = false;
+				if (git.value) updateNotice.value = st.message ?? "";
 				return;
 			}
 			restart.value = st;
@@ -241,6 +264,9 @@ export function useServerStatus() {
 		goos,
 		latestVersion,
 		upgradeAvailable,
+		upgradeSupported,
+		git,
+		updateNotice,
 		versionMessage,
 		checkingVersion,
 		upgrading,

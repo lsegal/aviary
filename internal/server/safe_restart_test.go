@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"strings"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
