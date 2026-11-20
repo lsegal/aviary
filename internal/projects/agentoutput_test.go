@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // museJSONL describes an event stream shaped unlike Claude's, so the generic
 // decoder is proved on paths it does not share with the decoder it replaces.
-var museJSONL = agents.JSONL{
+var museJSONL = clidefs.JSONL{
 	Type: "event", Text: "delta.text",
 	ToolName: "delta.tool.name", ToolInput: "delta.tool.arguments",
 	Ignore: []string{"heartbeat", "usage"},
@@ -98,7 +98,7 @@ func TestJSONLOutputWriterDecodesAcrossWritesAndFlushesTheTail(t *testing.T) {
 // it carry none, which is what pairing by shared path prefix buys.
 func TestJSONLOutputWriterPairsToolCallsWithTheirOwnInput(t *testing.T) {
 	var output bytes.Buffer
-	w := newJSONLOutputWriter(&output, agents.JSONL{
+	w := newJSONLOutputWriter(&output, clidefs.JSONL{
 		Type: "type", Text: "content[].text",
 		ToolName: "content[].tool_name", ToolInput: "content[].tool_input",
 	})
@@ -151,7 +151,7 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 		{format: "gemini-json", want: "*projects.transcriptOutputWriter"},
 	} {
 		t.Run(test.format, func(t *testing.T) {
-			output := agents.Output{Format: test.format}
+			output := clidefs.Output{Format: test.format}
 			if test.format == "jsonl" {
 				output.JSONL = &museJSONL
 			}
@@ -204,7 +204,7 @@ func TestGeminiJSONOutputWriterRendersTheStream(t *testing.T) {
 // the shared defaults, which every agent keeps.
 func TestMissingSessionDetectorUsesTheDefinitionsOwnPatterns(t *testing.T) {
 	ownPatterns := func(phrases ...string) []string {
-		return agents.Definition{MissingSession: phrases}.MissingSessionPatterns()
+		return clidefs.Definition{MissingSession: phrases}.MissingSessionPatterns()
 	}
 	for _, test := range []struct {
 		name     string
@@ -231,7 +231,7 @@ func TestMissingSessionDetectorUsesTheDefinitionsOwnPatterns(t *testing.T) {
 
 // deltaJSONL describes the same stream as museJSONL, except that its text
 // events carry a fragment of a message rather than a whole one.
-var deltaJSONL = agents.JSONL{
+var deltaJSONL = clidefs.JSONL{
 	Type: "event", Text: "delta.text", TextDelta: true,
 	ToolName: "delta.tool.name", ToolInput: "delta.tool.arguments",
 	Ignore: []string{"heartbeat", "usage"},
@@ -326,9 +326,9 @@ func TestJSONLOutputWriterWithoutTextDeltaIsUnchanged(t *testing.T) {
 // typed events, which is what a single set of paths cannot say: `proposed`
 // keeps the call's name in a `kind` field it shares with model turns, and
 // `invoked` keeps the name and its arguments somewhere else entirely.
-var perEventJSONL = agents.JSONL{
+var perEventJSONL = clidefs.JSONL{
 	Type: "event", Text: "delta.text",
-	Events: map[string]agents.JSONLEvent{
+	Events: map[string]clidefs.JSONLEvent{
 		"proposed": {ToolName: "task.kind", ToolNamePrefix: "tool."},
 		"invoked":  {ToolName: "call.name", ToolInput: "call.arguments"},
 		"note":     {Text: "note.body"},

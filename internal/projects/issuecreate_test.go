@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -17,7 +17,7 @@ func TestCreateIssueRunsGhCreateWithTheIdentity(t *testing.T) {
 	var prompts []string
 	output := "Looked at https://github.com/o/r/issues/3 and https://github.com/x/y/issues/9.\nFiled https://github.com/o/r/issues/12\n"
 	var runErr error
-	w := &Engine{Identity: "ABCD1234", Registry: agents.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Out: &syncBuffer{}}
+	w := &Engine{Identity: "ABCD1234", Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Out: &syncBuffer{}}
 	w.oneShotRun = func(_ context.Context, spec agentSpec, prompt string) (string, error) {
 		specs = append(specs, spec)
 		prompts = append(prompts, prompt)

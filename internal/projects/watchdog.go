@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/process"
 )
 
 // defaultUnblockInterval is how often the stuck-job watchdog looks for stuck
@@ -85,7 +85,7 @@ func parseUnblockInterval(value string) (time.Duration, error) {
 // validateUnblockAgent checks the unblock override against the registry. An
 // empty agent means the coding agent, whose models are checked when a round
 // resolves it, since the coding agent can change while the watch runs.
-func validateUnblockAgent(registry *agents.Registry, config unblockConfig) error {
+func validateUnblockAgent(registry *clidefs.Registry, config unblockConfig) error {
 	if config.Agent == "" {
 		return nil
 	}
@@ -527,12 +527,12 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 		err := r.runInProcess(ctx, spec, prompt, "", os.TempDir(), nil, &text, nil)
 		return text.String(), err
 	}
-	call, err := newOneShotPrompt(definition, agents.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Yolo: r.Yolo}, os.TempDir())
+	call, err := newOneShotPrompt(definition, clidefs.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Yolo: r.Yolo}, os.TempDir())
 	if err != nil {
 		return "", err
 	}
 	defer call.cleanup()
-	args := definition.Render(agents.ModeRun, call.Values)
+	args := definition.Render(clidefs.ModeRun, call.Values)
 	if len(args) == 0 {
 		return "", fmt.Errorf("agent %s declares no run arguments", spec.Name)
 	}

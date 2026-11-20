@@ -1,11 +1,11 @@
-// Package agents describes the coding-agent CLIs aviary can dispatch work to as
+// Package clidefs describes the coding-agent CLIs aviary can dispatch work to as
 // data rather than as code. Every place that has to know how to talk to an
 // agent -- the argv for a fresh run, a resume, and a one-shot vision call, the
 // environment its child process needs, how its session ID is established, and
 // how its output is decoded -- reads a Definition instead of branching on the
 // agent's name, so supporting another CLI is a JSON document rather than a set
 // of new `if name == ...` arms.
-package agents
+package clidefs
 
 import (
 	"encoding/json"

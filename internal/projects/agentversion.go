@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 // agentVersionTimeout bounds the `binary --version` call made before a
@@ -29,7 +29,7 @@ var agentVersionCommand = clidoctor.ReadVersion
 // blocking on it would break any CLI that prints its version some way aviary
 // has not seen. A definition declaring no minimum runs no
 // process at all.
-func checkAgentVersion(ctx context.Context, definition agents.Definition, binary string) (warning string, err error) {
+func checkAgentVersion(ctx context.Context, definition clidefs.Definition, binary string) (warning string, err error) {
 	if strings.TrimSpace(definition.MinVersion) == "" {
 		return "", nil
 	}

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // The contract harness proves what an agent definition claims, without any
@@ -106,7 +106,7 @@ type fakeAgentRun struct {
 // install points a definition at the fake agent and configures its behaviour
 // for the test, returning the definition to register and the record file the
 // invocations land in.
-func (f fakeAgentRun) install(t *testing.T, definition agents.Definition) (agents.Definition, string) {
+func (f fakeAgentRun) install(t *testing.T, definition clidefs.Definition) (clidefs.Definition, string) {
 	t.Helper()
 	binary, err := fakeAgentCLI()
 	if err != nil {
@@ -168,7 +168,7 @@ func fakeAgentInvocationRecords(t *testing.T, record string) []fakeAgentInvocati
 // against the fake agent and checks every claim.
 type agentContract struct {
 	// Definition is the agent being proved. Its Binary is replaced by the fake.
-	Definition agents.Definition
+	Definition clidefs.Definition
 	// Repo and Number name the issue the dispatch is for.
 	Repo   string
 	Number int
@@ -219,7 +219,7 @@ func (c agentContract) runner(t *testing.T, behaviour fakeAgentRun) (CommandRunn
 	}
 	behaviour.WatchEnv = append(behaviour.WatchEnv, watched...)
 	definition, record := behaviour.install(t, c.Definition)
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register %q: %v", definition.Name, err)
 	}
@@ -330,9 +330,9 @@ func (c agentContract) checkResumeRestart(t *testing.T) {
 }
 
 // builtinDefinition resolves one of the definitions aviary ships.
-func builtinDefinition(t *testing.T, name string) agents.Definition {
+func builtinDefinition(t *testing.T, name string) clidefs.Definition {
 	t.Helper()
-	definition, ok := agents.MustBuiltin().Lookup(name)
+	definition, ok := clidefs.MustBuiltin().Lookup(name)
 	if !ok {
 		t.Fatalf("no built-in definition for %q", name)
 	}
@@ -426,41 +426,41 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 	prompt := "/gh-fix o/r#7"
 	for _, test := range []struct {
 		name   string
-		mode   agents.Mode
-		values agents.Values
+		mode   clidefs.Mode
+		values clidefs.Values
 		want   []string
 	}{
 		{
-			name: "run with model and level", mode: agents.ModeRun,
-			values: agents.Values{Prompt: prompt, Model: "anthropic/claude-opus-5", Level: "high"},
+			name: "run with model and level", mode: clidefs.ModeRun,
+			values: clidefs.Values{Prompt: prompt, Model: "anthropic/claude-opus-5", Level: "high"},
 			want:   []string{"run", "--auto", "--model", "anthropic/claude-opus-5", "--variant", "high", "--format", "json", prompt},
 		},
 		{
 			// The run's own --yolo adds nothing: --auto is already the only
 			// permission mode a non-interactive opencode can work in.
-			name: "run in yolo mode", mode: agents.ModeRun,
-			values: agents.Values{Prompt: prompt, Yolo: true},
+			name: "run in yolo mode", mode: clidefs.ModeRun,
+			values: clidefs.Values{Prompt: prompt, Yolo: true},
 			want:   []string{"run", "--auto", "--format", "json", prompt},
 		},
 		{
 			// opencode reads no remote-control settings, so the run's flag
 			// reaches its argv not at all.
-			name: "run ignores remote control", mode: agents.ModeRun,
-			values: agents.Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
+			name: "run ignores remote control", mode: clidefs.ModeRun,
+			values: clidefs.Values{Prompt: prompt, RemoteControl: true, Settings: `{"remoteControlAtStartup":true}`, SessionName: "aviary o/r#7"},
 			want:   []string{"run", "--auto", "--format", "json", prompt},
 		},
 		{
 			// A session ID aviary happens to be holding is never rendered: the
 			// definition assigns none, so there is nothing to resume by.
-			name: "resume carries no session", mode: agents.ModeResume,
-			values: agents.Values{Prompt: prompt, Session: "ses_1a2b3c"},
+			name: "resume carries no session", mode: clidefs.ModeResume,
+			values: clidefs.Values{Prompt: prompt, Session: "ses_1a2b3c"},
 			want:   []string{"run", "--auto", "--format", "json", prompt},
 		},
 		{
 			// The one-shot board read stays on opencode's default format:
 			// its answer is parsed as prose rather than shown as progress.
-			name: "vision", mode: agents.ModeVision,
-			values: agents.Values{Prompt: prompt, Image: "/tmp/shot.png", Model: "anthropic/claude-opus-5"},
+			name: "vision", mode: clidefs.ModeVision,
+			values: clidefs.Values{Prompt: prompt, Image: "/tmp/shot.png", Model: "anthropic/claude-opus-5"},
 			want:   []string{"run", "--auto", "--file", "/tmp/shot.png", "--model", "anthropic/claude-opus-5", prompt},
 		},
 	} {
@@ -550,7 +550,7 @@ func TestGeminiDefinitionYoloContract(t *testing.T) {
 // read_file tool loads as an image part.
 func TestGeminiVisionArgsNameTheImageInThePrompt(t *testing.T) {
 	definition := builtinDefinition(t, "gemini")
-	args := definition.Render(agents.ModeVision, agents.Values{
+	args := definition.Render(clidefs.ModeVision, clidefs.Values{
 		Prompt: "look at /tmp/shot.png", Image: "/tmp/shot.png", Model: "gemini-2.5-pro",
 	})
 	want := []string{"--approval-mode", "auto_edit", "--model", "gemini-2.5-pro", "-p", "look at /tmp/shot.png"}
@@ -635,12 +635,12 @@ func TestAgentDefinitionCapturesCheckoutDirectory(t *testing.T) {
 // agent the registry no longer defines fails with a message listing what it
 // does define, instead of spawning whatever the binary flags happen to hold.
 func TestUnknownAgentIsReportedRatherThanRun(t *testing.T) {
-	runner := CommandRunner{Agent: "nosuchagent", Definitions: agents.MustBuiltin(), Repo: "o/r"}
+	runner := CommandRunner{Agent: "nosuchagent", Definitions: clidefs.MustBuiltin(), Repo: "o/r"}
 	err := runner.Run(context.Background(), Issue{Number: 7, Target: "o/r"})
 	if err == nil || !strings.Contains(err.Error(), `unknown agent "nosuchagent"`) {
 		t.Fatalf("error = %v, want it to name the unknown agent", err)
 	}
-	for _, name := range agents.MustBuiltin().Names() {
+	for _, name := range clidefs.MustBuiltin().Names() {
 		if !strings.Contains(err.Error(), name) {
 			t.Fatalf("error = %v, want it to list the known agent %q", err, name)
 		}
@@ -653,21 +653,21 @@ func TestUnknownAgentIsReportedRatherThanRun(t *testing.T) {
 // expression, and the phrase it prints for a session it no longer holds is its
 // own rather than one of the shared defaults. Nothing about it exists in Go.
 func TestJSONLAgentDefinitionContract(t *testing.T) {
-	definition := agents.Definition{
+	definition := clidefs.Definition{
 		Name: "streamer", Binary: "streamer",
-		Session: agents.Session{
-			Assign: agents.AssignCapture, Capture: `session id: ([0-9a-z-]+)`,
+		Session: clidefs.Session{
+			Assign: clidefs.AssignCapture, Capture: `session id: ([0-9a-z-]+)`,
 			ClearOnResumeFailure: true,
 		},
 		MissingSession: []string{"thread has expired"},
-		Output: agents.Output{Format: "jsonl", JSONL: &agents.JSONL{
+		Output: clidefs.Output{Format: "jsonl", JSONL: &clidefs.JSONL{
 			Type: "event", Text: "delta.text",
 			ToolName: "delta.tool.name", ToolInput: "delta.tool.arguments",
 			Ignore: []string{"usage"},
 		}},
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"start", "--json", "{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"continue", "--json", "{session}", "{prompt}"}}},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"start", "--json", "{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"continue", "--json", "{session}", "{prompt}"}}},
 		},
 	}
 	agentContract{
@@ -689,14 +689,14 @@ func TestJSONLAgentDefinitionContract(t *testing.T) {
 // detector: output that names no missing-session phrase at all is reported as
 // the agent failure it is rather than restarting the work.
 func TestJSONLAgentDoesNotRestartOnAnOrdinaryFailure(t *testing.T) {
-	definition := agents.Definition{
+	definition := clidefs.Definition{
 		Name: "streamer", Binary: "streamer",
-		Session:        agents.Session{Assign: agents.AssignNone},
+		Session:        clidefs.Session{Assign: clidefs.AssignNone},
 		MissingSession: []string{"thread has expired"},
-		Output:         agents.Output{Format: "plain"},
-		Args: agents.Args{
-			Run:    []agents.Fragment{{Args: []string{"start", "{prompt}"}}},
-			Resume: []agents.Fragment{{Args: []string{"continue", "{prompt}"}}},
+		Output:         clidefs.Output{Format: "plain"},
+		Args: clidefs.Args{
+			Run:    []clidefs.Fragment{{Args: []string{"start", "{prompt}"}}},
+			Resume: []clidefs.Fragment{{Args: []string{"continue", "{prompt}"}}},
 		},
 	}
 	contract := agentContract{Definition: definition, Repo: "o/r", Number: 7}
@@ -761,7 +761,7 @@ func TestConfiguredAgentDefinitionIsDispatchable(t *testing.T) {
 // loadDefinitions builds a registry from cli_definitions written as JSON:
 // either an object keyed by agent name, or {"agents": [...]} with each
 // definition naming itself.
-func loadDefinitions(t *testing.T, document string) *agents.Registry {
+func loadDefinitions(t *testing.T, document string) *clidefs.Registry {
 	t.Helper()
 	var top map[string]any
 	if err := json.Unmarshal([]byte(document), &top); err != nil {
@@ -775,7 +775,7 @@ func loadDefinitions(t *testing.T, document string) *agents.Registry {
 			defs[definition["name"].(string)] = definition
 		}
 	}
-	registry, err := agents.Load(defs)
+	registry, err := clidefs.Load(defs)
 	if err != nil {
 		t.Fatalf("load definitions: %v", err)
 	}

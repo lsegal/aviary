@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // orphanKillGrace is how long a leftover agent gets to shut itself down before

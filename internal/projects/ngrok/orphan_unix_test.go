@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // The sweep is only as good as the process list it reads, so exercise the real

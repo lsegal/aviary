@@ -1,4 +1,4 @@
-package projects
+package clidoctor
 
 import (
 	"bufio"
@@ -16,9 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lsegal/aviary/internal/clidoctor"
-	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 type codexPrimaryRateLimit struct {
@@ -68,7 +67,7 @@ func codexQuotaArgv(binary string) []string {
 // read on the poll loop, so a CLI stuck on a connection that went dead while
 // the machine slept would otherwise stop the watch for good. It
 // is a variable only so tests need not spend it.
-var builtinQuotaTimeout = agents.DefaultQuotaTimeout
+var builtinQuotaTimeout = clidefs.DefaultQuotaTimeout
 
 func readCodexQuota(ctx context.Context, binary string) (string, error) {
 	argv := codexQuotaArgv(binary)
@@ -271,7 +270,7 @@ const quotaCommandWaitDelay = time.Second
 // same one-minute terms as the built-in readers so a poll never re-runs it.
 type commandQuotaReader struct {
 	Binary string
-	Spec   agents.Quota
+	Spec   clidefs.Quota
 	mu     sync.Mutex
 	quota  string
 	err    error
@@ -296,7 +295,7 @@ func (r *commandQuotaReader) Read(ctx context.Context) (string, error) {
 // readCommandQuota runs one quota command under the definition's timeout. A
 // quota is a status-bar nicety, so a command that hangs is abandoned rather
 // than allowed to hold up the poll that asked for it.
-func readCommandQuota(ctx context.Context, binary string, spec agents.Quota) (string, error) {
+func readCommandQuota(ctx context.Context, binary string, spec clidefs.Quota) (string, error) {
 	argv := spec.Argv(binary)
 	if len(argv) == 0 {
 		return "", fmt.Errorf("quota command is empty")
@@ -323,7 +322,7 @@ func readCommandQuota(ctx context.Context, binary string, spec agents.Quota) (st
 // document. A field the template asks for and the document does not have is
 // an error rather than an empty substitution, so a changed output format
 // leaves the last good reading up instead of replacing it with nonsense.
-func formatCommandQuota(spec agents.Quota, document any) (string, error) {
+func formatCommandQuota(spec clidefs.Quota, document any) (string, error) {
 	text := spec.FormatTemplate()
 	if strings.Contains(text, "{percent") {
 		used, ok := quotaNumberAt(document, spec.PercentUsed)
@@ -402,11 +401,11 @@ func quotaStringAt(document any, path string) (string, bool) {
 	return "", false
 }
 
-// namedQuotaReader reads quota text for a single named agent. The read
+// QuotaReader reads quota text for a single named agent. The read
 // reports why it could not answer as well as what it read, so a reader whose
 // command fails is something a caller can show rather than an empty string
 // indistinguishable from an agent that tracks no quota at all.
-type namedQuotaReader struct {
+type QuotaReader struct {
 	name string
 	read func(context.Context) (string, error)
 	// tracked says the agent's definition names a quota source, so an empty
@@ -414,16 +413,16 @@ type namedQuotaReader struct {
 	tracked bool
 }
 
-// namedQuotaReaders builds one quota reader per configured agent, deduplicated
+// QuotaReaders builds one quota reader per configured agent, deduplicated
 // by name. Which reader an agent gets comes from its definition's quota block
 // rather than from its name, so a config-defined agent can report a quota
 // without a code change. An agent whose definition names no quota source --
 // the default, and what an agent the registry does not know falls back to --
 // still gets an entry so the UI can show that its quota is not tracked, but
 // that entry never spawns a process.
-func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func(string) string) []namedQuotaReader {
+func QuotaReaders(registry *clidefs.Registry, names []string, binaryFor func(string) string) []QuotaReader {
 	seen := make(map[string]bool, len(names))
-	readers := make([]namedQuotaReader, 0, len(names))
+	readers := make([]QuotaReader, 0, len(names))
 	untracked := func(context.Context) (string, error) { return "", nil }
 	for _, name := range names {
 		if seen[name] {
@@ -432,52 +431,52 @@ func namedQuotaReaders(registry *agents.Registry, names []string, binaryFor func
 		seen[name] = true
 		definition, ok := registry.Lookup(name)
 		if !ok {
-			readers = append(readers, namedQuotaReader{name: name, read: untracked})
+			readers = append(readers, QuotaReader{name: name, read: untracked})
 			continue
 		}
 		var read func(context.Context) (string, error)
 		tracked := true
 		switch definition.Quota.ReaderName() {
-		case agents.QuotaCodex:
+		case clidefs.QuotaCodex:
 			read = (&codexQuotaReader{Binary: binaryFor(name)}).Read
-		case agents.QuotaClaude:
+		case clidefs.QuotaClaude:
 			read = (&claudeQuotaReader{Binary: binaryFor(name)}).Read
-		case agents.QuotaCommand:
+		case clidefs.QuotaCommand:
 			read = (&commandQuotaReader{Binary: binaryFor(name), Spec: definition.Quota}).Read
 		default:
 			read, tracked = untracked, false
 		}
-		readers = append(readers, namedQuotaReader{name: name, read: read, tracked: tracked})
+		readers = append(readers, QuotaReader{name: name, read: read, tracked: tracked})
 	}
 	return readers
 }
 
-// combinedQuotaReader reads every named reader's quota and returns the
+// CombinedQuota reads every named reader's quota and returns the
 // results keyed by agent name. A reader that has a source but no reading
 // reports itself unavailable, with the reason when it has one, so a broken
 // read is never shown as the "not tracked" of an agent with no source at all
 // .
-func combinedQuotaReader(readers []namedQuotaReader) func(context.Context) map[string]string {
+func CombinedQuota(readers []QuotaReader) func(context.Context) map[string]string {
 	return func(ctx context.Context) map[string]string {
 		result := make(map[string]string, len(readers))
 		for _, reader := range readers {
 			quota, err := reader.read(ctx)
-			result[reader.name] = quotaReading(quota, reader.tracked, err)
+			result[reader.name] = QuotaReading(quota, reader.tracked, err)
 		}
 		return result
 	}
 }
 
-// quotaReading is the text one agent's quota shows: the reading itself, or,
+// QuotaReading is the text one agent's quota shows: the reading itself, or,
 // for an agent that has a quota source and no reading, "unavailable" and why.
 // It is empty only for an agent with no source, which every surface renders
 // as "not tracked".
-func quotaReading(quota string, tracked bool, err error) string {
+func QuotaReading(quota string, tracked bool, err error) string {
 	if text := strings.TrimSpace(quota); text != "" || !tracked {
 		return text
 	}
 	if err != nil {
-		return "unavailable: " + clidoctor.FirstLine(strings.TrimSpace(err.Error()))
+		return "unavailable: " + FirstLine(strings.TrimSpace(err.Error()))
 	}
 	return "unavailable"
 }
@@ -497,4 +496,15 @@ func formatNamedQuotas(quotas map[string]string) string {
 		parts[i] = name + ": " + text
 	}
 	return strings.Join(parts, ", ")
+}
+
+// ReadQuota reads one agent's quota through the same readers the Projects
+// watch status bar uses, so no surface grows a second opinion about quota.
+func ReadQuota(ctx context.Context, registry *clidefs.Registry, name, binary string) (string, error) {
+	readers := QuotaReaders(registry, []string{name}, func(string) string { return binary })
+	if len(readers) == 0 {
+		return "", nil
+	}
+	quota, err := readers[0].read(ctx)
+	return strings.TrimSpace(quota), err
 }

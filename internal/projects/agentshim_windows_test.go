@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/process"
 )
 
 const shimHelperEnv = "AVIARY_SHIM_HELPER"

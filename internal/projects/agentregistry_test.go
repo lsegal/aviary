@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // TestUnknownAgentSpecListsTheKnownAgents checks the error --agent gives is
@@ -15,7 +15,7 @@ func TestUnknownAgentSpecListsTheKnownAgents(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown agent was accepted")
 	}
-	want := append([]string{`unknown agent "nosuchagent"`}, agents.MustBuiltin().Names()...)
+	want := append([]string{`unknown agent "nosuchagent"`}, clidefs.MustBuiltin().Names()...)
 	for _, want := range want {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %v, want it to mention %s", err, want)
@@ -31,11 +31,11 @@ func TestAgentLevelErrorComesFromTheDefinition(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "agent level must be low, medium, or high") {
 		t.Fatalf("error = %v, want the built-in levels", err)
 	}
-	registry, err := agents.NewRegistry(agents.Definition{
-		Name: "acme", Binary: "acme", Levels: agents.NewAllowList("fast", "thorough"),
-		Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
+		Name: "acme", Binary: "acme", Levels: clidefs.NewAllowList("fast", "thorough"),
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,11 +52,11 @@ func TestAgentLevelErrorComesFromTheDefinition(t *testing.T) {
 // models rejects one it does not list, and that the built-ins, which enumerate
 // none, keep accepting any model.
 func TestAgentModelAllowListIsEnforced(t *testing.T) {
-	registry, err := agents.NewRegistry(agents.Definition{
-		Name: "acme", Binary: "acme", Models: agents.NewAllowList("acme-1"),
-		Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
+		Name: "acme", Binary: "acme", Models: clidefs.NewAllowList("acme-1"),
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestAgentAssignsSessionIDFollowsTheDefinition(t *testing.T) {
 // TestDefinitionEnvIsStable checks the child environment a definition asks for
 // is rendered in a fixed order, so a run does not vary with map iteration.
 func TestDefinitionEnvIsStable(t *testing.T) {
-	definition := agents.Definition{Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
+	definition := clidefs.Definition{Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
 	want := []string{"A=1", "B=2", "C=3"}
 	for i := 0; i < 5; i++ {
 		got := definitionEnv(definition)
@@ -100,7 +100,7 @@ func TestDefinitionEnvIsStable(t *testing.T) {
 			}
 		}
 	}
-	if got := definitionEnv(agents.Definition{}); got != nil {
+	if got := definitionEnv(clidefs.Definition{}); got != nil {
 		t.Fatalf("env = %v, want none", got)
 	}
 }
@@ -109,11 +109,11 @@ func TestDefinitionEnvIsStable(t *testing.T) {
 // is invoked through the executable its definition names, which is what makes
 // a configured agent runnable at all.
 func TestBinaryFallsBackToTheDefinition(t *testing.T) {
-	registry, err := agents.NewRegistry(agents.Definition{
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
 		Name: "acme", Binary: "/opt/acme",
-		Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-		Session: agents.Session{Assign: agents.AssignNone},
-		Output:  agents.Output{Format: agents.FormatText},
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestBinaryFallsBackToTheDefinition(t *testing.T) {
 // models.cli_definitions is the only config source of an executable (#456),
 // so it reaches built-in and config-defined agents alike.
 func TestDefinitionBinaryOverridesBuiltin(t *testing.T) {
-	registry, err := LoadCLIDefinitions(map[string]any{
+	registry, err := clidefs.FromConfig(map[string]any{
 		"codex": map[string]any{"binary": "/opt/codex-nightly"},
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	registry, err := LoadCLIDefinitions(nil)
+	registry, err := clidefs.FromConfig(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
 		t.Fatalf("aviary binary = %q, want the running executable %q", definition.Binary, executable)
 	}
 	definitions := map[string]any{aviaryAgent: map[string]any{"binary": "/opt/aviary"}}
-	registry, err = LoadCLIDefinitions(definitions)
+	registry, err = clidefs.FromConfig(definitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestAgentThatTakesNoLevelRejectsOne(t *testing.T) {
 	}
 	// Every agent that does declare levels is untouched by the new state.
 	for _, agent := range []string{"codex", "claude", "cline", "muse"} {
-		definition, ok := agents.MustBuiltin().Lookup(agent)
+		definition, ok := clidefs.MustBuiltin().Lookup(agent)
 		if !ok {
 			t.Fatalf("%s is not registered", agent)
 		}

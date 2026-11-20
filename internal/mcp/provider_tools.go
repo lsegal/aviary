@@ -6,14 +6,13 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects"
-	"github.com/lsegal/aviary/internal/projects/core"
 )
 
 // cliStatuses runs the coding-CLI doctor. It is a variable so tests can
 // answer for a machine whose CLIs they do not control.
-var cliStatuses = projects.CLIStatuses
+var cliStatuses = clidoctor.Statuses
 
 // registerProviderTools registers the tools that describe how Aviary reaches
 // models beyond stored credentials. The coding CLIs are core providers: the
@@ -34,7 +33,7 @@ func registerProviderTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		if statuses == nil {
-			statuses = []core.AgentStatus{}
+			statuses = []clidoctor.Status{}
 		}
 		return jsonResult(map[string]any{"clis": statuses})
 	})

@@ -372,44 +372,6 @@ type SettingsSnapshot struct {
 	UnblockDefault  string `json:"unblockDefault"`
 }
 
-// AgentStatus reports one registered agent's install, sign-in, and quota
-// state, mirroring what `aviary agents` prints, for the settings dashboard's
-// agents tab.
-type AgentStatus struct {
-	Name      string `json:"name"`
-	Installed bool   `json:"installed"`
-	Binary    string `json:"binary"`
-	// Path is where Binary was found on PATH, empty when it is not installed.
-	Path        string `json:"path,omitempty"`
-	Version     string `json:"version,omitempty"`
-	VersionNote string `json:"versionNote,omitempty"`
-	Auth        string `json:"auth"`
-	Quota       string `json:"quota"`
-	// TracksQuota says the definition names a quota source at all, telling an
-	// agent that reports no quota by design apart from one whose reader
-	// could not answer -- the same distinction describeQuota draws for the
-	// terminal report.
-	TracksQuota bool   `json:"tracksQuota"`
-	QuotaError  string `json:"quotaError,omitempty"`
-	// Models are the fully qualified agent/model names --agent accepts, and
-	// ModelNote explains a missing or partial list.
-	Models    []string `json:"models,omitempty"`
-	ModelNote string   `json:"modelNote,omitempty"`
-	// DefaultModel is the model aviary runs this agent with when --agent names
-	// none, empty for an agent whose definition leaves the choice to its own
-	// CLI.
-	DefaultModel string `json:"defaultModel,omitempty"`
-	// SkillsNote says which of aviary's installed skills are stale for the
-	// running release, empty when they are current.
-	SkillsNote string `json:"skillsNote,omitempty"`
-	// ProjectsNote says why the agent is gated out of Projects jobs, empty
-	// when it can run them.
-	ProjectsNote string `json:"projectsNote,omitempty"`
-	// Status is one of "ok", "warn", or "missing", matching the marker
-	// `aviary agents` prefixes each block with.
-	Status string `json:"status"`
-}
-
 // CheckpointResult is one active run's outcome in the shutdown checkpoint
 // aviary takes before it restarts or exits: Outcome is "pushed",
 // "nothing to push", "failed", or "timed out", and Detail says why.

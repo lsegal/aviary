@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // TestClineDefinitionContract proves the shipped cline definition against the
@@ -120,13 +120,13 @@ func TestClineDefinitionRendersOneProgressLinePerToolCall(t *testing.T) {
 // CLI does not print, so the declaration is asserted rather than assumed.
 func TestClineDefinitionDeclaresNoSession(t *testing.T) {
 	definition := builtinDefinition(t, "cline")
-	if definition.Session.Assign != agents.AssignNone {
-		t.Fatalf("session.assign = %q, want %q: cline has no headless resume", definition.Session.Assign, agents.AssignNone)
+	if definition.Session.Assign != clidefs.AssignNone {
+		t.Fatalf("session.assign = %q, want %q: cline has no headless resume", definition.Session.Assign, clidefs.AssignNone)
 	}
 	if definition.AssignsSessionID() || definition.CapturesSessionID() {
 		t.Fatal("cline neither takes a session ID from aviary nor prints one of its own")
 	}
-	if !definition.Supports(agents.ModeResume) {
+	if !definition.Supports(clidefs.ModeResume) {
 		t.Fatal("a resume template is still required, so a recovered run restarts rather than rendering nothing")
 	}
 }
@@ -140,17 +140,17 @@ func TestClineDefinitionRendersModelAndLevel(t *testing.T) {
 	// The one-shot vision read stays on plain text, exactly as Claude's does:
 	// its answer is parsed as prose rather than shown as progress, so wrapping
 	// it in cline's event envelope would buy nothing.
-	for mode, stream := range map[agents.Mode][]string{
-		agents.ModeRun:    {"--json"},
-		agents.ModeResume: {"--json"},
-		agents.ModeVision: nil,
+	for mode, stream := range map[clidefs.Mode][]string{
+		clidefs.ModeRun:    {"--json"},
+		clidefs.ModeResume: {"--json"},
+		clidefs.ModeVision: nil,
 	} {
-		got := definition.Render(mode, agents.Values{Prompt: "do it", Model: "anthropic/claude-fable-5.1", Level: "high"})
+		got := definition.Render(mode, clidefs.Values{Prompt: "do it", Model: "anthropic/claude-fable-5.1", Level: "high"})
 		want := append([]string{"--auto-approve", "true", "--model", "anthropic/claude-fable-5.1", "--thinking", "high"}, stream...)
 		if want = append(want, "do it"); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s argv = %#v, want %#v", mode, got, want)
 		}
-		bare := definition.Render(mode, agents.Values{Prompt: "do it"})
+		bare := definition.Render(mode, clidefs.Values{Prompt: "do it"})
 		want = append(append([]string{"--auto-approve", "true"}, stream...), "do it")
 		if !reflect.DeepEqual(bare, want) {
 			t.Fatalf("%s argv without a model or level = %#v, want %#v", mode, bare, want)
@@ -166,9 +166,9 @@ func TestClineDefinitionRendersModelAndLevel(t *testing.T) {
 // configuration from turning a dispatched run into one that never proceeds.
 func TestClineDefinitionAutoApprovesRegardlessOfYolo(t *testing.T) {
 	definition := builtinDefinition(t, "cline")
-	for _, mode := range []agents.Mode{agents.ModeRun, agents.ModeResume, agents.ModeVision} {
-		safe := definition.Render(mode, agents.Values{Prompt: "do it"})
-		yolo := definition.Render(mode, agents.Values{Prompt: "do it", Yolo: true})
+	for _, mode := range []clidefs.Mode{clidefs.ModeRun, clidefs.ModeResume, clidefs.ModeVision} {
+		safe := definition.Render(mode, clidefs.Values{Prompt: "do it"})
+		yolo := definition.Render(mode, clidefs.Values{Prompt: "do it", Yolo: true})
 		if !reflect.DeepEqual(safe, yolo) {
 			t.Fatalf("%s argv differs on --yolo: %#v vs %#v", mode, safe, yolo)
 		}
@@ -191,7 +191,7 @@ func TestClineLevelsMatchTheCLI(t *testing.T) {
 	if definition.AcceptsLevel("max") {
 		t.Fatal(`level "max" was accepted, but cline --thinking does not take it`)
 	}
-	if _, err := parseAgentSpecIn(agents.MustBuiltin(), "cline/anthropic/claude-fable-5.1:xhigh"); err != nil {
+	if _, err := parseAgentSpecIn(clidefs.MustBuiltin(), "cline/anthropic/claude-fable-5.1:xhigh"); err != nil {
 		t.Fatalf("--agent cline/anthropic/claude-fable-5.1:xhigh was rejected: %v", err)
 	}
 }
@@ -209,7 +209,7 @@ func TestClineDispatchReportsItsCheckoutDirectory(t *testing.T) {
 		Stdout: `{"ts":"2026-09-04T00:52:26.311Z","type":"agent_event","event":{"type":"content_end","contentType":"tool","toolCallId":"call_1","toolName":"execute_command","output":[{"query":"echo AVIARY_CHECKOUT_DIRECTORY=` + encoded + `","result":"AVIARY_CHECKOUT_DIRECTORY=` + encoded + `","success":true}]}}\n` +
 			`{"ts":"2026-09-04T00:52:27.743Z","type":"agent_event","event":{"type":"content_end","contentType":"text","text":"cloned"}}`,
 	}.install(t, builtinDefinition(t, "cline"))
-	registry, err := agents.NewRegistry(definition)
+	registry, err := clidefs.NewRegistry(definition)
 	if err != nil {
 		t.Fatalf("register %q: %v", definition.Name, err)
 	}

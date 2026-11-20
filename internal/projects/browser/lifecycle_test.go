@@ -16,7 +16,7 @@ import (
 
 	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 
-	owned "github.com/lsegal/aviary/internal/projects/process"
+	owned "github.com/lsegal/aviary/internal/process"
 )
 
 // The tests here are issue #773: every browser Aviary starts must be gone once

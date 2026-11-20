@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/update"
 )
 
@@ -50,7 +50,7 @@ var cliNames = map[string]string{
 
 // CLIsFromRegistry lists the coding CLIs whose agent definition names a
 // skills.sh target, in the registry's sorted order.
-func CLIsFromRegistry(registry *agents.Registry) []CLI {
+func CLIsFromRegistry(registry *clidefs.Registry) []CLI {
 	var clis []CLI
 	for _, name := range registry.Names() {
 		definition, _ := registry.Lookup(name)
@@ -73,7 +73,7 @@ func CLIsFromRegistry(registry *agents.Registry) []CLI {
 
 // builtinCLIs lists the coding CLIs of the built-in agent definitions.
 func builtinCLIs() []CLI {
-	registry, err := agents.Builtin()
+	registry, err := clidefs.Builtin()
 	if err != nil {
 		slog.Warn("coding skills: could not load the built-in agent definitions", "err", err)
 		return nil
@@ -534,7 +534,7 @@ func (m *Manager) UpdateTo(ctx context.Context, version string) (Result, error) 
 }
 
 // addArgs is the npx command line that installs one skill globally for every
-// skills.sh target in agents.
+// skills.sh target in clidefs.
 func addArgs(source string, agents []string) []string {
 	args := []string{"--yes", "skills", "add", source, "--global"}
 	for _, agent := range agents {

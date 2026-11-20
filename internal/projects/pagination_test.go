@@ -9,9 +9,11 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -289,4 +291,19 @@ func TestListEndpointPattern(t *testing.T) {
 			t.Errorf("listEndpoint.MatchString(%q) = %v, want %v", path, got, want)
 		}
 	}
+}
+
+// fakeQuotaBinary writes a shell script that prints body on stdout and returns
+// its path, so the generic reader can be exercised against a real process.
+func fakeQuotaBinary(t *testing.T, body string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake quota binary needs a POSIX shell")
+	}
+	path := filepath.Join(t.TempDir(), "fake-quota")
+	script := "#!/bin/sh\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

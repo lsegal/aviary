@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
-	"github.com/lsegal/aviary/internal/projects/process"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -535,7 +537,7 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 
 // startRun builds and starts an engine.
 func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
-	registry, err := LoadCLIDefinitions(s.Definitions)
+	registry, err := clidefs.FromConfig(s.Definitions)
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +607,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	if record := m.usageRecorder.Load(); record != nil {
 		runner.RecordUsage = *record
 	}
-	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
+	quota := clidoctor.CombinedQuota(clidoctor.QuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)
 	engine = &Engine{
 		Repo:              s.Targets[0],
@@ -795,7 +797,7 @@ func (m *Manager) stopRun(run *engineRun) {
 // aviaryAgent is the built-in definition that runs a job on an Aviary agent
 // in-process: aviary/<agent> runs a turn on <agent> through core's agent
 // runner.
-const aviaryAgent = "aviary"
+const aviaryAgent = clidefs.Aviary
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.
 func allAgentSpecs(s engineSettings) []string {

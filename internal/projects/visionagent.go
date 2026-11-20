@@ -5,9 +5,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/lsegal/aviary/internal/projects/agents"
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
-	"github.com/lsegal/aviary/internal/projects/process"
 )
 
 // visionAgentRunner adapts the run's agent runner to the one-shot invocation
@@ -21,7 +21,7 @@ type visionAgentRunner struct {
 // advancing the round-robin cursor that load balances real issue dispatch.
 func (v visionAgentRunner) VisionAgent() browser.AgentSpec {
 	spec := v.runner.specForSession(AgentSession{})
-	var definition *agents.Definition
+	var definition *clidefs.Definition
 	if found, ok := v.runner.definition(spec.Name); ok {
 		definition = &found
 	}

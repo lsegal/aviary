@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects/agents"
 )
 
 var testBundle = fstest.MapFS{
@@ -338,7 +338,7 @@ func TestSyncSkipsDevBuilds(t *testing.T) {
 }
 
 func TestCLIsFromRegistryUseSkillsTargets(t *testing.T) {
-	registry, err := agents.Builtin()
+	registry, err := clidefs.Builtin()
 	require.NoError(t, err)
 	clis := CLIsFromRegistry(registry)
 
