@@ -69,6 +69,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { useProviderStatus } from "../../composables/useProviderAuth";
 import {
 	useAddProject,
 	useProjectCheck,
@@ -88,6 +89,13 @@ const emit = defineEmits<{ close: []; added: [target: string] }>();
 
 const router = useRouter();
 const store = useSettingsStore();
+// The CLI providers, so a model such as claude/opus shows as its own spec.
+const cliStatus = useProviderStatus({ refreshOnMount: false });
+const cliNames = computed(() =>
+	(cliStatus.clis.value ?? []).map((cli) => cli.name),
+);
+// The probe is slow, so it runs here only when nothing is cached yet.
+if (cliStatus.clis.value === null) void cliStatus.refresh();
 const target = ref(props.initial ?? "");
 const input = ref<HTMLInputElement | null>(null);
 const { result, checking, error } = useProjectCheck(target);
@@ -108,7 +116,9 @@ const settings = computed(() =>
 // The attached agent's models, or models.defaults' when none is attached.
 const runsOn = computed(() => {
 	const agent = settings.value.agent || sharedAgent(store.config?.projects);
-	const specs = jobModels(agent, store.config).map((m) => m.spec);
+	const specs = jobModels(agent, store.config, cliNames.value).map(
+		(m) => m.spec,
+	);
 	if (!specs.length) return agent ? `${agent} (no model)` : "no agent";
 	return agent ? `${agent}: ${specs.join(", ")}` : specs.join(", ");
 });

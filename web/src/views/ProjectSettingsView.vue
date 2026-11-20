@@ -134,7 +134,7 @@
 							<p class="text-xs text-gray-500 dark:text-gray-400">
 								The models come from the agent<template v-if="effectiveAgent">: change them on
 									<RouterLink :to="`/settings/agents/${encodeURIComponent(effectiveAgent)}`" class="text-blue-600 hover:underline dark:text-blue-400">{{ effectiveAgent }}'s settings</RouterLink></template><template v-else>, or models.defaults when none is attached</template>.
-								Coding CLIs are providers, as <code class="font-mono">cli/&lt;cli&gt;/&lt;model&gt;</code> models.
+								Coding CLIs are providers, as <code class="font-mono">&lt;cli&gt;/&lt;model&gt;</code> models.
 							</p>
 						</div>
 					</section>
@@ -248,6 +248,7 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	useAddProject,
 	useProjectClones,
@@ -328,6 +329,13 @@ DefaultTag.props = ["on"];
 const route = useRoute();
 const router = useRouter();
 const store = useSettingsStore();
+// The CLI providers, so a model such as claude/opus shows as its own spec.
+const cliStatus = useProviderStatus({ refreshOnMount: false });
+const cliNames = computed(() =>
+	(cliStatus.clis.value ?? []).map((cli) => cli.name),
+);
+// The probe is slow, so it runs here only when nothing is cached yet.
+if (cliStatus.clis.value === null) void cliStatus.refresh();
 const clones = useProjectClones();
 const addProject = useAddProject();
 
@@ -483,12 +491,14 @@ const projectAgentOptions = computed(() => {
 	const cur = form.value?.agent ?? "";
 	return cur && !names.includes(cur) ? [...names, cur] : names;
 });
-const models = computed(() => jobModels(effectiveAgent.value, store.config));
+const models = computed(() =>
+	jobModels(effectiveAgent.value, store.config, cliNames.value),
+);
 const agentProblem = computed(() => {
 	if (models.value.length) return "";
 	const name = effectiveAgent.value;
 	if (!name)
-		return "No agent is attached and models.defaults names no cli/ model, so jobs cannot run. Choose an agent.";
+		return "No agent is attached and models.defaults names no coding-CLI model, so jobs cannot run. Choose an agent.";
 	if (!(store.config?.agents ?? []).some((a) => a.name === name))
 		return `Agent "${name}" is not configured.`;
 	return `Agent "${name}" has no model.`;
