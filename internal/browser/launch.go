@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,40 +12,11 @@ import (
 	"os/exec"
 	"runtime"
 	"testing"
-	"time"
 )
-
-// chromeVersionInfo is the response from Chrome's /json/version endpoint.
-type chromeVersionInfo struct {
-	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-}
-
-// ChromeTab represents a single open tab from Chrome's /json/list endpoint.
-type ChromeTab struct {
-	ID    string `json:"id"`
-	Type  string `json:"type"`
-	URL   string `json:"url"`
-	Title string `json:"title"`
-}
 
 var launchChromeWithModeFn = launchChromeWithMode
 var shouldLaunchHeadlessFn = shouldLaunchHeadless
 var waitForChromeFn = waitForChrome
-
-// fetchTabs returns all open tabs from the Chrome CDP /json/list endpoint.
-func fetchTabs(cdpBaseURL string) ([]ChromeTab, error) {
-	resp, err := http.Get(cdpBaseURL + "/json/list") //nolint:noctx
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	var tabs []ChromeTab
-	if err := json.NewDecoder(resp.Body).Decode(&tabs); err != nil {
-		return nil, err
-	}
-	return tabs, nil
-}
 
 // createTab creates a new tab at the given URL via Chrome's CDP /json/new endpoint.
 func createTab(ctx context.Context, cdpBaseURL, pageURL string) (*ChromeTab, error) {
@@ -74,52 +46,6 @@ func createTab(ctx context.Context, cdpBaseURL, pageURL string) (*ChromeTab, err
 	return &tab, nil
 }
 
-// findChrome returns the path to a Chrome/Chromium executable.
-// binary is used as-is if non-empty; otherwise well-known paths are searched.
-func findChrome(binary string) (string, error) {
-	if binary != "" {
-		return binary, nil
-	}
-
-	// Search PATH for common names.
-	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path, nil
-		}
-	}
-
-	// Platform-specific well-known paths.
-	for _, path := range platformChromePaths() {
-		if path == "" {
-			continue
-		}
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-
-	return "", fmt.Errorf("Chrome/Chromium not found; install Chrome or set browser.binary in aviary.yaml")
-}
-
-// fetchWebSocketURL queries Chrome's CDP /json/version endpoint and returns
-// the browser-level WebSocket debugger URL.
-func fetchWebSocketURL(cdpBaseURL string) (string, error) {
-	resp, err := http.Get(cdpBaseURL + "/json/version") //nolint:noctx
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	var info chromeVersionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return "", err
-	}
-	if info.WebSocketDebuggerURL == "" {
-		return "", fmt.Errorf("no webSocketDebuggerUrl in CDP response")
-	}
-	return info.WebSocketDebuggerURL, nil
-}
-
 // launchChrome starts Chrome as a detached OS process that will survive after
 // the calling process exits. It does not wait for Chrome to become ready.
 func launchChrome(m *Manager) error {
@@ -138,22 +64,15 @@ func shouldAutoLaunchHeadless(goos string) bool {
 }
 
 func launchChromeWithMode(m *Manager, headless bool) error {
-	chromePath, err := findChrome(m.binary)
+	chromePath, err := FindBinary(m.binary)
 	if err != nil {
 		return err
 	}
-
-	args := []string{
-		fmt.Sprintf("--remote-debugging-port=%d", m.cdpPort),
-		fmt.Sprintf("--user-data-dir=%s", m.userDataDir()),
-		"--no-first-run",
-		"--no-default-browser-check",
-	}
-	if headless {
-		args = append(args, "--headless", "--disable-gpu")
+	if err := checkProfileFree(m.userDataDir()); err != nil {
+		return err
 	}
 
-	cmd := exec.Command(chromePath, args...)
+	cmd := exec.Command(chromePath, LaunchArgs(m.userDataDir(), m.cdpPort, headless)...)
 	detachProcess(cmd) // platform-specific: ensures Chrome outlives this process
 
 	if err := cmd.Start(); err != nil {
@@ -168,24 +87,27 @@ func launchChromeAndWait(ctx context.Context, m *Manager, cdpBaseURL string, hea
 	}
 	slog.Info("browser: chrome launched", "port", m.cdpPort, "headless", headless)
 
-	waitCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
+	waitCtx, cancel := withDefaultTimeout(ctx, DetachedReadyTimeout)
 	defer cancel()
 	return waitForChromeFn(waitCtx, cdpBaseURL)
 }
 
 // waitForChrome polls the CDP endpoint until Chrome is ready or the context expires.
 func waitForChrome(ctx context.Context, cdpBaseURL string) (string, error) {
-	ticker := time.NewTicker(300 * time.Millisecond)
-	defer ticker.Stop()
+	return WaitForReady(ctx, cdpBaseURL, DetachedReadyTimeout, DetachedReadyInterval)
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("chrome did not become ready at %s: %w", cdpBaseURL, ctx.Err())
-		case <-ticker.C:
-			if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
-				return wsURL, nil
-			}
-		}
+// checkProfileFree refuses to launch the detached browser on a profile an
+// owned browser of another Aviary run already holds. Chrome would hand the
+// launch to that browser and exit without ever serving this DevTools port, so
+// the launch would only time out. The lock is released again at once: the
+// detached browser outlives this process, so it cannot hold the claim, and an
+// owned browser started later sees it through BrowserHoldsProfile instead.
+func checkProfileFree(profile string) error {
+	lock, err := LockProfile(profile)
+	if errors.Is(err, ErrProfileLocked) {
+		return fmt.Errorf("%w (%s): set the browser profile_directory setting to use a different directory", err, profile)
 	}
+	lock.Release()
+	return nil
 }
