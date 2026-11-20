@@ -41,8 +41,8 @@ var (
 	// projectCLIProviders lists the CLI providers whose agent definition names a
 	// skills.sh target; their skills directories come from codingskills.
 	projectCLIProviders = func() []codingskills.CLI { return codingskills.Default().CLIs() }
-	projectLookPath   = exec.LookPath
-	projectHomeDir    = os.UserHomeDir
+	projectLookPath     = exec.LookPath
+	projectHomeDir      = os.UserHomeDir
 )
 
 // projectSkills are the skills a project job runs.
