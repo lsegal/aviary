@@ -143,6 +143,20 @@ func TestStatusReportsVersionPerSkillPerCLI(t *testing.T) {
 	assert.Equal(t, 2, status.Outdated)
 }
 
+func TestStaleNoteNamesStaleSkillsForOneCLI(t *testing.T) {
+	m, _, home := newTestManager(t, "v2.0.0")
+	claudeDir := filepath.Join(home, ".claude", "skills")
+	writeSkill(t, claudeDir, "gh-fix", "fix v1\n")
+	writeSkill(t, claudeDir, "gh-discuss", "discuss v2\n")
+	writeSkill(t, claudeDir, "gh-create", "create v1\n")
+
+	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under Skills > For coding CLIs", m.StaleNote(testCLIs[0]))
+	assert.Empty(t, m.StaleNote(testCLIs[1]), "a CLI with no skills installed has nothing stale")
+
+	m.Version = func() string { return "dev" }
+	assert.Contains(t, m.StaleNote(testCLIs[0]), "stale for this aviary dev build")
+}
+
 func TestStatusIgnoresLockFromAnotherSource(t *testing.T) {
 	m, _, home := newTestManager(t, "v2.0.0", "codex")
 	canonical := filepath.Join(home, ".agents", "skills")

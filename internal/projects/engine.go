@@ -421,10 +421,8 @@ type Engine struct {
 	Transcripts *transcriptStore
 	// oneShotRun replaces one-off agent calls such as issue creation in tests.
 	oneShotRun func(context.Context, agentSpec, string) (string, error)
-	// published is the run's most recently published snapshot, and
-	// recentLogs its last log lines.
-	published  atomic.Pointer[core.Snapshot]
-	recentLogs []string
+	// published is the run's most recently published snapshot.
+	published atomic.Pointer[core.Snapshot]
 	// settingsView is the settings snapshot the Run loop last published. The
 	// settings modal reads it directly, so opening settings never waits on a
 	// poll, startup, or anything else the loop is busy with.
@@ -435,10 +433,6 @@ type Engine struct {
 // anything with a run in flight, and anything this instance already completed.
 // Failed work is deliberately absent, because it is dispatched again and so
 // still needs its metadata. Callers hold the lock guarding work and active.
-// recentLogLines is how many of the run's latest log lines are kept for
-// status reports.
-const recentLogLines = 40
-
 func (w *Engine) publishHandledIssues(work map[string]workState, active map[string]string) {
 	handled := make(map[string]bool, len(work)+len(active))
 	for key := range active {
@@ -816,7 +810,7 @@ func (w *Engine) standDownForStandingClaims(ctx context.Context, checker WorkClo
 				keep[i] = true
 				return
 			}
-			if standing.SelfHolds || !standing.OwnerClaimed {
+			if standing.SelfHolds || !standing.OwnerClaimed || standing.Rescinded {
 				keep[i] = true
 				return
 			}
@@ -932,6 +926,20 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 				// a live instance can answer.
 				w.logf("issue #%d reap check failed; negotiating anyway on the first reap after startup: %v", issue.Number, err)
 			} else {
+				// Its owners stopped work on it on a graceful shutdown and
+				// nobody holds it since, so it is free: claim it now and
+				// dispatch, with no handshake or staleness wait (issue #420).
+				if standing.Rescinded {
+					if err := w.Comments.PostComment(ctx, target.Repo, target.Number, claimComment(w.Identity, target.Continue)); err != nil {
+						w.logf("issue #%d ownership was rescinded but claiming it failed: %v", issue.Number, err)
+						return
+					}
+					w.recordHandshake(target, true)
+					w.logf("issue #%d ownership was rescinded on a graceful shutdown; claimed it as %s on %s without asking", issue.Number, w.Identity, target.describe())
+					keep[i] = true
+					newIssues[i].claim = &target
+					return
+				}
 				// Another instance holds the newest claim and posted it
 				// recently enough to still be running the work, so this reap
 				// stands down whether or not it is the first one.
@@ -1945,16 +1953,13 @@ func (s *taskState) snapshot() (running, queued, completed, failed int) {
 func (w *Engine) logf(format string, args ...interface{}) {
 	w.logMu.Lock()
 	defer w.logMu.Unlock()
-	line := fmt.Sprintf("%s "+format, append([]interface{}{time.Now().Format("2006-01-02 15:04:05")}, args...)...)
+	line := fmt.Sprintf(format, args...)
 	// Run defaults Out to io.Discard, but handoff logging also runs from code
 	// paths exercised without it; a missing writer must not panic.
 	if w.Out != nil {
-		_, _ = fmt.Fprintln(w.Out, line)
+		_, _ = fmt.Fprintln(w.Out, time.Now().Format("2006-01-02 15:04:05")+" "+line)
 	}
-	w.recentLogs = append(w.recentLogs, line)
-	if len(w.recentLogs) > recentLogLines {
-		w.recentLogs = w.recentLogs[len(w.recentLogs)-recentLogLines:]
-	}
+	// The UI's slog record carries its own time.
 	if w.UI != nil {
 		w.UI.Log(line)
 	}
@@ -2717,6 +2722,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				} else {
 					w.logf("issue #%d picked up uncontested; claimed it as %s (%q)", issue.Number, w.Identity, startingClaimBody)
 				}
+			} else if w.Comments != nil && session.Resume && !pending.woken {
+				w.reclaimRescinded(ctx, closureChecker, issue)
 			}
 			workMu.Lock()
 			key := issueKey(issue)

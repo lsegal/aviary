@@ -14,7 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -855,5 +855,5 @@ func errorf(s string, v ...any) {
 	if strings.HasPrefix(s, "unhandled node event") {
 		return
 	}
-	log.Printf("ERROR: "+s, v...)
+	slog.Error(fmt.Sprintf(s, v...), "component", "browser")
 }
