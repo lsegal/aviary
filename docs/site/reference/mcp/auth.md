@@ -219,3 +219,13 @@ Complete the GitHub Copilot login after the user has authorized the device code 
 **Returns:** Text confirmation.
 
 **Side effects:** Polls the GitHub device auth endpoint and stores the token on success.
+
+---
+
+## provider_cli_list
+
+The coding-CLI providers: for every coding-CLI definition (the built-ins plus `models.cli_definitions`), whether it is installed and where, its version, sign-in state, quota, and the models it reports. A CLI that is not installed is still listed, with `installed: false` and `status: "missing"`. Settings → Providers and Projects both read this list. Read-only, and allowed by the `standard` and `minimal` presets. CLI: `aviary models clis`.
+
+**Arguments:** none.
+
+**Returns:** `{ "clis": [{ "name", "installed", "binary", "path", "version", "versionNote", "auth", "quota", "tracksQuota", "quotaError", "models", "modelNote", "defaultModel", "projectsNote", "status" }] }`, where `status` is `ok`, `warn` (installed but signed out, too old, or with stale skills) or `missing`.
