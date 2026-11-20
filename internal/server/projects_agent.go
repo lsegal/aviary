@@ -7,6 +7,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/projects"
 )
 
 // promptProjectsAgent sends prompt to the built-in Projects agent's main
@@ -27,4 +28,48 @@ func (s *Server) promptProjectsAgent(_ context.Context, prompt string) error {
 	// The run outlives the engine's poll that routed it.
 	runner.Prompt(agent.WithSessionID(context.Background(), sess.ID), prompt)
 	return nil
+}
+
+// runProjectsJobTurn runs one turn of a Projects job on an Aviary agent
+// in-process, in the agent's main session as agent_run does, granting the
+// turn the job's directory. It returns once the turn ends; cancelling ctx
+// stops it.
+func (s *Server) runProjectsJobTurn(ctx context.Context, run projects.AviaryAgentRun) error {
+	if s.agents == nil {
+		return errors.New("the agent manager is not running")
+	}
+	runner, ok := s.agents.Get(run.Agent)
+	if !ok {
+		return fmt.Errorf("agent %q not found", run.Agent)
+	}
+	sess, err := agent.NewSessionManager().GetOrCreateNamed(run.Agent, "")
+	if err != nil {
+		return fmt.Errorf("opening agent %q's session: %w", run.Agent, err)
+	}
+	ctx = agent.WithSessionID(ctx, sess.ID)
+	if run.Workdir != "" {
+		ctx = agent.WithFilesystemGrant(ctx, run.Workdir)
+	}
+	done := make(chan error, 1)
+	finish := func(err error) {
+		select {
+		case done <- err:
+		default:
+		}
+	}
+	history := true
+	runner.PromptMediaWithOverrides(ctx, run.Prompt, run.MediaURL, agent.RunOverrides{History: &history}, func(e agent.StreamEvent) {
+		if run.Event != nil {
+			run.Event(e)
+		}
+		switch e.Type {
+		case agent.StreamEventDone:
+			finish(nil)
+		case agent.StreamEventStop:
+			finish(context.Canceled)
+		case agent.StreamEventError:
+			finish(e.Err)
+		}
+	})
+	return <-done
 }

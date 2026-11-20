@@ -27,6 +27,11 @@ type Definition struct {
 	// Binary is the default executable the agent is invoked through. It is
 	// overridable per agent by the run's own binary flags.
 	Binary string `json:"binary"`
+	// InProcess says the agent runs inside aviary through core's agent runner
+	// rather than as a child process: the model names one of aviary's own
+	// agents. Such a definition declares no args or output, since there is no
+	// argv to render and no stdout to decode.
+	InProcess bool `json:"inProcess,omitempty"`
 	// MinVersion is the lowest version of Binary the definition's argv
 	// templates are known to work with, as a dotted version such as
 	// "0.58.0". Declaring it turns an opaque unrecognized-argument failure
@@ -224,8 +229,7 @@ type Session struct {
 type Output struct {
 	// Format selects the decoder: "text" (alias "plain") shows output as it
 	// is written, "stream-json" (alias "claude-stream-json") decodes Claude's
-	// streaming event envelope, "codex-json" decodes `codex exec --json`,
-	// "aviary-json" decodes `aviary agent run --output-format json`, and
+	// streaming event envelope, "codex-json" decodes `codex exec --json`, and
 	// "jsonl" decodes a line-delimited JSON event stream described by the
 	// JSONL block below.
 	Format string `json:"format"`
@@ -747,7 +751,6 @@ const (
 	FormatStreamJSON = "stream-json"
 	FormatJSONL      = "jsonl"
 	FormatCodexJSON  = "codex-json"
-	FormatAviaryJSON = "aviary-json"
 	FormatGeminiJSON = "gemini-json"
 
 	TranscriptOpencodeJSON = "opencode-json"
@@ -765,7 +768,6 @@ var outputFormats = map[string]string{
 	formatClaudeJSONAlias: FormatStreamJSON,
 	FormatJSONL:           FormatJSONL,
 	FormatCodexJSON:       FormatCodexJSON,
-	FormatAviaryJSON:      FormatAviaryJSON,
 	FormatGeminiJSON:      FormatGeminiJSON,
 }
 
@@ -848,14 +850,27 @@ func (d Definition) Validate() error {
 			return fmt.Errorf(`field "minVersion": %q must be a dotted version such as "0.58.0"`, d.MinVersion)
 		}
 	}
-	if len(d.Args.Run) == 0 {
+	if d.InProcess {
+		if len(d.Args.Run) > 0 || len(d.Args.Resume) > 0 || len(d.Args.Vision) > 0 {
+			return fmt.Errorf(`field "args" is only meaningful when "inProcess" is false`)
+		}
+		if d.Output != (Output{}) {
+			return fmt.Errorf(`field "output" is only meaningful when "inProcess" is false`)
+		}
+		if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.MinVersion != "" {
+			return fmt.Errorf(`fields "promptStdin", "wakeup", "env", and "minVersion" are only meaningful when "inProcess" is false`)
+		}
+		if d.Session.Assign != AssignNone {
+			return fmt.Errorf(`field "session.assign" must be %q when "inProcess" is true`, AssignNone)
+		}
+	} else if len(d.Args.Run) == 0 {
 		return fmt.Errorf(`field "args.run" is required`)
 	}
 	// A resume template is required of every agent aviary can hold a session
 	// ID for. An agent that declares session.assign "none" has no session to
 	// resume, so it may leave args.resume out and have a recovery re-run its
 	// run template instead of duplicating it verbatim.
-	if len(d.Args.Resume) == 0 && d.Session.Assign != AssignNone {
+	if !d.InProcess && len(d.Args.Resume) == 0 && d.Session.Assign != AssignNone {
 		return fmt.Errorf(`field "args.resume" is required unless "session.assign" is %q`, AssignNone)
 	}
 	for mode, fragments := range map[string][]Fragment{
@@ -894,8 +909,10 @@ func (d Definition) Validate() error {
 	default:
 		return fmt.Errorf(`field "session.assign": %q must be %q, %q, or %q`, d.Session.Assign, AssignEngine, AssignCapture, AssignNone)
 	}
-	if err := d.Output.validate(); err != nil {
-		return err
+	if !d.InProcess {
+		if err := d.Output.validate(); err != nil {
+			return err
+		}
 	}
 	if d.Wakeup != nil {
 		if err := d.Wakeup.validate(); err != nil {

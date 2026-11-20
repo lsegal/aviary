@@ -843,3 +843,32 @@ func TestOnlyAgyIsGatedOutOfProjects(t *testing.T) {
 		}
 	}
 }
+
+// #435: an in-process definition runs through core's agent runner, so it
+// needs no argv or output decoder and rejects the fields only a child process
+// reads.
+func TestInProcessDefinitionValidation(t *testing.T) {
+	definition := Definition{Name: "acme", Binary: "acme", InProcess: true, Session: Session{Assign: AssignNone}}
+	if err := definition.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if !definition.Supports(ModeVision) || !definition.Supports(ModeResume) {
+		t.Fatal("an in-process definition does not support every mode")
+	}
+	for field, broken := range map[string]func(*Definition){
+		`"args"`:           func(d *Definition) { d.Args.Run = []Fragment{{Args: []string{"{prompt}"}}} },
+		`"output"`:         func(d *Definition) { d.Output = Output{Format: FormatText} },
+		`"env"`:            func(d *Definition) { d.Env = map[string]string{"A": "b"} },
+		`"session.assign"`: func(d *Definition) { d.Session.Assign = AssignEngine },
+	} {
+		invalid := definition
+		broken(&invalid)
+		if err := invalid.Validate(); err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("Validate() error = %v, want it to name %s", err, field)
+		}
+	}
+	aviary, ok := MustBuiltin().Lookup("aviary")
+	if !ok || !aviary.InProcess {
+		t.Fatalf("the built-in aviary definition is not in-process: %+v", aviary)
+	}
+}

@@ -107,9 +107,8 @@ func TestAviaryAgentSpecRunsTheNamedAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition, _ := registry.Lookup(spec.Name)
-	got := definition.Render(agents.ModeRun, agents.Values{Model: spec.Model, Prompt: "/gh-fix o/r#1"})
-	if want := []string{"agent", "run", "--output-format", "json", "--workdir", ".", "reviewer", "/gh-fix o/r#1"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv = %#v, want %#v", got, want)
+	if !definition.InProcess || spec.Model != "reviewer" {
+		t.Fatalf("spec = %+v, in-process = %v", spec, definition.InProcess)
 	}
 	if _, err := parseAgentSpecIn(registry, "aviary/reviewer:high"); err == nil {
 		t.Fatal("an aviary agent accepted a level")

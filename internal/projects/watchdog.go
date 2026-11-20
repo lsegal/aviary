@@ -522,6 +522,11 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 	if !ok {
 		return "", unknownAgentError(r.registry(), spec.Name)
 	}
+	if definition.InProcess {
+		var text bytes.Buffer
+		err := r.runInProcess(ctx, spec, prompt, "", os.TempDir(), &text, nil)
+		return text.String(), err
+	}
 	call, err := newOneShotPrompt(definition, agents.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Yolo: r.Yolo}, os.TempDir())
 	if err != nil {
 		return "", err

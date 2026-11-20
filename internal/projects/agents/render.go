@@ -115,6 +115,11 @@ func (d Definition) Render(mode Mode, values Values) []string {
 
 // Supports reports whether the definition declares a template for a mode.
 func (d Definition) Supports(mode Mode) bool {
+	if d.InProcess {
+		// Core's agent runner takes every mode: a resume is a fresh turn and
+		// a vision call passes the image as the turn's media.
+		return mode == ModeRun || mode == ModeResume || mode == ModeVision
+	}
 	switch mode {
 	case ModeRun:
 		return len(d.Args.Run) > 0

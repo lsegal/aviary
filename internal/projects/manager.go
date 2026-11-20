@@ -89,6 +89,9 @@ type Manager struct {
 	// mentionRouter prompts the built-in Projects agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]
+	// aviaryRunner runs in-process agent definitions; see
+	// SetAviaryAgentRunner.
+	aviaryRunner atomic.Pointer[AviaryAgentRunner]
 	// usageRecorder receives each job run's token use; see
 	// SetUsageRecorder.
 	usageRecorder atomic.Pointer[UsageRecorder]
@@ -596,6 +599,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
 		Quotas:            m.latestQuotas,
 	}
+	if aviary := m.aviaryRunner.Load(); aviary != nil {
+		runner.Aviary = *aviary
+	}
 	if record := m.usageRecorder.Load(); record != nil {
 		runner.RecordUsage = *record
 	}
@@ -786,8 +792,9 @@ func (m *Manager) stopRun(run *engineRun) {
 	}
 }
 
-// aviaryAgent is the built-in definition that runs a job on an Aviary agent:
-// aviary/<agent> runs `aviary agent run <agent>` through this executable.
+// aviaryAgent is the built-in definition that runs a job on an Aviary agent
+// in-process: aviary/<agent> runs a turn on <agent> through core's agent
+// runner.
 const aviaryAgent = "aviary"
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.

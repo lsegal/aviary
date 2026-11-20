@@ -206,7 +206,6 @@ func TestBuiltinTranscriptFormats(t *testing.T) {
 	for name, want := range map[string]string{
 		"claude": FormatStreamJSON, "codex": FormatCodexJSON, "gemini": FormatGeminiJSON,
 		"cline": TranscriptClineJSON, "opencode": TranscriptOpencodeJSON, "muse": FormatJSONL,
-		"aviary": FormatAviaryJSON,
 	} {
 		definition, ok := registry.Lookup(name)
 		if !ok {
