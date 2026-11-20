@@ -179,16 +179,6 @@ func NewSession(opts Options) (Session, error) {
 	}
 }
 
-func intField(m map[string]any, key string) int {
-	switch v := m[key].(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	}
-	return 0
-}
-
 func stringField(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return s

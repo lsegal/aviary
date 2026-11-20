@@ -82,7 +82,7 @@ func TestCodexJSONMapsToEvents(t *testing.T) {
 	if done.Status != "done" || done.Output != "hi\n" || done.ExitCode == nil || *done.ExitCode != 0 || done.IsError {
 		t.Fatalf("command = %+v", done)
 	}
-	if events[4].Usage.InputTokens != 35022 || events[4].Usage.CacheReadTokens != 29312 {
+	if events[4].Usage.InputTokens != 35022-29312 || events[4].Usage.CacheReadTokens != 29312 {
 		t.Fatalf("usage = %+v", events[4].Usage)
 	}
 	changes := mapFile(t, NewMapper(FormatCodexJSON), "codex-file-change.jsonl")
@@ -347,5 +347,39 @@ func TestLogPersistsAcrossOpen(t *testing.T) {
 func TestUnknownFormatHasNoMapper(t *testing.T) {
 	if NewMapper("text") != nil {
 		t.Fatal("text output should have no structured mapper")
+	}
+}
+
+func TestRecorderTotalsUsageAndToolCalls(t *testing.T) {
+	log, _ := Open("")
+	recorder := log.Recorder(NewMapper(FormatCodexJSON))
+	for _, line := range []string{
+		`{"type":"item.started","item":{"id":"c","type":"command_execution","command":"ls"}}`,
+		`{"type":"item.updated","item":{"id":"c","type":"command_execution","command":"ls"}}`,
+		`{"type":"item.completed","item":{"id":"c","type":"command_execution","command":"ls","exit_code":0}}`,
+		`{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":4,"output_tokens":2}}`,
+		`{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":3}}`,
+	} {
+		_, _ = recorder.Write([]byte(line + "\n"))
+	}
+	usage, tools := recorder.Usage()
+	if want := (Usage{InputTokens: 21, OutputTokens: 5, CacheReadTokens: 9}); usage != want {
+		t.Fatalf("usage = %+v, want %+v", usage, want)
+	}
+	if tools != 1 {
+		t.Fatalf("tool calls = %d, want the command counted once", tools)
+	}
+}
+
+func TestCodexWebSearchAndMCPResults(t *testing.T) {
+	mapper := NewMapper(FormatCodexJSON)
+	started := mapper.Map([]byte(`{"type":"item.started","item":{"id":"w","type":"web_search","query":"go"}}`))
+	done := mapper.Map([]byte(`{"type":"item.completed","item":{"id":"w","type":"web_search","query":"go","status":"completed"}}`))
+	if got := kinds(append(started, done...)); got != "tool_call,tool_result" {
+		t.Fatalf("web search kinds = %s", got)
+	}
+	result := mapper.Map([]byte(`{"type":"item.completed","item":{"id":"m","type":"mcp_tool_call","server":"gh","tool":"view","result":{"content":[{"type":"text","text":"issue body"}]}}}`))
+	if len(result) != 1 || result[0].Output != "issue body" {
+		t.Fatalf("mcp result = %+v", result)
 	}
 }

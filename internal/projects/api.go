@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // ErrNotWatching is returned by calls that need a running engine when no

@@ -91,6 +91,9 @@ type Manager struct {
 	// mentionRouter prompts the built-in Projects agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]
+	// usageRecorder receives each job run's token use; see
+	// SetUsageRecorder.
+	usageRecorder atomic.Pointer[UsageRecorder]
 }
 
 // MentionRouter sends a prompt to the built-in Projects agent.
@@ -101,6 +104,12 @@ type MentionRouter func(ctx context.Context, prompt string) error
 // block on the agent's answer.
 func (m *Manager) SetMentionRouter(route MentionRouter) {
 	m.mentionRouter.Store(&route)
+}
+
+// SetUsageRecorder makes engines started from now on report each agent run's
+// token use to record, so Projects jobs count toward core usage tracking.
+func (m *Manager) SetUsageRecorder(record UsageRecorder) {
+	m.usageRecorder.Store(&record)
 }
 
 // The backoff between engine starts that failed to resolve the authenticated
@@ -592,6 +601,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		Transcripts:       m.transcripts,
 		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
 		Quotas:            m.latestQuotas,
+	}
+	if record := m.usageRecorder.Load(); record != nil {
+		runner.RecordUsage = *record
 	}
 	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)
