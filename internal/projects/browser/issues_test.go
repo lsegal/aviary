@@ -98,7 +98,7 @@ func TestIssuesURL(t *testing.T) {
 		{
 			name:   "default filter",
 			filter: core.DefaultIssueFilter,
-			want:   "https://github.com/lsegal/aviary/issues?q=is%3Aissue+state%3Aopen+assignee%3A%40me+author%3A%40me",
+			want:   "https://github.com/lsegal/aviary/issues?q=is%3Aissue+state%3Aopen+assignee%3A%40me",
 		},
 		{
 			name:   "custom filter",

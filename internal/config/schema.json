@@ -491,7 +491,7 @@
           },
           "x-label": "Issue filter",
           "x-order": 7,
-          "description": "GitHub issue search filter. Defaults to assignee:@me author:@me."
+          "description": "GitHub issue search filter. Defaults to assignee:@me."
         },
         "all_issues": {
           "type": "boolean",

@@ -29,7 +29,7 @@ aviary project add owner/repo
 
 ## Which issues run
 
-A repository issue is picked up when it is open, carries the ready label (`ready` by default), and matches the issue filter (`assignee:@me author:@me` by default). On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
+A repository issue is picked up when it is open, carries the ready label (`ready` by default), and matches the issue filter (`assignee:@me` by default). On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
 
 - Issues labeled `critical`, then `high`, run before everything else, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.

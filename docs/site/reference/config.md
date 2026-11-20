@@ -413,7 +413,7 @@ projects:
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
 | `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
 | `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
-| `filter` | string[] | `assignee:@me author:@me` | Issue search filter |
+| `filter` | string[] | `assignee:@me` | Issue search filter |
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
