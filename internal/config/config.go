@@ -789,6 +789,7 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
+	migrateProjectAgents(&cfg)
 
 	for i := range cfg.Agents {
 		fileTasks, ftErr := LoadAgentTaskFiles(cfg.Agents[i])
