@@ -10,7 +10,7 @@ Aviary runs three kinds of scheduled work:
 
 **Script tasks** run a sandboxed Lua script directly against the agent's MCP tools. No LLM is involved at runtime. Executions are deterministic and cost zero tokens.
 
-**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs a coding CLI on the prompt in an isolated clone of the repository (in place of `/gh-fix`), and finishes when the CLI exits. See [Scheduled prompts](#scheduled-prompts).
+**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs the project's agent on the prompt in an isolated clone of the repository (in place of `/gh-fix`), and finishes when the agent's run ends. See [Scheduled prompts](#scheduled-prompts).
 
 All types support the same triggers and appear identically in the job queue. The difference is entirely in how they execute.
 
@@ -196,14 +196,14 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 ### Scheduled prompts
 
-A `project` task runs its prompt on the board of a watched project. `project` names the project (its `owner/repo` target) and `cli` optionally picks the coding CLI (`claude:opus`, `codex`); without it the project's agent is used.
+A `project` task runs its prompt on the board of a watched project. `project` names the project (its `owner/repo` target) and `run_agent` optionally overrides the agent that runs it, with an optional model (`claude:opus`, `codex`); without it the project's agent is used. Task files and configuration written with the older `cli` key still load, and are saved back as `run_agent`.
 
 ```yaml
 tasks:
   - name: nightly-triage
     type: project
     project: lsegal/aviary
-    cli: claude:opus
+    run_agent: claude:opus
     at: "02:00"
     timezone: America/Toronto
     overlap: skip
@@ -216,7 +216,7 @@ aviary task add assistant nightly-triage "Triage new issues" --project lsegal/av
 
 Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
 
-Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a coding CLI.
+Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, an **Agent override** (the agent that runs the task, optionally with a model).
 
 The project's **Schedules** tab lists its scheduled prompts with enable toggles and their last results, and edits every field with a preview of the next fires, the recent runs, Run now, Save and Delete. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 

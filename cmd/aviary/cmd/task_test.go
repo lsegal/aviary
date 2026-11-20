@@ -103,21 +103,21 @@ func TestTaskCLI_AddListPreviewRunRemove(t *testing.T) {
 func TestTaskCLI_AddProjectTask(t *testing.T) {
 	s := setupTaskCLI(t)
 
-	_, err := runTaskCmd(t, taskAddCmd, "bot", "triage", "Triage new issues", "--project", "o/r", "--cli", "claude:opus", "--at", "02:00")
+	_, err := runTaskCmd(t, taskAddCmd, "bot", "triage", "Triage new issues", "--project", "o/r", "--run-agent", "claude:opus", "--at", "02:00")
 	require.NoError(t, err)
 	tasks := s.ListTasks()
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "project", tasks[0].Type)
 	assert.Equal(t, "o/r", tasks[0].Project)
-	assert.Equal(t, "claude:opus", tasks[0].CLI)
+	assert.Equal(t, "claude:opus", tasks[0].RunAgent)
 
 	out, err := runTaskCmd(t, taskListCmd)
 	require.NoError(t, err)
 	assert.Contains(t, out, "o/r: daily at 02:00")
 
-	_, err = runTaskCmd(t, taskUpdateCmd, "triage", "--cli", "codex", "--enabled=false")
+	_, err = runTaskCmd(t, taskUpdateCmd, "triage", "--run-agent", "codex", "--enabled=false")
 	require.NoError(t, err)
-	assert.Equal(t, "codex", s.ListTasks()[0].CLI)
+	assert.Equal(t, "codex", s.ListTasks()[0].RunAgent)
 	out, err = runTaskCmd(t, taskListCmd)
 	require.NoError(t, err)
 	assert.Contains(t, out, "disabled")

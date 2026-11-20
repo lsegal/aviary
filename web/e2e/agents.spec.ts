@@ -1112,7 +1112,7 @@ test("a task can target a watched project and keeps it when saved", async ({
 						name: "nightly-triage",
 						type: "project",
 						project: "o/gone",
-						cli: "codex",
+						run_agent: "codex",
 						schedule: "0 3 * * *",
 						prompt: "Triage new issues",
 					},
@@ -1153,11 +1153,11 @@ test("a task can target a watched project and keeps it when saved", async ({
 		"o/other",
 		"o/gone",
 	]);
-	await expect(page.getByLabel("Coding CLI")).toHaveValue("codex");
+	await expect(page.getByLabel("Agent override")).toHaveValue("codex");
 	await expect(page.getByPlaceholder("./docs/**/*.md")).toHaveCount(0);
 
 	await project.selectOption("o/r");
-	await page.getByLabel("Coding CLI").fill(" claude:opus ");
+	await page.getByLabel("Agent override").fill(" claude:opus ");
 
 	// Turning the first task into a project task offers the watched projects.
 	await page.getByRole("button", { name: "daily-briefing" }).click();
@@ -1182,7 +1182,7 @@ test("a task can target a watched project and keeps it when saved", async ({
 						name: "nightly-triage",
 						type: "project",
 						project: "o/r",
-						cli: "claude:opus",
+						run_agent: "claude:opus",
 					},
 				],
 			},
