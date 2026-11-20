@@ -9,9 +9,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/chromedp/cdproto"
-	cdpbrowser "github.com/chromedp/cdproto/browser"
-	"github.com/chromedp/chromedp"
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 )
 
 // windowClosedPolls is how many reads in a row must find no page open before
@@ -30,7 +28,7 @@ var (
 	windowReadTimeout      = 5 * time.Second
 	windowStopTimeout      = 10 * time.Second
 	windowCloseFailedGrace = 2 * time.Second
-	closeBrowser           = closeOverDevTools
+	closeBrowser           = aviarybrowser.CloseOverDevTools
 )
 
 // OpenWindow launches a visible browser on the profile itself and blocks until
@@ -41,7 +39,7 @@ var (
 // instance holds the profile: the point is to change the profile, and changes
 // made in a directory removed on exit would be silently lost.
 func OpenWindow(ctx context.Context, config Config) error {
-	binary, err := findBinary(config.Binary)
+	binary, err := aviarybrowser.FindBinary(config.Binary)
 	if err != nil {
 		return err
 	}
@@ -52,15 +50,15 @@ func OpenWindow(ctx context.Context, config Config) error {
 	if err := os.MkdirAll(profile, 0o700); err != nil {
 		return fmt.Errorf("create browser profile directory %s: %w", profile, err)
 	}
-	lock, err := lockProfile(profile)
+	lock, err := aviarybrowser.LockProfile(profile)
 	if err != nil {
-		if errors.Is(err, errProfileLocked) {
+		if errors.Is(err, aviarybrowser.ErrProfileLocked) {
 			return fmt.Errorf("%w (%s): stop that run first, or set the browser profile_directory setting to open a different directory", err, profile)
 		}
 		return err
 	}
-	defer lock.release()
-	port, err := freePort()
+	defer lock.Release()
+	port, err := aviarybrowser.FreePort()
 	if err != nil {
 		return err
 	}
@@ -68,19 +66,19 @@ func OpenWindow(ctx context.Context, config Config) error {
 	// the configuration changes the browser has not written to disk yet. The
 	// supervisor still puts it under the orphan guard, which only acts when
 	// Aviary exits without closing the window first.
-	cmd := exec.Command(binary, launchArgs(profile, port, true)...)
+	cmd := exec.Command(binary, aviarybrowser.LaunchArgs(profile, port, false)...)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-	started, err := startChild(config.supervisor(), cmd)
+	started, err := aviarybrowser.StartOwned(config.supervisor(), shutdownPolicy(), cmd)
 	if err != nil {
 		return fmt.Errorf("start browser (%s): %w", binary, err)
 	}
-	window := &openWindow{child: started, baseURL: debugURL(port)}
+	window := &openWindow{OwnedChild: started, baseURL: aviarybrowser.DebugURL(port)}
 	return window.run(ctx, profile)
 }
 
 // openWindow is a running browser the user is working in.
 type openWindow struct {
-	*child
+	*aviarybrowser.OwnedChild
 	baseURL string
 	wsURL   string
 }
@@ -91,15 +89,15 @@ func (w *openWindow) run(ctx context.Context, profile string) error {
 	defer cancelReady()
 	go func() {
 		select {
-		case <-w.exited:
+		case <-w.Exited():
 			cancelReady()
 		case <-readyCtx.Done():
 		}
 	}()
-	wsURL, err := waitForReady(readyCtx, w.baseURL, readyTimeout)
+	wsURL, err := aviarybrowser.WaitForReady(readyCtx, w.baseURL, aviarybrowser.OwnedReadyTimeout, aviarybrowser.OwnedReadyInterval)
 	if err != nil {
 		select {
-		case <-w.exited:
+		case <-w.Exited():
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -128,9 +126,9 @@ func (w *openWindow) watch(ctx context.Context) error {
 	hadPage, empty := false, 0
 	for {
 		select {
-		case <-w.exited:
-			if ctx.Err() == nil && w.waitErr != nil {
-				return fmt.Errorf("browser exited: %w", w.waitErr)
+		case <-w.Exited():
+			if ctx.Err() == nil && w.WaitErr() != nil {
+				return fmt.Errorf("browser exited: %w", w.WaitErr())
 			}
 			return nil
 		case <-ctx.Done():
@@ -139,7 +137,7 @@ func (w *openWindow) watch(ctx context.Context) error {
 		case <-ticker.C:
 		}
 		readCtx, cancelRead := context.WithTimeout(ctx, windowReadTimeout)
-		pages, err := openPages(readCtx, w.baseURL)
+		pages, err := aviarybrowser.PageTargets(readCtx, w.baseURL)
 		cancelRead()
 		if err != nil {
 			continue
@@ -157,18 +155,4 @@ func (w *openWindow) watch(ctx context.Context) error {
 
 // stop shuts the window's browser down cleanly, so the preferences it is still
 // holding in memory are written out, and kills it only if it will not go.
-func (w *openWindow) stop() { w.child.stop(w.wsURL) }
-
-// closeOverDevTools sends the browser its own clean-shutdown command. It writes
-// the message to the browser's WebSocket by hand because a window with no pages
-// left has nothing for chromedp to attach to, creating a tab to send it from
-// would flash a new window, and chromedp's Browser refuses to send this command
-// itself.
-func closeOverDevTools(ctx context.Context, wsURL string) error {
-	connection, err := chromedp.DialContext(ctx, wsURL)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = connection.Close() }()
-	return connection.Write(ctx, &cdproto.Message{ID: 1, Method: cdproto.MethodType(cdpbrowser.CommandClose)})
-}
+func (w *openWindow) stop() { w.OwnedChild.Stop(w.wsURL) }

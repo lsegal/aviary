@@ -96,3 +96,24 @@ func TestClaimProfileSidestepsAviarysRunningBrowser(t *testing.T) {
 		t.Fatalf("ClaimProfile() with a stale lock = (%v, %q), want the profile itself", lock, dataDir)
 	}
 }
+
+// TestCheckProfileFreeRefusesAProfileAnOwnedBrowserHolds checks the detached
+// browser is not launched onto a profile another run's owned browser holds,
+// where Chrome would hand the launch over and the wait would only time out.
+func TestCheckProfileFreeRefusesAProfileAnOwnedBrowserHolds(t *testing.T) {
+	profile := t.TempDir()
+	if err := checkProfileFree(profile); err != nil {
+		t.Fatalf("checkProfileFree() on a free profile error = %v", err)
+	}
+	lock, err := LockProfile(profile)
+	if err != nil {
+		t.Fatalf("LockProfile() error = %v, want the check to have released its claim", err)
+	}
+	defer lock.Release()
+	if err := checkProfileFree(profile); !errors.Is(err, ErrProfileLocked) {
+		t.Fatalf("checkProfileFree() on a held profile error = %v, want ErrProfileLocked", err)
+	}
+	if err := checkProfileFree(filepath.Join(profile, "missing")); err != nil {
+		t.Fatalf("checkProfileFree() on a missing profile error = %v", err)
+	}
+}

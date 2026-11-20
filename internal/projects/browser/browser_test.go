@@ -1,17 +1,14 @@
 package browser
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 )
@@ -266,39 +263,6 @@ func TestAdoptsHeadedWindowOnce(t *testing.T) {
 	}
 }
 
-// captureErrorf collects what errorf writes to the standard
-// logger, restoring the logger's own destination and flags afterwards.
-func captureErrorf(t *testing.T, s string, v ...any) string {
-	t.Helper()
-	var buf bytes.Buffer
-	flags := log.Flags()
-	out := log.Writer()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	defer func() {
-		log.SetOutput(out)
-		log.SetFlags(flags)
-	}()
-	errorf(s, v...)
-	return buf.String()
-}
-
-func TestErrorfDropsUnhandledNodeEvents(t *testing.T) {
-	// The exact message chromedp emits for a DOM event it does not model; it
-	// says nothing about Aviary's work, so it must not reach the terminal.
-	got := captureErrorf(t, "unhandled node event %T", &dom.EventTopLayerElementsUpdated{})
-	if got != "" {
-		t.Fatalf("logged %q, want nothing", got)
-	}
-}
-
-func TestErrorfKeepsOtherErrors(t *testing.T) {
-	got := captureErrorf(t, "could not unmarshal event: %s", "boom")
-	if want := "ERROR: could not unmarshal event: boom\n"; got != want {
-		t.Fatalf("logged %q, want %q", got, want)
-	}
-}
-
 // TestTabStopsWaitingForAStuckCommand checks a tab whose command has
 // stopped returning fails the next read instead of joining it in blocking
 // forever. The poll loop reads GitHub on the goroutine that dispatches work, so
@@ -444,7 +408,7 @@ func TestRestartIfUnresponsive(t *testing.T) {
 	previous := probeWebSocketURL
 	defer func() { probeWebSocketURL = previous }()
 	probeWebSocketURL = func(context.Context, string) (string, error) { return "ws://live", nil }
-	launched := &process{port: 9222}
+	launched := &process{Port: 9222}
 	b := &Browser{ctx: context.Background(), cmd: launched}
 	if b.restartIfUnresponsive(launched) {
 		t.Fatal("a browser that still answers was restarted")
@@ -456,7 +420,7 @@ func TestRestartIfUnresponsive(t *testing.T) {
 		t.Fatal("a browser already replaced was probed")
 		return "", nil
 	}
-	b.cmd = &process{port: 9333}
+	b.cmd = &process{Port: 9333}
 	if !b.restartIfUnresponsive(launched) {
 		t.Fatal("a reader of a replaced browser was not told to retry")
 	}
