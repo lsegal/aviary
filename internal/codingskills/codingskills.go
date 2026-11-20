@@ -163,6 +163,23 @@ func (e Env) SkillsDir(target string) string {
 	}
 }
 
+// SkillsDirs lists every global directory target may read skills from:
+// SkillsDir first, then the CLI's own directories that a copy installed by
+// hand or by an older skills.sh may sit in.
+func (e Env) SkillsDirs(target string) []string {
+	dirs := []string{e.SkillsDir(target)}
+	home := e.home()
+	switch target {
+	case "codex":
+		dirs = append(dirs, filepath.Join(home, ".codex", "skills"))
+	case "cline":
+		dirs = append(dirs, filepath.Join(home, ".cline", "skills"))
+	case "opencode":
+		dirs = append(dirs, filepath.Join(filepath.Dir(dirs[0]), "skill"))
+	}
+	return dirs
+}
+
 // lockPath is skills.sh's record of where each global skill came from.
 func (e Env) lockPath() string {
 	if state := e.getenv("XDG_STATE_HOME"); state != "" {
@@ -309,6 +326,30 @@ func (m *Manager) Status() Status {
 		status.Skills = append(status.Skills, skill)
 	}
 	return status
+}
+
+// StaleNote says which of the skills installed for cli differ from the
+// bundled copies, or is empty when every installed copy is current. A skill
+// cli does not have is not stale: it is missing, which Sync handles.
+func (m *Manager) StaleNote(cli CLI) string {
+	version, release := m.releaseVersion()
+	running := "this aviary dev build"
+	if release {
+		running = "aviary v" + version
+	} else {
+		version = "dev"
+	}
+	lock := m.Env.readLock()
+	var stale []string
+	for _, name := range aviary.CodingSkillNames {
+		if install := m.install(name, cli, lock, version); install.Installed && !install.Current {
+			stale = append(stale, name)
+		}
+	}
+	if len(stale) == 0 {
+		return ""
+	}
+	return strings.Join(stale, ", ") + " stale for " + running + "; update them under Skills > For coding CLIs"
 }
 
 func (m *Manager) install(name string, cli CLI, lock map[string]lockEntry, version string) Install {

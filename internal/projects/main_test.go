@@ -1029,6 +1029,32 @@ func TestGHCLIReportsATimedOutCommand(t *testing.T) {
 	}
 }
 
+// TestGHCLIRunUsesItsOwnTimeoutAndFoldsOutputIntoErrors checks a GHCLI with
+// a Timeout is bounded by it, and that Run's error carries what gh printed.
+func TestGHCLIRunUsesItsOwnTimeoutAndFoldsOutputIntoErrors(t *testing.T) {
+	gh := GHCLI{Timeout: 20 * time.Millisecond, runCommand: func(ctx context.Context, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	_, err := gh.Run(context.Background(), "auth", "status")
+	if err == nil || !strings.Contains(err.Error(), "gh auth status did not finish within") {
+		t.Fatalf("error %v, want the call reported as timed out at its own deadline", err)
+	}
+
+	gh = GHCLI{runCommand: func(context.Context, ...string) ([]byte, error) {
+		return []byte("HTTP 404: Not Found\n"), errors.New("exit status 1")
+	}}
+	out, err := gh.Run(context.Background(), "api", "repos/a/b")
+	if out != nil || err == nil || err.Error() != "exit status 1: HTTP 404: Not Found" {
+		t.Fatalf("Run = %q, %v; want gh's output folded into the error", out, err)
+	}
+
+	gh = GHCLI{runCommand: func(context.Context, ...string) ([]byte, error) { return []byte("ok"), nil }}
+	if out, err := gh.Run(context.Background(), "api", "user"); err != nil || string(out) != "ok" {
+		t.Fatalf("Run = %q, %v; want stdout", out, err)
+	}
+}
+
 func TestRemoteControlCodexNoticeWarnsWhenCodexIsConfigured(t *testing.T) {
 	notice := remoteControlCodexNotice(true, []string{"codex"})
 	if notice != codexRemoteControlNotice {

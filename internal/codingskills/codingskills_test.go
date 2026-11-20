@@ -96,6 +96,23 @@ func TestSkillsDirFollowsSkillsShLayout(t *testing.T) {
 	assert.Equal(t, filepath.Join("/xdg", "opencode", "skills"), env.SkillsDir("opencode"))
 }
 
+func TestSkillsDirsListCLIAlternates(t *testing.T) {
+	env := Env{Home: "/home/u", Getenv: func(string) string { return "" }}
+	assert.Equal(t, []string{filepath.Join("/home/u", ".claude", "skills")}, env.SkillsDirs("claude-code"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".agents", "skills"),
+		filepath.Join("/home/u", ".codex", "skills"),
+	}, env.SkillsDirs("codex"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".agents", "skills"),
+		filepath.Join("/home/u", ".cline", "skills"),
+	}, env.SkillsDirs("cline"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".config", "opencode", "skills"),
+		filepath.Join("/home/u", ".config", "opencode", "skill"),
+	}, env.SkillsDirs("opencode"))
+}
+
 func TestStatusReportsVersionPerSkillPerCLI(t *testing.T) {
 	m, _, home := newTestManager(t, "v2.0.0", "claude", "codex")
 	canonical := filepath.Join(home, ".agents", "skills")
@@ -141,6 +158,20 @@ func TestStatusReportsVersionPerSkillPerCLI(t *testing.T) {
 	assert.Equal(t, []Install{{CLI: "claude"}, {CLI: "codex"}}, create.Installs)
 
 	assert.Equal(t, 2, status.Outdated)
+}
+
+func TestStaleNoteNamesStaleSkillsForOneCLI(t *testing.T) {
+	m, _, home := newTestManager(t, "v2.0.0")
+	claudeDir := filepath.Join(home, ".claude", "skills")
+	writeSkill(t, claudeDir, "gh-fix", "fix v1\n")
+	writeSkill(t, claudeDir, "gh-discuss", "discuss v2\n")
+	writeSkill(t, claudeDir, "gh-create", "create v1\n")
+
+	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under Skills > For coding CLIs", m.StaleNote(testCLIs[0]))
+	assert.Empty(t, m.StaleNote(testCLIs[1]), "a CLI with no skills installed has nothing stale")
+
+	m.Version = func() string { return "dev" }
+	assert.Contains(t, m.StaleNote(testCLIs[0]), "stale for this aviary dev build")
 }
 
 func TestStatusIgnoresLockFromAnotherSource(t *testing.T) {

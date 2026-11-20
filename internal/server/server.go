@@ -124,6 +124,7 @@ func New(cfg *config.Config, token string) *Server {
 
 	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
 		s.projects = manager
+		manager.SetLogSource(globalHub.since)
 		manager.SetReportDelivery(s.deliverTaskOutput)
 		manager.SetMentionRouter(s.promptProjectsAgent)
 		manager.SetUsageRecorder(func(rec domain.UsageRecord) {

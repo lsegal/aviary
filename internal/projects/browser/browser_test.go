@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -266,19 +266,21 @@ func TestAdoptsHeadedWindowOnce(t *testing.T) {
 	}
 }
 
-// captureErrorf collects what errorf writes to the standard
-// logger, restoring the logger's own destination and flags afterwards.
+// captureErrorf collects what errorf writes to slog, restoring the
+// default logger afterwards.
 func captureErrorf(t *testing.T, s string, v ...any) string {
 	t.Helper()
 	var buf bytes.Buffer
-	flags := log.Flags()
-	out := log.Writer()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	defer func() {
-		log.SetOutput(out)
-		log.SetFlags(flags)
-	}()
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	})))
+	defer slog.SetDefault(previous)
 	errorf(s, v...)
 	return buf.String()
 }
@@ -294,7 +296,7 @@ func TestErrorfDropsUnhandledNodeEvents(t *testing.T) {
 
 func TestErrorfKeepsOtherErrors(t *testing.T) {
 	got := captureErrorf(t, "could not unmarshal event: %s", "boom")
-	if want := "ERROR: could not unmarshal event: boom\n"; got != want {
+	if want := "level=ERROR msg=\"could not unmarshal event: boom\" component=browser\n"; got != want {
 		t.Fatalf("logged %q, want %q", got, want)
 	}
 }
