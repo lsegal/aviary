@@ -1371,6 +1371,41 @@ func TestLogsHistoryHandler_LimitCap(t *testing.T) {
 
 }
 
+func TestLogHubSince(t *testing.T) {
+	hub := newLogHub(4)
+	logger := slog.New(hub)
+	projectsLog := logger.With("component", "projects")
+	projectsLog.Info("one")
+	logger.Info("other", "component", "server")
+	projectsLog.Info("two")
+
+	lines, offset := hub.since("projects", 0, 0)
+	require.Len(t, lines, 2)
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} one$`, lines[0])
+	assert.True(t, strings.HasSuffix(lines[1], " two"))
+	assert.Equal(t, 3, offset)
+
+	latest, _ := hub.since("projects", 0, 1)
+	require.Len(t, latest, 1)
+	assert.True(t, strings.HasSuffix(latest[0], " two"))
+
+	projectsLog.Info("three")
+	logger.Info("other again", "component", "server")
+	lines, next := hub.since("projects", offset, 0)
+	require.Len(t, lines, 1)
+	assert.True(t, strings.HasSuffix(lines[0], " three"))
+	assert.Equal(t, 5, next)
+
+	// The ring holds four records, so "one" has been evicted.
+	lines, _ = hub.since("projects", 0, 0)
+	require.Len(t, lines, 2)
+	assert.True(t, strings.HasSuffix(lines[0], " two"))
+
+	// An offset from before a restart reads from the start of the ring.
+	lines, _ = hub.since("projects", 99, 0)
+	assert.Len(t, lines, 2)
+}
+
 func TestRecordToEntry_AttrsCoverage(t *testing.T) {
 	hub := newLogHub(10)
 	rec := slog.NewRecord(time.Now(), slog.LevelWarn, "component:warning", 0)
