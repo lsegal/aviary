@@ -2223,3 +2223,33 @@ func TestCopilotProvider_PingAndStream(t *testing.T) {
 	assert.True(t, gotUsage)
 	assert.True(t, gotDone)
 }
+
+// Every API provider validation accepts must resolve at runtime, so the two
+// cannot drift apart again.
+func TestFactoryHandlesEveryAPIProvider(t *testing.T) {
+	f := NewFactory(func(string) (string, error) { return "key", nil })
+	for _, provider := range APIProviders() {
+		_, err := f.ForModel(provider + "/model")
+		if err != nil && strings.Contains(err.Error(), "unknown provider") {
+			t.Errorf("ForModel(%q/model) = %v; APIProviders lists it", provider, err)
+		}
+	}
+}
+
+func TestFactoryUnknownProviderListsTheProviderSet(t *testing.T) {
+	f := NewFactory(func(string) (string, error) { return "", nil })
+	_, err := f.ForModel("bogus/model")
+	if err == nil {
+		t.Fatal("ForModel(bogus/model) succeeded")
+	}
+	for _, want := range append([]string{`unknown provider "bogus"`}, append(APIProviders(), CLIProviders().Providers()...)...) {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+
+	_, err = f.ForModel("claude/opus")
+	if err == nil || !strings.Contains(err.Error(), "claude CLI provider") {
+		t.Errorf("ForModel(claude/opus) = %v, want the CLI provider error", err)
+	}
+}

@@ -85,14 +85,17 @@
 										class="border-b border-gray-100 align-top last:border-0 dark:border-gray-800">
 										<td class="px-3 py-2" data-field="install">
 											<div class="flex items-center gap-2">
-												<span class="h-2 w-2 shrink-0 rounded-full" :class="CLI_DOT[cli.status]" />
+												<span class="h-2 w-2 shrink-0 rounded-full" data-field="status-dot" role="img"
+													:class="CLI_DOT[cli.status]" :title="cliStatusLabel(cli)" :aria-label="cliStatusLabel(cli)" />
 												<span class="font-medium text-gray-800 dark:text-gray-200">{{ cli.name }}</span>
 											</div>
 											<div class="mt-0.5 text-gray-600 dark:text-gray-300">{{ cli.version || "version unknown" }}</div>
 											<div class="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.path || cli.binary }}
 											</div>
-											<div v-if="cli.versionNote" class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.versionNote }}
-											</div>
+											<div v-if="cli.status === 'warn' && cli.statusNote" data-field="status-note"
+												class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.statusNote }}</div>
+											<div v-if="cli.skillsNote" data-field="skills-note"
+												class="text-[11px] text-gray-500 dark:text-gray-400">{{ cli.skillsNote }}</div>
 										</td>
 										<td class="px-3 py-2">
 											<span
@@ -157,7 +160,7 @@
 									</tr>
 								</tbody>
 							</table>
-							<!-- Add a provider: a dashed row that expands into tiles, then the chosen kind's form -->
+							<!-- Add a provider: a button that expands into tiles, then the chosen kind's form -->
 							<ProviderAddRow v-if="availableProviderOptions.length && !providerAddSelection"
 								:options="availableProviderOptions" @select="providerAddSelection = $event" />
 							<div v-if="providerAddSelection" data-testid="provider-add-form"
@@ -365,13 +368,19 @@
 <script lang="ts">
 import { computed, defineComponent, inject, ref, toRefs, watch } from "vue";
 import { useProviderStatus } from "../../composables/useProviderAuth";
-import { type CLIStatus, cliAuthLabel } from "../../lib/cliProviders";
+import {
+	type CLIStatus,
+	cliAuthLabel,
+	cliStatusLabel,
+} from "../../lib/cliProviders";
 import { settingsViewContextKey } from "./context";
 import ProviderAddRow from "./ProviderAddRow.vue";
 
 const CLI_DOT: Record<CLIStatus, string> = {
 	ok: "bg-green-500",
 	warn: "bg-amber-500",
+	// Hollow, so an unconfirmed CLI reads as neither healthy nor missing.
+	unknown: "border border-gray-400 bg-transparent dark:border-gray-500",
 	missing: "bg-gray-300 dark:bg-gray-600",
 };
 
@@ -508,6 +517,7 @@ export default defineComponent({
 			...context,
 			CLI_DOT,
 			cliAuthLabel,
+			cliStatusLabel,
 			cliProviders,
 			providerAddLabel,
 			installedCLIs,

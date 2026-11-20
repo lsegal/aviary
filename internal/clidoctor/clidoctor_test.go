@@ -352,9 +352,9 @@ func TestDoctorProbeHelperProcess(t *testing.T) {
 	time.Sleep(30 * time.Second)
 }
 
-// TestDoctorFlagsStaleSkills checks stale installed skills warn on every
-// installed agent that installs them, while an agent with no skills target is
-// left alone.
+// TestDoctorFlagsStaleSkills checks stale installed skills are noted on every
+// installed agent that installs them without turning a healthy agent's status
+// into a warning (#495), while an agent with no skills target is left alone.
 func TestDoctorFlagsStaleSkills(t *testing.T) {
 	installed := map[string]bool{"probed": true, "silent": true}
 	signedIn := func(string) (string, bool) { return "logged in", true }
@@ -362,8 +362,8 @@ func TestDoctorFlagsStaleSkills(t *testing.T) {
 	doctor.SkillsNote = func(string) string { return "gh-fix stale for aviary v1.5.25; restart aviary to reinstall" }
 	reports := doctor.Report(context.Background())
 	probed := reportFor(t, reports, "probed")
-	if probed.SkillsNote == "" || probed.StatusKey() != StatusWarn {
-		t.Fatalf("probed SkillsNote = %q, status = %q, want a warning", probed.SkillsNote, probed.StatusKey())
+	if probed.SkillsNote == "" || probed.StatusKey() != StatusOK {
+		t.Fatalf("probed SkillsNote = %q, status = %q, want a note on an ok agent", probed.SkillsNote, probed.StatusKey())
 	}
 	if silent := reportFor(t, reports, "silent"); silent.SkillsNote != "" {
 		t.Fatalf("silent SkillsNote = %q, want none for an agent with no skills target", silent.SkillsNote)

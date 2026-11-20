@@ -146,20 +146,22 @@ export interface JobModelsConfig {
 export interface JobModel {
 	/** The coding-CLI spec (AGENT/MODEL:LEVEL), or aviary/<agent>. */
 	spec: string;
-	/** The agent model it comes from, such as cli/claude/opus. */
+	/** The agent model it comes from, such as claude/opus or cli/claude/opus. */
 	model: string;
 }
 
 /**
  * The models a project attached to agentName runs its jobs on, mirroring
  * config.ProjectJobSpecs: the agent's model and fallbacks, after
- * models.defaults, each cli/ model as its spec. A model that is not a CLI
+ * models.defaults, each CLI provider model (claude/opus or cli/claude/opus)
+ * as its spec. cliProviders names the CLI providers. A model that is not a CLI
  * runs the job on the agent itself. An empty name takes the CLI models of
  * models.defaults; an unknown agent has none.
  */
 export function jobModels(
 	agentName: string,
 	cfg: JobModelsConfig | null | undefined,
+	cliProviders: readonly string[] = [],
 ): JobModel[] {
 	const name = agentName.trim();
 	const agent = name
@@ -175,9 +177,11 @@ export function jobModels(
 	for (const m of [model, ...fallbacks].map((v) => v.trim()).filter(Boolean)) {
 		const spec = m.startsWith("cli/")
 			? m.slice("cli/".length)
-			: agent.name
-				? `aviary/${agent.name}`
-				: "";
+			: cliProviders.includes(m.split("/")[0])
+				? m
+				: agent.name
+					? `aviary/${agent.name}`
+					: "";
 		if (spec && !out.some((j) => j.spec === spec)) out.push({ spec, model: m });
 	}
 	return out;

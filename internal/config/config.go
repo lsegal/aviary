@@ -345,12 +345,13 @@ func (t *TaskConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // LegacyTaskModel returns the model override a project task stored under one
 // of its old keys holds: run_agent, or cli before #501, whichever is set
-// first. Both held a coding-CLI spec ("claude/opus"), which is the model
-// cli/claude/opus.
+// first. Both held a coding-CLI spec. One naming a model ("claude/opus") is
+// already that CLI's model; a bare CLI ("codex") is the model cli/codex, as
+// an agent's model names it.
 func LegacyTaskModel(specs ...string) string {
 	for _, spec := range specs {
 		if spec = strings.TrimSpace(spec); spec != "" {
-			if strings.HasPrefix(spec, cliagent.ModelPrefix) {
+			if strings.Contains(spec, "/") {
 				return spec
 			}
 			return cliagent.ModelPrefix + spec

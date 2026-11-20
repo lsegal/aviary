@@ -420,7 +420,7 @@ projects:
 | `filter` | string[] | `assignee:@me` | Issue search filter |
 | `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `cli/<cli>/<model>` model runs jobs on that coding CLI; any other model runs them on the agent itself. |
+| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that coding CLI; any other model runs them on the agent itself. |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |

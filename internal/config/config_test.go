@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 func TestDefault(t *testing.T) {
@@ -920,8 +924,74 @@ func TestValidate_CLIModel(t *testing.T) {
 	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
 	// gemini is a coding-CLI provider Projects jobs run on, so it only warns.
 	assert.True(t, hasIssue(issues, "only claude and codex can answer agent prompts"))
-	assert.True(t, hasIssue(issues, "expected cli/<claude|codex>/<model>"))
+	assert.True(t, hasIssue(issues, "expected <claude|codex>/<model> or cli/<claude|codex>/<model>"))
 
+}
+
+// fakeCLIOnPath puts an empty executable named name on a fresh PATH, so the
+// installed-backend check sees it regardless of the host.
+func fakeCLIOnPath(t *testing.T, name string) {
+	t.Helper()
+	dir := t.TempDir()
+	file := name
+	if runtime.GOOS == "windows" {
+		file += ".exe"
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte("#!/bin/sh\n"), 0o755))
+	t.Setenv("PATH", dir)
+}
+
+// Since the providers unification each CLI is a provider of its own, so
+// "claude/opus" is the claude CLI's opus, validated as cli/claude/opus is.
+func TestValidate_CLIProviderModel(t *testing.T) {
+	fakeCLIOnPath(t, "claude")
+	cfg := &Config{
+		Agents: []AgentConfig{{Name: "a", Model: "claude/opus", Fallbacks: []string{"cli/claude/opus"}}},
+		Models: ModelsConfig{Defaults: &ModelDefaults{Model: "claude/opus"}},
+	}
+	assert.Empty(t, Validate(cfg, nil))
+}
+
+func TestValidate_CLIProviderModelNeedsInstalledCLI(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for _, model := range []string{"codex/gpt-6-sol", "cli/codex/gpt-6-sol"} {
+		issues := Validate(&Config{Agents: []AgentConfig{{Name: "a", Model: model}}}, nil)
+		assert.True(t, hasIssue(issues, "codex CLI not found in PATH"), model)
+		assert.False(t, hasIssue(issues, "unknown provider"), model)
+	}
+}
+
+func TestValidate_ProjectsOnlyCLIProviderWarnsInBothForms(t *testing.T) {
+	for _, model := range []string{"gemini/pro", "cli/gemini/pro", "mycli/x", "cli/mycli/x"} {
+		cfg := &Config{
+			Agents: []AgentConfig{{Name: "a", Model: model}},
+			Models: ModelsConfig{CLIDefinitions: map[string]any{
+				"mycli": map[string]any{
+					"binary":  "mycli",
+					"session": map[string]any{"assign": "none"},
+					"output":  map[string]any{"format": "text"},
+					"args": map[string]any{
+						"run":    []any{map[string]any{"args": []any{"run", "{prompt}"}}},
+						"resume": []any{map[string]any{"args": []any{"run", "{prompt}"}}},
+					},
+				},
+			}},
+		}
+		issues := Validate(cfg, nil)
+		require.Len(t, issues, 1, model)
+		assert.Equal(t, LevelWarning, issues[0].Level, model)
+		assert.Contains(t, issues[0].Message, "only claude and codex can answer agent prompts", model)
+	}
+}
+
+func TestValidate_UnknownProviderListsTheRealProviderSet(t *testing.T) {
+	issues := Validate(&Config{Agents: []AgentConfig{{Name: "a", Model: "bogus/model"}}}, nil)
+	require.Len(t, issues, 1)
+	msg := issues[0].Message
+	assert.Contains(t, msg, `unknown provider "bogus" in model "bogus/model"`)
+	for _, provider := range append(llm.APIProviders(), clidefs.MustBuiltin().Providers()...) {
+		assert.Contains(t, msg, provider)
+	}
 }
 
 func TestValidate_UnknownProvider(t *testing.T) {
@@ -1154,6 +1224,8 @@ func TestUniqueProviderModels(t *testing.T) {
 			{Name: "a2", Model: "openai/gpt-4"},
 			{Name: "a3", Model: "anthropic/claude-opus-4-5"}, // duplicate provider
 			{Name: "a4", Model: "cli/claude/opus"},           // excluded
+			{Name: "a5", Model: "claude/opus"},               // excluded
+			{Name: "a6", Model: "gemini/pro"},                // excluded
 		},
 	}
 	got := UniqueProviderModels(cfg)
@@ -1562,13 +1634,13 @@ func TestMarkdownTask_LegacyKeysLoadAndSaveAsModel(t *testing.T) {
 
 		task, err := LoadMarkdownTask(legacy)
 		require.NoError(t, err)
-		assert.Equal(t, "cli/claude/opus", task.Model, key)
+		assert.Equal(t, "claude/opus", task.Model, key)
 
 		_, err = SaveMarkdownTask(dir, task)
 		require.NoError(t, err)
 		data, err := os.ReadFile(legacy)
 		require.NoError(t, err)
-		assert.Contains(t, string(data), "model: cli/claude/opus", key)
+		assert.Contains(t, string(data), "model: claude/opus", key)
 		assert.NotContains(t, string(data), key+":", key)
 	}
 }
@@ -1599,16 +1671,22 @@ func TestTaskConfig_LegacyKeysLoadAndSaveAsModel(t *testing.T) {
 }
 
 func TestProjectModelSpec(t *testing.T) {
-	spec, override, ok := ProjectModelSpec("reviewer", "cli/claude/opus:high")
+	cfg := &Config{}
+	spec, override, ok := ProjectModelSpec(cfg, "reviewer", "cli/claude/opus:high")
 	assert.True(t, ok)
 	assert.Equal(t, "claude/opus:high", spec)
 	assert.Empty(t, override, "a cli/ model runs as its own spec")
 
-	spec, override, ok = ProjectModelSpec("reviewer", "anthropic/claude-opus-4-5")
+	spec, override, ok = ProjectModelSpec(cfg, "reviewer", "claude/opus")
+	assert.True(t, ok)
+	assert.Equal(t, "claude/opus", spec)
+	assert.Empty(t, override, "a <cli>/<model> model runs as its own spec")
+
+	spec, override, ok = ProjectModelSpec(cfg, "reviewer", "anthropic/claude-opus-4-5")
 	assert.True(t, ok)
 	assert.Equal(t, "aviary/reviewer", spec)
 	assert.Equal(t, "anthropic/claude-opus-4-5", override)
 
-	_, _, ok = ProjectModelSpec("", "anthropic/claude-opus-4-5")
+	_, _, ok = ProjectModelSpec(cfg, "", "anthropic/claude-opus-4-5")
 	assert.False(t, ok, "a provider model needs an agent to run on")
 }

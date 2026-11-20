@@ -23,8 +23,11 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	run.Project = strings.TrimSpace(run.Project)
 	m.mu.Lock()
 	settings, err := m.settingsLocked()
-	agentName := m.projectAgentLocked(run.Project)
+	agentName, agents := m.projectAgentLocked(run.Project), m.agents
 	m.mu.Unlock()
+	if agents == nil {
+		agents = &config.Config{}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -33,9 +36,9 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	}
 	var session AgentSession
 	if model := strings.TrimSpace(run.Model); model != "" {
-		spec, override, ok := config.ProjectModelSpec(agentName, model)
+		spec, override, ok := config.ProjectModelSpec(agents, agentName, model)
 		if !ok {
-			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model that is not a cli/ model on", model, run.Project)
+			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model that is not a coding-CLI model on", model, run.Project)
 		}
 		session = AgentSession{Agent: spec, Model: override}
 	}

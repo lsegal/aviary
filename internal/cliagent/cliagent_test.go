@@ -141,12 +141,36 @@ func TestParseModel(t *testing.T) {
 	_, _, err = ParseModel("cli/gemini/pro")
 	assert.ErrorContains(t, err, `unknown CLI backend "gemini"`)
 	_, _, err = ParseModel("cli/claude")
-	assert.ErrorContains(t, err, "expected cli/<claude|codex>/<model>")
+	assert.ErrorContains(t, err, "expected <claude|codex>/<model> or cli/<claude|codex>/<model>")
 	_, _, err = ParseModel("anthropic/claude-opus")
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, "is not a CLI model")
+	_, _, err = ParseModel("gemini/pro")
+	assert.ErrorContains(t, err, "is not a CLI model")
 
 	assert.True(t, IsCLIModel("cli/claude/opus"))
 	assert.False(t, IsCLIModel("anthropic/claude-opus"))
+}
+
+// The backend's own name is a provider since the providers unification, so
+// "claude/opus" selects the claude CLI exactly as "cli/claude/opus" does.
+func TestParseModel_BackendAsProvider(t *testing.T) {
+	b, m, err := ParseModel("claude/opus")
+	require.NoError(t, err)
+	assert.Equal(t, Claude, b)
+	assert.Equal(t, "opus", m)
+
+	b, m, err = ParseModel("codex/openai/gpt-6-sol")
+	require.NoError(t, err)
+	assert.Equal(t, Codex, b)
+	assert.Equal(t, "openai/gpt-6-sol", m)
+
+	_, _, err = ParseModel("claude/")
+	assert.ErrorContains(t, err, "invalid CLI model")
+
+	assert.True(t, IsCLIModel("claude/opus"))
+	assert.True(t, IsCLIModel(" codex/gpt-6-sol"))
+	assert.False(t, IsCLIModel("gemini/pro"))
+	assert.False(t, IsCLIModel("claude"))
 }
 
 func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {

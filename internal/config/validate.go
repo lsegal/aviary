@@ -9,6 +9,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/schedule"
 )
 
@@ -251,7 +252,7 @@ func (v *validator) checkModel(field, model string) {
 		return
 	}
 
-	provider, name := parts[0], parts[1]
+	provider := parts[0]
 
 	switch provider {
 	case "anthropic":
@@ -276,9 +277,14 @@ func (v *validator) checkModel(field, model string) {
 			"run 'aviary auth set meta:default <your-api-key>'")
 	case "vllm", "ollama":
 	case "cli":
-		v.checkCLIModel(field, model, name)
+		v.checkCLIModel(field, model)
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, google, google-gemini, github-copilot, meta, vllm, ollama, or cli", provider, model)
+		registry := cliRegistry(v.models)
+		if _, ok := registry.Lookup(provider); ok {
+			v.checkCLIModel(field, model)
+			return
+		}
+		v.errorf(field, "%v", llm.UnknownProviderError(registry, provider, model))
 	}
 }
 
@@ -293,9 +299,19 @@ func (v *validator) checkProjectTaskModel(field, model string) {
 	v.checkModel(field, model)
 }
 
-// checkCLIModel checks a "cli/<backend>/<model>" model string and that the
-// backend's CLI is installed.
-func (v *validator) checkCLIModel(field, model, _ string) {
+// cliRegistry returns the CLI providers models names: the built-in
+// definitions overlaid with models.cli_definitions. Definitions that do not
+// load fall back to the built-in set; checkModels reports them on their own.
+func cliRegistry(models ModelsConfig) *clidefs.Registry {
+	if registry, err := clidefs.Load(models.CLIDefinitions); err == nil {
+		return registry
+	}
+	return clidefs.MustBuiltin()
+}
+
+// checkCLIModel checks a CLI provider model string, "<cli>/<model>" or
+// "cli/<cli>/<model>", and that the backend's CLI is installed.
+func (v *validator) checkCLIModel(field, model string) {
 	backend, _, err := cliagent.ParseModel(model)
 	if err != nil {
 		if name, ok := v.projectsOnlyCLI(model); ok {
@@ -310,9 +326,10 @@ func (v *validator) checkCLIModel(field, model, _ string) {
 	}
 }
 
-// projectsOnlyCLI reports the CLI provider a cli/ model names when it is one
-// of the coding-CLI providers, built in or from models.cli_definitions, that
-// Projects jobs run on but agent turns cannot, such as cli/gemini/<model>.
+// projectsOnlyCLI reports the CLI provider a model names when it is one of
+// the coding-CLI providers, built in or from models.cli_definitions, that
+// Projects jobs run on but agent turns cannot, such as gemini/<model> or
+// cli/gemini/<model>.
 func (v *validator) projectsOnlyCLI(model string) (string, bool) {
 	rest, _ := strings.CutPrefix(strings.TrimSpace(model), cliagent.ModelPrefix)
 	name, _, _ := strings.Cut(rest, "/")
@@ -323,11 +340,7 @@ func (v *validator) projectsOnlyCLI(model string) (string, bool) {
 	if _, ok := v.models.CLIDefinitions[name]; ok {
 		return name, true
 	}
-	registry, err := clidefs.Builtin()
-	if err != nil {
-		return "", false
-	}
-	_, ok := registry.Lookup(name)
+	_, ok := cliRegistry(v.models).Lookup(name)
 	return name, ok
 }
 
@@ -531,9 +544,11 @@ func validAuthRef(ref string) bool {
 
 // UniqueProviderModels returns a map of provider name → one representative
 // model string (e.g. "anthropic" → "anthropic/claude-sonnet-5-5") drawn from
-// all agents and model defaults. "cli" models are excluded because they run
-// through a local CLI rather than a remote endpoint; see CLIBackends.
+// all agents and model defaults. CLI provider models, "cli/..." and
+// "<cli>/...", are excluded because they run through a local CLI rather than
+// a remote endpoint; see CLIBackends.
 func UniqueProviderModels(cfg *Config) map[string]string {
+	registry := cliRegistry(cfg.Models)
 	seen := map[string]string{}
 	add := func(model string) {
 		if model == "" {
@@ -545,6 +560,9 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 		}
 		provider := model[:idx]
 		if provider == "cli" {
+			return
+		}
+		if _, ok := registry.Lookup(provider); ok && !llm.IsAPIProvider(provider) {
 			return
 		}
 		if _, ok := seen[provider]; !ok {

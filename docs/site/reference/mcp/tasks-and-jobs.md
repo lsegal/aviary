@@ -68,7 +68,7 @@ Schedule a one-time or recurring task.
 | `content` | string | yes | Prompt text (for `type=prompt` and `type=project`) or Lua source (for `type=script`) |
 | `type` | string | | `"prompt"` (default), `"script"` or `"project"` |
 | `project` | string | | For `type=project`: the watched project (`owner/repo`) whose board runs the prompt |
-| `model` | string | | For `type=project`: a model override, such as `cli/claude/opus`, that the project's agent runs the task with instead of its own model (default: the agent's model) |
+| `model` | string | | For `type=project`: a model override, such as `claude/opus`, that the project's agent runs the task with instead of its own model (default: the agent's model) |
 | `in` | string | | Delay for a one-time run (e.g. `"5m"`, `"2h"`) |
 | `schedule` | string | | Cron expression for recurring runs (5-field or 6-field with leading seconds) |
 | `name` | string | | Task name (required to persist as a recurring task in config) |

@@ -327,7 +327,7 @@ func init() {
 	taskAddCmd.Flags().String("target", "", "output delivery: silent, session:<name>, or <channel>:<id>:<target>")
 	taskAddCmd.Flags().String("type", "", "task type: prompt (default), script or project")
 	taskAddCmd.Flags().String("project", "", "watched project (owner/repo) to run the prompt on as a board job; implies --type project")
-	taskAddCmd.Flags().String("model", "", "model override for a project task: the project's agent runs it with this model, such as cli/claude/opus (default: the agent's model)")
+	taskAddCmd.Flags().String("model", "", "model override for a project task: the project's agent runs it with this model, such as claude/opus (default: the agent's model)")
 	taskAddCmd.Flags().Bool("run-once", false, "fire only once")
 
 	addTaskTriggerFlags(taskUpdateCmd)

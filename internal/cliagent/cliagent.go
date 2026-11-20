@@ -23,7 +23,8 @@ const (
 var Backends = []Backend{Claude, Codex}
 
 // ModelPrefix is the provider prefix that selects a CLI backend in a model
-// string such as "cli/claude/opus".
+// string such as "cli/claude/opus". A backend's own name selects it too, as
+// in "claude/opus": each CLI is a provider in its own right.
 const ModelPrefix = "cli/"
 
 // MCPServerName is the name Aviary's MCP server is registered under in the
@@ -31,21 +32,28 @@ const ModelPrefix = "cli/"
 // boundary rather than mapped from the CLI's event stream.
 const MCPServerName = "aviary"
 
-// IsCLIModel reports whether model selects a CLI backend.
+// IsCLIModel reports whether model selects a CLI backend, either as
+// "cli/<backend>/<model>" or as "<backend>/<model>".
 func IsCLIModel(model string) bool {
-	return strings.HasPrefix(strings.TrimSpace(model), ModelPrefix)
+	model = strings.TrimSpace(model)
+	if strings.HasPrefix(model, ModelPrefix) {
+		return true
+	}
+	provider, _, ok := strings.Cut(model, "/")
+	return ok && Backend(provider).Valid()
 }
 
-// ParseModel splits "cli/<backend>/<model>" into its backend and the model name
-// passed to that CLI.
+// ParseModel splits "cli/<backend>/<model>" or "<backend>/<model>" into its
+// backend and the model name passed to that CLI.
 func ParseModel(model string) (Backend, string, error) {
-	rest, ok := strings.CutPrefix(strings.TrimSpace(model), ModelPrefix)
-	if !ok {
+	model = strings.TrimSpace(model)
+	rest, prefixed := strings.CutPrefix(model, ModelPrefix)
+	backend, name, ok := strings.Cut(rest, "/")
+	if !prefixed && !Backend(backend).Valid() {
 		return "", "", fmt.Errorf("model %q is not a CLI model", model)
 	}
-	backend, name, ok := strings.Cut(rest, "/")
 	if !ok || backend == "" || strings.TrimSpace(name) == "" {
-		return "", "", fmt.Errorf("invalid CLI model %q: expected cli/<claude|codex>/<model>", model)
+		return "", "", fmt.Errorf("invalid CLI model %q: expected <claude|codex>/<model> or cli/<claude|codex>/<model>", model)
 	}
 	b := Backend(backend)
 	if !b.Valid() {

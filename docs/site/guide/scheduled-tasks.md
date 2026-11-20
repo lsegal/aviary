@@ -196,14 +196,14 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 ### Scheduled prompts
 
-A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `cli/claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A `cli/` model runs the job on that coding CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load as `cli/<value>`, and are saved back as `model`.
+A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A coding-CLI model runs the job on that CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load into `model` (a value naming only a CLI, such as `codex`, loads as `cli/codex`), and are saved back as `model`.
 
 ```yaml
 tasks:
   - name: nightly-triage
     type: project
     project: lsegal/aviary
-    model: cli/claude/opus
+    model: claude/opus
     at: "02:00"
     timezone: America/Toronto
     overlap: skip
@@ -211,7 +211,7 @@ tasks:
 ```
 
 ```bash
-aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --model cli/claude/opus --at 02:00
+aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --model claude/opus --at 02:00
 ```
 
 Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
