@@ -311,6 +311,30 @@ func (m *Manager) Status() Status {
 	return status
 }
 
+// StaleNote says which of the skills installed for cli differ from the
+// bundled copies, or is empty when every installed copy is current. A skill
+// cli does not have is not stale: it is missing, which Sync handles.
+func (m *Manager) StaleNote(cli CLI) string {
+	version, release := m.releaseVersion()
+	running := "this aviary dev build"
+	if release {
+		running = "aviary v" + version
+	} else {
+		version = "dev"
+	}
+	lock := m.Env.readLock()
+	var stale []string
+	for _, name := range aviary.CodingSkillNames {
+		if install := m.install(name, cli, lock, version); install.Installed && !install.Current {
+			stale = append(stale, name)
+		}
+	}
+	if len(stale) == 0 {
+		return ""
+	}
+	return strings.Join(stale, ", ") + " stale for " + running + "; update them under Skills > For coding CLIs"
+}
+
 func (m *Manager) install(name string, cli CLI, lock map[string]lockEntry, version string) Install {
 	dir := filepath.Join(m.Env.SkillsDir(cli.Target), name)
 	install := Install{CLI: cli.ID}
