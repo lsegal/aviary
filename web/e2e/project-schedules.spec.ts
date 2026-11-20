@@ -55,7 +55,7 @@ const TASKS = [
 		id: "assistant/nightly-triage",
 		name: "nightly-triage",
 		prompt: "Triage issues opened since the last run and label them.",
-		cli: "claude:opus",
+		run_agent: "claude:opus",
 		enabled: true,
 		trigger_type: "daily",
 		at: "02:00",
@@ -270,7 +270,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 			timezone: "America/Toronto",
 		});
 
-	await editor.getByLabel("Coding CLI").fill("codex");
+	await editor.getByLabel("Agent override").fill("codex");
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -286,7 +286,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 			overlap: "skip",
 			missed: "run_once",
 			content: "Triage issues opened since the last run and label them.",
-			cli: "codex",
+			run_agent: "codex",
 			project: "lsegal/aviary",
 			enabled: true,
 		});
@@ -328,7 +328,7 @@ test("new schedule creates a project task", async ({ page }) => {
 			overlap: "skip",
 			missed: "skip",
 			content: "Rerun flaky CI jobs on open PRs.",
-			cli: "",
+			run_agent: "",
 			agent: "reviewer",
 			name: "hourly-ci-watch",
 			type: "project",

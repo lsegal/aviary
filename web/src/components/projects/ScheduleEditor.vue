@@ -19,8 +19,9 @@
 			<span class="text-xs text-gray-500">Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</span>
 		</label>
 		<label class="block text-sm">
-			<span class="font-medium text-gray-700 dark:text-gray-200">Coding CLI</span>
-			<input v-model="draft.cli" name="cli" :class="INPUT" placeholder="The project's agent, or e.g. claude:opus" />
+			<span class="font-medium text-gray-700 dark:text-gray-200">Agent override</span>
+			<input v-model="draft.runAgent" name="run_agent" :class="INPUT" placeholder="The project's agent, or e.g. claude:opus" />
+			<span class="text-xs text-gray-500">The agent that runs this task, optionally with a model. Leave empty to use the project's agent.</span>
 		</label>
 
 		<fieldset class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">

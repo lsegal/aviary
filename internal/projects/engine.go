@@ -3610,7 +3610,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			number++
 		}
 		key := target + "#" + strconv.Itoa(number)
-		session := AgentSession{Agent: run.CLI}
+		session := AgentSession{Agent: run.RunAgent}
 		if session.Agent == "" {
 			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
 				session.Agent = identified.AgentNameFor(target)

@@ -873,8 +873,8 @@
 </select>
 </div>
 <div>
-<label class="field-label">Coding CLI</label>
-<input v-model="selectedTask.cli" type="text" class="field-input font-mono" placeholder="Default: the project's agent (e.g. claude:opus)" aria-label="Coding CLI" />
+<label class="field-label">Agent override</label>
+<input v-model="selectedTask.run_agent" type="text" class="field-input font-mono" placeholder="Default: the project's agent (e.g. claude:opus)" aria-label="Agent override" />
 </div>
 </div>
 
