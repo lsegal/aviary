@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 // The screenshot fallback exists for one situation only: GitHub changed its
@@ -281,16 +282,14 @@ func visionArgs(spec AgentSpec, imagePath, pageURL string, qualified bool) []str
 	})
 }
 
-// builtinAgents is the fallback registry for a spec that names an agent
-// without carrying its definition, which is every spec built by a test.
-var builtinAgents = sync.OnceValue(clidefs.MustBuiltin)
-
 // definition resolves the definition the invocation is rendered from.
 func (s AgentSpec) definition() *clidefs.Definition {
 	if s.Definition != nil {
 		return s.Definition
 	}
-	if found, ok := builtinAgents().Lookup(s.Name); ok {
+	// A spec that names an agent without carrying its definition resolves
+	// it through core's CLI providers.
+	if found, ok := llm.CLIProvider(s.Name); ok {
 		return &found
 	}
 	return nil

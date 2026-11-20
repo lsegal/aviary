@@ -272,11 +272,11 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import { useCLIProviders } from "../composables/useCLIProviders";
 import {
 	useAddProject,
 	useProjectClones,
 } from "../composables/useProjectSettings";
+import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	DELIVERY_OPTIONS,
 	defaultFields,
@@ -354,7 +354,7 @@ DefaultTag.props = ["on"];
 const route = useRoute();
 const router = useRouter();
 const store = useSettingsStore();
-const probe = useCLIProviders();
+const probe = useProviderStatus();
 const clones = useProjectClones();
 const addProject = useAddProject();
 

@@ -159,7 +159,7 @@ test("tab switching does not blank content", async ({ page }) => {
 			.getByRole("link", { name: "Providers & Auth", exact: true })
 			.click();
 		await expect(
-			page.getByRole("heading", { name: "Credentials", exact: true }),
+			page.getByRole("heading", { name: "Providers", exact: true }),
 		).toBeVisible();
 	}
 });
@@ -337,7 +337,7 @@ test("providers auth tab shows credential controls", async ({ page }) => {
 		.click();
 
 	await expect(
-		page.getByRole("heading", { name: "Credentials", exact: true }),
+		page.getByRole("heading", { name: "Providers", exact: true }),
 	).toBeVisible();
 	await expect(
 		page.getByRole("heading", { name: "Extra Secrets", exact: true }),

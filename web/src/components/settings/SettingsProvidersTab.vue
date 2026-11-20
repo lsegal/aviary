@@ -2,13 +2,19 @@
 				<section v-show="activeTab === 'providers'" class="space-y-5 pb-8">
 					<!-- Provider Authentication -->
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Credentials
-						</h3>
-						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">Configure authentication for LLM providers. OAuth
-							tokens are stored securely and refreshed automatically.</p>
+						<div class="mb-2 flex items-center gap-2">
+							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Providers</h3>
+							<span v-if="cliRefreshing" data-testid="providers-refreshing"
+								class="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-500">
+								<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" /> Checking CLIs
+							</span>
+						</div>
+						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">How Aviary reaches models: API keys, OAuth sign-ins
+							and endpoints configured here, and coding CLIs that sign in with their own command-line tool. OAuth tokens
+							are stored securely and refreshed automatically.</p>
 
-						<!-- Existing provider credentials -->
-						<div v-if="configuredProviders.length"
+						<!-- Every provider: configured credentials, then the providers reached through a CLI -->
+						<div v-if="configuredProviders.length || cliProviders.length" data-testid="providers-list"
 							class="mb-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
 							<table class="w-full text-xs">
 								<thead>
@@ -74,9 +80,67 @@
 											</div>
 										</td>
 									</tr>
+									<tr v-for="cli in cliProviders" :key="`cli:${cli.name}`" :data-cli="cli.name" :data-status="cli.status"
+										class="border-b border-gray-100 align-top last:border-0 dark:border-gray-800">
+										<td class="px-3 py-2" data-field="install">
+											<div class="flex items-center gap-2">
+												<span class="h-2 w-2 shrink-0 rounded-full" :class="CLI_DOT[cli.status]" />
+												<span class="font-medium text-gray-800 dark:text-gray-200">{{ cli.name }}</span>
+											</div>
+											<template v-if="cli.installed">
+												<div class="mt-0.5 text-gray-600 dark:text-gray-300">{{ cli.version || "version unknown" }}</div>
+												<div class="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.path || cli.binary }}
+												</div>
+												<div v-if="cli.versionNote" class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.versionNote }}
+												</div>
+											</template>
+											<template v-else>
+												<div class="mt-0.5 text-gray-500 dark:text-gray-400">Not installed</div>
+												<div class="font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.binary }} not on PATH</div>
+											</template>
+										</td>
+										<td class="px-3 py-2">
+											<span
+												class="inline-block rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">CLI</span>
+										</td>
+										<td class="space-y-1 px-3 py-2">
+											<div data-field="auth" :class="cli.signedIn
+												? 'text-green-600 dark:text-green-400'
+												: cli.installed && cli.auth === 'signed out'
+													? 'text-amber-600 dark:text-amber-400'
+													: 'text-gray-500 dark:text-gray-400'">{{ cliAuthLabel(cli) }}</div>
+											<div v-if="cli.installed && (cli.quota || cli.quotaError)" data-field="quota"
+												class="text-gray-600 dark:text-gray-300">
+												{{ cli.quota }}
+												<div v-if="cli.quotaError" class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.quotaError }}
+												</div>
+											</div>
+											<div data-field="models">
+												<details v-if="cli.models.length">
+													<summary class="cursor-pointer text-gray-700 dark:text-gray-300">
+														{{ cli.models.length }} {{ cli.models.length === 1 ? "model" : "models" }}
+														<span v-if="cli.defaultModel" class="text-gray-400 dark:text-gray-500">· default {{ cli.defaultModel
+														}}</span>
+													</summary>
+													<ul class="mt-1 space-y-0.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+														<li v-for="m in cli.models" :key="m">{{ m }}</li>
+													</ul>
+													<div v-if="cli.modelNote" class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ cli.modelNote }}
+													</div>
+												</details>
+												<span v-else-if="cli.modelNote" class="text-[11px] text-gray-400 dark:text-gray-500">{{ cli.modelNote
+												}}</span>
+											</div>
+										</td>
+										<td class="px-3 py-2"></td>
+									</tr>
 								</tbody>
 							</table>
 						</div>
+						<p v-else-if="cliRefreshing" class="mb-4 text-xs text-gray-500">Checking coding CLIs…</p>
+						<p v-if="cliError && !cliProviders.length" class="mb-4 text-xs text-red-600 dark:text-red-400">
+							Couldn't read the coding CLIs: {{ cliError }}
+						</p>
 
 						<!-- Add provider credential -->
 						<div v-if="availableProviderOptions.length" class="flex flex-wrap items-center gap-2">
@@ -113,6 +177,9 @@
 						<p v-else-if="!configuredProviders.length" class="text-xs text-gray-400 dark:text-gray-500">No providers
 							configured yet.
 							Use the dropdown above to add one.</p>
+						<button type="button" data-testid="providers-check-again"
+							class="mt-2 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
+							:disabled="cliRefreshing" @click="refreshCLIProviders">↻ Check CLIs again</button>
 
 						<!-- Anthropic two-step OAuth inline form -->
 						<div v-if="anthropicUrl" class="mt-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
@@ -262,9 +329,6 @@
 							@click="refreshCredentials">? Refresh</button>
 					</div>
 
-					<!-- Mounted with the tab, so the slow CLI probe runs only when Providers is opened. -->
-					<SettingsCLIProviders v-if="activeTab === 'providers'" />
-
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Token</h3>
 						<p class="text-xs text-gray-500 dark:text-gray-400">
@@ -281,9 +345,16 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, inject, ref, toRefs } from "vue";
+import { computed, defineComponent, inject, ref, toRefs, watch } from "vue";
+import { useProviderStatus } from "../../composables/useProviderAuth";
+import { type CLIStatus, cliAuthLabel } from "../../lib/cliProviders";
 import { settingsViewContextKey } from "./context";
-import SettingsCLIProviders from "./SettingsCLIProviders.vue";
+
+const CLI_DOT: Record<CLIStatus, string> = {
+	ok: "bg-green-500",
+	warn: "bg-amber-500",
+	missing: "bg-gray-300 dark:bg-gray-600",
+};
 
 interface ConfiguredProviderEntry {
 	key: string;
@@ -340,7 +411,6 @@ interface SettingsProvidersContext {
 
 export default defineComponent({
 	name: "SettingsProvidersTab",
-	components: { SettingsCLIProviders },
 	setup() {
 		const settings = inject<SettingsProvidersContext>(settingsViewContextKey);
 		if (!settings) {
@@ -382,8 +452,26 @@ export default defineComponent({
 
 		const copyLabel = computed(() => (copiedCode.value ? "Copied" : "Copy"));
 
+		// The tab stays mounted while hidden, so the slow CLI probe runs only
+		// when Providers is opened.
+		const cliStatus = useProviderStatus({ refreshOnMount: false });
+		watch(
+			() => resolvedSettings.activeTab,
+			(tab) => {
+				if (tab === "providers") void cliStatus.refresh();
+			},
+			{ immediate: true },
+		);
+		const cliProviders = computed(() => cliStatus.clis.value ?? []);
+
 		const exposed = {
 			...context,
+			CLI_DOT,
+			cliAuthLabel,
+			cliProviders,
+			cliRefreshing: cliStatus.refreshing,
+			cliError: cliStatus.error,
+			refreshCLIProviders: cliStatus.refresh,
 			copyCode,
 			copyLabel,
 			selectCode,
