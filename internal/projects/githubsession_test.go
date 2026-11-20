@@ -163,7 +163,7 @@ func TestManagerStartBrowserFailureNamesGHPolling(t *testing.T) {
 	}
 	run := &engineRun{settings: engineSettings{Delivery: DeliveryBrowser}, engine: &Engine{}}
 	err = m.startBrowser(context.Background(), run, GHCLI{})
-	if err == nil || !strings.Contains(err.Error(), "no Chrome") || !strings.Contains(err.Error(), "projects.delivery to poll") {
+	if err == nil || !strings.Contains(err.Error(), "no Chrome") || !strings.Contains(err.Error(), "delivery: poll in an agent's projects settings") {
 		t.Fatalf("startBrowser = %v", err)
 	}
 }

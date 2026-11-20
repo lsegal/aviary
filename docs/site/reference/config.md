@@ -12,7 +12,6 @@ browser:   { ... }
 search:    { ... }
 scheduler: { ... }
 skills:    { ... }
-projects:  { ... }
 coding_skills: { ... }
 ```
 
@@ -65,6 +64,7 @@ agents:
     permissions: { ... }
     channels: [ ... ]
     tasks: [ ... ]
+    projects: { ... }
 ```
 
 | Field | Type | Default | Description |
@@ -78,6 +78,7 @@ agents:
 | `working_dir` | string | | Default working directory for file-path resolution. Supports `~` and environment variables. Defaults to the agent's data directory. |
 | `rules` | string | | Inline markdown rules or a path to a file (e.g. `"./RULES.md"`) injected at the top of every system prompt. Paths are resolved relative to `working_dir`. |
 | `verbose` | bool | `false` | Emit a brief status message before each tool call when responding via a channel |
+| `projects` | object | | The GitHub [projects](#agents-projects) this agent owns and their settings |
 
 ### agents[].permissions
 
@@ -249,6 +250,56 @@ tasks:
 | `script` | string | | Lua script executed directly (for `type: script`) |
 | `target` | string | | Target session or output destination. Use `session:<name>` for a session or `<channel-type>:<configured-channel-id>:<delivery-id>` for channel delivery. |
 
+### agents[].projects
+
+The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and it is managed on the agent's **Projects** settings tab (`/settings/agents/<agent>/projects`). There is no top-level `projects:` section; one in `aviary.yaml` is ignored. Listing the same target under two agents is a validation error.
+
+Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
+
+One engine runs every agent's projects, so the settings below `list` are merged across agents in `agents:` order, a later agent's non-zero value winning.
+
+```yaml
+agents:
+  - name: coder
+    model: cli/claude/opus
+    fallbacks: [cli/codex/gpt-5.6-terra:high]
+    projects:
+      list:
+        - target: owner/repo
+        - target: https://github.com/orgs/acme/projects/3
+          reports:                   # off unless set
+            agent: assistant
+            targets: [slack:main:C0123456789]
+      concurrency: 4
+      no_merge: true
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
+| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
+| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
+| `concurrency` | int | `3` | Jobs that run at once across every project |
+| `interval` | duration | `30s` | Time between GitHub polls |
+| `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
+| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
+| `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
+| `filter` | string[] | `assignee:@me` | Issue search filter |
+| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
+| `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
+| `yolo` | bool | `false` | Disable the CLI providers' sandboxes and permission checks |
+| `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
+| `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
+| `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
+| `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
+| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
+| `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
+| `webhook.listen` | string | `:0` | Webhook listener address |
+| `webhook.path` | string | `/webhook` | Webhook path |
+| `webhook.secret` | string | | Webhook signature secret, plain or a credential reference in the form `auth:<key>` (see `aviary auth set`) |
+| `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
+
 ---
 
 ## models
@@ -384,54 +435,6 @@ coding_skills:
 | --- | --- | --- | --- |
 | `auto_update` | bool | `true` | At startup, reinstall any skill whose installed copy differs from the one this release was built with |
 | `install_new_clis` | bool | `true` | Install the skills for providers found on the `PATH` later (checked every 15 minutes) |
-
----
-
-## projects
-
-Settings for [Projects](/guide/projects). Every field is optional and holds only a value that differs from its default; `aviary watch` with defaults writes nothing here. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
-
-```yaml
-projects:
-  list:
-    - target: owner/repo
-    - target: https://github.com/orgs/acme/projects/3
-      agent: opus-coder              # this project's agent
-      reports:                       # off unless set
-        agent: assistant
-        targets: [slack:main:C0123456789]
-  concurrency: 4
-  agent: coder                     # projects without their own
-  no_merge: true
-```
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board |
-| `list[].agent` | string | `agent` | The Aviary agent this project is attached to; its model and fallbacks are the jobs' provider and model defaults, in fallback order |
-| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
-| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
-| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
-| `concurrency` | int | `3` | Jobs that run at once across every project |
-| `interval` | duration | `30s` | Time between GitHub polls |
-| `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
-| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
-| `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
-| `filter` | string[] | `assignee:@me` | Issue search filter |
-| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
-| `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `agent` | string | `models.defaults` | The Aviary agent projects without their own are attached to. A `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself. |
-| `yolo` | bool | `false` | Disable the CLI providers' sandboxes and permission checks |
-| `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
-| `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
-| `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
-| `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
-| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
-| `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
-| `webhook.listen` | string | `:0` | Webhook listener address |
-| `webhook.path` | string | `/webhook` | Webhook path |
-| `webhook.secret` | string | | Webhook signature secret, plain or a credential reference in the form `auth:<key>` (see `aviary auth set`) |
-| `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
 
 ---
 

@@ -603,4 +603,16 @@ func (v *validator) checkProjects(agents []AgentConfig) {
 			owners[target] = agent.Name
 		}
 	}
+	// A project task runs against a project of its own agent's.
+	for i, agent := range agents {
+		for j, task := range agent.Tasks {
+			project := strings.TrimSpace(task.Project)
+			if project == "" {
+				continue
+			}
+			if owner, ok := owners[project]; ok && owner != agent.Name {
+				v.warnf(fmt.Sprintf("agents[%d].tasks[%d].project", i, j), "%s belongs to agent %q, not %q; its runs use %q's models", project, owner, agent.Name, owner)
+			}
+		}
+	}
 }

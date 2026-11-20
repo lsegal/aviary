@@ -265,7 +265,7 @@ aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
              [--yolo] [--no-merge] [--no-changelog]
 ```
 
-With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` attaches the targets to an Aviary agent, whose model and fallbacks pick the jobs' CLI providers. Flags override the `projects:` section while the watch runs.
+With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. Flags override the agents' `projects:` settings while the watch runs.
 
 ---
 

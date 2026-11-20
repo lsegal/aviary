@@ -1097,7 +1097,7 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	).toHaveCount(0);
 });
 
-test("a task can target a watched project and keeps it when saved", async ({
+test("a task can target one of its agent's projects and keeps it when saved", async ({
 	page,
 }) => {
 	let savedConfig: unknown = null;
@@ -1118,9 +1118,15 @@ test("a task can target a watched project and keeps it when saved", async ({
 						prompt: "Triage new issues",
 					},
 				],
+				// A project task runs against a project its own agent owns.
+				projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
+			},
+			{
+				name: "elsewhere",
+				model: "anthropic/claude-sonnet-4-5",
+				projects: { list: [{ target: "o/not-mine" }] },
 			},
 		],
-		projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
 	};
 	await mockMCP(page, {
 		config_get: config,
@@ -1190,7 +1196,9 @@ test("a task can target a watched project and keeps it when saved", async ({
 						model: "cli/claude/opus",
 					},
 				],
+				projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
 			},
+			{ name: "elsewhere", projects: { list: [{ target: "o/not-mine" }] } },
 		],
 	});
 });

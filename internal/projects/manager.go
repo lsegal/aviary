@@ -753,7 +753,7 @@ func (m *Manager) startBrowser(ctx context.Context, run *engineRun, gh GHCLI) er
 	options := run.settings.Browser
 	driver, err := startBrowserDriver(ctx, options.Config())
 	if err != nil {
-		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set projects.delivery to poll to read GitHub through gh instead", err)
+		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set delivery: poll in an agent's projects settings to read GitHub through gh instead", err)
 	}
 	// The browser closes cleanly with the engine, including when Aviary exits.
 	run.cleanup = append(run.cleanup, func() { _ = driver.Close() })

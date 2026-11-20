@@ -218,3 +218,21 @@ func TestValidateRejectsAProjectOwnedTwice(t *testing.T) {
 	}
 	t.Fatalf("issues = %+v", Validate(cfg, nil))
 }
+
+func TestValidateWarnsOnATaskForAnotherAgentsProject(t *testing.T) {
+	cfg := &Config{Agents: []AgentConfig{
+		{Name: "a", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/a"}}},
+			Tasks: []TaskConfig{{Name: "mine", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
+		{Name: "b", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/b"}}},
+			Tasks: []TaskConfig{{Name: "theirs", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
+	}}
+	var fields []string
+	for _, issue := range Validate(cfg, nil) {
+		if strings.HasSuffix(issue.Field, ".project") {
+			fields = append(fields, issue.Field+" "+string(issue.Level))
+		}
+	}
+	if !slices.Equal(fields, []string{"agents[1].tasks[0].project WARN"}) {
+		t.Fatalf("project issues = %v", fields)
+	}
+}
