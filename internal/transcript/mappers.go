@@ -304,11 +304,11 @@ func (m *codexMapper) item(item map[string]any, completed bool) []Event {
 		if server := stringValue(item, "server"); server != "" {
 			name = server + "." + name
 		}
+		args, _ := item["arguments"].(map[string]any)
 		if !completed {
-			args, _ := item["arguments"].(map[string]any)
 			return []Event{{Kind: KindToolCall, CallID: id, Name: name, Input: args}}
 		}
-		result := Event{Kind: KindToolResult, CallID: id, Name: name, IsError: failed}
+		result := Event{Kind: KindToolResult, CallID: id, Name: name, Input: args, IsError: failed}
 		if errValue, ok := item["error"].(map[string]any); ok {
 			result.IsError, result.Output = true, stringValue(errValue, "message")
 		} else if value, ok := item["result"].(map[string]any); ok && value["content"] != nil {

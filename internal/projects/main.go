@@ -23,9 +23,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/domain"
 	agents "github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 var version = "dev"
@@ -1360,6 +1362,47 @@ type CommandRunner struct {
 	// starts in and clones under. Nil uses the system temp
 	// directory.
 	CloneRoot func() (string, error)
+	// RecordUsage receives each run's token use for core usage tracking. Nil
+	// records nothing.
+	RecordUsage UsageRecorder
+}
+
+// UsageRecorder receives the token use of one agent run.
+type UsageRecorder func(domain.UsageRecord)
+
+// UsageAgentID is the agent ID Projects job usage is recorded under.
+const UsageAgentID = "projects"
+
+// recordUsage reports a run's token use, as its transcript mapper read it
+// from the agent's stream, so Projects jobs appear in core's Usage view. A
+// run that reported nothing and did not fail records nothing, as core's own
+// prompts do.
+func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transcript.Recorder, runErr error) {
+	if r.RecordUsage == nil {
+		return
+	}
+	usage, tools := recorder.Usage()
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && runErr == nil {
+		return
+	}
+	model := spec.Model
+	if model == "" {
+		model = spec.Name
+	}
+	r.RecordUsage(domain.UsageRecord{
+		Timestamp:        time.Now(),
+		SessionID:        issueKey(issue),
+		AgentID:          UsageAgentID,
+		Model:            model,
+		Provider:         spec.Name,
+		InputTokens:      usage.InputTokens,
+		OutputTokens:     usage.OutputTokens,
+		CacheReadTokens:  usage.CacheReadTokens,
+		CacheWriteTokens: usage.CacheWriteTokens,
+		ToolCalls:        tools,
+		CostUSD:          usage.CostUSD,
+		HasError:         runErr != nil,
+	})
 }
 
 func commandArgs(r CommandRunner, issue Issue) []string {
@@ -1909,98 +1952,6 @@ func (w *sessionMetadataCaptureWriter) Flush() {
 	}
 }
 
-// claudeJSONOutputWriter decodes Claude's --output-format stream-json events
-// into readable text lines. Claude's default text output only prints once
-// the full response is ready, which leaves the dashboard showing no output
-// at all until the agent finishes; stream-json events arrive incrementally.
-type claudeJSONOutputWriter struct {
-	mu     sync.Mutex
-	output io.Writer
-	buffer []byte
-}
-
-type claudeStreamEvent struct {
-	Type    string `json:"type"`
-	Message struct {
-		Content []struct {
-			Type  string          `json:"type"`
-			Text  string          `json:"text"`
-			Name  string          `json:"name"`
-			Input json.RawMessage `json:"input"`
-		} `json:"content"`
-	} `json:"message"`
-	IsError bool   `json:"is_error"`
-	Result  string `json:"result"`
-}
-
-func newClaudeJSONOutputWriter(output io.Writer) *claudeJSONOutputWriter {
-	return &claudeJSONOutputWriter{output: output}
-}
-
-func (w *claudeJSONOutputWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.buffer = append(w.buffer, p...)
-	for {
-		newline := bytes.IndexByte(w.buffer, '\n')
-		if newline < 0 {
-			break
-		}
-		line := append([]byte(nil), w.buffer[:newline]...)
-		w.buffer = w.buffer[newline+1:]
-		if err := w.writeLine(line); err != nil {
-			return 0, err
-		}
-	}
-	return len(p), nil
-}
-
-func (w *claudeJSONOutputWriter) Flush() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if len(w.buffer) == 0 {
-		return nil
-	}
-	line := append([]byte(nil), w.buffer...)
-	w.buffer = nil
-	return w.writeLine(line)
-}
-
-func (w *claudeJSONOutputWriter) writeLine(line []byte) error {
-	line = bytes.TrimSpace(line)
-	if len(line) == 0 {
-		return nil
-	}
-	var event claudeStreamEvent
-	if err := json.Unmarshal(line, &event); err != nil {
-		_, err = fmt.Fprintln(w.output, string(line))
-		return err
-	}
-	var texts []string
-	switch {
-	case event.Type == "assistant":
-		for _, block := range event.Message.Content {
-			switch block.Type {
-			case "text":
-				if text := strings.TrimSpace(block.Text); text != "" {
-					texts = append(texts, text)
-				}
-			case "tool_use":
-				texts = append(texts, "Running: "+claudeToolUseSummary(block.Name, block.Input))
-			}
-		}
-	case event.Type == "result" && event.IsError:
-		if text := strings.TrimSpace(event.Result); text != "" {
-			texts = append(texts, "Agent error: "+text)
-		}
-	}
-	if len(texts) == 0 {
-		return nil
-	}
-	_, err := fmt.Fprintln(w.output, strings.Join(texts, "\n"))
-	return err
-}
-
 // claudeToolUseDetailKeys are the tool input fields that carry enough context
 // to make a progress line useful, most specific first. A bare "Running: Read"
 // says nothing about what the agent is doing; "Running: Read main.go" does.
@@ -2165,7 +2116,8 @@ func (r CommandRunner) run(ctx context.Context, issue Issue, session AgentSessio
 }
 
 func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSession, updateSession func(AgentSession), jobOutput io.Writer) (sessionMissing bool, err error) {
-	agent := r.specForSession(session).Name
+	spec := r.specForSession(session)
+	agent := spec.Name
 	definition, ok := r.definition(agent)
 	if !ok {
 		return false, unknownAgentError(r.registry(), agent)
@@ -2268,6 +2220,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	}
 	if recorder := r.transcriptRecorder(issue, definition.Output.TranscriptFormat()); recorder != nil {
 		agentOutput = io.MultiWriter(recorder, agentOutput)
+		defer func() { r.recordUsage(issue, spec, recorder, err) }()
 		defer recorder.Flush()
 	}
 	cmd.Stdout, cmd.Stderr = agentOutput, agentOutput
