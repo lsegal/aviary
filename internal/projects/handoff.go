@@ -61,6 +61,7 @@ const (
 	continuingClaimBody = "Continuing work on this issue"
 	presenceClaimBody   = "I am working on this"
 	releaseClaimBody    = "Releasing this issue"
+	stoppingClaimBody   = "Stopping work on this issue"
 )
 
 type claimKind int
@@ -72,6 +73,7 @@ const (
 	claimContinuing
 	claimPresence
 	claimReleasing
+	claimStopping
 )
 
 // identityPattern matches the trailing "/aviary:UUID" signature that every
@@ -153,6 +155,8 @@ func parseClaim(body string) (kind claimKind, id Identity, ok bool) {
 		kind = claimPresence
 	case strings.HasPrefix(text, releaseClaimBody):
 		kind = claimReleasing
+	case strings.HasPrefix(text, stoppingClaimBody):
+		kind = claimStopping
 	default:
 		return claimUnknown, "", false
 	}
@@ -209,6 +213,9 @@ func latestClaimMatching(comments []Comment, match func(Identity) bool) (time.Ti
 		if !ok || !match(id) {
 			continue
 		}
+		// A shutdown's "Stopping work" message is not a withdrawal here: it
+		// only frees the work once the ownership count reaches zero (issue
+		// #420), so a claim it leaves standing still stands.
 		switch kind {
 		case claimStarting, claimContinuing, claimPresence, claimReleasing:
 		default:
@@ -248,6 +255,50 @@ func claimNewer(at time.Time, index int, other time.Time, otherIndex int) bool {
 	return at.After(other)
 }
 
+// ownershipCount reads a ticket's handoff comments in order as a reference
+// count on its ownership (issue #420): every starting or continuing claim adds
+// one, and every "Stopping work" or "Releasing" message takes one away. Claims
+// stack, so one stop cannot free work that was claimed twice.
+func ownershipCount(comments []Comment) int {
+	return ownershipCountBy(comments, func(Identity) bool { return true })
+}
+
+// ownershipCountBy is ownershipCount over only the handoff comments whose
+// signer satisfies match, such as the share of the count one instance holds.
+func ownershipCountBy(comments []Comment, match func(Identity) bool) int {
+	count := 0
+	for _, comment := range comments {
+		kind, id, ok := parseClaim(comment.Body)
+		if !ok || !match(id) {
+			continue
+		}
+		switch kind {
+		case claimStarting, claimContinuing:
+			count++
+		case claimStopping, claimReleasing:
+			count--
+		}
+	}
+	return count
+}
+
+// ownershipRescinded reports that a ticket's owners stopped work on it on a
+// graceful shutdown and nobody holds it since: it carries a "Stopping work"
+// message and its ownership count is zero or below. Such work is free to pick
+// up at once, with no handshake, grace wait, or staleness period. Tickets
+// with no stop message keep the older claim rules, so a killed instance's
+// claims are still left to the stale-claim reap.
+func ownershipRescinded(comments []Comment) bool {
+	stopped := false
+	for _, comment := range comments {
+		if kind, _, ok := parseClaim(comment.Body); ok && kind == claimStopping {
+			stopped = true
+			break
+		}
+	}
+	return stopped && ownershipCount(comments) <= 0
+}
+
 // latestClaimByOther returns the creation time, position, and signing identity
 // of the most recent starting, continuing, or presence claim signed by an
 // identity other than self.
@@ -279,6 +330,10 @@ type claimStanding struct {
 	// SelfHolds reports that this instance posted the newest claim on the
 	// target and did so recently enough to still own the work.
 	SelfHolds bool
+	// Rescinded reports that the work's owners stopped it on a graceful
+	// shutdown and its ownership count is zero or below, so it is free to
+	// pick up without any handshake or staleness wait (issue #420).
+	Rescinded bool
 }
 
 // claimStanding reads the target's comments once and reports who currently
@@ -293,6 +348,7 @@ func (w *Engine) claimStanding(ctx context.Context, target ownershipTarget) (cla
 	if err != nil {
 		return standing, err
 	}
+	standing.Rescinded = ownershipRescinded(comments)
 	stale := w.staleClaimAfter()
 	var ownerAt time.Time
 	var ownerIndex int
@@ -467,6 +523,70 @@ func (w *Engine) releaseOwnership(ctx context.Context, target ownershipTarget, r
 		return
 	}
 	w.logf("%s released by %s (%q); %s", target.describe(), w.Identity, releaseClaimBody, reason)
+}
+
+// ownershipTargetsFor lists every ticket an issue's ownership may be claimed
+// on: the issue itself, which uncontested pickups claim, and the open pull
+// request continuing it, which a handshake negotiates on instead.
+func ownershipTargetsFor(ctx context.Context, checker WorkClosureChecker, issue Issue) []ownershipTarget {
+	issueTarget := ownershipTarget{Repo: issueRepository(issue.Target, issue), Number: issue.Number}
+	targets := []ownershipTarget{issueTarget}
+	if pull := ownershipTargetFor(ctx, checker, issue); pull != issueTarget {
+		targets = append(targets, pull)
+	}
+	return targets
+}
+
+// rescindOwnership posts "Stopping work on this issue" on every ticket of
+// issue's that this instance holds a claim on, as the last step of a graceful
+// shutdown once the issue's work is checkpointed (issue #420). That message is
+// the -1 of the ownership count, so the next instance to look finds the work
+// free at once instead of waiting out a handshake on a claim nobody serves.
+func (w *Engine) rescindOwnership(ctx context.Context, issue Issue) {
+	if w.Comments == nil || w.Identity == "" {
+		return
+	}
+	checker, _ := w.Issues.(WorkClosureChecker)
+	for _, target := range ownershipTargetsFor(ctx, checker, issue) {
+		comments, err := w.Comments.ListComments(ctx, target.Repo, target.Number)
+		if err != nil {
+			w.logf("%s ownership not rescinded on shutdown; reading its claims failed: %v", target.describe(), err)
+			continue
+		}
+		if ownershipCountBy(comments, func(id Identity) bool { return id == w.Identity }) <= 0 {
+			continue
+		}
+		if err := w.Comments.PostComment(ctx, target.Repo, target.Number, signComment(stoppingClaimBody, w.Identity)); err != nil {
+			w.logf("%s ownership not rescinded on shutdown: %v", target.describe(), err)
+			continue
+		}
+		w.logf("%s ownership rescinded by %s on shutdown (%q)", target.describe(), w.Identity, stoppingClaimBody)
+	}
+}
+
+// reclaimRescinded re-announces ownership of resumed work whose claims a
+// graceful shutdown rescinded. A restarted instance resumes its sessions
+// without the handshake, so without a fresh claim the work would read as free
+// and another instance would pick up the same issue (issue #420).
+func (w *Engine) reclaimRescinded(ctx context.Context, checker WorkClosureChecker, issue Issue) {
+	if w.Comments == nil {
+		return
+	}
+	for _, target := range ownershipTargetsFor(ctx, checker, issue) {
+		comments, err := w.Comments.ListComments(ctx, target.Repo, target.Number)
+		if err != nil {
+			w.logf("%s failed to check for rescinded ownership: %v", target.describe(), err)
+			continue
+		}
+		if !ownershipRescinded(comments) {
+			continue
+		}
+		if err := w.Comments.PostComment(ctx, target.Repo, target.Number, signComment(continuingClaimBody, w.Identity)); err != nil {
+			w.logf("%s failed to reclaim rescinded ownership: %v", target.describe(), err)
+			continue
+		}
+		w.logf("%s resumed after its ownership was rescinded; reclaimed it as %s (%q)", target.describe(), w.Identity, continuingClaimBody)
+	}
 }
 
 // awaitOwnershipWindow blocks for the handoff grace period, or returns
