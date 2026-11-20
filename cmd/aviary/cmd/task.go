@@ -139,14 +139,15 @@ Choose the trigger with --schedule (cron), or --every, --at, --days and
   aviary task add assistant digest "Send the digest" --every 2h --overlap skip
 
 --project runs the prompt as a scheduled Projects job on that watched
-project's board, in an isolated clone, with --run-agent choosing the agent (default: the project's agent):
+project's board, in an isolated clone, on the project's agent; --model overrides
+that agent's model for the task's runs (default: the agent's own model):
 
   aviary task add assistant triage "Triage new issues" --project lsegal/aviary --at 02:00
 `,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := map[string]any{"agent": args[0], "name": args[1], "content": args[2], "precompile": false}
-		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{"target": "target", "type": "type", "run-once": "run_once", "project": "project", "run-agent": "run_agent"}))
+		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{"target": "target", "type": "type", "run-once": "run_once", "project": "project", "model": "model"}))
 		if _, ok := params["project"]; ok && params["type"] == nil {
 			params["type"] = "project"
 		}
@@ -175,7 +176,7 @@ var taskUpdateCmd = &cobra.Command{
 		params := map[string]any{"name": args[0]}
 		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{
 			"prompt": "content", "target": "target", "run-once": "run_once", "enabled": "enabled", "watch": "watch",
-			"project": "project", "run-agent": "run_agent",
+			"project": "project", "model": "model",
 		}))
 		if days, ok := params["days"].(string); ok {
 			params["days"] = expandDayRange(days)
@@ -326,7 +327,7 @@ func init() {
 	taskAddCmd.Flags().String("target", "", "output delivery: silent, session:<name>, or <channel>:<id>:<target>")
 	taskAddCmd.Flags().String("type", "", "task type: prompt (default), script or project")
 	taskAddCmd.Flags().String("project", "", "watched project (owner/repo) to run the prompt on as a board job; implies --type project")
-	taskAddCmd.Flags().String("run-agent", "", "agent that runs a project task, optionally with a model, such as claude:opus (default: the project's agent)")
+	taskAddCmd.Flags().String("model", "", "model override for a project task: the project's agent runs it with this model, such as cli/claude/opus (default: the agent's model)")
 	taskAddCmd.Flags().Bool("run-once", false, "fire only once")
 
 	addTaskTriggerFlags(taskUpdateCmd)
@@ -336,7 +337,7 @@ func init() {
 	taskUpdateCmd.Flags().Bool("run-once", false, "fire only once")
 	taskUpdateCmd.Flags().Bool("enabled", true, "enable or disable the task")
 	taskUpdateCmd.Flags().String("project", "", "watched project of a project task")
-	taskUpdateCmd.Flags().String("run-agent", "", "agent that runs a project task (empty: the project's agent)")
+	taskUpdateCmd.Flags().String("model", "", "model override for a project task (empty: the project agent's model)")
 
 	addTaskTriggerFlags(taskPreviewCmd)
 	taskPreviewCmd.Flags().Int("count", 3, "number of fires to show (at most 20)")

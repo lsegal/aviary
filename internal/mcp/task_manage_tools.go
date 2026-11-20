@@ -35,7 +35,7 @@ type taskUpdateArgs struct {
 	Missed   *string `json:"missed,omitempty" schema:"enum=skip|run_once|"`
 	Watch    *string `json:"watch,omitempty"`
 	Project  *string `json:"project,omitempty"`
-	RunAgent *string `json:"run_agent,omitempty"`
+	Model    *string `json:"model,omitempty"`
 }
 
 type taskDeleteArgs struct {
@@ -104,7 +104,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		set(&task.Missed, args.Missed)
 		set(&task.Watch, args.Watch)
 		set(&task.Project, args.Project)
-		set(&task.RunAgent, args.RunAgent)
+		set(&task.Model, args.Model)
 		if args.RunOnce != nil {
 			task.RunOnce = *args.RunOnce
 		}
@@ -118,8 +118,8 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		if strings.EqualFold(task.Type, "project") && task.Project == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require a project")
 		}
-		if !strings.EqualFold(task.Type, "project") && (task.Project != "" || task.RunAgent != "") {
-			return nil, struct{}{}, fmt.Errorf("project and run_agent are only supported for project tasks")
+		if !strings.EqualFold(task.Type, "project") && (task.Project != "" || task.Model != "") {
+			return nil, struct{}{}, fmt.Errorf("project and model are only supported for project tasks")
 		}
 		fields := scheduler.TaskFields(task)
 		switch {

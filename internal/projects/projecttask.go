@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidoctor"
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -22,6 +23,7 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	run.Project = strings.TrimSpace(run.Project)
 	m.mu.Lock()
 	settings, err := m.settingsLocked()
+	agentName := m.projectAgentLocked(run.Project)
 	m.mu.Unlock()
 	if err != nil {
 		return "", err
@@ -29,11 +31,36 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	if !slices.Contains(settings.Targets, run.Project) {
 		return "", fmt.Errorf("project %q is not watched; add it with project_add first", run.Project)
 	}
+	var session AgentSession
+	if model := strings.TrimSpace(run.Model); model != "" {
+		spec, override, ok := config.ProjectModelSpec(agentName, model)
+		if !ok {
+			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model that is not a cli/ model on", model, run.Project)
+		}
+		session = AgentSession{Agent: spec, Model: override}
+	}
 	engine := m.engine()
 	if engine == nil {
 		return "", ErrNotWatching
 	}
-	return engine.runProjectTask(ctx, run, issueRepository(run.Project, Issue{}))
+	return engine.runProjectTask(ctx, run, issueRepository(run.Project, Issue{}), session)
+}
+
+// projectAgentLocked names the Aviary agent target is attached to, as
+// settingsLocked resolves it: a watch's agent, else the projects config's.
+// It returns "" for a project attached to no agent.
+func (m *Manager) projectAgentLocked(target string) string {
+	cfg, name := m.cfg, ""
+	for _, watch := range m.watches {
+		cfg = mergeProjects(cfg, watch.Settings)
+		if agent := strings.TrimSpace(watch.Agent); agent != "" && slices.Contains(watch.Targets, target) {
+			name = agent
+		}
+	}
+	if name == "" {
+		name = cfg.AgentFor(target)
+	}
+	return strings.TrimSpace(name)
 }
 
 // ScheduledRetry returns the core task a board Retry on the job fires again
@@ -64,7 +91,10 @@ type projectTaskRequest struct {
 	ctx        context.Context
 	run        scheduler.ProjectRun
 	repository string
-	done       chan projectTaskResult
+	// session is the agent spec, and model override, the run starts on; an
+	// empty Agent runs it on the project's agent.
+	session AgentSession
+	done    chan projectTaskResult
 }
 
 type projectTaskResult struct {
@@ -85,8 +115,9 @@ func (w *Engine) projectTaskRequests() chan projectTaskRequest {
 }
 
 // runProjectTask runs a project task's prompt against repository as a board
-// job and waits for its agent to exit. Cancelling ctx stops the run.
-func (w *Engine) runProjectTask(ctx context.Context, run scheduler.ProjectRun, repository string) (string, error) {
+// job on session's agent, or the project's when it names none, and waits for
+// its agent to exit. Cancelling ctx stops the run.
+func (w *Engine) runProjectTask(ctx context.Context, run scheduler.ProjectRun, repository string, session AgentSession) (string, error) {
 	if err := w.checkReady(ctx); err != nil {
 		return "", err
 	}
@@ -96,7 +127,7 @@ func (w *Engine) runProjectTask(ctx context.Context, run scheduler.ProjectRun, r
 	if run.Fire.IsZero() {
 		run.Fire = time.Now()
 	}
-	request := projectTaskRequest{ctx: ctx, run: run, repository: repository, done: make(chan projectTaskResult, 1)}
+	request := projectTaskRequest{ctx: ctx, run: run, repository: repository, session: session, done: make(chan projectTaskResult, 1)}
 	select {
 	case w.projectTaskRequests() <- request:
 	case <-ctx.Done():

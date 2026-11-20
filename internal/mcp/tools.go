@@ -1292,7 +1292,7 @@ type taskScheduleArgs struct {
 	Name         string `json:"name,omitempty"`
 	Type         string `json:"type,omitempty" schema:"enum=prompt|script|project"`
 	Project      string `json:"project,omitempty"`
-	RunAgent     string `json:"run_agent,omitempty"`
+	Model        string `json:"model,omitempty"`
 	Content      string `json:"content"`
 	In           string `json:"in,omitempty"`
 	Schedule     string `json:"schedule,omitempty"`
@@ -1391,8 +1391,8 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if taskType == "project" && strings.TrimSpace(args.Project) == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require project=<watched project>")
 		}
-		if taskType != "project" && (args.Project != "" || args.RunAgent != "") {
-			return nil, struct{}{}, fmt.Errorf("project and run_agent are only supported for type=project tasks")
+		if taskType != "project" && (args.Project != "" || args.Model != "") {
+			return nil, struct{}{}, fmt.Errorf("project and model are only supported for type=project tasks")
 		}
 		contentText := strings.TrimSpace(args.Content)
 		if contentText == "" {
@@ -1564,7 +1564,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Overlap:  strings.ToLower(strings.TrimSpace(args.Overlap)),
 				Missed:   strings.ToLower(strings.TrimSpace(args.Missed)),
 				Project:  strings.TrimSpace(args.Project),
-				RunAgent: strings.TrimSpace(args.RunAgent),
+				Model:    strings.TrimSpace(args.Model),
 			}
 			// Check whether a task with this name already exists (for action message).
 			updated := false

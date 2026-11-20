@@ -17,6 +17,8 @@ import (
 type AviaryAgentRun struct {
 	// Agent names the Aviary agent: the model of an aviary/<agent> spec.
 	Agent string
+	// Model overrides the agent's default model for the turn; empty uses it.
+	Model string
 	// Prompt is the turn's message.
 	Prompt string
 	// MediaURL is an image the turn sees, for a vision call.
@@ -45,11 +47,12 @@ func (m *Manager) SetAviaryAgentRunner(run AviaryAgentRunner) {
 // the server, which is the only place core's agents run.
 var errNoAviaryRunner = errors.New("in-process agents run only inside the aviary server")
 
-// runInProcess runs one turn of an in-process agent definition, writing its
+// runInProcess runs one turn of an in-process agent definition, with model
+// overriding the agent's default model when set, writing its
 // readable output to output and its structured events to log, which may be
 // nil. It returns the turn's error, so a stopped turn reports
 // context.Canceled.
-func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, prompt, mediaURL, workdir string, hold *agent.TurnHold, output io.Writer, log *transcript.Log) error {
+func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, model, prompt, mediaURL, workdir string, hold *agent.TurnHold, output io.Writer, log *transcript.Log) error {
 	if r.Aviary == nil {
 		return errNoAviaryRunner
 	}
@@ -59,6 +62,7 @@ func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, prompt,
 	events := &inProcessEvents{output: output, log: log}
 	err := r.Aviary(ctx, AviaryAgentRun{
 		Agent:    spec.Model,
+		Model:    model,
 		Prompt:   prompt,
 		MediaURL: mediaURL,
 		Workdir:  workdir,
@@ -188,7 +192,7 @@ func (r CommandRunner) runInProcessJob(ctx context.Context, issue Issue, session
 	if recorder := r.transcriptRecorder(issue, ""); recorder != nil {
 		output = io.MultiWriter(recorder, output)
 	}
-	runErr := r.runInProcess(ctx, spec, jobPrompt(r, issue, session), "", workdir, hold, output, log)
+	runErr := r.runInProcess(ctx, spec, session.Model, jobPrompt(r, issue, session), "", workdir, hold, output, log)
 	if metadataOutput != nil {
 		metadataOutput.Flush()
 	}

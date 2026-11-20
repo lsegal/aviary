@@ -46,3 +46,21 @@ func ProjectJobSpecs(cfg *Config, agentName string) []string {
 	}
 	return specs
 }
+
+// ProjectModelSpec returns the coding-CLI spec that runs a job of a project
+// attached to the named agent with model overriding the agent's own, as
+// ProjectJobSpecs maps the agent's model: a cli/ model runs as its spec, and
+// any other model runs on the agent itself, as aviary/<agent>, with the model
+// returned as override for that turn. It reports false for a model that is
+// not a CLI when the project is attached to no agent to run it on.
+func ProjectModelSpec(agentName, model string) (spec, override string, ok bool) {
+	model = strings.TrimSpace(model)
+	if spec, isCLI := strings.CutPrefix(model, cliagent.ModelPrefix); isCLI {
+		return strings.TrimSpace(spec), "", strings.TrimSpace(spec) != ""
+	}
+	agentName = strings.TrimSpace(agentName)
+	if model == "" || agentName == "" {
+		return "", "", false
+	}
+	return aviarySpecPrefix + agentName, model, true
+}
