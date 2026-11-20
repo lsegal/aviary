@@ -21,7 +21,7 @@ const agentShimMaxSize = 64 << 10
 // . The shim is therefore replaced by the program it launches,
 // which receives the prompt intact. A batch file aviary cannot read through is
 // still run as is, unless the prompt has a line break it would lose: that is
-// refused with an error naming --agent-binary as the way to point aviary at
+// refused with an error naming models.cli_definitions.<agent>.binary as the way to point aviary at
 // the real executable.
 func agentShimArgv(binary string, args []string) (string, []string, error) {
 	if runtime.GOOS != "windows" {
@@ -36,7 +36,7 @@ func agentShimArgv(binary string, args []string) (string, []string, error) {
 	}
 	for _, arg := range args {
 		if strings.ContainsAny(arg, "\r\n") {
-			return binary, args, fmt.Errorf("agent binary %s is a batch file, and cmd.exe would cut its multi-line prompt at the first line break; pass the executable it launches with --agent-binary NAME=PATH", path)
+			return binary, args, fmt.Errorf("agent binary %s is a batch file, and cmd.exe would cut its multi-line prompt at the first line break; pass the executable it launches as models.cli_definitions.<agent>.binary", path)
 		}
 	}
 	return binary, args, nil

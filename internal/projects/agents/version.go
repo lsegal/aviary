@@ -89,6 +89,6 @@ func (d Definition) VersionSupported(reported string) (supported, comparable boo
 // arguments it has never heard of -- reports an unrecognized-argument error
 // that says nothing about the version being the cause.
 func (d Definition) VersionTooOldError(binary, reported string) error {
-	return fmt.Errorf("agent %q requires %s %s or newer, but %s reports %s; upgrade %s, or point aviary at a newer install with --agent-binary %s=PATH",
+	return fmt.Errorf("agent %q requires %s %s or newer, but %s reports %s; upgrade %s, or point aviary at a newer install with models.cli_definitions.%s.binary",
 		d.Name, d.Binary, d.MinVersion, binary, strings.TrimSpace(reported), d.Binary, d.Name)
 }

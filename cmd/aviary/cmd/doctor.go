@@ -15,6 +15,7 @@ import (
 	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/store"
@@ -176,7 +177,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintln(os.Stdout)
 	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
 	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
-	if registry, err := agents.Load(cfg.Models.CLIDefinitions); err != nil {
+	if registry, err := projects.LoadCLIDefinitions(cfg.Models.CLIDefinitions); err != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", err)
 		nerrs++
 	} else {
