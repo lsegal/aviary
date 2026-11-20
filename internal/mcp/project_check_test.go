@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lsegal/aviary/internal/codingskills"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,8 @@ import (
 func stubProjectCheck(t *testing.T, onPath []string, responses map[string]string) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	oldGH, oldLook, oldHome := projectGH, projectLookPath, projectHomeDir
 	t.Cleanup(func() { projectGH, projectLookPath, projectHomeDir = oldGH, oldLook, oldHome })
 	projectGH = func(_ context.Context, args ...string) ([]byte, error) {
@@ -86,6 +88,28 @@ func TestProjectCheckAllReady(t *testing.T) {
 	assert.Equal(t, projectCheckWarn, checks["fork"].Status)
 	assert.Len(t, res.CLIs, 2)
 	assert.Equal(t, "1.6.0", res.CLIs[1].Skills["gh-fix"])
+}
+
+func TestProjectCheckFindsSkillsInCLIAlternateDirs(t *testing.T) {
+	home := stubProjectCheck(t, []string{"gh", "codex", "opencode"}, map[string]string{"auth status": ""})
+	installSkill(t, home, ".codex/skills", "1.7.0")
+	installSkill(t, home, ".config/opencode/skill", "1.7.0")
+
+	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "users/lsegal/projects/4"})
+	require.NoError(t, err)
+	checks := checkByName(res)
+	assert.Equal(t, "Found codex and opencode", checks["clis"].Message)
+	assert.Equal(t, "gh-fix 1.7.0 installed for all 2", checks["skills"].Message)
+}
+
+func TestProjectCheckListsRegistryCLIsWhenNoneFound(t *testing.T) {
+	stubProjectCheck(t, []string{"gh"}, map[string]string{"auth status": ""})
+	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "users/lsegal/projects/4"})
+	require.NoError(t, err)
+	msg := checkByName(res)["clis"].Message
+	for _, cli := range codingskills.Default().CLIs() {
+		assert.Contains(t, msg, cli.ID)
+	}
 }
 
 func TestProjectCheckReportsEachFailure(t *testing.T) {

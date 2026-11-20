@@ -163,6 +163,23 @@ func (e Env) SkillsDir(target string) string {
 	}
 }
 
+// SkillsDirs lists every global directory target may read skills from:
+// SkillsDir first, then the CLI's own directories that a copy installed by
+// hand or by an older skills.sh may sit in.
+func (e Env) SkillsDirs(target string) []string {
+	dirs := []string{e.SkillsDir(target)}
+	home := e.home()
+	switch target {
+	case "codex":
+		dirs = append(dirs, filepath.Join(home, ".codex", "skills"))
+	case "cline":
+		dirs = append(dirs, filepath.Join(home, ".cline", "skills"))
+	case "opencode":
+		dirs = append(dirs, filepath.Join(filepath.Dir(dirs[0]), "skill"))
+	}
+	return dirs
+}
+
 // lockPath is skills.sh's record of where each global skill came from.
 func (e Env) lockPath() string {
 	if state := e.getenv("XDG_STATE_HOME"); state != "" {

@@ -96,6 +96,23 @@ func TestSkillsDirFollowsSkillsShLayout(t *testing.T) {
 	assert.Equal(t, filepath.Join("/xdg", "opencode", "skills"), env.SkillsDir("opencode"))
 }
 
+func TestSkillsDirsListCLIAlternates(t *testing.T) {
+	env := Env{Home: "/home/u", Getenv: func(string) string { return "" }}
+	assert.Equal(t, []string{filepath.Join("/home/u", ".claude", "skills")}, env.SkillsDirs("claude-code"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".agents", "skills"),
+		filepath.Join("/home/u", ".codex", "skills"),
+	}, env.SkillsDirs("codex"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".agents", "skills"),
+		filepath.Join("/home/u", ".cline", "skills"),
+	}, env.SkillsDirs("cline"))
+	assert.Equal(t, []string{
+		filepath.Join("/home/u", ".config", "opencode", "skills"),
+		filepath.Join("/home/u", ".config", "opencode", "skill"),
+	}, env.SkillsDirs("opencode"))
+}
+
 func TestStatusReportsVersionPerSkillPerCLI(t *testing.T) {
 	m, _, home := newTestManager(t, "v2.0.0", "claude", "codex")
 	canonical := filepath.Join(home, ".agents", "skills")
