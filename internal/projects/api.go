@@ -32,6 +32,23 @@ func (m *Manager) currentSnapshot() core.Snapshot {
 	return core.Snapshot{}
 }
 
+// inFlightStatuses are the job statuses that still hold work: running,
+// waiting out a scheduled wakeup, queued, or paused.
+var inFlightStatuses = []string{"active", "waiting", "queued", "paused"}
+
+// InFlightJobs lists the issue numbers of target's jobs that still hold work,
+// which removing the project stops: the engine restarts without target, so its
+// running jobs are checkpointed and none of them resume.
+func (m *Manager) InFlightJobs(target string) []int {
+	numbers := []int{}
+	for _, job := range m.currentSnapshot().Jobs {
+		if job.Target == target && slices.Contains(inFlightStatuses, job.Status) {
+			numbers = append(numbers, job.Number)
+		}
+	}
+	return numbers
+}
+
 // Status is project_status: identity, targets with issue counts, job counts,
 // delivery and the last check, quota per CLI, and recent log lines. Passing
 // logOffset returns only the lines logged since that offset.
