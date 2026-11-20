@@ -20,6 +20,7 @@ import (
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 var serveDaemon bool
@@ -240,6 +241,12 @@ func runStart(_ *cobra.Command, _ []string) error {
 		err := srv.ListenAndServe(ctx)
 		if err == nil || ctx.Err() != nil {
 			return err
+		}
+		if errors.Is(err, server.ErrReexecRequired) {
+			// Release the PID file first: the new process checks it on start.
+			_ = server.RemovePID()
+			slog.Info("server: restarting")
+			return update.Reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
 		}
 		if errors.Is(err, server.ErrRestartRequired) {
 			var loadErr error

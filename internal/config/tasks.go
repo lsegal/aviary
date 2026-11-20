@@ -23,8 +23,17 @@ type taskFileFrontmatter struct {
 	Schedule string `yaml:"schedule,omitempty"`
 	StartAt  string `yaml:"start_at,omitempty"`
 	RunOnce  bool   `yaml:"run_once,omitempty"`
+	Trigger  string `yaml:"trigger,omitempty"`
+	Every    string `yaml:"every,omitempty"`
+	At       string `yaml:"at,omitempty"`
+	Days     string `yaml:"days,omitempty"`
+	Timezone string `yaml:"timezone,omitempty"`
+	Overlap  string `yaml:"overlap,omitempty"`
+	Missed   string `yaml:"missed,omitempty"`
 	Watch    string `yaml:"watch,omitempty"`
 	Target   string `yaml:"target,omitempty"`
+	Project  string `yaml:"project,omitempty"`
+	CLI      string `yaml:"cli,omitempty"`
 }
 
 // ParseMarkdownTask parses a task definition from markdown content with
@@ -60,8 +69,17 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Schedule = fm.Schedule
 	task.StartAt = fm.StartAt
 	task.RunOnce = fm.RunOnce
+	task.Trigger = fm.Trigger
+	task.Every = fm.Every
+	task.At = fm.At
+	task.Days = fm.Days
+	task.Timezone = fm.Timezone
+	task.Overlap = fm.Overlap
+	task.Missed = fm.Missed
 	task.Watch = fm.Watch
 	task.Target = fm.Target
+	task.Project = fm.Project
+	task.CLI = fm.CLI
 	task.Prompt = strings.TrimSpace(rest[idx+5:])
 	return task, nil
 }
@@ -96,7 +114,16 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Schedule: task.Schedule,
 		StartAt:  task.StartAt,
 		RunOnce:  task.RunOnce,
+		Trigger:  task.Trigger,
+		Every:    task.Every,
+		At:       task.At,
+		Days:     task.Days,
+		Timezone: task.Timezone,
+		Overlap:  task.Overlap,
+		Missed:   task.Missed,
 		Watch:    task.Watch,
+		Project:  task.Project,
+		CLI:      task.CLI,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")
@@ -156,6 +183,24 @@ func LoadAgentTaskFiles(agentCfg AgentConfig) ([]TaskConfig, error) {
 		tasks = append(tasks, task)
 	}
 	return tasks, nil
+}
+
+// FindMarkdownTask returns the path of the task file in dir that defines the
+// task named name.
+func FindMarkdownTask(dir, name string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.md"))
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		if strings.HasPrefix(filepath.Base(f), "_") {
+			continue
+		}
+		if task, err := LoadMarkdownTask(f); err == nil && task.Name == name {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("no task file defines %q in %s", name, dir)
 }
 
 // mergeTasksByName merges fileTasks onto base: file tasks override base tasks

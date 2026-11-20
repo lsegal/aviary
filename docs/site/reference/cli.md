@@ -78,6 +78,16 @@ aviary token [flags]
 
 ---
 
+## aviary ui
+
+Open the Projects board in the server's web UI. With a project argument such as `owner/repo`, open that project's board. Uses the server address from `--server`.
+
+```
+aviary ui [project]
+```
+
+---
+
 ## aviary doctor
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
@@ -189,6 +199,8 @@ aviary agent run <name> [message] [flags]
 | `--file <path>` | | Read the prompt from a file instead of inline |
 | `--bare` | `false` | Run without any system prompt, rules, memory, or tool preamble |
 | `--history` | `true` | Include prior session history in the prompt |
+| `--output-format <format>` | `text` | `text` prints the reply; `json` prints one JSON event per line as the run goes: `message`, `tool_call`, `tool_result` (paired by `id`), `file_change`, `media`, and `error` |
+| `--workdir <dir>` | | Grant the run's file tools and `exec` this directory for the run only, without a `permissions.filesystem.allowedPaths` entry |
 
 ### aviary agent stop
 
@@ -238,6 +250,40 @@ Stop all currently running scheduled task jobs.
 
 ```
 aviary task stop
+```
+
+---
+
+## aviary watch
+
+Watch GitHub projects and fix ready issues with a coding CLI. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
+
+```
+aviary watch [TARGET ...] [--agent SPEC ...] [--concurrency N] [--interval D]
+             [--delivery poll|webhook] [--ready-label L] [--ready-state S]
+             [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
+             [--yolo] [--no-merge] [--no-changelog]
+```
+
+With no `TARGET`, the current checkout's `origin` repository is watched. Flags override the `projects:` section while the watch runs.
+
+---
+
+## aviary project
+
+Manage Projects. Each subcommand calls the `project_*` tool of the same name with the same arguments, given as `--<field> <value>` flags; a leading positional argument fills the main field. See [Projects tools](/reference/mcp/projects).
+
+```
+aviary project status
+aviary project add <target> [--agents SPEC,...] [--runtime]
+aviary project remove <target> [--runtime]
+aviary project refresh [target]
+aviary project job list [--target T] [--status S] [--offset N] [--limit N]
+aviary project job get|explain|retry|pause|resume|stop <number> [--target T]
+aviary project clone list|clear
+aviary project unblock [number] [--target T]
+aviary project issue comment <number> --text TEXT [--repository R]
+aviary project issue create --text TEXT [--repository R] [--model M]
 ```
 
 ---
@@ -472,6 +518,7 @@ Inspect supported provider and model pairs.
 ```
 aviary models [flags]
 aviary models list [flags]
+aviary models clis
 ```
 
 | Flag | Description |

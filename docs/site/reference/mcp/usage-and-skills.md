@@ -71,6 +71,56 @@ Enabled skills register additional MCP tools at server startup. See the [Configu
 
 ---
 
+## coding_skills_list
+
+List the [skills Aviary ships for coding CLIs](/guide/skills/) and the copy installed in each coding CLI on the `PATH`.
+
+**Arguments:** none
+
+**Returns:** JSON status object. `installs` follows the order of `clis`. `current` is true when the installed copy matches the one bundled with this release, and `version` is the Aviary release a copy came from, when known.
+
+```json
+{
+  "version": "2.0.0",
+  "source": "lsegal/aviary",
+  "release": true,
+  "clis": [{ "id": "claude", "name": "Claude", "target": "claude-code", "binary": "claude" }],
+  "skills": [
+    {
+      "name": "gh-fix",
+      "summary": "Fixes an issue end to end: ...",
+      "run_by_projects": true,
+      "installs": [{ "cli": "claude", "installed": true, "current": false, "version": "1.5.16", "source": "lsegal/aviary" }]
+    }
+  ],
+  "outdated": 1
+}
+```
+
+---
+
+## coding_skills_install
+
+Install or update the coding-CLI skills with `npx skills add`. A release installs from its own tag; a development build installs the copies bundled with it. Copies that are already current are skipped.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `skill` | string | | `gh-fix`, `gh-discuss`, `gh-create` or `gh-safe-merge`. Omit for every skill. |
+| `cli` | string | | Coding CLI id from `coding_skills_list`. Omit for every coding CLI on the `PATH`. |
+| `update_only` | bool | | Only update outdated copies; skip CLIs that don't have the skill yet. |
+
+**Returns:** the copies installed, as `skill/cli`.
+
+```json
+{ "installed": ["gh-fix/claude"] }
+```
+
+Both tools are in the `server` permission group.
+
+---
+
 ## web_search
 
 Search the web and return a list of results with titles, URLs, and descriptions.

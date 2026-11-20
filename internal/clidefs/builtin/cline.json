@@ -1,0 +1,41 @@
+{
+  "name": "cline",
+  "binary": "cline",
+  "levels": ["none", "low", "medium", "high", "xhigh"],
+  "session": {"assign": "none"},
+  "output": {
+    "format": "jsonl",
+    "transcript": "cline-json",
+    "jsonl": {
+      "type": "event.type",
+      "text": "event.text",
+      "toolName": "event.toolName",
+      "ignore": ["content_start", "content_update", "iteration_start", "iteration_end", "usage", "done"]
+    }
+  },
+  "skills": {"target": "cline"},
+  "doctor": {
+    "models": ["{binary}", "--acp"],
+    "modelsStdin": [
+      "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1,\"clientCapabilities\":{\"fs\":{\"readTextFile\":false,\"writeTextFile\":false}}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session/new\",\"params\":{\"cwd\":\".\",\"mcpServers\":[]}}"
+    ],
+    "modelsJSON": "result.models.availableModels[].modelId",
+    "timeout": "45s"
+  },
+  "args": {
+    "run": [
+      {"args": ["--auto-approve", "true"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--thinking", "{level}"]},
+      {"args": ["--json"]},
+      {"args": ["{prompt}"]}
+    ],
+    "vision": [
+      {"args": ["--auto-approve", "true"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--thinking", "{level}"]},
+      {"args": ["{prompt}"]}
+    ]
+  }
+}

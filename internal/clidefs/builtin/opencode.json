@@ -1,0 +1,39 @@
+{
+  "name": "opencode",
+  "binary": "opencode",
+  "levels": ["low", "medium", "high"],
+  "session": {"assign": "none"},
+  "output": {
+    "format": "jsonl",
+    "transcript": "opencode-json",
+    "jsonl": {
+      "type": "type",
+      "text": "part.text",
+      "toolName": "part.tool",
+      "toolInput": "part.state.input",
+      "ignore": ["step_start", "step_finish"]
+    }
+  },
+  "skills": {"target": "opencode"},
+  "doctor": {
+    "auth": ["{binary}", "auth", "list"],
+    "signedIn": "[1-9][0-9]* credential",
+    "models": ["{binary}", "models"],
+    "modelPattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+$"
+  },
+  "args": {
+    "run": [
+      {"args": ["run", "--auto"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--variant", "{level}"]},
+      {"args": ["--format", "json"]},
+      {"args": ["{prompt}"]}
+    ],
+    "vision": [
+      {"args": ["run", "--auto", "--file", "{image}"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--variant", "{level}"]},
+      {"args": ["{prompt}"]}
+    ]
+  }
+}

@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lsegal/aviary/internal/cronutil"
+	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/schedule"
 )
 
 // IssueLevel indicates the severity of a validation finding.
@@ -124,6 +125,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 		if a.Permissions != nil && !IsValidPermissionsPreset(a.Permissions.Preset) {
 			v.errorf(f+".permissions.preset", "invalid permissions preset %q; must be full, standard, or minimal", a.Permissions.Preset)
 		}
+		if a.Permissions != nil && a.Permissions.CLIBuiltinTools && EffectivePermissionsPreset(a.Permissions) != PermissionsPresetFull {
+			v.errorf(f+".permissions.cli_builtin_tools", "cli_builtin_tools requires the full permissions preset")
+		}
 		if a.Permissions != nil && a.Permissions.Exec != nil && len(a.Permissions.Exec.AllowedCommands) == 0 {
 			v.errorf(f+".permissions.exec.allowedCommands", "permissions.exec requires at least one allowedCommands entry")
 		}
@@ -159,8 +163,13 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			if t.Schedule == "" && t.Watch == "" {
-				v.warnf(tf, "neither 'schedule' nor 'watch' is set; task will never be triggered")
+			fields := schedule.Fields{
+				Trigger: t.Trigger, Schedule: t.Schedule, StartAt: t.StartAt, RunOnce: t.RunOnce,
+				Every: t.Every, At: t.At, Days: t.Days, Timezone: t.Timezone,
+				Overlap: t.Overlap, Missed: t.Missed,
+			}
+			if !fields.HasTrigger() && t.Watch == "" {
+				v.warnf(tf, "neither a schedule trigger nor 'watch' is set; task will never be triggered")
 			}
 
 			taskType := strings.ToLower(strings.TrimSpace(t.Type))
@@ -168,34 +177,20 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				taskType = "prompt"
 			}
 			switch taskType {
-			case "prompt", "script":
+			case "prompt", "script", "project":
 			default:
-				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\" or \"script\"", t.Type)
+				v.errorf(tf+".type", "invalid task type %q; must be \"prompt\", \"script\" or \"project\"", t.Type)
 			}
 
-			if t.StartAt != "" {
-				if _, err := time.Parse(time.RFC3339, t.StartAt); err != nil {
-					v.errorf(tf+".start_at", "invalid RFC3339 timestamp %q: %v", t.StartAt, err)
-				}
+			if fields.HasTrigger() {
 				if t.Watch != "" {
-					v.errorf(tf+".start_at", "start_at is only supported for scheduled tasks, not watch tasks")
+					v.errorf(tf+".watch", "watch tasks cannot also have a schedule trigger")
 				}
-			}
-
-			if t.RunOnce {
-				switch {
-				case t.Watch != "":
-					v.errorf(tf+".run_once", "run_once is only supported for scheduled tasks, not watch tasks")
-				case t.Schedule == "" && t.StartAt == "":
-					v.errorf(tf+".run_once", "run_once requires either schedule or start_at")
+				if _, err := schedule.Parse(fields); err != nil {
+					v.errorf(tf+".trigger", "%v (cron accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\")", err)
 				}
-			}
-
-			if t.Schedule != "" {
-				c := cronutil.New()
-				if _, err := c.AddFunc(t.Schedule, func() {}); err != nil {
-					v.errorf(tf+".schedule", "invalid cron expression %q: %v (aviary accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\" or \"0 * * * * *\" for every minute)", t.Schedule, err)
-				}
+			} else if t.RunOnce || t.StartAt != "" || t.Timezone != "" || t.Overlap != "" || t.Missed != "" {
+				v.errorf(tf, "run_once, timezone, overlap and missed are only supported for scheduled tasks")
 			}
 
 			switch taskType {
@@ -207,6 +202,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if strings.TrimSpace(t.Prompt) == "" {
 					v.errorf(tf+".prompt", "script tasks require non-empty prompt content")
 				}
+			case "project":
+				if strings.TrimSpace(t.Project) == "" {
+					v.errorf(tf+".project", "project tasks require the watched project to run against")
+				}
+				if strings.TrimSpace(t.Prompt) == "" {
+					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
+				}
+			}
+			if taskType != "project" && (t.Project != "" || t.CLI != "") {
+				v.errorf(tf, "project and cli are only supported for project tasks")
 			}
 
 			if !validTaskTarget(t.Target) {
@@ -238,7 +243,7 @@ func validTaskTarget(target string) bool {
 func (v *validator) checkModel(field, model string) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-4-5\")", model)
+		v.errorf(field, "invalid model %q: expected format <provider>/<model-name> (e.g. \"anthropic/claude-sonnet-5-5\")", model)
 		return
 	}
 
@@ -262,14 +267,54 @@ func (v *validator) checkModel(field, model string) {
 	case "github-copilot":
 		v.checkAuthCredentialEither(field, "github-copilot:oauth", "github-copilot:default",
 			"run 'aviary auth login github-copilot' or set GH_TOKEN/GITHUB_TOKEN")
+	case "meta":
+		v.checkAuthCredential(field, "meta:default",
+			"run 'aviary auth set meta:default <your-api-key>'")
 	case "vllm", "ollama":
-	case "stdio":
-		if _, err := exec.LookPath(name); err != nil {
-			v.errorf(field, "stdio command %q not found in PATH: %v", name, err)
-		}
+	case "cli":
+		v.checkCLIModel(field, model, name)
 	default:
-		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, google, google-gemini, github-copilot, vllm, ollama, or stdio", provider, model)
+		v.errorf(field, "unknown provider %q in model %q; must be anthropic, openai, openai-codex, google, google-gemini, github-copilot, meta, vllm, ollama, or cli", provider, model)
 	}
+}
+
+// checkCLIModel checks a "cli/<backend>/<model>" model string and that the
+// backend's CLI is installed.
+func (v *validator) checkCLIModel(field, model, _ string) {
+	backend, _, err := cliagent.ParseModel(model)
+	if err != nil {
+		v.errorf(field, "%v", err)
+		return
+	}
+	if _, err := exec.LookPath(backend.Binary()); err != nil {
+		v.errorf(field, "%s CLI not found in PATH; install it to use model %q", backend, model)
+	}
+}
+
+// CLIBackends returns the CLI backends referenced by any agent model,
+// fallback, or model default.
+func CLIBackends(cfg *Config) []cliagent.Backend {
+	seen := map[cliagent.Backend]bool{}
+	var out []cliagent.Backend
+	add := func(model string) {
+		if b, _, err := cliagent.ParseModel(model); err == nil && !seen[b] {
+			seen[b] = true
+			out = append(out, b)
+		}
+	}
+	if cfg.Models.Defaults != nil {
+		add(cfg.Models.Defaults.Model)
+		for _, fb := range cfg.Models.Defaults.Fallbacks {
+			add(fb)
+		}
+	}
+	for _, a := range cfg.Agents {
+		add(a.Model)
+		for _, fb := range a.Fallbacks {
+			add(fb)
+		}
+	}
+	return out
 }
 
 // checkAuthCredential checks that key is present in the auth store.
@@ -445,9 +490,9 @@ func validAuthRef(ref string) bool {
 }
 
 // UniqueProviderModels returns a map of provider name → one representative
-// model string (e.g. "anthropic" → "anthropic/claude-sonnet-4-5") drawn from
-// all agents and model defaults. "stdio" providers are excluded because they
-// have no remote endpoint to ping.
+// model string (e.g. "anthropic" → "anthropic/claude-sonnet-5-5") drawn from
+// all agents and model defaults. "cli" models are excluded because they run
+// through a local CLI rather than a remote endpoint; see CLIBackends.
 func UniqueProviderModels(cfg *Config) map[string]string {
 	seen := map[string]string{}
 	add := func(model string) {
@@ -459,7 +504,7 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 			return
 		}
 		provider := model[:idx]
-		if provider == "stdio" {
+		if provider == "cli" {
 			return
 		}
 		if _, ok := seen[provider]; !ok {

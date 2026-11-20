@@ -464,6 +464,7 @@ const providers: OnboardingProvider[] = KNOWN_PROVIDERS.filter((provider) =>
 		"openai-codex",
 		"google",
 		"github-copilot",
+		"meta",
 		"vllm",
 		"ollama",
 	].includes(provider.id),
@@ -965,6 +966,7 @@ function emptyConfig(): AppConfig {
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "auto" },
 		skills: {},
+		projects: {},
 	};
 }
 </script>

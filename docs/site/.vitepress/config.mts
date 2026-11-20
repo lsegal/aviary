@@ -69,8 +69,19 @@ export default defineConfig({
 							link: "/guide/sessions-conversations",
 						},
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
+						{ text: "Projects", link: "/guide/projects" },
 						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Operations", link: "/guide/operations" },
+					],
+				},
+				{
+					text: "Skills for Coding CLIs",
+					items: [
+						{ text: "Overview", link: "/guide/skills/" },
+						{ text: "gh-fix", link: "/guide/skills/gh-fix" },
+						{ text: "gh-discuss", link: "/guide/skills/gh-discuss" },
+						{ text: "gh-safe-merge", link: "/guide/skills/gh-safe-merge" },
+						{ text: "gh-create", link: "/guide/skills/gh-create" },
 					],
 				},
 			],
@@ -103,9 +114,14 @@ export default defineConfig({
 							link: "/reference/mcp/files-and-notes",
 						},
 						{ text: "Auth Tools", link: "/reference/mcp/auth" },
+						{ text: "Projects Tools", link: "/reference/mcp/projects" },
 						{
 							text: "Server And Config Tools",
 							link: "/reference/mcp/server-and-config",
+						},
+						{
+							text: "Projects Tools",
+							link: "/reference/mcp/projects",
 						},
 						{
 							text: "Usage And Skills Tools",

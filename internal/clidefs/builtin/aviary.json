@@ -1,0 +1,10 @@
+{
+  "name": "aviary",
+  "binary": "aviary",
+  "inProcess": true,
+  "levels": [],
+  "session": {"assign": "none"},
+  "doctor": {
+    "modelsNote": "the model is the name of an Aviary agent, as aviary agent list shows them"
+  }
+}

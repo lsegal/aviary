@@ -52,6 +52,7 @@ func TestManager_UserDataDirDefault(t *testing.T) {
 func TestIsIgnorableChromeDPError(t *testing.T) {
 	assert.True(t, isIgnorableChromeDPError(`could not unmarshal event: json: cannot unmarshal JSON string into Go network.InitiatorType within "/initiator/type": unknown InitiatorType value: FedCM`))
 	assert.False(t, isIgnorableChromeDPError(`could not unmarshal event: unknown ResourceType value: NewThing`))
+	assert.True(t, isIgnorableChromeDPError(`unhandled node event *dom.EventTopLayerElementsUpdated`))
 	assert.False(t, isIgnorableChromeDPError(`context deadline exceeded`))
 }
 
@@ -112,9 +113,9 @@ func parseCDPPort(t *testing.T, srvURL string) int {
 	return port
 }
 
-// --- fetchTabs ---
+// --- PageTargets ---
 
-func TestFetchTabs_Success(t *testing.T) {
+func TestPageTargets_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/json/list" {
 			w.Header().Set("Content-Type", "application/json")
@@ -126,28 +127,28 @@ func TestFetchTabs_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tabs, err := fetchTabs(srv.URL)
+	tabs, err := PageTargets(context.Background(), srv.URL)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(tabs))
+	assert.Equal(t, 1, len(tabs))
 	assert.Equal(t, "tab1", tabs[0].ID)
 
 }
 
-func TestFetchTabs_ConnectionError(t *testing.T) {
-	_, err := fetchTabs("http://127.0.0.1:1")
+func TestPageTargets_ConnectionError(t *testing.T) {
+	_, err := PageTargets(context.Background(), "http://127.0.0.1:1")
 	assert. // nothing listening
 		Error(t, err)
 
 }
 
-func TestFetchTabs_InvalidJSON(t *testing.T) {
+func TestPageTargets_InvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("not-json")) //nolint:errcheck
 	}))
 	defer srv.Close()
 
-	_, err := fetchTabs(srv.URL)
+	_, err := PageTargets(context.Background(), srv.URL)
 	assert.Error(t, err)
 
 }
@@ -208,50 +209,50 @@ func TestCreateTab_InvalidJSON(t *testing.T) {
 
 }
 
-// --- fetchWebSocketURL ---
+// --- WebSocketURL ---
 
-func TestFetchWebSocketURL_Success(t *testing.T) {
+func TestWebSocketURL_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/json/version" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://localhost:9222/devtools/browser/abc123",
 			})
 		}
 	}))
 	defer srv.Close()
 
-	wsURL, err := fetchWebSocketURL(srv.URL)
+	wsURL, err := WebSocketURL(context.Background(), srv.URL)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasPrefix(wsURL, "ws://"))
 
 }
 
-func TestFetchWebSocketURL_EmptyURL(t *testing.T) {
+func TestWebSocketURL_EmptyURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(chromeVersionInfo{WebSocketDebuggerURL: ""}) //nolint:errcheck
+		json.NewEncoder(w).Encode(versionInfo{WebSocketDebuggerURL: ""}) //nolint:errcheck
 	}))
 	defer srv.Close()
 
-	_, err := fetchWebSocketURL(srv.URL)
+	_, err := WebSocketURL(context.Background(), srv.URL)
 	assert.Error(t, err)
 
 }
 
-func TestFetchWebSocketURL_ConnectionError(t *testing.T) {
-	_, err := fetchWebSocketURL("http://127.0.0.1:1")
+func TestWebSocketURL_ConnectionError(t *testing.T) {
+	_, err := WebSocketURL(context.Background(), "http://127.0.0.1:1")
 	assert.Error(t, err)
 
 }
 
-func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
+func TestWebSocketURL_InvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("bad")) //nolint:errcheck
 	}))
 	defer srv.Close()
 
-	_, err := fetchWebSocketURL(srv.URL)
+	_, err := WebSocketURL(context.Background(), srv.URL)
 	assert.Error(t, err)
 
 }
@@ -261,7 +262,7 @@ func TestFetchWebSocketURL_InvalidJSON(t *testing.T) {
 func TestWaitForChrome_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+		json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 			WebSocketDebuggerURL: "ws://localhost:9222/devtools/browser/ready",
 		})
 	}))
@@ -320,19 +321,17 @@ func TestManager_Tabs_ChromeNotRunning(t *testing.T) {
 
 }
 
-// --- findChrome ---
+// --- FindBinary ---
 
-func TestFindChrome_ExplicitBinary(t *testing.T) {
-	path, err := findChrome("/explicit/path/chrome")
-	assert.NoError(t, err)
-	assert.Equal(t, "/explicit/path/chrome", path)
-
+func TestFindBinary_ExplicitBinaryMustExist(t *testing.T) {
+	_, err := FindBinary("/explicit/path/chrome")
+	assert.ErrorContains(t, err, "not found or not executable")
 }
 
-func TestFindChrome_NotFound(t *testing.T) {
+func TestFindBinary_NotFound(t *testing.T) {
 	// Without explicit binary and no Chrome in PATH (on CI), should return error.
 	// Skip if Chrome happens to be available.
-	path, err := findChrome("")
+	path, err := FindBinary("")
 	if err == nil {
 		t.Skipf("Chrome found at %q, cannot test not-found path", path)
 	}
@@ -619,7 +618,7 @@ func mockCDPServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
 			})
 		case "/json/list":
@@ -701,7 +700,7 @@ func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {
 		switch {
 		case r.URL.Path == "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
 			})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
@@ -733,7 +732,7 @@ func TestManager_Open_ReusesExactURLMatch(t *testing.T) {
 		switch {
 		case r.URL.Path == "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
 			})
 		case r.URL.Path == "/json/list":
@@ -772,7 +771,7 @@ func TestManager_Open_DoesNotReuseWhenDisabled(t *testing.T) {
 		switch {
 		case r.URL.Path == "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
 			})
 		case r.URL.Path == "/json/list":
@@ -811,7 +810,7 @@ func TestManager_Open_ReusesRedirectedURLAfterOpen(t *testing.T) {
 		switch {
 		case r.URL.Path == "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(chromeVersionInfo{ //nolint:errcheck
+			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
 				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
 			})
 		case r.URL.Path == "/json/list":
@@ -932,19 +931,10 @@ func TestManager_ResizeWithoutChrome(t *testing.T) {
 
 func TestLaunchChrome_BinaryNotFound(t *testing.T) {
 	m := NewManager("/nonexistent/path/to/chrome-xxxx", 19876, "", true)
-	// findChrome returns the path as-is for explicit binaries, so launchChrome
-	// will try to exec it and fail at cmd.Start().
+	// FindBinary rejects an explicit binary that does not exist.
 	err := launchChrome(m)
 	assert.Error(t, err)
 
-}
-
-// --- findChrome: platform paths ---
-
-func TestFindChrome_PlatformPaths(_ *testing.T) {
-	// Ensure platformChromePaths returns a slice (may be empty) without panic.
-	paths := platformChromePaths()
-	_ = paths // just exercise the function
 }
 
 // --- Manager.CloseTab removes session from cache ---

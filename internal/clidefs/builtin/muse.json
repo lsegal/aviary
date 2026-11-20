@@ -1,0 +1,69 @@
+{
+  "name": "muse",
+  "binary": "muse",
+  "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+  "defaultModel": "muse-spark-1.3",
+  "session": {"assign": "aviary"},
+  "output": {
+    "format": "jsonl",
+    "transcript": "muse-json",
+    "jsonl": {
+      "type": "payload_type",
+      "text": "payload.text",
+      "textDelta": true,
+      "ignore": ["run.terminal.completed", "run.terminal.failed", "run.terminal.cancelled", "tool.result"],
+      "events": {
+        "task.lifecycle.proposed": {"toolName": "payload.task.kind", "toolNamePrefix": "tool."}
+      }
+    }
+  },
+  "skills": {"target": "universal"},
+  "doctor": {
+    "models": ["{binary}", "serve"],
+    "modelsStdin": [
+      "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"aviary\",\"version\":\"1\"}}}",
+      "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"model/list\",\"params\":{}}"
+    ],
+    "modelsJSON": "result.models[].modelId",
+    "knownModels": [
+      "muse-spark-1.3",
+      "muse-spark-1.3-contributor",
+      "muse-spark-1.2",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.1",
+      "muse-wonder-1.0",
+      "muse-ember-1.0"
+    ],
+    "timeout": "45s"
+  },
+  "args": {
+    "run": [
+      {"args": ["exec"]},
+      {"when": "session", "args": ["--session-id", "{session}"]},
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--reasoning-effort", "{level}"]},
+      {"args": ["--user-input-auto-resolve", "--json"]},
+      {"args": ["{prompt}"]}
+    ],
+    "resume": [
+      {"args": ["exec", "--session-id", "{session}"]},
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--reasoning-effort", "{level}"]},
+      {"args": ["--user-input-auto-resolve", "--json"]},
+      {"args": ["{prompt}"]}
+    ],
+    "vision": [
+      {"args": ["exec", "--image", "{image}"]},
+      {"when": "yolo", "args": ["--yolo"]},
+      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--reasoning-effort", "{level}"]},
+      {"args": ["{prompt}"]}
+    ]
+  }
+}

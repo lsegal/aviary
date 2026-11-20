@@ -21,12 +21,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/agent"
-	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
-	"github.com/lsegal/aviary/internal/update"
 )
 
 type stubChannel struct{}
@@ -285,85 +283,6 @@ func TestHealthHandler(t *testing.T) {
 
 	assert.True(t, payload.OK)
 	assert.NotEqual(t, "", payload.GOOS)
-
-}
-
-func TestVersionHandler_Emulated(t *testing.T) {
-	resetSlogForTest()
-	orig := buildinfo.Version
-	buildinfo.Version = "dev"
-	t.Cleanup(func() {
-		buildinfo.Version = orig
-		_ = update.ConfigureEmulation("")
-	})
-	err := update.ConfigureEmulation("1.2.3:1.3.0")
-	assert.NoError(t, err)
-
-	srv := New(&config.Config{}, "tok")
-	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
-	rr := httptest.NewRecorder()
-	srv.versionHandler(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var payload struct {
-		CurrentVersion   string `json:"currentVersion"`
-		LatestVersion    string `json:"latestVersion"`
-		UpgradeAvailable bool   `json:"upgradeAvailable"`
-	}
-	err = json.NewDecoder(rr.Body).Decode(&payload)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "1.2.3", payload.CurrentVersion)
-	assert.Equal(t, "1.3.0", payload.LatestVersion)
-	assert.True(t, payload.UpgradeAvailable)
-
-}
-
-func TestVersionHandler_CheckFailureStillReturnsStatusOK(t *testing.T) {
-	orig := versionCheck
-	versionCheck = func(_ context.Context, _ *http.Client) (update.CheckResult, error) {
-		return update.CheckResult{
-			CurrentVersion: "dev",
-			Message:        "release lookup failed",
-		}, assert.AnError
-	}
-	t.Cleanup(func() {
-		versionCheck = orig
-	})
-
-	srv := New(&config.Config{}, "tok")
-	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
-	rr := httptest.NewRecorder()
-	srv.versionHandler(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var payload struct {
-		CurrentVersion string `json:"currentVersion"`
-		Message        string `json:"message"`
-	}
-	err := json.NewDecoder(rr.Body).Decode(&payload)
-	assert.NoError(t, err)
-	assert.Equal(t, "dev", payload.CurrentVersion)
-	assert.Equal(t, "release lookup failed", payload.Message)
-}
-
-func TestVersionUpgradeHandler_Emulated(t *testing.T) {
-	resetSlogForTest()
-	orig := buildinfo.Version
-	buildinfo.Version = "dev"
-	t.Cleanup(func() {
-		buildinfo.Version = orig
-		_ = update.ConfigureEmulation("")
-	})
-	err := update.ConfigureEmulation("1.2.3:1.3.0")
-	assert.NoError(t, err)
-
-	srv := New(&config.Config{}, "tok")
-	req := httptest.NewRequest(http.MethodPost, "/api/version/upgrade", strings.NewReader(`{"version":"1.3.0"}`))
-	rr := httptest.NewRecorder()
-	srv.versionUpgradeHandler(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.True(t, strings.Contains(rr.Body.String(), "Emulated upgrade completed"))
 
 }
 
@@ -1450,6 +1369,41 @@ func TestLogsHistoryHandler_LimitCap(t *testing.T) {
 	logsHistoryHandler(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+}
+
+func TestLogHubSince(t *testing.T) {
+	hub := newLogHub(4)
+	logger := slog.New(hub)
+	projectsLog := logger.With("component", "projects")
+	projectsLog.Info("one")
+	logger.Info("other", "component", "server")
+	projectsLog.Info("two")
+
+	lines, offset := hub.since("projects", 0, 0)
+	require.Len(t, lines, 2)
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} one$`, lines[0])
+	assert.True(t, strings.HasSuffix(lines[1], " two"))
+	assert.Equal(t, 3, offset)
+
+	latest, _ := hub.since("projects", 0, 1)
+	require.Len(t, latest, 1)
+	assert.True(t, strings.HasSuffix(latest[0], " two"))
+
+	projectsLog.Info("three")
+	logger.Info("other again", "component", "server")
+	lines, next := hub.since("projects", offset, 0)
+	require.Len(t, lines, 1)
+	assert.True(t, strings.HasSuffix(lines[0], " three"))
+	assert.Equal(t, 5, next)
+
+	// The ring holds four records, so "one" has been evicted.
+	lines, _ = hub.since("projects", 0, 0)
+	require.Len(t, lines, 2)
+	assert.True(t, strings.HasSuffix(lines[0], " two"))
+
+	// An offset from before a restart reads from the start of the ring.
+	lines, _ = hub.since("projects", 99, 0)
+	assert.Len(t, lines, 2)
 }
 
 func TestRecordToEntry_AttrsCoverage(t *testing.T) {

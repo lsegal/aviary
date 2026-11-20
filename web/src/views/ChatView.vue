@@ -1,8 +1,8 @@
 <template>
-	<AppLayout>
+	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
 			<!-- Agent tabs -->
-			<div class="flex items-end border-b border-gray-200 dark:border-gray-800">
+			<div v-if="!props.agent" class="flex items-end border-b border-gray-200 dark:border-gray-800">
 				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
 					<button v-for="a in agentsStore.agents" :key="a.id" type="button"
 						class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
@@ -107,54 +107,9 @@
 							</div>
 							<!-- Tool-use indicator -->
 							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
-								<details class="group inline-block max-w-full">
-									<summary
-										class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800">
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
-											class="h-3 w-3 shrink-0" aria-hidden="true">
-											<path fill-rule="evenodd"
-												d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z"
-												clip-rule="evenodd" />
-										</svg>
-										<span>{{ toolName(item.msg) }}</span>
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
-											class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
-											<path fill-rule="evenodd"
-												d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-												clip-rule="evenodd" />
-										</svg>
-									</summary>
-									<div
-										class="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
-										<template v-if="item.msg.toolData">
-											<div v-if="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length > 0">
-												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Arguments
-												</p>
-												<pre
-													class="max-h-40 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ formatJSON(item.msg.toolData.args) }}
-												</pre>
-											</div>
-											<div v-if="item.msg.toolData.result"
-												:class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
-												<p class="mb-1 font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Result
-												</p>
-												<pre
-													class="max-h-48 overflow-auto whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">{{ item.msg.toolData.result }}
-												</pre>
-											</div>
-											<div v-if="item.msg.toolData.error"
-												:class="item.msg.toolData.args && Object.keys(item.msg.toolData.args).length ? 'mt-2' : ''">
-												<p class="mb-1 font-semibold uppercase tracking-wide text-red-400">Error</p>
-												<pre
-													class="whitespace-pre-wrap break-all text-red-600 dark:text-red-400">{{ item.msg.toolData.error }}
-												</pre>
-											</div>
-											<p v-if="!item.msg.toolData.result && !item.msg.toolData.error"
-												class="italic text-gray-400 dark:text-gray-500">Running…</p>
-										</template>
-										<p v-else class="text-gray-500 dark:text-gray-400">{{ item.msg.text }}</p>
-									</div>
-								</details>
+								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
+									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
+									:error="item.msg.toolData?.error" :pending="!!item.msg.toolData" />
 							</div>
 							<!-- Regular user / assistant messages -->
 							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
@@ -255,11 +210,10 @@
 			<img :src="expandedImageURL" class="max-h-full max-w-full rounded-xl shadow-2xl" @click.stop />
 		</div>
 
-	</AppLayout>
+	</component>
 </template>
 
 <script setup lang="ts">
-import { marked } from "marked";
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -269,8 +223,10 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import ChatToolCall from "../components/chat/ChatToolCall.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
+import { renderMarkdown } from "../lib/markdown";
 import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 
@@ -315,33 +271,19 @@ interface PersistedMessage {
 	timestamp?: string;
 }
 
+const props = defineProps<{
+	/** Pins the chat to this agent and embeds it without the app layout,
+	 * agent tabs, or route changes, as the Projects board's side panel does. */
+	agent?: string;
+}>();
+
 const agentsStore = useAgentsStore();
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const { streamAgent } = useStream();
-const markdownRenderer = new marked.Renderer();
-
-markdownRenderer.html = (token) => escapeHTML(token.text);
-
-function escapeHTML(text: string): string {
-	return text
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&quot;")
-		.replaceAll("'", "&#39;");
-}
-
 function chatPath(agent: string, sessionId?: string): string {
 	return sessionId ? `/chat/${agent}/${sessionId}` : `/chat/${agent}`;
-}
-
-function renderMarkdown(text: string): string {
-	return marked.parse(text, {
-		async: false,
-		renderer: markdownRenderer,
-	}) as string;
 }
 
 /** Returns true if an assistant message text looks like an error. */
@@ -443,10 +385,6 @@ function extractCompleteToolPayload(
 /** Tool name shown in the collapsed pill; details stay inside the expansion. */
 function toolName(msg: Message): string {
 	return msg.toolData?.name || msg.text;
-}
-
-function formatJSON(v: unknown): string {
-	return JSON.stringify(v, null, 2);
 }
 
 function formatDateLabel(d: Date): string {
@@ -592,8 +530,36 @@ const onWindowKeydown = (e: KeyboardEvent) => {
 	}
 };
 
+let mounted: Promise<void> = Promise.resolve();
 onMounted(async () => {
+	let markMounted = () => {};
+	mounted = new Promise((resolve) => {
+		markMounted = resolve;
+	});
+	try {
+		await mountChat();
+	} finally {
+		markMounted();
+	}
+});
+
+async function mountChat() {
 	await agentsStore.fetchAgents();
+	if (props.agent) {
+		selectedAgent.value = props.agent;
+		await loadSessions();
+		await loadSessionMessages();
+	} else {
+		await mountRouteChat();
+	}
+	document.addEventListener("visibilitychange", onVisible);
+	window.addEventListener("keydown", onWindowKeydown);
+	connectSessionWS();
+	await nextTick();
+	updateScrollState();
+}
+
+async function mountRouteChat() {
 	const routeAgent =
 		typeof route.params.agent === "string" ? route.params.agent : "";
 	const routeSessionId =
@@ -608,12 +574,22 @@ onMounted(async () => {
 		await loadSessionMessages();
 		router.replace(chatPath(agentName, selectedSessionId.value));
 	}
-	document.addEventListener("visibilitychange", onVisible);
-	window.addEventListener("keydown", onWindowKeydown);
-	connectSessionWS();
-	await nextTick();
-	updateScrollState();
-});
+}
+
+/** Sends text as if typed, once the chat has loaded its session. */
+async function sendText(text: string) {
+	await mounted;
+	input.value = text;
+	await send();
+}
+
+defineExpose({ sendText });
+
+/** Keeps the address bar on the selected chat, unless embedded. */
+function pushChatPath() {
+	if (!props.agent)
+		router.push(chatPath(selectedAgent.value, selectedSessionId.value));
+}
 
 onUnmounted(() => {
 	document.removeEventListener("visibilitychange", onVisible);
@@ -720,7 +696,7 @@ async function selectAgent(name: string) {
 	resetHistoryNavigation();
 	updateScrollState();
 	await loadSessions();
-	router.push(chatPath(name, selectedSessionId.value));
+	pushChatPath();
 }
 
 async function selectSession(id: string) {
@@ -730,7 +706,7 @@ async function selectSession(id: string) {
 	messages.value = [];
 	resetHistoryNavigation();
 	updateScrollState();
-	router.push(chatPath(selectedAgent.value, id));
+	pushChatPath();
 	await loadSessionMessages();
 }
 
@@ -745,7 +721,7 @@ async function createSession() {
 		const sess = JSON.parse(raw) as Session;
 		sessions.value.push(sess);
 		selectedSessionId.value = sess.id;
-		router.push(chatPath(selectedAgent.value, sess.id));
+		pushChatPath();
 		loadMessagesSeq += 1;
 		messages.value = [];
 		resetHistoryNavigation();

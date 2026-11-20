@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary"
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -1412,4 +1414,54 @@ func TestUsageQueryTool_RFC3339Filter(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, rec.AgentID, got[0].AgentID)
 
+}
+
+// ── coding_skills tools ───────────────────────────────────────────────────────
+
+func TestCodingSkillsTools(t *testing.T) {
+	home := t.TempDir()
+	var calls [][]string
+	manager := &codingskills.Manager{
+		Env: codingskills.Env{
+			Home:     home,
+			Getenv:   func(string) string { return "" },
+			LookPath: func(binary string) (string, error) { return "/usr/bin/" + binary, nil },
+		},
+		Bundle:  aviary.CodingSkills,
+		Version: func() string { return "v2.0.0" },
+		CLIs: func() []codingskills.CLI {
+			return []codingskills.CLI{{ID: "claude", Name: "Claude", Target: "claude-code", Binary: "claude"}}
+		},
+		Run: func(_ context.Context, args ...string) error {
+			calls = append(calls, args)
+			return nil
+		},
+	}
+	prev := codingSkills
+	codingSkills = func() *codingskills.Manager { return manager }
+	t.Cleanup(func() { codingSkills = prev })
+
+	d := NewDispatcher("https://localhost:16677", "")
+	out, err := d.CallTool(context.Background(), "coding_skills_list", map[string]any{})
+	require.NoError(t, err)
+	var status codingskills.Status
+	require.NoError(t, json.Unmarshal([]byte(out), &status))
+	assert.Equal(t, "2.0.0", status.Version)
+	require.Len(t, status.CLIs, 1)
+	require.Len(t, status.Skills, 4)
+	assert.Equal(t, "gh-fix", status.Skills[0].Name)
+	assert.False(t, status.Skills[0].Installs[0].Installed)
+
+	out, err = d.CallTool(context.Background(), "coding_skills_install", map[string]any{"skill": "gh-fix", "update_only": true})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"installed":[]}`, out)
+	assert.Empty(t, calls, "update_only skips a skill the CLI does not have")
+
+	out, err = d.CallTool(context.Background(), "coding_skills_install", map[string]any{"skill": "gh-fix", "cli": "claude"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"installed":["gh-fix/claude"]}`, out)
+	require.Len(t, calls, 1)
+	assert.Equal(t, "https://github.com/lsegal/aviary/tree/v2.0.0/.agents/skills/gh-fix", calls[0][3])
+
+	toolCallContains(t, d, "coding_skills_install", map[string]any{"skill": "nope"}, "unknown coding-CLI skill")
 }

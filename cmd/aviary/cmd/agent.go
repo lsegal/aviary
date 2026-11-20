@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,8 @@ var agentListCmd = &cobra.Command{
 var agentRunFile string
 var agentRunBare bool
 var agentRunHistory bool
+var agentRunWorkdir string
+var agentRunOutputFormat string
 
 var agentRunCmd = &cobra.Command{
 	Use:   "run <name> [message]",
@@ -58,12 +61,32 @@ var agentRunCmd = &cobra.Command{
 		if cmd.Flags().Changed("history") {
 			toolArgs["history"] = agentRunHistory
 		}
-		out, err := dispatcher.CallTool(cmd.Context(), "agent_run", toolArgs)
-		if err != nil {
-			return err
+		if agentRunWorkdir != "" {
+			workdir, err := filepath.Abs(agentRunWorkdir)
+			if err != nil {
+				return fmt.Errorf("resolving workdir: %w", err)
+			}
+			toolArgs["workdir"] = workdir
 		}
-		fmt.Print(out)
-		return nil
+		switch agentRunOutputFormat {
+		case "text":
+			out, err := dispatcher.CallTool(cmd.Context(), "agent_run", toolArgs)
+			if err != nil {
+				return err
+			}
+			fmt.Print(out)
+			return nil
+		case "json":
+			toolArgs["stream_events"] = true
+			w := &agentEventWriter{out: cmd.OutOrStdout()}
+			out, isError, err := dispatcher.CallToolWithProgress(cmd.Context(), "agent_run", toolArgs, w.progress)
+			if err != nil {
+				return err
+			}
+			w.finish(out, isError)
+			return nil
+		}
+		return fmt.Errorf("--output-format must be text or json, not %q", agentRunOutputFormat)
 	},
 }
 
@@ -103,6 +126,8 @@ func init() {
 	agentRunCmd.Flags().StringVar(&agentRunFile, "file", "", "read prompt from file")
 	agentRunCmd.Flags().BoolVar(&agentRunBare, "bare", false, "run without any system prompt, rules, memory, or tool preamble")
 	agentRunCmd.Flags().BoolVar(&agentRunHistory, "history", true, "include prior session history in the prompt")
+	agentRunCmd.Flags().StringVar(&agentRunWorkdir, "workdir", "", "grant the run's file tools and exec this directory for its duration, e.g. a job's clone")
+	agentRunCmd.Flags().StringVar(&agentRunOutputFormat, "output-format", "text", "text, or json for one JSON event per line: messages, tool calls and results, file changes")
 	agentCmd.AddCommand(agentListCmd, agentRunCmd, agentStopCmd, agentTemplateSyncCmd)
 	rootCmd.AddCommand(agentCmd)
 }

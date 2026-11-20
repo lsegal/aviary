@@ -1,0 +1,29 @@
+{
+  "name": "agy",
+  "binary": "agy",
+  "defaultModel": "claude-sonnet-4-6",
+  "levels": ["low", "medium", "high"],
+  "session": {"assign": "none"},
+  "output": {"format": "text"},
+  "projectsUnavailable": "agy has no machine-readable output mode, so it cannot produce the structured job transcript Projects requires",
+  "skills": {"target": "antigravity-cli"},
+  "doctor": {
+    "models": ["{binary}", "models"],
+    "modelPattern": "^([A-Za-z0-9][A-Za-z0-9._/:-]*)\\t"
+  },
+  "args": {
+    "run": [
+      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--effort", "{level}"]},
+      {"args": ["--output-format", "text"]},
+      {"args": ["--print", "{prompt}"]}
+    ],
+    "vision": [
+      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
+      {"when": "model", "args": ["--model", "{model}"]},
+      {"when": "level", "args": ["--effort", "{level}"]},
+      {"args": ["--print", "{prompt}"]}
+    ]
+  }
+}

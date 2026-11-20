@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Issues · lsegal/aviary</title></head>
+<body>
+<include-fragment src="/in-product-messaging/banner" class="is-error">
+  <div data-show-on-forbidden-error hidden>
+    <div class="blankslate blankslate-spacious">
+      <h3 class="blankslate-heading">Uh oh!</h3>
+      <p>There was an error while loading. Please reload this page.</p>
+    </div>
+  </div>
+</include-fragment>
+<react-app app-name="issues-react" data-ssr="false">
+<section aria-label="All issues">
+<!-- GitHub renders the empty state inside the list itself, not beside it. -->
+<ul class="ListView-module__ul__uMK30" role="list" data-listview-component="items-list" data-density="default">
+  <div class="blankslate" role="region" aria-live="polite" aria-atomic="true">
+    <h3 class="blankslate-heading">No results</h3>
+    <p>Try adjusting your search filters.</p>
+  </div>
+</ul>
+</section>
+</react-app>
+<footer class="footer"><h2 class="sr-only">Footer</h2><p>&copy; 2026 GitHub, Inc.</p></footer>
+</body>
+</html>

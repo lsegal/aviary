@@ -119,6 +119,7 @@ For a full walkthrough see the [Getting Started guide](https://aviary.bot/guide/
 | [Getting Started](https://aviary.bot/guide/getting-started) | Install, first agent, first chat |
 | [Configuration](https://aviary.bot/guide/configuration) | `aviary.yaml` walkthrough — providers, agents, channels, tasks |
 | [Scheduled Tasks](https://aviary.bot/guide/scheduled-tasks) | Cron and file-watch tasks |
+| [Projects](https://aviary.bot/guide/projects) | Watch GitHub issues and fix them with coding CLIs |
 | [Control Panel](https://aviary.bot/guide/control-panel) | Web UI overview |
 | [CLI Reference](https://aviary.bot/reference/cli) | All commands and flags |
 | [Config Reference](https://aviary.bot/reference/config) | Full `aviary.yaml` schema |

@@ -22,6 +22,11 @@
 					"type": "boolean",
 					"description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
 				},
+				"auto_update": {
+					"type": "boolean",
+					"default": false,
+					"description": "Install new Aviary releases automatically, but only while no jobs are running."
+				},
 				"tls": {
 					"type": "object",
 					"additionalProperties": false,
@@ -184,20 +189,43 @@
 								"name": { "type": "string" },
 								"type": {
 									"type": "string",
-									"enum": ["prompt", "script"]
+									"enum": ["prompt", "script", "project"]
 								},
 								"schedule": { "type": "string" },
 								"start_at": { "type": "string", "format": "date-time" },
 								"run_once": { "type": "boolean", "default": false },
+								"trigger": {
+									"type": "string",
+									"enum": ["once", "interval", "daily", "weekly", "cron"]
+								},
+								"every": { "type": "string" },
+								"at": { "type": "string" },
+								"days": { "type": "string" },
+								"timezone": { "type": "string" },
+								"overlap": {
+									"type": "string",
+									"enum": ["queue", "skip"],
+									"default": "queue"
+								},
+								"missed": {
+									"type": "string",
+									"enum": ["skip", "run_once"],
+									"default": "skip"
+								},
 								"watch": { "type": "string" },
 								"prompt": { "type": "string" },
 								"script": { "type": "string" },
-								"target": { "type": "string" }
+								"target": { "type": "string" },
+								"project": { "type": "string" },
+								"cli": { "type": "string" }
 							},
 							"allOf": [
 								{
-									"oneOf": [
+									"anyOf": [
 										{ "required": ["schedule"] },
+										{ "required": ["every"] },
+										{ "required": ["at"] },
+										{ "required": ["start_at"] },
 										{ "required": ["watch"] }
 									]
 								},

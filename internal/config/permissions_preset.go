@@ -41,10 +41,17 @@ func IsValidPermissionsPreset(preset PermissionsPreset) bool {
 	}
 }
 
+// CLIBuiltinToolsAllowed reports whether a CLI-backed agent may use the CLI's
+// own shell, file-edit and web tools: only with the full preset and an
+// explicit cli_builtin_tools opt-in.
+func CLIBuiltinToolsAllowed(perms *PermissionsConfig) bool {
+	return perms != nil && perms.CLIBuiltinTools && EffectivePermissionsPreset(perms) == PermissionsPresetFull
+}
+
 // ToolGroup returns the logical tool group used by permissions presets and the UI.
 func ToolGroup(name string) string {
 	switch {
-	case name == "ping", strings.HasPrefix(name, "server_"), strings.HasPrefix(name, "config_"):
+	case name == "ping", strings.HasPrefix(name, "server_"), strings.HasPrefix(name, "config_"), strings.HasPrefix(name, "coding_skills_"):
 		return "server"
 	case strings.HasPrefix(name, "web_"):
 		return "search"
@@ -71,7 +78,7 @@ func IsToolAllowedByPreset(preset PermissionsPreset, toolName string) bool {
 		return true
 	case PermissionsPresetMinimal:
 		switch group {
-		case "agent", "auth", "exec", "file", "server", "browser", "skills", "usage":
+		case "agent", "auth", "exec", "file", "server", "browser", "skills", "usage", "project":
 			return false
 		default:
 			return true

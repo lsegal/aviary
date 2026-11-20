@@ -67,7 +67,7 @@ func (m *Manager) Open(ctx context.Context, url string) (string, error) {
 		}
 	}
 
-	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
+	cdpBaseURL := DebugURL(m.cdpPort)
 	tab, err := createTab(opCtx, cdpBaseURL, url)
 	if err != nil {
 		return "", err
@@ -154,16 +154,11 @@ func normalizeBrowserURL(raw string) string {
 // Tabs returns all currently open page tabs in the browser.
 // Returns an error if Chrome is not running.
 func (m *Manager) Tabs() ([]ChromeTab, error) {
-	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
-	tabs, err := fetchTabs(cdpBaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	defer cancel()
+	pages, err := PageTargets(ctx, DebugURL(m.cdpPort))
 	if err != nil {
 		return nil, fmt.Errorf("chrome not running on port %d", m.cdpPort)
-	}
-	var pages []ChromeTab
-	for _, t := range tabs {
-		if t.Type == "page" {
-			pages = append(pages, t)
-		}
 	}
 	return pages, nil
 }
@@ -296,15 +291,15 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	cdpBaseURL := fmt.Sprintf("http://localhost:%d", m.cdpPort)
-	if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
+	cdpBaseURL := DebugURL(m.cdpPort)
+	if wsURL, err := WebSocketURL(ctx, cdpBaseURL); err == nil {
 		return wsURL, nil
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// Double-check after acquiring lock.
-	if wsURL, err := fetchWebSocketURL(cdpBaseURL); err == nil {
+	if wsURL, err := WebSocketURL(ctx, cdpBaseURL); err == nil {
 		return wsURL, nil
 	}
 
@@ -317,7 +312,7 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 	if err == nil || headless {
 		return wsURL, err
 	}
-	if wsURL, retryErr := fetchWebSocketURL(cdpBaseURL); retryErr == nil {
+	if wsURL, retryErr := WebSocketURL(ctx, cdpBaseURL); retryErr == nil {
 		return wsURL, nil
 	}
 
@@ -333,11 +328,16 @@ func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Con
 }
 
 // userDataDir returns the Chrome user data directory for Aviary's browser.
-// If profileDir is set it is used as-is; otherwise a browser directory
-// alongside aviary.yaml is used.
+// If profileDir is set it is used as-is; otherwise DefaultProfileDir is used.
 func (m *Manager) userDataDir() string {
 	if m.profileDir != "" {
 		return m.profileDir
 	}
+	return DefaultProfileDir()
+}
+
+// DefaultProfileDir is the profile Aviary's browser uses when the browser
+// settings name none: a browser directory alongside aviary.yaml.
+func DefaultProfileDir() string {
 	return filepath.Join(filepath.Dir(config.DefaultPath()), "browser")
 }

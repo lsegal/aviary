@@ -8,11 +8,13 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 const pollInterval = 5 * time.Second
@@ -30,7 +32,35 @@ type WorkerPool struct {
 	deliver  func(agentName, route, text string) error
 	activeMu sync.Mutex
 	active   map[string]activeJob
+	// held stops workers from claiming new jobs while a safe restart waits.
+	held atomic.Bool
+	// checkpointNote is set during a safe restart's shutdown checkpoint:
+	// jobs canceled then are requeued with this note instead of canceled.
+	checkpointNote atomic.Pointer[string]
+	// onAttemptDone, when set, receives each job as persisted after one
+	// execution attempt finishes, with the attempt's duration.
+	onAttemptDone func(job domain.Job, duration time.Duration)
+	// projectRunner runs a "project" task's prompt as a Projects board job.
+	projectRunner ProjectRunner
 }
+
+// ProjectRun is one fire of a "project" task: its prompt, run as a job on the
+// board of a watched project.
+type ProjectRun struct {
+	// TaskID is the task's "agent/task" key, which a board Retry passes back
+	// to Trigger.
+	TaskID  string
+	Name    string
+	Project string
+	CLI     string
+	Prompt  string
+	Fire    time.Time
+}
+
+// ProjectRunner runs a project task and waits for its agent to exit. It
+// returns the run's one-line summary, and an error when the run failed or
+// was stopped.
+type ProjectRunner func(ctx context.Context, run ProjectRun) (summary string, err error)
 
 type activeJob struct {
 	taskID    string
@@ -82,6 +112,17 @@ func (p *WorkerPool) run(ctx context.Context) {
 		default:
 		}
 
+		if p.held.Load() {
+			select {
+			case <-time.After(pollInterval):
+			case <-p.stop:
+				return
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
+
 		job, err := p.queue.Claim()
 		if err != nil {
 			slog.Warn("worker: claim error", "err", err)
@@ -128,11 +169,11 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	go p.heartbeatJob(jobCtx, job.ID, stopHeartbeat)
 
 	slog.Info("executing job", "id", job.ID, "task", job.TaskID, "agent", job.AgentID)
+	started := time.Now()
+	defer p.attemptDone(job.ID, started)
 	if err := p.executeJob(jobCtx, job); err != nil {
 		if errors.Is(err, context.Canceled) {
-			if cancelErr := p.queue.Cancel(job.ID); cancelErr != nil {
-				slog.Warn("marking job canceled", "id", job.ID, "err", cancelErr)
-			}
+			p.finishCanceled(job.ID)
 			return
 		}
 		slog.Warn("job failed", "id", job.ID, "err", err)
@@ -144,6 +185,35 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	if err := p.queue.Complete(job.ID); err != nil {
 		slog.Warn("marking job complete", "id", job.ID, "err", err)
 	}
+}
+
+// finishCanceled records a canceled job: requeued for after the restart when a
+// safe restart's checkpoint canceled it, otherwise canceled.
+func (p *WorkerPool) finishCanceled(jobID string) {
+	if note := p.checkpointNote.Load(); note != nil {
+		if err := p.queue.Requeue(jobID, *note); err != nil {
+			slog.Warn("requeueing checkpointed job", "id", jobID, "err", err)
+		}
+		return
+	}
+	if err := p.queue.Cancel(jobID); err != nil {
+		slog.Warn("marking job canceled", "id", jobID, "err", err)
+	}
+}
+
+func (p *WorkerPool) attemptDone(jobID string, started time.Time) {
+	if p.onAttemptDone == nil {
+		return
+	}
+	path := store.FindJobPath(jobID)
+	if path == "" {
+		return
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return
+	}
+	p.onAttemptDone(job, time.Since(started))
 }
 
 func (p *WorkerPool) heartbeatJob(ctx context.Context, jobID string, stop <-chan struct{}) {
@@ -203,6 +273,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	ctx = agent.WithJobID(ctx, job.ID)
 
 	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
+	if taskType == "project" {
+		return p.executeProjectJob(ctx, job, runner.Config())
+	}
 	if taskType == "script" {
 		result, err := executeScriptJob(ctx, job, runner.Config(), p.deliver)
 		if result.Logs != "" {
@@ -213,8 +286,14 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		return err
 	}
 
-	if job.SessionID != "" && job.Attempts > 1 {
+	if job.SessionID != "" && (job.Attempts > 1 || job.ResumeNote != "") {
 		prompt = "Continue the unfinished scheduled task from this existing session. Complete any remaining work for the original request:\n\n" + job.Prompt
+	}
+	if job.ResumeNote != "" {
+		prompt = job.ResumeNote + "\n\n" + prompt
+		if err := p.queue.ClearResumeNote(job.ID); err != nil {
+			slog.Warn("job: failed to clear resume note", "id", job.ID, "err", err)
+		}
 	}
 
 	var lastErr error
@@ -311,6 +390,37 @@ func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, p
 		return taskType, prompt, script
 	}
 	return "prompt", prompt, script
+}
+
+// executeProjectJob hands a project task to the Projects engine, which runs
+// its prompt in an isolated clone as a board job, and records the run's
+// summary as the job's output.
+func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig) error {
+	if p.projectRunner == nil {
+		return errors.New("project tasks need the Projects engine, which is not running")
+	}
+	run := ProjectRun{TaskID: job.TaskID, Name: jobSessionName(job), Prompt: job.Prompt, Fire: time.Now()}
+	if cfg != nil {
+		for _, task := range cfg.Tasks {
+			if task.Name == run.Name {
+				run.Project, run.CLI = strings.TrimSpace(task.Project), strings.TrimSpace(task.CLI)
+				if strings.TrimSpace(run.Prompt) == "" {
+					run.Prompt = task.Prompt
+				}
+				break
+			}
+		}
+	}
+	if run.Project == "" {
+		return fmt.Errorf("project task %q names no project", job.TaskID)
+	}
+	summary, err := p.projectRunner(ctx, run)
+	if summary != "" {
+		if persistErr := p.queue.UpdateOutput(job.ID, summary); persistErr != nil {
+			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
+		}
+	}
+	return err
 }
 
 // SetTaskOutputDelivery configures the callback used to forward completed task output.

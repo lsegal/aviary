@@ -138,7 +138,7 @@ test("system skills can disable and enable installed skills", async ({
 	await page.goto("/system/skills");
 
 	await expect(
-		page.getByRole("heading", { name: "Skill Marketplace" }),
+		page.getByRole("heading", { name: "Skills", exact: true }),
 	).toBeVisible();
 	const disableButton = page
 		.locator("article")
@@ -322,4 +322,137 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async ({
 		page.getByRole("heading", { name: "Server", exact: true }),
 	).toBeVisible();
 	await expect(page.getByText("Unexpected end of JSON input")).toHaveCount(0);
+});
+
+test("system skills for coding CLIs shows versions and installs", async ({
+	page,
+}) => {
+	const installs: Record<string, { version?: string; current: boolean }> = {
+		"gh-fix/claude": { version: "2.0.0", current: true },
+		"gh-fix/codex": { version: "1.5.16", current: false },
+		"gh-discuss/claude": { version: "2.0.0", current: true },
+		"gh-discuss/codex": { current: false },
+		"gh-create/claude": { version: "2.0.0", current: true },
+	};
+	const installCalls: Record<string, unknown>[] = [];
+	const savedConfigs: string[] = [];
+	const status = () => {
+		const skills = ["gh-fix", "gh-discuss", "gh-create"].map((name) => ({
+			name,
+			summary: `${name} summary`,
+			run_by_projects: name !== "gh-create",
+			installs: ["claude", "codex"].map((cli) => {
+				const entry = installs[`${name}/${cli}`];
+				return {
+					cli,
+					installed: Boolean(entry),
+					current: entry?.current ?? false,
+					version: entry?.version,
+				};
+			}),
+		}));
+		return {
+			version: "2.0.0",
+			source: "lsegal/aviary",
+			release: true,
+			clis: [
+				{ id: "claude", name: "Claude", target: "claude-code" },
+				{ id: "codex", name: "Codex", target: "codex" },
+			],
+			skills,
+			outdated: skills
+				.flatMap((skill) => skill.installs)
+				.filter((entry) => entry.installed && !entry.current).length,
+		};
+	};
+	await mockMCP(page, {
+		config_get: {
+			server: { port: 16677 },
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: {},
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		config_save: async (args) => {
+			savedConfigs.push(String(args?.config));
+			return {};
+		},
+		skills_list: [],
+		coding_skills_list: async () => status(),
+		coding_skills_install: async (
+			args: { skill?: string; cli?: string; update_only?: boolean } = {},
+		) => {
+			installCalls.push(args);
+			const installed: string[] = [];
+			for (const key of Object.keys(installs).concat(
+				args.skill && args.cli ? [`${args.skill}/${args.cli}`] : [],
+			)) {
+				const [skill, cli] = key.split("/");
+				if (args.skill && args.skill !== skill) continue;
+				if (args.cli && args.cli !== cli) continue;
+				if (installs[key]?.current) continue;
+				if (!installs[key] && args.update_only) continue;
+				installs[key] = { version: "2.0.0", current: true };
+				installed.push(key);
+			}
+			return { installed };
+		},
+	});
+
+	await page.goto("/system/skills?tab=coding");
+
+	await expect(
+		page.getByRole("tab", { name: "For coding CLIs (3)" }),
+	).toHaveAttribute("aria-selected", "true");
+	await expect(page.getByTestId("coding-skill-gh-fix-claude")).toContainText(
+		"2.0.0",
+	);
+	await expect(page.getByTestId("coding-skill-gh-fix-codex")).toContainText(
+		"1.5.16",
+	);
+	await expect(page.getByTestId("coding-skill-gh-discuss-codex")).toContainText(
+		"Older copy",
+	);
+	await expect(page.getByTestId("coding-skill-gh-create-codex")).toContainText(
+		"Not installed",
+	);
+	await expect(page.getByTestId("coding-skill-gh-fix")).toContainText(
+		"run by Projects",
+	);
+	await expect(page.getByTestId("coding-skill-gh-create")).toContainText(
+		"you run it",
+	);
+
+	await page
+		.getByTestId("coding-skill-gh-create-codex")
+		.getByRole("button", { name: "Install" })
+		.click();
+	await expect(page.getByText("Installed gh-create/codex.")).toBeVisible();
+	await expect(page.getByTestId("coding-skill-gh-create-codex")).toContainText(
+		"2.0.0",
+	);
+	expect(installCalls[0]).toEqual({ skill: "gh-create", cli: "codex" });
+
+	await page
+		.getByTestId("coding-skill-gh-fix-codex")
+		.getByRole("button", { name: "Update to 2.0.0" })
+		.click();
+	await expect(page.getByText("Installed gh-fix/codex.")).toBeVisible();
+
+	const updateAll = page.getByTestId("coding-skills-update-all");
+	await expect(updateAll).toHaveText("Update all (1)");
+	await updateAll.click();
+	await expect(page.getByText("Installed gh-discuss/codex.")).toBeVisible();
+	expect(installCalls[2]).toEqual({ update_only: true });
+	await expect(updateAll).toHaveText("Update all (0)");
+	await expect(updateAll).toBeDisabled();
+
+	await page.getByTestId("coding-skills-auto-update").uncheck();
+	await expect
+		.poll(() => savedConfigs.at(-1) ?? "")
+		.toContain('"coding_skills":{"auto_update":false}');
+
+	await page.getByRole("tab", { name: /For Aviary agents/ }).click();
+	await expect(page).toHaveURL(/\/system\/skills$/);
 });
