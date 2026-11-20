@@ -292,7 +292,9 @@ function closeAdd() {
 	void router.replace({ query: rest });
 }
 async function onAdded(target: string) {
-	await router.push(projectPath(projectOwner(settingsStore.config, target), target));
+	await router.push(
+		projectPath(projectOwner(settingsStore.config, target), target),
+	);
 	await projectList.refresh();
 }
 

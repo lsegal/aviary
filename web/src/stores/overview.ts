@@ -2,7 +2,16 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { useMCP } from "../composables/useMCP";
 import type { Agent } from "./agents";
-import type { Job } from "./tasks";
+
+export interface Job {
+	id: string;
+	task_id: string;
+	agent_id: string;
+	status: string;
+	attempts: number;
+	created_at: string;
+	updated_at: string;
+}
 
 export interface DoctorIssue {
 	level: "ERROR" | "WARN";

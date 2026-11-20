@@ -285,7 +285,7 @@ async function setup(
 
 test("sidebar lists watched projects with live counts", async ({ page }) => {
 	await setup(page);
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 	const nav = page.locator("nav").last();
 	await expect(nav.getByRole("link", { name: /^GitHub/ })).toBeVisible();
 	await expect(nav.getByTestId("projects-running-badge")).toHaveText("2");
