@@ -16,12 +16,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
 	"github.com/lsegal/aviary/internal/projects/process"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // Watch is a set of targets watched for the life of the server without being
@@ -658,11 +660,15 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 // repository webhooks that point at it.
 func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, events chan WebhookEvent) error {
 	s := run.settings.Webhook
+	secret, err := resolveWebhookSecret(s.Secret)
+	if err != nil {
+		return err
+	}
 	listener, err := listenForWebhooks(s.Listen)
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: WebhookHandler{Events: events, Secret: s.Secret, WebhookPath: s.Path}, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: WebhookHandler{Events: events, Secret: secret, WebhookPath: s.Path}, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			m.logf("webhook server: %v", err)
@@ -685,7 +691,7 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 	}
 	m.logf("ngrok tunnel ready at %s", tunnel.URL())
 	for _, target := range run.settings.Targets {
-		if _, err := gh.ConfigureWebhook(ctx, target, endpoint, s.Secret); err != nil {
+		if _, err := gh.ConfigureWebhook(ctx, target, endpoint, secret); err != nil {
 			if errors.Is(err, errProjectWebhookUnavailable) || errors.Is(err, errWebhookPartiallyConfigured) {
 				m.logf("%v", err)
 				continue
@@ -695,7 +701,7 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 		m.logf("configured GitHub webhook for %s", target)
 	}
 	supervisor.webhookPath = s.Path
-	supervisor.reconciler = newWebhookReconciler(gh, run.settings.Targets, endpoint, s.Secret, m.logf)
+	supervisor.reconciler = newWebhookReconciler(gh, run.settings.Targets, endpoint, secret, m.logf)
 	supervisor.start = func(ctx context.Context) (webhookTunnel, error) {
 		tunnel, err := ngrok.Start(ctx, s.NgrokBinary, ngrokAddr, output)
 		if err != nil {
@@ -712,6 +718,30 @@ func (m *Manager) startWebhooks(ctx context.Context, run *engineRun, gh GHCLI, e
 // startBrowserDriver launches the browser browser delivery reads through. It
 // is a variable so tests can run the manager without a browser.
 var startBrowserDriver = browser.Start
+
+// openWebhookAuthStore opens the credential store that auth:<key> webhook
+// secrets resolve from; tests replace it.
+var openWebhookAuthStore = func() (auth.Store, error) {
+	return auth.NewFileStore(filepath.Join(store.SubDir(store.DirAuth), "credentials.json"))
+}
+
+// resolveWebhookSecret resolves an auth:<key> webhook secret through the
+// credential store, the same way core resolves its other secrets. A plain
+// value is returned unchanged.
+func resolveWebhookSecret(secret string) (string, error) {
+	if !strings.HasPrefix(secret, "auth:") {
+		return secret, nil
+	}
+	st, err := openWebhookAuthStore()
+	if err != nil {
+		return "", fmt.Errorf("projects webhook secret: %w", err)
+	}
+	resolved, err := auth.Resolve(st, secret)
+	if err != nil {
+		return "", fmt.Errorf("projects webhook secret: %w", err)
+	}
+	return resolved, nil
+}
 
 // startBrowser starts Aviary's browser for browser delivery and points the
 // engine's GitHub reads at it.
