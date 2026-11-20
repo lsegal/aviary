@@ -427,7 +427,7 @@ projects:
 | `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
 | `webhook.listen` | string | `:0` | Webhook listener address |
 | `webhook.path` | string | `/webhook` | Webhook path |
-| `webhook.secret` | string | | Webhook signature secret |
+| `webhook.secret` | string | | Webhook signature secret, plain or a credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
 
 ---

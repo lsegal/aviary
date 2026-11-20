@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/wake"
 )
 
@@ -4537,16 +4539,12 @@ func loadState(path string) (map[int]bool, error) {
 	if path == "" {
 		return map[int]bool{}, nil
 	}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	raw, err := store.ReadJSON[map[string]json.RawMessage](path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return map[int]bool{}, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, fmt.Errorf("decode state: %w", err)
 	}
 	s := make(map[int]bool, len(raw))
 	for key, value := range raw {
@@ -4571,11 +4569,7 @@ func saveState(path string, seen map[int]bool) error {
 	if path == "" {
 		return nil
 	}
-	b, err := json.MarshalIndent(seen, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(b, '\n'), 0600)
+	return store.WriteJSON(path, seen)
 }
 
 func loadWorkState(path string) (map[int]workState, error) {
@@ -4583,16 +4577,12 @@ func loadWorkState(path string) (map[int]workState, error) {
 	if path == "" {
 		return result, nil
 	}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	raw, err := store.ReadJSON[map[string]json.RawMessage](path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return result, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, fmt.Errorf("decode state: %w", err)
 	}
 	for key, value := range raw {
 		var number int
@@ -4619,11 +4609,7 @@ func saveWorkState(path string, state map[int]workState) error {
 	if path == "" {
 		return nil
 	}
-	b, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(b, '\n'), 0600)
+	return store.WriteJSON(path, state)
 }
 
 func loadScopedWorkState(path string, targets []string) (map[string]workState, error) {
@@ -4631,16 +4617,12 @@ func loadScopedWorkState(path string, targets []string) (map[string]workState, e
 	if path == "" {
 		return result, nil
 	}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	raw, err := store.ReadJSON[map[string]json.RawMessage](path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return result, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, fmt.Errorf("decode state: %w", err)
 	}
 	watched := make(map[string]bool, len(targets))
 	for _, target := range targets {
@@ -4694,11 +4676,7 @@ func saveScopedWorkState(path string, state map[string]workState, targets []stri
 		}
 		value = legacy
 	}
-	b, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(b, '\n'), 0600)
+	return store.WriteJSON(path, value)
 }
 
 // stacksProbeTTL is how long a repository's stacked pull request setting is
