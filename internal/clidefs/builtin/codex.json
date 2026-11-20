@@ -18,6 +18,7 @@
     "models": ["{binary}", "debug", "models"],
     "modelsJSON": "models[visibility=list].slug"
   },
+  "configHome": {"env": "CODEX_HOME", "default": "~/.codex", "private": ["config.toml"]},
   "promptStdin": ["-"],
   "approval": {
     "read-only": ["-c", "sandbox_mode=read-only"],

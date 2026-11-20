@@ -538,7 +538,7 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 		return "", fmt.Errorf("agent %s declares no run arguments", spec.Name)
 	}
 	cmd := newAgentCommand(ctx, r.binary(spec.Name), args...)
-	if env := definition.EnvList(); len(env) > 0 {
+	if env := launchEnv(definition); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.Dir = os.TempDir()

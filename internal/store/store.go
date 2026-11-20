@@ -55,6 +55,10 @@ func DataDir() string {
 	return filepath.Join(home, ".config", "aviary")
 }
 
+// CLIHomesDir is where aviary keeps the settings overlays it launches agent
+// CLIs with, so their bookkeeping writes never reach the user's own files.
+func CLIHomesDir() string { return filepath.Join(DataDir(), "cli-homes") }
+
 // WorkspaceDir returns the current workspace root.
 // Resolution order: SetWorkspaceDir value > process working directory.
 func WorkspaceDir() string {

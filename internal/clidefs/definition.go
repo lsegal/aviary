@@ -43,6 +43,9 @@ type Definition struct {
 	// Env is extra environment for the child process, layered on top of
 	// aviary's own environment.
 	Env map[string]string `json:"env,omitempty"`
+	// ConfigHome, when declared, keeps the CLI from writing to the user's own
+	// copy of its settings file on launches aviary makes. See ConfigHome.
+	ConfigHome *ConfigHome `json:"configHome,omitempty"`
 	// Session says how a session ID is established and what happens to it
 	// when a resume fails.
 	Session Session `json:"session"`
@@ -867,8 +870,8 @@ func (d Definition) Validate() error {
 		if d.Output != (Output{}) {
 			return fmt.Errorf(`field "output" is only meaningful when "inProcess" is false`)
 		}
-		if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.MinVersion != "" {
-			return fmt.Errorf(`fields "promptStdin", "wakeup", "env", and "minVersion" are only meaningful when "inProcess" is false`)
+		if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.ConfigHome != nil || d.MinVersion != "" {
+			return fmt.Errorf(`fields "promptStdin", "wakeup", "env", "configHome", and "minVersion" are only meaningful when "inProcess" is false`)
 		}
 		if d.Session.Assign != AssignNone {
 			return fmt.Errorf(`field "session.assign" must be %q when "inProcess" is true`, AssignNone)
@@ -944,6 +947,9 @@ func (d Definition) Validate() error {
 		return fmt.Errorf(`field "defaultModel": %q is not one this agent accepts; %s`, model, d.ModelError())
 	}
 	if err := d.validateApproval(); err != nil {
+		return err
+	}
+	if err := d.ConfigHome.validate(); err != nil {
 		return err
 	}
 	if err := d.Quota.validate(); err != nil {
