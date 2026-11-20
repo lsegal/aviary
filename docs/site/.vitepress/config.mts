@@ -80,6 +80,7 @@ export default defineConfig({
 						{ text: "Overview", link: "/guide/skills/" },
 						{ text: "gh-fix", link: "/guide/skills/gh-fix" },
 						{ text: "gh-discuss", link: "/guide/skills/gh-discuss" },
+						{ text: "gh-safe-merge", link: "/guide/skills/gh-safe-merge" },
 						{ text: "gh-create", link: "/guide/skills/gh-create" },
 					],
 				},
