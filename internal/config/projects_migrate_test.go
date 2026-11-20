@@ -92,3 +92,26 @@ func TestMigratedAgentNamesAvoidTakenNames(t *testing.T) {
 	assert.Equal(t, "projects-jobs", projectAgentName(""))
 	assert.Equal(t, "project-octo-repo", projectAgentName("https://github.com/Octo/Repo"))
 }
+
+func TestMigratedCLIModelsBeyondClaudeAndCodexOnlyWarn(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "gem", Model: "cli/gemini/gemini-3.5-flash"},
+			{Name: "custom", Model: "cli/mytool/m1"},
+			{Name: "bogus", Model: "cli/nosuchcli/x"},
+		},
+		Models: ModelsConfig{CLIDefinitions: map[string]any{"mytool": map[string]any{"binary": "mytool"}}},
+	}
+	issues := Validate(cfg, nil)
+	level := func(field string) string {
+		for _, issue := range issues {
+			if issue.Field == field {
+				return string(issue.Level)
+			}
+		}
+		return ""
+	}
+	assert.Equal(t, string(LevelWarning), level("agents[0].model"), issues)
+	assert.Equal(t, string(LevelWarning), level("agents[1].model"), issues)
+	assert.Equal(t, string(LevelError), level("agents[2].model"), issues)
+}

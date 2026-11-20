@@ -1,4 +1,7 @@
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { type CodingCLI, normalizeCLIList } from "../lib/cliProviders";
+import { parseToolJSON } from "../lib/projects";
+import { useMCP } from "./useMCP";
 
 export interface KnownProvider {
 	id: string;
@@ -370,5 +373,69 @@ export function useProviderAuth(callTool: CallTool) {
 		completeGemini,
 		startCopilot,
 		completeCopilot,
+	};
+}
+
+const CLI_PROVIDERS_CACHE_KEY = "aviary.providers.clis";
+
+// Providers reached through a coding CLI report their install, sign-in, quota
+// and model state from core's provider_cli_list. The probe is slow (it runs
+// every CLI's doctor), so its last result is shared across components and kept
+// in localStorage: the Providers list renders from the cache at once and the
+// probe refreshes it in the background.
+const cliProviders = ref<CodingCLI[] | null>(readCLIProviderCache());
+const cliProvidersRefreshing = ref(false);
+const cliProvidersError = ref("");
+let cliProvidersInflight: Promise<void> | null = null;
+
+function readCLIProviderCache(): CodingCLI[] | null {
+	try {
+		const raw = localStorage.getItem(CLI_PROVIDERS_CACHE_KEY);
+		return raw ? normalizeCLIList(JSON.parse(raw)) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The state of the providers reached through a coding CLI: the cached result
+ * at once, refreshed in the background when the caller mounts unless it asks to
+ * refresh on its own schedule.
+ */
+export function useProviderStatus({ refreshOnMount = true } = {}) {
+	const { callTool } = useMCP();
+
+	function refresh(): Promise<void> {
+		if (cliProvidersInflight) return cliProvidersInflight;
+		cliProvidersRefreshing.value = true;
+		cliProvidersInflight = (async () => {
+			try {
+				const clis = normalizeCLIList(
+					parseToolJSON(await callTool("provider_cli_list", {})),
+				);
+				cliProviders.value = clis;
+				cliProvidersError.value = "";
+				try {
+					localStorage.setItem(CLI_PROVIDERS_CACHE_KEY, JSON.stringify(clis));
+				} catch {
+					// Storage full or disabled; the in-memory cache still works.
+				}
+			} catch (e) {
+				cliProvidersError.value = e instanceof Error ? e.message : String(e);
+			} finally {
+				cliProvidersRefreshing.value = false;
+				cliProvidersInflight = null;
+			}
+		})();
+		return cliProvidersInflight;
+	}
+
+	if (refreshOnMount) onMounted(() => void refresh());
+
+	return {
+		clis: cliProviders,
+		refreshing: cliProvidersRefreshing,
+		error: cliProvidersError,
+		refresh,
 	};
 }

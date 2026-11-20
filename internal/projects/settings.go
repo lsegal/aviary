@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -246,7 +247,7 @@ func (w *Engine) registry() *clidefs.Registry {
 	if w.Registry != nil {
 		return w.Registry
 	}
-	return agentRegistry()
+	return llm.CLIProviders()
 }
 
 // agentOptions lists the registered agents with the models and levels each

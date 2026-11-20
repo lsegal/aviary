@@ -875,3 +875,24 @@ func TestInProcessDefinitionValidation(t *testing.T) {
 		t.Fatalf("the built-in aviary definition is not in-process: %+v", aviary)
 	}
 }
+
+// TestDefinitionEnvIsStable checks the child environment a definition asks for
+// is rendered in a fixed order by EnvList, so a run does not vary with map iteration.
+func TestDefinitionEnvIsStable(t *testing.T) {
+	definition := Definition{Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
+	want := []string{"A=1", "B=2", "C=3"}
+	for i := 0; i < 5; i++ {
+		got := definition.EnvList()
+		if len(got) != len(want) {
+			t.Fatalf("env = %v, want %v", got, want)
+		}
+		for j := range want {
+			if got[j] != want[j] {
+				t.Fatalf("env = %v, want %v", got, want)
+			}
+		}
+	}
+	if got := (Definition{}).EnvList(); got != nil {
+		t.Fatalf("env = %v, want none", got)
+	}
+}

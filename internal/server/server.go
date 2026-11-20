@@ -71,6 +71,7 @@ func New(cfg *config.Config, token string) *Server {
 		hardRestartCh:     make(chan struct{}, 1),
 		reexecCh:          make(chan struct{}, 1),
 	}
+	configureCLIProviders(cfg)
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
 	authStore, _ := auth.NewFileStore(authPath)
@@ -196,10 +197,21 @@ var startupWatches []projects.Watch
 // saving them to aviary.yaml.
 func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
 
+// configureCLIProviders installs the models: section's coding-CLI providers in
+// core's provider layer, which Projects and every other CLI caller resolve
+// through.
+func configureCLIProviders(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if err := llm.ConfigureCLIProviders(cfg.Models.CLIDefinitions); err != nil {
+		slog.Error("server: coding-CLI providers not applied", "err", err)
+	}
+}
+
 // startProjects applies the projects: section and the startup watches.
 func (s *Server) startProjects() {
 	s.projects.SetBrowser(s.cfg.Browser)
-	s.projects.SetCLIDefinitions(s.cfg.Models.CLIDefinitions)
 	s.projects.SetAgents(s.cfg.Agents, s.cfg.Models)
 	s.projects.Reconcile(s.cfg.Projects)
 	for _, watch := range startupWatches {
@@ -217,6 +229,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	if err := store.UpdateChannelMetadataState(oldCfg, newCfg, time.Now().UTC()); err != nil {
 		slog.Warn("server: failed to update channel metadata state", "err", err)
 	}
+	configureCLIProviders(newCfg)
 	mcp.SyncLiveServer(newCfg)
 	s.agents.Reconcile(newCfg)
 	if s.sched != nil {
@@ -224,7 +237,6 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	}
 	if s.projects != nil {
 		s.projects.SetBrowser(newCfg.Browser)
-		s.projects.SetCLIDefinitions(newCfg.Models.CLIDefinitions)
 		s.projects.SetAgents(newCfg.Agents, newCfg.Models)
 		go s.projects.Reconcile(newCfg.Projects)
 	}
