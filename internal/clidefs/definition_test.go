@@ -763,16 +763,19 @@ func TestDefaultModelHasToBeOneTheAgentAccepts(t *testing.T) {
 // model, and that the agents whose catalogs are per-account name
 // none rather than a model id aviary cannot promise every account has.
 //
-// The four ids here were each read out of the CLI's own catalog rather than
+// The five ids here were each read out of the CLI's own catalog rather than
 // guessed. gemini's list is built inside the CLI rather than
 // fetched for the account, so a flash id can be promised the way codex's and
 // claude's can; agy's is fetched, but every id it offers except the Claude and
-// GPT-OSS ones ends in its own reasoning level. muse, cline, and opencode name
-// none deliberately: their catalogs are whatever the signed-in account can
-// reach, so any id aviary wrote down here would fail the dispatch outright on
-// an account that does not have it -- strictly worse than letting the CLI
-// choose. See TestBuiltinDefaultModelsCarryNoReasoningLevel for the other half
-// of the agy decision.
+// GPT-OSS ones ends in its own reasoning level. muse's catalog is fetched too,
+// but Meta publishes one lineup for every Model API key and recommends
+// muse-spark-1.3 for new work, which is what issue #419 asked muse to
+// default to. cline and opencode name none deliberately: they route to
+// whatever provider the account configured, so any id aviary wrote down here
+// would fail the dispatch outright on an account that does not have it --
+// strictly worse than letting the CLI choose. See
+// TestBuiltinDefaultModelsCarryNoReasoningLevel for the other half of the agy
+// decision.
 func TestBuiltinDefaultModelsAreMidTier(t *testing.T) {
 	registry := MustBuiltin()
 	for name, want := range map[string]string{
@@ -780,7 +783,7 @@ func TestBuiltinDefaultModelsAreMidTier(t *testing.T) {
 		"claude":   "sonnet",
 		"gemini":   "gemini-3.5-flash",
 		"agy":      "claude-sonnet-4-6",
-		"muse":     "",
+		"muse":     "muse-spark-1.3",
 		"cline":    "",
 		"opencode": "",
 	} {

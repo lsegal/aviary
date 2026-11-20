@@ -23,6 +23,7 @@ var tuiProviders = []providerOption{
 	{name: "Anthropic", id: "anthropic", apiKey: "anthropic:default", oauthKey: "anthropic:oauth", supportsOAuth: true},
 	{name: "OpenAI", id: "openai", apiKey: "openai:default", oauthKey: "openai:oauth", supportsOAuth: true},
 	{name: "Gemini", id: "gemini", apiKey: "gemini:default", oauthKey: "gemini:oauth", supportsOAuth: true},
+	{name: "Meta (Muse)", id: "meta", apiKey: "meta:default"},
 	{name: "vLLM", id: "vllm", apiKey: "vllm:default", requiresBase: true},
 	{name: "Ollama", id: "ollama", apiKey: "ollama:default", requiresBase: true},
 }

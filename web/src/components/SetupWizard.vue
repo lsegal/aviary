@@ -464,6 +464,7 @@ const providers: OnboardingProvider[] = KNOWN_PROVIDERS.filter((provider) =>
 		"openai-codex",
 		"google",
 		"github-copilot",
+		"meta",
 		"vllm",
 		"ollama",
 	].includes(provider.id),
