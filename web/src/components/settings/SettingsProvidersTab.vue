@@ -80,7 +80,7 @@
 											</div>
 										</td>
 									</tr>
-									<tr v-for="cli in cliProviders" :key="`cli:${cli.name}`" :data-cli="cli.name" :data-status="cli.status"
+									<tr v-for="cli in installedCLIs" :key="`cli:${cli.name}`" :data-cli="cli.name" :data-status="cli.status"
 										class="border-b border-gray-100 align-top last:border-0 dark:border-gray-800">
 										<td class="px-3 py-2" data-field="install">
 											<div class="flex items-center gap-2">
@@ -88,19 +88,13 @@
 													:class="CLI_DOT[cli.status]" :title="cliStatusLabel(cli)" :aria-label="cliStatusLabel(cli)" />
 												<span class="font-medium text-gray-800 dark:text-gray-200">{{ cli.name }}</span>
 											</div>
-											<template v-if="cli.installed">
-												<div class="mt-0.5 text-gray-600 dark:text-gray-300">{{ cli.version || "version unknown" }}</div>
-												<div class="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.path || cli.binary }}
-												</div>
-												<div v-if="cli.status === 'warn' && cli.statusNote" data-field="status-note"
-													class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.statusNote }}</div>
-												<div v-if="cli.skillsNote" data-field="skills-note"
-													class="text-[11px] text-gray-500 dark:text-gray-400">{{ cli.skillsNote }}</div>
-											</template>
-											<template v-else>
-												<div class="mt-0.5 text-gray-500 dark:text-gray-400">Not installed</div>
-												<div class="font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.binary }} not on PATH</div>
-											</template>
+											<div class="mt-0.5 text-gray-600 dark:text-gray-300">{{ cli.version || "version unknown" }}</div>
+											<div class="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.path || cli.binary }}
+											</div>
+											<div v-if="cli.status === 'warn' && cli.statusNote" data-field="status-note"
+												class="text-[11px] text-amber-600 dark:text-amber-400">{{ cli.statusNote }}</div>
+											<div v-if="cli.skillsNote" data-field="skills-note"
+												class="text-[11px] text-gray-500 dark:text-gray-400">{{ cli.skillsNote }}</div>
 										</td>
 										<td class="px-3 py-2">
 											<span
@@ -136,6 +130,32 @@
 											</div>
 										</td>
 										<td class="px-3 py-2"></td>
+									</tr>
+									<!-- Not-installed CLIs share one compact line that expands to their detail -->
+									<tr v-if="missingCLIs.length" data-testid="providers-missing-clis">
+										<td colspan="4" class="px-3 py-2">
+											<details>
+												<summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+													<span class="mr-1 inline-block h-2 w-2 rounded-full" :class="CLI_DOT.missing" />
+													Not installed:
+													<span class="text-gray-700 dark:text-gray-300">{{ missingCLIs.map((cli) => cli.name).join(", ")
+													}}</span>
+												</summary>
+												<ul class="mt-2 space-y-1.5 pl-3">
+													<li v-for="cli in missingCLIs" :key="`cli:${cli.name}`" :data-cli="cli.name"
+														:data-status="cli.status">
+														<span data-field="install">
+															<span class="font-medium text-gray-800 dark:text-gray-200">{{ cli.name }}</span>
+															<span class="ml-2 font-mono text-[11px] text-gray-400 dark:text-gray-500">{{ cli.binary }} not on
+																PATH</span>
+														</span>
+														<span data-field="auth" class="ml-2 text-gray-500 dark:text-gray-400">{{ cliAuthLabel(cli) }}</span>
+														<span v-if="cli.modelNote" data-field="models"
+															class="ml-2 text-[11px] text-gray-400 dark:text-gray-500">· {{ cli.modelNote }}</span>
+													</li>
+												</ul>
+											</details>
+										</td>
 									</tr>
 								</tbody>
 							</table>
@@ -472,6 +492,14 @@ export default defineComponent({
 			{ immediate: true },
 		);
 		const cliProviders = computed(() => cliStatus.clis.value ?? []);
+		// Presentation only: installed CLIs keep full rows, missing ones collapse
+		// into one line so they don't bury the Add provider dropdown.
+		const installedCLIs = computed(() =>
+			cliProviders.value.filter((cli) => cli.status !== "missing"),
+		);
+		const missingCLIs = computed(() =>
+			cliProviders.value.filter((cli) => cli.status === "missing"),
+		);
 
 		const exposed = {
 			...context,
@@ -479,6 +507,8 @@ export default defineComponent({
 			cliAuthLabel,
 			cliStatusLabel,
 			cliProviders,
+			installedCLIs,
+			missingCLIs,
 			cliRefreshing: cliStatus.refreshing,
 			cliError: cliStatus.error,
 			refreshCLIProviders: cliStatus.refresh,
