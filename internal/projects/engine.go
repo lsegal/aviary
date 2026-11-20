@@ -4201,7 +4201,7 @@ func watchStateFile(ctx context.Context, path string) <-chan struct{} {
 }
 
 func stateFileFingerprint(path string) string {
-	b, err := os.ReadFile(path)
+	b, err := store.ReadFile(path)
 	if err != nil {
 		return ""
 	}

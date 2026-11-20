@@ -78,8 +78,8 @@ func TestAgentCommandRefusesMultiLinePromptThroughUnknownBatchFile(t *testing.T)
 	shim := filepath.Join(dir, "agent.cmd")
 	writeShimFile(t, shim, "@echo off\r\nset AGENT=\"%~1\"\r\n\""+os.Args[0]+"\" -test.run=TestAgentShimHelperProcess -- %AGENT%\r\n")
 	_, err := runShimAgent(t, shim, "first line\nsecond line")
-	if err == nil || !strings.Contains(err.Error(), "--agent-binary") {
-		t.Fatalf("multi-line prompt through an unknown batch file: err = %v, want one naming --agent-binary", err)
+	if err == nil || !strings.Contains(err.Error(), "cli_definitions") {
+		t.Fatalf("multi-line prompt through an unknown batch file: err = %v, want one naming cli_definitions", err)
 	}
 	got, err := runShimAgent(t, shim, "one line")
 	if err != nil {

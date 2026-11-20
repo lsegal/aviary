@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -470,53 +469,6 @@ func (f *agentFlag) specs() []string {
 		specs = append(specs, spec.String())
 	}
 	return specs
-}
-
-// agentBinaryFlag collects repeated --agent-binary NAME=PATH values. One
-// executable flag per agent does not scale past the two aviary shipped with,
-// so the agent is named in the value rather than in the flag.
-type agentBinaryFlag struct {
-	paths map[string]string
-}
-
-func (f *agentBinaryFlag) String() string {
-	pairs := make([]string, 0, len(f.paths))
-	for name, path := range f.paths {
-		pairs = append(pairs, name+"="+path)
-	}
-	sort.Strings(pairs)
-	return strings.Join(pairs, ",")
-}
-
-func (f *agentBinaryFlag) Set(value string) error {
-	name, path, ok := strings.Cut(value, "=")
-	name, path = strings.TrimSpace(name), strings.TrimSpace(path)
-	if !ok || name == "" || path == "" {
-		return fmt.Errorf("agent binary must be written NAME=PATH, such as claude=/opt/homebrew/bin/claude")
-	}
-	// An override for an agent that does not exist is a typo that would
-	// otherwise be silently ignored until the wrong executable ran.
-	registry := agentRegistry()
-	if _, known := registry.Lookup(name); !known {
-		return unknownAgentError(registry, name)
-	}
-	if f.paths == nil {
-		f.paths = make(map[string]string)
-	}
-	f.paths[name] = path
-	return nil
-}
-
-// values renders the overrides for the runner, nil when none were given.
-func (f *agentBinaryFlag) values() map[string]string {
-	if len(f.paths) == 0 {
-		return nil
-	}
-	paths := make(map[string]string, len(f.paths))
-	for name, path := range f.paths {
-		paths[name] = path
-	}
-	return paths
 }
 
 // names lists the agent names, without models, for quota lookups.
@@ -1332,11 +1284,6 @@ func projectStatusError(number int, err error, detail string) error {
 // from the agent definitions.
 type CommandRunner struct {
 	Binary, CodexBinary, ClaudeBinary string
-	// AgentBinaries holds the --agent-binary overrides, keyed by agent name.
-	// It outranks every other source, including the legacy per-agent flags,
-	// because it is the only one that can name an executable for an agent the
-	// config file introduced.
-	AgentBinaries map[string]string
 	// Agents holds every configured agent spec (agent/model:level) to load
 	// balance across when dispatching new issues. AgentName rotates through it
 	// round robin.
@@ -2059,14 +2006,11 @@ func truncateToolUseDetail(value string, isPath bool) string {
 }
 
 // binary resolves the executable one agent is invoked through, in the order
-// --agent-binary, the agent's own legacy alias flag, the binary its
-// definition names (a config file's override of it, or the built-in default),
-// and finally the run's default-agent executable for an agent no definition
-// covers.
+// the agent's own legacy alias flag, the binary its definition names
+// (models.cli_definitions.<agent>.binary, or the built-in default) -- the
+// same one the provider doctor probes -- and finally the run's default-agent
+// executable for an agent no definition covers.
 func (r CommandRunner) binary(agent string) string {
-	if path := strings.TrimSpace(r.AgentBinaries[agent]); path != "" {
-		return path
-	}
 	switch agent {
 	case "codex":
 		if r.CodexBinary != "" {

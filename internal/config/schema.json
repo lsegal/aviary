@@ -517,15 +517,6 @@
           "x-order": 10,
           "description": "Coding-CLI specs (AGENT/MODEL:LEVEL) jobs load balance across. Defaults to codex."
         },
-        "agent_binaries": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "x-label": "CLI executables",
-          "x-order": 11,
-          "description": "Executable for a coding CLI, by agent name."
-        },
         "yolo": {
           "type": "boolean",
           "x-label": "YOLO",

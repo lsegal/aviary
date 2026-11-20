@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -137,88 +138,54 @@ func TestBinaryFallsBackToTheDefinition(t *testing.T) {
 	}
 }
 
-// TestAgentBinaryOverridesEveryOtherSource pins the resolution order
-// --agent-binary, legacy alias flag, definition binary, run default (issue
-// #489). --agent-binary is the only source that can reach a config-defined
-// agent, so it has to outrank the two flags that predate it.
-func TestAgentBinaryOverridesEveryOtherSource(t *testing.T) {
-	registry, err := agents.NewRegistry(
-		agents.Definition{
-			Name: "muse", Binary: "/opt/muse",
-			Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-			Session: agents.Session{Assign: agents.AssignNone},
-			Output:  agents.Output{Format: agents.FormatText},
-		},
-		agents.Definition{
-			Name: "codex", Binary: "codex",
-			Args:    agents.Args{Run: []agents.Fragment{{Args: []string{"{prompt}"}}}, Resume: []agents.Fragment{{Args: []string{"{prompt}"}}}},
-			Session: agents.Session{Assign: agents.AssignNone},
-			Output:  agents.Output{Format: agents.FormatText},
-		},
-	)
+// TestDefinitionBinaryOverridesBuiltin pins the resolution order legacy
+// alias flag, definition binary, run default. A binary override in
+// models.cli_definitions is the only config source of an executable (#456),
+// so it reaches built-in and config-defined agents alike.
+func TestDefinitionBinaryOverridesBuiltin(t *testing.T) {
+	registry, err := LoadCLIDefinitions(map[string]any{
+		"codex": map[string]any{"binary": "/opt/codex-nightly"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := CommandRunner{
-		Agent: "codex", Binary: "run-default", CodexBinary: "codex-bin", Definitions: registry,
-		AgentBinaries: map[string]string{"codex": "/opt/codex-nightly", "muse": "/opt/muse-nightly"},
-	}
+	runner := CommandRunner{Agent: "codex", Binary: "run-default", Definitions: registry}
 	if got := runner.binary("codex"); got != "/opt/codex-nightly" {
-		t.Fatalf("binary = %q, want --agent-binary to outrank --codex-binary", got)
+		t.Fatalf("binary = %q, want the cli_definitions override", got)
 	}
-	if got := runner.binary("muse"); got != "/opt/muse-nightly" {
-		t.Fatalf("binary = %q, want --agent-binary to reach a config-defined agent", got)
-	}
-	// Without an override the legacy flag, then the definition, then the run
-	// default still answer in that order.
-	runner.AgentBinaries = nil
-	if got := runner.binary("codex"); got != "codex-bin" {
-		t.Fatalf("binary = %q, want the legacy alias flag", got)
-	}
-	if got := runner.binary("muse"); got != "/opt/muse" {
-		t.Fatalf("binary = %q, want the definition's own", got)
+	if got := runner.binary("claude"); got != "claude" {
+		t.Fatalf("binary = %q, want the built-in definition's own", got)
 	}
 	if got := runner.binary("stranger"); got != "run-default" {
 		t.Fatalf("binary = %q, want the run default for an agent no definition covers", got)
 	}
+	runner.CodexBinary = "codex-bin"
+	if got := runner.binary("codex"); got != "codex-bin" {
+		t.Fatalf("binary = %q, want the legacy alias flag", got)
+	}
 }
 
-// TestAgentBinaryFlagParsesNameEqualsPath covers the flag itself: the value
-// has to name a registered agent, so a typo is reported where it is written
-// rather than by the wrong executable running later.
-func TestAgentBinaryFlagParsesNameEqualsPath(t *testing.T) {
-	var flag agentBinaryFlag
-	if err := flag.Set("claude=/opt/claude"); err != nil {
+// TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable checks the aviary
+// definition runs this executable unless cli_definitions names another.
+func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	registry, err := LoadCLIDefinitions(nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := flag.Set("codex=/opt/codex"); err != nil {
+	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != executable {
+		t.Fatalf("aviary binary = %q, want the running executable %q", definition.Binary, executable)
+	}
+	definitions := map[string]any{aviaryAgent: map[string]any{"binary": "/opt/aviary"}}
+	registry, err = LoadCLIDefinitions(definitions)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// A repeat replaces rather than accumulates, matching every other flag.
-	if err := flag.Set("claude=/usr/bin/claude"); err != nil {
-		t.Fatal(err)
-	}
-	values := flag.values()
-	if values["claude"] != "/usr/bin/claude" || values["codex"] != "/opt/codex" {
-		t.Fatalf("values = %v", values)
-	}
-	if got := flag.String(); got != "claude=/usr/bin/claude,codex=/opt/codex" {
-		t.Fatalf("String() = %q", got)
-	}
-	if (&agentBinaryFlag{}).values() != nil {
-		t.Fatal("an unset flag should contribute no overrides")
-	}
-	for _, bad := range []string{"claude", "=/opt/claude", "claude=", "  =  "} {
-		if err := (&agentBinaryFlag{}).Set(bad); err == nil {
-			t.Fatalf("Set(%q) accepted a malformed value", bad)
-		}
-	}
-	err := (&agentBinaryFlag{}).Set("bogus=/opt/bogus")
-	if err == nil {
-		t.Fatal("Set accepted an unregistered agent")
-	}
-	if !strings.Contains(err.Error(), "known agents are") {
-		t.Fatalf("error = %v, want it to list the known agents", err)
+	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != "/opt/aviary" {
+		t.Fatalf("aviary binary = %q, want the cli_definitions override", definition.Binary)
 	}
 }
 

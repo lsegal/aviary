@@ -17,7 +17,6 @@ import (
 
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/ngrok"
@@ -260,7 +259,6 @@ type engineSettings struct {
 	Targets           []string            `json:"targets"`
 	TargetAgents      map[string][]string `json:"target_agents"`
 	Agents            []string            `json:"agents"`
-	AgentBinaries     map[string]string   `json:"agent_binaries"`
 	Definitions       map[string]any      `json:"definitions"`
 	Interval          time.Duration       `json:"interval"`
 	Delivery          string              `json:"delivery"`
@@ -364,7 +362,6 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Targets:           targets,
 		TargetAgents:      targetAgents,
 		Agents:            cfg.EffectiveAgents(),
-		AgentBinaries:     cfg.AgentBinaries,
 		Definitions:       m.definitions,
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
@@ -538,7 +535,7 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 
 // startRun builds and starts an engine.
 func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
-	registry, err := agents.Load(s.Definitions)
+	registry, err := LoadCLIDefinitions(s.Definitions)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +583,6 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	}
 	var engine *Engine
 	runner := CommandRunner{
-		AgentBinaries:     s.AgentBinaries,
 		Agents:            s.Agents,
 		Agent:             s.Agents[0],
 		TargetAgents:      s.TargetAgents,

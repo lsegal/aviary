@@ -8,7 +8,7 @@ import (
 )
 
 // TestDoctorArgvSubstitutesBinary checks both probes render against the
-// executable the agent was resolved to, so an --agent-binary override reaches
+// executable the agent was resolved to, so a binary override reaches
 // the report rather than probing whatever is on PATH under the same name.
 func TestDoctorArgvSubstitutesBinary(t *testing.T) {
 	doctor := Doctor{
@@ -172,7 +172,7 @@ func TestDoctorSurvivesTheConfigRoundTrip(t *testing.T) {
 
 // TestBuiltinDoctorProbesAreDeclaredOnce holds the shipped probes to what the
 // report needs of them: every argv names the agent through {binary}, so a
-// --agent-binary override is honoured rather than silently probing PATH.
+// binary override is honoured rather than silently probing PATH.
 func TestBuiltinDoctorProbesAreDeclaredOnce(t *testing.T) {
 	for _, name := range MustBuiltin().Names() {
 		definition, _ := MustBuiltin().Lookup(name)
