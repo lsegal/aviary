@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 // TestUnknownAgentSpecListsTheKnownAgents checks the error --agent gives is
@@ -176,5 +177,35 @@ func TestAgentThatTakesNoLevelRejectsOne(t *testing.T) {
 		if _, err := parseAgentSpec(agent + ":high"); err != nil {
 			t.Fatalf("parseAgentSpec(%q) error = %v", agent+":high", err)
 		}
+	}
+}
+
+// TestDispatchResolvesThroughCoreCLIProviders checks Projects has no CLI
+// registry of its own: the cli_definitions configured in core's provider layer
+// are the ones a job spec parses against and the executable it runs, and
+// invalid definitions keep a run from starting.
+func TestDispatchResolvesThroughCoreCLIProviders(t *testing.T) {
+	t.Cleanup(func() { _ = llm.ConfigureCLIProviders(nil) })
+	if err := llm.ConfigureCLIProviders(map[string]any{
+		"claude": map[string]any{"binary": "/opt/claude-nightly"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseAgentSpec("claude/opus:high"); err != nil {
+		t.Fatalf("parseAgentSpec(claude/opus:high) error = %v", err)
+	}
+	runner := CommandRunner{Agent: "claude/opus", Binary: "run-default"}
+	if got := runner.binary("claude"); got != "/opt/claude-nightly" {
+		t.Fatalf("binary = %q, want core's cli_definitions override", got)
+	}
+	if err := llm.ConfigureCLIProviders(map[string]any{"claude": map[string]any{"nosuchfield": true}}); err == nil {
+		t.Fatal("invalid cli_definitions were accepted")
+	}
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.startRun(engineSettings{Targets: []string{"o/r"}, Agents: []string{"claude/opus"}}); err == nil || !strings.Contains(err.Error(), "cli_definitions") {
+		t.Fatalf("startRun error = %v, want the invalid cli_definitions reported", err)
 	}
 }
