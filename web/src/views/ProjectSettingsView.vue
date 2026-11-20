@@ -222,7 +222,7 @@
 								{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
 									({{ clones.unmeasured.value }} not measured)</template>
 							</p>
-							<button v-if="clones.clones.value.some((c) => cloneState(c) === "unused")" type="button" :disabled="clones.clearing.value"
+							<button v-if="clones.clones.value.some((c) => cloneState(c) === 'unused')" type="button" :disabled="clones.clearing.value"
 								class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
 							<p v-if="clones.cleared.value" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">
