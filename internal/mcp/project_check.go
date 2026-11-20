@@ -15,6 +15,9 @@ import (
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/codingskills"
+	"github.com/lsegal/aviary/internal/projects"
 )
 
 // Check levels reported by project_check.
@@ -33,30 +36,14 @@ const projectCheckTimeout = 15 * time.Second
 
 var (
 	projectGH = func(ctx context.Context, args ...string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(ctx, projectCheckTimeout)
-		defer cancel()
-		out, err := exec.CommandContext(ctx, "gh", args...).Output()
-		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return out, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
-		}
-		return out, err
+		return projects.GHCLI{Binary: "gh", Timeout: projectCheckTimeout}.Run(ctx, args...)
 	}
-	projectLookPath = exec.LookPath
-	projectHomeDir  = os.UserHomeDir
+	// projectCodingCLIs lists the coding CLIs whose agent definition names a
+	// skills.sh target; their skills directories come from codingskills.
+	projectCodingCLIs = func() []codingskills.CLI { return codingskills.Default().CLIs() }
+	projectLookPath   = exec.LookPath
+	projectHomeDir    = os.UserHomeDir
 )
-
-// projectCLISkillDirs lists, per coding CLI, the directories its skills are
-// installed into, relative to the home directory.
-var projectCLISkillDirs = []struct {
-	name string
-	dirs []string
-}{
-	{"claude", []string{".claude/skills"}},
-	{"codex", []string{".codex/skills", ".agents/skills"}},
-	{"gemini", []string{".gemini/skills"}},
-	{"opencode", []string{".config/opencode/skills", ".config/opencode/skill"}},
-	{"cline", []string{".cline/skills"}},
-}
 
 // projectSkills are the skills a project job runs.
 var projectSkills = []string{"gh-fix"}
@@ -222,25 +209,27 @@ func checkReadyLabel(ctx context.Context, repo, label string, add func(string, s
 
 func checkCodingCLIs(res *ProjectCheckResult, add func(string, string, string, ...any)) {
 	home, _ := projectHomeDir()
-	var found, missingSkill []string
-	for _, def := range projectCLISkillDirs {
-		path, err := projectLookPath(def.name)
+	env := codingskills.Env{Home: home}
+	var known, found, missingSkill []string
+	for _, def := range projectCodingCLIs() {
+		known = append(known, def.ID)
+		path, err := projectLookPath(def.Binary)
 		if err != nil {
 			continue
 		}
-		cli := ProjectCheckCLI{Name: def.name, Path: path, Skills: map[string]string{}}
+		cli := ProjectCheckCLI{Name: def.ID, Path: path, Skills: map[string]string{}}
 		for _, skill := range projectSkills {
-			if v, ok := findInstalledSkill(home, def.dirs, skill); ok {
+			if v, ok := findInstalledSkill(env.SkillsDirs(def.Target), skill); ok {
 				cli.Skills[skill] = v
 			} else {
-				missingSkill = append(missingSkill, def.name)
+				missingSkill = append(missingSkill, def.ID)
 			}
 		}
 		res.CLIs = append(res.CLIs, cli)
-		found = append(found, def.name)
+		found = append(found, def.ID)
 	}
 	if len(found) == 0 {
-		add("clis", projectCheckFail, "No coding CLI found; install one of claude, codex, gemini, opencode or cline")
+		add("clis", projectCheckFail, "No coding CLI found; install one of %s", joinList(known, "or"))
 		add("skills", projectCheckFail, "%s cannot be installed until a coding CLI is found", strings.Join(projectSkills, ", "))
 		return
 	}
@@ -272,9 +261,9 @@ func checkCodingCLIs(res *ProjectCheckResult, add func(string, string, string, .
 
 // findInstalledSkill reports whether skill is installed under any of dirs and
 // returns the version from its SKILL.md frontmatter when it declares one.
-func findInstalledSkill(home string, dirs []string, skill string) (string, bool) {
+func findInstalledSkill(dirs []string, skill string) (string, bool) {
 	for _, d := range dirs {
-		path := filepath.Join(home, d, skill, "SKILL.md")
+		path := filepath.Join(d, skill, "SKILL.md")
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -308,16 +297,19 @@ func skillFrontmatterVersion(f *os.File) string {
 	return ""
 }
 
-func joinAnd(items []string) string {
+func joinAnd(items []string) string { return joinList(items, "and") }
+
+// joinList joins items as an English list ending in conjunction.
+func joinList(items []string, conjunction string) string {
 	switch len(items) {
 	case 0:
 		return ""
 	case 1:
 		return items[0]
 	case 2:
-		return items[0] + " and " + items[1]
+		return items[0] + " " + conjunction + " " + items[1]
 	}
-	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+	return strings.Join(items[:len(items)-1], ", ") + " " + conjunction + " " + items[len(items)-1]
 }
 
 func registerProjectCheckTool(s *sdkmcp.Server) {

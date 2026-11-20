@@ -393,7 +393,7 @@ func (g GHCLI) runAPI(ctx context.Context, args []string, body ...string) ([]byt
 	// Bounded like every other `gh` call: webhook reconciliation runs on the
 	// poll loop, so a call stuck on a connection that died while the machine
 	// slept would otherwise stop the watch for good.
-	runCtx, cancel := context.WithTimeout(ctx, ghCommandTimeout)
+	runCtx, cancel := context.WithTimeout(ctx, g.commandTimeout())
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, g.Binary, args...)
 	// Cancelling kills `gh`, but a child it left holding the output pipe would
