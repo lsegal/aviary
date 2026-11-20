@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +13,22 @@ import (
 
 const anthropicStrictToolLimit = 20
 const anthropicPromptCacheEnv = "AVIARY_ANTHROPIC_ENABLE_PROMPT_CACHE"
+
+// The OAuth provider impersonates the Claude CLI. These values were captured
+// from claude-cli 2.1.312 (interactive, OAuth) by pointing ANTHROPIC_BASE_URL
+// at a localhost proxy and recording its POST /v1/messages requests. The API
+// rejects OAuth requests from CLI versions it considers too old for a model
+// (claude_code_version_too_old), so refresh these from a new capture when
+// that error appears.
+const (
+	claudeCLIVersion   = "2.1.312"
+	claudeCLIUserAgent = "claude-cli/" + claudeCLIVersion + " (external, cli)"
+	claudeCLIBetas     = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,effort-2025-11-24"
+	// claudeCLIBillingHeader is the first system block of every CLI request.
+	// cc_version and cc_entrypoint are required for OAuth tokens to reach
+	// sonnet/opus models; the CLI no longer sends cch.
+	claudeCLIBillingHeader = "x-anthropic-billing-header: cc_version=" + claudeCLIVersion + ".7fc; cc_entrypoint=cli;"
+)
 
 // AnthropicProvider streams responses from Anthropic's Claude models.
 type AnthropicProvider struct {
@@ -39,11 +56,13 @@ func NewAnthropicOAuthProvider(accessToken, model string) *AnthropicProvider {
 	opts := []option.RequestOption{
 		option.WithAuthToken(accessToken),
 		option.WithHTTPClient(newOAuthClient()),
-		option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24"),
+		option.WithQuery("beta", "true"),
+		option.WithHeader("anthropic-beta", claudeCLIBetas),
 		option.WithHeader("anthropic-dangerous-direct-browser-access", "true"),
 		option.WithHeader("anthropic-version", "2023-06-01"),
-		option.WithHeader("user-agent", "claude-cli/2.1.78 (external, cli)"),
+		option.WithHeader("user-agent", claudeCLIUserAgent),
 		option.WithHeader("x-app", "cli"),
+		option.WithHeader("x-claude-code-session-id", newSessionID()),
 	}
 	return &AnthropicProvider{
 		client: anthropic.NewClient(opts...),
@@ -165,11 +184,8 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	}
 	if p.oauth {
 		// Prepend the Claude Code billing header that grants OAuth tokens access
-		// to sonnet/opus models. cc_version and cc_entrypoint are required;
-		// the cch value is not validated server-side.
-		billingHdr := anthropic.TextBlockParam{
-			Text: "x-anthropic-billing-header: cc_version=2.1.78.13b; cc_entrypoint=cli; cch=269ee;",
-		}
+		// to sonnet/opus models.
+		billingHdr := anthropic.TextBlockParam{Text: claudeCLIBillingHeader}
 		if req.System != "" {
 			params.System = []anthropic.TextBlockParam{billingHdr, {Text: req.System}}
 		} else {
@@ -264,6 +280,16 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	}()
 
 	return ch, nil
+}
+
+// newSessionID returns a random UUIDv4 for the X-Claude-Code-Session-Id
+// header, which the CLI sends once per session.
+func newSessionID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 func anthropicPromptCacheEnabled() bool {
