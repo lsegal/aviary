@@ -291,10 +291,8 @@ function closeAdd() {
 	const { add: _, ...rest } = route.query;
 	void router.replace({ query: rest });
 }
-async function onAdded(target: string) {
-	await router.push(
-		projectPath(projectOwner(settingsStore.config, target), target),
-	);
+async function onAdded(target: string, agent: string) {
+	await router.push(projectPath(agent, target));
 	await projectList.refresh();
 }
 

@@ -97,7 +97,10 @@ import { useSettingsStore } from "../../stores/settings";
 
 // agent preselects the owning agent, as when adding from its GitHub Projects.
 const props = defineProps<{ initial?: string; agent?: string }>();
-const emit = defineEmits<{ close: []; added: [target: string] }>();
+const emit = defineEmits<{
+	close: [];
+	added: [target: string, agent: string];
+}>();
 
 const router = useRouter();
 const store = useSettingsStore();
@@ -165,7 +168,7 @@ async function start() {
 		// The config watcher reloads the server; refresh the copy here so the
 		// board shows the new project's agent.
 		await store.fetchConfig();
-		emit("added", normalized.value);
+		emit("added", normalized.value, agent.value);
 	} catch (e) {
 		startError.value = e instanceof Error ? e.message : String(e);
 	} finally {

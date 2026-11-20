@@ -204,8 +204,8 @@ test("adding a project from the single field saves it to the chosen agent", asyn
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
-	await page.getByTestId("sidebar-add-project").click();
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByRole("button", { name: "+ Add project" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Watch a repository" });
 	await expect(dialog).toBeVisible();
@@ -223,9 +223,10 @@ test("adding a project from the single field saves it to the chosen agent", asyn
 		"data-status",
 		"warn",
 	);
-	// The first agent owns it unless another is chosen.
+	// The board's agent owns it unless another is chosen.
 	const agent = dialog.getByLabel("Agent that owns it");
-	await expect(agent).toHaveValue("atlas");
+	await expect(agent).toHaveValue("coder");
+	await agent.selectOption("atlas");
 	await expect(dialog).toContainText("Runs on atlas: aviary/atlas");
 	await agent.selectOption("coder");
 	await expect(dialog).toContainText(
@@ -237,7 +238,7 @@ test("adding a project from the single field saves it to the chosen agent", asyn
 	);
 
 	await dialog.getByRole("button", { name: "Start watching" }).click();
-	await expect(page).toHaveURL("/projects/lsegal%2Fzvidlib");
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Fzvidlib");
 	await expect(dialog).toBeHidden();
 	expect(calls.project_add).toEqual([
 		{ target: "lsegal/zvidlib", agent: "coder" },
@@ -251,7 +252,7 @@ test("a project another agent owns cannot be added again", async ({ page }) => {
 	const calls = await setup(page, {
 		check: { ...READY_CHECK, target: "lsegal/aviary", fork: false },
 	});
-	await page.goto("/projects?add=1");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 	const dialog = page.getByRole("dialog");
 	await dialog.getByLabel("Repository or project board").fill("lsegal/aviary");
 	await expect(dialog.getByTestId("add-project-owned")).toHaveText(
@@ -297,7 +298,7 @@ test("add-project checks report each failing prerequisite", async ({
 			],
 		},
 	});
-	await page.goto("/projects/lsegal%2Faviary?add=1");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 	const dialog = page.getByRole("dialog");
 	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
 
@@ -320,7 +321,7 @@ test("add-project checks report each failing prerequisite", async ({
 
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect(dialog).toBeHidden();
-	await expect(page).toHaveURL("/projects/lsegal%2Faviary");
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
 	expect(calls.project_add).toBeUndefined();
 });
 
@@ -328,7 +329,7 @@ test("a project's board names its agent and links to the agent's projects", asyn
 	page,
 }) => {
 	await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const owner = page.getByTestId("project-owner");
 	await expect(owner).toHaveText("agent: coder");
 	await page.getByTestId("project-settings-link").click();
@@ -639,7 +640,7 @@ test("change settings first opens the agent's projects with the new one listed",
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/projects?add=1");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 	const dialog = page.getByRole("dialog");
 	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
 	await expect(dialog.getByTestId("add-project-checks")).toContainText(

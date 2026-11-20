@@ -136,6 +136,7 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 	await mockMCP(page, {
 		agent_list: [{ name: "assistant" }, { name: "reviewer" }],
 		auth_list: [],
+		// No agent owns the watch, so its board sits under System → Watches.
 		config_get: { agents: [{ name: "assistant", model: "cli/codex/gpt-5.5" }] },
 		project_status: STATUS,
 		project_job_list: { jobs: [SCHEDULED_JOB], total: 1 },
@@ -173,7 +174,7 @@ test("board shows scheduled job cards and the up next strip", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/system/watches/lsegal%2Faviary");
 
 	const card = page.getByTestId("job-card");
 	await expect(card).toHaveCount(1);
@@ -212,7 +213,7 @@ test("up next strip is hidden when no schedule is enabled", async ({
 	page,
 }) => {
 	await setup(page, { upcoming: [] });
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/system/watches/lsegal%2Faviary");
 	await expect(page.getByTestId("job-card")).toHaveCount(1);
 	await expect(page.getByTestId("up-next")).toHaveCount(0);
 });
@@ -221,7 +222,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/projects/lsegal%2Faviary?tab=schedules");
+	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
 
 	const rows = page.getByTestId("schedule-row");
 	await expect(rows).toHaveCount(2);
@@ -313,7 +314,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 
 test("new schedule creates a project task", async ({ page }) => {
 	const calls = await setup(page);
-	await page.goto("/projects/lsegal%2Faviary?tab=schedules");
+	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
 	await page.getByTestId("schedule-new").click();
 	const editor = page.getByTestId("schedule-editor");
 	await editor.getByLabel("Name").fill("hourly-ci-watch");
@@ -353,7 +354,7 @@ test.describe("phone width", () => {
 	}) => {
 		await setup(page);
 		await page.goto(
-			"/projects/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
+			"/system/watches/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
 		);
 		await expect(page.getByTestId("schedule-editor")).toBeVisible();
 		await page.waitForTimeout(500);

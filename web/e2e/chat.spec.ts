@@ -89,7 +89,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("up arrow recalls previous chat messages", async ({ page }) => {
-	await page.goto("/chat");
+	await page.goto("/agents/assistant/chat");
 
 	const input = page.getByPlaceholder("Type a message or paste an image…");
 	await expect(input).toBeEnabled();
@@ -172,7 +172,7 @@ test("streaming response updates without dropping existing messages", async ({
 			},
 		],
 	});
-	await page.goto("/chat");
+	await page.goto("/agents/assistant/chat");
 
 	const input = page.getByPlaceholder("Type a message or paste an image…");
 	await input.fill("stream this");
@@ -235,7 +235,7 @@ test("stale session reloads cannot overwrite newer messages", async ({
 			return calls >= 4 ? newMessages : oldMessages;
 		},
 	});
-	await page.goto("/chat");
+	await page.goto("/agents/assistant/chat");
 	await expect(page.getByText("first prompt")).toBeVisible();
 
 	await page.evaluate(() => {

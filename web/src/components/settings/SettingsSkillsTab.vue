@@ -129,9 +129,8 @@ export default defineComponent({
 			Boolean(settings.skillConfig(name).enabled);
 		const enabledSkillCount = computed(
 			() =>
-				(settings.installedSkills as Skill[]).filter((s) =>
-					enabled(s.name),
-				).length,
+				(settings.installedSkills as Skill[]).filter((s) => enabled(s.name))
+					.length,
 		);
 		// Enabled skills first, then by name, narrowed by the search and filters.
 		const filteredSkills = computed(() => {
