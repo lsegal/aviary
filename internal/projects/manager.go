@@ -19,6 +19,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -49,13 +50,11 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	browser   config.BrowserConfig
-	// definitions are the coding-CLI definitions from the models: section.
-	definitions map[string]any
-	watches     []Watch
-	running     *engineRun
-	lastKey     string
-	lastError   string
-	stopped     bool
+	watches   []Watch
+	running   *engineRun
+	lastKey   string
+	lastError string
+	stopped   bool
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
@@ -180,15 +179,6 @@ func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 	m.mu.Unlock()
 }
 
-// SetCLIDefinitions records the coding-CLI definitions from core Aviary's
-// models: section, the one registry Projects reads its CLIs from. It takes
-// effect on the next Reconcile.
-func (m *Manager) SetCLIDefinitions(definitions map[string]any) {
-	m.mu.Lock()
-	m.definitions = definitions
-	m.mu.Unlock()
-}
-
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
 	m.reports.configure(cfg)
@@ -258,17 +248,19 @@ func (m *Manager) Shutdown() {
 
 // engineSettings is everything the engine is built from.
 type engineSettings struct {
-	Targets           []string            `json:"targets"`
-	TargetAgents      map[string][]string `json:"target_agents"`
-	Agents            []string            `json:"agents"`
-	Definitions       map[string]any      `json:"definitions"`
-	Interval          time.Duration       `json:"interval"`
-	Delivery          string              `json:"delivery"`
-	ReadyLabel        string              `json:"ready_label"`
-	ReadyState        string              `json:"ready_state"`
-	Filter            string              `json:"filter"`
-	AllIssues         bool                `json:"all_issues"`
-	Yolo              bool                `json:"yolo"`
+	Targets      []string            `json:"targets"`
+	TargetAgents map[string][]string `json:"target_agents"`
+	Agents       []string            `json:"agents"`
+	// Definitions are core's cli_definitions when the settings were built, so
+	// a change to them restarts the run on the new CLI providers.
+	Definitions       map[string]any `json:"definitions"`
+	Interval          time.Duration  `json:"interval"`
+	Delivery          string         `json:"delivery"`
+	ReadyLabel        string         `json:"ready_label"`
+	ReadyState        string         `json:"ready_state"`
+	Filter            string         `json:"filter"`
+	AllIssues         bool           `json:"all_issues"`
+	Yolo              bool           `json:"yolo"`
 	Webhook           config.ProjectsWebhookConfig
 	Browser           BrowserOptions `json:"browser"`
 	Concurrency       int            `json:"-"`
@@ -364,7 +356,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Targets:           targets,
 		TargetAgents:      targetAgents,
 		Agents:            cfg.EffectiveAgents(),
-		Definitions:       m.definitions,
+		Definitions:       llm.CLIProviderDefinitions(),
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
 		ReadyLabel:        cfg.EffectiveReadyLabel(),
@@ -537,11 +529,10 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 
 // startRun builds and starts an engine.
 func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
-	registry, err := clidefs.FromConfig(s.Definitions)
+	registry, err := llm.CLIProviderRegistry()
 	if err != nil {
 		return nil, err
 	}
-	setAgentRegistry(registry)
 	for _, spec := range allAgentSpecs(s) {
 		parsed, err := parseAgentSpecIn(registry, spec)
 		if err != nil {

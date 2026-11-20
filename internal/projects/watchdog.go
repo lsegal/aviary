@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
@@ -164,7 +165,7 @@ func (w *Engine) oneShotSpec(config unblockConfig) (agentSpec, error) {
 	if config.Model != "" {
 		definition, ok := registry.Lookup(spec.Name)
 		if !ok {
-			return agentSpec{}, unknownAgentError(registry, spec.Name)
+			return agentSpec{}, llm.UnknownCLIProviderError(registry, spec.Name)
 		}
 		if !definition.AcceptsModel(config.Model) {
 			return agentSpec{}, definition.ModelError()
@@ -520,7 +521,7 @@ func indentLines(text, indent string) string {
 func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt string) (string, error) {
 	definition, ok := r.definition(spec.Name)
 	if !ok {
-		return "", unknownAgentError(r.registry(), spec.Name)
+		return "", llm.UnknownCLIProviderError(r.registry(), spec.Name)
 	}
 	if definition.InProcess {
 		var text bytes.Buffer
@@ -537,7 +538,7 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 		return "", fmt.Errorf("agent %s declares no run arguments", spec.Name)
 	}
 	cmd := newAgentCommand(ctx, r.binary(spec.Name), args...)
-	if env := definitionEnv(definition); len(env) > 0 {
+	if env := definition.EnvList(); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.Dir = os.TempDir()

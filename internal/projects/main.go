@@ -24,6 +24,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/transcript"
@@ -378,7 +379,7 @@ func (s agentSpec) String() string {
 // parseAgentSpec parses provider/model:level, where the model and level are
 // both optional (for example codex, claude/opus, or codex/gpt-5.6:high).
 func parseAgentSpec(value string) (agentSpec, error) {
-	return parseAgentSpecIn(agentRegistry(), value)
+	return parseAgentSpecIn(llm.CLIProviders(), value)
 }
 
 // parseAgentSpecIn is parseAgentSpec against an explicit registry. The agent
@@ -401,7 +402,7 @@ func parseAgentSpecIn(registry *clidefs.Registry, value string) (agentSpec, erro
 	}
 	definition, ok := registry.Lookup(name)
 	if !ok {
-		return agentSpec{}, unknownAgentError(registry, name)
+		return agentSpec{}, llm.UnknownCLIProviderError(registry, name)
 	}
 	if hasLevel {
 		if !definition.AcceptsLevel(level) {
@@ -432,6 +433,17 @@ func agentProvider(value string) string {
 		return value
 	}
 	return spec.Name
+}
+
+// agentAssignsSessionID reports whether aviary generates the session ID for an
+// agent spec and hands it over, rather than reading one back from the agent's
+// own output. An agent no CLI provider defines is given a generated ID.
+func agentAssignsSessionID(value string) bool {
+	definition, ok := llm.CLIProvider(agentProvider(value))
+	if !ok {
+		return true
+	}
+	return definition.AssignsSessionID()
 }
 
 // agentFlag collects repeated --agent values so multiple agents can be
@@ -1645,7 +1657,7 @@ func (r CommandRunner) registry() *clidefs.Registry {
 	if r.Definitions != nil {
 		return r.Definitions
 	}
-	return agentRegistry()
+	return llm.CLIProviders()
 }
 
 // Run runs a coding agent on issue.
@@ -2102,7 +2114,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	agent := spec.Name
 	definition, ok := r.definition(agent)
 	if !ok {
-		return false, unknownAgentError(r.registry(), agent)
+		return false, llm.UnknownCLIProviderError(r.registry(), agent)
 	}
 	if err := definition.ProjectsError(); err != nil {
 		return false, err
@@ -2130,7 +2142,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// it waits for in-flight background shell tasks before terminating them
 	// (10 minutes by default), and aviary dispatches it for long-lived
 	// autonomous work.
-	if env := definitionEnv(definition); len(env) > 0 {
+	if env := definition.EnvList(); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.Dir, _ = sessionRunDir(session)

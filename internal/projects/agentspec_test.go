@@ -1,11 +1,11 @@
 package projects
 
 import (
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 // TestUnknownAgentSpecListsTheKnownAgents checks the error --agent gives is
@@ -84,27 +84,6 @@ func TestAgentAssignsSessionIDFollowsTheDefinition(t *testing.T) {
 	}
 }
 
-// TestDefinitionEnvIsStable checks the child environment a definition asks for
-// is rendered in a fixed order, so a run does not vary with map iteration.
-func TestDefinitionEnvIsStable(t *testing.T) {
-	definition := clidefs.Definition{Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
-	want := []string{"A=1", "B=2", "C=3"}
-	for i := 0; i < 5; i++ {
-		got := definitionEnv(definition)
-		if len(got) != len(want) {
-			t.Fatalf("env = %v, want %v", got, want)
-		}
-		for j := range want {
-			if got[j] != want[j] {
-				t.Fatalf("env = %v, want %v", got, want)
-			}
-		}
-	}
-	if got := definitionEnv(clidefs.Definition{}); got != nil {
-		t.Fatalf("env = %v, want none", got)
-	}
-}
-
 // TestBinaryFallsBackToTheDefinition checks an agent with no flag of its own
 // is invoked through the executable its definition names, which is what makes
 // a configured agent runnable at all.
@@ -165,30 +144,6 @@ func TestDefinitionBinaryOverridesBuiltin(t *testing.T) {
 	}
 }
 
-// TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable checks the aviary
-// definition runs this executable unless cli_definitions names another.
-func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
-	executable, err := os.Executable()
-	if err != nil {
-		t.Skip(err)
-	}
-	registry, err := clidefs.FromConfig(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != executable {
-		t.Fatalf("aviary binary = %q, want the running executable %q", definition.Binary, executable)
-	}
-	definitions := map[string]any{aviaryAgent: map[string]any{"binary": "/opt/aviary"}}
-	registry, err = clidefs.FromConfig(definitions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != "/opt/aviary" {
-		t.Fatalf("aviary binary = %q, want the cli_definitions override", definition.Binary)
-	}
-}
-
 // TestAgentThatTakesNoLevelRejectsOne checks the declared-empty allow-list
 // reaches --agent: gemini has no reasoning-effort flag and no {level} fragment
 // to render one into, so a level is refused at startup instead of being parsed
@@ -222,5 +177,35 @@ func TestAgentThatTakesNoLevelRejectsOne(t *testing.T) {
 		if _, err := parseAgentSpec(agent + ":high"); err != nil {
 			t.Fatalf("parseAgentSpec(%q) error = %v", agent+":high", err)
 		}
+	}
+}
+
+// TestDispatchResolvesThroughCoreCLIProviders checks Projects has no CLI
+// registry of its own: the cli_definitions configured in core's provider layer
+// are the ones a job spec parses against and the executable it runs, and
+// invalid definitions keep a run from starting.
+func TestDispatchResolvesThroughCoreCLIProviders(t *testing.T) {
+	t.Cleanup(func() { _ = llm.ConfigureCLIProviders(nil) })
+	if err := llm.ConfigureCLIProviders(map[string]any{
+		"claude": map[string]any{"binary": "/opt/claude-nightly"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseAgentSpec("claude/opus:high"); err != nil {
+		t.Fatalf("parseAgentSpec(claude/opus:high) error = %v", err)
+	}
+	runner := CommandRunner{Agent: "claude/opus", Binary: "run-default"}
+	if got := runner.binary("claude"); got != "/opt/claude-nightly" {
+		t.Fatalf("binary = %q, want core's cli_definitions override", got)
+	}
+	if err := llm.ConfigureCLIProviders(map[string]any{"claude": map[string]any{"nosuchfield": true}}); err == nil {
+		t.Fatal("invalid cli_definitions were accepted")
+	}
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.startRun(engineSettings{Targets: []string{"o/r"}, Agents: []string{"claude/opus"}}); err == nil || !strings.Contains(err.Error(), "cli_definitions") {
+		t.Fatalf("startRun error = %v, want the invalid cli_definitions reported", err)
 	}
 }

@@ -79,17 +79,17 @@ async function setup(
 	return calls;
 }
 
-test("providers lists every coding CLI with its doctor status beside the API providers", async ({
+test("one providers list holds the API providers and every coding CLI with its doctor status", async ({
 	page,
 }) => {
 	const calls = await setup(page);
 	await page.goto("/settings/general");
-	await expect(page.getByTestId("cli-providers")).toHaveCount(0);
 	expect(calls).toEqual([]);
 
 	await page.goto("/settings/providers");
-	const card = page.getByTestId("cli-providers");
+	const card = page.getByTestId("providers-list");
 	await expect(card).toBeVisible();
+	await expect(page.getByText("Coding CLIs", { exact: true })).toHaveCount(0);
 
 	const codex = card.locator('[data-cli="codex"]');
 	await expect(codex).toHaveAttribute("data-status", "ok");
@@ -125,11 +125,12 @@ test("providers lists every coding CLI with its doctor status beside the API pro
 		);
 	}
 
-	// The API providers' credential table is still there, and separate.
-	const credentials = page.locator("table", { hasText: "Auth Type" });
-	await expect(credentials.getByText("Anthropic")).toBeVisible();
-	await expect(credentials.getByText("API Key")).toBeVisible();
-	await expect(credentials.locator("[data-cli]")).toHaveCount(0);
+	// The API providers sit in the same list, ahead of the CLI providers.
+	await expect(card.locator("table")).toHaveCount(1);
+	await expect(card.getByText("Anthropic")).toBeVisible();
+	await expect(card.getByText("API Key")).toBeVisible();
+	await expect(codex.getByText("CLI", { exact: true })).toBeVisible();
+	await expect(card.locator("tbody tr").first()).toContainText("Anthropic");
 });
 
 test("saving settings keeps the coding-CLI definitions", async ({ page }) => {

@@ -2,6 +2,7 @@ package projects
 
 import (
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/projects/core"
 
 	"context"
@@ -86,7 +87,7 @@ func TestValidateSettingsUpdateRejectsBadValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateSettingsUpdate(agentRegistry(), tc.update); err == nil {
+			if err := validateSettingsUpdate(llm.CLIProviders(), tc.update); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})
