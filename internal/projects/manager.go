@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -89,6 +88,9 @@ type Manager struct {
 	// mentionRouter prompts the built-in Projects agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]
+	// aviaryRunner runs in-process agent definitions; see
+	// SetAviaryAgentRunner.
+	aviaryRunner atomic.Pointer[AviaryAgentRunner]
 }
 
 // MentionRouter sends a prompt to the built-in Projects agent.
@@ -535,7 +537,6 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 			return nil, fmt.Errorf("agent %q: name the Aviary agent to run, as aviary/<agent>", spec)
 		}
 	}
-	s.AgentBinaries = withAviaryBinary(s.AgentBinaries)
 	unblock := unblockConfig{Agent: s.UnblockAgent, Model: s.UnblockModel}
 	if err := validateUnblockAgent(registry, unblock); err != nil {
 		return nil, err
@@ -586,6 +587,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		Transcripts:       m.transcripts,
 		CloneRoot:         func() (string, error) { return engine.CloneRoot() },
 		Quotas:            m.latestQuotas,
+	}
+	if aviary := m.aviaryRunner.Load(); aviary != nil {
+		runner.Aviary = *aviary
 	}
 	quota := combinedQuotaReader(namedQuotaReaders(registry, quotaAgentNames(s), runner.binary))
 	events := make(chan WebhookEvent, 1)
@@ -746,26 +750,10 @@ func (m *Manager) stopRun(run *engineRun) {
 	}
 }
 
-// aviaryAgent is the built-in definition that runs a job on an Aviary agent:
-// aviary/<agent> runs `aviary agent run <agent>` through this executable.
+// aviaryAgent is the built-in definition that runs a job on an Aviary agent
+// in-process: aviary/<agent> runs a turn on <agent> through core's agent
+// runner.
 const aviaryAgent = "aviary"
-
-// withAviaryBinary points the aviary definition at the running executable
-// unless agent_binaries names another.
-func withAviaryBinary(binaries map[string]string) map[string]string {
-	if binaries[aviaryAgent] != "" {
-		return binaries
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return binaries
-	}
-	merged := map[string]string{aviaryAgent: executable}
-	for name, binary := range binaries {
-		merged[name] = binary
-	}
-	return merged
-}
 
 // allAgentSpecs lists every agent spec the settings may dispatch to.
 func allAgentSpecs(s engineSettings) []string {

@@ -148,7 +148,6 @@ func TestNewOutputDecoderSelectsByFormat(t *testing.T) {
 		{format: "claude-stream-json", want: "*projects.claudeJSONOutputWriter"},
 		{format: "jsonl", want: "*projects.jsonlOutputWriter"},
 		{format: "codex-json", want: "*projects.transcriptOutputWriter"},
-		{format: "aviary-json", want: "*projects.transcriptOutputWriter"},
 		{format: "gemini-json", want: "*projects.transcriptOutputWriter"},
 	} {
 		t.Run(test.format, func(t *testing.T) {

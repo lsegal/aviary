@@ -126,6 +126,7 @@ func New(cfg *config.Config, token string) *Server {
 		s.projects = manager
 		manager.SetReportDelivery(s.deliverTaskOutput)
 		manager.SetMentionRouter(s.promptProjectsAgent)
+		manager.SetAviaryAgentRunner(s.runProjectsJobTurn)
 	} else {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
 	}

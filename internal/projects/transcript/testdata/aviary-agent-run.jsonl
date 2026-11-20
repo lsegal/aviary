@@ -1,6 +1,0 @@
-{"type":"message","text":"I’ll run `cat missing.txt` once, then `ls`."}
-{"type":"tool_call","id":"item_1","name":"shell","input":{"command":"/bin/zsh -lc 'cat missing.txt'"}}
-{"type":"tool_result","id":"item_1","name":"shell","error":"cat: missing.txt: No such file or directory\n"}
-{"type":"tool_call","id":"item_2","name":"shell","input":{"command":"/bin/zsh -lc ls"}}
-{"type":"tool_result","id":"item_2","name":"shell","output":"note.txt\nout.txt\n"}
-{"type":"message","text":"`cat missing.txt` failed because the file was missing, then `ls` listed `note.txt` and `out.txt`."}

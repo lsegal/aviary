@@ -45,3 +45,11 @@ func (v visionAgentRunner) RunAgent(ctx context.Context, binary string, args []s
 	err := process.Run(cmd)
 	return output.String(), err
 }
+
+// RunInProcess runs the vision turn through core's agent runner outside any
+// checkout.
+func (v visionAgentRunner) RunInProcess(ctx context.Context, spec browser.AgentSpec, prompt, mediaURL string) (string, error) {
+	var output bytes.Buffer
+	err := v.runner.runInProcess(ctx, agentSpec{Name: spec.Name, Model: spec.Model, Level: spec.Level}, prompt, mediaURL, os.TempDir(), &output, nil)
+	return output.String(), err
+}

@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -202,6 +203,9 @@ type AgentRunner interface {
 	VisionAgent() AgentSpec
 	// RunAgent runs binary with args and returns everything it wrote.
 	RunAgent(ctx context.Context, binary string, args []string) (string, error)
+	// RunInProcess runs one turn of an in-process agent definition with the
+	// image at mediaURL and returns the reply it wrote.
+	RunInProcess(ctx context.Context, spec AgentSpec, prompt, mediaURL string) (string, error)
 }
 
 // visionAgent turns one screenshot into a list of issues by invoking the
@@ -243,7 +247,13 @@ func (a visionAgent) Ask(ctx context.Context, screenshot []byte, pageURL string,
 		return nil, fmt.Errorf("write screenshot: %w", err)
 	}
 	spec := a.Runner.VisionAgent()
-	output, err := a.Runner.RunAgent(ctx, spec.Binary, visionArgs(spec, path, pageURL, qualified))
+	var output string
+	if definition := spec.definition(); definition != nil && definition.InProcess {
+		mediaURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+		output, err = a.Runner.RunInProcess(ctx, spec, visionPrompt(path, pageURL, qualified), mediaURL)
+	} else {
+		output, err = a.Runner.RunAgent(ctx, spec.Binary, visionArgs(spec, path, pageURL, qualified))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("agent failed: %w", err)
 	}

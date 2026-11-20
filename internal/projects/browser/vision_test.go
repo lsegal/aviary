@@ -534,3 +534,39 @@ func TestVisionArgsComeFromTheAgentDefinition(t *testing.T) {
 		t.Fatalf("vision args = %#v, want none", got)
 	}
 }
+
+// visionRunner records which way the vision call was run.
+type visionRunner struct {
+	spec             AgentSpec
+	binary, mediaURL string
+}
+
+func (r *visionRunner) VisionAgent() AgentSpec { return r.spec }
+
+func (r *visionRunner) RunAgent(_ context.Context, binary string, _ []string) (string, error) {
+	r.binary = binary
+	return "[1]", nil
+}
+
+func (r *visionRunner) RunInProcess(_ context.Context, _ AgentSpec, _ string, mediaURL string) (string, error) {
+	r.mediaURL = mediaURL
+	return "[2]", nil
+}
+
+// #435: an in-process agent reads the screenshot as the turn's media rather
+// than through a spawned CLI.
+func TestVisionRunsInProcessAgentsWithTheScreenshotAsMedia(t *testing.T) {
+	inProcess := &agents.Definition{Name: "aviary", Binary: "aviary", InProcess: true}
+	runner := &visionRunner{spec: AgentSpec{Name: "aviary", Definition: inProcess, Binary: "aviary", Model: "reviewer"}}
+	refs, err := visionAgent{Runner: runner}.Ask(context.Background(), []byte{0x89, 'P'}, "https://github.com/o/r/issues", false)
+	if err != nil || len(refs) != 1 || refs[0].Number != 2 {
+		t.Fatalf("refs = %+v, err = %v", refs, err)
+	}
+	if runner.mediaURL != "data:image/png;base64,iVA=" || runner.binary != "" {
+		t.Fatalf("media = %q, binary = %q", runner.mediaURL, runner.binary)
+	}
+	runner = &visionRunner{spec: AgentSpec{Name: "codex", Binary: "codex"}}
+	if _, err := (visionAgent{Runner: runner}).Ask(context.Background(), []byte{1}, "https://github.com/o/r/issues", false); err != nil || runner.binary != "codex" || runner.mediaURL != "" {
+		t.Fatalf("codex vision: binary = %q, media = %q, err = %v", runner.binary, runner.mediaURL, err)
+	}
+}

@@ -1,8 +1,6 @@
 package mcp
 
 import (
-	"strconv"
-
 	"github.com/lsegal/aviary/internal/agent"
 )
 
@@ -32,12 +30,9 @@ type AgentRunEvent struct {
 }
 
 // agentRunEvents turns one run's stream into AgentRunEvents, giving tool
-// calls IDs when the backend reports none. Without IDs a result is paired
-// with the oldest unfinished call of the same tool, since a runner reports a
-// call's result after announcing it.
+// calls IDs when the backend reports none.
 type agentRunEvents struct {
-	next    int
-	pending map[string][]string
+	ids agent.ToolCallIDs
 }
 
 func (a *agentRunEvents) fromStream(e agent.StreamEvent) (AgentRunEvent, bool) {
@@ -51,9 +46,9 @@ func (a *agentRunEvents) fromStream(e agent.StreamEvent) (AgentRunEvent, bool) {
 			return AgentRunEvent{}, false
 		}
 		if !e.Tool.Done {
-			return AgentRunEvent{Type: "tool_call", ID: a.callID(e.Tool), Name: e.Tool.Name, Input: e.Tool.Args}, true
+			return AgentRunEvent{Type: "tool_call", ID: a.ids.ID(e.Tool), Name: e.Tool.Name, Input: e.Tool.Args}, true
 		}
-		return AgentRunEvent{Type: "tool_result", ID: a.resultID(e.Tool), Name: e.Tool.Name, Output: e.Tool.Result, Error: e.Tool.Error}, true
+		return AgentRunEvent{Type: "tool_result", ID: a.ids.ID(e.Tool), Name: e.Tool.Name, Output: e.Tool.Result, Error: e.Tool.Error}, true
 	case agent.StreamEventFile:
 		if e.File != nil {
 			return AgentRunEvent{Type: "file_change", Name: e.File.Tool, Path: e.File.Path, Diff: e.File.Diff}, true
@@ -68,29 +63,4 @@ func (a *agentRunEvents) fromStream(e agent.StreamEvent) (AgentRunEvent, bool) {
 		}
 	}
 	return AgentRunEvent{}, false
-}
-
-func (a *agentRunEvents) callID(tool *agent.ToolEvent) string {
-	if tool.ID != "" {
-		return tool.ID
-	}
-	a.next++
-	id := "call_" + strconv.Itoa(a.next)
-	if a.pending == nil {
-		a.pending = map[string][]string{}
-	}
-	a.pending[tool.Name] = append(a.pending[tool.Name], id)
-	return id
-}
-
-func (a *agentRunEvents) resultID(tool *agent.ToolEvent) string {
-	if tool.ID != "" {
-		return tool.ID
-	}
-	queue := a.pending[tool.Name]
-	if len(queue) == 0 {
-		return ""
-	}
-	a.pending[tool.Name] = queue[1:]
-	return queue[0]
 }
