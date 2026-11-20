@@ -248,11 +248,11 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	useAddProject,
 	useProjectClones,
 } from "../composables/useProjectSettings";
+import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	DELIVERY_OPTIONS,
 	defaultFields,

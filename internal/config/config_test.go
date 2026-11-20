@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/clidefs"
-	"github.com/lsegal/aviary/internal/llm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 func TestDefault(t *testing.T) {

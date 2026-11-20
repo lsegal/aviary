@@ -69,11 +69,11 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useProviderStatus } from "../../composables/useProviderAuth";
 import {
 	useAddProject,
 	useProjectCheck,
 } from "../../composables/useProjectSettings";
+import { useProviderStatus } from "../../composables/useProviderAuth";
 import {
 	type CheckStatus,
 	checkLabel,
