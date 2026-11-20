@@ -624,6 +624,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	engine.SetUnblockAgent(unblock)
 	engine.SetScheduleRerun(m.rerunSchedule)
 	run.engine = engine
+	// Once a run's work is checkpointed, its issue's ownership is handed back
+	// so the next instance can pick it up at once (issue #420).
+	run.checkpointer.SetRescind(engine.rescindOwnership)
 	if engine.UseWebhooks {
 		if err := m.startWebhooks(ctx, run, gh, events); err != nil {
 			return fail(err)

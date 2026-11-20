@@ -809,7 +809,7 @@ func (w *Engine) standDownForStandingClaims(ctx context.Context, checker WorkClo
 				keep[i] = true
 				return
 			}
-			if standing.SelfHolds || !standing.OwnerClaimed {
+			if standing.SelfHolds || !standing.OwnerClaimed || standing.Rescinded {
 				keep[i] = true
 				return
 			}
@@ -925,6 +925,20 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 				// a live instance can answer.
 				w.logf("issue #%d reap check failed; negotiating anyway on the first reap after startup: %v", issue.Number, err)
 			} else {
+				// Its owners stopped work on it on a graceful shutdown and
+				// nobody holds it since, so it is free: claim it now and
+				// dispatch, with no handshake or staleness wait (issue #420).
+				if standing.Rescinded {
+					if err := w.Comments.PostComment(ctx, target.Repo, target.Number, claimComment(w.Identity, target.Continue)); err != nil {
+						w.logf("issue #%d ownership was rescinded but claiming it failed: %v", issue.Number, err)
+						return
+					}
+					w.recordHandshake(target, true)
+					w.logf("issue #%d ownership was rescinded on a graceful shutdown; claimed it as %s on %s without asking", issue.Number, w.Identity, target.describe())
+					keep[i] = true
+					newIssues[i].claim = &target
+					return
+				}
 				// Another instance holds the newest claim and posted it
 				// recently enough to still be running the work, so this reap
 				// stands down whether or not it is the first one.
@@ -2753,6 +2767,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				} else {
 					w.logf("issue #%d picked up uncontested; claimed it as %s (%q)", issue.Number, w.Identity, startingClaimBody)
 				}
+			} else if w.Comments != nil && session.Resume && !pending.woken {
+				w.reclaimRescinded(ctx, closureChecker, issue)
 			}
 			workMu.Lock()
 			key := issueKey(issue)

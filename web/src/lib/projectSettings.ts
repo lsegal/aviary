@@ -94,7 +94,7 @@ export const DEFAULT_BROWSER_INTERVAL = "20s";
 export function defaultInterval(delivery: Delivery): string {
 	return delivery === "browser" ? DEFAULT_BROWSER_INTERVAL : DEFAULT_INTERVAL;
 }
-export const DEFAULT_FILTER = ["assignee:@me author:@me"];
+export const DEFAULT_FILTER = ["assignee:@me"];
 export const DEFAULT_AGENT = "codex";
 
 // The job events a project can report, from config.ProjectReportEvents.

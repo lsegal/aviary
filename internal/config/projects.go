@@ -187,7 +187,7 @@ const (
 	DefaultProjectsBrowserInterval = 20 * time.Second
 	DefaultProjectsDelivery        = "browser"
 	DefaultProjectsReadyLabel      = "ready"
-	DefaultProjectsFilter          = "assignee:@me author:@me"
+	DefaultProjectsFilter          = "assignee:@me"
 	DefaultProjectsAgent           = "codex"
 	DefaultProjectsWebhookPath     = "/webhook"
 )
