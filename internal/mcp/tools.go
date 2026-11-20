@@ -2870,7 +2870,7 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_version_check",
-		Description: "Check the current Aviary version against the latest GitHub release, and list the running jobs an upgrade would stop and resume",
+		Description: "Check the current Aviary version against the latest GitHub release (or, for a dev build in a source checkout, against the checkout's upstream branch), and list the running jobs an upgrade would stop and resume",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		check, err := update.Check(ctx, nil)
 		if err != nil && check.LatestVersion == "" {
@@ -2886,7 +2886,7 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
-		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in CLI provider, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current",
+		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in CLI provider, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current. A dev build in a source checkout instead runs git pull --ff-only (refused when the tree has local changes) and does not restart; hot reload picks up the new code",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version})
 	})
