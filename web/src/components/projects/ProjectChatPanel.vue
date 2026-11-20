@@ -12,7 +12,7 @@
 			<div class="min-w-0 flex-1">
 				<h2 class="text-sm font-semibold text-gray-900 dark:text-white">Prompt chat</h2>
 				<p class="truncate text-xs text-gray-500 dark:text-gray-400">
-					Ask the <b>{{ PROJECTS_AGENT }}</b> agent about this instance's jobs. It can't steer a running job.
+					Ask the <b>{{ PROJECTS_AGENT }}</b> agent about {{ props.project }} and this instance's jobs.
 				</p>
 			</div>
 			<button type="button" aria-label="Close prompt chat" title="Close"
@@ -20,7 +20,7 @@
 				@click="emit('close')">✕</button>
 		</header>
 		<div class="min-h-0 flex-1">
-			<ChatView ref="chat" :agent="PROJECTS_AGENT" />
+			<ChatView ref="chat" :agent="PROJECTS_AGENT" :project="props.project" />
 		</div>
 	</aside>
 </template>
@@ -35,6 +35,10 @@ const WIDTH_KEY = "aviary.projects.chatWidth";
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 420;
 
+const props = defineProps<{
+	/** The board's project, which the agent answers about. */
+	project: string;
+}>();
 const emit = defineEmits<{ close: [] }>();
 
 const chat = ref<{ sendText: (text: string) => Promise<void> } | null>(null);

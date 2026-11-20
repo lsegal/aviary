@@ -847,8 +847,11 @@ func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "anthropic/claude-sonnet-5-5", runner.Agent().Model)
 	tools := runner.filterTools([]ToolInfo{{Name: "project_status"}, {Name: "project_issue_comment"}, {Name: "project_add"}, {Name: "agent_run"}, {Name: "exec"}}, nil, nil)
-	require.Len(t, tools, 1)
-	assert.Equal(t, "project_status", tools[0].Name)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	assert.Equal(t, []string{"project_status", "project_issue_comment"}, names)
 
 	// An agent of the same name in aviary.yaml replaces the built-in one.
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: config.ProjectsAgentName, Model: "openai/gpt-5"}}})

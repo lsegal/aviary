@@ -107,6 +107,20 @@ func projectResult[T any](tool string, fn func(*projects.Manager) (T, error)) (*
 	return jsonResult(value)
 }
 
+// projectsAgentContext is the live context a request to the Projects agent
+// carries: this instance, its targets, the board project the chat was opened
+// from, and a snapshot of its jobs. Other agents get none.
+func projectsAgentContext(ctx context.Context, agentName, project string) string {
+	if agentName != config.ProjectsAgentName {
+		return ""
+	}
+	m, err := projectManager()
+	if err != nil {
+		return ""
+	}
+	return m.ChatContext(ctx, project)
+}
+
 // retryScheduledJob fires a scheduled Projects job's task again through
 // core's scheduler, so the rerun lands in the task's history like any fire.
 func retryScheduledJob(taskID string) (map[string]any, error) {
