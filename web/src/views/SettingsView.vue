@@ -387,6 +387,7 @@ import {
 	type AgentTask,
 	type AllowFromEntry,
 	type AppConfig,
+	agentTaskType,
 	type SkillConfig,
 	useSettingsStore,
 } from "../stores/settings";
@@ -626,6 +627,27 @@ const selectedAgentIdx = ref(
 const selectedTaskIdx = ref<number | null>(
 	draft.value.agents[selectedAgentIdx.value]?.tasks?.length ? 0 : null,
 );
+
+/** The watched projects a "project" task can run against. */
+const watchedProjectTargets = computed((): string[] => [
+	...new Set(
+		(draft.value.projects?.list ?? [])
+			.map((project) => (project.target ?? "").trim())
+			.filter(Boolean),
+	),
+]);
+
+/**
+ * The projects a task's editor offers: the watched ones, plus the task's own
+ * project when it is no longer watched, so opening the editor keeps it.
+ */
+function projectTargetOptions(task: AgentTask): string[] {
+	const current = (task.project ?? "").trim();
+	const targets = watchedProjectTargets.value;
+	return current && !targets.includes(current)
+		? [...targets, current]
+		: targets;
+}
 
 const selectedTask = computed((): AgentTask | null => {
 	const agent = draft.value.agents[selectedAgentIdx.value];
@@ -2793,8 +2815,17 @@ function normalizedDraftConfig(): AppConfig {
 			...task,
 			enabled: task.enabled === false ? false : undefined,
 			name: (task.name ?? "").trim(),
-			type: task.type === "script" ? "script" : "prompt",
+			type: agentTaskType(task.type),
 			prompt: task.prompt ?? "",
+			// project and cli belong to project tasks only.
+			project:
+				agentTaskType(task.type) === "project"
+					? (task.project ?? "").trim() || undefined
+					: undefined,
+			cli:
+				agentTaskType(task.type) === "project"
+					? (task.cli ?? "").trim() || undefined
+					: undefined,
 			schedule: (task.schedule ?? "").trim(),
 			watch: (task.watch ?? "").trim(),
 			start_at: (task.start_at ?? "").trim(),
@@ -3444,6 +3475,7 @@ const settingsContext = proxyRefs({
 	providerAddSelection,
 	providerApiKeyValue,
 	providerBaseURIValue,
+	projectTargetOptions,
 	reauthorizeProvider,
 	refreshCredentials,
 	removeAgent,

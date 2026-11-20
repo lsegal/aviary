@@ -214,7 +214,9 @@ tasks:
 aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --at 02:00
 ```
 
-Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the schedule again; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
+Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
+
+Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a coding CLI.
 
 The project's **Schedules** tab lists its scheduled prompts with enable toggles and their last results, and edits every field with a preview of the next fires, the recent runs, Run now, Save and Delete. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 

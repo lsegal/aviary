@@ -1096,3 +1096,96 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 		page.getByText("No root markdown files yet. Refresh or add one."),
 	).toHaveCount(0);
 });
+
+test("a task can target a watched project and keeps it when saved", async ({
+	page,
+}) => {
+	let savedConfig: unknown = null;
+	const config = {
+		...CONFIG,
+		agents: [
+			{
+				...CONFIG.agents[0],
+				tasks: [
+					...CONFIG.agents[0].tasks,
+					{
+						name: "nightly-triage",
+						type: "project",
+						project: "o/gone",
+						cli: "codex",
+						schedule: "0 3 * * *",
+						prompt: "Triage new issues",
+					},
+				],
+			},
+		],
+		projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
+	};
+	await mockMCP(page, {
+		config_get: config,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		agent_file_list: [],
+	});
+
+	await page.goto("/settings/agents/assistant/tasks");
+	await page.getByRole("button", { name: "nightly-triage" }).click();
+
+	// A project that is no longer watched stays selected instead of clearing.
+	const project = page.getByRole("combobox", { name: "Project" });
+	await expect(project).toHaveValue("o/gone");
+	await expect(project.locator("option")).toHaveText([
+		"Select a watched project…",
+		"o/r",
+		"o/other",
+		"o/gone",
+	]);
+	await expect(page.getByLabel("Coding CLI")).toHaveValue("codex");
+	await expect(page.getByPlaceholder("./docs/**/*.md")).toHaveCount(0);
+
+	await project.selectOption("o/r");
+	await page.getByLabel("Coding CLI").fill(" claude:opus ");
+
+	// Turning the first task into a project task offers the watched projects.
+	await page.getByRole("button", { name: "daily-briefing" }).click();
+	await page
+		.locator("select")
+		.filter({ has: page.locator('option[value="project"]') })
+		.selectOption("project");
+	await page.getByRole("combobox", { name: "Project" }).selectOption("o/other");
+
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [
+			{
+				tasks: [
+					{
+						name: "daily-briefing",
+						type: "project",
+						project: "o/other",
+					},
+					{
+						name: "nightly-triage",
+						type: "project",
+						project: "o/r",
+						cli: "claude:opus",
+					},
+				],
+			},
+		],
+	});
+});

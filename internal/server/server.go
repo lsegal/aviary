@@ -138,11 +138,7 @@ func New(cfg *config.Config, token string) *Server {
 		slog.Warn("server: projects initialization failed; projects disabled", "err", err)
 	}
 	if s.sched != nil && s.projects != nil {
-		s.sched.SetProjectRunner(s.runProjectTask)
-		s.projects.SetScheduleRerun(func(taskID string) error {
-			_, err := s.sched.Trigger(taskID)
-			return err
-		})
+		s.sched.SetProjectRunner(s.projects.RunProjectTask)
 	}
 
 	// Inject deps into MCP tool handlers.
@@ -1099,30 +1095,4 @@ func (s *Server) loadSessionDeliveries() {
 	if len(cfgs) > 0 {
 		slog.Info("server: loaded session channel deliveries", "sessions", len(cfgs))
 	}
-}
-
-// runProjectTask runs a "project" task's prompt as a job on its project's
-// board and waits for the agent to exit.
-func (s *Server) runProjectTask(ctx context.Context, run scheduler.ProjectRun) (string, error) {
-	result, err := s.projects.RunScheduled(ctx, projects.ScheduledRun{
-		ScheduleID: run.TaskID,
-		Name:       run.Name,
-		Target:     run.Project,
-		Prompt:     run.Prompt,
-		Agent:      run.CLI,
-		Fire:       run.Fire,
-	})
-	if err != nil {
-		return "", err
-	}
-	switch result.Status {
-	case projects.ScheduledRunComplete:
-		return result.Summary, nil
-	case projects.ScheduledRunStopped:
-		return result.Summary, context.Canceled
-	}
-	if result.Summary == "" {
-		return "", errors.New("scheduled run failed")
-	}
-	return result.Summary, errors.New(result.Summary)
 }

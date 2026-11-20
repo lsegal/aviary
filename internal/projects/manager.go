@@ -73,10 +73,6 @@ type Manager struct {
 	// logSource pages core's log ring for project_status; see SetLogSource.
 	logSource atomic.Pointer[LogSource]
 
-	// scheduleRerun fires a schedule again for a board Retry on one of its
-	// jobs; see SetScheduleRerun.
-	scheduleRerun atomic.Pointer[func(scheduleID string) error]
-
 	snapshot atomic.Pointer[core.Snapshot]
 	reports  *reporter
 	quotas   atomic.Pointer[map[string]string]
@@ -640,7 +636,6 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	engine.SetTempDirs(s.TempDirs)
 	engine.SetUnblockInterval(s.UnblockInterval)
 	engine.SetUnblockAgent(unblock)
-	engine.SetScheduleRerun(m.rerunSchedule)
 	run.engine = engine
 	// Once a run's work is checkpointed, its issue's ownership is handed back
 	// so the next instance can pick it up at once (issue #420).

@@ -817,7 +817,7 @@
 										<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 											<span v-if="!isTaskEnabled(selectedTask)" class="flex-shrink-0 rounded-full bg-red-50 px-3 py-1 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">disabled</span>
 											<span class="flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium"
-												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
+												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : selectedTask.type === 'project' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
 												{{ selectedTask.type }}</span>
 											<span class="min-w-0 max-w-full rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
 												<span class="block truncate sm:inline">Defined in: {{ taskDefinedIn(selectedTask) }}</span>
@@ -855,6 +855,7 @@
 <select v-model="selectedTask.type" class="field-input">
 <option value="prompt">Prompt</option>
 <option value="script">Script</option>
+<option value="project">Project</option>
 </select>
 </div>
 <div>
@@ -863,8 +864,22 @@
 </div>
 </div>
 
-<div class="grid gap-3 lg:grid-cols-2 mt-3">
+<div v-if="selectedTask.type === 'project'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
+<label class="field-label">Project</label>
+<select v-model="selectedTask.project" class="field-input" aria-label="Project">
+<option value="">Select a watched project…</option>
+<option v-for="target in projectTargetOptions(selectedTask)" :key="target" :value="target">{{ target }}</option>
+</select>
+</div>
+<div>
+<label class="field-label">Coding CLI</label>
+<input v-model="selectedTask.cli" type="text" class="field-input font-mono" placeholder="Default: the project's agent (e.g. claude:opus)" aria-label="Coding CLI" />
+</div>
+</div>
+
+<div class="grid gap-3 lg:grid-cols-2 mt-3">
+<div v-if="selectedTask.type !== 'project'">
 <label class="field-label">Watch</label>
 <input v-model="selectedTask.watch" type="text" class="field-input" placeholder="./docs/**/*.md" />
 </div>

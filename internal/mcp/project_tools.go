@@ -107,6 +107,20 @@ func projectResult[T any](tool string, fn func(*projects.Manager) (T, error)) (*
 	return jsonResult(value)
 }
 
+// retryScheduledJob fires a scheduled Projects job's task again through
+// core's scheduler, so the rerun lands in the task's history like any fire.
+func retryScheduledJob(taskID string) (map[string]any, error) {
+	d := GetDeps()
+	if d.Scheduler == nil {
+		return nil, errors.New("scheduler not initialized")
+	}
+	job, err := d.Scheduler.Trigger(taskID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true, "action": "retry", "task": taskID, "task_job": job}, nil
+}
+
 func registerProjectTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_status",
@@ -152,7 +166,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		name, verb, description string
 		annotations             *sdkmcp.ToolAnnotations
 	}{
-		{"project_job_retry", "retry", "Retry a Projects job: requeue it so gh-fix reruns it with its saved session; on a paused job this clears the pause first", mutatingTool},
+		{"project_job_retry", "retry", "Retry a Projects job: requeue it so gh-fix reruns it with its saved session; on a paused job this clears the pause first. A scheduled job's task is fired again through the scheduler instead", mutatingTool},
 		{"project_job_pause", "pause", "Pause an active, waiting or queued Projects job; a running agent is stopped and its work pushed, and only a retry or resume picks it back up", mutatingTool},
 		{"project_job_resume", "resume", "Resume a paused Projects job: clear the pause and requeue it", mutatingTool},
 		{"project_job_stop", "stop", "Stop a Projects job's agent and wait for it to exit, or clear a paused job and release its claim on the issue", destructiveTool},
@@ -163,6 +177,13 @@ func registerProjectTools(s *sdkmcp.Server) {
 			Annotations: action.annotations,
 		}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectJobArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 			return projectResult(action.name, func(m *projects.Manager) (map[string]any, error) {
+				if action.verb == "retry" {
+					if taskID, err := m.ScheduledRetry(args.Target, args.Number); err != nil {
+						return nil, err
+					} else if taskID != "" {
+						return retryScheduledJob(taskID)
+					}
+				}
 				return m.JobAction(ctx, action.verb, args.Target, args.Number)
 			})
 		})
