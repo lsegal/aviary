@@ -911,12 +911,15 @@ func TestValidate_StdioProviderRejected(t *testing.T) {
 func TestValidate_CLIModel(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{
-			{Name: "a", Model: "cli/gemini/pro"},
+			{Name: "a", Model: "cli/nosuchcli/pro"},
 			{Name: "b", Model: "cli/claude"},
+			{Name: "c", Model: "cli/gemini/pro"},
 		},
 	}
 	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "unknown CLI backend \"gemini\""))
+	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
+	// gemini is a coding-CLI provider Projects jobs run on, so it only warns.
+	assert.True(t, hasIssue(issues, "only claude and codex can answer agent prompts"))
 	assert.True(t, hasIssue(issues, "expected cli/<claude|codex>/<model>"))
 
 }

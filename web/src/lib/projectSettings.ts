@@ -2,11 +2,11 @@
 // section of aviary.yaml (read and written with config_get / config_save) and
 // hold only values that differ from the defaults below, which mirror
 // internal/config/projects.go. Most settings are shared by every watched
-// project; each project's own entry in `list` carries its coding-CLI order
-// and its optional job reports.
-// The add-project checks come from project_check, the coding-CLI probe from
-// project_cli_list and clones from project_clone_list; their responses are
-// normalized here so the views never depend on the raw payload shape.
+// project; each project's own entry in `list` carries the Aviary agent it is
+// attached to and its optional job reports.
+// The add-project checks come from project_check and clones from
+// project_clone_list; their responses are normalized here so the views never
+// depend on the raw payload shape.
 
 export type Delivery = "browser" | "poll" | "webhook";
 
@@ -21,7 +21,8 @@ export interface ProjectReportsEntry {
 /** One watched project in `projects.list`. */
 export interface ProjectEntry {
 	target: string;
-	agents?: string[];
+	/** The Aviary agent this project is attached to; absent uses the section's. */
+	agent?: string;
 	reports?: ProjectReportsEntry;
 	// Other per-project settings pass through untouched.
 	[key: string]: unknown;
@@ -48,7 +49,8 @@ export interface ProjectsSection {
 	filter?: string[];
 	all_issues?: boolean;
 	allowed_commenters?: string[];
-	agents?: string[];
+	/** The Aviary agent projects without their own are attached to. */
+	agent?: string;
 	no_merge?: boolean;
 	no_changelog?: boolean;
 	yolo?: boolean;
@@ -61,8 +63,8 @@ export interface ProjectsSection {
 /** The settings edited on one project's page, with defaults filled in. */
 export interface ProjectSettings {
 	target: string;
-	/** This project's coding-CLI order; empty uses the shared `agents`. */
-	agents: string[];
+	/** The Aviary agent this project is attached to; empty uses the shared `agent`. */
+	agent: string;
 	concurrency: number;
 	readyLabel: string;
 	readyState: string;
@@ -94,7 +96,6 @@ export function defaultInterval(delivery: Delivery): string {
 	return delivery === "browser" ? DEFAULT_BROWSER_INTERVAL : DEFAULT_INTERVAL;
 }
 export const DEFAULT_FILTER = ["assignee:@me"];
-export const DEFAULT_AGENT = "codex";
 
 // The job events a project can report, from config.ProjectReportEvents.
 export const REPORT_EVENTS: { key: string; label: string }[] = [
@@ -130,10 +131,56 @@ export function isListed(
 	return (section?.list ?? []).some((p) => sameTarget(p.target, target));
 }
 
-/** The shared coding-CLI specs a project uses when it sets none of its own. */
-export function sharedAgents(section: ProjectsSection | undefined): string[] {
-	const agents = strings(section?.agents);
-	return agents.length ? agents : [DEFAULT_AGENT];
+/** The Aviary agent a project is attached to when it names none of its own. */
+export function sharedAgent(section: ProjectsSection | undefined): string {
+	return typeof section?.agent === "string" ? section.agent.trim() : "";
+}
+
+/** The parts of the Aviary config a project's job models come from. */
+export interface JobModelsConfig {
+	agents?: { name: string; model?: string; fallbacks?: string[] }[];
+	models?: { defaults?: { model?: string; fallbacks?: string[] } };
+}
+
+/** One model a project's jobs run on, in fallback order. */
+export interface JobModel {
+	/** The coding-CLI spec (AGENT/MODEL:LEVEL), or aviary/<agent>. */
+	spec: string;
+	/** The agent model it comes from, such as cli/claude/opus. */
+	model: string;
+}
+
+/**
+ * The models a project attached to agentName runs its jobs on, mirroring
+ * config.ProjectJobSpecs: the agent's model and fallbacks, after
+ * models.defaults, each cli/ model as its spec. A model that is not a CLI
+ * runs the job on the agent itself. An empty name takes the CLI models of
+ * models.defaults; an unknown agent has none.
+ */
+export function jobModels(
+	agentName: string,
+	cfg: JobModelsConfig | null | undefined,
+): JobModel[] {
+	const name = agentName.trim();
+	const agent = name
+		? (cfg?.agents ?? []).find((a) => a.name === name)
+		: { name: "" };
+	if (!agent) return [];
+	const defaults = cfg?.models?.defaults;
+	const model = (agent.model ?? "").trim() || (defaults?.model ?? "").trim();
+	const fallbacks = agent.fallbacks?.length
+		? agent.fallbacks
+		: (defaults?.fallbacks ?? []);
+	const out: JobModel[] = [];
+	for (const m of [model, ...fallbacks].map((v) => v.trim()).filter(Boolean)) {
+		const spec = m.startsWith("cli/")
+			? m.slice("cli/".length)
+			: agent.name
+				? `aviary/${agent.name}`
+				: "";
+		if (spec && !out.some((j) => j.spec === spec)) out.push({ spec, model: m });
+	}
+	return out;
 }
 
 function parseDelivery(v: string | undefined): Delivery {
@@ -151,7 +198,7 @@ export function settingsFromSection(
 	const filter = strings(s.filter);
 	return {
 		target: entry?.target ?? target,
-		agents: strings(entry?.agents),
+		agent: typeof entry?.agent === "string" ? entry.agent.trim() : "",
 		concurrency:
 			typeof s.concurrency === "number" && s.concurrency > 0
 				? s.concurrency
@@ -308,23 +355,23 @@ export function withSettings(
 	const dirs = clean(s.tempDirs);
 	set("temp_dirs", dirs, !dirs.length);
 
-	const agents = clean(s.agents);
+	const agent = s.agent.trim();
 	const reports = reportsEntry(s.reports);
 	const current = section?.list ?? [];
 	const at = current.findIndex((p) => sameTarget(p.target, s.target));
 	const list = current.filter((p) => !sameTarget(p.target, s.target));
-	// Keep the entry's other fields; only agents and reports change here.
+	// Keep the entry's other fields; only agent and reports change here.
 	const {
-		agents: _,
+		agent: _,
 		reports: __,
 		...rest
 	} = at >= 0 ? current[at] : { target: s.target };
 	const extra = Object.keys(rest).some((k) => k !== "target");
-	if (listed || agents.length || reports || extra) {
+	if (listed || agent || reports || extra) {
 		const entry: ProjectEntry = {
 			...rest,
 			target: s.target.trim(),
-			...(agents.length ? { agents } : {}),
+			...(agent ? { agent } : {}),
 			...(reports ? { reports } : {}),
 		};
 		list.splice(at >= 0 ? at : list.length, 0, entry);
@@ -455,20 +502,6 @@ export function normalizeCheck(raw: unknown): ProjectCheckResult {
 		ok: r.ok === true && !checks.some((c) => c.status === "fail"),
 		checks,
 	};
-}
-
-// ── Coding-CLI specs ──────────────────────────────────────────────────────
-
-/** The agent name of a coding-CLI spec (AGENT/MODEL:LEVEL or aviary/<agent>). */
-export function specName(spec: string): string {
-	const name = spec.split("/")[0] ?? spec;
-	return name.split(":")[0] ?? name;
-}
-
-/** The model a spec pins, as a fully qualified spec without the level. */
-export function specModel(spec: string): string {
-	if (specName(spec) === "aviary" || !spec.includes("/")) return "";
-	return spec.split(":")[0] ?? "";
 }
 
 // ── Clones (project_clone_list / project_clone_clear) ─────────────────────

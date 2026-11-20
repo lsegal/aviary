@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/schedule"
 )
 
@@ -283,12 +284,37 @@ func (v *validator) checkModel(field, model string) {
 func (v *validator) checkCLIModel(field, model, _ string) {
 	backend, _, err := cliagent.ParseModel(model)
 	if err != nil {
+		if name, ok := v.projectsOnlyCLI(model); ok {
+			v.warnf(field, "%s is a coding-CLI provider that runs Projects jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
+			return
+		}
 		v.errorf(field, "%v", err)
 		return
 	}
 	if _, err := exec.LookPath(backend.Binary()); err != nil {
 		v.errorf(field, "%s CLI not found in PATH; install it to use model %q", backend, model)
 	}
+}
+
+// projectsOnlyCLI reports the CLI provider a cli/ model names when it is one
+// of the coding-CLI providers, built in or from models.cli_definitions, that
+// Projects jobs run on but agent turns cannot, such as cli/gemini/<model>.
+func (v *validator) projectsOnlyCLI(model string) (string, bool) {
+	rest, _ := strings.CutPrefix(strings.TrimSpace(model), cliagent.ModelPrefix)
+	name, _, _ := strings.Cut(rest, "/")
+	name, _, _ = strings.Cut(name, ":")
+	if name == "" || cliagent.Backend(name).Valid() {
+		return "", false
+	}
+	if _, ok := v.models.CLIDefinitions[name]; ok {
+		return name, true
+	}
+	registry, err := clidefs.Builtin()
+	if err != nil {
+		return "", false
+	}
+	_, ok := registry.Lookup(name)
+	return name, ok
 }
 
 // CLIBackends returns the CLI backends referenced by any agent model,

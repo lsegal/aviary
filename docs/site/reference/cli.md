@@ -259,13 +259,13 @@ aviary task stop
 Watch GitHub projects and fix ready issues with a coding CLI. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
 
 ```
-aviary watch [TARGET ...] [--agent SPEC ...] [--concurrency N] [--interval D]
+aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
              [--delivery poll|webhook] [--ready-label L] [--ready-state S]
              [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
              [--yolo] [--no-merge] [--no-changelog]
 ```
 
-With no `TARGET`, the current checkout's `origin` repository is watched. Flags override the `projects:` section while the watch runs.
+With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` attaches the targets to an Aviary agent, whose model and fallbacks pick the jobs' coding CLIs. Flags override the `projects:` section while the watch runs.
 
 ---
 
@@ -275,7 +275,7 @@ Manage Projects. Each subcommand calls the `project_*` tool of the same name wit
 
 ```
 aviary project status
-aviary project add <target> [--agents SPEC,...] [--runtime]
+aviary project add <target> [--agent NAME] [--runtime]
 aviary project remove <target> [--runtime]
 aviary project refresh [target]
 aviary project job list [--target T] [--status S] [--offset N] [--limit N]

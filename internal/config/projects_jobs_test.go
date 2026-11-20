@@ -1,0 +1,54 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestProjectJobSpecsComeFromTheAttachedAgent(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "coder", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex/gpt-5.6-terra:high", "cli/claude/opus"}},
+			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/gemini/gemini-3.5-flash"}},
+			{Name: "plain"},
+		},
+		Models: ModelsConfig{Defaults: &ModelDefaults{Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/codex/gpt-5.6-terra"}}},
+		Projects: ProjectsConfig{
+			Agent: "coder",
+			List:  []ProjectConfig{{Target: "o/shared"}, {Target: "o/own", Agent: "api"}},
+		},
+	}
+	assert.Equal(t, "coder", cfg.Projects.AgentFor("o/shared"))
+	assert.Equal(t, "api", cfg.Projects.AgentFor("o/own"))
+	assert.Equal(t, "coder", cfg.Projects.AgentFor("o/unlisted"))
+
+	assert.Equal(t, []string{"claude/opus", "codex/gpt-5.6-terra:high"}, ProjectJobSpecs(cfg, "coder"), "duplicates drop out")
+	assert.Equal(t, []string{"aviary/api", "gemini/gemini-3.5-flash"}, ProjectJobSpecs(cfg, "api"), "an API model runs the job on the agent")
+	assert.Equal(t, []string{"aviary/plain", "codex/gpt-5.6-terra"}, ProjectJobSpecs(cfg, "plain"), "no model takes models.defaults")
+	assert.Equal(t, []string{"codex/gpt-5.6-terra"}, ProjectJobSpecs(cfg, ""), "no agent takes the CLI models of models.defaults")
+	assert.Nil(t, ProjectJobSpecs(cfg, "nobody"))
+}
+
+func TestCLIModelsBeyondClaudeAndCodexOnlyWarn(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "gem", Model: "cli/gemini/gemini-3.5-flash"},
+			{Name: "custom", Model: "cli/mytool/m1"},
+			{Name: "bogus", Model: "cli/nosuchcli/x"},
+		},
+		Models: ModelsConfig{CLIDefinitions: map[string]any{"mytool": map[string]any{"binary": "mytool"}}},
+	}
+	issues := Validate(cfg, nil)
+	level := func(field string) string {
+		for _, issue := range issues {
+			if issue.Field == field {
+				return string(issue.Level)
+			}
+		}
+		return ""
+	}
+	assert.Equal(t, string(LevelWarning), level("agents[0].model"), issues)
+	assert.Equal(t, string(LevelWarning), level("agents[1].model"), issues)
+	assert.Equal(t, string(LevelError), level("agents[2].model"), issues)
+}

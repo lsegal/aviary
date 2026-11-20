@@ -39,7 +39,7 @@
 				<p class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
 					<span>Up to <b class="text-gray-900 dark:text-white">{{ settings.concurrency }}</b> jobs at once</span>
 					<span>{{ settings.merge ? "Merges when CI passes" : "Leaves pull requests for you to merge" }}</span>
-					<span>Runs on <b class="text-gray-900 dark:text-white">{{ (settings.agents.length ? settings.agents : sharedAgents(store.config?.projects)).join(", ") }}</b></span>
+					<span>Runs on <b class="text-gray-900 dark:text-white">{{ runsOn }}</b></span>
 				</p>
 				<p v-if="startError" class="mt-3 text-sm text-red-700 dark:text-red-300">{{ startError }}</p>
 
@@ -76,8 +76,9 @@ import {
 import {
 	type CheckStatus,
 	checkLabel,
+	jobModels,
 	settingsFromSection,
-	sharedAgents,
+	sharedAgent,
 } from "../../lib/projectSettings";
 import { encodeProject } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
@@ -104,6 +105,13 @@ const normalized = computed(() => result.value?.target || target.value.trim());
 const settings = computed(() =>
 	settingsFromSection(normalized.value, store.config?.projects),
 );
+// The attached agent's models, or models.defaults' when none is attached.
+const runsOn = computed(() => {
+	const agent = settings.value.agent || sharedAgent(store.config?.projects);
+	const specs = jobModels(agent, store.config).map((m) => m.spec);
+	if (!specs.length) return agent ? `${agent} (no model)` : "no agent";
+	return agent ? `${agent}: ${specs.join(", ")}` : specs.join(", ");
+});
 const canStart = computed(
 	() =>
 		!!target.value.trim() && !checking.value && !error.value && !!result.value,

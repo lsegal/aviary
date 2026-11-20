@@ -45,9 +45,10 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
-	// Agents are the coding-CLI specs (AGENT/MODEL:LEVEL) jobs load balance
-	// across. Empty means DefaultProjectsAgent.
-	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
+	// Agent is the Aviary agent projects without their own are attached to.
+	// Its model and fallbacks are the provider and model defaults of their
+	// jobs.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// Yolo disables the coding CLIs' sandboxes and permission checks.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
@@ -78,10 +79,11 @@ type ProjectConfig struct {
 	// Target is owner/repo, a repository URL, a project board, or a
 	// Discussions board.
 	Target string `yaml:"target" json:"target"`
-	// Agents are this project's coding-CLI specs in fallback order: a job
-	// runs on the first one whose quota is not used up. Empty uses the
-	// section's Agents.
-	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
+	// Agent is the Aviary agent this project is attached to. Its model and
+	// fallbacks, in order, are the provider and model defaults of the
+	// project's jobs: a job runs on the first one whose quota is not used up.
+	// Empty uses the section's Agent.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -183,7 +185,6 @@ const (
 	DefaultProjectsDelivery        = "browser"
 	DefaultProjectsReadyLabel      = "ready"
 	DefaultProjectsFilter          = "assignee:@me"
-	DefaultProjectsAgent           = "codex"
 	DefaultProjectsWebhookPath     = "/webhook"
 )
 
@@ -231,18 +232,19 @@ func (p ProjectsConfig) EffectiveFilter() string {
 	return DefaultProjectsFilter
 }
 
-// EffectiveAgents returns the agent specs jobs load balance across.
-func (p ProjectsConfig) EffectiveAgents() []string {
-	var specs []string
-	for _, spec := range p.Agents {
-		if spec = strings.TrimSpace(spec); spec != "" {
-			specs = append(specs, spec)
+// AgentFor returns the name of the Aviary agent target is attached to: the
+// project's own agent, otherwise the section's. Empty means none is attached.
+func (p ProjectsConfig) AgentFor(target string) string {
+	target = strings.TrimSpace(target)
+	for _, project := range p.List {
+		if strings.TrimSpace(project.Target) == target {
+			if agent := strings.TrimSpace(project.Agent); agent != "" {
+				return agent
+			}
+			break
 		}
 	}
-	if len(specs) == 0 {
-		return []string{DefaultProjectsAgent}
-	}
-	return specs
+	return strings.TrimSpace(p.Agent)
 }
 
 // Targets returns every watched target, in order, without duplicates.
@@ -264,7 +266,7 @@ func (p ProjectsConfig) Targets() []string {
 func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
-		len(p.AllowedCommenters) == 0 && len(p.Agents) == 0 &&
+		len(p.AllowedCommenters) == 0 && p.Agent == "" &&
 		!p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil

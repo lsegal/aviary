@@ -159,15 +159,19 @@ func TestProjectStatusAndJobsWithNothingWatched(t *testing.T) {
 
 func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	d, _ := setupProjects(t)
-	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agents": []any{"claude/opus", "codex"}})
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus"}}}))
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "agent": "nobody"}, `agent "nobody" is not configured`)
+	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agent": "coder"})
 	assert.Equal(t, true, added["saved"])
 	cfg, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, cfg.Projects.List, 1)
-	assert.Equal(t, config.ProjectConfig{Target: "o/r", Agents: []string{"claude/opus", "codex"}}, cfg.Projects.List[0])
-	// Only the project was written: every setting is still its default.
+	assert.Equal(t, config.ProjectConfig{Target: "o/r", Agent: "coder"}, cfg.Projects.List[0])
+	// Only the project was written: every setting is still its default, and
+	// no agent was created for it.
 	cfg.Projects.List = nil
 	assert.True(t, cfg.Projects.IsZero())
+	assert.Len(t, cfg.Agents, 1)
 
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, []any{"o/r"}, status["targets"])
@@ -186,7 +190,8 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 // TestProjectAddRuntimeWritesNoConfig checks the zero-config path aviary watch
 // takes: a runtime watch is watched without touching aviary.yaml.
 func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
-	d, _ := setupProjects(t)
+	d, m := setupProjects(t)
+	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}})
 	path := config.DefaultPath()
 	before := readFile(t, path)
 	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"concurrency": 5, "no_merge": true}})

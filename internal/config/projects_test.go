@@ -16,19 +16,13 @@ func TestProjectsDefaults(t *testing.T) {
 	if p.EffectiveDelivery() != "browser" || p.EffectiveReadyLabel() != "ready" || p.EffectiveFilter() != DefaultProjectsFilter {
 		t.Fatalf("defaults = %q, %q, %q", p.EffectiveDelivery(), p.EffectiveReadyLabel(), p.EffectiveFilter())
 	}
-	if got := p.EffectiveAgents(); len(got) != 1 || got[0] != "codex" {
-		t.Fatalf("default agents = %v", got)
-	}
 	empty := ""
-	p = ProjectsConfig{Concurrency: 5, Interval: "2m", Delivery: "Webhook", ReadyLabel: &empty, Filter: []string{"label:bug", "author:@me"}, Agents: []string{" claude ", ""}}
+	p = ProjectsConfig{Concurrency: 5, Interval: "2m", Delivery: "Webhook", ReadyLabel: &empty, Filter: []string{"label:bug", "author:@me"}}
 	if p.EffectiveConcurrency() != 5 || p.EffectiveInterval() != 2*time.Minute || p.EffectiveDelivery() != "webhook" {
 		t.Fatalf("overrides = %d, %s, %s", p.EffectiveConcurrency(), p.EffectiveInterval(), p.EffectiveDelivery())
 	}
 	if p.EffectiveReadyLabel() != "" || p.EffectiveFilter() != "label:bug author:@me" {
 		t.Fatalf("overrides = %q, %q", p.EffectiveReadyLabel(), p.EffectiveFilter())
-	}
-	if got := p.EffectiveAgents(); len(got) != 1 || got[0] != "claude" {
-		t.Fatalf("agents = %v", got)
 	}
 }
 

@@ -9,9 +9,16 @@ const STATUS = {
 // Shapes follow internal/config/projects.go and internal/projects/api.go.
 const CONFIG = {
 	server: { port: 16677 },
-	agents: [{ name: "atlas", model: "anthropic/claude-sonnet-4-5" }],
+	agents: [
+		{ name: "atlas", model: "anthropic/claude-sonnet-4-5" },
+		{
+			name: "coder",
+			model: "cli/claude/opus",
+			fallbacks: ["cli/codex/gpt-5.5"],
+		},
+	],
 	projects: {
-		list: [{ target: "lsegal/aviary", agents: ["claude/opus"] }],
+		list: [{ target: "lsegal/aviary", agent: "coder" }],
 		allowed_commenters: ["lsegal", "teammate"],
 		webhook: { path: "/hooks/gh" },
 	},
@@ -78,7 +85,6 @@ async function setup(
 	opts: {
 		check?: unknown;
 		config?: unknown;
-		cliList?: () => Promise<unknown>;
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -104,7 +110,7 @@ async function setup(
 			record("project_add", args);
 			return { ok: true };
 		},
-		provider_cli_list: async () => (opts.cliList ? opts.cliList() : CLIS),
+		provider_cli_list: async () => CLIS,
 		project_clone_list: {
 			roots: ["/tmp"],
 			clones: [
@@ -167,7 +173,8 @@ test("adding a project from the single field starts a watch without writing avia
 		"warn",
 	);
 	await expect(dialog).toContainText("Up to 3 jobs at once");
-	await expect(dialog).toContainText("Runs on codex");
+	// lsegal/zvidlib is attached to no agent, and models.defaults has none.
+	await expect(dialog).toContainText("Runs on no agent");
 	await expect(dialog.locator("footer code")).toHaveText(
 		"aviary watch lsegal/zvidlib",
 	);
@@ -262,7 +269,7 @@ test("changing a setting writes only the differing values", async ({
 			"projects:",
 			"  list:",
 			"    - target: lsegal/aviary",
-			"      agents: [claude/opus]",
+			"      agent: coder",
 			"  allowed_commenters: [lsegal, teammate]",
 			"  webhook:",
 			"    path: /hooks/gh",
@@ -316,7 +323,7 @@ test("changing a setting writes only the differing values", async ({
 		"Saved and applied to the running watch",
 	);
 	expect(savedSection(calls)).toEqual({
-		list: [{ target: "lsegal/aviary", agents: ["claude/opus"] }],
+		list: [{ target: "lsegal/aviary", agent: "coder" }],
 		allowed_commenters: ["lsegal", "teammate"],
 		webhook: { path: "/hooks/gh" },
 		concurrency: 6,
@@ -360,70 +367,73 @@ test("discard restores the saved settings", async ({ page }) => {
 	);
 });
 
-test("CLI probe shows its cached result and refreshes in the background", async ({
+test("a project runs its jobs on its agent's model and fallbacks", async ({
 	page,
 }) => {
-	let release: () => void = () => {};
-	const gate = new Promise<void>((r) => {
-		release = r;
-	});
-	await page.addInitScript(
-		(clis) =>
-			localStorage.setItem("aviary.providers.clis", JSON.stringify(clis)),
-		{
-			clis: [
-				{
-					name: "claude",
-					auth: "signed in",
-					quota: "cached quota",
-					models: ["claude/opus", "claude/sonnet"],
-				},
-			],
-		},
-	);
-	const calls = await setup(page, {
-		cliList: async () => {
-			await gate;
-			return CLIS;
-		},
-	});
+	const calls = await setup(page);
 	await page.goto("/projects/lsegal%2Faviary/settings");
 
-	const claude = page.locator('[data-cli="claude"]');
-	await expect(claude).toContainText("cached quota");
-	await expect(page.getByTestId("cli-refreshing")).toBeVisible();
-	release();
-	await expect(page.getByTestId("cli-refreshing")).toBeHidden();
-	await expect(claude).toContainText("38% of 5h quota left");
-	await expect(page.locator('[data-cli="gemini"]')).toContainText("signed out");
+	const agent = page.locator('[data-field="agent"]');
+	const models = page.getByTestId("job-models").locator("li");
+	await expect(agent).toHaveValue("coder");
+	await expect(models).toHaveCount(2);
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
+	await expect(models.nth(0)).toContainText("model");
+	await expect(models.nth(1)).toHaveAttribute("data-spec", "codex/gpt-5.5");
+	await expect(models.nth(1)).toContainText("fallback");
+	await expect(
+		page.getByRole("link", { name: "coder's settings" }),
+	).toHaveAttribute("href", "/settings/agents/coder");
 
+	// An agent on an API model runs the job itself.
+	await agent.selectOption("atlas");
+	await expect(models).toHaveCount(1);
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "aviary/atlas");
+	await expect(models.nth(0)).toContainText("runs on the agent itself");
 	const yaml = page.getByTestId("project-yaml");
-	const codex = page.locator('[data-cli="codex"]');
-	await codex.getByRole("button", { name: "Use" }).click();
-	await codex.getByRole("button", { name: "gpt-5.5", exact: true }).click();
-	await expect(yaml).toContainText("agents: [claude/opus, codex/gpt-5.5]");
-	await page.getByRole("button", { name: "Move codex up" }).click();
-	await expect(yaml).toContainText("agents: [codex/gpt-5.5, claude/opus]");
-	await page
-		.locator('[aria-label="Add an Aviary agent"]')
-		.selectOption("aviary/atlas");
-	await expect(yaml).toContainText(
-		"agents: [codex/gpt-5.5, claude/opus, aviary/atlas]",
-	);
+	await expect(yaml).toContainText("agent: atlas");
 	expect(calls.config_save).toBeUndefined();
 });
 
-test("a project without its own CLI order uses the shared one", async ({
+test("a project without its own agent uses the shared one", async ({
 	page,
 }) => {
 	await setup(page, {
-		config: { server: {}, projects: { agents: ["claude/sonnet"] } },
+		config: {
+			server: {},
+			agents: CONFIG.agents,
+			projects: { agent: "coder" },
+		},
 	});
 	await page.goto("/projects/lsegal%2Faviary/settings");
-	await expect(page.getByTestId("cli-shared")).toBeVisible();
-	await expect(page.locator('[data-cli="claude"]')).toContainText("1");
+	await expect(page.getByTestId("agent-shared")).toBeVisible();
+	await expect(page.locator('[data-field="agent"]')).toHaveValue("");
+	await expect(page.locator('[data-field="agent"] option').first()).toHaveText(
+		"Shared: coder",
+	);
+	await expect(
+		page.getByTestId("job-models").locator("li").first(),
+	).toHaveAttribute("data-spec", "claude/opus");
 	await expect(page.getByTestId("project-yaml")).toHaveText(
-		"projects:\n  agents: [claude/sonnet]",
+		"projects:\n  agent: coder",
+	);
+});
+
+test("a project attached to no runnable agent says why", async ({ page }) => {
+	await setup(page, {
+		config: {
+			server: {},
+			agents: CONFIG.agents,
+			projects: { list: [{ target: "lsegal/aviary", agent: "gone" }] },
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	await expect(page.getByTestId("agent-problem")).toHaveText(
+		'Agent "gone" is not configured.',
+	);
+	await page.locator('[data-field="agent"]').selectOption("");
+	await expect(page.getByTestId("agent-problem")).toContainText(
+		"models.defaults names no cli/ model",
 	);
 });
 
@@ -480,13 +490,12 @@ test("a new project with its own settings is written before it starts", async ({
 }) => {
 	const calls = await setup(page);
 	await page.goto("/projects/lsegal%2Fzvidlib/settings?add=1");
-	const codex = page.locator('[data-cli="codex"]');
-	await codex.getByRole("button", { name: "gpt-5.5", exact: true }).click();
+	await page.locator('[data-field="agent"]').selectOption("atlas");
 	await page.getByRole("button", { name: "Save and start watching" }).click();
 	await expect(page).toHaveURL("/projects/lsegal%2Fzvidlib");
 	expect(savedSection(calls).list).toEqual([
 		CONFIG.projects.list[0],
-		{ target: "lsegal/zvidlib", agents: ["codex/gpt-5.5"] },
+		{ target: "lsegal/zvidlib", agent: "atlas" },
 	]);
 	// Saved to the list, so the config watcher starts it; no runtime watch.
 	expect(calls.project_add).toBeUndefined();
@@ -499,16 +508,16 @@ test("saving keeps a project's other per-project settings", async ({
 	const calls = await setup(page, {
 		config: {
 			server: {},
+			agents: CONFIG.agents,
 			projects: { list: [{ target: "lsegal/aviary", other }] },
 		},
 	});
 	await page.goto("/projects/lsegal%2Faviary/settings");
-	const codex = page.locator('[data-cli="codex"]');
-	await codex.getByRole("button", { name: "gpt-5.5", exact: true }).click();
+	await page.locator('[data-field="agent"]').selectOption("atlas");
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedSection(calls).list).toEqual([
-		{ target: "lsegal/aviary", other, agents: ["codex/gpt-5.5"] },
+		{ target: "lsegal/aviary", other, agent: "atlas" },
 	]);
 });
 
@@ -563,7 +572,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	await expect(yaml).toContainText(
 		[
 			"    - target: lsegal/aviary",
-			"      agents: [claude/opus]",
+			"      agent: coder",
 			"      reports:",
 			"        agent: atlas",
 			'        targets: ["slack:main:C123", "session:projects"]',
@@ -578,7 +587,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	expect(savedSection(calls).list).toEqual([
 		{
 			target: "lsegal/aviary",
-			agents: ["claude/opus"],
+			agent: "coder",
 			reports: {
 				agent: "atlas",
 				targets: ["slack:main:C123", "session:projects"],
