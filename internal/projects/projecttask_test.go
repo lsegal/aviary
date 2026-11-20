@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/scheduler"
 )
 
 // scheduledRunner records the issue each run receives, writes a line of
@@ -63,28 +64,25 @@ func scheduledJob(w *Engine, number int) (JobSnapshot, bool) {
 	return JobSnapshot{}, false
 }
 
-func TestEngineRunsScheduledPromptAsBoardJob(t *testing.T) {
+func TestEngineRunsProjectTaskAsBoardJob(t *testing.T) {
 	runner := &scheduledRunner{started: make(chan Issue, 1)}
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)
 
-	result, err := w.RunScheduled(ctx, ScheduledRun{ScheduleID: "bot/triage", Name: "triage", Target: "o/r", Repository: "o/r", Prompt: "Triage new issues", Fire: fire})
+	summary, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", Name: "triage", Project: "o/r", Prompt: "Triage new issues", Fire: fire}, "o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != ScheduledRunComplete || result.Summary != "Opened issue #12 for the stale lockfile" {
-		t.Fatalf("result = %+v", result)
+	if summary != "Opened issue #12 for the stale lockfile" {
+		t.Fatalf("summary = %q", summary)
 	}
 	issue := <-runner.started
 	if issue.Prompt != "Triage new issues" || issue.ScheduleID != "bot/triage" || issue.Repository != "o/r" {
 		t.Fatalf("runner got %+v", issue)
 	}
-	if result.Job != int(fire.Unix()) {
-		t.Fatalf("job number = %d, want the fire time %d", result.Job, fire.Unix())
-	}
-	job, ok := scheduledJob(w, result.Job)
+	job, ok := scheduledJob(w, int(fire.Unix()))
 	if !ok {
-		t.Fatal("the scheduled run has no board job")
+		t.Fatal("the project task has no board job numbered by its fire time")
 	}
 	if job.Kind != core.JobKindSchedule || job.ScheduleID != "bot/triage" || job.Title != "triage" || job.Status != "complete" {
 		t.Fatalf("job = %+v", job)
@@ -94,106 +92,116 @@ func TestEngineRunsScheduledPromptAsBoardJob(t *testing.T) {
 	}
 }
 
-func TestEngineScheduledRunsGetDistinctJobs(t *testing.T) {
+func TestEngineProjectTasksGetDistinctJobs(t *testing.T) {
 	runner := &scheduledRunner{started: make(chan Issue, 2)}
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Now()
-	first, _ := w.RunScheduled(ctx, ScheduledRun{ScheduleID: "bot/a", Target: "o/r", Prompt: "a", Fire: fire})
-	second, _ := w.RunScheduled(ctx, ScheduledRun{ScheduleID: "bot/b", Target: "o/r", Prompt: "b", Fire: fire})
-	if first.Job == second.Job {
-		t.Fatalf("two runs fired in the same second share job #%d", first.Job)
+	for _, id := range []string{"bot/a", "bot/b"} {
+		if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: id, Project: "o/r", Prompt: id, Fire: fire}, "o/r"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, okFirst := scheduledJob(w, int(fire.Unix()))
+	second, okSecond := scheduledJob(w, int(fire.Unix())+1)
+	if !okFirst || !okSecond || first.ScheduleID == second.ScheduleID {
+		t.Fatalf("two runs fired in the same second did not get distinct jobs: %+v %+v", first, second)
 	}
 }
 
-func TestEngineStopsScheduledRunAndRefusesPause(t *testing.T) {
+func TestEngineStopsProjectTaskAndRefusesPauseAndRetry(t *testing.T) {
 	runner := &scheduledRunner{started: make(chan Issue, 1), block: true}
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Now()
-	results := make(chan ScheduledRunResult, 1)
+	errs := make(chan error, 1)
 	go func() {
-		result, err := w.RunScheduled(ctx, ScheduledRun{ScheduleID: "bot/watch", Target: "o/r", Prompt: "watch", Fire: fire})
-		if err != nil {
-			t.Error(err)
-		}
-		results <- result
+		_, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/watch", Project: "o/r", Prompt: "watch", Fire: fire}, "o/r")
+		errs <- err
 	}()
 	select {
 	case <-runner.started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("the scheduled run did not start")
+		t.Fatal("the project task did not start")
 	}
 	number := int(fire.Unix())
 	if err := w.handleJobAction(ctx, jobAction{Action: "pause", Target: "o/r", Number: number}); err == nil || !strings.Contains(err.Error(), "cannot be paused") {
 		t.Fatalf("pause = %v, want it refused", err)
 	}
-	if err := w.handleJobAction(ctx, jobAction{Action: "retry", Target: "o/r", Number: number}); err == nil {
-		t.Fatal("retry of a running scheduled job was accepted")
+	if err := w.handleJobAction(ctx, jobAction{Action: "retry", Target: "o/r", Number: number}); !errors.Is(err, errScheduledRetry) {
+		t.Fatalf("retry = %v, want it left to core's scheduler", err)
 	}
 	if err := w.handleJobAction(ctx, jobAction{Action: "stop", Target: "o/r", Number: number}); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	result := <-results
-	if result.Status != ScheduledRunStopped {
-		t.Fatalf("result = %+v, want stopped", result)
+	if err := <-errs; !errors.Is(err, context.Canceled) {
+		t.Fatalf("run error = %v, want it canceled", err)
 	}
 	if job, _ := scheduledJob(w, number); job.Status != "failed" {
 		t.Fatalf("stopped job status = %q", job.Status)
 	}
 }
 
-func TestEngineRetryOfScheduledJobFiresTheScheduleAgain(t *testing.T) {
-	runner := &scheduledRunner{started: make(chan Issue, 1)}
-	w, ctx := startScheduledEngine(t, runner)
-	reran := make(chan string, 1)
-	w.SetScheduleRerun(func(id string) error {
-		reran <- id
-		return nil
-	})
-	result, err := w.RunScheduled(ctx, ScheduledRun{ScheduleID: "bot/digest", Target: "o/r", Prompt: "digest"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := w.handleJobAction(ctx, jobAction{Action: "retry", Target: "o/r", Number: result.Job}); err != nil {
-		t.Fatalf("retry: %v", err)
-	}
-	if id := <-reran; id != "bot/digest" {
-		t.Fatalf("reran %q", id)
-	}
-}
-
-func TestEngineScheduledRunStopsWithItsCaller(t *testing.T) {
+func TestEngineProjectTaskStopsWithItsCaller(t *testing.T) {
 	runner := &scheduledRunner{started: make(chan Issue, 1), block: true}
 	w, ctx := startScheduledEngine(t, runner)
 	callerCtx, cancel := context.WithCancel(ctx)
-	results := make(chan ScheduledRunResult, 1)
+	errs := make(chan error, 1)
 	go func() {
-		result, _ := w.RunScheduled(callerCtx, ScheduledRun{ScheduleID: "bot/x", Target: "o/r", Prompt: "x"})
-		results <- result
+		_, err := w.runProjectTask(callerCtx, scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x"}, "o/r")
+		errs <- err
 	}()
 	<-runner.started
 	cancel()
 	select {
-	case result := <-results:
-		if result.Status != ScheduledRunStopped {
-			t.Fatalf("result = %+v, want stopped", result)
+	case err := <-errs:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("run error = %v, want it canceled", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancelling the caller did not stop the run")
 	}
 }
 
-func TestScheduledRunOutcome(t *testing.T) {
-	if got := scheduledRunOutcome(nil, nil, "a\n\nlast line\n"); got.Status != ScheduledRunComplete || got.Summary != "last line" {
+func TestProjectTaskOutcome(t *testing.T) {
+	if got := projectTaskOutcome(nil, nil, "a\n\nlast line\n"); got.err != nil || got.summary != "last line" || projectTaskStatus(got) != "complete" {
 		t.Fatalf("complete = %+v", got)
 	}
-	if got := scheduledRunOutcome(errors.New("exit status 1\nmore"), nil, ""); got.Status != ScheduledRunFailed || got.Summary != "exit status 1" {
+	if got := projectTaskOutcome(errors.New("exit status 1\nmore"), nil, ""); got.err == nil || got.summary != "exit status 1" || projectTaskStatus(got) != "failed" {
 		t.Fatalf("failed = %+v", got)
 	}
-	if got := scheduledRunOutcome(context.Canceled, errWorkStoppedFromWebUI, ""); got.Status != ScheduledRunStopped {
+	if got := projectTaskOutcome(context.Canceled, errWorkStoppedFromWebUI, ""); !errors.Is(got.err, context.Canceled) || projectTaskStatus(got) != "stopped" {
 		t.Fatalf("stopped = %+v", got)
 	}
-	if got := scheduledRunOutcome(&scheduledWakeup{Delay: time.Minute}, nil, "done"); got.Status != ScheduledRunComplete {
+	if got := projectTaskOutcome(&scheduledWakeup{Delay: time.Minute}, nil, "done"); got.err != nil {
 		t.Fatalf("a pending wakeup = %+v, want complete", got)
+	}
+}
+
+func TestManagerRunProjectTaskNeedsAWatchedProject(t *testing.T) {
+	m := newTestManager(t)
+	if _, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/unwatched", Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "not watched") {
+		t.Fatalf("err = %v, want the unwatched project refused", err)
+	}
+}
+
+func TestManagerScheduledRetry(t *testing.T) {
+	m := newTestManager(t)
+	if _, err := m.ScheduledRetry("o/r", 1); !errors.Is(err, ErrNotWatching) {
+		t.Fatalf("without an engine = %v, want ErrNotWatching", err)
+	}
+	m.running = &engineRun{engine: &Engine{}}
+	m.snapshot.Store(&core.Snapshot{Jobs: []core.JobSnapshot{
+		{Number: 1, Target: "o/r", Kind: core.JobKindSchedule, ScheduleID: "bot/digest", Status: "complete"},
+		{Number: 2, Target: "o/r", Kind: core.JobKindSchedule, ScheduleID: "bot/digest", Status: "active"},
+		{Number: 3, Target: "o/r", Kind: core.JobKindIssue, Status: "failed"},
+	}})
+	if id, err := m.ScheduledRetry("o/r", 1); err != nil || id != "bot/digest" {
+		t.Fatalf("finished scheduled job = %q, %v; want its task", id, err)
+	}
+	if _, err := m.ScheduledRetry("o/r", 2); err == nil {
+		t.Fatal("retry of a running scheduled job was accepted")
+	}
+	if id, err := m.ScheduledRetry("o/r", 3); err != nil || id != "" {
+		t.Fatalf("issue job = %q, %v; want it left to JobAction", id, err)
 	}
 }
 

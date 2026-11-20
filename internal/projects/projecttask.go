@@ -40,6 +40,9 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 // when the job is a scheduled run, after checking the job can be retried. It
 // returns "" for any other job, which JobAction retries itself.
 func (m *Manager) ScheduledRetry(target string, number int) (string, error) {
+	if m.engine() == nil {
+		return "", ErrNotWatching
+	}
 	job, err := findJob(m.currentSnapshot().Jobs, target, number)
 	if err != nil {
 		return "", err
