@@ -16,7 +16,7 @@ import (
 func lockFile(file *os.File) error {
 	err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
-		return errProfileLocked
+		return ErrProfileLocked
 	}
 	if err != nil {
 		return fmt.Errorf("lock browser profile: %w", err)
@@ -28,11 +28,11 @@ func lockFile(file *os.File) error {
 // running on, pointing at "<hostname>-<pid>".
 const chromeSingletonLock = "SingletonLock"
 
-// browserHoldsProfile reports whether a live Chromium process, such as
+// chromeHoldsProfile reports whether a live Chromium process, such as
 // Aviary's own browser, already runs on profile. A lock left by a browser
 // that has exited, or one written on another host, does not count: Chromium
 // takes over a stale lock itself.
-func browserHoldsProfile(profile string) bool {
+func chromeHoldsProfile(profile string) bool {
 	target, err := os.Readlink(filepath.Join(profile, chromeSingletonLock))
 	if err != nil {
 		return false

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	aviarybrowser "github.com/lsegal/aviary/internal/browser"
 )
 
 // Files the stand-in browser and the window tests talk through, in its
@@ -31,9 +33,9 @@ func serveFakeWindow(dataDir string) {
 		return err == nil
 	}
 	http.HandleFunc("/json/list", func(w http.ResponseWriter, _ *http.Request) {
-		targets := []targetInfo{}
+		targets := []aviarybrowser.ChromeTab{}
 		if !exists(fakeWindowClosed) {
-			targets = append(targets, targetInfo{ID: "window", Type: "page"})
+			targets = append(targets, aviarybrowser.ChromeTab{ID: "window", Type: "page"})
 		}
 		_ = json.NewEncoder(w).Encode(targets)
 		_ = os.WriteFile(filepath.Join(dataDir, fakeWindowListed), nil, 0o600)
@@ -194,13 +196,13 @@ func TestOpenWindowKillsABrowserThatWillNotShutDown(t *testing.T) {
 // launch this must not fall back to one.
 func TestOpenWindowRefusesAProfileAnotherInstanceHolds(t *testing.T) {
 	config := fakeWindowConfig(t)
-	lock, err := lockProfile(config.Profile)
+	lock, err := aviarybrowser.LockProfile(config.Profile)
 	if err != nil {
-		t.Fatalf("lockProfile() error = %v", err)
+		t.Fatalf("aviarybrowser.LockProfile() error = %v", err)
 	}
-	defer lock.release()
+	defer lock.Release()
 	err = OpenWindow(context.Background(), config)
-	if !errors.Is(err, errProfileLocked) {
+	if !errors.Is(err, aviarybrowser.ErrProfileLocked) {
 		t.Fatalf("OpenWindow() error = %v, want errProfileLocked", err)
 	}
 	if !strings.Contains(err.Error(), config.Profile) {
@@ -214,19 +216,19 @@ func TestOpenWindowRefusesAProfileAnotherInstanceHolds(t *testing.T) {
 func TestOpenWindowHoldsTheProfileUntilItCloses(t *testing.T) {
 	config := fakeWindowConfig(t)
 	result := openFakeWindow(context.Background(), t, config)
-	if lock, err := lockProfile(config.Profile); !errors.Is(err, errProfileLocked) {
-		lock.release()
-		t.Fatalf("lockProfile() with the window open error = %v, want errProfileLocked", err)
+	if lock, err := aviarybrowser.LockProfile(config.Profile); !errors.Is(err, aviarybrowser.ErrProfileLocked) {
+		lock.Release()
+		t.Fatalf("aviarybrowser.LockProfile() with the window open error = %v, want errProfileLocked", err)
 	}
 	touchProfileFile(t, config, fakeBrowserQuit)
 	if err := awaitWindowResult(t, result); err != nil {
 		t.Fatalf("OpenWindow() error = %v", err)
 	}
-	lock, err := lockProfile(config.Profile)
+	lock, err := aviarybrowser.LockProfile(config.Profile)
 	if err != nil {
-		t.Fatalf("lockProfile() after the window closed error = %v", err)
+		t.Fatalf("aviarybrowser.LockProfile() after the window closed error = %v", err)
 	}
-	lock.release()
+	lock.Release()
 }
 
 // Chrome hands off to a browser already on the directory and exits, which only
@@ -241,7 +243,6 @@ func TestOpenWindowReportsABrowserThatHandsOff(t *testing.T) {
 }
 
 func TestOpenWindowReportsAMissingBinary(t *testing.T) {
-	fakeLookup(t, nil, nil)
 	if err := OpenWindow(context.Background(), Config{Binary: "not-a-browser", Profile: t.TempDir()}); err == nil {
 		t.Fatal("OpenWindow() error = nil, want the missing binary reported")
 	}
@@ -255,12 +256,12 @@ func TestCloseOverDevToolsShutsDownARealBrowser(t *testing.T) {
 	defer func() { _ = live.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	base := debugURL(live.cmd.port)
-	if err := closeOverDevTools(ctx, live.cmd.wsURL); err != nil {
-		t.Fatalf("closeOverDevTools() error = %v", err)
+	base := live.cmd.BaseURL()
+	if err := aviarybrowser.CloseOverDevTools(ctx, live.cmd.WSURL); err != nil {
+		t.Fatalf("CloseOverDevTools() error = %v", err)
 	}
 	for {
-		if _, err := webSocketURL(ctx, base); err != nil {
+		if _, err := aviarybrowser.WebSocketURL(ctx, base); err != nil {
 			if ctx.Err() != nil {
 				t.Fatal("the browser was still answering after being asked to shut down")
 			}
