@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/version"
 )
 
 // Definition is everything aviary needs to know to invoke one agent CLI. It is
@@ -473,6 +475,17 @@ type Doctor struct {
 	// signed-out account on a zero exit status, where the exit code alone
 	// says nothing. It needs Auth.
 	SignedIn string `json:"signedIn,omitempty"`
+	// SignedInJSON is where the auth command's JSON output says whether the
+	// CLI is signed in, as a dotted path in the ModelsJSON grammar that has to
+	// end on true -- "loggedIn" for `claude auth status`. It is SignedIn for a
+	// CLI that answers in JSON, and it needs Auth.
+	SignedInJSON string `json:"signedInJSON,omitempty"`
+	// AuthDetail and AuthDetailJSON read how the CLI is signed in out of the
+	// auth command's output -- the first capture group of the expression, or
+	// the value at the path -- so the report can say "signed in (claude.ai)"
+	// rather than only "signed in". They need Auth.
+	AuthDetail     string `json:"authDetail,omitempty"`
+	AuthDetailJSON string `json:"authDetailJSON,omitempty"`
 	// Models is the argv that lists the models the agent accepts, one per
 	// line on its stdout, or in JSON when ModelsJSON says where. It is what
 	// makes a provider-agnostic CLI usable from --agent: the report renders
@@ -551,8 +564,17 @@ func (d Doctor) TimeoutDuration() time.Duration {
 }
 
 // ReportsSignedIn reads the auth probe's output. With no SignedIn expression
-// the exit status has already decided, so any output counts.
+// or SignedInJSON path the exit status has already decided, so any output
+// counts.
 func (d Doctor) ReportsSignedIn(output string) bool {
+	if path := strings.TrimSpace(d.SignedInJSON); path != "" {
+		for _, value := range valuesFromJSON(path, output) {
+			if value == "true" {
+				return true
+			}
+		}
+		return false
+	}
 	if strings.TrimSpace(d.SignedIn) == "" {
 		return true
 	}
@@ -561,6 +583,35 @@ func (d Doctor) ReportsSignedIn(output string) bool {
 		return false
 	}
 	return expr.MatchString(output)
+}
+
+// AuthDetailFrom reads how the CLI is signed in out of the auth probe's
+// output, empty when the definition declares no way to tell or the output
+// does not say.
+func (d Doctor) AuthDetailFrom(output string) string {
+	if path := strings.TrimSpace(d.AuthDetailJSON); path != "" {
+		if values := valuesFromJSON(path, output); len(values) > 0 {
+			return values[0]
+		}
+		return ""
+	}
+	pattern := strings.TrimSpace(d.AuthDetail)
+	if pattern == "" {
+		return ""
+	}
+	expr, err := regexp.Compile(pattern)
+	if err != nil {
+		return ""
+	}
+	match := expr.FindStringSubmatch(output)
+	switch {
+	case match == nil:
+		return ""
+	case len(match) > 1:
+		return strings.TrimSpace(match[1])
+	default:
+		return strings.TrimSpace(match[0])
+	}
 }
 
 // ModelsFrom reads the model list out of the probe's output, one model per
@@ -605,7 +656,7 @@ func (d Doctor) ModelsFrom(output string) []string {
 // and every line otherwise.
 func (d Doctor) modelCandidates(output string) []string {
 	if path := strings.TrimSpace(d.ModelsJSON); path != "" {
-		return modelsFromJSON(path, output)
+		return valuesFromJSON(path, output)
 	}
 	return strings.Split(output, "\n")
 }
@@ -627,8 +678,18 @@ func (d Doctor) validate() error {
 			return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
 		}
 	}
-	if len(d.Auth) == 0 && strings.TrimSpace(d.SignedIn) != "" {
-		return fmt.Errorf(`field "doctor.signedIn" is only meaningful alongside "doctor.auth"`)
+	for field, declared := range map[string]bool{
+		"doctor.signedIn":       strings.TrimSpace(d.SignedIn) != "",
+		"doctor.signedInJSON":   strings.TrimSpace(d.SignedInJSON) != "",
+		"doctor.authDetail":     strings.TrimSpace(d.AuthDetail) != "",
+		"doctor.authDetailJSON": strings.TrimSpace(d.AuthDetailJSON) != "",
+	} {
+		if declared && len(d.Auth) == 0 {
+			return fmt.Errorf(`field %q is only meaningful alongside "doctor.auth"`, field)
+		}
+	}
+	if strings.TrimSpace(d.SignedIn) != "" && strings.TrimSpace(d.SignedInJSON) != "" {
+		return fmt.Errorf(`fields "doctor.signedIn" and "doctor.signedInJSON" cannot both be set`)
 	}
 	for field, declared := range map[string]bool{
 		"doctor.modelPattern": strings.TrimSpace(d.ModelPattern) != "",
@@ -644,12 +705,15 @@ func (d Doctor) validate() error {
 			return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
 		}
 	}
-	if path := strings.TrimSpace(d.ModelsJSON); path != "" {
+	for field, path := range map[string]string{"doctor.modelsJSON": d.ModelsJSON, "doctor.signedInJSON": d.SignedInJSON, "doctor.authDetailJSON": d.AuthDetailJSON} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
 		if _, err := parseModelPath(path); err != nil {
-			return fmt.Errorf(`field "doctor.modelsJSON": %w`, err)
+			return fmt.Errorf("field %q: %w", field, err)
 		}
 	}
-	for field, pattern := range map[string]string{"doctor.signedIn": d.SignedIn, "doctor.modelPattern": d.ModelPattern} {
+	for field, pattern := range map[string]string{"doctor.signedIn": d.SignedIn, "doctor.authDetail": d.AuthDetail, "doctor.modelPattern": d.ModelPattern} {
 		if strings.TrimSpace(pattern) == "" {
 			continue
 		}
@@ -780,7 +844,7 @@ func (d Definition) Validate() error {
 		return fmt.Errorf(`field "binary" is required`)
 	}
 	if minVersion := strings.TrimSpace(d.MinVersion); minVersion != "" {
-		if _, ok := ParseVersion(minVersion); !ok {
+		if _, ok := version.Parse(minVersion); !ok {
 			return fmt.Errorf(`field "minVersion": %q must be a dotted version such as "0.58.0"`, d.MinVersion)
 		}
 	}

@@ -24,6 +24,9 @@
   "skills": {"target": "claude-code"},
   "promptStdin": [],
   "doctor": {
+    "auth": ["{binary}", "auth", "status"],
+    "signedInJSON": "loggedIn",
+    "authDetailJSON": "authMethod",
     "knownModels": ["opus", "sonnet", "haiku", "claude-opus-5-5"],
     "modelsNote": "known Claude aliases and model ids; the CLI may accept others"
   },

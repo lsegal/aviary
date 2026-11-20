@@ -13,13 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/version"
 )
 
 const (
@@ -69,12 +69,6 @@ type releasePayload struct {
 	} `json:"assets"`
 }
 
-type parsedVersion struct {
-	major int
-	minor int
-	patch int
-}
-
 var (
 	emulateMu     sync.RWMutex
 	emulateLocal  string
@@ -106,10 +100,10 @@ func ConfigureEmulation(raw string) error {
 	}
 	local := strings.TrimSpace(parts[0])
 	remote := strings.TrimSpace(parts[1])
-	if _, err := parseSemver(local); err != nil {
+	if _, err := version.ParseRelease(local); err != nil {
 		return fmt.Errorf("invalid emulated local version: %w", err)
 	}
-	if _, err := parseSemver(remote); err != nil {
+	if _, err := version.ParseRelease(remote); err != nil {
 		return fmt.Errorf("invalid emulated remote version: %w", err)
 	}
 	emulateLocal = local
@@ -127,7 +121,7 @@ func EmulationActive() bool {
 
 // IsDevBuild reports whether the current binary version is not a clean semver release.
 func IsDevBuild() bool {
-	_, err := parseSemver(buildinfo.Version)
+	_, err := version.ParseRelease(buildinfo.Version)
 	return err != nil
 }
 
@@ -271,12 +265,12 @@ func NormalizeVersion(version string) string {
 // SameVersion reports whether a and b name the same release, ignoring a
 // leading "v". Non-semver versions compare as plain strings.
 func SameVersion(a, b string) bool {
-	pa, errA := parseSemver(a)
-	pb, errB := parseSemver(b)
+	pa, errA := version.ParseRelease(a)
+	pb, errB := version.ParseRelease(b)
 	if errA != nil || errB != nil {
 		return NormalizeVersion(a) == NormalizeVersion(b)
 	}
-	return compareSemver(pa, pb) == 0
+	return version.CompareReleases(pa, pb) == 0
 }
 
 // ReleaseURL returns the GitHub release page for version in repo.
@@ -311,25 +305,25 @@ func compareVersions(current, latest string, emulated bool) (CheckResult, error)
 	if latest != "" {
 		out.ReleaseURL = ReleaseURL(DefaultRepo, latest)
 	}
-	cur, err := parseSemver(current)
+	cur, err := version.ParseRelease(current)
 	if err != nil {
 		out.UpgradeSupported = false
 		out.Message = "current build version is not a semver release"
 		return out, nil
 	}
-	lat, err := parseSemver(latest)
+	lat, err := version.ParseRelease(latest)
 	if err != nil {
 		out.UpgradeSupported = false
 		out.Message = "latest release version is not valid semver"
 		return out, err
 	}
 	out.UpgradeSupported = true
-	out.UpgradeAvailable = compareSemver(cur, lat) < 0
+	out.UpgradeAvailable = version.CompareReleases(cur, lat) < 0
 	return out, nil
 }
 
 func isComparableVersion(v string) bool {
-	_, err := parseSemver(v)
+	_, err := version.ParseRelease(v)
 	return err == nil
 }
 
@@ -504,61 +498,6 @@ func installBinary(src, target string) error {
 
 func isCrossDeviceRename(err error) bool {
 	return errors.Is(err, syscall.EXDEV)
-}
-
-func parseSemver(raw string) (parsedVersion, error) {
-	v := strings.TrimSpace(raw)
-	v = strings.TrimPrefix(v, "v")
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return parsedVersion{}, fmt.Errorf("%q is not X.Y.Z semver", raw)
-	}
-	parsePart := func(s string) (int, error) {
-		if s == "" {
-			return 0, fmt.Errorf("empty semver segment")
-		}
-		for _, r := range s {
-			if r < '0' || r > '9' {
-				return 0, fmt.Errorf("invalid semver segment %q", s)
-			}
-		}
-		return strconv.Atoi(s)
-	}
-	major, err := parsePart(parts[0])
-	if err != nil {
-		return parsedVersion{}, err
-	}
-	minor, err := parsePart(parts[1])
-	if err != nil {
-		return parsedVersion{}, err
-	}
-	patch, err := parsePart(parts[2])
-	if err != nil {
-		return parsedVersion{}, err
-	}
-	return parsedVersion{major: major, minor: minor, patch: patch}, nil
-}
-
-func compareSemver(a, b parsedVersion) int {
-	switch {
-	case a.major != b.major:
-		return cmpInt(a.major, b.major)
-	case a.minor != b.minor:
-		return cmpInt(a.minor, b.minor)
-	default:
-		return cmpInt(a.patch, b.patch)
-	}
-}
-
-func cmpInt(a, b int) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
 }
 
 // ClearCache forgets the cached version check so the next Check asks GitHub.
