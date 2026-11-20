@@ -97,8 +97,14 @@ func runLifecycleAviary(mode string) {
 		Supervisor: lifecycleSupervisor{started: started},
 	}
 	done := make(chan error, 1)
+	// launched closes once the launch path has finished starting the browser.
+	// OpenWindow only returns when the window closes, so window mode is
+	// launched as soon as the browser answers; Start must return first, or a
+	// signal sent on the ready file cancels it mid-launch.
+	launched := make(chan struct{})
 	switch mode {
 	case lifecycleWindow:
+		close(launched)
 		go func() { done <- OpenWindow(ctx, config) }()
 	case lifecycleDriver:
 		go func() {
@@ -107,6 +113,7 @@ func runLifecycleAviary(mode string) {
 				done <- err
 				return
 			}
+			close(launched)
 			<-ctx.Done()
 			done <- driver.Close()
 		}()
@@ -121,6 +128,11 @@ func runLifecycleAviary(mode string) {
 	}
 	if _, err := aviarybrowser.WaitForReady(ctx, aviarybrowser.DebugURL(debugPort(cmd.Args)), aviarybrowser.OwnedReadyTimeout, aviarybrowser.OwnedReadyInterval); err != nil {
 		fail(err)
+	}
+	select {
+	case <-launched:
+	case err := <-done:
+		fail(fmt.Errorf("browser never finished starting: %v", err))
 	}
 	if err := os.WriteFile(filepath.Join(dir, lifecycleReady), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 		fail(err)
