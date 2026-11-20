@@ -132,3 +132,85 @@ test("upgrade dialog says nothing will stop when no jobs run", async ({
 		"No jobs are running, so nothing will be stopped.",
 	);
 });
+
+function gitCheck(dirty: boolean) {
+	return {
+		currentVersion: "dev",
+		latestVersion: "abc1234",
+		upgradeAvailable: true,
+		upgradeSupported: !dirty,
+		message: dirty
+			? "Updating is blocked: the checkout at /src/aviary has uncommitted changes."
+			: "origin/main is 1 commit(s) ahead of this checkout.",
+		git: {
+			dir: "/src/aviary",
+			branch: "main",
+			upstream: "origin/main",
+			behind: 1,
+			ahead: 0,
+			dirty,
+			hotReload: true,
+		},
+		restart: { phase: "idle", jobs: [], held: false },
+	};
+}
+
+test("dev checkout pulls from git without restarting", async ({ page }) => {
+	const upgrades: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: gitCheck(false),
+		server_upgrade: (args?: Record<string, unknown>) => {
+			upgrades.push(args ?? {});
+			return {
+				phase: "idle",
+				jobs: [],
+				held: false,
+				noop: true,
+				message:
+					"Pulled 1 commit(s) (1111111 → abc1234). Hot reload is rebuilding Aviary with the new code.",
+			};
+		},
+	});
+	await page.goto("/overview");
+
+	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toContainText(
+		"Update this checkout to origin/main (abc1234)",
+	);
+	await expect(dialog).toContainText("git pull --ff-only");
+	await expect(dialog).toContainText("hot reload rebuilds Aviary");
+	await expect(
+		dialog.getByRole("button", { name: "When no jobs are running" }),
+	).toHaveCount(0);
+
+	await dialog.getByRole("button", { name: "Pull" }).click();
+	await expect(dialog).toBeHidden();
+	expect(upgrades).toEqual([{ version: "abc1234", when: "now" }]);
+	await expect(page.getByTestId("update-notice").first()).toContainText(
+		"Hot reload is rebuilding Aviary",
+	);
+	await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+test("dev checkout with local changes blocks the update and says why", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: gitCheck(true),
+	});
+	await page.goto("/overview");
+
+	await expect(
+		page.getByRole("button", { name: "Upgrade", exact: true }),
+	).toBeDisabled();
+	await expect(page.getByTestId("version-message").first()).toContainText(
+		"uncommitted changes",
+	);
+});
