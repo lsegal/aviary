@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // ProjectsConfig is the projects: section of aviary.yaml. Every field is
@@ -49,7 +51,10 @@ type ProjectsConfig struct {
 	// Its model and fallbacks are the provider and model defaults of their
 	// jobs.
 	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
-	// Yolo disables the CLI providers' sandboxes and permission checks.
+	// ApprovalMode is the Projects surface's approval-mode override for the
+	// CLI runs it launches. Empty follows approval.mode.
+	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
+	// Yolo is the full approval mode, honoured when ApprovalMode is unset.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
 	NoMerge bool `yaml:"no_merge,omitempty" json:"no_merge,omitempty"`
@@ -267,7 +272,7 @@ func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 && p.Agent == "" &&
-		!p.Yolo && !p.NoMerge && !p.NoChangelog &&
+		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }

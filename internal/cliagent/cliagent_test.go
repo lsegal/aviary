@@ -174,10 +174,12 @@ func TestParseModel_BackendAsProvider(t *testing.T) {
 }
 
 func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
-	args := claudeArgs(Options{Model: "opus", SystemPrompt: "rules", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret", NewSessionID: "abc"}, "")
+	args := claudeArgs(Options{Model: "opus", SystemPrompt: "rules", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret", NewSessionID: "abc", Approval: []string{"--permission-mode", "dontAsk"}}, "")
 	assert.Equal(t, "", args[slices.Index(args, "--tools")+1])
 	assert.Equal(t, "mcp__aviary", args[slices.Index(args, "--allowedTools")+1])
-	assert.NotContains(t, args, "bypassPermissions")
+	// The approval flags are always passed, so a defaultMode in the user's
+	// own Claude settings cannot block Aviary's MCP tools (issue #513).
+	assert.Equal(t, "dontAsk", args[slices.Index(args, "--permission-mode")+1])
 	assert.Contains(t, args, "--strict-mcp-config")
 	assert.Equal(t, "abc", args[slices.Index(args, "--session-id")+1])
 	assert.Equal(t, "rules", args[slices.Index(args, "--system-prompt")+1])
@@ -189,9 +191,10 @@ func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
 }
 
 func TestClaudeArgs_BuiltinToolsOnAndResume(t *testing.T) {
-	args := claudeArgs(Options{Model: "opus", BuiltinTools: true}, "sess-1")
+	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, Approval: []string{"--permission-mode", "auto"}}, "sess-1")
 	assert.NotContains(t, args, "--tools")
-	assert.Equal(t, "bypassPermissions", args[slices.Index(args, "--permission-mode")+1])
+	assert.NotContains(t, args, "--allowedTools")
+	assert.Equal(t, "auto", args[slices.Index(args, "--permission-mode")+1])
 	assert.Equal(t, "sess-1", args[slices.Index(args, "--resume")+1])
 	assert.Equal(t, `{"mcpServers":{}}`, args[slices.Index(args, "--mcp-config")+1])
 
@@ -206,6 +209,8 @@ func TestCodexArgs(t *testing.T) {
 	assert.Equal(t, []string{"exec", "--json"}, args[:2])
 	assert.Contains(t, joined, `sandbox_mode="read-only"`)
 	assert.Contains(t, joined, `web_search="disabled"`)
+	// Without its own tools the agent stays read-only whatever the mode.
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", Approval: []string{"--dangerously-bypass-approvals-and-sandbox"}}, "", nil), "--dangerously-bypass-approvals-and-sandbox")
 	for _, f := range codexBuiltinFeatures {
 		assert.Contains(t, joined, "--disable "+f)
 	}
@@ -216,7 +221,7 @@ func TestCodexArgs(t *testing.T) {
 	assert.NotContains(t, joined, "secret")
 	assert.Equal(t, "-", args[len(args)-1])
 
-	args = codexArgs(Options{Model: "gpt", BuiltinTools: true}, "thread-1", nil)
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", nil)
 	joined = strings.Join(args, " ")
 	assert.Equal(t, []string{"exec", "resume"}, args[:2])
 	assert.Equal(t, []string{"thread-1", "-"}, args[len(args)-2:])

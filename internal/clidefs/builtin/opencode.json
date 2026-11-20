@@ -35,8 +35,9 @@
       {"args": ["{prompt}"]}
     ],
     "vision": [
-      {"args": ["run", "--file", "{image}"]},
+      {"args": ["run"]},
       {"args": ["{approval}"]},
+      {"args": ["--file", "{image}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--variant", "{level}"]},
       {"args": ["{prompt}"]}

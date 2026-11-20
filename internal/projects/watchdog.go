@@ -528,7 +528,7 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 		err := r.runInProcess(ctx, spec, "", prompt, "", os.TempDir(), nil, &text, nil)
 		return text.String(), err
 	}
-	call, err := newOneShotPrompt(definition, clidefs.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Yolo: r.Yolo}, os.TempDir())
+	call, err := newOneShotPrompt(definition, clidefs.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Approval: r.Approval}, os.TempDir())
 	if err != nil {
 		return "", err
 	}

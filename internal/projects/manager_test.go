@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -24,7 +25,7 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	m.SetEngineEnabled(false)
-	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}})
+	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}, config.ApprovalConfig{})
 	return m
 }
 
@@ -34,7 +35,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 		{Name: "shared", Model: "cli/codex"},
 		{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}},
 		{Name: "high", Model: "cli/codex:high"},
-	}, config.ModelsConfig{})
+	}, config.ModelsConfig{}, config.ApprovalConfig{})
 	m.Reconcile(config.ProjectsConfig{
 		List:        []config.ProjectConfig{{Target: "o/a", Agent: "opus"}, {Target: "o/b"}},
 		Agent:       "shared",
@@ -76,7 +77,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 
 func TestManagerSettingsRejectUnattachedProjects(t *testing.T) {
 	m := newTestManager(t)
-	m.SetAgents([]config.AgentConfig{{Name: "nomodel"}}, config.ModelsConfig{})
+	m.SetAgents([]config.AgentConfig{{Name: "nomodel"}}, config.ModelsConfig{}, config.ApprovalConfig{})
 	for name, cfg := range map[string]config.ProjectsConfig{
 		"no agent":      {List: []config.ProjectConfig{{Target: "o/r"}}}, // and no models.defaults
 		"unknown agent": {List: []config.ProjectConfig{{Target: "o/r", Agent: "nobody"}}},
@@ -95,7 +96,7 @@ func TestManagerSettingsRejectUnattachedProjects(t *testing.T) {
 func TestManagerAgentModelsDefaultFromModelsSection(t *testing.T) {
 	m := newTestManager(t)
 	m.SetAgents([]config.AgentConfig{{Name: "plain"}, {Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}}},
-		config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}})
+		config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}}, config.ApprovalConfig{})
 	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a", Agent: "plain"}, {Target: "o/b", Agent: "api"}}})
 	m.mu.Lock()
 	s, err := m.settingsLocked()
@@ -129,7 +130,7 @@ func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {
 		"delivery":    func(s *engineSettings) { s.Delivery = "webhook" },
 		"ready label": func(s *engineSettings) { s.ReadyLabel = "go" },
 		"filter":      func(s *engineSettings) { s.Filter = "label:x" },
-		"yolo":        func(s *engineSettings) { s.Yolo = true },
+		"yolo":        func(s *engineSettings) { s.Approval = clidefs.ApprovalFull },
 	} {
 		changed := base
 		change(&changed)
@@ -307,7 +308,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Shutdown)
-	m.SetAgents([]config.AgentConfig{{Name: "coder", Model: "cli/codex"}}, config.ModelsConfig{})
+	m.SetAgents([]config.AgentConfig{{Name: "coder", Model: "cli/codex"}}, config.ModelsConfig{}, config.ApprovalConfig{})
 	recordLogs(t, m)
 	var lookups atomic.Int32
 	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
@@ -343,5 +344,49 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 	}
 	if got := lookups.Load(); got != 2 {
 		t.Fatalf("lookups = %d, want 2", got)
+	}
+}
+
+// TestManagerSettingsResolveApprovalMode checks Projects jobs run under the
+// Projects override, fall back to the general approval mode without one, and
+// that yolo, in the config or on a watch, is the override's full mode
+// (issue #513).
+func TestManagerSettingsResolveApprovalMode(t *testing.T) {
+	m := newTestManager(t)
+	approval := func() clidefs.ApprovalMode {
+		t.Helper()
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		s, err := m.settingsLocked()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.Approval
+	}
+	models := config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}
+
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	if got := approval(); got != clidefs.ApprovalAuto {
+		t.Fatalf("no setting: approval = %q, want auto", got)
+	}
+	m.SetAgents(nil, models, config.ApprovalConfig{Mode: clidefs.ApprovalReadOnly, Chat: clidefs.ApprovalFull})
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	if got := approval(); got != clidefs.ApprovalReadOnly {
+		t.Fatalf("general setting: approval = %q, want read-only", got)
+	}
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}, ApprovalMode: clidefs.ApprovalAuto})
+	if got := approval(); got != clidefs.ApprovalAuto {
+		t.Fatalf("Projects override: approval = %q, want auto", got)
+	}
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}, Yolo: true})
+	if got := approval(); got != clidefs.ApprovalFull {
+		t.Fatalf("yolo: approval = %q, want full", got)
+	}
+	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	if err := m.AddWatch(Watch{Targets: []string{"o/b"}, Settings: config.ProjectsConfig{Yolo: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := approval(); got != clidefs.ApprovalFull {
+		t.Fatalf("watch --yolo: approval = %q, want full", got)
 	}
 }

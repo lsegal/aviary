@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
@@ -304,4 +305,41 @@ func TestCLIToolScope_RejectsUnknownToken(t *testing.T) {
 	scope.release()
 	_, err = connectCLIMCP(context.Background(), url, scope.token)
 	assert.Error(t, err, "a released token no longer works")
+}
+
+// TestCLITurn_ChatApprovalModeReachesTheCLI checks the chat surface's approval
+// mode is translated through the CLI provider's definition into the flags the
+// CLI starts with, and that changing it restarts the CLI on the next turn
+// (issue #513).
+func TestCLITurn_ChatApprovalModeReachesTheCLI(t *testing.T) {
+	setTestDataDir(t)
+	SetToolClientFactory(func(context.Context) (ToolClient, error) { return &recordingToolClient{}, nil })
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+	fb := useFakeCLI(t)
+
+	m := NewManager(nil)
+	m.Reconcile(&config.Config{
+		Agents:   []config.AgentConfig{{Name: "agent_cli_approval", Model: "cli/claude/opus"}},
+		Approval: config.ApprovalConfig{Mode: clidefs.ApprovalFull, Chat: clidefs.ApprovalReadOnly},
+	})
+	runner, ok := m.Get("agent_cli_approval")
+	require.True(t, ok)
+	t.Cleanup(runner.Stop)
+
+	runCLIPrompt(t, runner, "main", "hi")
+	require.Len(t, fb.turns, 1)
+	assert.Equal(t, []string{"--permission-mode", "dontAsk"}, fb.turns[0].opts.Approval, "the chat override wins over the general mode")
+
+	// With no chat override the general mode applies, on a new CLI process.
+	m.Reconcile(&config.Config{
+		Agents:   []config.AgentConfig{{Name: "agent_cli_approval", Model: "cli/claude/opus"}},
+		Approval: config.ApprovalConfig{Mode: clidefs.ApprovalFull},
+	})
+	runCLIPrompt(t, runner, "main", "again")
+	require.Len(t, fb.turns, 2)
+	require.Len(t, fb.sessions, 2, "a new approval mode starts a new CLI process")
+	assert.Equal(t, []string{"--dangerously-skip-permissions"}, fb.turns[1].opts.Approval)
+
+	assert.Equal(t, []string{"-c", "sandbox_mode=read-only"}, cliApprovalArgs(cliagent.Codex, clidefs.ApprovalReadOnly))
+	assert.Equal(t, []string{"--permission-mode", "auto"}, cliApprovalArgs(cliagent.Claude, ""), "no setting means auto")
 }

@@ -181,12 +181,21 @@ func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 }
 
 // SetAgents records the Aviary agents and the models: section that projects
-// are attached to. A project's jobs run on its agent's model and fallbacks.
-// It takes effect on the next Reconcile.
-func (m *Manager) SetAgents(agents []config.AgentConfig, models config.ModelsConfig) {
+// are attached to, and the approval: section whose general mode jobs follow
+// when Projects has no override. A project's jobs run on its agent's model
+// and fallbacks. It takes effect on the next Reconcile.
+func (m *Manager) SetAgents(agents []config.AgentConfig, models config.ModelsConfig, approval config.ApprovalConfig) {
 	m.mu.Lock()
-	m.agents = &config.Config{Agents: slices.Clone(agents), Models: models}
+	m.agents = &config.Config{Agents: slices.Clone(agents), Models: models, Approval: approval}
 	m.mu.Unlock()
+}
+
+// generalApprovalLocked is the general approval mode SetAgents recorded.
+func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
+	if m.agents == nil {
+		return ""
+	}
+	return m.agents.Approval.Mode
 }
 
 // Reconcile applies a newly loaded projects: section.
@@ -263,14 +272,14 @@ type engineSettings struct {
 	Agents       []string            `json:"agents"`
 	// Definitions are core's cli_definitions when the settings were built, so
 	// a change to them restarts the run on the new CLI providers.
-	Definitions       map[string]any `json:"definitions"`
-	Interval          time.Duration  `json:"interval"`
-	Delivery          string         `json:"delivery"`
-	ReadyLabel        string         `json:"ready_label"`
-	ReadyState        string         `json:"ready_state"`
-	Filter            string         `json:"filter"`
-	AllIssues         bool           `json:"all_issues"`
-	Yolo              bool           `json:"yolo"`
+	Definitions       map[string]any       `json:"definitions"`
+	Interval          time.Duration        `json:"interval"`
+	Delivery          string               `json:"delivery"`
+	ReadyLabel        string               `json:"ready_label"`
+	ReadyState        string               `json:"ready_state"`
+	Filter            string               `json:"filter"`
+	AllIssues         bool                 `json:"all_issues"`
+	Approval          clidefs.ApprovalMode `json:"approval"`
 	Webhook           config.ProjectsWebhookConfig
 	Browser           BrowserOptions `json:"browser"`
 	Concurrency       int            `json:"-"`
@@ -317,6 +326,9 @@ func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
 	}
 	if overlay.Agent != "" {
 		merged.Agent = overlay.Agent
+	}
+	if overlay.ApprovalMode != "" {
+		merged.ApprovalMode = overlay.ApprovalMode
 	}
 	merged.Yolo = merged.Yolo || overlay.Yolo
 	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
@@ -372,7 +384,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		ReadyState:        strings.TrimSpace(cfg.ReadyState),
 		Filter:            cfg.EffectiveFilter(),
 		AllIssues:         cfg.AllIssues,
-		Yolo:              cfg.Yolo,
+		Approval:          cfg.EffectiveApprovalMode(m.generalApprovalLocked()),
 		Concurrency:       cfg.EffectiveConcurrency(),
 		AllowedCommenters: cfg.AllowedCommenters,
 		NoMerge:           cfg.NoMerge,
@@ -644,7 +656,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		TargetAgents:      s.TargetAgents,
 		Repo:              s.Targets[0],
 		Identity:          m.identity,
-		Yolo:              s.Yolo,
+		Approval:          s.Approval,
 		NoMerge:           s.NoMerge,
 		NoChangelog:       s.NoChangelog,
 		Definitions:       registry,

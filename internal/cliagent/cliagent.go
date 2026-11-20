@@ -86,6 +86,10 @@ type Options struct {
 	// BuiltinTools enables the CLI's own shell, file-edit and web tools.
 	// When false they are turned off and only Aviary's MCP tools remain.
 	BuiltinTools bool
+	// Approval are the CLI's native permission flags for the surface's
+	// approval mode, as its CLI provider definition translates it. They are
+	// always passed, so the user's own CLI settings never pick the mode.
+	Approval []string
 	// ResumeID is the CLI-native session ID to resume. Empty starts a new
 	// session; the new ID is reported with an EventSession event.
 	ResumeID string

@@ -208,7 +208,7 @@ func configureCLIProviders(cfg *config.Config) {
 // startProjects applies the projects: section and the startup watches.
 func (s *Server) startProjects() {
 	s.projects.SetBrowser(s.cfg.Browser)
-	s.projects.SetAgents(s.cfg.Agents, s.cfg.Models)
+	s.projects.SetAgents(s.cfg.Agents, s.cfg.Models, s.cfg.Approval)
 	s.projects.Reconcile(s.cfg.Projects)
 	for _, watch := range startupWatches {
 		if err := s.projects.AddWatch(watch); err != nil {
@@ -233,7 +233,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	}
 	if s.projects != nil {
 		s.projects.SetBrowser(newCfg.Browser)
-		s.projects.SetAgents(newCfg.Agents, newCfg.Models)
+		s.projects.SetAgents(newCfg.Agents, newCfg.Models, newCfg.Approval)
 		go s.projects.Reconcile(newCfg.Projects)
 	}
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {

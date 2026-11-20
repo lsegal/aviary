@@ -158,22 +158,27 @@ func TestClineDefinitionRendersModelAndLevel(t *testing.T) {
 	}
 }
 
-// TestClineDefinitionAutoApprovesRegardlessOfYolo records why --yolo renders
-// nothing extra. Cline has no sandbox and no lesser autonomous mode: its only
-// approval control is --auto-approve, which defaults to true and which a run
-// left at false cannot get past headlessly, because there is no terminal to
-// approve on. Passing it explicitly in every mode keeps a user's own
-// configuration from turning a dispatched run into one that never proceeds.
-func TestClineDefinitionAutoApprovesRegardlessOfYolo(t *testing.T) {
+// TestClineDefinitionAutoApprovesUnlessReadOnly records why the full mode
+// renders nothing beyond auto. Cline has no sandbox and no lesser autonomous
+// mode: its only approval control is --auto-approve, which defaults to true and
+// which a run left at false cannot get past headlessly, because there is no
+// terminal to approve on. Passing it explicitly in every mode keeps a user's
+// own configuration from turning a dispatched run into one that never
+// proceeds; read-only adds --plan, which keeps cline from changing anything.
+func TestClineDefinitionAutoApprovesUnlessReadOnly(t *testing.T) {
 	definition := builtinDefinition(t, "cline")
 	for _, mode := range []clidefs.Mode{clidefs.ModeRun, clidefs.ModeResume, clidefs.ModeVision} {
 		safe := definition.Render(mode, clidefs.Values{Prompt: "do it"})
-		yolo := definition.Render(mode, clidefs.Values{Prompt: "do it", Yolo: true})
-		if !reflect.DeepEqual(safe, yolo) {
-			t.Fatalf("%s argv differs on --yolo: %#v vs %#v", mode, safe, yolo)
+		full := definition.Render(mode, clidefs.Values{Prompt: "do it", Approval: clidefs.ApprovalFull})
+		if !reflect.DeepEqual(safe, full) {
+			t.Fatalf("%s argv differs in the full mode: %#v vs %#v", mode, safe, full)
 		}
 		if want := []string{"--auto-approve", "true"}; !reflect.DeepEqual(safe[:2], want) {
 			t.Fatalf("%s argv = %#v, want it to start with %#v", mode, safe, want)
+		}
+		readOnly := definition.Render(mode, clidefs.Values{Prompt: "do it", Approval: clidefs.ApprovalReadOnly})
+		if want := []string{"--plan", "--auto-approve", "true"}; !reflect.DeepEqual(readOnly[:3], want) {
+			t.Fatalf("%s read-only argv = %#v, want it to start with %#v", mode, readOnly, want)
 		}
 	}
 }

@@ -1715,10 +1715,10 @@ func TestCommandRunnerUsesGhDiscussForDiscussionTargets(t *testing.T) {
 
 func TestCommandRunnerYoloDisablesAgentSafetyChecks(t *testing.T) {
 	prompt := "/gh-fix 12\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
-	if got, want := commandArgs(CommandRunner{Agent: "codex", Yolo: true}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "codex", Approval: clidefs.ApprovalFull}, Issue{Number: 12}), []string{"exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex yolo args = %#v, want %#v", got, want)
 	}
-	if got, want := commandArgs(CommandRunner{Agent: "claude", Yolo: true}, Issue{Number: 12}), []string{"-p", "--dangerously-skip-permissions", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}; !reflect.DeepEqual(got, want) {
+	if got, want := commandArgs(CommandRunner{Agent: "claude", Approval: clidefs.ApprovalFull}, Issue{Number: 12}), []string{"-p", "--dangerously-skip-permissions", "--model", claudeDefaultModel, "--output-format", "stream-json", "--verbose", prompt}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude yolo args = %#v, want %#v", got, want)
 	}
 }
@@ -1858,7 +1858,7 @@ func TestAgentFlagCollectsSpecs(t *testing.T) {
 
 func TestCommandRunnerResumesOriginalAgentSession(t *testing.T) {
 	dir := t.TempDir()
-	codex := CommandRunner{Agent: "claude/saved-model:high", Yolo: true}
+	codex := CommandRunner{Agent: "claude/saved-model:high", Approval: clidefs.ApprovalFull}
 	session := AgentSession{ID: "session-7", Agent: "codex", CheckoutDirectory: dir, Resume: true}
 	resumePrompt := "continue\n\nRecover the existing work. If this issue has a draft pull request, inspect it and pull its branch before continuing."
 	wantCodex := []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "--model", codexDefaultModel, "session-7", resumePrompt}
@@ -1866,7 +1866,7 @@ func TestCommandRunnerResumesOriginalAgentSession(t *testing.T) {
 		t.Fatalf("Codex resume args = %#v, want %#v", got, wantCodex)
 	}
 
-	claude := CommandRunner{Agent: "codex/saved-model:medium", Yolo: true}
+	claude := CommandRunner{Agent: "codex/saved-model:medium", Approval: clidefs.ApprovalFull}
 	session.Agent = "claude"
 	wantClaude := []string{"-p", "--resume", "session-7", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", resumePrompt}
 	if got := commandArgsForSession(claude, Issue{Number: 7}, session); !reflect.DeepEqual(got, wantClaude) {

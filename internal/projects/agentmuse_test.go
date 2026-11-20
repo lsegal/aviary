@@ -62,7 +62,7 @@ func TestMuseYoloDefinitionContract(t *testing.T) {
 		Repo:       "o/r",
 		Number:     7,
 		SessionID:  "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-		Yolo:       true,
+		Approval:   clidefs.ApprovalFull,
 		Stdout:     museStream,
 		WantRun: []string{
 			"exec", "--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
