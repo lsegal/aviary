@@ -74,7 +74,6 @@ type Manager struct {
 	// logSource pages core's log ring for project_status; see SetLogSource.
 	logSource atomic.Pointer[LogSource]
 
-
 	snapshot atomic.Pointer[core.Snapshot]
 	reports  *reporter
 	quotas   atomic.Pointer[map[string]string]

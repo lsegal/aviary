@@ -76,16 +76,22 @@ export interface AgentEntry {
 	tasks: AgentTask[];
 }
 
+export type AgentTaskType = "prompt" | "script" | "project";
+
 export interface AgentTask {
 	enabled?: boolean;
 	name: string;
-	type?: "prompt" | "script";
+	type?: AgentTaskType;
 	prompt?: string;
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
 	watch?: string;
 	target?: string;
+	/** The watched project a "project" task runs its prompt against. */
+	project?: string;
+	/** The coding-CLI spec a "project" task runs with; empty uses the project's agent. */
+	cli?: string;
 	from_file?: boolean;
 	file?: string;
 }
@@ -148,6 +154,11 @@ export interface AppConfig {
 	coding_skills?: CodingSkillsConfig;
 	/** The projects: section (non-default values only); edited on project settings pages. */
 	projects: ProjectsSection;
+}
+
+/** Normalizes a task's type, which defaults to prompt. */
+export function agentTaskType(type: string | undefined): AgentTaskType {
+	return type === "script" || type === "project" ? type : "prompt";
 }
 
 function defaultConfig(): AppConfig {
@@ -226,7 +237,7 @@ export const useSettingsStore = defineStore("settings", () => {
 					tasks: (agent.tasks ?? []).map((task) => ({
 						...task,
 						enabled: task.enabled !== false,
-						type: task.type === "script" ? "script" : "prompt",
+						type: agentTaskType(task.type),
 						prompt: task.prompt ?? "",
 					})),
 				})),
