@@ -1,22 +1,6 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
-			<!-- Agent tabs -->
-			<div v-if="!props.agent" class="flex items-end border-b border-gray-200 dark:border-gray-800">
-				<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
-					<button v-for="a in agentsStore.agents" :key="a.id" type="button"
-						class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
-						:class="selectedAgent === a.name
-							? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-							: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-						@click="selectAgent(a.name)">
-						{{ a.name }}
-					</button>
-					<div v-if="!agentsStore.agents.length" class="px-4 py-2.5 text-sm text-gray-400 dark:text-gray-500">No agents
-						configured.</div>
-				</div>
-			</div>
-
 			<!-- Session subtabs -->
 			<div v-if="selectedAgent"
 				class="flex items-end border-b border-gray-200 bg-gray-50 px-4 select-none dark:border-gray-800 dark:bg-gray-900/50">
@@ -96,7 +80,7 @@
 			<div class="relative flex-1 overflow-hidden">
 				<div ref="messagesEl" class="h-full overflow-y-auto px-6 py-4 space-y-4" @scroll="onMessagesScroll">
 					<div v-if="!selectedAgent" class="flex h-full items-center justify-center text-sm text-gray-400">
-						Select an agent to start chatting.
+						Pick an agent in the sidebar to start chatting.
 					</div>
 					<template v-else>
 						<template v-for="item in displayItems"
@@ -220,7 +204,7 @@ import {
 	DropdownMenuRoot,
 	DropdownMenuTrigger,
 } from "radix-vue";
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
@@ -286,7 +270,8 @@ const route = useRoute();
 const router = useRouter();
 const { streamAgent } = useStream();
 function chatPath(agent: string, sessionId?: string): string {
-	return sessionId ? `/chat/${agent}/${sessionId}` : `/chat/${agent}`;
+	const base = `/agents/${encodeURIComponent(agent)}/chat`;
+	return sessionId ? `${base}/${sessionId}` : base;
 }
 
 /** Returns true if an assistant message text looks like an error. */
@@ -567,10 +552,9 @@ async function mountRouteChat() {
 		typeof route.params.agent === "string" ? route.params.agent : "";
 	const routeSessionId =
 		typeof route.params.sessionId === "string" ? route.params.sessionId : "";
+	// The sidebar picks the agent: the route names it.
 	const agentName =
-		agentsStore.agents.find((a) => a.name === routeAgent)?.name ??
-		agentsStore.agents[0]?.name ??
-		"";
+		agentsStore.agents.find((a) => a.name === routeAgent)?.name ?? "";
 	if (agentName) {
 		selectedAgent.value = agentName;
 		await loadSessions(routeSessionId);
@@ -689,7 +673,8 @@ async function loadSessions(preferredSessionId = "") {
 	}
 }
 
-async function selectAgent(name: string) {
+/** Switches to the agent the sidebar navigated to, keeping its session in the URL. */
+async function selectAgent(name: string, sessionId = "") {
 	if (selectedAgent.value === name) return;
 	loadMessagesSeq += 1;
 	selectedAgent.value = name;
@@ -698,9 +683,25 @@ async function selectAgent(name: string) {
 	messages.value = [];
 	resetHistoryNavigation();
 	updateScrollState();
-	await loadSessions();
-	pushChatPath();
+	await loadSessions(sessionId);
+	await loadSessionMessages();
+	router.replace(chatPath(name, selectedSessionId.value));
 }
+
+// The sidebar's Chat links reuse this view, so follow the route's agent.
+watch(
+	() => route.params.agent,
+	async (param) => {
+		if (props.agent || typeof param !== "string") return;
+		await mounted;
+		const name = agentsStore.agents.find((a) => a.name === param)?.name;
+		if (name) {
+			const sessionId =
+				typeof route.params.sessionId === "string" ? route.params.sessionId : "";
+			await selectAgent(name, sessionId);
+		}
+	},
+);
 
 async function selectSession(id: string) {
 	if (selectedSessionId.value === id) return;

@@ -1,9 +1,15 @@
 ﻿<template>
 				<section v-show="activeTab === 'skills'" class="space-y-5 pb-8">
+					<section aria-labelledby="skills-in-providers">
+						<h3 id="skills-in-providers" class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+							Installed in providers</h3>
+						<CodingSkillsPanel v-if="activeTab === 'skills'" />
+					</section>
+
 					<div class="flex items-center justify-between">
 						<div>
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Installed
-								Skills</h3>
+							<h3 id="skills-for-agents" class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+								Available to Aviary agents</h3>
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bundled skills come from the Aviary binary.
 								Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code> and
 								<code class="font-mono">~/.agents/skills</code>.</p>
@@ -19,12 +25,32 @@
 						</button>
 					</div>
 
-					<div v-if="!installedSkills.length"
-						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-						No installed skills found.
+					<div v-if="installedSkills.length" data-testid="skill-filters"
+						class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+						<input v-model="skillSearch" type="search" placeholder="Search installed skills" class="field-input" />
+						<div class="flex flex-wrap items-center justify-between gap-3 text-xs">
+							<div class="flex items-center gap-1" role="group" aria-label="Status">
+								<button v-for="f in skillStatusFilters" :key="f.value" type="button" :aria-pressed="skillStatusFilter === f.value"
+									:class="skillStatusFilter === f.value ? SKILL_FILTER_ON : SKILL_FILTER_OFF" @click="skillStatusFilter = f.value">
+									{{ f.label }}
+								</button>
+							</div>
+							<div class="flex items-center gap-1" role="group" aria-label="Source">
+								<button v-for="f in skillSourceFilters" :key="f.value" type="button" :aria-pressed="skillSourceFilter === f.value"
+									:class="skillSourceFilter === f.value ? SKILL_FILTER_ON : SKILL_FILTER_OFF" @click="skillSourceFilter = f.value">
+									{{ f.label }}
+								</button>
+							</div>
+							<span class="text-gray-500 dark:text-gray-400">{{ enabledSkillCount }} of {{ installedSkills.length }} enabled · showing {{ filteredSkills.length }}</span>
+						</div>
 					</div>
 
-					<div v-for="skill in installedSkills" :key="skill.name"
+					<div v-if="!filteredSkills.length"
+						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+						{{ installedSkills.length ? "No skills match." : "No installed skills found." }}
+					</div>
+
+					<div v-for="skill in filteredSkills" :key="skill.name"
 						class="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 						<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
 							<div class="min-w-0">
@@ -72,17 +98,80 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, inject } from "vue";
+import { computed, defineComponent, inject, ref } from "vue";
+import CodingSkillsPanel from "../skills/CodingSkillsPanel.vue";
 import { settingsViewContextKey } from "./context";
+
+type StatusFilter = "all" | "enabled" | "disabled";
+type SourceFilter = "all" | "builtin" | "disk";
 
 export default defineComponent({
 	name: "SettingsSkillsTab",
+	components: { CodingSkillsPanel },
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {
 			throw new Error("Settings view context is not available.");
 		}
-		return settings;
+		const skillSearch = ref("");
+		const skillStatusFilter = ref<StatusFilter>("all");
+		const skillSourceFilter = ref<SourceFilter>("all");
+		const enabled = (name: string) =>
+			Boolean(settings.skillConfig(name).enabled);
+		const enabledSkillCount = computed(
+			() => settings.installedSkills.value.filter((s) => enabled(s.name)).length,
+		);
+		// Enabled skills first, then by name, narrowed by the search and filters.
+		const filteredSkills = computed(() => {
+			const term = skillSearch.value.trim().toLowerCase();
+			return settings.installedSkills.value
+				.filter((skill) => {
+					if (skillStatusFilter.value !== "all") {
+						if (enabled(skill.name) !== (skillStatusFilter.value === "enabled"))
+							return false;
+					}
+					if (
+						skillSourceFilter.value !== "all" &&
+						skill.source !== skillSourceFilter.value
+					)
+						return false;
+					return (
+						!term ||
+						[skill.name, skill.description ?? "", skill.path].some((v) =>
+							v.toLowerCase().includes(term),
+						)
+					);
+				})
+				.sort((a, b) =>
+					enabled(a.name) !== enabled(b.name)
+						? enabled(a.name)
+							? -1
+							: 1
+						: a.name.localeCompare(b.name),
+				);
+		});
+		return {
+			...settings,
+			skillSearch,
+			skillStatusFilter,
+			skillSourceFilter,
+			skillStatusFilters: [
+				{ label: "All", value: "all" },
+				{ label: "Enabled", value: "enabled" },
+				{ label: "Disabled", value: "disabled" },
+			] as { label: string; value: StatusFilter }[],
+			skillSourceFilters: [
+				{ label: "Any Source", value: "all" },
+				{ label: "Built-in", value: "builtin" },
+				{ label: "Disk", value: "disk" },
+			] as { label: string; value: SourceFilter }[],
+			enabledSkillCount,
+			filteredSkills,
+			SKILL_FILTER_ON:
+				"rounded-full bg-blue-600 px-3 py-1 font-semibold text-white",
+			SKILL_FILTER_OFF:
+				"rounded-full px-3 py-1 font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+		};
 	},
 });
 </script>

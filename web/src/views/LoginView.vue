@@ -49,7 +49,7 @@ async function submit() {
 	loading.value = false;
 	if (ok) {
 		await agentsStore.fetchAgents();
-		await router.push(agentsStore.agents.length === 0 ? "/overview" : "/chat");
+		await router.push(agentsStore.agents.length === 0 ? "/system/overview" : "/agents");
 	} else {
 		errorMsg.value = "Invalid token. Please try again.";
 	}
