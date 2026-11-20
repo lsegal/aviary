@@ -88,7 +88,7 @@ The command returns immediately and runs compilation in the background. Use `tas
 
 **MCP tool:** `config_task_convert_to_script` — accepts `agent` and `task` arguments. Returns a compile ID immediately; track with `task_compile_query`.
 
-**Web UI:** In **Settings → Agents → Tasks**, each prompt-type task shows a **Convert to Script** button. Clicking it starts compilation in the background and opens a notification banner with a link to the Jobs page.
+**Web UI:** In **Agents → *agent* → Tasks**, each prompt-type task shows a **Convert to Script** button. Clicking it starts compilation in the background and opens a notification banner with a link to the Jobs page.
 
 ## Moving Tasks from aviary.yaml to Files
 
@@ -110,7 +110,7 @@ This removes the `daily-report` task from `aviary.yaml` and writes it as `~/.con
 
 **MCP tool:** `config_task_move_to_file` — accepts `agent` and `task` arguments.
 
-**Web UI:** In **Settings → Agents → Tasks**, each inline task has a **Move to File** button that performs the same operation.
+**Web UI:** In **Agents → *agent* → Tasks**, each inline task has a **Move to File** button that performs the same operation.
 
 ## Triggering Tasks
 
@@ -216,7 +216,7 @@ aviary task add assistant nightly-triage "Triage new issues" --project lsegal/av
 
 Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
 
-Project tasks can also be created and edited like any other task under **Settings → Agents & Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a **Model override**, the same model picker channels use, which the project's agent runs the task with instead of its own model.
+Project tasks can also be created and edited like any other task under **Agents → *agent* → Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a **Model override**, the same model picker channels use, which the project's agent runs the task with instead of its own model.
 
 The project's **Schedules** tab lists its scheduled prompts with enable toggles and their last results, and edits every field with a preview of the next fires, the recent runs, Run now, Save and Delete. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 
