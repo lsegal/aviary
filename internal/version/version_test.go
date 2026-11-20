@@ -67,7 +67,6 @@ func TestCompare(t *testing.T) {
 	}
 }
 
-
 // TestFind reads the version string out of the banners the doctor prints.
 func TestFind(t *testing.T) {
 	for text, want := range map[string]string{

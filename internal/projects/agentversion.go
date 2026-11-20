@@ -3,12 +3,11 @@ package projects
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/process"
 )
 
 // agentVersionTimeout bounds the `binary --version` call made before a
@@ -20,9 +19,7 @@ var agentVersionTimeout = 20 * time.Second
 
 // agentVersionCommand reads the binary's reported version. It is a variable so
 // tests can answer without an installed CLI.
-var agentVersionCommand = func(ctx context.Context, binary string) ([]byte, error) {
-	return process.CombinedOutput(exec.CommandContext(ctx, binary, "--version"))
-}
+var agentVersionCommand = clidoctor.ReadVersion
 
 // checkAgentVersion enforces a definition's declared minimum binary version
 // before the agent is dispatched. It returns an error naming the agent, the
@@ -48,15 +45,7 @@ func checkAgentVersion(ctx context.Context, definition agents.Definition, binary
 		return fmt.Sprintf("Warning: could not read a version from %s --version; %s requires %s %s or newer.", binary, definition.Name, definition.Binary, definition.MinVersion), nil
 	}
 	if !supported {
-		return "", definition.VersionTooOldError(binary, firstLine(reported))
+		return "", definition.VersionTooOldError(binary, clidoctor.FirstLine(reported))
 	}
 	return "", nil
-}
-
-// firstLine is the part of a --version output worth quoting back: CLIs that
-// print a banner or an update notice alongside the number would otherwise
-// paste all of it into the error.
-func firstLine(text string) string {
-	line, _, _ := strings.Cut(text, "\n")
-	return strings.TrimSpace(line)
 }

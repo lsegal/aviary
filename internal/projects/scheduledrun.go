@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lsegal/aviary/internal/clidoctor"
 )
 
 // ScheduledRun is one fire of a scheduled prompt: a Projects job that runs
@@ -109,9 +111,9 @@ func scheduledRunOutcome(runErr, cause error, log string) ScheduledRunResult {
 	case errors.Is(cause, errWorkStoppedFromWebUI):
 		return ScheduledRunResult{Status: ScheduledRunStopped, Summary: "stopped by the owner"}
 	case cause != nil && runErr != nil:
-		return ScheduledRunResult{Status: ScheduledRunStopped, Summary: firstLine(cause.Error())}
+		return ScheduledRunResult{Status: ScheduledRunStopped, Summary: clidoctor.FirstLine(cause.Error())}
 	case runErr != nil && !errors.As(runErr, &wakeup):
-		return ScheduledRunResult{Status: ScheduledRunFailed, Summary: firstLine(runErr.Error())}
+		return ScheduledRunResult{Status: ScheduledRunFailed, Summary: clidoctor.FirstLine(runErr.Error())}
 	}
 	return ScheduledRunResult{Status: ScheduledRunComplete, Summary: lastLine(log)}
 }

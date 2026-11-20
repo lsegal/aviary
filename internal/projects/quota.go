@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/process"
 )
@@ -476,7 +477,7 @@ func quotaReading(quota string, tracked bool, err error) string {
 		return text
 	}
 	if err != nil {
-		return "unavailable: " + firstLine(strings.TrimSpace(err.Error()))
+		return "unavailable: " + clidoctor.FirstLine(strings.TrimSpace(err.Error()))
 	}
 	return "unavailable"
 }
