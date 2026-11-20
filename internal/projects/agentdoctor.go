@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/process"
@@ -119,8 +120,9 @@ type agentDoctor struct {
 	version  func(ctx context.Context, binary string) ([]byte, error)
 	run      func(ctx context.Context, argv []string, spec agents.Doctor, stdin []string) ([]byte, bool)
 	quotaFor func(ctx context.Context, name, binary string) (string, error)
-	// skillsNote reports which installed skills are stale.
-	skillsNote func() string
+	// skillsNote reports which of aviary's skills installed for the named
+	// agent are stale.
+	skillsNote func(name string) string
 }
 
 // newAgentDoctor builds the doctor that talks to the real machine.
@@ -132,6 +134,14 @@ func newAgentDoctor(registry *agents.Registry) *agentDoctor {
 		run:      runDoctorProbe,
 		quotaFor: func(ctx context.Context, name, binary string) (string, error) {
 			return readAgentQuota(ctx, registry, name, binary)
+		},
+		skillsNote: func(name string) string {
+			for _, cli := range codingskills.CLIsFromRegistry(registry) {
+				if cli.ID == name {
+					return codingskills.Default().StaleNote(cli)
+				}
+			}
+			return ""
 		},
 	}
 }
@@ -313,7 +323,7 @@ func (d *agentDoctor) reportAgent(ctx context.Context, name string) agentReport 
 	report.auth = d.reportAuth(ctx, definition, path, report.quota)
 	report.models, report.modelNote = d.reportModels(ctx, definition, path)
 	if definition.SkillsTarget() != "" && d.skillsNote != nil {
-		report.skillsNote = d.skillsNote()
+		report.skillsNote = d.skillsNote(name)
 	}
 	return report
 }
