@@ -22,6 +22,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/wake"
 )
 
 const (
@@ -1995,52 +1996,6 @@ func (w *Engine) forgetLogged(key string) bool {
 // read the same in the terminal; this is what tells them apart.
 const pollStallIntervals = 4
 
-// The wake check compares how much wall-clock time passed between two of its
-// ticks with how much should have. A process does not run while the machine
-// sleeps, so the first tick after waking lands long after the one before it.
-// They are variables only so tests need not spend them.
-var (
-	wakeCheckInterval = 15 * time.Second
-	wakeJumpThreshold = time.Minute
-)
-
-// watchForWake reports each time the machine resumes from sleep, with roughly
-// how long it slept, so the run can re-establish connections that did not
-// survive it instead of staying broken until it is restarted.
-func watchForWake(ctx context.Context) <-chan time.Duration {
-	wakes := make(chan time.Duration, 1)
-	ticker := time.NewTicker(wakeCheckInterval)
-	go func() {
-		defer ticker.Stop()
-		detectWakes(ctx, ticker.C, wakeCheckInterval, time.Now, wakes)
-	}()
-	return wakes
-}
-
-// detectWakes is watchForWake's loop. Wall-clock time is compared with its
-// monotonic reading stripped, because on most platforms the monotonic clock
-// stops while the machine sleeps and would hide the gap. A clock set forward
-// by hand looks the same, which costs no more than one extra refresh. A wake
-// is dropped rather than queued when the last one has not been handled yet.
-func detectWakes(ctx context.Context, ticks <-chan time.Time, interval time.Duration, now func() time.Time, wakes chan<- time.Duration) {
-	last := now().Round(0)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticks:
-		}
-		current := now().Round(0)
-		if slept := current.Sub(last) - interval; slept >= wakeJumpThreshold {
-			select {
-			case wakes <- slept:
-			default:
-			}
-		}
-		last = current
-	}
-}
-
 // watchPollProgress reports a run whose poll loop has stopped completing polls,
 // and reports it once rather than on every check. Every GitHub read the loop
 // makes is bounded, so a stall this long means something else is holding it;
@@ -3837,7 +3792,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		defer jobMu.Unlock()
 		return publishedJobs(jobs)
 	})
-	wakes := watchForWake(watchCtx)
+	wakes := wake.Subscribe(watchCtx)
 	var tick <-chan time.Time
 	var retryTimer *time.Timer
 	var retry <-chan time.Time
