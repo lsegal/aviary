@@ -264,6 +264,11 @@ test("an Add provider row expands into tiles of provider kinds that start the ad
 	// The add row sits in the providers list itself, after the last provider.
 	const row = card.getByTestId("provider-add-row");
 	await expect(row).toHaveText(/Add provider/);
+	// It is styled as a standard button: no dashed outline, sized to its label.
+	await expect(row).not.toHaveCSS("border-top-style", "dashed");
+	const rowBox = await row.boundingBox();
+	const cardBox = await card.boundingBox();
+	expect(rowBox?.width ?? 0).toBeLessThan((cardBox?.width ?? 0) / 2);
 	await row.click();
 	const tiles = card
 		.getByRole("group", { name: "Provider kinds" })
