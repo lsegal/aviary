@@ -2,13 +2,21 @@
 // agent doctor's view of every CLI definition. Settings → Providers
 // renders them, and Projects reads the same list to choose a job's CLI.
 
-/** The doctor's overall verdict: ready, installed but needing attention, or not installed. */
-export type CLIStatus = "ok" | "warn" | "missing";
+/**
+ * The doctor's overall verdict: ready (installed and signed in), installed
+ * with a problem statusNote names, installed with an unconfirmed sign-in, or
+ * not installed.
+ */
+export type CLIStatus = "ok" | "warn" | "unknown" | "missing";
 
 export interface CLIProvider {
 	name: string;
 	installed: boolean;
 	status: CLIStatus;
+	/** Why status is not ok, in words; empty for an ok or missing CLI. */
+	statusNote: string;
+	/** Which of aviary's installed skills are stale for this CLI. */
+	skillsNote: string;
 	/** The executable the definition names, and where it was found. */
 	binary: string;
 	path: string;
@@ -53,15 +61,19 @@ export function normalizeCLIList(raw: unknown): CLIProvider[] {
 			const auth = str(o.auth);
 			const raw = str(o.status);
 			const installed = o.installed !== false && raw !== "missing";
+			// Anything the doctor did not plainly call ok or a warning reads as
+			// unknown, never as healthy.
 			const status: CLIStatus = !installed
 				? "missing"
-				: raw === "warn"
-					? "warn"
-					: "ok";
+				: raw === "ok" || raw === "warn"
+					? raw
+					: "unknown";
 			return {
 				name,
 				installed,
 				status,
+				statusNote: str(o.statusNote),
+				skillsNote: str(o.skillsNote),
 				binary: str(o.binary),
 				path: str(o.path),
 				version: str(o.version),
@@ -87,4 +99,18 @@ export function cliAuthLabel(cli: CLIProvider): string {
 	if (!cli.installed) return "not installed";
 	if (cli.signedIn) return "signed in";
 	return cli.auth || "unknown";
+}
+
+/** What a CLI row's status dot means, for its tooltip. */
+export function cliStatusLabel(cli: CLIProvider): string {
+	switch (cli.status) {
+		case "ok":
+			return "Ready: installed and signed in";
+		case "missing":
+			return "Not installed";
+		case "warn":
+			return `Needs attention: ${cli.statusNote || "a problem the doctor did not name"}`;
+		default:
+			return `Not confirmed: ${cli.statusNote || "sign-in state unknown"}`;
+	}
 }

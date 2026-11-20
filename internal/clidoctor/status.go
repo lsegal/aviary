@@ -39,9 +39,10 @@ type Status struct {
 	// ProjectsNote says why the agent is gated out of Projects jobs, empty
 	// when it can run them.
 	ProjectsNote string `json:"projectsNote,omitempty"`
-	// Status is one of "ok", "warn", or "missing", matching the marker
-	// `aviary agents` prefixes each block with.
-	Status string `json:"status"`
+	// Status is one of "ok", "warn", "unknown", or "missing", and StatusNote
+	// says why it is not ok.
+	Status     string `json:"status"`
+	StatusNote string `json:"statusNote,omitempty"`
 }
 
 // QuotaText is the report's quota line. An agent that names no quota source
@@ -73,6 +74,7 @@ func StatusOf(report Report) Status {
 		SkillsNote:   report.SkillsNote,
 		ProjectsNote: report.ProjectsNote,
 		Status:       report.StatusKey(),
+		StatusNote:   report.StatusNote(),
 	}
 	if report.QuotaErr != nil {
 		status.QuotaError = report.QuotaErr.Error()

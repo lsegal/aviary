@@ -62,15 +62,17 @@ An agent's `fallbacks` list is tried in order when the primary model is unavaila
 
 ### Claude Code and Codex CLIs
 
-An agent can run its turns through the Claude Code or Codex CLI instead of calling a model API. This uses the CLI's own sign-in, such as a Claude or ChatGPT subscription, and its coding harness. Select it with a `cli/` model string:
+An agent can run its turns through the Claude Code or Codex CLI instead of calling a model API. This uses the CLI's own sign-in, such as a Claude or ChatGPT subscription, and its coding harness. Each CLI is a provider, so select it with a `<cli>/<model>` model string:
 
 ```yaml
 agents:
   - name: coder
-    model: cli/claude/opus        # claude -p --model opus
+    model: claude/opus            # claude -p --model opus
   - name: helper
-    model: cli/codex/gpt-6-sol    # codex exec --model gpt-6-sol
+    model: codex/gpt-6-sol        # codex exec --model gpt-6-sol
 ```
+
+The same models written with a `cli/` prefix, such as `cli/claude/opus`, are accepted too. Only Claude Code and Codex can answer agent prompts; a model on another provider reached through a CLI, such as `gemini/<model>`, is valid for Projects jobs but warns when an agent uses it.
 
 The CLI runs the agent loop. Aviary passes it the agent's system prompt and rules, and serves the agent's tools to it over MCP on a loopback-only endpoint with a token scoped to that session. The CLI's text, tool calls, and usage come back as ordinary chat events, so the chat UI, channels, session history and Usage work the same way.
 

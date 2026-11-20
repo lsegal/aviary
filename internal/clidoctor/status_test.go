@@ -121,15 +121,16 @@ func TestStatusOfCarriesTheDefaultModel(t *testing.T) {
 	}
 }
 
-// TestStaleSkillsWarn checks a stale-skills note core's doctor
-// found is carried to the dashboard as a warning.
-func TestStaleSkillsWarn(t *testing.T) {
+// TestStaleSkillsNoted checks a stale-skills note core's doctor found is
+// carried to the dashboard without turning a healthy CLI's status into a
+// warning (#495).
+func TestStaleSkillsNoted(t *testing.T) {
 	probed := Report{
 		Name: "probed", Binary: "probed", Path: "/opt/probed", Auth: SignedIn,
 		SkillsNote: "gh-fix stale for aviary v1.5.25; restart aviary to reinstall",
 	}
-	if status := StatusOf(probed); status.SkillsNote != probed.SkillsNote || status.Status != "warn" {
-		t.Fatalf("status = %+v, want the skills note and a warning", status)
+	if status := StatusOf(probed); status.SkillsNote != probed.SkillsNote || status.Status != StatusOK {
+		t.Fatalf("status = %+v, want the skills note on an ok status", status)
 	}
 }
 
@@ -169,4 +170,47 @@ func TestReportCarriesProjectsGate(t *testing.T) {
 	if note := StatusOf(doctor.Probe(context.Background(), "claude")).ProjectsNote; note != "" {
 		t.Fatalf("claude projects note = %q, want none", note)
 	}
+}
+
+// TestStatusKeyFollowsTheStateTheRowShows checks the status reads as healthy
+// only for a signed-in CLI, warns only for a problem StatusNote names, and
+// never reads as healthy when the sign-in state is unknown (#495).
+func TestStatusKeyFollowsTheStateTheRowShows(t *testing.T) {
+	installed := Report{Name: "claude", Path: "/bin/claude"}
+	cases := []struct {
+		name      string
+		report    Report
+		key, note string
+	}{
+		{"missing", Report{Name: "claude", Auth: SignedIn}, StatusMissing, ""},
+		{"signed in", with(installed, func(r *Report) { r.Auth = SignedIn }), StatusOK, ""},
+		{"signed in with stale skills", with(installed, func(r *Report) {
+			r.Auth = SignedIn
+			r.SkillsNote = "gh-fix stale for this aviary dev build"
+		}), StatusOK, ""},
+		{"unknown", with(installed, func(r *Report) { r.Auth = Unknown }), StatusUnknown, "sign-in state unknown"},
+		{"no auth probe", installed, StatusUnknown, "sign-in state unknown"},
+		{"signed out", with(installed, func(r *Report) { r.Auth = SignedOut }), StatusWarn, "signed out"},
+		{"old version", with(installed, func(r *Report) {
+			r.Auth = Unknown
+			r.VersionNote = "below the 2.0.0 minimum"
+		}), StatusWarn, "version below the 2.0.0 minimum"},
+		{"old version signed out", with(installed, func(r *Report) {
+			r.Auth = SignedOut
+			r.VersionNote = "below the 2.0.0 minimum"
+		}), StatusWarn, "version below the 2.0.0 minimum; signed out"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status := StatusOf(c.report)
+			if status.Status != c.key || status.StatusNote != c.note {
+				t.Fatalf("status = %q, note = %q, want %q, %q", status.Status, status.StatusNote, c.key, c.note)
+			}
+		})
+	}
+}
+
+func with(r Report, edit func(*Report)) Report {
+	edit(&r)
+	return r
 }

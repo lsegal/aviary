@@ -345,9 +345,9 @@ type ModelsConfig struct {
 	Providers map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
 	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
 	// CLIDefinitions overrides built-in CLI definitions field by field
-	// and adds new ones, keyed by agent name. A null field drops it. The
-	// CLI providers are providers like any other, so Projects reads them from
-	// here rather than owning a registry of its own.
+	// and adds new ones, keyed by agent name. A null field drops it.
+	// Providers reached through a CLI are like any other, so Projects reads
+	// them from here rather than owning a registry of its own.
 	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 }
 

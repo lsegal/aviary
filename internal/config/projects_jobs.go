@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 // aviarySpecPrefix marks a model spec that runs a job on an Aviary agent.
@@ -12,7 +13,8 @@ const aviarySpecPrefix = "aviary/"
 
 // ProjectJobSpecs returns the model specs, in fallback order, that jobs
 // of a project attached to the named agent run on: the agent's model and
-// fallbacks, after models.defaults, each cli/ model as its spec. A model
+// fallbacks, after models.defaults, each CLI provider model as its spec:
+// cli/claude/opus and claude/opus are both the spec claude/opus. A model
 // that is not a CLI runs the job on the agent itself, as aviary/<agent>. An
 // empty name, a project attached to no agent, takes the CLI models of
 // models.defaults, as an agent without a model would. It returns nil when
@@ -27,6 +29,7 @@ func ProjectJobSpecs(cfg *Config, agentName string) []string {
 		}
 		agent = cfg.Agents[index]
 	}
+	registry := cliRegistry(cfg.Models)
 	var specs []string
 	add := func(spec string) {
 		if spec != "" && !slices.Contains(specs, spec) {
@@ -38,8 +41,11 @@ func ProjectJobSpecs(cfg *Config, agentName string) []string {
 		if model == "" {
 			continue
 		}
+		provider, _, _ := strings.Cut(model, "/")
 		if spec, ok := strings.CutPrefix(model, cliagent.ModelPrefix); ok {
 			add(strings.TrimSpace(spec))
+		} else if _, ok := registry.Lookup(provider); ok && !llm.IsAPIProvider(provider) {
+			add(model)
 		} else if agent.Name != "" {
 			add(aviarySpecPrefix + agent.Name)
 		}

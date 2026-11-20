@@ -395,6 +395,33 @@ test("a project runs its jobs on its agent's model and fallbacks", async ({
 	expect(calls.config_save).toBeUndefined();
 });
 
+test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async ({
+	page,
+}) => {
+	await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				{
+					name: "coder",
+					model: "claude/opus",
+					fallbacks: ["gemini/gemini-3.5-flash", "anthropic/claude-sonnet-4-5"],
+				},
+			],
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+
+	const models = page.getByTestId("job-models").locator("li");
+	await expect(models).toHaveCount(3);
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
+	await expect(models.nth(1)).toHaveAttribute(
+		"data-spec",
+		"gemini/gemini-3.5-flash",
+	);
+	await expect(models.nth(2)).toHaveAttribute("data-spec", "aviary/coder");
+});
+
 test("a project without its own agent uses the shared one", async ({
 	page,
 }) => {
@@ -433,7 +460,7 @@ test("a project attached to no runnable agent says why", async ({ page }) => {
 	);
 	await page.locator('[data-field="agent"]').selectOption("");
 	await expect(page.getByTestId("agent-problem")).toContainText(
-		"models.defaults names no cli/ model",
+		"models.defaults names no CLI model",
 	);
 });
 
