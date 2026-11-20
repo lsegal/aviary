@@ -137,12 +137,13 @@ func ReadVersion(ctx context.Context, binary string) ([]byte, error) {
 	return process.CombinedOutput(exec.CommandContext(ctx, binary, "--version"))
 }
 
-// Report probes every registered CLI and returns one entry each, in the
-// registry's sorted order. The CLIs are probed concurrently: each one costs a
+// Report probes every registered CLI provider and returns one entry each, in
+// the registry's sorted order. In-process agents are not providers and are
+// left out. The CLIs are probed concurrently: each one costs a
 // handful of subprocesses, and a report that ran them one CLI at a time would
 // take as long as the slowest of them multiplied by the registry.
 func (d *Doctor) Report(ctx context.Context) []Report {
-	names := d.Registry.Names()
+	names := d.Registry.Providers()
 	reports := make([]Report, len(names))
 	var wait sync.WaitGroup
 	for i, name := range names {

@@ -250,11 +250,11 @@ func (w *Engine) registry() *clidefs.Registry {
 	return llm.CLIProviders()
 }
 
-// agentOptions lists the registered agents with the models and levels each
-// accepts, for the dashboard's agent selector.
+// agentOptions lists the registered CLI providers with the models and levels
+// each accepts, for the dashboard's agent selector.
 func (w *Engine) agentOptions() []core.AgentOption {
 	registry := w.registry()
-	names := registry.Names()
+	names := registry.Providers()
 	options := make([]core.AgentOption, 0, len(names))
 	for _, name := range names {
 		definition, ok := registry.Lookup(name)
@@ -286,7 +286,7 @@ func (w *Engine) settingsSnapshot() SettingsSnapshot {
 		AutoUpdate:        w.autoUpdate.Load(),
 		TempDirs:          w.TempDirs(),
 		TempDirDefault:    filepath.Clean(os.TempDir()),
-		Agents:            w.registry().Names(),
+		Agents:            w.registry().Providers(),
 		AgentOptions:      w.agentOptions(),
 		ConfiguredAgents:  w.configuredAgents(),
 		UnblockInterval:   unblockIntervalText(w.UnblockInterval()),
