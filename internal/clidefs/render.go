@@ -2,6 +2,7 @@ package clidefs
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -185,3 +186,21 @@ func (d Definition) AssignsSessionID() bool { return d.Session.Assign == AssignE
 // CapturesSessionID reports whether the agent prints a session ID for aviary to
 // read.
 func (d Definition) CapturesSessionID() bool { return d.Session.Assign == AssignCapture }
+
+// EnvList renders the definition's environment as KEY=VALUE pairs, in a
+// stable order so a child environment does not depend on map iteration.
+func (d Definition) EnvList() []string {
+	if len(d.Env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(d.Env))
+	for key := range d.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		env = append(env, key+"="+d.Env[key])
+	}
+	return env
+}

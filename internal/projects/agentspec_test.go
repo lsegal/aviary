@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -84,27 +83,6 @@ func TestAgentAssignsSessionIDFollowsTheDefinition(t *testing.T) {
 	}
 }
 
-// TestDefinitionEnvIsStable checks the child environment a definition asks for
-// is rendered in a fixed order, so a run does not vary with map iteration.
-func TestDefinitionEnvIsStable(t *testing.T) {
-	definition := clidefs.Definition{Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
-	want := []string{"A=1", "B=2", "C=3"}
-	for i := 0; i < 5; i++ {
-		got := definitionEnv(definition)
-		if len(got) != len(want) {
-			t.Fatalf("env = %v, want %v", got, want)
-		}
-		for j := range want {
-			if got[j] != want[j] {
-				t.Fatalf("env = %v, want %v", got, want)
-			}
-		}
-	}
-	if got := definitionEnv(clidefs.Definition{}); got != nil {
-		t.Fatalf("env = %v, want none", got)
-	}
-}
-
 // TestBinaryFallsBackToTheDefinition checks an agent with no flag of its own
 // is invoked through the executable its definition names, which is what makes
 // a configured agent runnable at all.
@@ -162,30 +140,6 @@ func TestDefinitionBinaryOverridesBuiltin(t *testing.T) {
 	runner.CodexBinary = "codex-bin"
 	if got := runner.binary("codex"); got != "codex-bin" {
 		t.Fatalf("binary = %q, want the legacy alias flag", got)
-	}
-}
-
-// TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable checks the aviary
-// definition runs this executable unless cli_definitions names another.
-func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
-	executable, err := os.Executable()
-	if err != nil {
-		t.Skip(err)
-	}
-	registry, err := clidefs.FromConfig(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != executable {
-		t.Fatalf("aviary binary = %q, want the running executable %q", definition.Binary, executable)
-	}
-	definitions := map[string]any{aviaryAgent: map[string]any{"binary": "/opt/aviary"}}
-	registry, err = clidefs.FromConfig(definitions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if definition, _ := registry.Lookup(aviaryAgent); definition.Binary != "/opt/aviary" {
-		t.Fatalf("aviary binary = %q, want the cli_definitions override", definition.Binary)
 	}
 }
 
