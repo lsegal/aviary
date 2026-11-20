@@ -373,11 +373,26 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 		...CONFIG.projects,
 		approval_mode: "read-only",
 	});
+});
 
-	// Following the general mode writes nothing.
+test("following the general approval mode writes no Projects override", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			projects: { ...CONFIG.projects, approval_mode: "auto" },
+		},
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	const mode = page.locator('[data-field="approval_mode"]');
+	await expect(mode).toHaveValue("auto");
 	await mode.selectOption("");
+	await expect(page.getByTestId("project-yaml")).not.toContainText(
+		"approval_mode",
+	);
 	await page.getByRole("button", { name: "Save", exact: true }).click();
-	await expect.poll(() => calls.config_save?.length).toBe(2);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedSection(calls)).toEqual(CONFIG.projects);
 });
 

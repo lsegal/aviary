@@ -69,7 +69,7 @@ func init() {
 	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me")`)
 	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter; the ready label still applies")
 	f.StringSliceVar(&watchOpts.allowedCommenters, "allowed-commenters", nil, "GitHub logins whose comments steer jobs (default the authenticated gh user)")
-	f.BoolVar(&watchOpts.yolo, "yolo", false, "disable the CLI providers' sandboxes and permission checks")
+	f.BoolVar(&watchOpts.yolo, "yolo", false, "run jobs in the full approval mode: no CLI sandboxes or permission checks")
 	f.BoolVar(&watchOpts.noMerge, "no-merge", false, "leave finished pull requests ready for a human to merge")
 	f.BoolVar(&watchOpts.noChangelog, "no-changelog", false, "skip changelog entries in gh-fix pull requests")
 	f.BoolVar(&watchOpts.browserVision, "browser-vision", false, "browser delivery: read pages it no longer recognizes from capped screenshots")
