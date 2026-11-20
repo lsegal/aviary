@@ -281,6 +281,68 @@ func TestGeminiErrorsAndUnfinishedMessages(t *testing.T) {
 	}
 }
 
+// The fixture is a real stream from muse 1.4.24 running a plan, two shell
+// commands (the second failing), a file creation, an edit and a read, with a
+// reply streamed as deltas before and after. Muse has no sign-in on the
+// capture host, so the model side of the run was a local stand-in served
+// through --base-url; every line is the CLI's own output.
+func TestMuseJSONMapsToEvents(t *testing.T) {
+	events := mapFile(t, NewMapper(FormatMuseJSON), "muse-run.jsonl")
+	want := "message,plan,tool_result,command,command,command,command,file_change,tool_result,file_change,tool_result,tool_call,tool_result,message,usage"
+	if got := kinds(events); got != want {
+		t.Fatalf("kinds = %s\nwant    %s", got, want)
+	}
+	if first, last := events[0].Text, events[13].Text; first != "I will plan, run a command, then create and edit a file." || last != "Done: note.txt now says hello world." {
+		t.Fatalf("messages = %q, %q", first, last)
+	}
+	if plan := events[1]; len(plan.Items) != 2 || plan.Items[0].Text != "Run echo hi" || plan.Items[0].Status != "in_progress" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	start, done := events[3], events[4]
+	if start.Command != "echo hi" || start.Status != "running" || start.CallID == "" {
+		t.Fatalf("command start = %+v", start)
+	}
+	if done.CallID != start.CallID || done.Output != "hi\n" || done.Status != "done" || done.ExitCode == nil || *done.ExitCode != 0 || done.IsError {
+		t.Fatalf("command result = %+v", done)
+	}
+	if failed := events[6]; failed.Command != "ls missing-file" || !failed.IsError || failed.ExitCode == nil || *failed.ExitCode != 1 {
+		t.Fatalf("failed command = %+v", failed)
+	}
+	if added := events[7]; added.Path != "note.txt" || added.Name != "write_file" {
+		t.Fatalf("added file = %+v", added)
+	}
+	if edited := events[9]; edited.Path != "note.txt" || edited.Diff != "@@\n-hello\n+hello world" {
+		t.Fatalf("edited file = %+v", edited)
+	}
+	if read := events[12]; read.Name != "read_file" || read.CallID != events[11].CallID || !strings.HasSuffix(read.Output, "1|hello world") {
+		t.Fatalf("tool result = %+v", read)
+	}
+	if usage := events[14].Usage; usage == nil || usage.InputTokens != 2800 || usage.CacheReadTokens != 5600 || usage.OutputTokens != 280 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+// A run whose model call fails reports the reason once, on its terminal
+// record, and an unfinished message still flushes at the end of the stream.
+func TestMuseFailedRunsAndUnfinishedMessages(t *testing.T) {
+	mapper := NewMapper(FormatMuseJSON)
+	if got := mapper.Map([]byte(`{"payload_type":"task.lifecycle.failed","payload":{"kind":"task_lifecycle","event":{"kind":"failed","reason":"your API key from META_API_KEY was rejected"}}}`)); len(got) != 0 {
+		t.Fatalf("task failure = %+v", got)
+	}
+	if got := mapper.Map([]byte(`{"payload_type":"run.usage","payload":{"kind":"run_usage","models":[],"calls":1,"failed_calls":1}}`)); len(got) != 0 {
+		t.Fatalf("empty usage = %+v", got)
+	}
+	failed := mapper.Map([]byte(`{"payload_type":"run.terminal.failed","payload":{"kind":"run_terminal","terminal":"failed","text":"","reason":"your API key from META_API_KEY was rejected"}}`))
+	if kinds(failed) != "system" || !failed[0].IsError || failed[0].Text != "your API key from META_API_KEY was rejected" {
+		t.Fatalf("failed run = %+v", failed)
+	}
+	mapper.Map([]byte(`{"payload_type":"run.output.delta","payload":{"text":"half "}}`))
+	mapper.Map([]byte(`{"payload_type":"run.output.delta","payload":{"text":"done"}}`))
+	if got := mapper.(Flusher).Flush(); len(got) != 1 || got[0].Text != "half done" {
+		t.Fatalf("flushed = %+v", got)
+	}
+}
+
 func TestLogPersistsAcrossOpen(t *testing.T) {
 	dir := t.TempDir()
 	log, err := Open(dir)

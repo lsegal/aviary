@@ -101,6 +101,7 @@ const (
 	FormatCodexJSON        = "codex-json"
 	FormatOpencodeJSON     = "opencode-json"
 	FormatClineJSON        = "cline-json"
+	FormatMuseJSON         = "muse-json"
 	FormatGeminiJSON       = "gemini-json"
 )
 
@@ -118,6 +119,8 @@ func NewMapper(format string) Mapper {
 		return opencodeMapper{}
 	case FormatClineJSON:
 		return &clineMapper{}
+	case FormatMuseJSON:
+		return &museMapper{}
 	case FormatGeminiJSON:
 		return &geminiMapper{}
 	}
