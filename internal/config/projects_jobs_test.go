@@ -30,6 +30,17 @@ func TestProjectJobSpecsComeFromTheAttachedAgent(t *testing.T) {
 	assert.Nil(t, ProjectJobSpecs(cfg, "nobody"))
 }
 
+// A CLI provider model is a job spec whether or not it carries the cli/
+// prefix, so claude/opus runs jobs on the claude CLI, not on the agent.
+func TestProjectJobSpecsTakeCLIProviderModelsInBothForms(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "coder", Model: "claude/opus", Fallbacks: []string{"cli/claude/opus", "gemini/gemini-3.5-flash", "anthropic/claude-sonnet-5-5"}},
+		},
+	}
+	assert.Equal(t, []string{"claude/opus", "gemini/gemini-3.5-flash", "aviary/coder"}, ProjectJobSpecs(cfg, "coder"))
+}
+
 func TestCLIModelsBeyondClaudeAndCodexOnlyWarn(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{
