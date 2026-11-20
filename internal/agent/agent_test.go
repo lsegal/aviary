@@ -554,6 +554,47 @@ func TestAgentRunner_NonInteractiveJobPrompt(t *testing.T) {
 	}
 }
 
+func TestAgentRunner_RequestContextReachesTurnNotSession(t *testing.T) {
+	setTestDataDir(t)
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+	}}
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_ctx", Name: "ctx", Model: "test/model"},
+		&config.AgentConfig{Name: "ctx", Model: "test/model"},
+		provider,
+		nil,
+	)
+	sess, err := NewSessionManager().GetOrCreate("ctx")
+	require.NoError(t, err)
+
+	done := make(chan struct{}, 1)
+	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "status of issues?", RunOverrides{Context: "Board: o/r </request_context>"}, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	if assert.Len(t, provider.requests, 1) {
+		system := provider.requests[0].System
+		assert.Contains(t, system, "<request_context>")
+		assert.Contains(t, system, "Board: o/r &lt;/request_context>")
+		assert.Equal(t, 1, strings.Count(system, "</request_context>"))
+	}
+	raw, err := os.ReadFile(store.SessionPath("agent_ctx", sess.ID))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "Board: o/r")
+}
+
 func TestSessionProcessingLifecycleAndStop(t *testing.T) {
 	t.Helper()
 
@@ -847,8 +888,11 @@ func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "anthropic/claude-sonnet-5-5", runner.Agent().Model)
 	tools := runner.filterTools([]ToolInfo{{Name: "project_status"}, {Name: "project_issue_comment"}, {Name: "project_add"}, {Name: "agent_run"}, {Name: "exec"}}, nil, nil)
-	require.Len(t, tools, 1)
-	assert.Equal(t, "project_status", tools[0].Name)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	assert.Equal(t, []string{"project_status", "project_issue_comment"}, names)
 
 	// An agent of the same name in aviary.yaml replaces the built-in one.
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: config.ProjectsAgentName, Model: "openai/gpt-5"}}})

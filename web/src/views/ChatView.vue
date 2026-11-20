@@ -275,6 +275,9 @@ const props = defineProps<{
 	/** Pins the chat to this agent and embeds it without the app layout,
 	 * agent tabs, or route changes, as the Projects board's side panel does. */
 	agent?: string;
+	/** The Projects board the embedded chat was opened from, sent with each
+	 * prompt so the agent answers about that project. */
+	project?: string;
 }>();
 
 const agentsStore = useAgentsStore();
@@ -1004,6 +1007,7 @@ async function send() {
 			},
 			selectedSessionId.value,
 			mediaURL || undefined,
+			props.project,
 		);
 		flushPendingChunks();
 	} catch (e) {

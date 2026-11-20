@@ -281,3 +281,15 @@ func TestProjectAddWithReports(t *testing.T) {
 	require.Len(t, cfg.Projects.List, 1)
 	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Projects.List[0].Reports)
 }
+
+func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {
+	_, m := setupProjects(t)
+
+	got := projectsAgentContext(context.Background(), config.ProjectsAgentName, "o/r")
+	assert.Contains(t, got, "/aviary:"+m.Identity())
+	assert.Contains(t, got, "opened this chat from the o/r board")
+	assert.Empty(t, projectsAgentContext(context.Background(), "other", "o/r"))
+
+	SetDeps(&Deps{})
+	assert.Empty(t, projectsAgentContext(context.Background(), config.ProjectsAgentName, "o/r"))
+}

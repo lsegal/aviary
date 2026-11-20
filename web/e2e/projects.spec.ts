@@ -634,7 +634,9 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");
 	await expect(chat).toBeVisible();
-	await expect(chat).toContainText("It can't steer a running job.");
+	await expect(chat).toContainText(
+		"Ask the projects agent about lsegal/aviary",
+	);
 	// It talks to the built-in Projects agent, never to a job.
 	await expect.poll(() => calls.session_list?.at(-1)?.agent).toBe("projects");
 	// Images show in both directions.
@@ -683,6 +685,8 @@ test("Summarize sends the job to the prompt chat", async ({ page }) => {
 	expect(calls.agent_run[0]).toMatchObject({
 		name: "projects",
 		message: "Summarize the current session log of work on lsegal/aviary#218",
+		// The board's project goes with every prompt (#516).
+		project: "lsegal/aviary",
 	});
 	await expect(chat).toContainText(
 		"Summarize the current session log of work on lsegal/aviary#218",

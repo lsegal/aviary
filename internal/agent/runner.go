@@ -71,6 +71,10 @@ type RunOverrides struct {
 	Bare             bool
 	History          *bool
 	SuppressDelivery bool
+	// Context is live context for this run only, such as a snapshot of the
+	// state the agent answers about. It reaches the model with the turn, as
+	// recalled memory does, and is never written to the session.
+	Context string
 }
 
 // Prompt sends a message to the agent and fans out stream events to consumers.
@@ -359,6 +363,14 @@ func (r *AgentRunner) promptCore(
 					// A CLI session keeps one system prompt for its whole life,
 					// so per-message memory goes into the user turn instead.
 					systemPrompt += "\n\n" + memoryBlock
+				}
+			}
+			if requestContext := strings.TrimSpace(overrides.Context); requestContext != "" {
+				block := "<request_context>\n<!-- Live context read when this request arrived. It supersedes any earlier request_context. -->\n" + sanitizeDelimitedContent(requestContext) + "\n</request_context>"
+				if isCLI {
+					memoryBlock = strings.TrimSpace(memoryBlock + "\n\n" + block)
+				} else {
+					systemPrompt += "\n\n" + block
 				}
 			}
 			if r.isTaskSession(sessionID) {
