@@ -97,8 +97,8 @@
 							</div>
 						</section>
 
-						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="Coding CLIs">
-							<span class="font-medium text-gray-600 dark:text-gray-300">Coding CLIs</span>
+						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
+							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
 							<span v-for="cli in status.clis" :key="cli.name"
 								class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />

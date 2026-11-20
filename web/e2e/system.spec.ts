@@ -20,6 +20,14 @@ test.beforeEach(async ({ page }) => {
 			},
 		},
 		config_save: {},
+		coding_skills_list: {
+			version: "2.0.0",
+			source: "lsegal/aviary",
+			release: true,
+			clis: [],
+			skills: [],
+			outdated: 0,
+		},
 		skills_list: [
 			{
 				name: "gogcli",
@@ -324,7 +332,7 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async ({
 	await expect(page.getByText("Unexpected end of JSON input")).toHaveCount(0);
 });
 
-test("system skills for coding CLIs shows versions and installs", async ({
+test("system skills shows provider installs and installs them on one page", async ({
 	page,
 }) => {
 	const installs: Record<string, { version?: string; current: boolean }> = {
@@ -400,11 +408,15 @@ test("system skills for coding CLIs shows versions and installs", async ({
 		},
 	});
 
-	await page.goto("/system/skills?tab=coding");
+	await page.goto("/system/skills");
 
+	await expect(page.getByRole("tab")).toHaveCount(0);
 	await expect(
-		page.getByRole("tab", { name: "For coding CLIs (3)" }),
-	).toHaveAttribute("aria-selected", "true");
+		page.getByRole("region", { name: "Installed in providers" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("region", { name: "Available to Aviary agents" }),
+	).toBeVisible();
 	await expect(page.getByTestId("coding-skill-gh-fix-claude")).toContainText(
 		"2.0.0",
 	);
@@ -452,7 +464,4 @@ test("system skills for coding CLIs shows versions and installs", async ({
 	await expect
 		.poll(() => savedConfigs.at(-1) ?? "")
 		.toContain('"coding_skills":{"auto_update":false}');
-
-	await page.getByRole("tab", { name: /For Aviary agents/ }).click();
-	await expect(page).toHaveURL(/\/system\/skills$/);
 });

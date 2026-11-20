@@ -41,7 +41,7 @@ func init() {
 	modelsCmd.AddCommand(newProjectToolCommand(projectToolCommand{
 		path:  []string{"clis"},
 		tool:  "provider_cli_list",
-		short: "Check every coding CLI provider: installed, version, sign-in, quota and models",
+		short: "Check every provider reached through a CLI: installed, version, sign-in, quota and models",
 	}))
 	rootCmd.AddCommand(modelsCmd)
 }

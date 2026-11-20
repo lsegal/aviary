@@ -38,11 +38,11 @@ var (
 	projectGH = func(ctx context.Context, args ...string) ([]byte, error) {
 		return projects.GHCLI{Binary: "gh", Timeout: projectCheckTimeout}.Run(ctx, args...)
 	}
-	// projectCodingCLIs lists the coding CLIs whose agent definition names a
+	// projectCLIProviders lists the CLI providers whose agent definition names a
 	// skills.sh target; their skills directories come from codingskills.
-	projectCodingCLIs = func() []codingskills.CLI { return codingskills.Default().CLIs() }
-	projectLookPath   = exec.LookPath
-	projectHomeDir    = os.UserHomeDir
+	projectCLIProviders = func() []codingskills.CLI { return codingskills.Default().CLIs() }
+	projectLookPath     = exec.LookPath
+	projectHomeDir      = os.UserHomeDir
 )
 
 // projectSkills are the skills a project job runs.
@@ -60,7 +60,7 @@ type ProjectCheck struct {
 	Message string `json:"message"`
 }
 
-// ProjectCheckCLI is a coding CLI found on PATH and its installed skills.
+// ProjectCheckCLI is a CLI provider found on PATH and its installed skills.
 type ProjectCheckCLI struct {
 	Name   string            `json:"name"`
 	Path   string            `json:"path"`
@@ -112,7 +112,7 @@ func parseProjectTarget(raw string) (target, kind, repo string, err error) {
 }
 
 // runProjectCheck checks everything a new project needs: GitHub access,
-// installed coding CLIs and their skills, the ready label, and whether pull
+// installed CLI providers and their skills, the ready label, and whether pull
 // requests must come from a fork.
 func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckResult, error) {
 	target, kind, repo, err := parseProjectTarget(args.Target)
@@ -136,7 +136,7 @@ func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckR
 	} else if signedIn {
 		add("github", projectCheckOK, "gh is signed in")
 	}
-	checkCodingCLIs(res, add)
+	checkCLIProviders(res, add)
 
 	res.OK = true
 	for _, c := range res.Checks {
@@ -207,11 +207,11 @@ func checkReadyLabel(ctx context.Context, repo, label string, add func(string, s
 	add("ready_label", projectCheckOK, "%q exists, with %s open %s", label, count, noun)
 }
 
-func checkCodingCLIs(res *ProjectCheckResult, add func(string, string, string, ...any)) {
+func checkCLIProviders(res *ProjectCheckResult, add func(string, string, string, ...any)) {
 	home, _ := projectHomeDir()
 	env := codingskills.Env{Home: home}
 	var known, found, missingSkill []string
-	for _, def := range projectCodingCLIs() {
+	for _, def := range projectCLIProviders() {
 		known = append(known, def.ID)
 		path, err := projectLookPath(def.Binary)
 		if err != nil {
@@ -229,8 +229,8 @@ func checkCodingCLIs(res *ProjectCheckResult, add func(string, string, string, .
 		found = append(found, def.ID)
 	}
 	if len(found) == 0 {
-		add("clis", projectCheckFail, "No coding CLI found; install one of %s", joinList(known, "or"))
-		add("skills", projectCheckFail, "%s cannot be installed until a coding CLI is found", strings.Join(projectSkills, ", "))
+		add("clis", projectCheckFail, "No CLI provider found; install one of %s", joinList(known, "or"))
+		add("skills", projectCheckFail, "%s cannot be installed until a CLI provider is found", strings.Join(projectSkills, ", "))
 		return
 	}
 	add("clis", projectCheckOK, "Found %s", joinAnd(found))
@@ -316,7 +316,7 @@ func registerProjectCheckTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name: "project_check",
 		Description: "Check whether a repository, Project board or Discussions board can be watched as a project: " +
-			"GitHub access, installed coding CLIs and their gh-fix skill, the ready label, and whether pull requests must come from a fork. " +
+			"GitHub access, installed CLI providers and their gh-fix skill, the ready label, and whether pull requests must come from a fork. " +
 			"Read-only; writes nothing.",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {

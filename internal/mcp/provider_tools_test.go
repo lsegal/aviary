@@ -36,7 +36,7 @@ func TestProviderCLIListReportsEveryDefinition(t *testing.T) {
 	assert.NotContains(t, names, "aviary")
 }
 
-// The coding CLIs are core providers: they are listed with no Projects
+// The CLI providers are core providers: they are listed with no Projects
 // manager at all, and user-defined CLIs come from models.cli_definitions.
 func TestProviderCLIListWithoutProjectsReadsModelsDefinitions(t *testing.T) {
 	d, _ := setupProjects(t)

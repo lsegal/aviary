@@ -41,7 +41,7 @@ type Participant interface {
 }
 
 // SkillsUpdater refreshes installed skills, such as the skills of every
-// signed-in coding CLI, to match version, the release an upgrade installs.
+// signed-in CLI provider, to match version, the release an upgrade installs.
 type SkillsUpdater func(ctx context.Context, version string) error
 
 // Marker records why Aviary restarted. It is written right before the restart

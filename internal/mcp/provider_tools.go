@@ -10,17 +10,17 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 )
 
-// cliStatuses runs the coding-CLI doctor. It is a variable so tests can
+// cliStatuses runs the CLI doctor. It is a variable so tests can
 // answer for a machine whose CLIs they do not control.
 var cliStatuses = clidoctor.Statuses
 
 // registerProviderTools registers the tools that describe how Aviary reaches
-// models beyond stored credentials. The coding CLIs are core providers: the
+// models beyond stored credentials. The CLI providers are core providers: the
 // Providers settings and Projects both read them from here.
 func registerProviderTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "provider_cli_list",
-		Description: "The coding-CLI providers (codex, claude, gemini, ... and any in models.cli_definitions): for each, whether it is installed and where, its version, sign-in, quota, and the models it reports",
+		Description: "The providers reached through a CLI (codex, claude, gemini, ... and any in models.cli_definitions): for each, whether it is installed and where, its version, sign-in, quota, and the models it reports",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "providers", "tool", "provider_cli_list")

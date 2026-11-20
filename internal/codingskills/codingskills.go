@@ -1,5 +1,5 @@
-// Package codingskills installs and tracks the skills Aviary ships for coding
-// CLIs (gh-fix, gh-discuss, gh-create and gh-safe-merge). They install into
+// Package codingskills installs and tracks the skills Aviary ships for
+// providers (gh-fix, gh-discuss, gh-create and gh-safe-merge). They install into
 // each CLI through skills.sh, so they keep working without Aviary.
 package codingskills
 
@@ -32,7 +32,7 @@ const Repo = "lsegal/aviary"
 // cannot hold an install open forever.
 const installTimeout = 5 * time.Minute
 
-// CLI is a coding CLI the skills install into. Target is its skills.sh agent
+// CLI is a CLI provider the skills install into. Target is its skills.sh agent
 // id, and Binary the executable whose presence on PATH means it is set up.
 type CLI struct {
 	ID     string `json:"id"`
@@ -48,7 +48,7 @@ var cliNames = map[string]string{
 	"opencode": "OpenCode",
 }
 
-// CLIsFromRegistry lists the coding CLIs whose agent definition names a
+// CLIsFromRegistry lists the CLI providers whose agent definition names a
 // skills.sh target, in the registry's sorted order.
 func CLIsFromRegistry(registry *clidefs.Registry) []CLI {
 	var clis []CLI
@@ -71,7 +71,7 @@ func CLIsFromRegistry(registry *clidefs.Registry) []CLI {
 	return clis
 }
 
-// builtinCLIs lists the coding CLIs of the built-in agent definitions.
+// builtinCLIs lists the CLI providers of the built-in agent definitions.
 func builtinCLIs() []CLI {
 	registry, err := clidefs.Builtin()
 	if err != nil {
@@ -210,7 +210,7 @@ func (e Env) readLock() map[string]lockEntry {
 	return lock.Skills
 }
 
-// Status is what the For coding CLIs tab shows.
+// Status is what System › Skills shows under Installed in providers.
 type Status struct {
 	// Version is the Aviary release the bundled skills belong to, or "dev".
 	Version string `json:"version"`
@@ -246,14 +246,14 @@ type Install struct {
 	Path   string `json:"path,omitempty"`
 }
 
-// Manager reads and installs the coding-CLI skills.
+// Manager reads and installs the skills Aviary ships.
 type Manager struct {
 	Env Env
 	// Bundle holds the expected skills under aviary.CodingSkillsRoot.
 	Bundle fs.FS
 	// Version is the running Aviary version.
 	Version func() string
-	// CLIs lists the coding CLIs with a skills.sh target.
+	// CLIs lists the CLI providers with a skills.sh target.
 	CLIs func() []CLI
 	// Run runs npx with args.
 	Run func(ctx context.Context, args ...string) error
@@ -302,7 +302,7 @@ func (m *Manager) releaseVersion() (string, bool) {
 	return v, true
 }
 
-// Status reports the installed copy of every skill in every coding CLI on
+// Status reports the installed copy of every skill in every CLI provider on
 // PATH.
 func (m *Manager) Status() Status {
 	version, release := m.releaseVersion()
@@ -352,7 +352,7 @@ func (m *Manager) StaleNote(cli CLI) string {
 	if len(stale) == 0 {
 		return ""
 	}
-	return strings.Join(stale, ", ") + " stale for " + running + "; update them under Skills > For coding CLIs"
+	return strings.Join(stale, ", ") + " stale for " + running + "; update them under System > Skills"
 }
 
 func (m *Manager) install(name string, cli CLI, lock map[string]lockEntry, version string) Install {
@@ -412,7 +412,7 @@ func normalizeNewlines(text []byte) []byte {
 }
 
 // Request selects the copies InstallMissing and Update act on. Empty Skill or
-// CLI selects every skill or every coding CLI on PATH.
+// CLI selects every skill or every CLI provider on PATH.
 type Request struct {
 	Skill string `json:"skill,omitempty"`
 	CLI   string `json:"cli,omitempty"`
@@ -435,11 +435,11 @@ func (m *Manager) Install(ctx context.Context, req Request) (Result, error) {
 
 	result := Result{Installed: []string{}}
 	if req.Skill != "" && !isCodingSkill(req.Skill) {
-		return result, fmt.Errorf("unknown coding-CLI skill %q", req.Skill)
+		return result, fmt.Errorf("unknown skill %q", req.Skill)
 	}
 	status := m.Status()
 	if req.CLI != "" && !hasCLI(status.CLIs, req.CLI) {
-		return result, fmt.Errorf("coding CLI %q is not installed", req.CLI)
+		return result, fmt.Errorf("CLI provider %q is not installed", req.CLI)
 	}
 	targets := map[string]string{}
 	for _, cli := range status.CLIs {
@@ -493,7 +493,7 @@ func (m *Manager) Install(ctx context.Context, req Request) (Result, error) {
 }
 
 // UpdateTo reinstalls every installed copy of the skills from release
-// version, the release an upgrade is installing, for every coding CLI on PATH.
+// version, the release an upgrade is installing, for every CLI provider on PATH.
 // The running binary bundles the release being replaced, so it cannot tell
 // which copies already match version and reinstalls them all. Skills a CLI
 // does not have are left to Sync after the restart. A version that is not a
@@ -575,7 +575,7 @@ func (m *Manager) extractBundle() (string, func(), error) {
 	return dir, cleanup, nil
 }
 
-// Sync is the automatic upkeep: it installs the skills for coding CLIs that
+// Sync is the automatic upkeep: it installs the skills for providers that
 // lack them and updates outdated copies, as cfg allows. Development builds
 // have no release to install from and are left alone.
 func (m *Manager) Sync(ctx context.Context, cfg *config.Config) {
@@ -594,7 +594,7 @@ func (m *Manager) Sync(ctx context.Context, cfg *config.Config) {
 		slog.Info("coding skills: installed", "skills", strings.Join(result.Installed, ", "))
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Warn("coding skills: could not install; coding CLIs keep their current copies", "err", err)
+		slog.Warn("coding skills: could not install; CLI providers keep their current copies", "err", err)
 	}
 }
 

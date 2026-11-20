@@ -52,4 +52,4 @@ It finishes a pull request rather than rewriting it. Anything more substantive t
 npx skills add lsegal/aviary@gh-safe-merge --global --agent claude-code -y
 ```
 
-See [Skills for Coding CLIs](./) for other CLIs and for how Aviary keeps the skill current.
+See [Skills for providers](./) for other CLIs and for how Aviary keeps the skill current.

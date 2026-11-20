@@ -29,7 +29,7 @@ var ProjectsAgentTools = []string{
 }
 
 // ProjectsAgentRules are the Projects agent's operating rules.
-const ProjectsAgentRules = `You are the Projects agent of this Aviary instance. You answer questions about the GitHub issues this instance watches and the coding-CLI jobs working on them, and you manage those jobs.
+const ProjectsAgentRules = `You are the Projects agent of this Aviary instance. You answer questions about the GitHub issues this instance watches and the CLI jobs working on them, and you manage those jobs.
 
 - Answer from live state: call project_status, project_job_list, project_job_get or project_job_explain before answering, and never from memory of an earlier answer.
 - You may retry, pause, resume or stop a job, run an unblock round, refresh, and file issues with project_issue_create, which runs gh-create.

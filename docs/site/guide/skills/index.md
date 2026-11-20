@@ -1,6 +1,6 @@
-# Skills for Coding CLIs
+# Skills for providers
 
-Aviary ships four skills for coding CLIs such as Claude Code, Codex and Gemini CLI. Projects runs them: Aviary decides which issue or Discussion to work on, in which CLI and when, and the skill does the rest. They are ordinary [skills.sh](https://skills.sh/) skills installed into each CLI, so they also work on their own, with no Aviary at all.
+Aviary ships four skills for providers such as Claude Code, Codex and Gemini CLI. Projects runs them: Aviary decides which issue or Discussion to work on, in which CLI and when, and the skill does the rest. They are ordinary [skills.sh](https://skills.sh/) skills installed into each CLI, so they also work on their own, with no Aviary at all.
 
 | Skill | What it does | Who runs it |
 | --- | --- | --- |
@@ -13,12 +13,12 @@ These skills are separate from the skills Aviary's own agents use. They live in 
 
 ## Installing and Updating
 
-**System › Skills › For coding CLIs** in the control panel shows the installed version of each skill in each coding CLI, with **Install**, **Update** and **Update all**. Aviary installs through `npx skills add`, so Node.js must be on the `PATH`.
+**System › Skills** in the control panel lists these skills with every other installed skill. Under **Installed in providers** it shows the installed version of each skill in each CLI provider, with **Install**, **Update** and **Update all**. Aviary installs through `npx skills add`, so Node.js must be on the `PATH`.
 
 By default Aviary keeps the skills current on its own:
 
 - **Update with Aviary.** At startup, including the restart after an upgrade, Aviary reinstalls any skill whose installed copy differs from the one the running release was built with. Each release installs the skills from its own tag, so they match what it was tested against.
-- **Install for new CLIs.** When a coding CLI shows up later, Aviary installs the skills for it too.
+- **Install for new CLIs.** When a CLI provider shows up later, Aviary installs the skills for it too.
 
 Turn either off on the same tab, or in `aviary.yaml`:
 

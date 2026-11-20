@@ -6,7 +6,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-// Status reports one coding CLI's install, sign-in, and quota state in the
+// Status reports one CLI's install, sign-in, and quota state in the
 // wire format provider_cli_list and the settings dashboard read, mirroring
 // what the doctor prints.
 type Status struct {
@@ -82,7 +82,7 @@ func StatusOf(report Report) Status {
 	return status
 }
 
-// Statuses probes every coding CLI -- the built-ins overlaid with
+// Statuses probes every CLI provider -- the built-ins overlaid with
 // definitions, the models: section's cli_definitions -- for install, version,
 // sign-in, quota and models.
 func Statuses(ctx context.Context, definitions map[string]any) ([]Status, error) {

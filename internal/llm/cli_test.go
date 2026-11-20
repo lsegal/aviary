@@ -41,7 +41,7 @@ func TestCLIProvidersPointAviaryAtRunningExecutable(t *testing.T) {
 }
 
 // TestCLIProvidersIncludeEveryBuiltinCLI checks the provider layer serves
-// the built-in coding CLIs beside the API providers.
+// the built-in CLI providers beside the API providers.
 func TestCLIProvidersIncludeEveryBuiltinCLI(t *testing.T) {
 	resetCLIProviders(t)
 	for _, name := range []string{"claude", "codex", "cline", "muse", "gemini", clidefs.Aviary} {

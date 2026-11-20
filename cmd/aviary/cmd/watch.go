@@ -41,9 +41,9 @@ var watchOpts watchOptions
 
 var watchCmd = &cobra.Command{
 	Use:   "watch [TARGET ...]",
-	Short: "Watch GitHub projects and fix ready issues with a coding CLI",
+	Short: "Watch GitHub projects and fix ready issues with a CLI provider",
 	Long: `Watch repositories, GitHub Project boards and Discussions boards, and run
-gh-fix (or gh-discuss for new Discussion threads) in a coding CLI on every
+gh-fix (or gh-discuss for new Discussion threads) in a CLI provider on every
 issue labeled ready, up to a concurrency limit.
 
 With no TARGET the current checkout's origin repository is watched. TARGET is
@@ -60,7 +60,7 @@ project permanently.`,
 
 func init() {
 	f := watchCmd.Flags()
-	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent to attach the targets to; its model and fallbacks pick the jobs' coding CLIs (default: the projects: section's agent)")
+	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent to attach the targets to; its model and fallbacks pick the jobs' CLI providers (default: the projects: section's agent)")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
@@ -69,7 +69,7 @@ func init() {
 	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me")`)
 	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter; the ready label still applies")
 	f.StringSliceVar(&watchOpts.allowedCommenters, "allowed-commenters", nil, "GitHub logins whose comments steer jobs (default the authenticated gh user)")
-	f.BoolVar(&watchOpts.yolo, "yolo", false, "disable the coding CLIs' sandboxes and permission checks")
+	f.BoolVar(&watchOpts.yolo, "yolo", false, "disable the CLI providers' sandboxes and permission checks")
 	f.BoolVar(&watchOpts.noMerge, "no-merge", false, "leave finished pull requests ready for a human to merge")
 	f.BoolVar(&watchOpts.noChangelog, "no-changelog", false, "skip changelog entries in gh-fix pull requests")
 	f.BoolVar(&watchOpts.browserVision, "browser-vision", false, "browser delivery: read pages it no longer recognizes from capped screenshots")

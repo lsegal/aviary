@@ -40,7 +40,7 @@ export function useAvailableModels() {
 	const endpointModelOptions = ref<string[]>([]);
 	const configuredModelOptions = ref<string[]>([]);
 	const { callTool } = useMCP();
-	// Coding-CLI providers sign in through their own CLI, never through Aviary
+	// Providers reached through a CLI sign in through their own CLI, never through Aviary
 	// credentials, so their models come from the CLI probe the Providers list
 	// shows rather than from the credential-filtered catalog.
 	const cliStatus = useProviderStatus({ refreshOnMount: false });

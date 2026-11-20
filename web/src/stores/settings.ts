@@ -109,7 +109,7 @@ export interface ModelDefaults {
 export interface ModelsConfig {
 	providers: Record<string, ProviderConfig>;
 	defaults: ModelDefaults;
-	/** Coding-CLI definitions; the UI does not edit them, only keeps them. */
+	/** CLI definitions; the UI does not edit them, only keeps them. */
 	cli_definitions?: Record<string, unknown>;
 }
 

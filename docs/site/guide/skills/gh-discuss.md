@@ -33,4 +33,4 @@ Already answered? Not actually a question? The repository can't settle it? It ex
 npx skills add lsegal/aviary@gh-discuss --global --agent claude-code -y
 ```
 
-See [Skills for Coding CLIs](./) for other CLIs and for how Aviary keeps the skill current.
+See [Skills for providers](./) for other CLIs and for how Aviary keeps the skill current.

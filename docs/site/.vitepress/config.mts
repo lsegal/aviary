@@ -75,7 +75,7 @@ export default defineConfig({
 					],
 				},
 				{
-					text: "Skills for Coding CLIs",
+					text: "Skills for providers",
 					items: [
 						{ text: "Overview", link: "/guide/skills/" },
 						{ text: "gh-fix", link: "/guide/skills/gh-fix" },

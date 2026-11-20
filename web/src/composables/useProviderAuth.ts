@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { type CodingCLI, normalizeCLIList } from "../lib/cliProviders";
+import { type CLIProvider, normalizeCLIList } from "../lib/cliProviders";
 import { parseToolJSON } from "../lib/projects";
 import { useMCP } from "./useMCP";
 
@@ -378,17 +378,17 @@ export function useProviderAuth(callTool: CallTool) {
 
 const CLI_PROVIDERS_CACHE_KEY = "aviary.providers.clis";
 
-// Providers reached through a coding CLI report their install, sign-in, quota
+// Providers reached through a CLI report their install, sign-in, quota
 // and model state from core's provider_cli_list. The probe is slow (it runs
 // every CLI's doctor), so its last result is shared across components and kept
 // in localStorage: the Providers list renders from the cache at once and the
 // probe refreshes it in the background.
-const cliProviders = ref<CodingCLI[] | null>(readCLIProviderCache());
+const cliProviders = ref<CLIProvider[] | null>(readCLIProviderCache());
 const cliProvidersRefreshing = ref(false);
 const cliProvidersError = ref("");
 let cliProvidersInflight: Promise<void> | null = null;
 
-function readCLIProviderCache(): CodingCLI[] | null {
+function readCLIProviderCache(): CLIProvider[] | null {
 	try {
 		const raw = localStorage.getItem(CLI_PROVIDERS_CACHE_KEY);
 		return raw ? normalizeCLIList(JSON.parse(raw)) : null;
@@ -398,7 +398,7 @@ function readCLIProviderCache(): CodingCLI[] | null {
 }
 
 /**
- * The state of the providers reached through a coding CLI: the cached result
+ * The state of the providers reached through a CLI: the cached result
  * at once, refreshed in the background when the caller mounts unless it asks to
  * refresh on its own schedule.
  */
