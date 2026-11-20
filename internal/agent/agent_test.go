@@ -46,6 +46,15 @@ func setTestDataDir(t *testing.T) {
 	})
 }
 
+// newTestManager returns a Manager whose background checkpoint recoveries
+// finish before t's earlier cleanups, such as setTestDataDir's, run.
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+	m := NewManager(nil)
+	t.Cleanup(m.WaitRecovery)
+	return m
+}
+
 type mockProvider struct {
 	events []llm.Event
 	err    error
@@ -851,7 +860,7 @@ func TestAgentRunner_StopAndAccessors(t *testing.T) {
 }
 
 func TestManager_ReconcileAndLookup(t *testing.T) {
-	mgr := NewManager(nil)
+	mgr := newTestManager(t)
 
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot1", Model: "anthropic/claude"}, {Name: "bot2", Model: "openai/gpt-4"}}}
 	mgr.Reconcile(cfg)
@@ -880,7 +889,7 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 }
 
 func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
-	mgr := NewManager(nil)
+	mgr := newTestManager(t)
 	defer mgr.Stop()
 
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus", Projects: config.ProjectsConfig{ChatModel: "anthropic/claude-sonnet-5-5"}}}})
@@ -903,7 +912,7 @@ func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
 }
 
 func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
-	mgr := NewManager(nil)
+	mgr := newTestManager(t)
 
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{Name: "bot", Model: ""}},
@@ -948,7 +957,7 @@ func TestManager_Reconcile_UsesGlobalDefaults(t *testing.T) {
 }
 
 func TestManager_Reconcile_UpdatesOnPermissionsChange(t *testing.T) {
-	mgr := NewManager(nil)
+	mgr := newTestManager(t)
 
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{
