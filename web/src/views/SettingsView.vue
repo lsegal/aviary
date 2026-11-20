@@ -5,7 +5,7 @@
 				<div
 					class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
 					<div class="flex items-center justify-between gap-3">
-						<h2 class="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
+						<h2 class="text-xl font-bold text-gray-900 dark:text-white" data-testid="settings-title">{{ pageTitle }}</h2>
 						<div class="flex items-center gap-2">
 							<transition name="save-indicator">
 								<div v-if="saveSuccessVisible" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
@@ -44,7 +44,7 @@
 				</div>
 				<div v-if="compileToastVisible"
 					class="mb-4 flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-					<span>Compile in progress… <RouterLink to="/jobs" class="font-medium underline">View jobs</RouterLink></span>
+					<span>Compile in progress… <RouterLink to="/system/jobs" class="font-medium underline">View jobs</RouterLink></span>
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
 
@@ -480,12 +480,18 @@ function safeJsonParse<T>(raw: string, fallback: T): T {
 const route = useRoute();
 const router = useRouter();
 
-const tabs: Tab[] = ["general", "agents", "skills", "sessions", "providers"];
+// System pages map to their tab; System → Settings is the general tab.
+const systemTabs: Record<string, Tab> = {
+	settings: "general",
+	providers: "providers",
+	sessions: "sessions",
+	skills: "skills",
+};
 
 function routeToActiveTab(): Tab {
-	if (route.path.startsWith("/settings/agents")) return "agents";
-	const tab = route.params.tab as Tab | undefined;
-	return tab && tabs.includes(tab) ? tab : "general";
+	if (route.path === "/agents" || route.path.startsWith("/agents/"))
+		return "agents";
+	return systemTabs[route.params.tab as string] ?? "general";
 }
 
 const activeTab = ref<Tab>(routeToActiveTab());
@@ -589,7 +595,7 @@ const revertAvailable = ref(false);
 const draft = ref<AppConfig>(emptyConfig());
 
 const agentSubtabs = [
-	"general",
+	"settings",
 	"permissions",
 	"channels",
 	"files",
@@ -614,13 +620,13 @@ function agentIdxFromParam(param: string): number {
 }
 
 function agentRoutePath(idx: number, subtab: AgentSubtab): string {
-	return `/settings/agents/${agentRouteId(idx)}/${subtab}`;
+	return `/agents/${agentRouteId(idx)}/${subtab}`;
 }
 
 const selectedAgentSubtab = ref<AgentSubtab>(
 	agentSubtabs.includes(route.params.subtab as AgentSubtab)
 		? (route.params.subtab as AgentSubtab)
-		: "general",
+		: "settings",
 );
 const selectedAgentIdx = ref(
 	route.params.agent ? agentIdxFromParam(route.params.agent as string) : 0,
@@ -683,7 +689,7 @@ watch(selectedAgentIdx, (idx) => {
 
 // Subtab click → replace current URL segment.
 watch(selectedAgentSubtab, (subtab) => {
-	if (!route.path.startsWith("/settings/agents")) return;
+	if (!route.path.startsWith("/agents/")) return;
 	const target = agentRoutePath(selectedAgentIdx.value, subtab);
 	if (route.path !== target) void router.replace(target);
 });
@@ -692,7 +698,7 @@ watch(selectedAgentSubtab, (subtab) => {
 watch(
 	() => draft.value.agents[selectedAgentIdx.value]?.name,
 	() => {
-		if (!route.path.startsWith("/settings/agents")) return;
+		if (!route.path.startsWith("/agents/")) return;
 		const target = agentRoutePath(
 			selectedAgentIdx.value,
 			selectedAgentSubtab.value,
@@ -751,18 +757,42 @@ watch(
 	},
 );
 
-// /settings/agents with no agent param → redirect to current selection.
-watch(
-	() => route.path,
-	(path) => {
-		if (path === "/settings/agents") {
-			void router.replace(
-				agentRoutePath(selectedAgentIdx.value, selectedAgentSubtab.value),
-			);
-		}
-	},
-	{ immediate: true },
-);
+// /agents alone opens the first agent's chat, or adds an agent with ?add
+// (the sidebar's + Add Agent). With no agents it shows the empty state.
+function resolveAgentsIndex() {
+	if (route.path !== "/agents" || loading.value) return;
+	if (route.query.add !== undefined) {
+		addAgent();
+		return;
+	}
+	const first = draft.value.agents[0]?.name;
+	if (first) void router.replace(`/agents/${encodeURIComponent(first)}/chat`);
+}
+watch(() => route.fullPath, resolveAgentsIndex);
+
+const agentSubtabLabels: Record<AgentSubtab, string> = {
+	settings: "Settings",
+	permissions: "Permissions",
+	channels: "Channels",
+	files: "Files",
+	tasks: "Tasks",
+	projects: "GitHub Projects",
+};
+const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
+	general: "Settings",
+	providers: "Providers & Auth",
+	sessions: "Sessions",
+	skills: "Skills",
+};
+
+/** The page heading: the agent and its page, or the System page. */
+const pageTitle = computed(() => {
+	if (activeTab.value !== "agents") return systemTabLabels[activeTab.value];
+	const agent = draft.value.agents[selectedAgentIdx.value];
+	if (!agent || route.path === "/agents") return "Agents";
+	const name = agent.name || "New agent";
+	return `${name} · ${agentSubtabLabels[selectedAgentSubtab.value]}`;
+});
 
 const selectedAgentAsSingletonList = computed(() =>
 	selectedAgentIdx.value < draft.value.agents.length
@@ -1406,7 +1436,7 @@ function moveAgentFileState(previousName: string, nextName: string) {
 }
 
 async function ensureSelectedAgentFilesLoaded() {
-	if (activeTab.value !== "agents" || selectedAgentSubtab.value !== "general") {
+	if (activeTab.value !== "agents" || selectedAgentSubtab.value !== "files") {
 		return;
 	}
 	const agentName =
@@ -1724,6 +1754,7 @@ async function loadConfig() {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
 		loading.value = false;
+		resolveAgentsIndex();
 	}
 }
 
@@ -1817,8 +1848,9 @@ function addAgent() {
 		tasks: [],
 	};
 	draft.value.agents.push(agent);
-	// Setting the index triggers the watch which navigates to _N/general.
+	selectedAgentSubtab.value = "settings";
 	selectedAgentIdx.value = draft.value.agents.length - 1;
+	void router.replace(agentRoutePath(selectedAgentIdx.value, "settings"));
 }
 
 const removeAgentTarget = ref<number | null>(null);
@@ -1844,6 +1876,10 @@ function confirmRemoveAgent() {
 	removeAgentTarget.value = null;
 	removeAgentOpen.value = false;
 	draft.value.agents.splice(index, 1);
+	if (!draft.value.agents.length) {
+		void router.replace("/agents");
+		return;
+	}
 	const next = Math.min(
 		selectedAgentIdx.value,
 		Math.max(0, draft.value.agents.length - 1),

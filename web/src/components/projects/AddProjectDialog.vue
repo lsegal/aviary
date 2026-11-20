@@ -95,7 +95,8 @@ import {
 } from "../../lib/projectSettings";
 import { useSettingsStore } from "../../stores/settings";
 
-const props = defineProps<{ initial?: string }>();
+// agent preselects the owning agent, as when adding from its GitHub Projects.
+const props = defineProps<{ initial?: string; agent?: string }>();
 const emit = defineEmits<{ close: []; added: [target: string] }>();
 
 const router = useRouter();
@@ -117,13 +118,14 @@ const startError = ref("");
 onMounted(async () => {
 	input.value?.focus();
 	if (!store.config) await store.fetchConfig();
-	if (!agent.value) agent.value = agentNames.value[0] ?? "";
+	if (!agent.value || !agentNames.value.includes(agent.value))
+		agent.value = agentNames.value[0] ?? "";
 });
 
 const agentNames = computed(() =>
 	(store.config?.agents ?? []).map((a) => a.name).filter(Boolean),
 );
-const agent = ref(agentNames.value[0] ?? "");
+const agent = ref(props.agent || agentNames.value[0] || "");
 
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
@@ -174,7 +176,7 @@ async function start() {
 function changeSettings() {
 	emit("close");
 	void router.push(
-		`/settings/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
+		`/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
 	);
 }
 

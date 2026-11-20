@@ -13,7 +13,7 @@
 						class="flex items-center gap-2 px-3 py-2" :class="t === selected ? 'bg-blue-50 dark:bg-blue-950/30' : ''">
 						<button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-sm text-gray-900 dark:text-white"
 							:aria-pressed="t === selected" @click="selected = t">{{ t }}</button>
-						<router-link :to="`/projects/${encodeProject(t)}`" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
+						<router-link :to="projectPath(agent.name, t)" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
 						<button v-if="!savedTargets.includes(t)" type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`"
 							title="Not saved yet" @click="removeProject(t)">✕</button>
 					</li>
@@ -41,7 +41,7 @@
 			<h3 :class="CARD_HEAD">Jobs run on <span :class="CARD_NOTE">{{ agentLabel }}'s model, then down its fallbacks when quota runs out</span></h3>
 			<div class="space-y-2 p-4">
 				<p v-if="!models.length" class="text-sm text-red-600 dark:text-red-400" data-testid="agent-problem">
-					{{ agentLabel }} has no model a job can run on. Set one on the General subtab.
+					{{ agentLabel }} has no model a job can run on. Set one on its Settings page.
 				</p>
 				<ol v-else class="space-y-2" data-testid="job-models">
 					<li v-for="(m, i) in models" :key="m.spec" :data-spec="m.spec"
@@ -276,7 +276,7 @@ import {
 	withReports,
 	withSettings,
 } from "../../lib/projectSettings";
-import { encodeProject } from "../../lib/projects";
+import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectSection from "../projects/DeleteProjectSection.vue";
 

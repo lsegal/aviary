@@ -609,8 +609,18 @@ export function encodeProject(name: string): string {
 	return encodeURIComponent(name);
 }
 
-export function jobPath(target: string, number: number): string {
-	return `/projects/${encodeProject(target)}/jobs/${number}`;
+/**
+ * The board path of target: under its owning agent's GitHub Projects, or
+ * under System → Watches for a runtime watch no agent owns.
+ */
+export function projectPath(owner: string, target: string): string {
+	return owner
+		? `/agents/${encodeURIComponent(owner)}/projects/${encodeProject(target)}`
+		: `/system/watches/${encodeProject(target)}`;
+}
+
+export function jobPath(owner: string, target: string, number: number): string {
+	return `${projectPath(owner, target)}/jobs/${number}`;
 }
 
 export type ScheduleTrigger = "once" | "interval" | "daily" | "weekly" | "cron";
