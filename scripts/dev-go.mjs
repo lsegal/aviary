@@ -64,7 +64,7 @@ function resolveRunner() {
 			`warning: forgo publishes no release for ${platformKey}; ` +
 				"falling back to 'go run' without hot reload.",
 		);
-		return { bin: "go", args: ["run"] };
+		return { bin: "go", args: ["run"], hotReload: false };
 	}
 
 	let forgo = findForgo();
@@ -79,12 +79,18 @@ function resolveRunner() {
 		);
 		process.exit(1);
 	}
-	return { bin: forgo, args: ["run", "--watch"] };
+	return { bin: forgo, args: ["run", "--watch"], hotReload: true };
 }
 
-const { bin, args } = resolveRunner();
+const { bin, args, hotReload } = resolveRunner();
+// Tells the backend's git-mode updater whether pulled sources go live on
+// their own or need a restart.
+const env = { ...process.env };
+if (hotReload) env.AVIARY_HOT_RELOAD = "1";
+else delete env.AVIARY_HOT_RELOAD;
 const child = spawn(bin, [...args, "./cmd/aviary", ...process.argv.slice(2)], {
 	cwd: rootDir,
+	env,
 	stdio: "inherit",
 });
 

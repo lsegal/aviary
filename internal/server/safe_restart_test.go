@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +68,9 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	resetSlogForTest()
 	store.SetDataDir(t.TempDir())
 	origVersion, origCheck, origInstall, origExe, origPoll := buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll
+	origCheckout, origPull := gitCheckout, gitPull
 	buildinfo.Version = current
+	gitCheckout = func() string { return "" }
 	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return check, nil }
 	var log []string
 	installRelease = func(_ context.Context, opts update.InstallOptions) (update.InstallResult, error) {
@@ -84,6 +87,7 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	})
 	t.Cleanup(func() {
 		buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll = origVersion, origCheck, origInstall, origExe, origPoll
+		gitCheckout, gitPull = origCheckout, origPull
 		saferestart.Unregister("test")
 		saferestart.UnregisterSkillsUpdater("test")
 		saferestart.Hold(false)
@@ -215,4 +219,49 @@ func TestSafeRestart_RejectsUnknownWhen(t *testing.T) {
 	srv, _, _ := setupSafeRestart(t, "1.2.3", update.CheckResult{})
 	_, err := srv.requestRestart(context.Background(), saferestart.Request{When: "later"})
 	assert.ErrorContains(t, err, `when must be "now" or "idle"`)
+}
+
+func TestSafeRestart_GitModePullsWithoutRestart(t *testing.T) {
+	srv, p, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	p.setJobs([]saferestart.Job{{Source: "test", ID: "job-1"}})
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
+		*log = append(*log, "pull "+dir)
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1, HotReload: true}, nil
+	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	if err != nil {
+		t.Fatalf("requestRestart: %v", err)
+	}
+	if !st.Noop || !strings.Contains(st.Message, "Pulled 1 commit") || !strings.Contains(st.Message, "Hot reload") {
+		t.Fatalf("status = %+v, want a no-restart pull message", st)
+	}
+	if got := strings.Join(*log, "|"); got != "pull /src/aviary" {
+		t.Fatalf("log = %q, want only the pull (no install, checkpoint, or restart)", got)
+	}
+	if srv.RestartStatus().Phase != saferestart.PhaseIdle || saferestart.Held() {
+		t.Fatalf("restart status = %+v, want idle and not holding jobs", srv.RestartStatus())
+	}
+	select {
+	case <-srv.reexecCh:
+		t.Fatal("git-mode update requested a re-exec")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestSafeRestart_GitModeRefusalIsReported(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		return update.GitPullResult{}, errors.New("not updating: the checkout at /src/aviary has uncommitted changes")
+	}
+
+	_, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("err = %v, want the dirty-tree reason", err)
+	}
+	if len(*log) != 0 || saferestart.Held() {
+		t.Fatalf("log = %v held = %v, want nothing done", *log, saferestart.Held())
+	}
 }

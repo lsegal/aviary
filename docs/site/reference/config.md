@@ -39,7 +39,7 @@ server:
 | `external_access` | bool | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` |
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
-| `auto_update` | bool | `false` | Install new releases automatically, but only while no jobs are running. |
+| `auto_update` | bool | `false` | Install new releases automatically, but only while no jobs are running. Dev builds in a git checkout fast-forward the checkout instead (see [Upgrades](/guide/operations#dev-checkouts)). |
 | `tls.cert` | string | | Path to TLS certificate file |
 | `tls.key` | string | | Path to TLS private key file |
 

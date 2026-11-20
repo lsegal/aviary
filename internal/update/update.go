@@ -43,6 +43,9 @@ type CheckResult struct {
 	Message          string    `json:"message,omitempty"`
 	// ReleaseURL links the latest version to its release page.
 	ReleaseURL string `json:"releaseUrl,omitempty"`
+	// Git is set in git mode, when a dev build runs from a source checkout:
+	// updates are pulled from the checkout's upstream instead of a release.
+	Git *GitState `json:"git,omitempty"`
 }
 
 // InstallOptions controls how a release is downloaded and installed.
@@ -135,10 +138,14 @@ func CurrentVersion() string {
 	return buildinfo.Version
 }
 
-// Check compares the current version with the latest available release.
+// Check compares the current version with the latest available release, or
+// in git mode with the source checkout's upstream branch.
 func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 	if client == nil {
 		client = http.DefaultClient
+	}
+	if dir := GitCheckout(); dir != "" {
+		return cachedGitCheck(ctx, dir)
 	}
 	if EmulationActive() {
 		emulateMu.RLock()
@@ -149,7 +156,7 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 	}
 
 	cacheMu.RLock()
-	if time.Now().Before(cacheExpiry) {
+	if time.Now().Before(cacheExpiry) && cachedCheck.Git == nil {
 		out := cachedCheck
 		cacheMu.RUnlock()
 		return out, nil
@@ -171,6 +178,25 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 		return out, cmpErr
 	}
 
+	cacheMu.Lock()
+	cachedCheck = out
+	cacheExpiry = time.Now().Add(checkTTL)
+	cacheMu.Unlock()
+	return out, nil
+}
+
+func cachedGitCheck(ctx context.Context, dir string) (CheckResult, error) {
+	cacheMu.RLock()
+	if time.Now().Before(cacheExpiry) && cachedCheck.Git != nil {
+		out := cachedCheck
+		cacheMu.RUnlock()
+		return out, nil
+	}
+	cacheMu.RUnlock()
+	out, err := gitCheckResult(ctx, dir)
+	if err != nil {
+		return out, err
+	}
 	cacheMu.Lock()
 	cachedCheck = out
 	cacheExpiry = time.Now().Add(checkTTL)

@@ -28,6 +28,10 @@ var upgradeCmd = &cobra.Command{
 	Long: `Upgrade Aviary to the latest release, or to --version (with or without a
 leading v). Does nothing when Aviary is already at that version.
 
+A dev build running from a source checkout instead fast-forwards the checkout
+with git pull, and only when it has no local changes. Hot reload picks up the
+pulled sources, so nothing restarts.
+
 When the server is running, the upgrade is a safe restart: running jobs are
 stopped at a checkpoint and resumed in their own sessions after the restart.
 --when idle instead holds new jobs and upgrades once no jobs are running.`,
@@ -78,6 +82,16 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	if dir := update.GitCheckout(); dir != "" {
+		pullCtx, pullCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer pullCancel()
+		res, err := update.GitPull(pullCtx, dir)
+		if err != nil {
+			return err
+		}
+		fmt.Println(update.GitPullMessage(res))
+		return nil
+	}
 	if update.EmulationActive() {
 		fmt.Printf("Emulated upgrade to %s completed. No files were changed.\n", targetVersion)
 		return nil
