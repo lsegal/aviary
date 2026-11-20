@@ -66,24 +66,26 @@
           class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
           {{ updateNotice }}
         </div>
-        <nav class="flex flex-wrap gap-2">
-          <div v-for="link in links" :key="link.to" class="relative">
-            <router-link :to="linkTarget(link)" :class="topLevelLinkClass(link, true)">
-              {{ link.label }}
-            </router-link>
-          </div>
+        <nav class="flex flex-wrap gap-2" aria-label="Main">
+          <router-link v-for="a in agentNav" :key="a.name" :to="a.to" :class="topLevelLinkClass(a.active, true)">
+            {{ a.label }}
+          </router-link>
+          <router-link :to="addAgentLink" data-testid="mobile-add-agent" :class="topLevelLinkClass(false, true)">
+            + Add Agent
+          </router-link>
+          <router-link to="/system/overview" :class="topLevelLinkClass(systemActive, true)">System</router-link>
         </nav>
       </div>
     </header>
 
-    <div v-if="activeMobileGroup()"
+    <div v-if="mobileChildren.length"
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
       <nav class="flex gap-2 overflow-x-auto pb-1">
-        <router-link v-for="child in childrenForGroup(activeMobileGroup())" :key="child.key" :to="child.to"
+        <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
           {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
         </router-link>
-        <button v-if="activeMobileGroup() === 'settings'" type="button"
+        <button v-if="systemActive" type="button"
           class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
           @click="auth.logout(); $router.push('/login')">
           Log out
@@ -121,31 +123,65 @@
           </a>
         </div>
       </div>
-      <div class="space-y-1">
-        <template v-for="link in links" :key="link.to">
-          <router-link :to="linkTarget(link)" :class="[topLevelLinkClass(link, false), 'flex items-center']">
-            {{ link.label }}
-            <span v-if="link.group === 'projects' && projectsRunning > 0" data-testid="projects-running-badge"
-              class="ml-auto rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ projectsRunning }}</span>
+      <div class="min-h-0 flex-1 space-y-1 overflow-y-auto" data-testid="sidebar-nav">
+        <router-link to="/agents" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-agents">
+          Agents
+        </router-link>
+        <div class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-agent-list">
+          <template v-for="a in agentNav" :key="a.name">
+            <router-link :to="a.to" :data-agent="a.name"
+              :class="[childLinkClass(a.active && !a.children.length, false), 'flex items-center gap-2', a.active ? 'font-semibold text-gray-950 dark:text-white' : '']">
+              <span class="min-w-0 flex-1 truncate">{{ a.label }}</span>
+              <span v-if="a.running > 0" data-testid="agent-running-badge"
+                class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ a.running }}</span>
+            </router-link>
+            <div v-if="a.children.length" class="space-y-1 border-l border-gray-200 pl-2 dark:border-gray-800" :data-testid="`sidebar-agent-${a.name}`">
+              <template v-for="child in a.children" :key="child.key">
+                <router-link :to="child.to" :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
+                  <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+                  <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+                </router-link>
+                <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
+                  <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
+                    :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
+                    <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
+                    <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+                  </router-link>
+                  <router-link :to="addProjectLink(a.name)" data-testid="sidebar-add-project"
+                    class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+                    + Add project
+                  </router-link>
+                </div>
+              </template>
+            </div>
+          </template>
+          <router-link :to="addAgentLink" data-testid="sidebar-add-agent"
+            class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+            + Add Agent
           </router-link>
-          <div v-if="link.group === 'projects' && isLinkActive(link)" class="mb-3 mt-1 space-y-1 pl-2">
-            <router-link v-for="child in projectChildren" :key="child.key" :to="child.to"
-              :class="[childLinkClass(child, false), 'flex items-center gap-2']">
+        </div>
+
+        <router-link to="/system/overview" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-system">
+          System
+        </router-link>
+        <div class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
+          <router-link v-for="child in systemPrimary" :key="child.key" :to="child.to" :class="childLinkClass(isChildActive(child), false)">
+            {{ child.label }}
+          </router-link>
+          <button type="button" data-testid="sidebar-system-more" :aria-expanded="systemMoreOpen"
+            class="mt-1 flex w-full items-center gap-1 rounded-lg px-3 py-2 text-left text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            @click="systemMoreToggled = !systemMoreOpen">
+            <span aria-hidden="true" class="inline-block w-3 transition-transform" :class="systemMoreOpen ? 'rotate-90' : ''">›</span>
+            {{ systemMoreOpen ? "Less" : "More" }}
+          </button>
+          <template v-if="systemMoreOpen">
+            <router-link v-for="child in systemMore" :key="child.key" :to="child.to"
+              :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <span class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+              <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
             </router-link>
-            <router-link :to="addProjectLink" data-testid="sidebar-add-project"
-              class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
-              + Add project
-            </router-link>
-          </div>
-          <div v-else-if="link.children && isLinkActive(link)" class="mb-3 mt-1 space-y-1 pl-2">
-            <router-link v-for="child in link.children" :key="child.key" :to="child.to"
-              :class="childLinkClass(child, false)">
-              {{ child.label }}
-            </router-link>
-          </div>
-        </template>
+          </template>
+        </div>
       </div>
       <div class="mt-auto flex flex-col gap-2">
         <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
@@ -203,17 +239,16 @@
 
 <script setup lang="ts">
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
-import { type Component, computed, markRaw } from "vue";
+import { type Component, computed, markRaw, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
-import { encodeProject } from "../lib/projects";
+import { type ProjectSummary, projectPath } from "../lib/projects";
+import { projectOwner } from "../lib/projectSettings";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
-
-type SettingsTab = "general" | "agents" | "skills" | "sessions" | "providers";
-type NavGroup = "settings" | "system" | "projects";
 
 interface NavChild {
 	key: string;
@@ -222,11 +257,15 @@ interface NavChild {
 	count?: string;
 }
 
-interface NavLink {
-	to: string;
+interface AgentNav {
+	name: string;
 	label: string;
-	group?: NavGroup;
-	children?: NavChild[];
+	to: string;
+	active: boolean;
+	running: number;
+	/** The active agent's pages; empty for the others. */
+	children: NavChild[];
+	projects: NavChild[];
 }
 
 interface BrandLink {
@@ -273,118 +312,139 @@ const brandLinks: BrandLink[] = [
 	},
 ];
 
-const settingsChildren: NavChild[] = [
-	{ key: "general", label: "General", to: "/settings/general" },
-	{ key: "agents", label: "Agents & Tasks", to: "/settings/agents" },
-	{ key: "skills", label: "Skills", to: "/settings/skills" },
-	{ key: "sessions", label: "Sessions", to: "/settings/sessions" },
-	{ key: "providers", label: "Providers & Auth", to: "/settings/providers" },
-];
+// An agent's pages, in sidebar order. Settings holds its General,
+// Permissions and Channels tabs.
+const AGENT_PAGES = [
+	{ key: "chat", label: "Chat" },
+	{ key: "projects", label: "GitHub Projects" },
+	{ key: "tasks", label: "Tasks" },
+	{ key: "files", label: "Files" },
+	{ key: "settings", label: "Settings" },
+] as const;
 
-const systemChildren: NavChild[] = [
-	{ key: "usage", label: "Usage", to: "/usage" },
-	{ key: "jobs", label: "Jobs", to: "/jobs" },
+// System's first pages are always shown; the rest sit behind the expander in
+// their previous relative order.
+const systemPrimary: NavChild[] = [
+	{ key: "overview", label: "Overview", to: "/system/overview" },
+	{ key: "settings", label: "Settings", to: "/system/settings" },
+	{ key: "providers", label: "Providers & Auth", to: "/system/providers" },
+	{ key: "usage", label: "Usage", to: "/system/usage" },
+	{ key: "jobs", label: "Jobs", to: "/system/jobs" },
+];
+const systemRest: NavChild[] = [
 	{ key: "tools", label: "Tools", to: "/system/tools" },
 	{ key: "skills", label: "Skills", to: "/system/skills" },
+	{ key: "sessions", label: "Sessions", to: "/system/sessions" },
 	{ key: "models", label: "Models", to: "/system/models" },
-	{ key: "logs", label: "Logs", to: "/logs" },
-	{ key: "daemons", label: "Daemons", to: "/daemons" },
+	{ key: "logs", label: "Logs", to: "/system/logs" },
+	{ key: "daemons", label: "Daemons", to: "/system/daemons" },
 ];
 
+const settingsStore = useSettingsStore();
+if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
 
-const projectChildren = computed<NavChild[]>(() =>
-	projects.value.map((p) => ({
+function projectCount(p: ProjectSummary): string {
+	if (p.running > 0) return `${p.running} running`;
+	if (p.waiting > 0) return `${p.waiting} waiting`;
+	return "idle";
+}
+
+function projectChild(owner: string, p: ProjectSummary): NavChild {
+	return {
 		key: p.name,
 		label: p.name,
-		to: `/projects/${encodeProject(p.name)}`,
-		count:
-			p.running > 0
-				? `${p.running} running`
-				: p.waiting > 0
-					? `${p.waiting} waiting`
-					: "idle",
-	})),
+		to: projectPath(owner, p.name),
+		count: projectCount(p),
+	};
+}
+
+const routeAgent = computed(() =>
+	typeof route.params.agent === "string" ? route.params.agent : "",
 );
 
-// Opens the add-project dialog over the current board, or the first one.
-const addProjectLink = computed(() => ({
-	path:
-		route.path.startsWith("/projects/") &&
-		!route.path.includes("/jobs/") &&
-		!route.path.endsWith("/settings")
-			? route.path
-			: "/projects",
-	query: { add: "1" },
-}));
-
-const projectsRunning = computed(() =>
-	projects.value.reduce((n, p) => n + p.running, 0),
+const agentNames = computed(() =>
+	(settingsStore.config?.agents ?? []).map((a) => a.name).filter(Boolean),
 );
 
-const links: NavLink[] = [
-	{ to: "/overview", label: "Overview" },
-	{ to: "/chat", label: "Chat" },
-	{ to: "/projects", label: "GitHub", group: "projects" },
-	{
-		to: "/settings",
-		label: "Settings",
-		group: "settings",
-		children: settingsChildren,
-	},
-	{ to: "/system", label: "System", group: "system", children: systemChildren },
-];
-
-function settingsTabTarget(tab: SettingsTab) {
-	return `/settings/${tab}`;
+function ownedProjects(agent: string): ProjectSummary[] {
+	return projects.value.filter(
+		(p) => projectOwner(settingsStore.config, p.name) === agent,
+	);
 }
 
-function groupTarget(group: NavGroup): string {
-	if (group === "settings") {
-		if (route.path.startsWith("/settings/agents")) return route.path;
-		const tab = (route.params.tab as SettingsTab | undefined) ?? "general";
-		return settingsTabTarget(tab);
-	}
-	if (group === "projects") return "/projects";
-	return systemChildren[0]?.to ?? "/logs";
+function agentPagePath(agent: string, page: string): string {
+	return `/agents/${encodeURIComponent(agent)}/${page}`;
 }
 
-function linkTarget(link: NavLink) {
-	if (link.group) {
-		return groupTarget(link.group);
-	}
-	return link.to;
+const agentNav = computed<AgentNav[]>(() => {
+	const names = [...agentNames.value];
+	// An agent added but not saved yet routes as _N until it has a name.
+	const pending = routeAgent.value.startsWith("_") ? routeAgent.value : "";
+	if (pending) names.push(pending);
+	return names.map((name) => {
+		const active = routeAgent.value === name;
+		const owned = pending === name ? [] : ownedProjects(name);
+		return {
+			name,
+			label: pending === name ? "New agent" : name,
+			to: pending === name ? agentPagePath(name, "settings") : agentPagePath(name, "chat"),
+			active,
+			running: owned.reduce((n, p) => n + p.running, 0),
+			children: active
+				? AGENT_PAGES.map((page) => ({
+						key: page.key,
+						label: page.label,
+						to: agentPagePath(name, page.key),
+						count:
+							page.key === "projects" && owned.length
+								? String(owned.length)
+								: undefined,
+					}))
+				: [],
+			projects: owned.map((p) => projectChild(name, p)),
+		};
+	});
+});
+
+// The agent's projects list opens on its GitHub Projects pages and boards.
+const projectsOpen = computed(() =>
+	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
+);
+
+const addAgentLink = { path: "/agents", query: { add: "1" } };
+
+function addProjectLink(agent: string) {
+	return { path: agentPagePath(agent, "projects"), query: { new: "1" } };
 }
 
-function isLinkActive(link: NavLink): boolean {
-	if (link.group === "settings") {
-		return route.path.startsWith("/settings");
-	}
-	if (link.group === "system") {
-		return systemChildren.some((child) => route.path === child.to);
-	}
-	if (link.group === "projects") {
-		return route.path.startsWith("/projects");
-	}
-	return route.path === link.to || route.path.startsWith(`${link.to}/`);
-}
+// Runtime watches no agent owns sit with System's other pages.
+const watchChildren = computed<NavChild[]>(() =>
+	projects.value
+		.filter((p) => !projectOwner(settingsStore.config, p.name))
+		.map((p) => ({ ...projectChild("", p), label: `Watch: ${p.name}` })),
+);
+
+const systemMore = computed(() => [...systemRest, ...watchChildren.value]);
+
+const systemActive = computed(() => route.path.startsWith("/system/"));
+
+// The expander opens itself while one of its pages is showing.
+const systemMoreToggled = ref<boolean | null>(null);
+const systemMoreOpen = computed(
+	() =>
+		systemMoreToggled.value ??
+		systemMore.value.some((child) => isChildActive(child)),
+);
 
 function isChildActive(child: NavChild): boolean {
-	if (child.to.startsWith("/projects/")) {
-		// Project names contain an encoded "/", so compare decoded paths.
-		const path = decodeURIComponent(child.to);
-		const current = decodeURIComponent(route.path);
-		return (
-			current === path ||
-			current.startsWith(`${path}/jobs/`) ||
-			current === `${path}/settings`
-		);
-	}
-	return route.path === child.to || route.path.startsWith(`${child.to}/`);
+	// Project names contain an encoded "/", so compare decoded paths.
+	const path = decodeURIComponent(child.to);
+	const current = decodeURIComponent(route.path);
+	return current === path || current.startsWith(`${path}/`);
 }
 
-function topLevelLinkClass(link: NavLink, mobile: boolean): string {
-	const active = isLinkActive(link);
+function topLevelLinkClass(active: boolean, mobile: boolean): string {
 	const base = mobile
 		? "rounded-xl border px-3 py-2 text-sm font-medium transition-colors"
 		: "block rounded-xl px-3 py-2 text-sm font-medium transition-colors";
@@ -398,33 +458,24 @@ function topLevelLinkClass(link: NavLink, mobile: boolean): string {
 		: `${base} text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white`;
 }
 
-function childLinkClass(child: NavChild, mobile: boolean): string {
-	const active = isChildActive(child);
+function childLinkClass(active: boolean, mobile: boolean): string {
 	const base = "mt-1 block rounded-lg px-3 py-2 text-sm transition-colors";
 	if (active) {
-		return mobile
-			? `${base} bg-gray-100 font-semibold text-gray-950 dark:bg-gray-800 dark:text-white`
-			: `${base} bg-gray-100 font-semibold text-gray-950 dark:bg-gray-800 dark:text-white`;
+		return `${base} bg-gray-100 font-semibold text-gray-950 dark:bg-gray-800 dark:text-white`;
 	}
 	return mobile
 		? `${base} text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white`
 		: `${base} text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white`;
 }
 
-function activeMobileGroup(): NavGroup | null {
-	if (route.path.startsWith("/settings")) return "settings";
-	if (systemChildren.some((child) => route.path === child.to)) return "system";
-	if (route.path.startsWith("/projects") && projectChildren.value.length > 0)
-		return "projects";
-	return null;
-}
-
-function childrenForGroup(group: NavGroup | null): NavChild[] {
-	if (group === "settings") return settingsChildren;
-	if (group === "system") return systemChildren;
-	if (group === "projects") return projectChildren.value;
+// On narrow screens the active agent's pages, or all of System's, form a
+// second row under the main one.
+const mobileChildren = computed<NavChild[]>(() => {
+	const agent = agentNav.value.find((a) => a.active);
+	if (agent) return [...agent.children, ...(projectsOpen.value ? agent.projects : [])];
+	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
 	return [];
-}
+});
 
 function mobileSubnavClass(child: NavChild): string {
 	return isChildActive(child)

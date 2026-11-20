@@ -22,7 +22,7 @@
 					<label class="block">
 						<span :class="LABEL">Add a repository or project board</span>
 						<div class="flex gap-2">
-							<input v-model="newTarget" type="text" autocomplete="off" spellcheck="false" placeholder="owner/repo"
+							<input ref="newTargetInput" v-model="newTarget" type="text" autocomplete="off" spellcheck="false" placeholder="owner/repo"
 								:class="[INPUT, 'font-mono']" data-field="new_project" />
 							<button type="submit" :disabled="!canAdd"
 								class="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">Add</button>
@@ -241,7 +241,7 @@
 
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
-import { computed, h, ref, watch } from "vue";
+import { computed, h, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import {
 	useProjectCheck,
@@ -370,6 +370,17 @@ watch(targets, (list) => {
 });
 
 const newTarget = ref("");
+// The sidebar's + Add project opens this page with ?new to focus the input.
+const newTargetInput = ref<HTMLInputElement | null>(null);
+watch(
+	() => route.query.new,
+	async (v) => {
+		if (v === undefined) return;
+		await nextTick();
+		newTargetInput.value?.focus();
+	},
+	{ immediate: true },
+);
 const check = useProjectCheck(newTarget);
 const checkResult = check.result;
 const checkError = check.error;

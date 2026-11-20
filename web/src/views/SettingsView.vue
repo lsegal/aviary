@@ -594,8 +594,10 @@ const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
+// An agent's pages: its Settings page's General, Permissions and Channels
+// tabs, then Files, Tasks and GitHub Projects.
 const agentSubtabs = [
-	"settings",
+	"general",
 	"permissions",
 	"channels",
 	"files",
@@ -619,15 +621,31 @@ function agentIdxFromParam(param: string): number {
 	return idx >= 0 ? idx : 0;
 }
 
-function agentRoutePath(idx: number, subtab: AgentSubtab): string {
-	return `/agents/${agentRouteId(idx)}/${subtab}`;
+const settingsSections: readonly AgentSubtab[] = [
+	"general",
+	"permissions",
+	"channels",
+];
+
+/** The URL tail of a subtab: settings, settings/permissions, files, … */
+function subtabPath(subtab: AgentSubtab): string {
+	if (subtab === "general") return "settings";
+	return settingsSections.includes(subtab) ? `settings/${subtab}` : subtab;
 }
 
-const selectedAgentSubtab = ref<AgentSubtab>(
-	agentSubtabs.includes(route.params.subtab as AgentSubtab)
-		? (route.params.subtab as AgentSubtab)
-		: "settings",
-);
+/** The subtab a route names, or null when it names none. */
+function routeSubtab(): AgentSubtab | null {
+	const subtab = route.params.subtab as string | undefined;
+	if (!subtab) return null;
+	if (subtab !== "settings") return subtab as AgentSubtab;
+	return (route.params.section as AgentSubtab | undefined) || "general";
+}
+
+function agentRoutePath(idx: number, subtab: AgentSubtab): string {
+	return `/agents/${agentRouteId(idx)}/${subtabPath(subtab)}`;
+}
+
+const selectedAgentSubtab = ref<AgentSubtab>(routeSubtab() ?? "general");
 const selectedAgentIdx = ref(
 	route.params.agent ? agentIdxFromParam(route.params.agent as string) : 0,
 );
@@ -749,18 +767,23 @@ watch(
 	},
 );
 watch(
-	() => route.params.subtab as string | undefined,
-	(subtab) => {
-		if (subtab && agentSubtabs.includes(subtab as AgentSubtab)) {
-			selectedAgentSubtab.value = subtab as AgentSubtab;
-		}
+	() => [route.params.subtab, route.params.section],
+	() => {
+		const subtab = routeSubtab();
+		if (subtab) selectedAgentSubtab.value = subtab;
 	},
 );
 
 // /agents alone opens the first agent's chat, or adds an agent with ?add
 // (the sidebar's + Add Agent). With no agents it shows the empty state.
 function resolveAgentsIndex() {
-	if (route.path !== "/agents" || loading.value) return;
+	if (loading.value || activeTab.value !== "agents") return;
+	// /agents/NAME alone opens that agent's chat.
+	if (route.params.agent && !route.params.subtab) {
+		void router.replace(`/agents/${route.params.agent}/chat`);
+		return;
+	}
+	if (route.path !== "/agents") return;
 	if (route.query.add !== undefined) {
 		addAgent();
 		return;
@@ -771,9 +794,9 @@ function resolveAgentsIndex() {
 watch(() => route.fullPath, resolveAgentsIndex);
 
 const agentSubtabLabels: Record<AgentSubtab, string> = {
-	settings: "Settings",
-	permissions: "Permissions",
-	channels: "Channels",
+	general: "Settings",
+	permissions: "Settings",
+	channels: "Settings",
 	files: "Files",
 	tasks: "Tasks",
 	projects: "GitHub Projects",
@@ -1848,9 +1871,9 @@ function addAgent() {
 		tasks: [],
 	};
 	draft.value.agents.push(agent);
-	selectedAgentSubtab.value = "settings";
+	selectedAgentSubtab.value = "general";
 	selectedAgentIdx.value = draft.value.agents.length - 1;
-	void router.replace(agentRoutePath(selectedAgentIdx.value, "settings"));
+	void router.replace(agentRoutePath(selectedAgentIdx.value, "general"));
 }
 
 const removeAgentTarget = ref<number | null>(null);
