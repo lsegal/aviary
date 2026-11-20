@@ -373,11 +373,8 @@ type Engine struct {
 	forks         map[string]forkProbe
 	jobActionOnce sync.Once
 	jobActions    chan jobActionRequest
-	// scheduled carries scheduled prompt runs into the Run loop, and
-	// scheduleRerun is what a board Retry on one calls.
-	scheduled       scheduledRunChannel
-	scheduleRerunMu sync.Mutex
-	scheduleRerun   func(scheduleID string) error
+	// projectTasks carries core's project task runs into the Run loop.
+	projectTasks projectTaskChannel
 	// settingsOnce/settingsRequests carry live settings updates
 	// into the Run loop, mirroring the jobActionOnce/jobActions pattern above.
 	settingsOnce     sync.Once
@@ -2202,8 +2199,8 @@ func (w *Engine) Run(ctx context.Context) error {
 	// from the run loop and while a poll waits for a slot.
 	retryAfterStop := make(map[string]bool)
 	var serveJobAction func(request jobActionRequest, dispatching bool)
-	// startScheduled queues a scheduled prompt run as a board job.
-	var startScheduled func(request scheduledRunRequest)
+	// startScheduled queues a core project task run as a board job.
+	var startScheduled func(request projectTaskRequest)
 	var serveScheduledAction func(request jobActionRequest, key string, job JobSnapshot)
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
@@ -2216,7 +2213,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				return false, nil
 			case request := <-w.settingsRequestsChan():
 				request.done <- w.applySettingsRequest(request.update, sem)
-			case request := <-w.scheduledRunRequests():
+			case request := <-w.projectTaskRequests():
 				startScheduled(request)
 			case request := <-w.jobActionRequests():
 				serveJobAction(request, true)
@@ -3565,8 +3562,9 @@ func (w *Engine) Run(ctx context.Context) error {
 		}
 	}
 	// serveScheduledAction answers a dashboard action on a scheduled job:
-	// Stop cancels its run, Retry fires its schedule again, and Pause is
-	// refused, since a scheduled run has no issue to resume it from.
+	// Stop cancels its run, while Retry and Pause are refused: core's
+	// scheduler fires the task again, and a scheduled run has no issue to
+	// resume it from.
 	serveScheduledAction = func(request jobActionRequest, key string, job JobSnapshot) {
 		available := core.JobActionsFor(job)
 		switch request.action.Action {
@@ -3599,41 +3597,36 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 			}()
 		case "retry":
-			if !available.Retry {
-				request.done <- fmt.Errorf("job cannot be retried: %s", available.RetryReason)
-				return
-			}
-			w.logf("scheduled run %s retry requested; firing schedule %s again", key, job.ScheduleID)
-			request.done <- w.rerunSchedule(job.ScheduleID)
+			request.done <- errScheduledRetry
 		case "pause":
 			request.done <- fmt.Errorf("scheduled jobs cannot be paused; stop it instead")
 		default:
 			request.done <- fmt.Errorf("unknown job action %q", request.action.Action)
 		}
 	}
-	startScheduled = func(request scheduledRunRequest) {
-		run := request.run
+	startScheduled = func(request projectTaskRequest) {
+		run, target := request.run, request.run.Project
 		number := int(run.Fire.Unix())
 		jobMu.Lock()
 		for {
-			if _, taken := jobs[run.Target+"#"+strconv.Itoa(number)]; !taken {
+			if _, taken := jobs[target+"#"+strconv.Itoa(number)]; !taken {
 				break
 			}
 			number++
 		}
-		key := run.Target + "#" + strconv.Itoa(number)
-		session := AgentSession{Agent: run.Agent}
+		key := target + "#" + strconv.Itoa(number)
+		session := AgentSession{Agent: run.CLI}
 		if session.Agent == "" {
 			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
-				session.Agent = identified.AgentNameFor(run.Target)
+				session.Agent = identified.AgentNameFor(target)
 			} else if identified, ok := w.runner().(AgentIdentifier); ok {
 				session.Agent = identified.AgentName()
 			}
 		}
 		spec, _ := parseAgentSpec(session.Agent)
-		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.ScheduleID, Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
+		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.TaskID, Number: number, Target: target, Repository: request.repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
 		jobMu.Unlock()
-		issue := Issue{Number: number, Target: run.Target, Repository: run.Repository, Title: run.Name, Prompt: run.Prompt, ScheduleID: run.ScheduleID}
+		issue := Issue{Number: number, Target: target, Repository: request.repository, Title: run.Name, Prompt: run.Prompt, ScheduleID: run.TaskID}
 		runCtx, cancelRun := context.WithCancelCause(ctx)
 		stopWatching := context.AfterFunc(request.ctx, func() { cancelRun(context.Cause(request.ctx)) })
 		exited := make(chan struct{})
@@ -3644,12 +3637,12 @@ func (w *Engine) Run(ctx context.Context) error {
 		tasks.mu.Lock()
 		tasks.queued++
 		tasks.mu.Unlock()
-		w.logf("scheduled run %s queued for schedule %s", key, run.ScheduleID)
+		w.logf("scheduled run %s queued for schedule %s", key, run.TaskID)
 		publish()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result := ScheduledRunResult{Job: number}
+			var result projectTaskResult
 			defer func() {
 				stopWatching()
 				cancelRun(nil)
@@ -3722,11 +3715,12 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 			jobMu.Lock()
 			job := jobs[key]
-			result = scheduledRunOutcome(runErr, context.Cause(runCtx), job.Log)
-			result.Job = number
-			job.Status = scheduledJobStatus(result)
-			if result.Status != ScheduledRunComplete {
-				job.Log += result.Summary
+			result = projectTaskOutcome(runErr, context.Cause(runCtx), job.Log)
+			status := projectTaskStatus(result)
+			job.Status = "complete"
+			if result.err != nil {
+				job.Status = "failed"
+				job.Log += result.summary
 			}
 			jobs[key] = job
 			jobMu.Unlock()
@@ -3734,14 +3728,14 @@ func (w *Engine) Run(ctx context.Context) error {
 			if acquired {
 				tasks.running--
 			}
-			if result.Status == ScheduledRunComplete {
+			if result.err == nil {
 				tasks.completed++
 			} else {
 				tasks.failed++
 			}
 			tasks.mu.Unlock()
-			w.jobSystem(key, "scheduled run "+result.Status)
-			w.logf("scheduled run %s %s: %s", key, result.Status, result.Summary)
+			w.jobSystem(key, "scheduled run "+status)
+			w.logf("scheduled run %s %s: %s", key, status, result.summary)
 			publish()
 		}()
 	}
@@ -3862,7 +3856,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- w.applySettingsRequest(request.update, sem)
 		case request := <-w.jobActionRequests():
 			serveJobAction(request, false)
-		case request := <-w.scheduledRunRequests():
+		case request := <-w.projectTaskRequests():
 			startScheduled(request)
 		case <-ctx.Done():
 			w.logf("shutdown requested; waiting for running tasks to finish")
