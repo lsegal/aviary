@@ -118,9 +118,11 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 // prompt checkpoints and either re-issues them or sends a timeout notification.
 func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 	timeout := config.DefaultFailedTaskTimeout
+	m.mu.RLock()
 	if m.cfg != nil {
 		timeout = m.cfg.Server.EffectiveFailedTaskTimeout()
 	}
+	m.mu.RUnlock()
 
 	dir := store.CheckpointDir(runner.agent.ID)
 	entries, err := os.ReadDir(dir)
