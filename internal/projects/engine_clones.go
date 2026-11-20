@@ -107,7 +107,10 @@ func (w *Engine) ListClones(ctx context.Context) (core.ClonesSnapshot, error) {
 	}
 	usage := w.cloneUsage()
 	reg.adopt(usage.roots, usage.work)
-	snapshot := listClones(reg, usage)
+	snapshot, err := listClones(reg, usage)
+	if err != nil {
+		return core.ClonesSnapshot{}, err
+	}
 	measureCloneSizes(ctx, &snapshot, cloneSizeTimeout, dirSize)
 	return snapshot, nil
 }
@@ -120,7 +123,10 @@ func (w *Engine) ClearClones(context.Context) (core.ClearClonesResult, error) {
 	}
 	usage := w.cloneUsage()
 	reg.adopt(usage.roots, usage.work)
-	result := clearClones(reg, w.cloneUsage)
+	result, err := clearClones(reg, w.cloneUsage)
+	if err != nil {
+		return core.ClearClonesResult{}, err
+	}
 	for _, entry := range result.Removed {
 		w.logf("removed unused clone %s (%s)", entry.Path, formatBytes(*entry.Size))
 	}
