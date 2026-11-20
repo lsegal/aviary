@@ -199,13 +199,13 @@ func TestBuiltinOutputDecoders(t *testing.T) {
 }
 
 // #390: the generic JSONL decoder only renders text and tool names, so the
-// opencode and cline definitions name the mapper that records their streams as
+// opencode, cline and muse (#397) definitions name the mapper that records their streams as
 // structured transcripts, and every other built-in maps with its own format.
 func TestBuiltinTranscriptFormats(t *testing.T) {
 	registry := MustBuiltin()
 	for name, want := range map[string]string{
 		"claude": FormatStreamJSON, "codex": FormatCodexJSON, "gemini": FormatGeminiJSON,
-		"cline": TranscriptClineJSON, "opencode": TranscriptOpencodeJSON, "muse": FormatJSONL,
+		"cline": TranscriptClineJSON, "opencode": TranscriptOpencodeJSON, "muse": TranscriptMuseJSON,
 	} {
 		definition, ok := registry.Lookup(name)
 		if !ok {

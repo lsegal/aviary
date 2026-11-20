@@ -6,6 +6,7 @@
   "session": {"assign": "aviary"},
   "output": {
     "format": "jsonl",
+    "transcript": "muse-json",
     "jsonl": {
       "type": "payload_type",
       "text": "payload.text",
