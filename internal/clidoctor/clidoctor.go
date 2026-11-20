@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/codingskills"
 	"github.com/lsegal/aviary/internal/process"
 )
 
@@ -102,19 +103,32 @@ type Doctor struct {
 	Version  func(ctx context.Context, binary string) ([]byte, error)
 	Run      func(ctx context.Context, argv []string, spec clidefs.Doctor, stdin []string) ([]byte, bool)
 	// Quota reads one agent's quota text, and SkillsNote reports which of
-	// aviary's skills installed for the agent are stale. Either may be nil,
-	// and the report then leaves that field empty.
+	// aviary's skills installed for the agent are stale. New wires both to
+	// the real readers; either may be nil, and the report then leaves that
+	// field empty.
 	Quota      func(ctx context.Context, name, binary string) (string, error)
 	SkillsNote func(name string) string
 }
 
-// New builds the doctor that talks to the real machine.
+// New builds the doctor that talks to the real machine, reading quota and
+// stale skills the same way for every caller.
 func New(registry *clidefs.Registry) *Doctor {
 	return &Doctor{
 		Registry: registry,
 		LookPath: exec.LookPath,
 		Version:  ReadVersion,
 		Run:      RunProbe,
+		Quota: func(ctx context.Context, name, binary string) (string, error) {
+			return ReadQuota(ctx, registry, name, binary)
+		},
+		SkillsNote: func(name string) string {
+			for _, cli := range codingskills.CLIsFromRegistry(registry) {
+				if cli.ID == name {
+					return codingskills.Default().StaleNote(cli)
+				}
+			}
+			return ""
+		},
 	}
 }
 

@@ -1,4 +1,4 @@
-package projects
+package clidoctor
 
 import (
 	"context"
@@ -58,7 +58,7 @@ func TestNamedQuotaReadersComeFromTheDefinition(t *testing.T) {
 		definitionWithQuota(t, "muse", clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{"muse", "usage"}, PercentUsed: "used"}),
 		definitionWithQuota(t, "quiet", clidefs.Quota{}),
 	)
-	readers := namedQuotaReaders(registry, []string{"codex", "claude", "muse", "quiet", "codex", "stranger"}, func(string) string { return "bin" })
+	readers := QuotaReaders(registry, []string{"codex", "claude", "muse", "quiet", "codex", "stranger"}, func(string) string { return "bin" })
 	var names []string
 	for _, reader := range readers {
 		names = append(names, reader.name)
@@ -76,7 +76,7 @@ func TestNamedQuotaReadersComeFromTheDefinition(t *testing.T) {
 func TestQuotaReadersWithoutASourceSpawnNothing(t *testing.T) {
 	registry := registryWith(t, definitionWithQuota(t, "quiet", clidefs.Quota{}))
 	binaryCalls := 0
-	readers := namedQuotaReaders(registry, []string{"quiet", "stranger"}, func(string) string {
+	readers := QuotaReaders(registry, []string{"quiet", "stranger"}, func(string) string {
 		binaryCalls++
 		return "definitely-not-a-real-binary"
 	})
@@ -306,7 +306,7 @@ func TestCombinedQuotaReaderSaysWhyATrackedReadFailed(t *testing.T) {
 		definitionWithQuota(t, "quiet", clidefs.Quota{}),
 	)
 	missing := filepath.Join(t.TempDir(), "definitely-not-installed")
-	read := combinedQuotaReader(namedQuotaReaders(registry, []string{"claude", "codex", "quiet", "stranger"}, func(string) string { return missing }))
+	read := CombinedQuota(QuotaReaders(registry, []string{"claude", "codex", "quiet", "stranger"}, func(string) string { return missing }))
 	quotas := read(context.Background())
 	for _, name := range []string{"claude", "codex"} {
 		if got := quotas[name]; !strings.HasPrefix(got, "unavailable: ") {
@@ -330,13 +330,13 @@ func TestCombinedQuotaReaderSaysWhyATrackedReadFailed(t *testing.T) {
 // TestQuotaReadingKeepsAGoodReading checks a reading wins over the error a
 // later failed read reports, since the readers keep their last good value.
 func TestQuotaReadingKeepsAGoodReading(t *testing.T) {
-	if got := quotaReading("week 78% left", true, fmt.Errorf("boom")); got != "week 78% left" {
+	if got := QuotaReading("week 78% left", true, fmt.Errorf("boom")); got != "week 78% left" {
 		t.Fatalf("reading = %q", got)
 	}
-	if got := quotaReading("", true, nil); got != "unavailable" {
+	if got := QuotaReading("", true, nil); got != "unavailable" {
 		t.Fatalf("reading = %q, want unavailable", got)
 	}
-	if got := quotaReading("", false, fmt.Errorf("boom")); got != "" {
+	if got := QuotaReading("", false, fmt.Errorf("boom")); got != "" {
 		t.Fatalf("reading = %q, want empty for an agent with no reader", got)
 	}
 }

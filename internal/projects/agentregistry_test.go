@@ -143,7 +143,7 @@ func TestBinaryFallsBackToTheDefinition(t *testing.T) {
 // models.cli_definitions is the only config source of an executable (#456),
 // so it reaches built-in and config-defined agents alike.
 func TestDefinitionBinaryOverridesBuiltin(t *testing.T) {
-	registry, err := LoadCLIDefinitions(map[string]any{
+	registry, err := clidefs.FromConfig(map[string]any{
 		"codex": map[string]any{"binary": "/opt/codex-nightly"},
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	registry, err := LoadCLIDefinitions(nil)
+	registry, err := clidefs.FromConfig(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestLoadCLIDefinitionsPointsAviaryAtRunningExecutable(t *testing.T) {
 		t.Fatalf("aviary binary = %q, want the running executable %q", definition.Binary, executable)
 	}
 	definitions := map[string]any{aviaryAgent: map[string]any{"binary": "/opt/aviary"}}
-	registry, err = LoadCLIDefinitions(definitions)
+	registry, err = clidefs.FromConfig(definitions)
 	if err != nil {
 		t.Fatal(err)
 	}

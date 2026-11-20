@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -45,4 +46,11 @@ func TestDescribeCLIBackend(t *testing.T) {
 	ok, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Version: "codex-cli 0.1.0", Auth: clidoctor.SignedIn, VersionNote: "older than the required 0.2.0"})
 	assert.False(t, ok)
 	assert.Equal(t, "codex 0.1.0, signed in; version older than the required 0.2.0", line)
+
+	// The quota comes from the same readers provider_cli_list and Projects
+	// use, so a tracked CLI reports its reading or why it has none.
+	_, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Auth: clidoctor.SignedIn, TracksQuota: true, Quota: "weekly 60% left"})
+	assert.Equal(t, "codex, signed in; quota weekly 60% left", line)
+	_, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Auth: clidoctor.SignedIn, TracksQuota: true, QuotaErr: errors.New("boom")})
+	assert.Equal(t, "codex, signed in; quota unavailable: boom", line)
 }
