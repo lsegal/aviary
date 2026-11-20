@@ -127,3 +127,35 @@ export function useAddProject() {
 		await callTool("project_add", { target, agent });
 	};
 }
+
+/** The job statuses that still hold work, which deleting a project stops. */
+const IN_FLIGHT = ["active", "waiting", "queued", "paused"];
+
+/**
+ * Deleting a project through project_remove: inFlight lists the issue numbers
+ * of its jobs the deletion stops, and remove deletes it, resolving to the
+ * jobs it stopped. The repository and clones on disk are left alone.
+ */
+export function useRemoveProject(target: Ref<string>) {
+	const { callTool } = useMCP();
+	const inFlight = ref<number[]>([]);
+
+	async function loadInFlight() {
+		inFlight.value = [];
+		const res = parseToolJSON(
+			await callTool("project_job_list", { target: target.value, limit: 500 }),
+		) as { jobs?: { number?: number; status?: string }[] } | null;
+		inFlight.value = (res?.jobs ?? [])
+			.filter((j) => IN_FLIGHT.includes(j.status ?? ""))
+			.map((j) => Number(j.number));
+	}
+
+	async function remove(): Promise<number[]> {
+		const res = parseToolJSON(
+			await callTool("project_remove", { target: target.value }),
+		) as { stopped_jobs?: number[] } | null;
+		return res?.stopped_jobs ?? [];
+	}
+
+	return { inFlight, loadInFlight, remove };
+}

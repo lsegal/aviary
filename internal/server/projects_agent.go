@@ -26,7 +26,12 @@ func (s *Server) promptProjectsAgent(_ context.Context, prompt string) error {
 		return fmt.Errorf("opening the Projects agent's session: %w", err)
 	}
 	// The run outlives the engine's poll that routed it.
-	runner.Prompt(agent.WithSessionID(context.Background(), sess.ID), prompt)
+	ctx := agent.WithSessionID(context.Background(), sess.ID)
+	var overrides agent.RunOverrides
+	if s.projects != nil {
+		overrides.Context = s.projects.ChatContext(ctx, "")
+	}
+	runner.PromptWithOverrides(ctx, prompt, overrides)
 	return nil
 }
 

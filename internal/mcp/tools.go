@@ -168,6 +168,7 @@ type agentRunArgs struct {
 	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
 	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
+	Project             string `json:"project,omitempty"`               // the Projects board the chat was opened from; read only for the Projects agent
 }
 
 type agentNameArgs struct {
@@ -398,9 +399,14 @@ func registerAgentTools(s *sdkmcp.Server) {
 			}
 		}
 
+		var requestContext string
+		if !args.Bare {
+			requestContext = projectsAgentContext(ctx, agentName, args.Project)
+		}
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
+			Context: requestContext,
 		}, func(e agent.StreamEvent) {
 			if streamEvents {
 				if event, ok := events.fromStream(e); ok {

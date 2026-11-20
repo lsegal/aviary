@@ -160,7 +160,7 @@
 					</div>
 				</template>
 			</div>
-			<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" @close="chatOpen = false" />
+			<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
 		<AddProjectDialog v-if="adding" @close="closeAdd" @added="onAdded" />
 	</AppLayout>

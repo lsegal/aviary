@@ -14,7 +14,8 @@
 						<button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-sm text-gray-900 dark:text-white"
 							:aria-pressed="t === selected" @click="selected = t">{{ t }}</button>
 						<router-link :to="`/projects/${encodeProject(t)}`" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
-						<button type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`" @click="removeProject(t)">✕</button>
+						<button v-if="!savedTargets.includes(t)" type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`"
+							title="Not saved yet" @click="removeProject(t)">✕</button>
 					</li>
 				</ul>
 				<form class="space-y-2" @submit.prevent="addProject">
@@ -219,6 +220,8 @@
 			</div>
 		</section>
 
+		<DeleteProjectSection v-if="selected && savedTargets.includes(selected)" :target="selected" @deleted="onDeleted" />
+
 		<section :class="CARD">
 			<h3 :class="CARD_HEAD">YAML <span :class="CARD_NOTE">Only what differs from defaults ends up in aviary.yaml</span></h3>
 			<pre data-testid="project-yaml"
@@ -264,7 +267,8 @@ import {
 	withSettings,
 } from "../../lib/projectSettings";
 import { encodeProject } from "../../lib/projects";
-import type { AgentEntry } from "../../stores/settings";
+import { type AgentEntry, useSettingsStore } from "../../stores/settings";
+import DeleteProjectSection from "../projects/DeleteProjectSection.vue";
 
 const props = defineProps<{
 	/** The agent whose projects are edited; its projects field is updated in place. */
@@ -409,6 +413,22 @@ function addProject() {
 
 function removeProject(target: string) {
 	store(withoutProject(section.value, target));
+}
+
+// The agent's projects as last saved. One added here but not saved yet is
+// dropped from the draft; a saved one is deleted with project_remove, which
+// stops its jobs and rewrites aviary.yaml itself.
+const settingsStore = useSettingsStore();
+const savedTargets = computed(() =>
+	projectTargets(
+		settingsStore.config?.agents.find((a) => a.name === props.agent.name)
+			?.projects,
+	),
+);
+
+async function onDeleted() {
+	removeProject(selected.value);
+	await settingsStore.fetchConfig();
 }
 
 // A project handed over from the board's Add project dialog starts listed.
