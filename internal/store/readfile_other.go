@@ -9,3 +9,8 @@ import "os"
 func openShared(path string) (*os.File, error) {
 	return os.Open(path)
 }
+
+// replaceFile renames oldpath over newpath.
+func replaceFile(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}

@@ -51,7 +51,7 @@ func WriteJSON(path string, v any) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("closing temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := replaceFile(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("renaming temp file: %w", err)
 	}

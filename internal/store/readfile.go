@@ -6,7 +6,7 @@ import "io"
 // blocks WriteJSON from atomically renaming a new file over path: on Windows a
 // reader that opens without delete sharing makes that rename fail, so a file
 // polled while another goroutine or process saves it would intermittently
-// refuse the save.
+// refuse the save. WriteJSON's replaceFile does the other half.
 func ReadFile(path string) ([]byte, error) {
 	f, err := openShared(path)
 	if err != nil {
