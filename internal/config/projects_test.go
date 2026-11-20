@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,20 +62,28 @@ func TestProjectsSectionOnlyHoldsChangedValues(t *testing.T) {
 	if strings.Contains(string(data), "projects") {
 		t.Fatalf("default config wrote a projects section:\n%s", data)
 	}
-	cfg.Projects.NoMerge = true
+	cfg.Agents = []AgentConfig{{Name: "coder", Model: "m"}}
 	if err := Save(path, &cfg); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
-	if !strings.Contains(string(data), "projects:\n  no_merge: true\n") {
+	if strings.Contains(string(data), "projects") {
+		t.Fatalf("an agent without projects wrote a projects section:\n%s", data)
+	}
+	cfg.Agents[0].Projects.NoMerge = true
+	if err := Save(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(path)
+	if !strings.Contains(string(data), "    projects:\n      no_merge: true\n") {
 		t.Fatalf("config = \n%s", data)
 	}
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !loaded.Projects.NoMerge || loaded.Projects.IsZero() {
-		t.Fatalf("loaded projects = %+v", loaded.Projects)
+	if !loaded.Agents[0].Projects.NoMerge || loaded.Agents[0].Projects.IsZero() {
+		t.Fatalf("loaded projects = %+v", loaded.Agents[0].Projects)
 	}
 }
 
@@ -120,10 +129,10 @@ func TestValidateProjectReports(t *testing.T) {
 func TestProjectReportsRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "aviary.yaml")
 	cfg := Default()
-	cfg.Projects.List = []ProjectConfig{
+	cfg.Agents = []AgentConfig{{Name: "bot", Model: "m", Projects: ProjectsConfig{List: []ProjectConfig{
 		{Target: "acme/quiet"},
 		{Target: "acme/app", Reports: &ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"failed"}}},
-	}
+	}}}}
 	if err := Save(path, &cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -135,10 +144,10 @@ func TestProjectReportsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Projects.List[0].Reports != nil {
-		t.Fatalf("quiet project loaded reports: %+v", loaded.Projects.List[0].Reports)
+	if loaded.Agents[0].Projects.List[0].Reports != nil {
+		t.Fatalf("quiet project loaded reports: %+v", loaded.Agents[0].Projects.List[0].Reports)
 	}
-	reports := loaded.Projects.List[1].Reports
+	reports := loaded.Agents[0].Projects.List[1].Reports
 	if !reports.Enabled() || reports.Agent != "bot" || reports.Targets[0] != "slack:main:C1" || !reports.Reports(ProjectReportFailed) || reports.Reports(ProjectReportMerged) {
 		t.Fatalf("loaded reports = %+v", reports)
 	}
@@ -153,5 +162,77 @@ func TestProjectToolsByPreset(t *testing.T) {
 	}
 	if IsToolAllowedByPreset(PermissionsPresetMinimal, "project_job_stop") {
 		t.Fatal("the minimal preset should block project tools")
+	}
+}
+
+// TestProjectsLiveUnderTheirAgent checks the engine sees every agent's
+// projects with their owners, and a top-level projects: section is not read.
+func TestProjectsLiveUnderTheirAgent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aviary.yaml")
+	yaml := `agents:
+  - name: coder
+    model: cli/claude/opus
+    projects:
+      concurrency: 2
+      list:
+        - target: acme/app
+  - name: docs
+    model: cli/codex/gpt-5
+    projects:
+      concurrency: 4
+      no_merge: true
+      list:
+        - target: acme/docs
+projects:
+  list:
+    - target: acme/legacy
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := cfg.ProjectSettings()
+	if got := settings.Targets(); !slices.Equal(got, []string{"acme/app", "acme/docs"}) {
+		t.Fatalf("targets = %v", got)
+	}
+	if settings.Concurrency != 4 || !settings.NoMerge {
+		t.Fatalf("merged settings = %+v", settings)
+	}
+	if cfg.ProjectOwner("acme/app") != "coder" || cfg.ProjectOwner("acme/docs") != "docs" || cfg.ProjectOwner("acme/legacy") != "" {
+		t.Fatalf("owners = %v", cfg.ProjectOwners())
+	}
+}
+
+func TestValidateRejectsAProjectOwnedTwice(t *testing.T) {
+	cfg := &Config{Agents: []AgentConfig{
+		{Name: "a", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
+		{Name: "b", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
+	}}
+	for _, issue := range Validate(cfg, nil) {
+		if issue.Field == "agents[1].projects.list[0]" && issue.Level == LevelError {
+			return
+		}
+	}
+	t.Fatalf("issues = %+v", Validate(cfg, nil))
+}
+
+func TestValidateWarnsOnATaskForAnotherAgentsProject(t *testing.T) {
+	cfg := &Config{Agents: []AgentConfig{
+		{Name: "a", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/a"}}},
+			Tasks: []TaskConfig{{Name: "mine", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
+		{Name: "b", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/b"}}},
+			Tasks: []TaskConfig{{Name: "theirs", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
+	}}
+	var fields []string
+	for _, issue := range Validate(cfg, nil) {
+		if strings.HasSuffix(issue.Field, ".project") {
+			fields = append(fields, issue.Field+" "+string(issue.Level))
+		}
+	}
+	if !slices.Equal(fields, []string{"agents[1].tasks[0].project WARN"}) {
+		t.Fatalf("project issues = %v", fields)
 	}
 }

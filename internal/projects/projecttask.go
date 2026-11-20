@@ -38,7 +38,7 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	if model := strings.TrimSpace(run.Model); model != "" {
 		spec, override, ok := config.ProjectModelSpec(agents, agentName, model)
 		if !ok {
-			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model of an API provider on", model, run.Project)
+			return "", fmt.Errorf("model override %q: project %q is owned by no agent to run a model of an API provider on", model, run.Project)
 		}
 		session = AgentSession{Agent: spec, Model: override}
 	}
@@ -49,19 +49,18 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	return engine.runProjectTask(ctx, run, issueRepository(run.Project, Issue{}), session)
 }
 
-// projectAgentLocked names the Aviary agent target is attached to, as
-// settingsLocked resolves it: a watch's agent, else the projects config's.
-// It returns "" for a project attached to no agent.
+// projectAgentLocked names the Aviary agent target runs under, as
+// settingsLocked resolves it: a watch's agent, else the agent that owns it.
+// It returns "" for a runtime watch no agent owns.
 func (m *Manager) projectAgentLocked(target string) string {
-	cfg, name := m.cfg, ""
+	name := ""
 	for _, watch := range m.watches {
-		cfg = mergeProjects(cfg, watch.Settings)
 		if agent := strings.TrimSpace(watch.Agent); agent != "" && slices.Contains(watch.Targets, target) {
 			name = agent
 		}
 	}
 	if name == "" {
-		name = cfg.AgentFor(target)
+		name = m.owners[target]
 	}
 	return strings.TrimSpace(name)
 }

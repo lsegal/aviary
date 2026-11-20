@@ -27,7 +27,6 @@ type Config struct {
 	Search    SearchConfig           `yaml:"search,omitempty"    json:"search,omitempty"`
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
-	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
 	// Approval is how much CLI providers may do without asking; see
 	// ApprovalConfig.
 	Approval ApprovalConfig `yaml:"approval,omitempty" json:"approval,omitzero"`
@@ -125,6 +124,10 @@ type AgentConfig struct {
 	Permissions *PermissionsConfig `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 	Channels    []ChannelConfig    `yaml:"channels,omitempty"    json:"channels,omitempty"`
 	Tasks       []TaskConfig       `yaml:"tasks,omitempty"       json:"tasks,omitempty"`
+	// Projects are the GitHub projects this agent owns: the targets it
+	// watches and the settings that configure them. A project belongs to
+	// exactly one agent, whose model and fallbacks run its jobs.
+	Projects ProjectsConfig `yaml:"projects,omitempty" json:"projects,omitzero"`
 	// Verbose enables progress status messages before each tool call when the
 	// agent is responding via a channel (Slack, Signal, etc.). When true the
 	// agent emits a brief "I am doing X..." message before executing each tool,

@@ -70,6 +70,19 @@ func (m *Manager) ChatContext(ctx context.Context, project string) string {
 	} else {
 		b.WriteString("It watches no projects yet.\n")
 	}
+	// A project belongs to the Aviary agent that owns it, whose models run
+	// its jobs.
+	m.mu.Lock()
+	var owned []string
+	for _, target := range targets {
+		if agent := m.projectAgentLocked(target); agent != "" {
+			owned = append(owned, fmt.Sprintf("%s belongs to agent %s", target, agent))
+		}
+	}
+	m.mu.Unlock()
+	if len(owned) > 0 {
+		fmt.Fprintf(&b, "Each project belongs to the Aviary agent whose models run its jobs: %s.\n", strings.Join(owned, "; "))
+	}
 	if project != "" {
 		fmt.Fprintf(&b, "The user opened this chat from the %s board. Questions that name no project, such as \"status of issues?\", are about %s; answer them about it without asking which repository is meant.\n", project, project)
 		if !slices.Contains(targets, project) {

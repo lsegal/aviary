@@ -1,9 +1,11 @@
-// Project settings and the add-project flow. Settings live in the `projects:`
-// section of aviary.yaml (read and written with config_get / config_save) and
-// hold only values that differ from the defaults below, which mirror
-// internal/config/projects.go. Most settings are shared by every watched
-// project; each project's own entry in `list` carries the Aviary agent it is
-// attached to and its optional job reports.
+// Project settings and the add-project flow. A project belongs to exactly one
+// Aviary agent: it lives in that agent's `projects:` section of aviary.yaml
+// (read and written with config_get / config_save), which holds only values
+// that differ from the defaults below, mirroring internal/config/projects.go.
+// The section's settings apply to the agent's projects; the engine-wide ones
+// (concurrency, delivery, intervals, clone directories) are merged across
+// every agent's section. Each project's own entry in `list` carries its
+// optional job reports.
 // The add-project checks come from project_check and clones from
 // project_clone_list; their responses are normalized here so the views never
 // depend on the raw payload shape.
@@ -20,11 +22,9 @@ export interface ProjectReportsEntry {
 	events?: string[];
 }
 
-/** One watched project in `projects.list`. */
+/** One watched project in an agent's `projects.list`. */
 export interface ProjectEntry {
 	target: string;
-	/** The Aviary agent this project is attached to; absent uses the section's. */
-	agent?: string;
 	reports?: ProjectReportsEntry;
 	// Other per-project settings pass through untouched.
 	[key: string]: unknown;
@@ -38,7 +38,7 @@ export interface ProjectReports {
 	events: string[];
 }
 
-/** The `projects:` section as stored in aviary.yaml (snake_case, sparse). */
+/** An agent's `projects:` section as stored in aviary.yaml (snake_case, sparse). */
 export interface ProjectsSection {
 	list?: ProjectEntry[];
 	concurrency?: number;
@@ -51,8 +51,6 @@ export interface ProjectsSection {
 	filter?: string[];
 	all_issues?: boolean;
 	allowed_commenters?: string[];
-	/** The Aviary agent projects without their own are attached to. */
-	agent?: string;
 	no_merge?: boolean;
 	no_changelog?: boolean;
 	approval_mode?: ApprovalMode;
@@ -64,11 +62,8 @@ export interface ProjectsSection {
 	[key: string]: unknown;
 }
 
-/** The settings edited on one project's page, with defaults filled in. */
+/** The settings of an agent's projects section, with defaults filled in. */
 export interface ProjectSettings {
-	target: string;
-	/** The Aviary agent this project is attached to; empty uses the shared `agent`. */
-	agent: string;
 	concurrency: number;
 	readyLabel: string;
 	readyState: string;
@@ -87,7 +82,6 @@ export interface ProjectSettings {
 	approvalMode: ApprovalMode | "";
 	unblockInterval: string;
 	tempDirs: string[];
-	reports: ProjectReports;
 }
 
 export const DEFAULT_CONCURRENCY = 3;
@@ -136,15 +130,69 @@ export function isListed(
 	return (section?.list ?? []).some((p) => sameTarget(p.target, target));
 }
 
-/** The Aviary agent a project is attached to when it names none of its own. */
-export function sharedAgent(section: ProjectsSection | undefined): string {
-	return typeof section?.agent === "string" ? section.agent.trim() : "";
+/** The targets in the section's list, in order. */
+export function projectTargets(section: ProjectsSection | undefined): string[] {
+	return (section?.list ?? [])
+		.map((p) => (p.target ?? "").trim())
+		.filter(Boolean);
 }
 
 /** The parts of the Aviary config a project's job models come from. */
 export interface JobModelsConfig {
-	agents?: { name: string; model?: string; fallbacks?: string[] }[];
+	agents?: {
+		name: string;
+		model?: string;
+		fallbacks?: string[];
+		projects?: ProjectsSection;
+	}[];
 	models?: { defaults?: { model?: string; fallbacks?: string[] } };
+}
+
+/**
+ * The name of the agent that owns target, mirroring config.ProjectOwner: the
+ * first agent whose projects list it. "" when no agent does, as for a runtime
+ * watch.
+ */
+export function projectOwner(
+	cfg: JobModelsConfig | null | undefined,
+	target: string,
+): string {
+	const owner = (cfg?.agents ?? []).find((a) => isListed(a.projects, target));
+	return owner?.name ?? "";
+}
+
+/** The settings path where target's owning agent manages it. */
+export function projectSettingsPath(
+	cfg: JobModelsConfig | null | undefined,
+	target: string,
+): string {
+	const owner = projectOwner(cfg, target);
+	if (!owner) return "/settings/agents";
+	return `/settings/agents/${encodeURIComponent(owner)}/projects?project=${encodeURIComponent(target)}`;
+}
+
+/** The section with target added to its list, unless already listed. */
+export function withProject(
+	section: ProjectsSection | undefined,
+	target: string,
+): ProjectsSection {
+	const t = target.trim();
+	const out: ProjectsSection = { ...(section ?? {}) };
+	if (!t || isListed(out, t)) return out;
+	out.list = [...(out.list ?? []), { target: t }];
+	return out;
+}
+
+/** The section with target removed from its list. */
+export function withoutProject(
+	section: ProjectsSection | undefined,
+	target: string,
+): ProjectsSection {
+	const out: ProjectsSection = { ...(section ?? {}) };
+	const list = (out.list ?? []).filter((p) => !sameTarget(p.target, target));
+	if (list.length) out.list = list;
+	else delete out.list;
+	return out;
 }
 
 /** One model a project's jobs run on, in fallback order. */
@@ -156,7 +204,7 @@ export interface JobModel {
 }
 
 /**
- * The models a project attached to agentName runs its jobs on, mirroring
+ * The models a project owned by agentName runs its jobs on, mirroring
  * config.ProjectJobSpecs: the agent's model and fallbacks, after
  * models.defaults, each CLI provider model (claude/opus or cli/claude/opus)
  * as its spec. cliProviders names the CLI providers. A model that is not a CLI
@@ -197,17 +245,13 @@ function parseDelivery(v: string | undefined): Delivery {
 	return mode === "poll" || mode === "webhook" ? mode : DEFAULT_DELIVERY;
 }
 
-/** Reads one project's settings from the section, filling in defaults. */
+/** Reads an agent's projects settings from its section, filling in defaults. */
 export function settingsFromSection(
-	target: string,
 	section: ProjectsSection | undefined,
 ): ProjectSettings {
 	const s = section ?? {};
-	const entry = (s.list ?? []).find((p) => sameTarget(p.target, target));
 	const filter = strings(s.filter);
 	return {
-		target: entry?.target ?? target,
-		agent: typeof entry?.agent === "string" ? entry.agent.trim() : "",
 		concurrency:
 			typeof s.concurrency === "number" && s.concurrency > 0
 				? s.concurrency
@@ -230,8 +274,16 @@ export function settingsFromSection(
 		approvalMode: s.approval_mode ?? (s.yolo === true ? "full" : ""),
 		unblockInterval: (s.unblock_interval ?? "").trim(),
 		tempDirs: strings(s.temp_dirs),
-		reports: reportsFromEntry(entry?.reports),
 	};
+}
+
+/** Reads target's report settings from the section. */
+export function reportsFromSection(
+	section: ProjectsSection | undefined,
+	target: string,
+): ProjectReports {
+	const entry = (section?.list ?? []).find((p) => sameTarget(p.target, target));
+	return reportsFromEntry(entry?.reports);
 }
 
 function reportsFromEntry(r: ProjectReportsEntry | undefined): ProjectReports {
@@ -318,15 +370,12 @@ function clean(list: string[]): string[] {
 }
 
 /**
- * Writes one project's settings back into the section, keeping only values
- * that differ from their defaults. With listed false the project is left out
- * of `list` unless it has settings of its own, so a project watched with
- * defaults writes nothing.
+ * Writes the settings back into the section, keeping only values that differ
+ * from their defaults. The list of projects is kept as it is.
  */
 export function withSettings(
 	section: ProjectsSection | undefined,
 	s: ProjectSettings,
-	listed = isListed(section, s.target),
 ): ProjectsSection {
 	const out: ProjectsSection = { ...(section ?? {}) };
 	const set = (key: string, value: unknown, isDefault: boolean) => {
@@ -364,35 +413,29 @@ export function withSettings(
 	set("unblock_interval", s.unblockInterval.trim(), !s.unblockInterval.trim());
 	const dirs = clean(s.tempDirs);
 	set("temp_dirs", dirs, !dirs.length);
+	return out;
+}
 
-	const agent = s.agent.trim();
-	const reports = reportsEntry(s.reports);
-	const current = section?.list ?? [];
-	const at = current.findIndex((p) => sameTarget(p.target, s.target));
-	const list = current.filter((p) => !sameTarget(p.target, s.target));
-	// Keep the entry's other fields; only agent and reports change here.
-	const {
-		agent: _,
-		reports: __,
-		...rest
-	} = at >= 0 ? current[at] : { target: s.target };
-	const extra = Object.keys(rest).some((k) => k !== "target");
-	if (listed || agent || reports || extra) {
-		const entry: ProjectEntry = {
-			...rest,
-			target: s.target.trim(),
-			...(agent ? { agent } : {}),
-			...(reports ? { reports } : {}),
-		};
-		list.splice(at >= 0 ? at : list.length, 0, entry);
-	}
-	set("list", list, !list.length);
+/** Writes target's report settings into its entry in the section's list. */
+export function withReports(
+	section: ProjectsSection | undefined,
+	target: string,
+	r: ProjectReports,
+): ProjectsSection {
+	const out: ProjectsSection = { ...(section ?? {}) };
+	const reports = reportsEntry(r);
+	out.list = (out.list ?? []).map((p) => {
+		if (!sameTarget(p.target, target)) return p;
+		// Keep the entry's other fields; only reports change here.
+		const { reports: _, ...rest } = p;
+		return reports ? { ...rest, reports } : rest;
+	});
 	return out;
 }
 
 /** Which settings still hold their defaults, for the grey "default" tags. */
 export function defaultFields(s: ProjectSettings): Set<keyof ProjectSettings> {
-	const d = settingsFromSection(s.target, {});
+	const d = settingsFromSection({});
 	const out = new Set<keyof ProjectSettings>();
 	for (const key of Object.keys(d) as (keyof ProjectSettings)[]) {
 		if (JSON.stringify(s[key]) === JSON.stringify(d[key])) out.add(key);
@@ -442,13 +485,18 @@ function yamlValue(indent: string, key: string, value: unknown): string[] {
 	return [`${indent}${key}: ${yamlScalar(value)}`];
 }
 
-/** Renders the `projects:` section as it will be written, or "" when empty. */
-export function projectsYAML(section: ProjectsSection): string {
+/**
+ * Renders an agent's `projects:` section as it will be written under the
+ * agent, or "" when empty.
+ */
+export function projectsYAML(agent: string, section: ProjectsSection): string {
 	const entries = Object.entries(section).filter(([, v]) => v !== undefined);
 	if (!entries.length) return "";
 	return [
-		"projects:",
-		...entries.flatMap(([k, v]) => yamlValue("  ", k, v)),
+		"agents:",
+		`  - name: ${yamlScalar(agent)}`,
+		"    projects:",
+		...entries.flatMap(([k, v]) => yamlValue("      ", k, v)),
 	].join("\n");
 }
 

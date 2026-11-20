@@ -29,18 +29,20 @@ import (
 
 // Watch is a set of targets watched for the life of the server without being
 // saved to aviary.yaml, as `aviary watch` starts them. Settings overrides the
-// projects: section's values for the whole engine while the watch runs; only
+// agents' projects settings for the whole engine while the watch runs; only
 // its non-zero fields apply.
 type Watch struct {
 	Targets []string `json:"targets"`
-	// Agent is the Aviary agent the targets are attached to. Empty uses the
-	// agent the projects: section attaches them to.
+	// Agent is the Aviary agent the targets run under for the watch. Empty
+	// keeps a target's owning agent, or models.defaults for a target no agent
+	// owns.
 	Agent    string                `json:"agent,omitempty"`
 	Settings config.ProjectsConfig `json:"settings,omitzero"`
 }
 
 // Manager owns the Projects engine inside the Aviary server. It builds the
-// engine from the projects: section of aviary.yaml plus any runtime watches,
+// engine from the projects every agent in aviary.yaml owns plus any runtime
+// watches,
 // applies changed settings to the running engine, and restarts it when a
 // change needs a new one, such as a new target.
 type Manager struct {
@@ -50,10 +52,13 @@ type Manager struct {
 	// engines.
 	refreshMu sync.Mutex
 	mu        sync.Mutex
-	cfg       config.ProjectsConfig
-	browser   config.BrowserConfig
-	// agents holds the Aviary agents and models: section projects are
-	// attached to; their jobs take their specs from it.
+	// cfg is every agent's projects merged for the engine, and owners maps
+	// each saved target to the agent that owns it.
+	cfg     config.ProjectsConfig
+	owners  map[string]string
+	browser config.BrowserConfig
+	// agents holds the Aviary agents and models: section; a project's jobs
+	// take their specs from its owning agent.
 	agents    *config.Config
 	watches   []Watch
 	running   *engineRun
@@ -180,17 +185,8 @@ func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 	m.mu.Unlock()
 }
 
-// SetAgents records the Aviary agents and the models: section that projects
-// are attached to, and the approval: section whose general mode jobs follow
-// when Projects has no override. A project's jobs run on its agent's model
-// and fallbacks. It takes effect on the next Reconcile.
-func (m *Manager) SetAgents(agents []config.AgentConfig, models config.ModelsConfig, approval config.ApprovalConfig) {
-	m.mu.Lock()
-	m.agents = &config.Config{Agents: slices.Clone(agents), Models: models, Approval: approval}
-	m.mu.Unlock()
-}
-
-// generalApprovalLocked is the general approval mode SetAgents recorded.
+// generalApprovalLocked is the general approval mode of the last
+// reconciled config, which jobs follow when Projects has no override.
 func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 	if m.agents == nil {
 		return ""
@@ -198,11 +194,16 @@ func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 	return m.agents.Approval.Mode
 }
 
-// Reconcile applies a newly loaded projects: section.
-func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
-	m.reports.configure(cfg)
+// Reconcile applies a newly loaded configuration: the agents, the projects
+// each one owns, the models: section, and the approval: section. A
+// project's jobs run on its owning agent's model and fallbacks.
+func (m *Manager) Reconcile(cfg *config.Config) {
+	settings := cfg.ProjectSettings()
+	m.reports.configure(settings)
 	m.mu.Lock()
-	m.cfg = cfg
+	m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
+	m.cfg = settings
+	m.owners = cfg.ProjectOwners()
 	m.mu.Unlock()
 	_ = m.refresh()
 }
@@ -299,67 +300,13 @@ func (s engineSettings) restartKey() string {
 	return string(data)
 }
 
-// mergeProjects lays overlay's non-zero values over base.
-func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
-	merged := base
-	if overlay.Concurrency > 0 {
-		merged.Concurrency = overlay.Concurrency
-	}
-	if overlay.Interval != "" {
-		merged.Interval = overlay.Interval
-	}
-	if overlay.Delivery != "" {
-		merged.Delivery = overlay.Delivery
-	}
-	if overlay.ReadyLabel != nil {
-		merged.ReadyLabel = overlay.ReadyLabel
-	}
-	if overlay.ReadyState != "" {
-		merged.ReadyState = overlay.ReadyState
-	}
-	if len(overlay.Filter) > 0 {
-		merged.Filter = overlay.Filter
-	}
-	merged.AllIssues = merged.AllIssues || overlay.AllIssues
-	if len(overlay.AllowedCommenters) > 0 {
-		merged.AllowedCommenters = overlay.AllowedCommenters
-	}
-	if overlay.Agent != "" {
-		merged.Agent = overlay.Agent
-	}
-	if overlay.ApprovalMode != "" {
-		merged.ApprovalMode = overlay.ApprovalMode
-	}
-	merged.Yolo = merged.Yolo || overlay.Yolo
-	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
-	merged.BrowserVisible = merged.BrowserVisible || overlay.BrowserVisible
-	merged.NoMerge = merged.NoMerge || overlay.NoMerge
-	merged.NoChangelog = merged.NoChangelog || overlay.NoChangelog
-	if overlay.UnblockInterval != "" {
-		merged.UnblockInterval = overlay.UnblockInterval
-	}
-	if overlay.UnblockAgent != "" {
-		merged.UnblockAgent = overlay.UnblockAgent
-	}
-	if overlay.UnblockModel != "" {
-		merged.UnblockModel = overlay.UnblockModel
-	}
-	if len(overlay.TempDirs) > 0 {
-		merged.TempDirs = overlay.TempDirs
-	}
-	if overlay.Webhook != nil {
-		merged.Webhook = overlay.Webhook
-	}
-	return merged
-}
-
 // settingsLocked resolves the engine settings from the config and watches.
 func (m *Manager) settingsLocked() (engineSettings, error) {
 	cfg := m.cfg
 	targets := cfg.Targets()
 	watchAgents := map[string]string{}
 	for _, watch := range m.watches {
-		cfg = mergeProjects(cfg, watch.Settings)
+		cfg = config.MergeProjects(cfg, watch.Settings)
 		for _, target := range watch.Targets {
 			if !slices.Contains(targets, target) {
 				targets = append(targets, target)
@@ -369,7 +316,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 			}
 		}
 	}
-	targetAgents, defaultSpecs, err := m.jobSpecsLocked(cfg, targets, watchAgents)
+	targetAgents, defaultSpecs, err := m.jobSpecsLocked(targets, watchAgents)
 	if err != nil {
 		return engineSettings{}, err
 	}
@@ -423,56 +370,39 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 	return s, nil
 }
 
-// jobSpecsLocked resolves each target's job specs from the Aviary agent it is
-// attached to, in fallback order, and the spec of jobs no target owns: the
-// first of the section agent's, otherwise of the first target's.
-func (m *Manager) jobSpecsLocked(cfg config.ProjectsConfig, targets []string, watchAgents map[string]string) (map[string][]string, []string, error) {
+// jobSpecsLocked resolves each target's job specs from the Aviary agent that
+// owns it, in fallback order, and the spec of jobs no target owns: the first
+// target's first.
+func (m *Manager) jobSpecsLocked(targets []string, watchAgents map[string]string) (map[string][]string, []string, error) {
 	agents := m.agents
 	if agents == nil {
 		agents = &config.Config{}
-	}
-	resolve := func(name, owner string) ([]string, error) {
-		specs := config.ProjectJobSpecs(agents, name)
-		if len(specs) == 0 {
-			return nil, fmt.Errorf("projects: %s is attached to agent %q, which is not configured or has no model", owner, name)
-		}
-		return specs, nil
-	}
-	var defaultSpecs []string
-	if name := strings.TrimSpace(cfg.Agent); name != "" {
-		specs, err := resolve(name, "the projects: section")
-		if err != nil {
-			return nil, nil, err
-		}
-		defaultSpecs = specs
 	}
 	targetAgents := map[string][]string{}
 	for _, target := range targets {
 		name := watchAgents[target]
 		if name == "" {
-			name = cfg.AgentFor(target)
+			name = m.owners[target]
 		}
 		if name == "" {
-			// Like any Aviary agent without a model, an unattached project
-			// takes models.defaults; only its CLI models can run a job.
+			// Like any Aviary agent without a model, a runtime watch no agent
+			// owns takes models.defaults; only its CLI models can run a job.
 			specs := config.ProjectJobSpecs(agents, "")
 			if len(specs) == 0 {
-				return nil, nil, fmt.Errorf("projects: %s is not attached to an agent and models.defaults names no cli/ model; set projects.agent or the project's agent", target)
+				return nil, nil, fmt.Errorf("projects: %s is owned by no agent and models.defaults names no cli/ model; watch it with an agent", target)
 			}
 			targetAgents[target] = specs
 			continue
 		}
-		specs, err := resolve(name, target)
-		if err != nil {
-			return nil, nil, err
+		specs := config.ProjectJobSpecs(agents, name)
+		if len(specs) == 0 {
+			return nil, nil, fmt.Errorf("projects: %s belongs to agent %q, which is not configured or has no model", target, name)
 		}
 		targetAgents[target] = specs
 	}
-	if len(defaultSpecs) == 0 && len(targets) > 0 {
-		defaultSpecs = targetAgents[targets[0]]
-	}
-	if len(defaultSpecs) > 0 {
-		defaultSpecs = defaultSpecs[:1]
+	var defaultSpecs []string
+	if len(targets) > 0 {
+		defaultSpecs = targetAgents[targets[0]][:1]
 	}
 	return targetAgents, defaultSpecs, nil
 }
@@ -832,7 +762,7 @@ func (m *Manager) startBrowser(ctx context.Context, run *engineRun, gh GHCLI) er
 	options := run.settings.Browser
 	driver, err := startBrowserDriver(ctx, options.Config())
 	if err != nil {
-		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set projects.delivery to poll to read GitHub through gh instead", err)
+		return fmt.Errorf("start Aviary's browser for browser delivery: %w; set delivery: poll in an agent's projects settings to read GitHub through gh instead", err)
 	}
 	// The browser closes cleanly with the engine, including when Aviary exits.
 	run.cleanup = append(run.cleanup, func() { _ = driver.Close() })

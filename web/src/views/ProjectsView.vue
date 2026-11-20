@@ -21,6 +21,9 @@
 							<p class="text-xs text-gray-500"><router-link to="/projects" class="hover:underline">Projects</router-link> /</p>
 							<div class="flex items-center gap-2">
 								<h1 class="truncate text-xl font-bold text-gray-900 dark:text-white">{{ project }}</h1>
+								<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
+									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+									:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
 								<span data-testid="delivery-status" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 									:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
 									<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
@@ -54,7 +57,7 @@
 								:disabled="checking" @click="onCheckNow">
 								{{ checking ? "Checking…" : "Check now" }}
 							</button>
-							<router-link :to="`/projects/${encodeProject(project)}/settings`"
+							<router-link :to="settingsPath" data-testid="project-settings-link"
 								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 								Settings
 							</router-link>
@@ -83,7 +86,7 @@
 						</p>
 
 						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
-							:schedules="schedules" :agents="scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
 							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
 							:preview="previewSchedule" />
 
@@ -180,6 +183,7 @@ import {
 	useProjectSchedules,
 } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
+import { projectOwner, projectSettingsPath } from "../lib/projectSettings";
 import {
 	age,
 	type BoardFilter,
@@ -187,6 +191,7 @@ import {
 	type ProjectJob,
 	summarizePrompt,
 } from "../lib/projects";
+import { useSettingsStore } from "../stores/settings";
 
 const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "all", label: "All" },
@@ -207,6 +212,14 @@ const router = useRouter();
 const projectList = useProjectList();
 const project = computed(() =>
 	typeof route.params.project === "string" ? route.params.project : "",
+);
+// A project belongs to the agent whose projects list it; its settings live
+// on that agent's settings page.
+const settingsStore = useSettingsStore();
+if (!settingsStore.config) void settingsStore.fetchConfig();
+const owner = computed(() => projectOwner(settingsStore.config, project.value));
+const settingsPath = computed(() =>
+	projectSettingsPath(settingsStore.config, project.value),
 );
 const filter = ref<BoardFilter>("all");
 // The search narrows the jobs within the filter, across every field and the

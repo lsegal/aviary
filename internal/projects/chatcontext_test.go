@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -24,6 +25,10 @@ func chatContextSnapshot(t *testing.T, text string) map[string]any {
 
 func TestChatContextNamesBoardTargetsAndLiveJobs(t *testing.T) {
 	m := newTestManager(t)
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
+		{Name: "coder", Model: "cli/codex", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}}},
+		{Name: "docs", Model: "cli/codex", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "x/y"}}}},
+	}})
 	m.snapshot.Store(&core.Snapshot{
 		Targets:     []string{"x/y", "o/r"},
 		IssueCounts: map[string]int{"o/r": 4, "x/y": 1},
@@ -40,6 +45,7 @@ func TestChatContextNamesBoardTargetsAndLiveJobs(t *testing.T) {
 	for _, want := range []string{
 		"/aviary:" + m.Identity(),
 		"It watches these projects: x/y, o/r.",
+		"x/y belongs to agent docs; o/r belongs to agent coder.",
 		"opened this chat from the o/r board",
 		"without asking which repository is meant",
 	} {

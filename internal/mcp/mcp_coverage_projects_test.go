@@ -165,19 +165,21 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	assert.Equal(t, true, added["saved"])
 	cfg, err := config.Load("")
 	require.NoError(t, err)
-	require.Len(t, cfg.Projects.List, 1)
-	assert.Equal(t, config.ProjectConfig{Target: "o/r", Agent: "coder"}, cfg.Projects.List[0])
-	// Only the project was written: every setting is still its default, and
-	// no agent was created for it.
-	cfg.Projects.List = nil
-	assert.True(t, cfg.Projects.IsZero())
-	assert.Len(t, cfg.Agents, 1)
+	assert.Equal(t, "coder", added["agent"])
+	require.Len(t, cfg.Agents, 1, "no agent was created for the project")
+	owned := cfg.Agents[0].Projects
+	require.Len(t, owned.List, 1)
+	assert.Equal(t, config.ProjectConfig{Target: "o/r"}, owned.List[0])
+	// Only the project was written: every setting is still its default.
+	owned.List = nil
+	assert.True(t, owned.IsZero())
 
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, []any{"o/r"}, status["targets"])
-	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r"}, "already watched")
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "agent": "coder"}, `already watched by agent "coder"`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/s"}, "agent is required")
 	toolCallContains(t, d, "project_add", map[string]any{"target": " "}, "target is required")
-	toolCallContains(t, d, "project_add", map[string]any{"target": "o/s", "settings": map[string]any{"no_merge": true}}, "only to a runtime watch")
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/s", "agent": "coder", "settings": map[string]any{"no_merge": true}}, "only to a runtime watch")
 
 	// Removing a project stops its jobs that still hold work and names them;
 	// finished jobs and other projects' jobs are not counted.
@@ -191,7 +193,7 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	assert.Equal(t, []any{1.0, 2.0, 3.0, 4.0}, removed["stopped_jobs"])
 	cfg, err = config.Load("")
 	require.NoError(t, err)
-	assert.Empty(t, cfg.Projects.List)
+	assert.Empty(t, cfg.Agents[0].Projects.List)
 	toolCallContains(t, d, "project_remove", map[string]any{"target": "o/r"}, "not watched")
 }
 
@@ -199,7 +201,7 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 // takes: a runtime watch is watched without touching aviary.yaml.
 func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 	d, m := setupProjects(t)
-	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}, config.ApprovalConfig{})
+	m.Reconcile(&config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}})
 	path := config.DefaultPath()
 	before := readFile(t, path)
 	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"concurrency": 5, "no_merge": true}})
@@ -256,11 +258,14 @@ func TestProjectGitHubToolsWithoutBrowserDelivery(t *testing.T) {
 
 func TestProjectGitHubUsePollingSavesDelivery(t *testing.T) {
 	d, _ := setupProjects(t)
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus"}}}))
+	toolCallContains(t, d, "project_github_use_polling", map[string]any{}, "no agent owns a project")
+	callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agent": "coder"})
 	result := callJSON(t, d, "project_github_use_polling", map[string]any{})
 	assert.Equal(t, "poll", result["delivery"])
 	cfg, err := config.Load("")
 	require.NoError(t, err)
-	assert.Equal(t, "poll", cfg.Projects.Delivery)
+	assert.Equal(t, "poll", cfg.Agents[0].Projects.Delivery)
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, "poll", status["delivery"])
 	assert.Equal(t, "30s", status["poll_interval"])
@@ -282,12 +287,12 @@ func TestProjectAddWithReports(t *testing.T) {
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "reports": map[string]any{"agent": "ghost", "targets": []any{"slack:main:C1"}}}, `reports agent "ghost" is not configured`)
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "reports": reports}, "reports apply only to a saved project")
 
-	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "reports": reports})
+	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agent": "bot", "reports": reports})
 	assert.Equal(t, true, added["saved"])
 	cfg, err := config.Load("")
 	require.NoError(t, err)
-	require.Len(t, cfg.Projects.List, 1)
-	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Projects.List[0].Reports)
+	require.Len(t, cfg.Agents[0].Projects.List, 1)
+	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Agents[0].Projects.List[0].Reports)
 }
 
 func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {

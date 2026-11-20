@@ -43,7 +43,8 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
-	v.checkApproval(cfg.Approval, cfg.Projects)
+	v.checkProjects(cfg.Agents)
+	v.checkApproval(cfg.Approval, cfg.Agents)
 	return v.issues
 }
 
@@ -63,10 +64,12 @@ func (v *validator) warnf(field, format string, args ...any) {
 }
 
 // checkApproval validates the approval modes.
-func (v *validator) checkApproval(a ApprovalConfig, p ProjectsConfig) {
-	for field, mode := range map[string]clidefs.ApprovalMode{
-		"approval.mode": a.Mode, "approval.chat": a.Chat, "projects.approval_mode": p.ApprovalMode,
-	} {
+func (v *validator) checkApproval(a ApprovalConfig, agents []AgentConfig) {
+	modes := map[string]clidefs.ApprovalMode{"approval.mode": a.Mode, "approval.chat": a.Chat}
+	for i, agent := range agents {
+		modes[fmt.Sprintf("agents[%d].projects.approval_mode", i)] = agent.Projects.ApprovalMode
+	}
+	for field, mode := range modes {
 		if err := clidefs.ValidateApprovalMode(mode); err != nil {
 			v.errorf(field, "%v", err)
 		}
@@ -594,4 +597,36 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 		}
 	}
 	return seen
+}
+
+// checkProjects rejects a project owned by more than one agent: a project has
+// exactly one parent agent.
+func (v *validator) checkProjects(agents []AgentConfig) {
+	owners := map[string]string{}
+	for i, agent := range agents {
+		for j, project := range agent.Projects.List {
+			target := strings.TrimSpace(project.Target)
+			if target == "" {
+				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d].target", i, j), "a project needs a target")
+				continue
+			}
+			if owner, ok := owners[target]; ok && owner != agent.Name {
+				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)
+				continue
+			}
+			owners[target] = agent.Name
+		}
+	}
+	// A project task runs against a project of its own agent's.
+	for i, agent := range agents {
+		for j, task := range agent.Tasks {
+			project := strings.TrimSpace(task.Project)
+			if project == "" {
+				continue
+			}
+			if owner, ok := owners[project]; ok && owner != agent.Name {
+				v.warnf(fmt.Sprintf("agents[%d].tasks[%d].project", i, j), "%s belongs to agent %q, not %q; its runs use %q's models", project, owner, agent.Name, owner)
+			}
+		}
+	}
 }

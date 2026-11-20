@@ -21,11 +21,22 @@ A target is one of:
 
 Several targets share one concurrency limit, and work is drawn from them in turn.
 
-To watch a project permanently, add it to the `projects:` section of `aviary.yaml`, or run:
+To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` section of `aviary.yaml`, and managed on the agent's **Projects** settings tab (Settings → Agents → *agent* → Projects, `/settings/agents/<agent>/projects`), where its projects are added, configured and removed. **Delete project** there stops watching a saved project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The board shows each project's agent and links there. Or run:
 
 ```bash
-aviary project add owner/repo
+aviary project add owner/repo --agent coder
 ```
+
+```yaml
+agents:
+  - name: coder
+    model: cli/claude/opus
+    projects:
+      list:
+        - target: owner/repo
+```
+
+There is no top-level `projects:` section. See [`agents[].projects`](/reference/config#agents-projects) for every setting.
 
 ## Which issues run
 
@@ -37,7 +48,7 @@ A repository issue is picked up when it is open, carries the ready label (`ready
 
 ## CLI providers
 
-A project is attached to an Aviary agent, like everything else in Aviary: its own `agent`, or `projects.agent` for projects that name none. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a project attached to no agent, which then needs a CLI model there.
+A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a runtime watch (`aviary watch`) no agent owns, which then needs a CLI model there.
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Projects. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers then reports it installed at that path, and jobs run the same executable.
 
@@ -90,9 +101,9 @@ On a finished or paused job, a mention goes to the Projects agent instead, as `l
 
 ## Prompt chat
 
-**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. Each prompt carries the board's project and a live snapshot of this instance (its watched projects, issue and job counts, and a summary of every job), so a question like "status of issues?" is answered for the board it was opened from. It can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. Asked to update an issue or pull request, it posts one comment mentioning the author, which the job working it also hears, and replies with the comment's URL; it never edits an issue's body or title. It is limited to the `project_*` tools and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
+**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. Each prompt carries the board's project and a live snapshot of this instance (its watched projects and the agent each belongs to, issue and job counts, and a summary of every job), so a question like "status of issues?" is answered for the board it was opened from. It can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. Asked to update an issue or pull request, it posts one comment mentioning the author, which the job working it also hears, and replies with the comment's URL; it never edits an issue's body or title. It is limited to the `project_*` tools and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
 
-The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `projects.chat_model` and `projects.chat_fallbacks`, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
+The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `chat_model` and `chat_fallbacks` in an agent's `projects:` settings, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
 
 ## Keeping jobs moving
 
@@ -108,13 +119,15 @@ The agent keeps its conversations as ordinary Aviary sessions; mentions routed t
 A project can send a short report through an Aviary agent's channels when one of its jobs finishes (`merged`), fails (`failed`), or starts waiting on CI, a wakeup, or a blocker (`waiting`). Reports are off by default. Turn them on per project by naming the agent and where to send:
 
 ```yaml
-projects:
-  list:
-    - target: owner/repo
-      reports:
-        agent: assistant
-        targets: [slack:main:C0123456789, session:projects]
-        events: [merged, failed]   # optional; all events when left out
+agents:
+  - name: coder
+    projects:
+      list:
+        - target: owner/repo
+          reports:
+            agent: assistant
+            targets: [slack:main:C0123456789, session:projects]
+            events: [merged, failed]   # optional; all events when left out
 ```
 
 Targets use the same form as a scheduled task's target ([delivery targets](/guide/channels#delivery-targets)), and the agent must have the channel configured. `project_add` takes the same `reports` object when it saves a project.

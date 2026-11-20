@@ -163,7 +163,7 @@ func TestManagerStartBrowserFailureNamesGHPolling(t *testing.T) {
 	}
 	run := &engineRun{settings: engineSettings{Delivery: DeliveryBrowser}, engine: &Engine{}}
 	err = m.startBrowser(context.Background(), run, GHCLI{})
-	if err == nil || !strings.Contains(err.Error(), "no Chrome") || !strings.Contains(err.Error(), "projects.delivery to poll") {
+	if err == nil || !strings.Contains(err.Error(), "no Chrome") || !strings.Contains(err.Error(), "delivery: poll in an agent's projects settings") {
 		t.Fatalf("startBrowser = %v", err)
 	}
 }
@@ -174,7 +174,7 @@ func TestManagerBrowserSettingsFollowAviarysBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.SetBrowser(config.BrowserConfig{Binary: "/opt/chrome", ProfileDir: "/data/profile"})
-	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}, config.ApprovalConfig{})
+	m.agents = &config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}}
 	m.cfg = config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, BrowserVision: true}
 	m.mu.Lock()
 	s, err := m.settingsLocked()

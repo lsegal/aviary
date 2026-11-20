@@ -52,11 +52,11 @@ type projectTargetArgs struct {
 
 type projectAddArgs struct {
 	Target  string `json:"target" jsonschema:"owner/repo, a repository URL, a GitHub Project board, or a Discussions board"`
-	Agent   string `json:"agent,omitempty" jsonschema:"The Aviary agent to attach the project to; its model and fallbacks are the provider and model defaults of the project's jobs. Leave out to use the agent the projects: section attaches projects to"`
+	Agent   string `json:"agent,omitempty" jsonschema:"The Aviary agent that owns the project; it lands in that agent's projects and its model and fallbacks are the provider and model defaults of the project's jobs. Required unless runtime is set"`
 	Runtime bool   `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
-	// Settings overrides the projects: section for a runtime watch.
+	// Settings overrides the agents' projects settings for a runtime watch.
 	Settings *config.ProjectsConfig `json:"settings,omitempty" jsonschema:"For a runtime watch, projects settings that override aviary.yaml while it runs"`
 }
 
@@ -215,7 +215,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_add",
-		Description: "Watch a project: a repository, GitHub Project board, or Discussions board. Saved to the projects: section of aviary.yaml unless runtime is set",
+		Description: "Watch a project: a repository, GitHub Project board, or Discussions board. Saved to the owning agent's projects in aviary.yaml unless runtime is set",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectAddArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_add", func(m *projects.Manager) (map[string]any, error) {
@@ -246,20 +246,23 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err := cfg.ValidateProjectReports(args.Reports); err != nil {
 				return nil, err
 			}
-			if slices.Contains(cfg.Projects.Targets(), target) {
-				return nil, fmt.Errorf("%s is already watched", target)
+			if owner := cfg.ProjectOwner(target); owner != "" {
+				return nil, fmt.Errorf("%s is already watched by agent %q", target, owner)
 			}
 			agent := strings.TrimSpace(args.Agent)
-			if agent != "" && !slices.ContainsFunc(cfg.Agents, func(a config.AgentConfig) bool { return a.Name == agent }) {
+			if agent == "" {
+				return nil, errors.New("agent is required: a saved project belongs to an agent")
+			}
+			i := slices.IndexFunc(cfg.Agents, func(a config.AgentConfig) bool { return a.Name == agent })
+			if i < 0 {
 				return nil, fmt.Errorf("agent %q is not configured", agent)
 			}
-			cfg.Projects.List = append(cfg.Projects.List, config.ProjectConfig{Target: target, Agent: agent, Reports: args.Reports})
+			cfg.Agents[i].Projects.List = append(cfg.Agents[i].Projects.List, config.ProjectConfig{Target: target, Reports: args.Reports})
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
-			m.SetAgents(cfg.Agents, cfg.Models, cfg.Approval)
-			m.Reconcile(cfg.Projects)
-			return map[string]any{"target": target, "saved": true}, nil
+			m.Reconcile(cfg)
+			return map[string]any{"target": target, "agent": agent, "saved": true}, nil
 		})
 	})
 
@@ -282,16 +285,20 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			before := len(cfg.Projects.List)
-			cfg.Projects.List = slices.DeleteFunc(cfg.Projects.List, func(p config.ProjectConfig) bool {
-				return strings.TrimSpace(p.Target) == target
-			})
-			saved := len(cfg.Projects.List) != before
+			saved := false
+			for i := range cfg.Agents {
+				list := cfg.Agents[i].Projects.List
+				before := len(list)
+				cfg.Agents[i].Projects.List = slices.DeleteFunc(list, func(p config.ProjectConfig) bool {
+					return strings.TrimSpace(p.Target) == target
+				})
+				saved = saved || len(cfg.Agents[i].Projects.List) != before
+			}
 			if saved {
 				if err := config.Save("", cfg); err != nil {
 					return nil, err
 				}
-				m.Reconcile(cfg.Projects)
+				m.Reconcile(cfg)
 			}
 			if !saved && !runtime {
 				return nil, fmt.Errorf("%s is not watched", target)
@@ -362,7 +369,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_github_use_polling",
-		Description: "Read GitHub through gh polling instead of Aviary's browser: saves projects.delivery: poll to aviary.yaml",
+		Description: "Read GitHub through gh polling instead of Aviary's browser: saves delivery: poll to the projects settings of every agent that owns projects in aviary.yaml",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_github_use_polling", func(m *projects.Manager) (map[string]any, error) {
@@ -370,11 +377,20 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			cfg.Projects.Delivery = projects.DeliveryPoll
+			changed := false
+			for i := range cfg.Agents {
+				if len(cfg.Agents[i].Projects.List) > 0 {
+					cfg.Agents[i].Projects.Delivery = projects.DeliveryPoll
+					changed = true
+				}
+			}
+			if !changed {
+				return nil, errors.New("no agent owns a project; add one to an agent first, or watch with --delivery poll")
+			}
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
-			m.Reconcile(cfg.Projects)
+			m.Reconcile(cfg)
 			return map[string]any{"delivery": projects.DeliveryPoll, "saved": true}, nil
 		})
 	})

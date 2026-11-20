@@ -52,7 +52,7 @@ projects: and discussions: shorthands.
 
 Nothing is written to aviary.yaml: the watch lasts until Ctrl+C. When the
 Aviary server is running the watch is added to it; otherwise the server is
-started in the foreground for the watch. Flags override the projects: section
+started in the foreground for the watch. Flags override the agents' projects settings
 of aviary.yaml while the watch runs. Use 'aviary project add' to watch a
 project permanently.`,
 	RunE: runWatch,
@@ -60,7 +60,7 @@ project permanently.`,
 
 func init() {
 	f := watchCmd.Flags()
-	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent to attach the targets to; its model and fallbacks pick the jobs' CLI providers (default: the projects: section's agent)")
+	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent the targets run under; its model and fallbacks pick the jobs' CLI providers (default: the agent that owns the target, else models.defaults)")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")

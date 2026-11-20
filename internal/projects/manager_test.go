@@ -25,23 +25,28 @@ func newTestManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	m.SetEngineEnabled(false)
-	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}, config.ApprovalConfig{})
+	m.agents = &config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}}
 	return m
+}
+
+// ownedBy returns a config whose coder agent, on cli/codex, owns projects.
+func ownedBy(projects config.ProjectsConfig) *config.Config {
+	return &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: projects}}}
 }
 
 func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	m := newTestManager(t)
-	m.SetAgents([]config.AgentConfig{
-		{Name: "shared", Model: "cli/codex"},
-		{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}},
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
+		{Name: "shared", Model: "cli/codex", Projects: config.ProjectsConfig{
+			List:        []config.ProjectConfig{{Target: "o/b"}},
+			Concurrency: 2,
+			Interval:    "1m",
+		}},
+		{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}, Projects: config.ProjectsConfig{
+			List: []config.ProjectConfig{{Target: "o/a"}},
+		}},
 		{Name: "high", Model: "cli/codex:high"},
-	}, config.ModelsConfig{}, config.ApprovalConfig{})
-	m.Reconcile(config.ProjectsConfig{
-		List:        []config.ProjectConfig{{Target: "o/a", Agent: "opus"}, {Target: "o/b"}},
-		Agent:       "shared",
-		Concurrency: 2,
-		Interval:    "1m",
-	})
+	}})
 	label := ""
 	if err := m.AddWatch(Watch{Targets: []string{"o/c", "o/d"}, Agent: "high", Settings: config.ProjectsConfig{Concurrency: 6, ReadyLabel: &label, NoMerge: true}}); err != nil {
 		t.Fatal(err)
@@ -52,14 +57,14 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"o/a", "o/b", "o/c", "o/d"}; !reflect.DeepEqual(s.Targets, want) {
+	if want := []string{"o/b", "o/a", "o/c", "o/d"}; !reflect.DeepEqual(s.Targets, want) {
 		t.Fatalf("targets = %v, want %v", s.Targets, want)
 	}
 	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"claude/opus", "codex"}) {
-		t.Fatalf("a project's jobs should run on its agent's model and fallbacks: %v", got)
+		t.Fatalf("a project's jobs should run on its owning agent's model and fallbacks: %v", got)
 	}
 	if got := s.TargetAgents["o/b"]; !reflect.DeepEqual(got, []string{"codex"}) {
-		t.Fatalf("a project without an agent should use the section's: %v", got)
+		t.Fatalf("o/b should run on the agent that owns it: %v", got)
 	}
 	if got := s.TargetAgents["o/c"]; !reflect.DeepEqual(got, []string{"codex:high"}) {
 		t.Fatalf("watch agents = %v", got)
@@ -77,27 +82,35 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 
 func TestManagerSettingsRejectUnattachedProjects(t *testing.T) {
 	m := newTestManager(t)
-	m.SetAgents([]config.AgentConfig{{Name: "nomodel"}}, config.ModelsConfig{}, config.ApprovalConfig{})
-	for name, cfg := range map[string]config.ProjectsConfig{
-		"no agent":      {List: []config.ProjectConfig{{Target: "o/r"}}}, // and no models.defaults
-		"unknown agent": {List: []config.ProjectConfig{{Target: "o/r", Agent: "nobody"}}},
-		"no model":      {List: []config.ProjectConfig{{Target: "o/r"}}, Agent: "nomodel"},
+	m.agents = &config.Config{Agents: []config.AgentConfig{{Name: "nomodel"}}}
+	for name, owner := range map[string]string{
+		"no agent":      "", // and no models.defaults
+		"unknown agent": "nobody",
+		"no model":      "nomodel",
 	} {
 		m.mu.Lock()
-		m.cfg = cfg
+		m.cfg = config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}}
+		m.owners = map[string]string{}
+		if owner != "" {
+			m.owners["o/r"] = owner
+		}
 		_, err := m.settingsLocked()
 		m.mu.Unlock()
-		if err == nil || !strings.Contains(err.Error(), "o/r") && !strings.Contains(err.Error(), "section") {
-			t.Errorf("%s: err = %v, want the unattached project named", name, err)
+		if err == nil || !strings.Contains(err.Error(), "o/r") {
+			t.Errorf("%s: err = %v, want the project named", name, err)
 		}
 	}
 }
 
 func TestManagerAgentModelsDefaultFromModelsSection(t *testing.T) {
 	m := newTestManager(t)
-	m.SetAgents([]config.AgentConfig{{Name: "plain"}, {Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}}},
-		config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}}, config.ApprovalConfig{})
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a", Agent: "plain"}, {Target: "o/b", Agent: "api"}}})
+	m.Reconcile(&config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "plain", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}}},
+			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}, Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/b"}}}},
+		},
+		Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}},
+	})
 	m.mu.Lock()
 	s, err := m.settingsLocked()
 	m.mu.Unlock()
@@ -169,13 +182,13 @@ func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
 	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{}) {
 		t.Fatalf("unconfigured allowed_commenters = %#v, want an empty list", got)
 	}
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, AllowedCommenters: []string{"alice", "bob"}})
+	m.Reconcile(ownedBy(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, AllowedCommenters: []string{"alice", "bob"}}))
 	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"alice", "bob"}) {
 		t.Fatalf("configured allowed_commenters = %v", got)
 	}
 	// A running engine reports the commenters it enforces, such as the
 	// authenticated gh user it falls back to when none are configured.
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}})
+	m.Reconcile(ownedBy(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}}))
 	m.snapshot.Store(&core.Snapshot{AllowedCommenters: []string{"me"}})
 	m.mu.Lock()
 	m.running = &engineRun{}
@@ -190,7 +203,7 @@ func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
 
 func TestManagerRejectsABadUnblockInterval(t *testing.T) {
 	m := newTestManager(t)
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, UnblockInterval: "soon"})
+	m.Reconcile(ownedBy(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, UnblockInterval: "soon"}))
 	if status := m.Status(t.Context(), 0); status["error"] == nil {
 		t.Fatalf("status = %v, want the settings error", status)
 	}
@@ -308,7 +321,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Shutdown)
-	m.SetAgents([]config.AgentConfig{{Name: "coder", Model: "cli/codex"}}, config.ModelsConfig{}, config.ApprovalConfig{})
+	m.agents = ownedBy(config.ProjectsConfig{})
 	recordLogs(t, m)
 	var lookups atomic.Int32
 	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
@@ -363,26 +376,35 @@ func TestManagerSettingsResolveApprovalMode(t *testing.T) {
 		}
 		return s.Approval
 	}
-	models := config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}
+	// The coder agent owns o/a, and a watch no agent owns runs on
+	// models.defaults; general is the approval: section.
+	general := config.ApprovalConfig{}
+	reconcile := func(p config.ProjectsConfig) {
+		p.List = []config.ProjectConfig{{Target: "o/a"}}
+		cfg := ownedBy(p)
+		cfg.Models = config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}
+		cfg.Approval = general
+		m.Reconcile(cfg)
+	}
 
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	reconcile(config.ProjectsConfig{})
 	if got := approval(); got != clidefs.ApprovalAuto {
 		t.Fatalf("no setting: approval = %q, want auto", got)
 	}
-	m.SetAgents(nil, models, config.ApprovalConfig{Mode: clidefs.ApprovalReadOnly, Chat: clidefs.ApprovalFull})
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	general = config.ApprovalConfig{Mode: clidefs.ApprovalReadOnly, Chat: clidefs.ApprovalFull}
+	reconcile(config.ProjectsConfig{})
 	if got := approval(); got != clidefs.ApprovalReadOnly {
 		t.Fatalf("general setting: approval = %q, want read-only", got)
 	}
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}, ApprovalMode: clidefs.ApprovalAuto})
+	reconcile(config.ProjectsConfig{ApprovalMode: clidefs.ApprovalAuto})
 	if got := approval(); got != clidefs.ApprovalAuto {
 		t.Fatalf("Projects override: approval = %q, want auto", got)
 	}
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}, Yolo: true})
+	reconcile(config.ProjectsConfig{Yolo: true})
 	if got := approval(); got != clidefs.ApprovalFull {
 		t.Fatalf("yolo: approval = %q, want full", got)
 	}
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}})
+	reconcile(config.ProjectsConfig{})
 	if err := m.AddWatch(Watch{Targets: []string{"o/b"}, Settings: config.ProjectsConfig{Yolo: true}}); err != nil {
 		t.Fatal(err)
 	}

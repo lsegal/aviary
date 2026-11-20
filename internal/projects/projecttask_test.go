@@ -200,25 +200,33 @@ func TestEngineRunsProjectTaskWithModelOverride(t *testing.T) {
 	}
 }
 
-func TestManagerProjectAgentResolvesTheAttachedAgent(t *testing.T) {
+func TestManagerProjectAgentResolvesTheOwningAgent(t *testing.T) {
 	m := newTestManager(t)
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a", Agent: "opus"}, {Target: "o/b"}}, Agent: "shared"})
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
+		{Name: "opus", Model: "cli/claude/opus", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}}},
+		{Name: "shared", Model: "cli/codex", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/b"}}}},
+	}})
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if got := m.projectAgentLocked("o/a"); got != "opus" {
-		t.Fatalf("o/a agent = %q, want its own", got)
+		t.Fatalf("o/a agent = %q, want its owner", got)
 	}
 	if got := m.projectAgentLocked("o/b"); got != "shared" {
-		t.Fatalf("o/b agent = %q, want the projects default", got)
+		t.Fatalf("o/b agent = %q, want its owner", got)
+	}
+	if got := m.projectAgentLocked("o/c"); got != "" {
+		t.Fatalf("unowned o/c agent = %q, want none", got)
 	}
 }
 
 func TestManagerRunProjectTaskRefusesAProviderModelWithoutAnAgent(t *testing.T) {
 	m := newTestManager(t)
-	m.Reconcile(config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}})
+	if err := m.AddWatch(Watch{Targets: []string{"o/r"}}); err != nil {
+		t.Fatal(err)
+	}
 	_, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x", Model: "anthropic/claude-opus-4-5"})
-	if err == nil || !strings.Contains(err.Error(), "attached to no agent") {
-		t.Fatalf("err = %v, want the unattached project refused", err)
+	if err == nil || !strings.Contains(err.Error(), "owned by no agent") {
+		t.Fatalf("err = %v, want the unowned project refused", err)
 	}
 }
 

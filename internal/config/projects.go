@@ -9,9 +9,14 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-// ProjectsConfig is the projects: section of aviary.yaml. Every field is
-// optional and holds only a value that differs from its default, so a watch
-// started with defaults writes nothing here.
+// ProjectsConfig is an agent's projects: section in aviary.yaml: the
+// projects the agent owns and the settings that configure them. Every field
+// is optional and holds only a value that differs from its default, so a
+// watch started with defaults writes nothing here.
+//
+// One Projects engine runs every agent's projects, so the engine-wide
+// settings (everything but List) of all agents are merged in agent order,
+// a later agent's non-zero value winning; see Config.ProjectSettings.
 type ProjectsConfig struct {
 	// List is the watched projects: repositories, project boards and
 	// Discussions boards.
@@ -47,10 +52,6 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
-	// Agent is the Aviary agent projects without their own are attached to.
-	// Its model and fallbacks are the provider and model defaults of their
-	// jobs.
-	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// ApprovalMode is the Projects surface's approval-mode override for the
 	// CLI runs it launches. Empty follows approval.mode.
 	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
@@ -79,16 +80,14 @@ type ProjectsConfig struct {
 	Webhook *ProjectsWebhookConfig `yaml:"webhook,omitempty" json:"webhook,omitempty"`
 }
 
-// ProjectConfig is one watched project.
+// ProjectConfig is one watched project. The agent whose projects: section
+// holds it owns it: that agent's model and fallbacks, in order, are the
+// provider and model defaults of the project's jobs, a job running on the
+// first one whose quota is not used up.
 type ProjectConfig struct {
 	// Target is owner/repo, a repository URL, a project board, or a
 	// Discussions board.
 	Target string `yaml:"target" json:"target"`
-	// Agent is the Aviary agent this project is attached to. Its model and
-	// fallbacks, in order, are the provider and model defaults of the
-	// project's jobs: a job runs on the first one whose quota is not used up.
-	// Empty uses the section's Agent.
-	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -237,21 +236,6 @@ func (p ProjectsConfig) EffectiveFilter() string {
 	return DefaultProjectsFilter
 }
 
-// AgentFor returns the name of the Aviary agent target is attached to: the
-// project's own agent, otherwise the section's. Empty means none is attached.
-func (p ProjectsConfig) AgentFor(target string) string {
-	target = strings.TrimSpace(target)
-	for _, project := range p.List {
-		if strings.TrimSpace(project.Target) == target {
-			if agent := strings.TrimSpace(project.Agent); agent != "" {
-				return agent
-			}
-			break
-		}
-	}
-	return strings.TrimSpace(p.Agent)
-}
-
 // Targets returns every watched target, in order, without duplicates.
 func (p ProjectsConfig) Targets() []string {
 	var targets []string
@@ -271,8 +255,99 @@ func (p ProjectsConfig) Targets() []string {
 func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
-		len(p.AllowedCommenters) == 0 && p.Agent == "" &&
+		len(p.AllowedCommenters) == 0 &&
 		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
+}
+
+// MergeProjects lays overlay's non-zero engine-wide settings over base. List
+// is base's.
+func MergeProjects(base, overlay ProjectsConfig) ProjectsConfig {
+	merged := base
+	if overlay.Concurrency > 0 {
+		merged.Concurrency = overlay.Concurrency
+	}
+	if overlay.Interval != "" {
+		merged.Interval = overlay.Interval
+	}
+	if overlay.Delivery != "" {
+		merged.Delivery = overlay.Delivery
+	}
+	if overlay.ReadyLabel != nil {
+		merged.ReadyLabel = overlay.ReadyLabel
+	}
+	if overlay.ReadyState != "" {
+		merged.ReadyState = overlay.ReadyState
+	}
+	if len(overlay.Filter) > 0 {
+		merged.Filter = overlay.Filter
+	}
+	merged.AllIssues = merged.AllIssues || overlay.AllIssues
+	if len(overlay.AllowedCommenters) > 0 {
+		merged.AllowedCommenters = overlay.AllowedCommenters
+	}
+	if overlay.ApprovalMode != "" {
+		merged.ApprovalMode = overlay.ApprovalMode
+	}
+	merged.Yolo = merged.Yolo || overlay.Yolo
+	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
+	merged.BrowserVisible = merged.BrowserVisible || overlay.BrowserVisible
+	merged.NoMerge = merged.NoMerge || overlay.NoMerge
+	merged.NoChangelog = merged.NoChangelog || overlay.NoChangelog
+	if overlay.UnblockInterval != "" {
+		merged.UnblockInterval = overlay.UnblockInterval
+	}
+	if overlay.UnblockAgent != "" {
+		merged.UnblockAgent = overlay.UnblockAgent
+	}
+	if overlay.UnblockModel != "" {
+		merged.UnblockModel = overlay.UnblockModel
+	}
+	if overlay.ChatModel != "" {
+		merged.ChatModel = overlay.ChatModel
+	}
+	if len(overlay.ChatFallbacks) > 0 {
+		merged.ChatFallbacks = overlay.ChatFallbacks
+	}
+	if len(overlay.TempDirs) > 0 {
+		merged.TempDirs = overlay.TempDirs
+	}
+	if overlay.Webhook != nil {
+		merged.Webhook = overlay.Webhook
+	}
+	return merged
+}
+
+// ProjectSettings returns every agent's projects merged into the one section
+// the Projects engine runs: List holds each agent's projects in agent order,
+// and the engine-wide settings are merged as MergeProjects does, a later
+// agent's value winning.
+func (c *Config) ProjectSettings() ProjectsConfig {
+	var merged ProjectsConfig
+	for _, agent := range c.Agents {
+		merged = MergeProjects(merged, agent.Projects)
+		merged.List = append(merged.List, agent.Projects.List...)
+	}
+	return merged
+}
+
+// ProjectOwners maps every watched target to the name of the agent that owns
+// it. A target listed under several agents belongs to the first.
+func (c *Config) ProjectOwners() map[string]string {
+	owners := map[string]string{}
+	for _, agent := range c.Agents {
+		for _, target := range agent.Projects.Targets() {
+			if _, ok := owners[target]; !ok {
+				owners[target] = agent.Name
+			}
+		}
+	}
+	return owners
+}
+
+// ProjectOwner returns the name of the agent that owns target, or "" when no
+// agent does.
+func (c *Config) ProjectOwner(target string) string {
+	return c.ProjectOwners()[strings.TrimSpace(target)]
 }

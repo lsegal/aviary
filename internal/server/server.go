@@ -205,11 +205,10 @@ func configureCLIProviders(cfg *config.Config) {
 	}
 }
 
-// startProjects applies the projects: section and the startup watches.
+// startProjects applies the agents' projects and the startup watches.
 func (s *Server) startProjects() {
 	s.projects.SetBrowser(s.cfg.Browser)
-	s.projects.SetAgents(s.cfg.Agents, s.cfg.Models, s.cfg.Approval)
-	s.projects.Reconcile(s.cfg.Projects)
+	s.projects.Reconcile(s.cfg)
 	for _, watch := range startupWatches {
 		if err := s.projects.AddWatch(watch); err != nil {
 			slog.Error("server: watch failed to start", "targets", watch.Targets, "err", err)
@@ -233,8 +232,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	}
 	if s.projects != nil {
 		s.projects.SetBrowser(newCfg.Browser)
-		s.projects.SetAgents(newCfg.Agents, newCfg.Models, newCfg.Approval)
-		go s.projects.Reconcile(newCfg.Projects)
+		go s.projects.Reconcile(newCfg)
 	}
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
 		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)

@@ -27,11 +27,6 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/projects/:project/settings",
-			component: () => import("../views/ProjectSettingsView.vue"),
-			meta: { requiresAuth: true },
-		},
-		{
 			path: "/projects/:project/jobs/:number(\\d+)",
 			component: () => import("../views/ProjectRunView.vue"),
 			meta: { requiresAuth: true },
@@ -70,7 +65,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/settings/agents/:agent?/:subtab(general|permissions|channels|files|tasks)?",
+			path: "/settings/agents/:agent?/:subtab(general|permissions|channels|files|tasks|projects)?",
 			component: () => import("../views/SettingsView.vue"),
 			meta: { requiresAuth: true },
 		},

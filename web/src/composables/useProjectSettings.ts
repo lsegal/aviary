@@ -118,13 +118,13 @@ export function useProjectCheck(target: Ref<string>, delay = 400) {
 }
 
 /**
- * Starts watching target with the current settings as a runtime watch
- * (project_add with runtime), so nothing is written to aviary.yaml.
+ * Adds target to agent's projects (project_add), saving it to that agent in
+ * aviary.yaml; the running watch picks it up right away.
  */
 export function useAddProject() {
 	const { callTool } = useMCP();
-	return async (target: string) => {
-		await callTool("project_add", { target, runtime: true });
+	return async (target: string, agent: string) => {
+		await callTool("project_add", { target, agent });
 	};
 }
 

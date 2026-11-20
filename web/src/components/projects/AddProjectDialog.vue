@@ -36,6 +36,18 @@
 					</ul>
 				</section>
 
+				<label for="add-project-agent" class="mt-4 block text-xs font-medium text-gray-700 dark:text-gray-300">
+					Agent that owns it
+				</label>
+				<select id="add-project-agent" v-model="agent" data-field="agent"
+					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-white">
+					<option v-if="!agentNames.length" value="" disabled>No agents configured</option>
+					<option v-for="a in agentNames" :key="a" :value="a">{{ a }}</option>
+				</select>
+				<p v-if="owner" data-testid="add-project-owned" class="mt-2 text-sm text-amber-700 dark:text-amber-400">
+					{{ normalized }} already belongs to agent {{ owner }}.
+				</p>
+
 				<p class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
 					<span>Up to <b class="text-gray-900 dark:text-white">{{ settings.concurrency }}</b> jobs at once</span>
 					<span>{{ settings.merge ? "Merges when CI passes" : "Leaves pull requests for you to merge" }}</span>
@@ -59,8 +71,8 @@
 			</form>
 			<footer class="border-t border-gray-200 bg-gray-50 px-5 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 sm:px-6">
 				Same from a terminal:
-				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary watch {{ normalized || "owner/repo" }}</code>
-				<p class="mt-1">Nothing is written to aviary.yaml until you change a setting.</p>
+				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary project add {{ normalized || "owner/repo" }} --agent {{ agent || "AGENT" }}</code>
+				<p class="mt-1">The project is saved to {{ agent || "the agent" }}'s projects in aviary.yaml and managed in its settings.</p>
 			</footer>
 		</div>
 	</div>
@@ -78,10 +90,9 @@ import {
 	type CheckStatus,
 	checkLabel,
 	jobModels,
+	projectOwner,
 	settingsFromSection,
-	sharedAgent,
 } from "../../lib/projectSettings";
-import { encodeProject } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 
 const props = defineProps<{ initial?: string }>();
@@ -103,28 +114,44 @@ const addProject = useAddProject();
 const starting = ref(false);
 const startError = ref("");
 
-onMounted(() => {
+onMounted(async () => {
 	input.value?.focus();
-	if (!store.config) void store.fetchConfig();
+	if (!store.config) await store.fetchConfig();
+	if (!agent.value) agent.value = agentNames.value[0] ?? "";
 });
+
+const agentNames = computed(() =>
+	(store.config?.agents ?? []).map((a) => a.name).filter(Boolean),
+);
+const agent = ref(agentNames.value[0] ?? "");
 
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
+// The owning agent's projects settings, and the models its jobs run on.
 const settings = computed(() =>
-	settingsFromSection(normalized.value, store.config?.projects),
+	settingsFromSection(
+		(store.config?.agents ?? []).find((a) => a.name === agent.value)?.projects,
+	),
 );
-// The attached agent's models, or models.defaults' when none is attached.
 const runsOn = computed(() => {
-	const agent = settings.value.agent || sharedAgent(store.config?.projects);
-	const specs = jobModels(agent, store.config, cliNames.value).map(
+	if (!agent.value) return "no agent";
+	const specs = jobModels(agent.value, store.config, cliNames.value).map(
 		(m) => m.spec,
 	);
-	if (!specs.length) return agent ? `${agent} (no model)` : "no agent";
-	return agent ? `${agent}: ${specs.join(", ")}` : specs.join(", ");
+	return specs.length
+		? `${agent.value}: ${specs.join(", ")}`
+		: `${agent.value} (no model)`;
 });
+// A project belongs to exactly one agent.
+const owner = computed(() => projectOwner(store.config, normalized.value));
 const canStart = computed(
 	() =>
-		!!target.value.trim() && !checking.value && !error.value && !!result.value,
+		!!target.value.trim() &&
+		!!agent.value &&
+		!owner.value &&
+		!checking.value &&
+		!error.value &&
+		!!result.value,
 );
 
 async function start() {
@@ -132,7 +159,10 @@ async function start() {
 	starting.value = true;
 	startError.value = "";
 	try {
-		await addProject(normalized.value);
+		await addProject(normalized.value, agent.value);
+		// The config watcher reloads the server; refresh the copy here so the
+		// board shows the new project's agent.
+		await store.fetchConfig();
 		emit("added", normalized.value);
 	} catch (e) {
 		startError.value = e instanceof Error ? e.message : String(e);
@@ -144,7 +174,7 @@ async function start() {
 function changeSettings() {
 	emit("close");
 	void router.push(
-		`/projects/${encodeProject(normalized.value)}/settings?add=1`,
+		`/settings/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
 	);
 }
 

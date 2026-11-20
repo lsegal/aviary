@@ -63,5 +63,5 @@ func EffectiveAgents(cfg *Config) []AgentConfig {
 	if slices.ContainsFunc(agents, func(a AgentConfig) bool { return a.Name == ProjectsAgentName }) {
 		return agents
 	}
-	return append(agents, ProjectsAgent(cfg.Projects))
+	return append(agents, ProjectsAgent(cfg.ProjectSettings()))
 }

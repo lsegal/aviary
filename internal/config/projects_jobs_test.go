@@ -6,22 +6,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestProjectJobSpecsComeFromTheAttachedAgent(t *testing.T) {
+func TestProjectJobSpecsComeFromTheOwningAgent(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{
-			{Name: "coder", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex/gpt-5.6-terra:high", "cli/claude/opus"}},
-			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/gemini/gemini-3.5-flash"}},
+			{Name: "coder", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex/gpt-5.6-terra:high", "cli/claude/opus"},
+				Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/shared"}}}},
+			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/gemini/gemini-3.5-flash"},
+				Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/own"}}}},
 			{Name: "plain"},
 		},
 		Models: ModelsConfig{Defaults: &ModelDefaults{Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/codex/gpt-5.6-terra"}}},
-		Projects: ProjectsConfig{
-			Agent: "coder",
-			List:  []ProjectConfig{{Target: "o/shared"}, {Target: "o/own", Agent: "api"}},
-		},
 	}
-	assert.Equal(t, "coder", cfg.Projects.AgentFor("o/shared"))
-	assert.Equal(t, "api", cfg.Projects.AgentFor("o/own"))
-	assert.Equal(t, "coder", cfg.Projects.AgentFor("o/unlisted"))
+	assert.Equal(t, "coder", cfg.ProjectOwner("o/shared"))
+	assert.Equal(t, "api", cfg.ProjectOwner(" o/own "))
+	assert.Equal(t, "", cfg.ProjectOwner("o/unlisted"), "no agent owns an unlisted project")
 
 	assert.Equal(t, []string{"claude/opus", "codex/gpt-5.6-terra:high"}, ProjectJobSpecs(cfg, "coder"), "duplicates drop out")
 	assert.Equal(t, []string{"aviary/api", "gemini/gemini-3.5-flash"}, ProjectJobSpecs(cfg, "api"), "an API model runs the job on the agent")

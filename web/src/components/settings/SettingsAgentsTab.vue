@@ -32,6 +32,7 @@
 										{ key: 'permissions', label: 'Permissions' },
 										{ key: 'channels', label: 'Channels' },
 										{ key: 'tasks', label: 'Tasks' },
+										{ key: 'projects', label: 'Projects' },
 									] as const)" :key="subtab.key" type="button" class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
 										:class="selectedAgentSubtab === subtab.key
 											? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
@@ -763,6 +764,9 @@
 							</div>
 						</div>
 
+						<!-- Projects subtab -->
+						<SettingsAgentProjects v-if="selectedAgentSubtab === 'projects'" :agent="agent" :config="draft" />
+
 						<!-- Tasks subtab -->
 						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
 							<div class="flex items-center justify-between">
@@ -955,6 +959,7 @@ import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import { settingsViewContextKey } from "./context";
+import SettingsAgentProjects from "./SettingsAgentProjects.vue";
 
 export default defineComponent({
 	name: "SettingsAgentsTab",
@@ -963,6 +968,7 @@ export default defineComponent({
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
+		SettingsAgentProjects,
 		SwitchRoot,
 		SwitchThumb,
 	},
