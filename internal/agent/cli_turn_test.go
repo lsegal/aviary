@@ -346,6 +346,46 @@ func TestCLITurn_ChatApprovalModeReachesTheCLI(t *testing.T) {
 	assert.Equal(t, []string{"--permission-mode", "auto"}, cliApprovalArgs(cliagent.Claude, ""), "no setting means auto")
 }
 
+// TestCLITurn_GrantsTheAgentDirectory checks a CLI session can reach the
+// agent's own directory, where its MEMORY.md and memory/ live, whatever its
+// working_dir, without widening the approval mode (#534).
+func TestCLITurn_GrantsTheAgentDirectory(t *testing.T) {
+	setTestDataDir(t)
+	SetToolClientFactory(func(context.Context) (ToolClient, error) { return &recordingToolClient{}, nil })
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+	fb := useFakeCLI(t)
+	workDir := t.TempDir()
+
+	m := newTestManager(t)
+	m.Reconcile(&config.Config{
+		Agents:   []config.AgentConfig{{Name: "agent_cli_home", Model: "cli/claude/opus", WorkingDir: workDir}},
+		Approval: config.ApprovalConfig{Chat: clidefs.ApprovalReadOnly},
+	})
+	runner, ok := m.Get("agent_cli_home")
+	require.True(t, ok)
+	t.Cleanup(runner.Stop)
+	agentDir := store.AgentDir(runner.Agent().ID)
+
+	runCLIPrompt(t, runner, "main", "hi")
+	require.Len(t, fb.turns, 1)
+	opts := fb.turns[0].opts
+	assert.Equal(t, workDir, opts.WorkDir)
+	assert.Equal(t, []string{"--add-dir", agentDir}, opts.ExtraDir)
+	assert.DirExists(t, agentDir)
+	assert.Equal(t, []string{"--permission-mode", "dontAsk"}, opts.Approval, "the grant does not widen read-only")
+
+	// Without a working_dir the CLI already runs in the agent's directory.
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "agent_cli_home", Model: "cli/claude/opus"}}})
+	runner, ok = m.Get("agent_cli_home")
+	require.True(t, ok)
+	runCLIPrompt(t, runner, "main", "again")
+	require.Len(t, fb.turns, 2)
+	assert.Equal(t, agentDir, fb.turns[1].opts.WorkDir)
+	assert.Empty(t, fb.turns[1].opts.ExtraDir)
+
+	assert.Equal(t, []string{"-c", `sandbox_workspace_write.writable_roots=["/a"]`}, cliExtraDirArgs(cliagent.Codex, "/w", "/a"))
+}
+
 // TestCLILaunchEnvOverlaysCodexHome shows chat turns launch codex with
 // CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
 // trusted-project writes out of the user's config.toml (#528).

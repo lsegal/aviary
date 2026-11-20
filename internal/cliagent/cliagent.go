@@ -90,6 +90,11 @@ type Options struct {
 	// approval mode, as its CLI provider definition translates it. They are
 	// always passed, so the user's own CLI settings never pick the mode.
 	Approval []string
+	// ExtraDir are the CLI's native arguments that add the agent's own
+	// directory to the session's workspace scope beside WorkDir, as its CLI
+	// provider definition declares them. They widen which directories are in
+	// scope, never what the approval mode allows there.
+	ExtraDir []string
 	// ResumeID is the CLI-native session ID to resume. Empty starts a new
 	// session; the new ID is reported with an EventSession event.
 	ResumeID string

@@ -92,13 +92,15 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		return
 	}
 
+	workDir := r.workingDir()
 	opts := cliagent.Options{
 		Backend:      backend,
 		Model:        cliModel,
 		SystemPrompt: in.systemPrompt,
-		WorkDir:      r.workingDir(),
+		WorkDir:      workDir,
 		BuiltinTools: r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions),
 		Approval:     cliApprovalArgs(backend, r.approvalMode()),
+		ExtraDir:     cliExtraDirArgs(backend, workDir, r.agentHomeDir()),
 		Ephemeral:    !in.useHistory,
 		Env:          cliLaunchEnv(backend),
 	}
@@ -374,6 +376,22 @@ func cliApprovalArgs(backend cliagent.Backend, mode clidefs.ApprovalMode) []stri
 	return definition.ApprovalArgs(mode)
 }
 
+// cliExtraDirArgs grants the CLI the agent's own directory, where its
+// MEMORY.md and memory/ live, through its CLI provider definition. The
+// working directory scopes the workspace and the agent's directory is its
+// home, so both are in scope for every session (#534). Nothing is added when
+// the CLI already runs there.
+func cliExtraDirArgs(backend cliagent.Backend, workDir, agentDir string) []string {
+	if filepath.Clean(workDir) == filepath.Clean(agentDir) {
+		return nil
+	}
+	definition, ok := llm.CLIProvider(string(backend))
+	if !ok {
+		return nil
+	}
+	return definition.ExtraDirArgs(agentDir)
+}
+
 // cliLaunchEnv points the backend's CLI at the settings overlay its provider
 // definition declares, as every Projects launch does. For codex that is
 // CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
@@ -402,7 +420,7 @@ func cliFingerprint(opts cliagent.Options, tools []ToolInfo) string {
 	for _, part := range []string{
 		string(opts.Backend), opts.Model, opts.SystemPrompt, opts.WorkDir,
 		fmt.Sprint(opts.BuiltinTools), fmt.Sprint(opts.Ephemeral), strings.Join(names, ","),
-		strings.Join(opts.Approval, "\x00"),
+		strings.Join(opts.Approval, "\x00"), strings.Join(opts.ExtraDir, "\x00"),
 	} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
@@ -469,6 +487,11 @@ func (r *AgentRunner) workingDir() string {
 		}
 		return dir
 	}
+	return r.agentHomeDir()
+}
+
+// agentHomeDir is the agent's own data directory, created when missing.
+func (r *AgentRunner) agentHomeDir() string {
 	dir := store.AgentDir(r.agent.ID)
 	_ = os.MkdirAll(dir, 0o700)
 	return dir

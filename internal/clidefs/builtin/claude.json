@@ -35,6 +35,7 @@
     "auto": ["--permission-mode", "auto"],
     "full": ["--dangerously-skip-permissions"]
   },
+  "extraDir": ["--add-dir", "{dir}"],
   "args": {
     "run": [
       {"args": ["-p"]},
