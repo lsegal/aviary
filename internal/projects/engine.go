@@ -21,7 +21,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 const (

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // codexSession runs each turn as a `codex exec --json` process and resumes
@@ -163,20 +165,29 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 
 func (s *codexSession) Close() error { return nil }
 
-// codexMapper turns `codex exec --json` lines into Events.
+// codexMapper turns `codex exec --json` lines into Events. The shared stream
+// parser decodes messages, tools and usage; codexMapper reads only the thread
+// ID and the turn's outcome.
 type codexMapper struct {
 	emit        func(Event)
 	threadID    string
 	lastMessage string
 	messages    int
-	started     map[string]bool
+	stream      transcript.Mapper
+	tools       *toolTranslator
 }
 
 func newCodexMapper(emit func(Event)) *codexMapper {
 	if emit == nil {
 		emit = func(Event) {}
 	}
-	return &codexMapper{emit: emit, started: map[string]bool{}}
+	return &codexMapper{
+		emit:   emit,
+		stream: transcript.NewMapper(transcript.FormatCodexJSON),
+		tools: newToolTranslator(emit, func(name string) bool {
+			return strings.HasPrefix(name, MCPServerName+".") // reported by Aviary's MCP boundary
+		}),
+	}
 }
 
 // handle processes one line. It returns done once the turn completes.
@@ -185,52 +196,26 @@ func (m *codexMapper) handle(line []byte) (bool, error) {
 	if err := json.Unmarshal(line, &ev); err != nil {
 		return false, nil // ignore log noise
 	}
+	events := m.stream.Map(line)
+	for _, event := range events {
+		if event.Kind != transcript.KindMessage || event.Text == "" {
+			continue
+		}
+		if m.messages > 0 {
+			m.emit(Event{Type: EventText, Text: "\n\n"})
+		}
+		m.messages++
+		m.lastMessage = event.Text
+		m.emit(Event{Type: EventText, Text: event.Text})
+	}
+	m.tools.translate(events)
 	switch stringField(ev, "type") {
 	case "thread.started":
 		if id := stringField(ev, "thread_id"); id != "" {
 			m.threadID = id
 			m.emit(Event{Type: EventSession, SessionID: id})
 		}
-	case "item.started":
-		if tool := codexTool(mapField(ev, "item")); tool != nil {
-			m.started[tool.ID] = true
-			m.emit(Event{Type: EventToolStart, Tool: tool})
-		}
-	case "item.completed":
-		item := mapField(ev, "item")
-		if stringField(item, "type") == "agent_message" {
-			text := stringField(item, "text")
-			if text == "" {
-				break
-			}
-			if m.messages > 0 {
-				m.emit(Event{Type: EventText, Text: "\n\n"})
-			}
-			m.messages++
-			m.lastMessage = text
-			m.emit(Event{Type: EventText, Text: text})
-			break
-		}
-		tool := codexTool(item)
-		if tool == nil {
-			break
-		}
-		if !m.started[tool.ID] {
-			m.emit(Event{Type: EventToolStart, Tool: &ToolEvent{ID: tool.ID, Name: tool.Name, Args: tool.Args}})
-		}
-		delete(m.started, tool.ID)
-		codexToolOutcome(item, tool)
-		m.emit(Event{Type: EventToolResult, Tool: tool})
 	case "turn.completed":
-		if usage := mapField(ev, "usage"); usage != nil {
-			cached := intField(usage, "cached_input_tokens")
-			m.emit(Event{Type: EventUsage, Usage: &Usage{
-				InputTokens:      max(intField(usage, "input_tokens")-cached, 0),
-				OutputTokens:     intField(usage, "output_tokens"),
-				CacheReadTokens:  cached,
-				CacheWriteTokens: intField(usage, "cache_write_input_tokens"),
-			}})
-		}
 		return true, nil
 	case "turn.failed":
 		msg := codexErrorMessage(stringField(mapField(ev, "error"), "message"))
@@ -258,56 +243,6 @@ func codexErrorMessage(msg string) string {
 		return body.Error.Message
 	}
 	return msg
-}
-
-// codexTool describes a Codex item that represents a tool call, or returns nil
-// for items that are not tools or that Aviary's MCP boundary already reports.
-func codexTool(item map[string]any) *ToolEvent {
-	id := stringField(item, "id")
-	switch stringField(item, "type") {
-	case "command_execution":
-		return &ToolEvent{ID: id, Name: "shell", Args: map[string]any{"command": item["command"]}}
-	case "file_change":
-		return &ToolEvent{ID: id, Name: "file_change", Args: map[string]any{"changes": item["changes"]}}
-	case "web_search":
-		return &ToolEvent{ID: id, Name: "web_search", Args: map[string]any{"query": item["query"]}}
-	case "mcp_tool_call":
-		server := stringField(item, "server")
-		if server == MCPServerName {
-			return nil
-		}
-		args, _ := item["arguments"].(map[string]any)
-		return &ToolEvent{ID: id, Name: server + "." + stringField(item, "tool"), Args: args}
-	}
-	return nil
-}
-
-// codexToolOutcome fills in the result or error of a completed tool item.
-func codexToolOutcome(item map[string]any, tool *ToolEvent) {
-	failed := stringField(item, "status") == "failed"
-	switch stringField(item, "type") {
-	case "command_execution":
-		tool.Result = stringField(item, "aggregated_output")
-		if code, ok := item["exit_code"].(float64); ok && code != 0 {
-			failed = true
-		}
-	case "mcp_tool_call":
-		if e := mapField(item, "error"); e != nil {
-			tool.Error = stringField(e, "message")
-		}
-		if r := mapField(item, "result"); r != nil {
-			tool.Result = toolResultText(r["content"])
-		}
-	default:
-		tool.Result = stringField(item, "status")
-	}
-	if failed && tool.Error == "" {
-		tool.Error = tool.Result
-		if tool.Error == "" {
-			tool.Error = "failed"
-		}
-		tool.Result = ""
-	}
 }
 
 // writeTempImage stores an image given as a data URL or remote URL in a temp

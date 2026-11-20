@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // museJSONL describes an event stream shaped unlike Claude's, so the generic

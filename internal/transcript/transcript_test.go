@@ -82,7 +82,7 @@ func TestCodexJSONMapsToEvents(t *testing.T) {
 	if done.Status != "done" || done.Output != "hi\n" || done.ExitCode == nil || *done.ExitCode != 0 || done.IsError {
 		t.Fatalf("command = %+v", done)
 	}
-	if events[4].Usage.InputTokens != 35022 || events[4].Usage.CacheReadTokens != 29312 {
+	if events[4].Usage.InputTokens != 35022-29312 || events[4].Usage.CacheReadTokens != 29312 {
 		t.Fatalf("usage = %+v", events[4].Usage)
 	}
 	changes := mapFile(t, NewMapper(FormatCodexJSON), "codex-file-change.jsonl")

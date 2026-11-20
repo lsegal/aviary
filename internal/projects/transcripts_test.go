@@ -3,7 +3,7 @@ package projects
 import (
 	"testing"
 
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // TestBuiltinDefinitionsHaveTranscriptMappers covers #390: a run's recorder is

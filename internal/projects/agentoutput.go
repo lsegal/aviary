@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/lsegal/aviary/internal/projects/agents"
-	"github.com/lsegal/aviary/internal/projects/transcript"
+	"github.com/lsegal/aviary/internal/transcript"
 )
 
 // outputDecoder wraps the writer an agent's stdout is forwarded to, turning
