@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { providerOf, SUPPORTED_MODELS } from "../constants/models";
 import { useMCP } from "./useMCP";
+import { useProviderStatus } from "./useProviderAuth";
 
 type ProviderConfig = {
 	auth?: string;
@@ -39,6 +40,15 @@ export function useAvailableModels() {
 	const endpointModelOptions = ref<string[]>([]);
 	const configuredModelOptions = ref<string[]>([]);
 	const { callTool } = useMCP();
+	// Coding-CLI providers sign in through their own CLI, never through Aviary
+	// credentials, so their models come from the CLI probe the Providers list
+	// shows rather than from the credential-filtered catalog.
+	const cliStatus = useProviderStatus({ refreshOnMount: false });
+	const cliModelOptions = computed(() =>
+		(cliStatus.clis.value ?? [])
+			.filter((cli) => cli.installed)
+			.flatMap((cli) => cli.models),
+	);
 
 	function parseStringArrayPayload(raw: string): string[] | null {
 		const trimmed = raw.trim();
@@ -77,6 +87,7 @@ export function useAvailableModels() {
 				const provider = providerOf(model);
 				return !provider || authenticatedProviders.value.has(provider);
 			}),
+			...cliModelOptions.value,
 			...endpointModelOptions.value,
 			...configuredModelOptions.value,
 		].filter((model, index, all) => all.indexOf(model) === index),
@@ -161,6 +172,11 @@ export function useAvailableModels() {
 	}
 
 	async function refreshConfigBackedModels() {
+		// The probe is slow, so it runs here only when nothing is cached yet;
+		// the Providers tab keeps the shared cache current after that.
+		if (cliStatus.clis.value === null) {
+			void cliStatus.refresh();
+		}
 		try {
 			const raw = await callTool("config_get");
 			const cfg = parseConfigPayload(raw);
