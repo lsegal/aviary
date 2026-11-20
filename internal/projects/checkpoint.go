@@ -24,6 +24,9 @@ import (
 const (
 	checkpointRunBudget   = 45 * time.Second
 	checkpointPhaseBudget = 60 * time.Second
+	// rescindPhaseBudget bounds posting the "Stopping work" messages that
+	// follow the checkpoint (issue #420).
+	rescindPhaseBudget = 15 * time.Second
 )
 
 // The outcomes a run's shutdown checkpoint can report.
@@ -130,7 +133,7 @@ func (a *activeAgents) pauseAll() []checkpointRun {
 		if run.issue.ScheduleID != "" {
 			continue
 		}
-		runs = append(runs, checkpointRun{Target: run.issue.Target, Number: run.issue.Number, Checkout: run.checkout})
+		runs = append(runs, checkpointRun{Target: run.issue.Target, Number: run.issue.Number, Checkout: run.checkout, Issue: run.issue})
 	}
 	sort.Slice(runs, func(i, j int) bool {
 		if runs[i].Target != runs[j].Target {
@@ -157,6 +160,9 @@ type checkpointRun struct {
 	Target   string
 	Number   int
 	Checkout string
+	// Issue is the run's issue, which the shutdown rescinds ownership of once
+	// its work is checkpointed.
+	Issue Issue
 }
 
 // shutdownCheckpointer runs the shutdown checkpoint once per process. The
@@ -169,6 +175,10 @@ type shutdownCheckpointer struct {
 	git     checkpointGit
 	run     time.Duration
 	overall time.Duration
+	// rescind posts "Stopping work on this issue" for one checkpointed run's
+	// issue (issue #420); nil skips that step.
+	rescindMu sync.Mutex
+	rescind   func(context.Context, Issue)
 
 	once    sync.Once
 	results []core.CheckpointResult
@@ -187,6 +197,14 @@ func (s *shutdownCheckpointer) SetLog(logf func(string, ...interface{})) {
 	s.logMu.Lock()
 	s.logf = logf
 	s.logMu.Unlock()
+}
+
+// SetRescind sets how the shutdown rescinds ownership of a run's issue once
+// its work is checkpointed, such as the instance's own handoff comments.
+func (s *shutdownCheckpointer) SetRescind(rescind func(context.Context, Issue)) {
+	s.rescindMu.Lock()
+	s.rescind = rescind
+	s.rescindMu.Unlock()
 }
 
 func (s *shutdownCheckpointer) log(format string, args ...interface{}) {
@@ -215,9 +233,53 @@ func (s *shutdownCheckpointer) Checkpoint() []core.CheckpointResult {
 		s.progressMu.Unlock()
 		s.log("shutdown checkpoint: pushing the work of %d active run(s) before stopping (up to %s)", len(runs), s.overall)
 		s.results = checkpointAll(runs, s.git, s.run, s.overall, s.report)
+		s.rescindAll(runs, s.results)
 		s.log("shutdown checkpoint: finished; stopping the agents")
 	})
 	return s.results
+}
+
+// rescindAll hands back ownership of every run whose work the checkpoint
+// saved, strictly after that checkpoint, so whoever picks an issue up next
+// finds the checkpointed state (issue #420). A run whose checkpoint failed or
+// timed out keeps its claim: its work is not on the remote, so the claim is
+// left to the stale-claim reap exactly as after an ungraceful exit.
+func (s *shutdownCheckpointer) rescindAll(runs []checkpointRun, results []core.CheckpointResult) {
+	s.rescindMu.Lock()
+	rescind := s.rescind
+	s.rescindMu.Unlock()
+	if rescind == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), rescindPhaseBudget)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i, run := range runs {
+		if i >= len(results) {
+			break
+		}
+		switch results[i].Outcome {
+		case checkpointPushed, checkpointNothing:
+		default:
+			s.log("shutdown checkpoint: %s#%d keeps its ownership claim; its checkpoint %s", run.Target, run.Number, results[i].Outcome)
+			continue
+		}
+		wg.Add(1)
+		go func(issue Issue) {
+			defer wg.Done()
+			rescind(ctx, issue)
+		}(run.Issue)
+	}
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-ctx.Done():
+		s.log("shutdown checkpoint: rescinding ownership still running after %s; stopping anyway", rescindPhaseBudget)
+	}
 }
 
 // report records and logs one run's outcome as it arrives, so a restart

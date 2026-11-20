@@ -89,7 +89,7 @@ func FilteredChromeDPErrorf(format string, args ...any) {
 		slog.Debug("browser: ignored chromedp error", "msg", msg)
 		return
 	}
-	slog.Error(msg)
+	slog.Error(msg, "component", "browser")
 }
 
 func isIgnorableChromeDPError(msg string) bool {

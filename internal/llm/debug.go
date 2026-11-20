@@ -43,7 +43,7 @@ func newOAuthClient() *http.Client {
 }
 
 // cliEmulatingTransport overwrites the Go SDK's X-Stainless telemetry headers
-// with the values the Claude CLI (Node.js SDK 0.74.0) sends, so that the
+// with the values the Claude CLI 2.1.312 (Node.js SDK 0.128.0) sends, so that the
 // Anthropic server treats these requests identically to official CLI requests.
 type cliEmulatingTransport struct{ base http.RoundTripper }
 
@@ -51,10 +51,10 @@ func (t *cliEmulatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	r := req.Clone(req.Context())
 	r.Header.Set("X-Stainless-Lang", "js")
 	r.Header.Set("X-Stainless-Runtime", "node")
-	r.Header.Set("X-Stainless-Os", "Windows")
-	r.Header.Set("X-Stainless-Package-Version", "0.74.0")
-	r.Header.Set("X-Stainless-Runtime-Version", "v24.3.0")
-	r.Header.Set("X-Stainless-Arch", "x64")
+	r.Header.Set("X-Stainless-Os", "MacOS")
+	r.Header.Set("X-Stainless-Package-Version", "0.128.0")
+	r.Header.Set("X-Stainless-Runtime-Version", "v26.12.1")
+	r.Header.Set("X-Stainless-Arch", "arm64")
 	r.Header.Set("X-Stainless-Timeout", "600")
 	// Match the Claude CLI Accept-Encoding exactly. Setting this explicitly
 	// disables Go's automatic gzip decompression, so we must handle it ourselves.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -570,7 +571,7 @@ func TestAgentDoctorFlagsStaleSkills(t *testing.T) {
 	installed := map[string]bool{"probed": true, "silent": true}
 	signedIn := func(string) (string, bool) { return "logged in", true }
 	doctor := stubDoctor(t, installed, noProbe, signedIn, noProbe, nil)
-	doctor.skillsNote = func() string { return "gh-fix stale for aviary v1.5.25; restart aviary to reinstall" }
+	doctor.skillsNote = func(string) string { return "gh-fix stale for aviary v1.5.25; restart aviary to reinstall" }
 	reports := doctor.Report(context.Background())
 	probed := reportFor(t, reports, "probed")
 	if probed.skillsNote == "" || probed.status() != statusWarn {
@@ -586,6 +587,30 @@ func TestAgentDoctorFlagsStaleSkills(t *testing.T) {
 	}
 	if status := agentStatus(probed); status.SkillsNote != probed.skillsNote || status.Status != "warn" {
 		t.Fatalf("status = %+v, want the skills note and a warning", status)
+	}
+}
+
+// TestNewAgentDoctorReportsStaleSkills checks the production doctor reads the
+// skills installed in the user's home, so a stale copy warns in the real app
+// and not only when a test sets the note.
+func TestNewAgentDoctorReportsStaleSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	skill := filepath.Join(home, ".claude", "skills", "gh-fix")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("an old gh-fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doctor := newAgentDoctor(agents.MustBuiltin())
+	if note := doctor.skillsNote("claude"); !strings.HasPrefix(note, "gh-fix stale for ") {
+		t.Fatalf("claude skillsNote = %q, want gh-fix reported stale", note)
+	}
+	if note := doctor.skillsNote("gemini"); note != "" {
+		t.Fatalf("gemini skillsNote = %q, want none with no skills installed", note)
 	}
 }
 

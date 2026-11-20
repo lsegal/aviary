@@ -45,7 +45,7 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	m.mu.Unlock()
 	logs, nextOffset := m.logsSince(logOffset, statusLogLines)
 	if logOffset > 0 {
-		logs, nextOffset = m.logsSince(logOffset, managerLogLines)
+		logs, nextOffset = m.logsSince(logOffset, 0)
 	}
 	targets := snapshot.Targets
 	if len(targets) == 0 {

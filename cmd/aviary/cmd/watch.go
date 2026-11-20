@@ -66,7 +66,7 @@ func init() {
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
 	f.StringVar(&watchOpts.readyLabel, "ready-label", "", `label a repository issue needs (default "ready")`)
 	f.StringVar(&watchOpts.readyState, "ready-state", "", "project board status that marks an item ready (default Todo or Ready)")
-	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me author:@me")`)
+	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me")`)
 	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter; the ready label still applies")
 	f.StringSliceVar(&watchOpts.allowedCommenters, "allowed-commenters", nil, "GitHub logins whose comments steer jobs (default the authenticated gh user)")
 	f.BoolVar(&watchOpts.yolo, "yolo", false, "disable the coding CLIs' sandboxes and permission checks")

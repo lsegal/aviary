@@ -40,7 +40,6 @@ type Watch struct {
 // change needs a new one, such as a new target.
 type Manager struct {
 	stateDir string
-	logger   *slog.Logger
 
 	// refreshMu serializes refreshes, so two config changes never start two
 	// engines.
@@ -68,9 +67,8 @@ type Manager struct {
 	identity    Identity
 	transcripts *transcriptStore
 
-	logMu    sync.Mutex
-	logs     []string
-	logTotal int
+	// logSource pages core's log ring for project_status; see SetLogSource.
+	logSource atomic.Pointer[LogSource]
 
 	// scheduleRerun fires a schedule again for a board Retry on one of its
 	// jobs; see SetScheduleRerun.
@@ -126,10 +124,6 @@ type engineRun struct {
 	driver browser.Handover
 }
 
-// managerLogLines is how many engine log lines the manager keeps for
-// project_status.
-const managerLogLines = 500
-
 // NewManager returns a manager that keeps its work state and job transcripts
 // under stateDir.
 func NewManager(stateDir string) (*Manager, error) {
@@ -139,7 +133,6 @@ func NewManager(stateDir string) (*Manager, error) {
 	}
 	m := &Manager{
 		stateDir:    stateDir,
-		logger:      slog.Default().With("component", "projects"),
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
 		reports:     newReporter(),
@@ -631,6 +624,9 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	engine.SetUnblockAgent(unblock)
 	engine.SetScheduleRerun(m.rerunSchedule)
 	run.engine = engine
+	// Once a run's work is checkpointed, its issue's ownership is handed back
+	// so the next instance can pick it up at once (issue #420).
+	run.checkpointer.SetRescind(engine.rescindOwnership)
 	if engine.UseWebhooks {
 		if err := m.startWebhooks(ctx, run, gh, events); err != nil {
 			return fail(err)
@@ -807,37 +803,39 @@ func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
 	m.reports.setDelivery(deliver)
 }
 
+// logComponent is the slog component Projects logs under, which is how
+// project_status picks its lines out of core's log ring.
+const logComponent = "projects"
+
+// LogSource pages core's log ring: the lines component logged after offset,
+// oldest first, and the offset to ask from next time. An offset of zero or
+// less asks for the latest limit lines; a limit of zero or less asks for every
+// line.
+type LogSource func(component string, offset, limit int) ([]string, int)
+
+// SetLogSource sets where project_status reads Projects log lines from.
+// Without one it reports none.
+func (m *Manager) SetLogSource(source LogSource) {
+	m.logSource.Store(&source)
+}
+
 // Log receives one engine log line.
 func (m *Manager) Log(line string) {
-	m.logMu.Lock()
-	m.logs = append(m.logs, line)
-	if len(m.logs) > managerLogLines {
-		m.logs = append([]string(nil), m.logs[len(m.logs)-managerLogLines:]...)
-	}
-	m.logTotal++
-	m.logMu.Unlock()
-	m.logger.Info(line)
+	slog.Info(line, "component", logComponent)
 }
 
 func (m *Manager) logf(format string, args ...any) {
-	m.Log(time.Now().Format("2006-01-02 15:04:05") + " " + fmt.Sprintf(format, args...))
+	m.Log(fmt.Sprintf(format, args...))
 }
 
-// logsSince returns the log lines after the first offset ever logged, and the
-// offset to ask from next time.
+// logsSince returns the Projects log lines after offset, and the offset to ask
+// from next time.
 func (m *Manager) logsSince(offset, limit int) ([]string, int) {
-	m.logMu.Lock()
-	defer m.logMu.Unlock()
-	first := m.logTotal - len(m.logs)
-	start := max(offset-first, 0)
-	if offset <= 0 {
-		start = max(len(m.logs)-limit, 0)
+	source := m.logSource.Load()
+	if source == nil {
+		return nil, offset
 	}
-	lines := append([]string{}, m.logs[min(start, len(m.logs)):]...)
-	if limit > 0 && len(lines) > limit {
-		lines = lines[len(lines)-limit:]
-	}
-	return lines, m.logTotal
+	return (*source)(logComponent, offset, limit)
 }
 
 // engine returns the running engine, or nil.
