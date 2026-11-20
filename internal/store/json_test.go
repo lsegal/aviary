@@ -273,3 +273,22 @@ func TestIntegration_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, 1, len(list2))
 
 }
+
+// TestWriteJSONReplacesAFileOpenForReading guards the Windows case where a
+// reader's open handle made the atomic rename fail, so a file polled while it
+// was saved intermittently refused the save (#453).
+func TestWriteJSONReplacesAFileOpenForReading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	assert.NoError(t, WriteJSON(path, testItem{Name: "old", Value: 1}))
+
+	reader, err := openShared(path)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer reader.Close() //nolint:errcheck
+
+	assert.NoError(t, WriteJSON(path, testItem{Name: "new", Value: 2}))
+	got, err := ReadJSON[testItem](path)
+	assert.NoError(t, err)
+	assert.Equal(t, testItem{Name: "new", Value: 2}, got)
+}

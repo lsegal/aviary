@@ -11,7 +11,7 @@ import (
 // ReadJSON reads and unmarshals a JSON file into v.
 func ReadJSON[T any](path string) (T, error) {
 	var zero T
-	data, err := os.ReadFile(path)
+	data, err := ReadFile(path)
 	if err != nil {
 		return zero, fmt.Errorf("reading %s: %w", path, err)
 	}
@@ -51,7 +51,7 @@ func WriteJSON(path string, v any) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("closing temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := replaceFile(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
