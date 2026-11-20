@@ -105,6 +105,21 @@ func (r *Registry) Names() []string {
 	return names
 }
 
+// Providers lists, in sorted order, the registered agents that reach models:
+// every agent but the in-process ones, whose model names one of aviary's own
+// agents. It is what the Providers list and the provider pickers show, while
+// Lookup still resolves an in-process agent as a job backend.
+func (r *Registry) Providers() []string {
+	names := r.Names()
+	providers := names[:0]
+	for _, name := range names {
+		if !r.definitions[name].InProcess {
+			providers = append(providers, name)
+		}
+	}
+	return providers
+}
+
 // SkillsTargets lists the skills.sh target ids of the registered agents,
 // deduplicated and sorted. It is what the installers install aviary's skills
 // for, so an agent added to the registry is covered without either installer
