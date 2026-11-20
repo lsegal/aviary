@@ -1,0 +1,57 @@
+name: Scheduled patch release
+# Cuts a patch release whenever the default branch has commits the latest
+# release tag does not. This workflow only decides and dispatches; the version
+# bump, tag, release assets, and Docker image stay in release.yml (which
+# publishes the image through its docker.yml call).
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+# Scheduled and manual runs share one group, so two checks never run at once
+# and cannot both see "no release in flight" and dispatch twice.
+concurrency:
+  group: scheduled-patch-release
+  cancel-in-progress: false
+permissions:
+  actions: write
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for unreleased commits and dispatch a patch release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # A release is in flight until release.yml finishes, and its
+          # `pnpm release` step pushes the version commit and the new tag
+          # together, so a check during the run would see unreleased commits
+          # that the running release already covers.
+          for status in requested queued pending waiting in_progress; do
+            count="$(gh api "repos/$REPO/actions/workflows/release.yml/runs?status=$status&per_page=1" --jq .total_count)"
+            if [[ "$count" != "0" ]]; then
+              echo "release.yml has a run that is $status; not dispatching another release."
+              exit 0
+            fi
+          done
+          branch="$(gh api "repos/$REPO" --jq .default_branch)"
+          head="$(gh api "repos/$REPO/commits/$branch" --jq .sha)"
+          # The same tag release.yml bumps from: the highest vX.Y.Z tag.
+          latest="$(gh api --paginate "repos/$REPO/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          if [[ -z "$latest" ]]; then
+            echo "No release tag yet; $branch is at $head."
+            ahead=1
+          else
+            ahead="$(gh api "repos/$REPO/compare/$latest...$head" --jq .ahead_by)"
+            echo "$branch is at $head, $ahead commit(s) ahead of $latest."
+          fi
+          if [[ "$ahead" == "0" ]]; then
+            echo "Nothing to release."
+            exit 0
+          fi
+          gh workflow run release.yml --repo "$REPO" --ref "$branch" -f level=patch
+          echo "Dispatched release.yml at patch level on $branch."
