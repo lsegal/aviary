@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/projects/process"
 )
@@ -46,8 +47,8 @@ const (
 // it a hung push held its run past the run budget.
 const checkpointGitWaitDelay = 2 * time.Second
 
-// activeAgents tracks the agent subprocesses this instance is running and the
-// checkout each one works in, so the shutdown checkpoint knows what to pause
+// activeAgents tracks the agents this instance is running, as subprocesses or
+// in-process turns, and the checkout each one works in, so the shutdown checkpoint knows what to pause
 // and commit. It is shared by pointer across copies of CommandRunner, and a
 // nil tracker records nothing.
 type activeAgents struct {
@@ -60,6 +61,8 @@ type activeAgent struct {
 	issue    Issue
 	checkout string
 	cmd      *exec.Cmd
+	// hold quiesces an in-process turn, which has no process to pause.
+	hold *agent.TurnHold
 }
 
 // add records a run that is about to start its agent in checkout, which may
@@ -93,6 +96,22 @@ func (a *activeAgents) started(run *activeAgent, cmd *exec.Cmd) {
 	}
 }
 
+// startedInProcess records that the run's agent is an in-process turn and
+// returns the hold the turn's tool calls wait on. A turn that starts while the
+// checkpoint has everything paused is held at once, like a paused process.
+func (a *activeAgents) startedInProcess(run *activeAgent) *agent.TurnHold {
+	if a == nil || run == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	run.hold = &agent.TurnHold{}
+	if a.paused {
+		run.hold.Engage()
+	}
+	return run.hold
+}
+
 // setCheckout records the checkout directory the agent announced.
 func (a *activeAgents) setCheckout(run *activeAgent, checkout string) {
 	if a == nil || run == nil || checkout == "" {
@@ -113,7 +132,8 @@ func (a *activeAgents) remove(run *activeAgent) {
 }
 
 // pauseAll suspends every running agent so its checkout stops changing, and
-// keeps any agent started afterwards paused too. Agents stay paused until
+// keeps any agent started afterwards paused too. An in-process turn is held
+// instead: it starts no new tool call until shutdown cancels it. Agents stay paused until
 // aviary terminates them; the checkpoint is only taken on the way out. It
 // reports each run with the checkout to commit, in issue order.
 func (a *activeAgents) pauseAll() []checkpointRun {
@@ -127,6 +147,9 @@ func (a *activeAgents) pauseAll() []checkpointRun {
 	for run := range a.runs {
 		if run.cmd != nil {
 			_ = process.Pause(run.cmd)
+		}
+		if run.hold != nil {
+			run.hold.Engage()
 		}
 		// A scheduled run has no issue or pull request to push its work to,
 		// and is not resumed after the restart.

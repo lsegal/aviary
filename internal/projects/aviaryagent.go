@@ -26,6 +26,9 @@ type AviaryAgentRun struct {
 	Workdir string
 	// Event receives each event of the turn's stream.
 	Event func(agent.StreamEvent)
+	// Hold holds the turn's new tool calls while engaged, such as during the
+	// shutdown checkpoint.
+	Hold *agent.TurnHold
 }
 
 // AviaryAgentRunner runs one turn through core's agent runner and returns once
@@ -46,7 +49,7 @@ var errNoAviaryRunner = errors.New("in-process agents run only inside the aviary
 // readable output to output and its structured events to log, which may be
 // nil. It returns the turn's error, so a stopped turn reports
 // context.Canceled.
-func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, prompt, mediaURL, workdir string, output io.Writer, log *transcript.Log) error {
+func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, prompt, mediaURL, workdir string, hold *agent.TurnHold, output io.Writer, log *transcript.Log) error {
 	if r.Aviary == nil {
 		return errNoAviaryRunner
 	}
@@ -60,6 +63,7 @@ func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, prompt,
 		MediaURL: mediaURL,
 		Workdir:  workdir,
 		Event:    events.add,
+		Hold:     hold,
 	})
 	events.flush()
 	return err
@@ -155,6 +159,7 @@ func (r CommandRunner) runInProcessJob(ctx context.Context, issue Issue, session
 	workdir, _ := sessionRunDir(session)
 	active := r.Active.add(issue, session.CheckoutDirectory)
 	defer r.Active.remove(active)
+	hold := r.Active.startedInProcess(active)
 	output := io.Writer(io.Discard)
 	if jobOutput != nil {
 		output = io.MultiWriter(output, jobOutput)
@@ -183,7 +188,7 @@ func (r CommandRunner) runInProcessJob(ctx context.Context, issue Issue, session
 	if recorder := r.transcriptRecorder(issue, ""); recorder != nil {
 		output = io.MultiWriter(recorder, output)
 	}
-	runErr := r.runInProcess(ctx, spec, jobPrompt(r, issue, session), "", workdir, output, log)
+	runErr := r.runInProcess(ctx, spec, jobPrompt(r, issue, session), "", workdir, hold, output, log)
 	if metadataOutput != nil {
 		metadataOutput.Flush()
 	}

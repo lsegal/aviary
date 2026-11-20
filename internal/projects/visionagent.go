@@ -50,6 +50,6 @@ func (v visionAgentRunner) RunAgent(ctx context.Context, binary string, args []s
 // checkout.
 func (v visionAgentRunner) RunInProcess(ctx context.Context, spec browser.AgentSpec, prompt, mediaURL string) (string, error) {
 	var output bytes.Buffer
-	err := v.runner.runInProcess(ctx, agentSpec{Name: spec.Name, Model: spec.Model, Level: spec.Level}, prompt, mediaURL, os.TempDir(), &output, nil)
+	err := v.runner.runInProcess(ctx, agentSpec{Name: spec.Name, Model: spec.Model, Level: spec.Level}, prompt, mediaURL, os.TempDir(), nil, &output, nil)
 	return output.String(), err
 }
