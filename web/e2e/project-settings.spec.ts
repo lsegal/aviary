@@ -80,11 +80,46 @@ const READY_CHECK = {
 type Args = Record<string, unknown>;
 type Calls = Record<string, Args[]>;
 
+const CLONES = {
+	roots: ["/tmp"],
+	clones: [
+		{
+			path: "/tmp/aviary-209",
+			repository: "lsegal/aviary",
+			issue: 209,
+			inUse: false,
+			reason: "not owned by this instance: no job here records it",
+			size: 157286400,
+		},
+		{
+			path: "/tmp/aviary-218",
+			repository: "lsegal/aviary",
+			issue: 218,
+			pullRequest: 233,
+			inUse: true,
+			reason: "job is paused",
+		},
+		{
+			path: "/elsewhere/aviary-230",
+			repository: "lsegal/aviary",
+			issue: 230,
+			inUse: false,
+			kept: true,
+			reason: "outside the configured temp directories; remove it by hand",
+			size: 0,
+		},
+	],
+	totalSize: 157286400,
+	unmeasured: 1,
+};
+
 async function setup(
 	page: Page,
 	opts: {
 		check?: unknown;
 		config?: unknown;
+		jobs?: { number: number; status: string }[];
+		clonesError?: string;
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -96,7 +131,18 @@ async function setup(
 	await mockMCP(page, {
 		agent_list: [],
 		project_status: STATUS,
-		project_job_list: { jobs: [], total: 0 },
+		project_job_list: (args?: Args) => {
+			record("project_job_list", args);
+			return { jobs: opts.jobs ?? [], total: opts.jobs?.length ?? 0 };
+		},
+		project_remove: (args?: Args) => {
+			record("project_remove", args);
+			return {
+				target: args?.target,
+				removed: true,
+				stopped_jobs: (opts.jobs ?? []).map((j) => j.number),
+			};
+		},
 		config_get: opts.config ?? CONFIG,
 		config_save: (args?: Args) => {
 			record("config_save", args);
@@ -111,33 +157,15 @@ async function setup(
 			return { ok: true };
 		},
 		provider_cli_list: async () => CLIS,
-		project_clone_list: {
-			roots: ["/tmp"],
-			clones: [
-				{
-					path: "/tmp/aviary-209",
-					repository: "lsegal/aviary",
-					issue: 209,
-					inUse: false,
-					size: 157286400,
-				},
-				{
-					path: "/tmp/aviary-218",
-					repository: "lsegal/aviary",
-					issue: 218,
-					pullRequest: 233,
-					inUse: true,
-					reason: "job is running",
-				},
-			],
-			totalSize: 157286400,
-			unmeasured: 1,
+		project_clone_list: () => {
+			if (opts.clonesError) throw new Error(opts.clonesError);
+			return CLONES;
 		},
 		project_clone_clear: (args?: Args) => {
 			record("project_clone_clear", args);
 			return {
 				removed: [{ path: "/tmp/aviary-209", size: 157286400 }],
-				kept: 1,
+				kept: 2,
 				reclaimed: 157286400,
 			};
 		},
@@ -513,24 +541,46 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	const calls = await setup(page);
 	await page.goto("/projects/lsegal%2Faviary/settings");
 	const rows = page.getByTestId("clone-row");
-	await expect(rows).toHaveCount(2);
+	await expect(rows).toHaveCount(3);
 	await expect(rows.first()).toContainText("lsegal/aviary#209");
-	await expect(rows.first()).toContainText("unused");
+	await expect(rows.first().getByTestId("clone-state")).toHaveText(
+		"unused: not owned by this instance: no job here records it",
+	);
 	await expect(rows.nth(1)).toContainText("PR #233");
-	await expect(rows.nth(1)).toContainText("in use");
+	await expect(rows.nth(1).getByTestId("clone-state")).toHaveText(
+		"in use: job is paused",
+	);
+	await expect(rows.nth(2).getByTestId("clone-state")).toHaveText(
+		"kept: outside the configured temp directories; remove it by hand",
+	);
 	await expect(rows.first().getByTestId("clone-size")).toHaveText("150 MB");
 	await expect(rows.nth(1).getByTestId("clone-size")).toHaveText(
 		"size unknown",
 	);
 	await expect(page.getByTestId("clone-total")).toHaveText(
-		"2 clones, 150 MB total (1 not measured)",
+		"3 clones, 150 MB total (1 not measured)",
 	);
 
 	await page.getByRole("button", { name: "Clear unused clones" }).click();
 	await expect(page.getByTestId("clone-message")).toHaveText(
-		"Removed 1 clone, reclaimed 150 MB, kept 1 in use.",
+		"Removed 1 clone, reclaimed 150 MB, kept 2.",
 	);
 	expect(calls.project_clone_clear).toEqual([{}]);
+});
+
+test("an unreadable work state shows an error instead of clones", async ({
+	page,
+}) => {
+	await setup(page, {
+		clonesError: "work state could not be read: unexpected end of JSON",
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	await expect(
+		page.getByText(
+			"Couldn't list clones: work state could not be read: unexpected end of JSON",
+		),
+	).toBeVisible();
+	await expect(page.getByTestId("clone-row")).toHaveCount(0);
 });
 
 test("change settings first saves nothing for defaults, then starts the watch", async ({
@@ -717,4 +767,49 @@ test("saved reports load into the form and are checked like the server does", as
 	await expect(page.getByTestId("reports-error")).toHaveText(
 		"Reports need at least one target.",
 	);
+});
+
+test("a project is deleted after a confirmation that names it and its in-flight jobs", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		jobs: [
+			{ number: 12, status: "active" },
+			{ number: 14, status: "paused" },
+			{ number: 15, status: "complete" },
+		],
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	await page.getByRole("button", { name: "Delete project" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog.getByRole("heading")).toHaveText("Delete lsegal/aviary?");
+	await expect(dialog).toContainText("clones on disk are not touched");
+	await expect(dialog.getByTestId("delete-jobs")).toContainText(
+		"2 jobs are still in flight (#12, #14). Deleting stops them",
+	);
+	expect(calls.project_job_list?.at(-1)).toMatchObject({
+		target: "lsegal/aviary",
+	});
+
+	// Cancelling removes nothing.
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toBeHidden();
+	expect(calls.project_remove).toBeUndefined();
+
+	await page.getByRole("button", { name: "Delete project" }).click();
+	await dialog.getByRole("button", { name: "Delete project" }).click();
+	await expect(page).toHaveURL(/\/projects$/);
+	expect(calls.project_remove).toEqual([{ target: "lsegal/aviary" }]);
+	// The removal goes through project_remove alone, never a config rewrite.
+	expect(calls.config_save).toBeUndefined();
+});
+
+test("a project being added has nothing to delete", async ({ page }) => {
+	await setup(page);
+	await page.goto("/projects/lsegal%2Fzvidlib/settings?add=1");
+	await expect(page.locator("#general")).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Delete project" }),
+	).toHaveCount(0);
+	await expect(page.getByRole("link", { name: "Delete" })).toHaveCount(0);
 });

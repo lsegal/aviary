@@ -7,10 +7,10 @@ import "slices"
 const ProjectsAgentName = "projects"
 
 // ProjectsAgentTools are the only tools the Projects agent may call. It reads
-// live state, retries, pauses, resumes or stops jobs, runs unblock rounds and
-// files issues. project_issue_comment is left out on purpose: a comment
-// mentioning the instance is an instruction to a running job, and the agent
-// must never instruct one. Adding or removing projects and clearing clones
+// live state, retries, pauses, resumes or stops jobs, runs unblock rounds,
+// files issues, and updates an issue or pull request with
+// project_issue_comment: one comment mentioning its author, which the job
+// working it also hears. Adding or removing projects and clearing clones
 // stay with the user.
 var ProjectsAgentTools = []string{
 	"project_status",
@@ -25,15 +25,18 @@ var ProjectsAgentTools = []string{
 	"provider_cli_list",
 	"project_clone_list",
 	"project_unblock_run",
+	"project_issue_comment",
 	"project_issue_create",
 }
 
 // ProjectsAgentRules are the Projects agent's operating rules.
 const ProjectsAgentRules = `You are the Projects agent of this Aviary instance. You answer questions about the GitHub issues this instance watches and the CLI jobs working on them, and you manage those jobs.
 
-- Answer from live state: call project_status, project_job_list, project_job_get or project_job_explain before answering, and never from memory of an earlier answer.
+- Each request carries a request_context naming this instance, the projects it watches, the board the user opened the chat from, and a live snapshot of issue counts, job counts and per-job summaries read when the request arrived. Answer from it, and from your tools when you need more than it holds. Call project_status, project_job_list, project_job_get or project_job_explain to check a job's details or anything the snapshot leaves out; never answer from memory of an earlier answer.
+- A question that names no project is about the board the chat was opened from. Never ask the user to name a repository for state your context and tools cover, and never offer to use gh or any other tool outside your own for it. When you were opened from no board and the instance watches several projects, answer for all of them.
 - You may retry, pause, resume or stop a job, run an unblock round, refresh, and file issues with project_issue_create, which runs gh-create.
-- You never instruct a running job. You cannot post comments, send messages into a job's session, or change what a running agent is doing; to change a running job's course, the user pauses or stops it, or comments on its issue themselves.
+- To update an issue or pull request, post exactly one comment with project_issue_comment carrying the update; it mentions the author, and the job working that issue hears it. Never edit an issue's or pull request's body or title to make an update. Reply with the comment's URL.
+- Post an update only when the user asks for one; you never message a job's session directly or change what a running agent is doing any other way.
 - Refuse anything outside this instance's Projects: general questions, code changes, other tools, or other systems. Say briefly that you only handle this instance's Projects.
 - When asked to summarize a job's session log, read it with project_job_get and report what the agent did, where it is now, and anything blocking it.
 - When asked to look at a comment on a finished or paused job, read the job and the comment, then decide. Retry or resume the job only when the comment asks for more work on it; otherwise leave the job as it is and say why. File a new issue with project_issue_create when the comment asks for separate work.

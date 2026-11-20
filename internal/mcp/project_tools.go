@@ -107,6 +107,20 @@ func projectResult[T any](tool string, fn func(*projects.Manager) (T, error)) (*
 	return jsonResult(value)
 }
 
+// projectsAgentContext is the live context a request to the Projects agent
+// carries: this instance, its targets, the board project the chat was opened
+// from, and a snapshot of its jobs. Other agents get none.
+func projectsAgentContext(ctx context.Context, agentName, project string) string {
+	if agentName != config.ProjectsAgentName {
+		return ""
+	}
+	m, err := projectManager()
+	if err != nil {
+		return ""
+	}
+	return m.ChatContext(ctx, project)
+}
+
 // retryScheduledJob fires a scheduled Projects job's task again through
 // core's scheduler, so the rerun lands in the task's history like any fire.
 func retryScheduledJob(taskID string) (map[string]any, error) {
@@ -251,17 +265,18 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_remove",
-		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches; running jobs are checkpointed first",
+		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches. Its running, waiting, queued and paused jobs stop (running ones are checkpointed first) and are listed in stopped_jobs; the repository, its issues and pull requests, and clones on disk are left alone",
 		Annotations: destructiveTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectRemoveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_remove", func(m *projects.Manager) (map[string]any, error) {
 			target := strings.TrimSpace(args.Target)
+			stopped := m.InFlightJobs(target)
 			runtime := m.RemoveWatch(target)
 			if args.Runtime {
 				if !runtime {
 					return nil, fmt.Errorf("%s has no runtime watch", target)
 				}
-				return map[string]any{"target": target, "removed": true}, nil
+				return map[string]any{"target": target, "removed": true, "stopped_jobs": stopped}, nil
 			}
 			cfg, err := config.Load("")
 			if err != nil {
@@ -281,7 +296,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if !saved && !runtime {
 				return nil, fmt.Errorf("%s is not watched", target)
 			}
-			return map[string]any{"target": target, "removed": true}, nil
+			return map[string]any{"target": target, "removed": true, "stopped_jobs": stopped}, nil
 		})
 	})
 

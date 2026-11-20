@@ -90,7 +90,7 @@ On a finished or paused job, a mention goes to the Projects agent instead, as `l
 
 ## Prompt chat
 
-**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. It answers from live state, and can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. It is limited to the `project_*` tools, cannot comment on issues or otherwise instruct a running job, and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
+**Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. Each prompt carries the board's project and a live snapshot of this instance (its watched projects, issue and job counts, and a summary of every job), so a question like "status of issues?" is answered for the board it was opened from. It can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. Asked to update an issue or pull request, it posts one comment mentioning the author, which the job working it also hears, and replies with the comment's URL; it never edits an issue's body or title. It is limited to the `project_*` tools and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
 
 The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `projects.chat_model` and `projects.chat_fallbacks`, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
 

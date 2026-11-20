@@ -29,7 +29,7 @@
 			<div v-if="!form" class="py-12 text-center text-sm text-gray-400">Loading settings…</div>
 			<div v-else class="flex gap-6 px-4 py-4 sm:px-6">
 				<nav class="sticky top-24 hidden h-fit w-44 shrink-0 space-y-1 text-sm lg:block" aria-label="Settings sections">
-					<a v-for="s in SECTIONS" :key="s.id" :href="`#${s.id}`"
+					<a v-for="s in sections" :key="s.id" :href="`#${s.id}`"
 						class="block rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{{ s.label }}</a>
 				</nav>
 
@@ -221,8 +221,8 @@
 									</div>
 									<span data-testid="clone-size" class="text-xs tabular-nums text-gray-500"
 										:title="c.size === null ? 'Not measured in time' : undefined">{{ c.size === null ? "size unknown" : formatBytes(c.size) }}</span>
-									<span class="text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'" :title="c.reason">
-										{{ c.inUse ? "in use" : "unused" }}
+									<span data-testid="clone-state" class="max-w-xs text-right text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'">
+										{{ cloneState(c) }}<template v-if="c.reason">: <span data-testid="clone-reason">{{ c.reason }}</span></template>
 									</span>
 								</li>
 							</ul>
@@ -231,12 +231,12 @@
 								{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
 									({{ clones.unmeasured.value }} not measured)</template>
 							</p>
-							<button v-if="clones.clones.value.some((c) => !c.inUse)" type="button" :disabled="clones.clearing.value"
+							<button v-if="clones.clones.value.some((c) => cloneState(c) === 'unused')" type="button" :disabled="clones.clearing.value"
 								class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
 							<p v-if="clones.cleared.value" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">
 								Removed {{ clones.cleared.value.removed }} {{ clones.cleared.value.removed === 1 ? "clone" : "clones" }},
-								reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }} in use</template>.
+								reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }}</template>.
 							</p>
 						</div>
 					</section>
@@ -246,6 +246,8 @@
 						<pre data-testid="project-yaml"
 							class="overflow-x-auto rounded-b-xl bg-gray-50 px-5 py-4 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || "# Every setting is a default, so nothing is written." }}</pre>
 					</section>
+
+					<DeleteProjectSection v-if="!adding" :target="target" @deleted="onDeleted" />
 				</div>
 			</div>
 		</div>
@@ -257,6 +259,7 @@ import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import DeleteProjectSection from "../components/projects/DeleteProjectSection.vue";
 import {
 	useAddProject,
 	useProjectClones,
@@ -264,6 +267,7 @@ import {
 import { useProviderStatus } from "../composables/useProviderAuth";
 import { APPROVAL_MODES } from "../lib/approval";
 import {
+	cloneState,
 	DELIVERY_OPTIONS,
 	defaultFields,
 	defaultInterval,
@@ -305,6 +309,7 @@ const SECTIONS = [
 	{ id: "reports", label: "Reports" },
 	{ id: "clones", label: "Clones" },
 	{ id: "yaml", label: "YAML" },
+	{ id: "delete", label: "Delete" },
 ];
 
 type ToggleKey = "merge" | "changelog" | "browserVision" | "browserVisible";
@@ -344,6 +349,10 @@ const target = computed(() =>
 	typeof route.params.project === "string" ? route.params.project : "",
 );
 const adding = computed(() => route.query.add === "1");
+// A project being added is not watched yet, so there is nothing to delete.
+const sections = computed(() =>
+	adding.value ? SECTIONS.filter((s) => s.id !== "delete") : SECTIONS,
+);
 const boardLink = computed(() => `/projects/${encodeProject(target.value)}`);
 
 const form = ref<ProjectSettings | null>(null);
@@ -475,6 +484,12 @@ async function save() {
 	} finally {
 		saving.value = false;
 	}
+}
+
+// project_remove already stopped the watch; reload the config it rewrote.
+async function onDeleted() {
+	await store.fetchConfig();
+	await router.push("/projects");
 }
 
 // ── Agent ───────────────────────────────────────────────────────────────────

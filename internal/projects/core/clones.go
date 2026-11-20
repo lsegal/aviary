@@ -14,9 +14,13 @@ type CloneEntry struct {
 	PullRequestRepository string `json:"pullRequestRepository,omitempty"`
 	// Job is the work key (target#number) the clone belongs to.
 	Job string `json:"job,omitempty"`
-	// InUse reports that the clone may still be needed, so clearing keeps it.
-	// Reason says why it is in use or why its status could not be verified.
+	// InUse reports that a live job of this instance (active, waiting,
+	// queued, paused or stopping) holds the clone, so clearing keeps it.
+	// Kept reports a clone nothing holds that clearing still leaves alone,
+	// such as one outside the configured temp directories. Reason says why
+	// the clone is in use, kept, or unused.
 	InUse  bool   `json:"inUse"`
+	Kept   bool   `json:"kept,omitempty"`
 	Reason string `json:"reason,omitempty"`
 	// Size is the clone's bytes on disk: measured by listing, and right
 	// before removal by a clear. Nil means it could not be measured in time.
