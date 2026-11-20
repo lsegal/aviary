@@ -63,7 +63,7 @@ func cliModelSpec(registry *clidefs.Registry, model string) (string, bool) {
 	return "", false
 }
 
-// ProjectModelSpec returns the coding-CLI spec that runs a job of a project
+// ProjectModelSpec returns the model spec that runs a job of a project
 // attached to the named agent with model overriding the agent's own, as
 // ProjectJobSpecs maps the agent's model: a CLI provider model runs as its
 // spec, and any other model runs on the agent itself, as aviary/<agent>, with

@@ -38,7 +38,7 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	if model := strings.TrimSpace(run.Model); model != "" {
 		spec, override, ok := config.ProjectModelSpec(agents, agentName, model)
 		if !ok {
-			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model that is not a coding-CLI model on", model, run.Project)
+			return "", fmt.Errorf("model override %q: project %q is attached to no agent to run a model of an API provider on", model, run.Project)
 		}
 		session = AgentSession{Agent: spec, Model: override}
 	}

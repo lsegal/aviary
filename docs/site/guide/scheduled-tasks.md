@@ -196,7 +196,7 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 ### Scheduled prompts
 
-A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A coding-CLI model runs the job on that CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load into `model` (a value naming only a CLI, such as `codex`, loads as `cli/codex`), and are saved back as `model`.
+A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A model of a provider reached through a CLI runs the job on that CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load into `model` (a value naming only a CLI, such as `codex`, loads as `cli/codex`), and are saved back as `model`.
 
 ```yaml
 tasks:

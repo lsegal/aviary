@@ -289,9 +289,9 @@ func (v *validator) checkModel(field, model string) {
 }
 
 // checkProjectTaskModel validates a project task's model override as any
-// model is checked, except that a coding-CLI provider only Projects jobs run
-// on, such as cli/gemini/<model>, is fine: the task runs as a Projects job,
-// never as an agent prompt.
+// model is checked, except that a provider reached through a CLI that only
+// Projects jobs run on, such as cli/gemini/<model>, is fine: the task runs as
+// a Projects job, never as an agent prompt.
 func (v *validator) checkProjectTaskModel(field, model string) {
 	if _, ok := v.projectsOnlyCLI(model); ok {
 		return
