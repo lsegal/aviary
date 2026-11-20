@@ -3,6 +3,7 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -84,8 +85,14 @@ func parseModelStep(segment string) (modelStep, error) {
 // errors.
 func (p modelPath) extract(value any) []string {
 	if len(p) == 0 {
-		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-			return []string{strings.TrimSpace(text)}
+		switch leaf := value.(type) {
+		case string:
+			if strings.TrimSpace(leaf) != "" {
+				return []string{strings.TrimSpace(leaf)}
+			}
+		case bool:
+			// A boolean leaf is what an auth probe's signedInJSON ends on.
+			return []string{strconv.FormatBool(leaf)}
 		}
 		return nil
 	}
@@ -129,11 +136,11 @@ func (step modelStep) selects(element any) bool {
 	return ok && text == step.filterValue
 }
 
-// modelsFromJSON reads the ids the path names out of a probe's output. The
+// valuesFromJSON reads the values the path names out of a probe's output. The
 // whole output is tried as one document first, for a command that prints a
 // catalog, and each line separately after that, for an agent that answers in
 // JSON-RPC and prints a response per line among its own logging.
-func modelsFromJSON(expr, output string) []string {
+func valuesFromJSON(expr, output string) []string {
 	path, err := parseModelPath(expr)
 	if err != nil {
 		return nil

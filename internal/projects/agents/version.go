@@ -2,69 +2,10 @@ package agents
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/lsegal/aviary/internal/version"
 )
-
-// versionPattern finds the first dotted numeric version in a line of a CLI's
-// --version output. CLIs print it in every shape imaginable -- bare "0.58.0",
-// "gemini 0.58.0", "codex-cli 0.5.0 (rust)" -- so the number is read out of
-// whatever surrounds it rather than the whole line being parsed.
-var versionPattern = regexp.MustCompile(`\b(\d+(?:\.\d+)*)\b`)
-
-// ParseVersion reads the version a binary reported, returning its numeric
-// components. A prerelease or build suffix is ignored: it never makes a
-// version older than the release it precedes by enough to matter here, and
-// treating "1.2.0-beta.1" as unreadable would block a dispatch that works.
-// ok is false when the text carries no version at all, which is the case the
-// caller warns about rather than failing on.
-func ParseVersion(text string) ([]int, bool) {
-	match := versionPattern.FindStringSubmatch(text)
-	if match == nil {
-		return nil, false
-	}
-	parts := strings.Split(match[1], ".")
-	components := make([]int, 0, len(parts))
-	for _, part := range parts {
-		number, err := strconv.Atoi(part)
-		if err != nil {
-			return nil, false
-		}
-		components = append(components, number)
-	}
-	return components, true
-}
-
-// CompareVersions orders two reported versions, returning -1, 0, or 1, and
-// false when either of them carries no version. Components missing from the
-// shorter version count as zero, so "1.2" and "1.2.0" are the same version.
-func CompareVersions(a, b string) (int, bool) {
-	left, ok := ParseVersion(a)
-	if !ok {
-		return 0, false
-	}
-	right, ok := ParseVersion(b)
-	if !ok {
-		return 0, false
-	}
-	for i := 0; i < len(left) || i < len(right); i++ {
-		var l, r int
-		if i < len(left) {
-			l = left[i]
-		}
-		if i < len(right) {
-			r = right[i]
-		}
-		if l != r {
-			if l < r {
-				return -1, true
-			}
-			return 1, true
-		}
-	}
-	return 0, true
-}
 
 // VersionSupported reports whether a binary reporting this version satisfies
 // the definition's declared minimum. comparable is false when the definition
@@ -76,7 +17,7 @@ func (d Definition) VersionSupported(reported string) (supported, comparable boo
 	if strings.TrimSpace(d.MinVersion) == "" {
 		return true, false
 	}
-	order, ok := CompareVersions(reported, d.MinVersion)
+	order, ok := version.Compare(reported, d.MinVersion)
 	if !ok {
 		return true, false
 	}

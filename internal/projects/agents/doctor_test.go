@@ -235,3 +235,44 @@ func TestAgyModelsFromRealProbeOutput(t *testing.T) {
 		}
 	}
 }
+
+// TestDoctorReadsJSONAuth covers a CLI whose auth command answers in JSON:
+// the signedInJSON path has to end on true, and authDetailJSON says how.
+func TestDoctorReadsJSONAuth(t *testing.T) {
+	doctor := Doctor{Auth: []string{"{binary}", "auth", "status"}, SignedInJSON: "loggedIn", AuthDetailJSON: "authMethod"}
+	if !doctor.ReportsSignedIn(`{"loggedIn":true,"authMethod":"claude.ai"}`) {
+		t.Error("loggedIn true is not signed in")
+	}
+	for _, output := range []string{`{"loggedIn":false}`, `{}`, "not json"} {
+		if doctor.ReportsSignedIn(output) {
+			t.Errorf("ReportsSignedIn(%q) = true, want false", output)
+		}
+	}
+	if got := doctor.AuthDetailFrom(`{"loggedIn":true,"authMethod":"claude.ai"}`); got != "claude.ai" {
+		t.Errorf("AuthDetailFrom = %q, want claude.ai", got)
+	}
+	text := Doctor{Auth: []string{"x"}, AuthDetail: `(?im)^\s*Logged in using\s+(.+)$`}
+	if got := text.AuthDetailFrom("Logged in using ChatGPT\n"); got != "ChatGPT" {
+		t.Errorf("AuthDetailFrom = %q, want ChatGPT", got)
+	}
+	if got := (Doctor{}).AuthDetailFrom("Logged in"); got != "" {
+		t.Errorf("AuthDetailFrom with nothing declared = %q, want empty", got)
+	}
+}
+
+// TestDoctorAuthFieldsNeedAuth rejects the sign-in readers without the auth
+// command they read, and both sign-in readers at once.
+func TestDoctorAuthFieldsNeedAuth(t *testing.T) {
+	for name, doctor := range map[string]Doctor{
+		"signedInJSON alone":   {SignedInJSON: "loggedIn"},
+		"authDetail alone":     {AuthDetail: "(.+)"},
+		"authDetailJSON alone": {AuthDetailJSON: "authMethod"},
+		"both readers":         {Auth: []string{"x"}, SignedIn: "ok", SignedInJSON: "loggedIn"},
+		"bad JSON path":        {Auth: []string{"x"}, SignedInJSON: "a["},
+		"bad expression":       {Auth: []string{"x"}, AuthDetail: "("},
+	} {
+		if err := doctor.validate(); err == nil {
+			t.Errorf("%s validated, want an error", name)
+		}
+	}
+}

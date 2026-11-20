@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -412,32 +411,4 @@ func TestCodexSession_MissingBinary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.Send(context.Background(), Turn{Text: "hi"}, nil)
 	assert.Error(t, err)
-}
-
-func TestDoctorParsers(t *testing.T) {
-	assert.Equal(t, "2.1.312", parseVersion("2.1.312 (Claude Code)\n"))
-	assert.Equal(t, "0.153.2", parseVersion("codex-cli 0.153.2\n"))
-
-	ok, detail := parseClaudeAuthStatus([]byte(`{"loggedIn":true,"authMethod":"claude.ai"}`), nil)
-	assert.True(t, ok)
-	assert.Equal(t, "claude.ai", detail)
-	ok, _ = parseClaudeAuthStatus([]byte(`{"loggedIn":false}`), errors.New("exit 1"))
-	assert.False(t, ok)
-
-	ok, detail = parseCodexLoginStatus([]byte("Logged in using ChatGPT\n"), nil)
-	assert.True(t, ok)
-	assert.Equal(t, "ChatGPT", detail)
-	ok, _ = parseCodexLoginStatus([]byte("Not logged in\n"), errors.New("exit 1"))
-	assert.False(t, ok)
-
-	assert.Equal(t, "codex CLI not found in PATH", Status{Backend: Codex}.String())
-	assert.Equal(t, "claude 2.1, not signed in", Status{Backend: Claude, Installed: true, Version: "2.1"}.String())
-	assert.Equal(t, "codex 0.1, signed in (ChatGPT)", Status{Backend: Codex, Installed: true, Version: "0.1", SignedIn: true, Detail: "ChatGPT"}.String())
-}
-
-func TestCheck_NotInstalled(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	st := Check(context.Background(), Claude)
-	assert.False(t, st.Installed)
-	assert.False(t, st.OK())
 }

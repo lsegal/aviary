@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/projects/agents"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
@@ -3142,7 +3143,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					job.Log += runErr.Error()
 					jobs[key] = job
 					jobMu.Unlock()
-					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + firstLine(runErr.Error()), IsError: true})
+					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + clidoctor.FirstLine(runErr.Error()), IsError: true})
 					state := work[key]
 					state.Status = "failed"
 					work[key] = state
