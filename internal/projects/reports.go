@@ -44,7 +44,7 @@ func (r *reporter) setDelivery(deliver ReportDelivery) {
 	r.mu.Unlock()
 }
 
-// configure applies the projects: section's per-project report settings.
+// configure applies every agent's per-project report settings.
 func (r *reporter) configure(cfg config.ProjectsConfig) {
 	projects := map[string]*config.ProjectReportsConfig{}
 	for _, project := range cfg.List {

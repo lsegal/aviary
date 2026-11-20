@@ -43,6 +43,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
+	v.checkProjects(cfg.Agents)
 	return v.issues
 }
 
@@ -582,4 +583,24 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 		}
 	}
 	return seen
+}
+
+// checkProjects rejects a project owned by more than one agent: a project has
+// exactly one parent agent.
+func (v *validator) checkProjects(agents []AgentConfig) {
+	owners := map[string]string{}
+	for i, agent := range agents {
+		for j, project := range agent.Projects.List {
+			target := strings.TrimSpace(project.Target)
+			if target == "" {
+				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d].target", i, j), "a project needs a target")
+				continue
+			}
+			if owner, ok := owners[target]; ok && owner != agent.Name {
+				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)
+				continue
+			}
+			owners[target] = agent.Name
+		}
+	}
 }

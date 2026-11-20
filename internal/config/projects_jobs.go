@@ -13,11 +13,11 @@ import (
 const aviarySpecPrefix = "aviary/"
 
 // ProjectJobSpecs returns the model specs, in fallback order, that jobs
-// of a project attached to the named agent run on: the agent's model and
+// of a project owned by the named agent run on: the agent's model and
 // fallbacks, after models.defaults, each CLI provider model as its spec:
 // cli/claude/opus and claude/opus are both the spec claude/opus. A model
 // that is not a CLI runs the job on the agent itself, as aviary/<agent>. An
-// empty name, a project attached to no agent, takes the CLI models of
+// empty name, a runtime watch no agent owns, takes the CLI models of
 // models.defaults, as an agent without a model would. It returns nil when
 // the named agent is not configured.
 func ProjectJobSpecs(cfg *Config, agentName string) []string {
@@ -64,11 +64,11 @@ func cliModelSpec(registry *clidefs.Registry, model string) (string, bool) {
 }
 
 // ProjectModelSpec returns the model spec that runs a job of a project
-// attached to the named agent with model overriding the agent's own, as
+// owned by the named agent with model overriding the agent's own, as
 // ProjectJobSpecs maps the agent's model: a CLI provider model runs as its
 // spec, and any other model runs on the agent itself, as aviary/<agent>, with
 // the model returned as override for that turn. It reports false for a model
-// that is not a CLI when the project is attached to no agent to run it on.
+// that is not a CLI when the project is owned by no agent to run it on.
 func ProjectModelSpec(cfg *Config, agentName, model string) (spec, override string, ok bool) {
 	if spec, isCLI := cliModelSpec(cliRegistry(cfg.Models), model); isCLI {
 		return spec, "", true
