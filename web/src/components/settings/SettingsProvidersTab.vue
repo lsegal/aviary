@@ -282,8 +282,8 @@
 
 <script lang="ts">
 import { computed, defineComponent, inject, ref, toRefs } from "vue";
-import SettingsCLIProviders from "./SettingsCLIProviders.vue";
 import { settingsViewContextKey } from "./context";
+import SettingsCLIProviders from "./SettingsCLIProviders.vue";
 
 interface ConfiguredProviderEntry {
 	key: string;
