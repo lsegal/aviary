@@ -169,7 +169,7 @@ func TestStaleNoteNamesStaleSkillsForOneCLI(t *testing.T) {
 	writeSkill(t, claudeDir, "gh-discuss", "discuss v2\n")
 	writeSkill(t, claudeDir, "gh-create", "create v1\n")
 
-	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under Skills > For providers", m.StaleNote(testCLIs[0]))
+	assert.Equal(t, "gh-fix, gh-create stale for aviary v2.0.0; update them under System > Skills", m.StaleNote(testCLIs[0]))
 	assert.Empty(t, m.StaleNote(testCLIs[1]), "a CLI with no skills installed has nothing stale")
 
 	m.Version = func() string { return "dev" }

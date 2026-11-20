@@ -210,7 +210,7 @@ func (e Env) readLock() map[string]lockEntry {
 	return lock.Skills
 }
 
-// Status is what the For providers tab shows.
+// Status is what System › Skills shows under Installed in providers.
 type Status struct {
 	// Version is the Aviary release the bundled skills belong to, or "dev".
 	Version string `json:"version"`
@@ -352,7 +352,7 @@ func (m *Manager) StaleNote(cli CLI) string {
 	if len(stale) == 0 {
 		return ""
 	}
-	return strings.Join(stale, ", ") + " stale for " + running + "; update them under Skills > For providers"
+	return strings.Join(stale, ", ") + " stale for " + running + "; update them under System > Skills"
 }
 
 func (m *Manager) install(name string, cli CLI, lock map[string]lockEntry, version string) Install {

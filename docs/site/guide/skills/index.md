@@ -13,7 +13,7 @@ These skills are separate from the skills Aviary's own agents use. They live in 
 
 ## Installing and Updating
 
-**System › Skills › For providers** in the control panel shows the installed version of each skill in each CLI provider, with **Install**, **Update** and **Update all**. Aviary installs through `npx skills add`, so Node.js must be on the `PATH`.
+**System › Skills** in the control panel lists these skills with every other installed skill. Under **Installed in providers** it shows the installed version of each skill in each CLI provider, with **Install**, **Update** and **Update all**. Aviary installs through `npx skills add`, so Node.js must be on the `PATH`.
 
 By default Aviary keeps the skills current on its own:
 

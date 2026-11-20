@@ -13,7 +13,7 @@ This page summarizes the implemented browser UI as it exists today.
 | Usage | `/usage` | Token and session analytics. |
 | Jobs | `/jobs` | Scheduled work, queue state, logs, and compile attempts. |
 | Tools | `/system/tools` | MCP tool catalog and direct invocation. |
-| Skills | `/system/skills` | Installed skill browsing and activation control, plus a For providers tab with the installed version of each skill Aviary ships per CLI. |
+| Skills | `/system/skills` | Every installed skill on one page: the installed version of each skill Aviary ships in each provider's CLI, and browsing and activation control for the skills Aviary agents use. |
 | Models | `/system/models` | Built-in provider and model catalog. |
 | Logs | `/logs` | Streaming log inspection and filtering. |
 | Daemons | `/daemons` | Process monitoring and restart support. |

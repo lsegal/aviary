@@ -211,8 +211,6 @@ interface InstallArgs {
 	update_only?: boolean;
 }
 
-const emit = defineEmits<{ count: [value: number] }>();
-
 const { callTool } = useMCP();
 const store = useSettingsStore();
 
@@ -248,7 +246,6 @@ async function load() {
 			store.config ? Promise.resolve() : store.fetchConfig(),
 		]);
 		status.value = JSON.parse(raw) as CodingSkillsStatus;
-		emit("count", status.value.skills.length);
 	} catch (error) {
 		errorMessage.value = error instanceof Error ? error.message : String(error);
 	} finally {
