@@ -253,7 +253,7 @@ tasks:
 
 ## models
 
-Provider credentials and default model settings.
+Provider credentials, default model settings, and the coding-CLI providers.
 
 ```yaml
 models:
@@ -270,6 +270,9 @@ models:
     model: anthropic/claude-sonnet-4-6
     fallbacks:
       - openai/gpt-6.2-sol
+  cli_definitions:
+    claude:
+      binary: /opt/claude/bin/claude
 ```
 
 | Field | Type | Description |
@@ -277,6 +280,7 @@ models:
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
+| `cli_definitions` | map | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 
 **Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`
 
@@ -395,9 +399,6 @@ projects:
   concurrency: 4
   agents: [codex, claude/sonnet]
   no_merge: true
-  cli_definitions:
-    claude:
-      binary: /opt/claude/bin/claude
 ```
 
 | Field | Type | Default | Description |
@@ -417,7 +418,6 @@ projects:
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `agents` | string[] | `[codex]` | Coding-CLI specs jobs load balance across; `aviary/<agent>` runs an Aviary agent |
 | `agent_binaries` | map | | Executable for a coding CLI, by agent name |
-| `cli_definitions` | map | | Coding-CLI definitions by agent name: field-by-field overrides of the built-ins (`null` drops a field) and new CLIs. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns) |
 | `yolo` | bool | `false` | Disable the coding CLIs' sandboxes and permission checks |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -135,9 +136,19 @@ func TestWakeDetectionSettlesOverdueFire(t *testing.T) {
 	key := "alpha/t"
 	require.Equal(t, now.Add(30*time.Minute), s.armed[key].next)
 
-	// The machine sleeps for three hours; the timer has not fired.
+	// The machine sleeps for three hours; the timer has not fired, and the
+	// shared wake detector reports the wake.
 	now = now.Add(3 * time.Hour)
-	s.checkOverdue()
+	ctx, cancel := context.WithCancel(context.Background())
+	wakes := make(chan time.Duration)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.wakeLoop(ctx, wakes)
+	}()
+	wakes <- 3 * time.Hour
+	cancel()
+	<-done
 
 	assert.Equal(t, 1, jobCount(t, s, key))
 	assert.Equal(t, "missed", lastRun(t, s, key).Reason)

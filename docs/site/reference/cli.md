@@ -280,7 +280,6 @@ aviary project remove <target> [--runtime]
 aviary project refresh [target]
 aviary project job list [--target T] [--status S] [--offset N] [--limit N]
 aviary project job get|explain|retry|pause|resume|stop <number> [--target T]
-aviary project cli list
 aviary project clone list|clear
 aviary project unblock [number] [--target T]
 aviary project issue comment <number> --text TEXT [--repository R]
@@ -519,6 +518,7 @@ Inspect supported provider and model pairs.
 ```
 aviary models [flags]
 aviary models list [flags]
+aviary models clis
 ```
 
 | Flag | Description |

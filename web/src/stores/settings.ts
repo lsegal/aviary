@@ -103,6 +103,8 @@ export interface ModelDefaults {
 export interface ModelsConfig {
 	providers: Record<string, ProviderConfig>;
 	defaults: ModelDefaults;
+	/** Coding-CLI definitions; the UI does not edit them, only keeps them. */
+	cli_definitions?: Record<string, unknown>;
 }
 
 export interface BrowserConfig {
@@ -229,6 +231,7 @@ export const useSettingsStore = defineStore("settings", () => {
 					})),
 				})),
 				models: {
+					...parsed.models,
 					providers: parsed.models?.providers ?? {},
 					defaults: { ...base.models.defaults, ...parsed.models?.defaults },
 				},

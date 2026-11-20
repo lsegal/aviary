@@ -38,6 +38,11 @@ func init() {
 	modelsCmd.Flags().StringVar(&modelsProvider, "provider", "", "filter to a provider name")
 	modelsListCmd.Flags().StringVar(&modelsProvider, "provider", "", "filter to a provider name")
 	modelsCmd.AddCommand(modelsListCmd)
+	modelsCmd.AddCommand(newProjectToolCommand(projectToolCommand{
+		path:  []string{"clis"},
+		tool:  "provider_cli_list",
+		short: "Check every coding CLI provider: installed, version, sign-in, quota and models",
+	}))
 	rootCmd.AddCommand(modelsCmd)
 }
 

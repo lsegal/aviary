@@ -48,11 +48,13 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	browser   config.BrowserConfig
-	watches   []Watch
-	running   *engineRun
-	lastKey   string
-	lastError string
-	stopped   bool
+	// definitions are the coding-CLI definitions from the models: section.
+	definitions map[string]any
+	watches     []Watch
+	running     *engineRun
+	lastKey     string
+	lastError   string
+	stopped     bool
 	// engineOff keeps the manager tracking settings without starting an
 	// engine; see SetEngineEnabled.
 	engineOff bool
@@ -165,6 +167,15 @@ func (m *Manager) SetEngineEnabled(enabled bool) {
 func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 	m.mu.Lock()
 	m.browser = cfg
+	m.mu.Unlock()
+}
+
+// SetCLIDefinitions records the coding-CLI definitions from core Aviary's
+// models: section, the one registry Projects reads its CLIs from. It takes
+// effect on the next Reconcile.
+func (m *Manager) SetCLIDefinitions(definitions map[string]any) {
+	m.mu.Lock()
+	m.definitions = definitions
 	m.mu.Unlock()
 }
 
@@ -345,7 +356,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		TargetAgents:      targetAgents,
 		Agents:            cfg.EffectiveAgents(),
 		AgentBinaries:     cfg.AgentBinaries,
-		Definitions:       cfg.CLIDefinitions,
+		Definitions:       m.definitions,
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
 		ReadyLabel:        cfg.EffectiveReadyLabel(),

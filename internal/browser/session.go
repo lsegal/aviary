@@ -30,7 +30,7 @@ func newRemoteSessionForTab(ctx context.Context, wsURL, tabID string) (*Session,
 	taskCtx, cancelTask := chromedp.NewContext(
 		allocCtx,
 		chromedp.WithTargetID(target.ID(tabID)),
-		chromedp.WithErrorf(filteredChromeDPErrorf),
+		chromedp.WithErrorf(FilteredChromeDPErrorf),
 	)
 
 	if err := chromedp.Run(taskCtx); err != nil {
@@ -76,16 +76,26 @@ func (s *Session) Detach() {
 	s.cancelAlloc()
 }
 
-func filteredChromeDPErrorf(format string, args ...any) {
+// FilteredChromeDPErrorf is the chromedp error logger every Aviary browser
+// context uses. chromedp reports events it cannot decode or has no case for,
+// and browsers keep adding those: FedCM initiators, and DOM events such as
+// `dom.topLayerElementsUpdated` that its node-tree bookkeeping does not model.
+// They say nothing about Aviary's own work, so they are logged at debug level
+// instead of being printed over a terminal a user is watching. Anything else
+// chromedp reports is still surfaced.
+func FilteredChromeDPErrorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if isIgnorableChromeDPError(msg) {
 		slog.Debug("browser: ignored chromedp error", "msg", msg)
 		return
 	}
-	slog.Error(msg)
+	slog.Error(msg, "component", "browser")
 }
 
 func isIgnorableChromeDPError(msg string) bool {
+	if strings.HasPrefix(msg, "unhandled node event") {
+		return true
+	}
 	return strings.Contains(msg, "could not unmarshal event:") &&
 		strings.Contains(msg, `unknown InitiatorType value: FedCM`)
 }

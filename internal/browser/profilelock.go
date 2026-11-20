@@ -13,18 +13,18 @@ import (
 // exits however it exits, and a crashed run never leaves the profile claimed.
 const profileLockName = "aviary-browser.lock"
 
-// errProfileLocked reports a profile another running Aviary instance already
+// ErrProfileLocked reports a profile another running Aviary instance already
 // has a browser on.
-var errProfileLocked = errors.New("browser profile is in use by another aviary instance")
+var ErrProfileLocked = errors.New("browser profile is in use by another aviary instance")
 
-// profileLock is a held claim on a browser profile.
-type profileLock struct {
+// ProfileLock is a held claim on a browser profile.
+type ProfileLock struct {
 	file *os.File
 }
 
-// lockProfile claims a profile for this process's browser, failing with
-// errProfileLocked when another instance already holds it.
-func lockProfile(profile string) (*profileLock, error) {
+// LockProfile claims a profile for this process's browser, failing with
+// ErrProfileLocked when another instance already holds it.
+func LockProfile(profile string) (*ProfileLock, error) {
 	file, err := os.OpenFile(filepath.Join(profile, profileLockName), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open browser profile lock: %w", err)
@@ -33,11 +33,11 @@ func lockProfile(profile string) (*profileLock, error) {
 		_ = file.Close()
 		return nil, err
 	}
-	return &profileLock{file: file}, nil
+	return &ProfileLock{file: file}, nil
 }
 
-// release gives the profile up. Closing the file drops the lock with it.
-func (l *profileLock) release() {
+// Release gives the profile up. Closing the file drops the lock with it.
+func (l *ProfileLock) Release() {
 	if l == nil || l.file == nil {
 		return
 	}
@@ -45,7 +45,7 @@ func (l *profileLock) release() {
 	l.file = nil
 }
 
-// claimProfile decides which user-data directory a launch runs the browser
+// ClaimProfile decides which user-data directory a launch runs the browser
 // against. Chrome allows one process per --user-data-dir, and a second one
 // launched on a directory already in use hands itself to the first and exits,
 // so a second Aviary instance on the same profile never saw its own DevTools
@@ -58,14 +58,14 @@ func (l *profileLock) release() {
 // The same applies when Aviary's own browser (the one its browser tools drive)
 // is already running on the profile: Projects shares that profile by default,
 // so it runs beside that browser in a private directory instead.
-func claimProfile(profile string) (*profileLock, string, error) {
-	lock, err := lockProfile(profile)
+func ClaimProfile(profile string) (*ProfileLock, string, error) {
+	lock, err := LockProfile(profile)
 	if err == nil {
-		if !browserHoldsProfile(profile) {
+		if !chromeHoldsProfile(profile) {
 			return lock, profile, nil
 		}
-		lock.release()
-	} else if !errors.Is(err, errProfileLocked) {
+		lock.Release()
+	} else if !errors.Is(err, ErrProfileLocked) {
 		return nil, "", err
 	}
 	dataDir, err := os.MkdirTemp("", "aviary-browser-")

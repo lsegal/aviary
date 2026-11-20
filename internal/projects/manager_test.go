@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -242,6 +243,15 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 	initial := loginRetryInitial
 	loginRetryInitial = 10 * time.Millisecond
 	t.Cleanup(func() { loginRetryInitial = initial })
+	// The watch polls through gh: the default browser delivery would launch a
+	// real Chrome on the retry, which can outlast the deadline on a loaded CI
+	// runner (issue #448).
+	previous := startBrowserDriver
+	t.Cleanup(func() { startBrowserDriver = previous })
+	startBrowserDriver = func(context.Context, browser.Config) (*browser.Browser, error) {
+		t.Error("the engine launched a browser")
+		return nil, errors.New("no browser in tests")
+	}
 	m, err := NewManager(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +268,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 		}
 		return nil, errors.New("gh is unavailable in tests")
 	}
-	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agents: []string{"codex"}}); !errors.Is(err, errLoginLookup) {
+	if err := m.AddWatch(Watch{Targets: []string{"o/r"}, Agents: []string{"codex"}, Settings: config.ProjectsConfig{Delivery: DeliveryPoll}}); !errors.Is(err, errLoginLookup) {
 		t.Fatalf("AddWatch error = %v, want the login lookup failure", err)
 	}
 	if logs, _ := m.logsSince(0, 0); !slices.ContainsFunc(logs, func(line string) bool { return strings.Contains(line, "waiting 10ms to retry starting") }) {
@@ -276,10 +286,7 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			m.mu.Lock()
-			lastError := m.lastError
-			m.mu.Unlock()
-			t.Fatalf("engine did not start after %d lookups: %s", lookups.Load(), lastError)
+			t.Fatalf("engine did not start after %d lookups", lookups.Load())
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
