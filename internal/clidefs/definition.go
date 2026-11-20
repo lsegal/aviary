@@ -755,6 +755,7 @@ const (
 
 	TranscriptOpencodeJSON = "opencode-json"
 	TranscriptClineJSON    = "cline-json"
+	TranscriptMuseJSON     = "muse-json"
 
 	formatPlainAlias      = "plain"
 	formatClaudeJSONAlias = "claude-stream-json"

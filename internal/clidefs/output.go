@@ -28,7 +28,7 @@ func (o Output) TranscriptFormat() string {
 }
 
 // transcriptFormats lists the mappers a JSONL definition may name.
-var transcriptFormats = []string{TranscriptClineJSON, TranscriptOpencodeJSON}
+var transcriptFormats = []string{TranscriptClineJSON, TranscriptMuseJSON, TranscriptOpencodeJSON}
 
 // validate reports the first thing wrong with the output block.
 func (o Output) validate() error {
