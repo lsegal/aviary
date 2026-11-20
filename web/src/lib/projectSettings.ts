@@ -10,6 +10,8 @@
 // project_clone_list; their responses are normalized here so the views never
 // depend on the raw payload shape.
 
+import type { ApprovalMode } from "../stores/settings";
+
 export type Delivery = "browser" | "poll" | "webhook";
 
 /** A project's opt-in to job reports through an Aviary agent's channels. */
@@ -51,6 +53,8 @@ export interface ProjectsSection {
 	allowed_commenters?: string[];
 	no_merge?: boolean;
 	no_changelog?: boolean;
+	approval_mode?: ApprovalMode;
+	/** The full approval mode, read when approval_mode is unset; saving folds it into approval_mode. */
 	yolo?: boolean;
 	unblock_interval?: string;
 	temp_dirs?: string[];
@@ -74,7 +78,8 @@ export interface ProjectSettings {
 	commenters: string[];
 	merge: boolean;
 	changelog: boolean;
-	yolo: boolean;
+	/** Projects' approval-mode override; empty follows the general approval mode. */
+	approvalMode: ApprovalMode | "";
 	unblockInterval: string;
 	tempDirs: string[];
 }
@@ -266,7 +271,7 @@ export function settingsFromSection(
 		commenters: strings(s.allowed_commenters),
 		merge: s.no_merge !== true,
 		changelog: s.no_changelog !== true,
-		yolo: s.yolo === true,
+		approvalMode: s.approval_mode ?? (s.yolo === true ? "full" : ""),
 		unblockInterval: (s.unblock_interval ?? "").trim(),
 		tempDirs: strings(s.temp_dirs),
 	};
@@ -403,7 +408,8 @@ export function withSettings(
 	set("allowed_commenters", commenters, !commenters.length);
 	set("no_merge", true, s.merge);
 	set("no_changelog", true, s.changelog);
-	set("yolo", true, !s.yolo);
+	set("approval_mode", s.approvalMode, !s.approvalMode);
+	set("yolo", true, true);
 	set("unblock_interval", s.unblockInterval.trim(), !s.unblockInterval.trim());
 	const dirs = clean(s.tempDirs);
 	set("temp_dirs", dirs, !dirs.length);

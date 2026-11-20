@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 test.beforeEach(async ({ page }) => {
@@ -276,6 +276,62 @@ test("settings can disable browser tab reuse", async ({ page }) => {
 			reuse_tabs: false,
 		},
 	});
+});
+
+async function setupApprovalSettings(
+	page: Page,
+	approval: Record<string, string>,
+): Promise<Record<string, unknown>[]> {
+	const saved: Record<string, unknown>[] = [];
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: { port: 16677 },
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "" },
+			scheduler: { concurrency: "" },
+			skills: {},
+			approval,
+		},
+		config_save: (args) => {
+			saved.push(JSON.parse(String(args?.config ?? "{}")));
+			return {};
+		},
+		skills_list: [],
+		tool_list: [],
+	});
+	await page.goto("/settings");
+	return saved;
+}
+
+test("settings sets the chat approval mode over the general one", async ({
+	page,
+}) => {
+	const saved = await setupApprovalSettings(page, { mode: "read-only" });
+	await expect(page.getByTestId("approval-mode")).toHaveValue("read-only");
+	const chat = page.getByTestId("approval-chat");
+	await expect(chat).toHaveValue("");
+	await chat.selectOption("full");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => saved.length).toBe(1);
+	expect(saved[0].approval).toEqual({ mode: "read-only", chat: "full" });
+});
+
+test("settings drops the approval section at its defaults", async ({
+	page,
+}) => {
+	const saved = await setupApprovalSettings(page, {
+		mode: "read-only",
+		chat: "full",
+	});
+	const chat = page.getByTestId("approval-chat");
+	await expect(chat).toHaveValue("full");
+	await page.getByTestId("approval-mode").selectOption("");
+	await chat.selectOption("");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => saved.length).toBe(1);
+	expect(saved[0].approval).toBeUndefined();
 });
 
 test("settings tolerates an empty config payload", async ({ page }) => {

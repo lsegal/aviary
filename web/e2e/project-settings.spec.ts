@@ -437,6 +437,61 @@ test("changing a setting writes only the differing values under the agent", asyn
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 });
 
+test("yolo loads as the full approval mode and saves as the Projects override", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{ ...CONFIG.agents[1], projects: { ...CODER_PROJECTS, yolo: true } },
+			],
+		},
+	});
+	await page.goto("/settings/agents/coder/projects");
+	const mode = page.locator('[data-field="approval_mode"]');
+	await expect(mode).toHaveValue("full");
+
+	await mode.selectOption("read-only");
+	const yaml = page.getByTestId("project-yaml");
+	await expect(yaml).toContainText("approval_mode: read-only");
+	await expect(yaml).not.toContainText("yolo");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedProjects(calls, "coder")).toEqual({
+		...CODER_PROJECTS,
+		approval_mode: "read-only",
+	});
+});
+
+test("following the general approval mode writes no Projects override", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{
+					...CONFIG.agents[1],
+					projects: { ...CODER_PROJECTS, approval_mode: "auto" },
+				},
+			],
+		},
+	});
+	await page.goto("/settings/agents/coder/projects");
+	const mode = page.locator('[data-field="approval_mode"]');
+	await expect(mode).toHaveValue("auto");
+	await mode.selectOption("");
+	await expect(page.getByTestId("project-yaml")).not.toContainText(
+		"approval_mode",
+	);
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
+});
+
 test("an agent's projects run their jobs on its model and fallbacks", async ({
 	page,
 }) => {

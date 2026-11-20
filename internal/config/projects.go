@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // ProjectsConfig is an agent's projects: section in aviary.yaml: the
@@ -50,7 +52,10 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
-	// Yolo disables the CLI providers' sandboxes and permission checks.
+	// ApprovalMode is the Projects surface's approval-mode override for the
+	// CLI runs it launches. Empty follows approval.mode.
+	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
+	// Yolo is the full approval mode, honoured when ApprovalMode is unset.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
 	NoMerge bool `yaml:"no_merge,omitempty" json:"no_merge,omitempty"`
@@ -251,7 +256,7 @@ func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 &&
-		!p.Yolo && !p.NoMerge && !p.NoChangelog &&
+		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }
@@ -281,6 +286,9 @@ func MergeProjects(base, overlay ProjectsConfig) ProjectsConfig {
 	merged.AllIssues = merged.AllIssues || overlay.AllIssues
 	if len(overlay.AllowedCommenters) > 0 {
 		merged.AllowedCommenters = overlay.AllowedCommenters
+	}
+	if overlay.ApprovalMode != "" {
+		merged.ApprovalMode = overlay.ApprovalMode
 	}
 	merged.Yolo = merged.Yolo || overlay.Yolo
 	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision

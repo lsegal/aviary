@@ -163,6 +163,12 @@ An upgrade is a safe restart. Aviary installs the release, updates the skills fo
 
 **Automatic updates:** set `server.auto_update: true` to install new releases on their own. They are applied only while no jobs are running.
 
+### Dev checkouts
+
+A dev build running from an Aviary git checkout (for example under `pnpm dev`, outside Docker) updates from git instead of releases. The check fetches the checkout's upstream branch and compares it with `HEAD`, and `git status` tells it whether the working tree has local changes. The notice appears when the upstream branch has new commits.
+
+Updating, manually or automatically, runs `git pull --ff-only` in the checkout and doesn't restart Aviary: hot reload rebuilds and relaunches the backend from the pulled sources. When hot reload is unavailable and `pnpm dev` falls back to `go run`, the pull still happens and Aviary tells you to restart it. Aviary never pulls over uncommitted changes or a branch that has diverged from its upstream; the notice names the git state that blocks the update instead. Setting `AVIARY_EMULATE_VERSIONS` keeps the release updater in force.
+
 ---
 
 ## Troubleshooting

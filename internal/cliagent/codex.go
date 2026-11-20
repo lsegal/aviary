@@ -60,7 +60,7 @@ func codexArgs(opts Options, threadID string, images []string) []string {
 		args = append(args, "-c", "developer_instructions="+tomlString(opts.SystemPrompt))
 	}
 	if opts.BuiltinTools {
-		args = append(args, "-c", "sandbox_mode="+tomlString("workspace-write"))
+		args = append(args, opts.Approval...)
 	} else {
 		args = append(args,
 			"-c", "sandbox_mode="+tomlString("read-only"),

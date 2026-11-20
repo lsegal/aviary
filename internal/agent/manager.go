@@ -69,7 +69,14 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 	}
 	m.order = newOrder
 
-	// Add or update agents.
+	// Add or update agents. Every runner picks up the chat approval mode,
+	// including those whose own config did not change.
+	approval := cfg.ChatApprovalMode()
+	defer func() {
+		for _, runner := range m.runners {
+			runner.SetApproval(approval)
+		}
+	}()
 	for name, ac := range desired {
 		effectiveModel := config.EffectiveAgentModel(*ac, cfg.Models)
 		effectiveFallbacks := config.EffectiveAgentFallbacks(*ac, cfg.Models)

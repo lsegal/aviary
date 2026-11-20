@@ -23,6 +23,8 @@ var ErrReexecRequired = errors.New("server re-exec required")
 var (
 	versionCheck   = update.Check
 	installRelease = update.Install
+	gitCheckout    = update.GitCheckout
+	gitPull        = update.GitPull
 	executablePath = os.Executable
 	idlePoll       = 2 * time.Second
 )
@@ -96,6 +98,12 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		return saferestart.Status{}, fmt.Errorf("when must be %q or %q", saferestart.WhenNow, saferestart.WhenIdle)
 	}
 
+	if req.Upgrade {
+		if dir := gitCheckout(); dir != "" {
+			return s.gitUpgrade(ctx, dir)
+		}
+	}
+
 	version := ""
 	if req.Upgrade {
 		check, err := versionCheck(ctx, &http.Client{Timeout: 15 * time.Second})
@@ -151,6 +159,20 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 	st := s.RestartStatus()
 	publishRestartStatus(st)
 	go s.runRestart(when, cancel)
+	return st, nil
+}
+
+// gitUpgrade updates a dev checkout with a fast-forward pull. Hot reload
+// relaunches the backend from the pulled sources, so there is no restart.
+func (s *Server) gitUpgrade(ctx context.Context, dir string) (saferestart.Status, error) {
+	res, err := gitPull(ctx, dir)
+	if err != nil {
+		return saferestart.Status{}, err
+	}
+	slog.Info("server: pulled dev checkout", "component", "update", "dir", dir, "from", res.From, "to", res.To, "commits", res.Commits)
+	st := s.RestartStatus()
+	st.Noop = true
+	st.Message = update.GitPullMessage(res)
 	return st, nil
 }
 
@@ -264,12 +286,12 @@ func (s *Server) runDone() <-chan struct{} {
 	return s.runCtx.Done()
 }
 
-// runSelfUpdater checks for a new release every update.CheckInterval, tells
-// every dashboard about it, and applies it when auto_update is on and no jobs
-// are running.
+// runSelfUpdater checks for a new release (or, in git mode, new upstream
+// commits) every update.CheckInterval, tells every dashboard about it, and
+// applies it when auto_update is on and no jobs are running.
 func (s *Server) runSelfUpdater(ctx context.Context) {
-	if update.IsDevBuild() && !update.EmulationActive() {
-		return // dev builds have no release to compare against
+	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
+		return // dev builds outside a checkout have nothing to compare against
 	}
 	var lastNotified string
 	tick := func() {
@@ -283,7 +305,7 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 			c := check
 			wsBroadcast(wsEvent{Type: "version", Check: &c})
 		}
-		if s.cfg == nil || !s.cfg.Server.AutoUpdate {
+		if s.cfg == nil || !s.cfg.Server.AutoUpdate || !check.UpgradeSupported {
 			return
 		}
 		if s.RestartStatus().Phase != saferestart.PhaseIdle || len(saferestart.RunningJobs()) > 0 {

@@ -11,16 +11,21 @@
     "models": ["{binary}", "models"],
     "modelPattern": "^([A-Za-z0-9][A-Za-z0-9._/:-]*)\\t"
   },
+  "approval": {
+    "read-only": ["--mode", "plan"],
+    "auto": ["--mode", "auto"],
+    "full": ["--dangerously-skip-permissions"]
+  },
   "args": {
     "run": [
-      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--effort", "{level}"]},
       {"args": ["--output-format", "text"]},
       {"args": ["--print", "{prompt}"]}
     ],
     "vision": [
-      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--effort", "{level}"]},
       {"args": ["--print", "{prompt}"]}

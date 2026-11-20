@@ -1303,8 +1303,10 @@ type CommandRunner struct {
 	Agent, Repo string
 	Identity    Identity
 	Output      io.Writer
-	Yolo        bool
-	NoMerge     bool
+	// Approval is the Projects surface's effective approval mode, which
+	// every CLI launch renders through its definition.
+	Approval clidefs.ApprovalMode
+	NoMerge  bool
 	// NoChangelog asks the dispatched /gh-fix prompt to skip adding a
 	// changelog entry for the run, mirroring how NoMerge asks it to leave the
 	// pull request unmerged.
@@ -1611,7 +1613,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 		Session:    session.ID,
 		Model:      spec.Model,
 		Level:      spec.Level,
-		Yolo:       r.Yolo,
+		Approval:   r.Approval,
 		NoCheckout: !inCheckout,
 		// Claude only reads --remote-control on its interactive startup path,
 		// so under -p the flag alone does nothing. The bridge itself is not

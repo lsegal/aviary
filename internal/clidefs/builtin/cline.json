@@ -23,16 +23,20 @@
     "modelsJSON": "result.models.availableModels[].modelId",
     "timeout": "45s"
   },
+  "approval": {
+    "read-only": ["--plan", "--auto-approve", "true"],
+    "auto": ["--auto-approve", "true"]
+  },
   "args": {
     "run": [
-      {"args": ["--auto-approve", "true"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--thinking", "{level}"]},
       {"args": ["--json"]},
       {"args": ["{prompt}"]}
     ],
     "vision": [
-      {"args": ["--auto-approve", "true"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--thinking", "{level}"]},
       {"args": ["{prompt}"]}

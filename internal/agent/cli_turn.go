@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -97,6 +98,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		SystemPrompt: in.systemPrompt,
 		WorkDir:      r.workingDir(),
 		BuiltinTools: r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions),
+		Approval:     cliApprovalArgs(backend, r.approvalMode()),
 		Ephemeral:    !in.useHistory,
 	}
 	key := r.agent.ID + "\x00" + in.sessionID
@@ -360,6 +362,17 @@ func (r *AgentRunner) stopCLIProcs() {
 	}
 }
 
+// cliApprovalArgs translates the chat approval mode into the backend's native
+// permission flags through its CLI provider definition, the same translation
+// every other CLI launch uses.
+func cliApprovalArgs(backend cliagent.Backend, mode clidefs.ApprovalMode) []string {
+	definition, ok := llm.CLIProvider(string(backend))
+	if !ok {
+		return nil
+	}
+	return definition.ApprovalArgs(mode)
+}
+
 // cliFingerprint identifies the options a CLI process was started with.
 func cliFingerprint(opts cliagent.Options, tools []ToolInfo) string {
 	names := make([]string, 0, len(tools))
@@ -371,6 +384,7 @@ func cliFingerprint(opts cliagent.Options, tools []ToolInfo) string {
 	for _, part := range []string{
 		string(opts.Backend), opts.Model, opts.SystemPrompt, opts.WorkDir,
 		fmt.Sprint(opts.BuiltinTools), fmt.Sprint(opts.Ephemeral), strings.Join(names, ","),
+		strings.Join(opts.Approval, "\x00"),
 	} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})

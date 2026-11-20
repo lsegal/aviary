@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -142,7 +143,7 @@ func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {
 		"delivery":    func(s *engineSettings) { s.Delivery = "webhook" },
 		"ready label": func(s *engineSettings) { s.ReadyLabel = "go" },
 		"filter":      func(s *engineSettings) { s.Filter = "label:x" },
-		"yolo":        func(s *engineSettings) { s.Yolo = true },
+		"yolo":        func(s *engineSettings) { s.Approval = clidefs.ApprovalFull },
 	} {
 		changed := base
 		change(&changed)
@@ -356,5 +357,58 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 	}
 	if got := lookups.Load(); got != 2 {
 		t.Fatalf("lookups = %d, want 2", got)
+	}
+}
+
+// TestManagerSettingsResolveApprovalMode checks Projects jobs run under the
+// Projects override, fall back to the general approval mode without one, and
+// that yolo, in the config or on a watch, is the override's full mode
+// (issue #513).
+func TestManagerSettingsResolveApprovalMode(t *testing.T) {
+	m := newTestManager(t)
+	approval := func() clidefs.ApprovalMode {
+		t.Helper()
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		s, err := m.settingsLocked()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.Approval
+	}
+	// The coder agent owns o/a, and a watch no agent owns runs on
+	// models.defaults; general is the approval: section.
+	general := config.ApprovalConfig{}
+	reconcile := func(p config.ProjectsConfig) {
+		p.List = []config.ProjectConfig{{Target: "o/a"}}
+		cfg := ownedBy(p)
+		cfg.Models = config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}
+		cfg.Approval = general
+		m.Reconcile(cfg)
+	}
+
+	reconcile(config.ProjectsConfig{})
+	if got := approval(); got != clidefs.ApprovalAuto {
+		t.Fatalf("no setting: approval = %q, want auto", got)
+	}
+	general = config.ApprovalConfig{Mode: clidefs.ApprovalReadOnly, Chat: clidefs.ApprovalFull}
+	reconcile(config.ProjectsConfig{})
+	if got := approval(); got != clidefs.ApprovalReadOnly {
+		t.Fatalf("general setting: approval = %q, want read-only", got)
+	}
+	reconcile(config.ProjectsConfig{ApprovalMode: clidefs.ApprovalAuto})
+	if got := approval(); got != clidefs.ApprovalAuto {
+		t.Fatalf("Projects override: approval = %q, want auto", got)
+	}
+	reconcile(config.ProjectsConfig{Yolo: true})
+	if got := approval(); got != clidefs.ApprovalFull {
+		t.Fatalf("yolo: approval = %q, want full", got)
+	}
+	reconcile(config.ProjectsConfig{})
+	if err := m.AddWatch(Watch{Targets: []string{"o/b"}, Settings: config.ProjectsConfig{Yolo: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := approval(); got != clidefs.ApprovalFull {
+		t.Fatalf("watch --yolo: approval = %q, want full", got)
 	}
 }

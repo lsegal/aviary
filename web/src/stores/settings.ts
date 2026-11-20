@@ -145,6 +145,15 @@ export interface CodingSkillsConfig {
 	install_new_clis?: boolean;
 }
 
+/** An approval mode in Aviary's own terms; each CLI translates it at launch. */
+export type ApprovalMode = "read-only" | "auto" | "full";
+
+/** The approval: section: the general mode and the chat surface's override. Empty is unset. */
+export interface ApprovalConfig {
+	mode?: ApprovalMode | "";
+	chat?: ApprovalMode | "";
+}
+
 export interface AppConfig {
 	server: ServerConfig;
 	agents: AgentEntry[];
@@ -154,6 +163,7 @@ export interface AppConfig {
 	scheduler: SchedulerConfig;
 	skills: Record<string, SkillConfig>;
 	coding_skills?: CodingSkillsConfig;
+	approval?: ApprovalConfig;
 }
 
 /** Normalizes a task's type, which defaults to prompt. */
@@ -255,6 +265,7 @@ export const useSettingsStore = defineStore("settings", () => {
 				},
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
 				skills: parsed.skills ?? {},
+				approval: parsed.approval,
 			};
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

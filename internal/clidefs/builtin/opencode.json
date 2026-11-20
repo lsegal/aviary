@@ -21,16 +21,23 @@
     "models": ["{binary}", "models"],
     "modelPattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+$"
   },
+  "approval": {
+    "read-only": ["--agent", "plan"],
+    "auto": ["--auto"]
+  },
   "args": {
     "run": [
-      {"args": ["run", "--auto"]},
+      {"args": ["run"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--variant", "{level}"]},
       {"args": ["--format", "json"]},
       {"args": ["{prompt}"]}
     ],
     "vision": [
-      {"args": ["run", "--auto", "--file", "{image}"]},
+      {"args": ["run"]},
+      {"args": ["{approval}"]},
+      {"args": ["--file", "{image}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--variant", "{level}"]},
       {"args": ["{prompt}"]}

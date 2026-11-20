@@ -368,6 +368,7 @@ import {
 	KNOWN_PROVIDERS,
 	useProviderAuth,
 } from "../composables/useProviderAuth";
+import { APPROVAL_MODES } from "../lib/approval";
 import { projectTargets } from "../lib/projectSettings";
 import {
 	clampToolNamesForPreset,
@@ -1624,6 +1625,10 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	if (hydrated.browser.reuse_tabs === undefined) {
 		hydrated.browser.reuse_tabs = true;
 	}
+	hydrated.approval = {
+		mode: hydrated.approval?.mode ?? "",
+		chat: hydrated.approval?.chat ?? "",
+	};
 	hydrated.agents.forEach((agent) => {
 		sanitizeAgentToolSelections(agent);
 		(agent.channels ?? []).forEach((ch) => {
@@ -2745,6 +2750,11 @@ function normalizedDraftConfig(): AppConfig {
 		normalized.scheduler.precompute_tasks === false ? false : undefined;
 	normalized.browser.reuse_tabs =
 		normalized.browser.reuse_tabs === false ? false : undefined;
+	const approval = {
+		mode: normalized.approval?.mode || undefined,
+		chat: normalized.approval?.chat || undefined,
+	};
+	normalized.approval = approval.mode || approval.chat ? approval : undefined;
 
 	normalized.search = {
 		web: {
@@ -3378,6 +3388,7 @@ async function completeAnthropic() {
 
 const settingsContext = proxyRefs({
 	activeTab,
+	approvalModes: APPROVAL_MODES,
 	addAgent,
 	addAllowFrom,
 	addChannel,

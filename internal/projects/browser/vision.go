@@ -189,9 +189,9 @@ type AgentSpec struct {
 	// Model and Level are the model and reasoning level to ask for. Both are
 	// empty when the agent's own defaults are wanted.
 	Model, Level string
-	// Yolo bypasses the agent's approval prompts, matching the run's own
-	// setting.
-	Yolo bool
+	// Approval is the approval mode the call renders, matching the run's
+	// own.
+	Approval clidefs.ApprovalMode
 }
 
 // AgentRunner supplies and runs that invocation. The root package implements
@@ -274,11 +274,11 @@ func visionArgs(spec AgentSpec, imagePath, pageURL string, qualified bool) []str
 		return nil
 	}
 	return definition.Render(clidefs.ModeVision, clidefs.Values{
-		Prompt: visionPrompt(imagePath, pageURL, qualified),
-		Image:  imagePath,
-		Model:  spec.Model,
-		Level:  spec.Level,
-		Yolo:   spec.Yolo,
+		Prompt:   visionPrompt(imagePath, pageURL, qualified),
+		Image:    imagePath,
+		Model:    spec.Model,
+		Level:    spec.Level,
+		Approval: spec.Approval,
 	})
 }
 

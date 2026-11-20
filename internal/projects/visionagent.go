@@ -31,7 +31,7 @@ func (v visionAgentRunner) VisionAgent() browser.AgentSpec {
 		Binary:     v.runner.binary(spec.Name),
 		Model:      spec.Model,
 		Level:      spec.Level,
-		Yolo:       v.runner.Yolo,
+		Approval:   v.runner.Approval,
 	}
 }
 

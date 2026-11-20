@@ -56,7 +56,7 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		},
 		{
 			name: "codex fresh yolo", agent: "codex", mode: ModeRun,
-			values: Values{Prompt: prompt, Yolo: true},
+			values: Values{Prompt: prompt, Approval: ApprovalFull},
 			want:   []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", prompt},
 		},
 		{
@@ -69,7 +69,7 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		{
 			name: "codex vision", agent: "codex", mode: ModeVision,
 			values: Values{Prompt: prompt, Image: "/tmp/shot.png", Model: "gpt-5"},
-			want:   []string{"exec", "--skip-git-repo-check", "--image", "/tmp/shot.png", "--model", "gpt-5", prompt},
+			want:   []string{"exec", "--skip-git-repo-check", "--image", "/tmp/shot.png", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5", prompt},
 		},
 		{
 			name: "claude fresh", agent: "claude", mode: ModeRun,
@@ -86,7 +86,7 @@ func TestBuiltinArgvIsUnchanged(t *testing.T) {
 		},
 		{
 			name: "claude fresh yolo", agent: "claude", mode: ModeRun,
-			values: Values{Prompt: prompt, Yolo: true},
+			values: Values{Prompt: prompt, Approval: ApprovalFull},
 			want:   []string{"-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", prompt},
 		},
 		{
@@ -187,7 +187,7 @@ func TestRenderCodexOneShotSkipsTheGitRepoCheck(t *testing.T) {
 	if got := codex.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 		t.Errorf("one-shot argv = %#v, want %#v", got, want)
 	}
-	values.Yolo = true
+	values.Approval = ApprovalFull
 	want = []string{"exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5", "-"}
 	if got := codex.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 		t.Errorf("one-shot yolo argv = %#v, want %#v", got, want)
@@ -637,7 +637,7 @@ func TestResumingAgentsKeepTheirOwnTemplate(t *testing.T) {
 		// The fallback must not reach these: a resume renders the resume
 		// fragments the definition declares, whatever the run declares.
 		values := Values{Prompt: "continue", Session: "sess-1"}
-		declared := Definition{Args: Args{Run: definition.Args.Resume}}
+		declared := Definition{Args: Args{Run: definition.Args.Resume}, Approval: definition.Approval}
 		if got, want := definition.Render(ModeResume, values), declared.Render(ModeRun, values); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s resume argv = %q, want its declared template %q", name, got, want)
 		}
