@@ -133,6 +133,11 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
+		// Recovery runs in the background, so the runner may already have
+		// started a prompt of its own; its checkpoint is not interrupted.
+		if runner.ownsCheckpoint(path) {
+			continue
+		}
 		cp, err := store.ReadJSON[RunCheckpoint](path)
 		if err != nil {
 			slog.Warn("agent: ignoring unreadable checkpoint", "path", path, "err", err)

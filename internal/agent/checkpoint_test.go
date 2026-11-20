@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -227,6 +228,45 @@ func TestRecoverCheckpoints_UnreadableFile(t *testing.T) {
 	// Corrupt file should be deleted.
 	_, err := os.Stat(badPath)
 	assert.True(t, os.IsNotExist(err), "corrupt checkpoint file should be deleted")
+}
+
+// TestRecoverCheckpoints_SkipsLivePrompt shows recovery, which runs in the
+// background after Reconcile creates a runner, leaves alone the checkpoint of
+// a prompt that runner has already started, rather than sending it twice
+// (#530), and still recovers it for a runner that replaces a stopped one.
+func TestRecoverCheckpoints_SkipsLivePrompt(t *testing.T) {
+	setTestDataDir(t)
+
+	bp := newBlockingProvider()
+	m := NewManager(nil)
+	runner := newTestRunner(m, "agent_live", "live", bp)
+	runner.Prompt(WithSessionID(context.Background(), "sess_live"), "ping")
+	select {
+	case <-bp.ready:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for stream to start")
+	}
+
+	m.recoverCheckpoints(runner)
+
+	entries, err := os.ReadDir(store.CheckpointDir("agent_live"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	path := filepath.Join(store.CheckpointDir("agent_live"), entries[0].Name())
+	cp, err := store.ReadJSON[RunCheckpoint](path)
+	require.NoError(t, err)
+	assert.Zero(t, cp.RetryCount, "a live prompt's checkpoint must not be re-issued")
+
+	// A server stop interrupts the prompt; the runner that replaces it owns
+	// none of its predecessor's checkpoints and recovers this one.
+	runner.Stop()
+	runner.Wait()
+	provider := &sequenceProvider{}
+	next := newTestRunner(m, "agent_live", "live", provider)
+	m.recoverCheckpoints(next)
+	next.Wait()
+	assert.Equal(t, 1, provider.callCount())
+	assert.Equal(t, 0, checkpointCount("agent_live"))
 }
 
 // --- runner checkpoint lifecycle tests ---
