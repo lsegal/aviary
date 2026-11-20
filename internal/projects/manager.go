@@ -31,8 +31,10 @@ import (
 // projects: section's values for the whole engine while the watch runs; only
 // its non-zero fields apply.
 type Watch struct {
-	Targets  []string              `json:"targets"`
-	Agents   []string              `json:"agents,omitempty"`
+	Targets []string `json:"targets"`
+	// Agent is the Aviary agent the targets are attached to. Empty uses the
+	// agent the projects: section attaches them to.
+	Agent    string                `json:"agent,omitempty"`
 	Settings config.ProjectsConfig `json:"settings,omitzero"`
 }
 
@@ -49,6 +51,9 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       config.ProjectsConfig
 	browser   config.BrowserConfig
+	// agents holds the Aviary agents and models: section projects are
+	// attached to; their jobs take their specs from it.
+	agents *config.Config
 	// definitions are the coding-CLI definitions from the models: section.
 	definitions map[string]any
 	watches     []Watch
@@ -189,6 +194,15 @@ func (m *Manager) SetCLIDefinitions(definitions map[string]any) {
 	m.mu.Unlock()
 }
 
+// SetAgents records the Aviary agents and the models: section that projects
+// are attached to. A project's jobs run on its agent's model and fallbacks.
+// It takes effect on the next Reconcile.
+func (m *Manager) SetAgents(agents []config.AgentConfig, models config.ModelsConfig) {
+	m.mu.Lock()
+	m.agents = &config.Config{Agents: slices.Clone(agents), Models: models}
+	m.mu.Unlock()
+}
+
 // Reconcile applies a newly loaded projects: section.
 func (m *Manager) Reconcile(cfg config.ProjectsConfig) {
 	m.reports.configure(cfg)
@@ -313,8 +327,8 @@ func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
 	if len(overlay.AllowedCommenters) > 0 {
 		merged.AllowedCommenters = overlay.AllowedCommenters
 	}
-	if len(overlay.Agents) > 0 {
-		merged.Agents = overlay.Agents
+	if overlay.Agent != "" {
+		merged.Agent = overlay.Agent
 	}
 	merged.Yolo = merged.Yolo || overlay.Yolo
 	merged.BrowserVision = merged.BrowserVision || overlay.BrowserVision
@@ -343,27 +357,26 @@ func mergeProjects(base, overlay config.ProjectsConfig) config.ProjectsConfig {
 func (m *Manager) settingsLocked() (engineSettings, error) {
 	cfg := m.cfg
 	targets := cfg.Targets()
-	targetAgents := map[string][]string{}
-	for _, project := range cfg.List {
-		if len(project.Agents) > 0 {
-			targetAgents[strings.TrimSpace(project.Target)] = project.Agents
-		}
-	}
+	watchAgents := map[string]string{}
 	for _, watch := range m.watches {
 		cfg = mergeProjects(cfg, watch.Settings)
 		for _, target := range watch.Targets {
 			if !slices.Contains(targets, target) {
 				targets = append(targets, target)
 			}
-			if len(watch.Agents) > 0 {
-				targetAgents[target] = watch.Agents
+			if agent := strings.TrimSpace(watch.Agent); agent != "" {
+				watchAgents[target] = agent
 			}
 		}
+	}
+	targetAgents, defaultSpecs, err := m.jobSpecsLocked(cfg, targets, watchAgents)
+	if err != nil {
+		return engineSettings{}, err
 	}
 	s := engineSettings{
 		Targets:           targets,
 		TargetAgents:      targetAgents,
-		Agents:            cfg.EffectiveAgents(),
+		Agents:            defaultSpecs,
 		Definitions:       m.definitions,
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
@@ -408,6 +421,53 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		s.UnblockInterval = interval
 	}
 	return s, nil
+}
+
+// jobSpecsLocked resolves each target's job specs from the Aviary agent it is
+// attached to, in fallback order, and the spec of jobs no target owns: the
+// first of the section agent's, otherwise of the first target's.
+func (m *Manager) jobSpecsLocked(cfg config.ProjectsConfig, targets []string, watchAgents map[string]string) (map[string][]string, []string, error) {
+	agents := m.agents
+	if agents == nil {
+		agents = &config.Config{}
+	}
+	resolve := func(name, owner string) ([]string, error) {
+		specs := config.ProjectJobSpecs(agents, name)
+		if len(specs) == 0 {
+			return nil, fmt.Errorf("projects: %s is attached to agent %q, which is not configured or has no model", owner, name)
+		}
+		return specs, nil
+	}
+	var defaultSpecs []string
+	if name := strings.TrimSpace(cfg.Agent); name != "" {
+		specs, err := resolve(name, "the projects: section")
+		if err != nil {
+			return nil, nil, err
+		}
+		defaultSpecs = specs
+	}
+	targetAgents := map[string][]string{}
+	for _, target := range targets {
+		name := watchAgents[target]
+		if name == "" {
+			name = cfg.AgentFor(target)
+		}
+		if name == "" {
+			return nil, nil, fmt.Errorf("projects: %s is not attached to an agent; set projects.agent or the project's agent", target)
+		}
+		specs, err := resolve(name, target)
+		if err != nil {
+			return nil, nil, err
+		}
+		targetAgents[target] = specs
+	}
+	if len(defaultSpecs) == 0 && len(targets) > 0 {
+		defaultSpecs = targetAgents[targets[0]]
+	}
+	if len(defaultSpecs) > 0 {
+		defaultSpecs = defaultSpecs[:1]
+	}
+	return targetAgents, defaultSpecs, nil
 }
 
 // refresh brings the running engine in line with the settings: nothing when

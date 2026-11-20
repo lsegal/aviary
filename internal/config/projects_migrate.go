@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+
+	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // ProjectsJobsAgentName is the agent Load attaches projects to when it
@@ -92,9 +95,25 @@ func attachSpecs(cfg *Config, specs []string, name string) string {
 	return name
 }
 
-// ProjectJobModel returns the cli/ model that selects a coding-CLI spec.
+// ProjectJobModel returns the cli/ model that selects a coding-CLI spec. A
+// spec that names no model gets its CLI's default, since a cli/ model always
+// names one.
 func ProjectJobModel(spec string) string {
-	return "cli/" + strings.TrimSpace(spec)
+	spec = strings.TrimSpace(spec)
+	name, level, hasLevel := strings.Cut(spec, ":")
+	if !strings.Contains(name, "/") {
+		if registry, err := clidefs.Builtin(); err == nil {
+			if definition, ok := registry.Lookup(name); ok {
+				if model := definition.ModelOrDefault(""); model != "" {
+					spec = name + "/" + model
+					if hasLevel {
+						spec += ":" + level
+					}
+				}
+			}
+		}
+	}
+	return cliagent.ModelPrefix + spec
 }
 
 // projectAgentName names the agent migrated from a project's own list.
@@ -130,4 +149,41 @@ func uniqueAgentName(cfg *Config, name string) string {
 			return candidate
 		}
 	}
+}
+
+// MigrateProjectAgents is the migration Load runs, for callers that change
+// the projects: section in memory: it attaches projects added without an
+// agent to the section's, creating that agent when there is none.
+func MigrateProjectAgents(cfg *Config) bool { return migrateProjectAgents(cfg) }
+
+// ProjectJobSpecs returns the coding-CLI specs, in fallback order, that jobs
+// of a project attached to the named agent run on: the agent's model and
+// fallbacks, after models.defaults, each cli/ model as its spec. A model
+// that is not a CLI runs the job on the agent itself, as aviary/<agent>. It
+// returns nil when no such agent is configured.
+func ProjectJobSpecs(cfg *Config, agentName string) []string {
+	agentName = strings.TrimSpace(agentName)
+	index := slices.IndexFunc(cfg.Agents, func(a AgentConfig) bool { return a.Name == agentName })
+	if agentName == "" || index < 0 {
+		return nil
+	}
+	agent := cfg.Agents[index]
+	var specs []string
+	add := func(spec string) {
+		if spec != "" && !slices.Contains(specs, spec) {
+			specs = append(specs, spec)
+		}
+	}
+	for _, model := range append([]string{EffectiveAgentModel(agent, cfg.Models)}, EffectiveAgentFallbacks(agent, cfg.Models)...) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if spec, ok := strings.CutPrefix(model, cliagent.ModelPrefix); ok {
+			add(strings.TrimSpace(spec))
+			continue
+		}
+		add(aviarySpecPrefix + agent.Name)
+	}
+	return specs
 }

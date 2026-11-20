@@ -21,7 +21,7 @@ import (
 
 // watchOptions holds the watch command flags.
 type watchOptions struct {
-	agents            []string
+	agent             string
 	concurrency       int
 	interval          string
 	delivery          string
@@ -60,7 +60,7 @@ project permanently.`,
 
 func init() {
 	f := watchCmd.Flags()
-	f.StringArrayVar(&watchOpts.agents, "agent", nil, "coding CLI as AGENT/MODEL:LEVEL, such as codex or claude/opus (repeat for a fallback order)")
+	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent to attach the targets to; its model and fallbacks pick the jobs' coding CLIs (default: the projects: section's agent)")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
@@ -148,7 +148,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	watch := projects.Watch{Targets: targets, Agents: watchOpts.agents, Settings: settings}
+	watch := projects.Watch{Targets: targets, Agent: watchOpts.agent, Settings: settings}
 	running, _, err := server.IsRunning()
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
@@ -173,8 +173,8 @@ func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error
 		var settings map[string]any
 		_ = json.Unmarshal(data, &settings)
 		args := map[string]any{"target": target, "runtime": true}
-		if len(watch.Agents) > 0 {
-			args["agents"] = watch.Agents
+		if watch.Agent != "" {
+			args["agent"] = watch.Agent
 		}
 		if len(settings) > 0 {
 			args["settings"] = settings
