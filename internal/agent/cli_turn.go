@@ -100,7 +100,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		WorkDir:      workDir,
 		BuiltinTools: r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions),
 		Approval:     cliApprovalArgs(backend, r.approvalMode()),
-		ExtraDir:     cliExtraDirArgs(backend, workDir, r.agentHomeDir()),
+		ExtraDir:     cliExtraDirArgs(backend, r.approvalMode(), workDir, r.agentHomeDir()),
 		Ephemeral:    !in.useHistory,
 		Env:          cliLaunchEnv(backend),
 	}
@@ -379,9 +379,10 @@ func cliApprovalArgs(backend cliagent.Backend, mode clidefs.ApprovalMode) []stri
 // cliExtraDirArgs grants the CLI the agent's own directory, where its
 // MEMORY.md and memory/ live, through its CLI provider definition. The
 // working directory scopes the workspace and the agent's directory is its
-// home, so both are in scope for every session (#534). Nothing is added when
-// the CLI already runs there.
-func cliExtraDirArgs(backend cliagent.Backend, workDir, agentDir string) []string {
+// home, so both are in scope for every session (#534). The approval mode
+// still decides what the session may do there. Nothing is added when the CLI
+// already runs there.
+func cliExtraDirArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, workDir, agentDir string) []string {
 	if filepath.Clean(workDir) == filepath.Clean(agentDir) {
 		return nil
 	}
@@ -389,7 +390,7 @@ func cliExtraDirArgs(backend cliagent.Backend, workDir, agentDir string) []strin
 	if !ok {
 		return nil
 	}
-	return definition.ExtraDirArgs(agentDir)
+	return definition.ExtraDirArgs(mode, agentDir)
 }
 
 // cliLaunchEnv points the backend's CLI at the settings overlay its provider

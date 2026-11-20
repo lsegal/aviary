@@ -25,7 +25,7 @@
     "auto": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"],
     "full": ["--dangerously-bypass-approvals-and-sandbox"]
   },
-  "extraDir": ["-c", "sandbox_workspace_write.writable_roots=[{dirQuoted}]"],
+  "extraDir": {"read-only": ["-c", "sandbox_workspace_write.writable_roots=[{dirQuoted}]"]},
   "args": {
     "run": [
       {"args": ["exec", "--json"]},

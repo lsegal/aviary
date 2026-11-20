@@ -370,20 +370,32 @@ func TestCLITurn_GrantsTheAgentDirectory(t *testing.T) {
 	require.Len(t, fb.turns, 1)
 	opts := fb.turns[0].opts
 	assert.Equal(t, workDir, opts.WorkDir)
-	assert.Equal(t, []string{"--add-dir", agentDir}, opts.ExtraDir)
+	assert.Equal(t, []string{"--add-dir", agentDir}, opts.ExtraDir, "read-only adds no edit rule")
 	assert.DirExists(t, agentDir)
 	assert.Equal(t, []string{"--permission-mode", "dontAsk"}, opts.Approval, "the grant does not widen read-only")
+
+	// In auto the agent may also edit its own directory, on a new process.
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "agent_cli_home", Model: "cli/claude/opus", WorkingDir: workDir}}})
+	runner, ok = m.Get("agent_cli_home")
+	require.True(t, ok)
+	runCLIPrompt(t, runner, "main", "auto")
+	require.Len(t, fb.turns, 2)
+	extra := fb.turns[1].opts.ExtraDir
+	require.Len(t, extra, 4)
+	assert.Equal(t, []string{"--add-dir", agentDir, "--allowedTools"}, extra[:3])
+	assert.True(t, strings.HasPrefix(extra[3], "Edit(//") && strings.HasSuffix(extra[3], "/agents/agent_cli_home/**)"), extra[3])
+	assert.Equal(t, []string{"--permission-mode", "auto"}, fb.turns[1].opts.Approval)
 
 	// Without a working_dir the CLI already runs in the agent's directory.
 	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "agent_cli_home", Model: "cli/claude/opus"}}})
 	runner, ok = m.Get("agent_cli_home")
 	require.True(t, ok)
 	runCLIPrompt(t, runner, "main", "again")
-	require.Len(t, fb.turns, 2)
-	assert.Equal(t, agentDir, fb.turns[1].opts.WorkDir)
-	assert.Empty(t, fb.turns[1].opts.ExtraDir)
+	require.Len(t, fb.turns, 3)
+	assert.Equal(t, agentDir, fb.turns[2].opts.WorkDir)
+	assert.Empty(t, fb.turns[2].opts.ExtraDir)
 
-	assert.Equal(t, []string{"-c", `sandbox_workspace_write.writable_roots=["/a"]`}, cliExtraDirArgs(cliagent.Codex, "/w", "/a"))
+	assert.Equal(t, []string{"-c", `sandbox_workspace_write.writable_roots=["/a"]`}, cliExtraDirArgs(cliagent.Codex, clidefs.ApprovalAuto, "/w", "/a"))
 }
 
 // TestCLILaunchEnvOverlaysCodexHome shows chat turns launch codex with

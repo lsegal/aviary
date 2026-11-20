@@ -35,7 +35,10 @@
     "auto": ["--permission-mode", "auto"],
     "full": ["--dangerously-skip-permissions"]
   },
-  "extraDir": ["--add-dir", "{dir}"],
+  "extraDir": {
+    "read-only": ["--add-dir", "{dir}"],
+    "auto": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{dirPosix}/**)"]
+  },
   "args": {
     "run": [
       {"args": ["-p"]},
