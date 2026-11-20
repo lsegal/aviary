@@ -35,8 +35,6 @@ func newOutputDecoder(output agents.Output, w io.Writer) outputDecoder {
 		return newJSONLOutputWriter(w, *output.JSONL)
 	case agents.FormatCodexJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatCodexJSON)
-	case agents.FormatAviaryJSON:
-		return newTranscriptOutputWriter(w, transcript.FormatAviaryJSON)
 	case agents.FormatGeminiJSON:
 		return newTranscriptOutputWriter(w, transcript.FormatGeminiJSON)
 	}
@@ -372,12 +370,12 @@ func firstJSONLString(values []any) string {
 }
 
 // transcriptOutputWriter renders a stream its transcript mapper reads, such
-// as `codex exec --json`, `aviary agent run --output-format json` or `gemini
-// --output-format stream-json`, for the job's scrollback: agent messages as
-// text, commands, file changes and tool calls as progress lines, and codex's
-// thread id in the "session id:" form the codex definition captures. A mapper
-// that joins streamed deltas into whole messages is flushed before a line that
-// is not an event and at the end of the stream.
+// as `codex exec --json` or `gemini --output-format stream-json`, for the
+// job's scrollback: agent messages as text, commands, file changes and tool
+// calls as progress lines, and codex's thread id in the "session id:" form the
+// codex definition captures. A mapper that joins streamed deltas into whole
+// messages is flushed before a line that is not an event and at the end of the
+// stream.
 type transcriptOutputWriter struct {
 	lineWriter
 	output io.Writer
