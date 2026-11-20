@@ -85,6 +85,7 @@ async function setup(
 	opts: {
 		check?: unknown;
 		config?: unknown;
+		jobs?: { number: number; status: string }[];
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -96,7 +97,18 @@ async function setup(
 	await mockMCP(page, {
 		agent_list: [],
 		project_status: STATUS,
-		project_job_list: { jobs: [], total: 0 },
+		project_job_list: (args?: Args) => {
+			record("project_job_list", args);
+			return { jobs: opts.jobs ?? [], total: opts.jobs?.length ?? 0 };
+		},
+		project_remove: (args?: Args) => {
+			record("project_remove", args);
+			return {
+				target: args?.target,
+				removed: true,
+				stopped_jobs: (opts.jobs ?? []).map((j) => j.number),
+			};
+		},
 		config_get: opts.config ?? CONFIG,
 		config_save: (args?: Args) => {
 			record("config_save", args);
@@ -674,4 +686,49 @@ test("saved reports load into the form and are checked like the server does", as
 	await expect(page.getByTestId("reports-error")).toHaveText(
 		"Reports need at least one target.",
 	);
+});
+
+test("a project is deleted after a confirmation that names it and its in-flight jobs", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		jobs: [
+			{ number: 12, status: "active" },
+			{ number: 14, status: "paused" },
+			{ number: 15, status: "complete" },
+		],
+	});
+	await page.goto("/projects/lsegal%2Faviary/settings");
+	await page.getByRole("button", { name: "Delete project" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog.getByRole("heading")).toHaveText("Delete lsegal/aviary?");
+	await expect(dialog).toContainText("clones on disk are not touched");
+	await expect(dialog.getByTestId("delete-jobs")).toContainText(
+		"2 jobs are still in flight (#12, #14). Deleting stops them",
+	);
+	expect(calls.project_job_list?.at(-1)).toMatchObject({
+		target: "lsegal/aviary",
+	});
+
+	// Cancelling removes nothing.
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toBeHidden();
+	expect(calls.project_remove).toBeUndefined();
+
+	await page.getByRole("button", { name: "Delete project" }).click();
+	await dialog.getByRole("button", { name: "Delete project" }).click();
+	await expect(page).toHaveURL(/\/projects$/);
+	expect(calls.project_remove).toEqual([{ target: "lsegal/aviary" }]);
+	// The removal goes through project_remove alone, never a config rewrite.
+	expect(calls.config_save).toBeUndefined();
+});
+
+test("a project being added has nothing to delete", async ({ page }) => {
+	await setup(page);
+	await page.goto("/projects/lsegal%2Fzvidlib/settings?add=1");
+	await expect(page.locator("#general")).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Delete project" }),
+	).toHaveCount(0);
+	await expect(page.getByRole("link", { name: "Delete" })).toHaveCount(0);
 });
