@@ -10,7 +10,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-// Providers reached through a coding CLI (claude, codex, cline, muse, gemini,
+// Providers reached through a CLI (claude, codex, cline, muse, gemini,
 // aviary and any in models.cli_definitions) sit in the provider layer beside
 // the API and OAuth providers above. Their definitions say how to invoke the
 // CLI; their installed, version, sign-in, quota and model state is read by
@@ -115,7 +115,7 @@ var apiProviders = []string{
 }
 
 // APIProviders lists the providers reached over a model API rather than
-// through a coding CLI.
+// through a CLI.
 func APIProviders() []string {
 	return slices.Clone(apiProviders)
 }

@@ -1,8 +1,8 @@
 # Projects
 
-Projects watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a coding CLI such as Codex or Claude Code on every issue that is ready for work. Each job runs the `gh-fix` skill on an issue, or `gh-discuss` on a new Discussion thread. The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Projects decides which issue runs, on which CLI, and when.
+Projects watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a CLI provider such as Codex or Claude Code on every issue that is ready for work. Each job runs the `gh-fix` skill on an issue, or `gh-discuss` on a new Discussion thread. The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Projects decides which issue runs, on which CLI, and when.
 
-Projects needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one coding CLI, and the `gh-fix` skill installed for that CLI.
+Projects needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one CLI provider, and the `gh-fix` skill installed for that CLI.
 
 ## Watching a repository
 
@@ -35,17 +35,17 @@ A repository issue is picked up when it is open, carries the ready label (`ready
 - An issue with open sub-issues is a tracking issue and is skipped.
 - An issue blocked by open dependencies waits. If it is blocked by exactly one issue that already has an open pull request, and the repository allows stacked pull requests, it runs stacked on that pull request.
 
-## Coding CLIs
+## CLI providers
 
-A project is attached to an Aviary agent, like everything else in Aviary: its own `agent`, or `projects.agent` for projects that name none. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A coding CLI is a provider, so a `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a project attached to no agent, which then needs a coding-CLI model there.
+A project is attached to an Aviary agent, like everything else in Aviary: its own `agent`, or `projects.agent` for projects that name none. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a project attached to no agent, which then needs a CLI model there.
 
-Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`: the coding CLIs are core Aviary providers, shared with the rest of Aviary rather than owned by Projects. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers then reports it installed at that path, and jobs run the same executable.
+Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Projects. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers then reports it installed at that path, and jobs run the same executable.
 
 Without `yolo`, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
 
 `agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
-Settings → Providers shows the coding CLIs in its one Providers list, tagged CLI beside the API, OAuth and endpoint providers, with each CLI's install, version, sign-in, quota and models, including CLIs that are not installed; `aviary models clis` (the `provider_cli_list` tool) reports the same, plus any Projects gate.
+Settings → Providers shows the CLI providers in its one Providers list, tagged CLI beside the API, OAuth and endpoint providers, with each CLI's install, version, sign-in, quota and models, including CLIs that are not installed; `aviary models clis` (the `provider_cli_list` tool) reports the same, plus any Projects gate.
 
 ### Deferred turns
 
@@ -82,7 +82,7 @@ models:
 
 ## Steering jobs
 
-Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the coding CLI treats comments by anyone else in the thread as untrusted information rather than instructions.
+Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the CLI provider treats comments by anyone else in the thread as untrusted information rather than instructions.
 
 Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
@@ -125,7 +125,7 @@ Targets use the same form as a scheduled task's target ([delivery targets](/guid
 
 ## Job transcripts
 
-Each job keeps a structured transcript built from the coding CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`) and Codex (`exec --json`) are mapped today. Other CLIs record their raw output and Projects' own events.
+Each job keeps a structured transcript built from the CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`) and Codex (`exec --json`) are mapped today. Other CLIs record their raw output and Projects' own events.
 
 ## Scheduled prompts
 

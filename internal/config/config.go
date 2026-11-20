@@ -27,18 +27,18 @@ type Config struct {
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
-	// CodingSkills controls how Aviary keeps the skills it ships for coding
-	// CLIs (gh-fix, gh-discuss, gh-create, gh-safe-merge) installed and current.
+	// CodingSkills controls how Aviary keeps the skills it ships for
+	// providers (gh-fix, gh-discuss, gh-create, gh-safe-merge) installed and current.
 	CodingSkills *CodingSkillsConfig `yaml:"coding_skills,omitempty" json:"coding_skills,omitempty"`
 }
 
-// CodingSkillsConfig controls the automatic upkeep of the coding-CLI skills.
+// CodingSkillsConfig controls the automatic upkeep of the skills Aviary ships.
 // Both settings default to true when unset.
 type CodingSkillsConfig struct {
 	// AutoUpdate reinstalls outdated skills at startup, so each release runs
 	// the skills it was built with.
 	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
-	// InstallNewCLIs installs the skills for any coding CLI found later.
+	// InstallNewCLIs installs the skills for any CLI provider found later.
 	InstallNewCLIs *bool `yaml:"install_new_clis,omitempty" json:"install_new_clis,omitempty"`
 }
 
@@ -344,10 +344,10 @@ func (t *TaskConfig) UnmarshalYAML(value *yaml.Node) error {
 type ModelsConfig struct {
 	Providers map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
 	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
-	// CLIDefinitions overrides built-in coding-CLI definitions field by field
-	// and adds new ones, keyed by agent name. A null field drops it. The
-	// coding CLIs are providers like any other, so Projects reads them from
-	// here rather than owning a registry of its own.
+	// CLIDefinitions overrides built-in CLI definitions field by field
+	// and adds new ones, keyed by agent name. A null field drops it.
+	// Providers reached through a CLI are like any other, so Projects reads
+	// them from here rather than owning a registry of its own.
 	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 }
 
@@ -477,7 +477,7 @@ func EffectiveBrowserReuseTabs(b BrowserConfig) bool {
 	return BoolOr(b.ReuseTabs, true)
 }
 
-// EffectiveCodingSkillsAutoUpdate reports whether outdated coding-CLI skills
+// EffectiveCodingSkillsAutoUpdate reports whether outdated skills Aviary ships
 // are reinstalled automatically. Defaults to true when unset.
 func EffectiveCodingSkillsAutoUpdate(cfg *Config) bool {
 	if cfg == nil || cfg.CodingSkills == nil {
@@ -486,7 +486,7 @@ func EffectiveCodingSkillsAutoUpdate(cfg *Config) bool {
 	return BoolOr(cfg.CodingSkills.AutoUpdate, true)
 }
 
-// EffectiveCodingSkillsInstallNewCLIs reports whether the coding-CLI skills
+// EffectiveCodingSkillsInstallNewCLIs reports whether the skills Aviary ships
 // are installed for CLIs found later. Defaults to true when unset.
 func EffectiveCodingSkillsInstallNewCLIs(cfg *Config) bool {
 	if cfg == nil || cfg.CodingSkills == nil {

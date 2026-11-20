@@ -301,7 +301,7 @@ func (v *validator) checkCLIModel(field, model string) {
 	backend, _, err := cliagent.ParseModel(model)
 	if err != nil {
 		if name, ok := v.projectsOnlyCLI(model); ok {
-			v.warnf(field, "%s is a coding-CLI provider that runs Projects jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
+			v.warnf(field, "%s is a provider reached through a CLI that runs Projects jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
 			return
 		}
 		v.errorf(field, "%v", err)
@@ -313,7 +313,7 @@ func (v *validator) checkCLIModel(field, model string) {
 }
 
 // projectsOnlyCLI reports the CLI provider a model names when it is one of
-// the coding-CLI providers, built in or from models.cli_definitions, that
+// the providers reached through a CLI, built in or from models.cli_definitions, that
 // Projects jobs run on but agent turns cannot, such as gemini/<model> or
 // cli/gemini/<model>.
 func (v *validator) projectsOnlyCLI(model string) (string, bool) {

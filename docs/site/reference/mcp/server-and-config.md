@@ -59,7 +59,7 @@ Check the current Aviary version against the latest GitHub release, and list the
 
 ## server_upgrade
 
-Upgrade Aviary with a safe restart. Aviary installs the release, updates the skills for every signed-in coding CLI, stops running jobs at a checkpoint and saves their sessions, then restarts and resumes each job in its own session with a note that Aviary restarted. Does nothing when Aviary is already at the requested version.
+Upgrade Aviary with a safe restart. Aviary installs the release, updates the skills for every signed-in CLI provider, stops running jobs at a checkpoint and saves their sessions, then restarts and resumes each job in its own session with a note that Aviary restarted. Does nothing when Aviary is already at the requested version.
 
 **Arguments:**
 

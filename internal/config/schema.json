@@ -300,7 +300,7 @@
             "type": "object"
           },
           "x-label": "CLI definitions",
-          "description": "Coding-CLI definitions keyed by agent name: overrides of the built-ins field by field (null drops a field) and new agents."
+          "description": "CLI definitions keyed by agent name: overrides of the built-ins field by field (null drops a field) and new agents."
         }
       }
     },
@@ -419,7 +419,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "This project's coding-CLI specs (AGENT/MODEL:LEVEL) in fallback order; a job runs on the first whose quota is not used up."
+                "description": "This project's model specs (AGENT/MODEL:LEVEL) in fallback order; a job runs on the first whose quota is not used up."
               },
               "reports": {
                 "type": "object",
@@ -513,15 +513,15 @@
           "items": {
             "type": "string"
           },
-          "x-label": "Coding CLIs",
+          "x-label": "CLI providers",
           "x-order": 10,
-          "description": "Coding-CLI specs (AGENT/MODEL:LEVEL) jobs load balance across. Defaults to codex."
+          "description": "Model specs (AGENT/MODEL:LEVEL) jobs load balance across. Defaults to codex."
         },
         "yolo": {
           "type": "boolean",
           "x-label": "YOLO",
           "x-order": 13,
-          "description": "Disable the coding CLIs' sandboxes and permission checks."
+          "description": "Disable the CLI providers' sandboxes and permission checks."
         },
         "no_merge": {
           "type": "boolean",

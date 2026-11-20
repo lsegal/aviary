@@ -30,7 +30,7 @@ Settings have no tool of their own. They live in the `projects:` section of `avi
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, delivery mode, poll interval, ready label, last check, quota per coding CLI, the configured agent specs, and recent log lines.
+Instance identity, watched projects with issue counts, job counts, delivery mode, poll interval, ready label, last check, quota per CLI provider, the configured agent specs, and recent log lines.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way.
 
@@ -117,7 +117,7 @@ It reports, as separate checks:
 - **github**: `gh` is installed, signed in, and can read the repository (archived repositories fail).
 - **fork**: a warning when you can't push to the repository, so pull requests will come from your fork.
 - **ready_label**: the ready label exists, with its count of open issues. Repositories only.
-- **clis**: which coding CLIs (`claude`, `codex`, `gemini`, `opencode`, `cline`) are on `PATH`.
+- **clis**: which CLI providers (`claude`, `codex`, `gemini`, `opencode`, `cline`) are on `PATH`.
 - **skills**: whether `gh-fix` is installed for each of those CLIs, with its version when the skill declares one.
 
 **Arguments:**

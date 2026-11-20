@@ -79,7 +79,7 @@ type projectIssueCommentArgs struct {
 type projectIssueCreateArgs struct {
 	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO to file the issue on; defaults to the only watched repository"`
 	Text       string `json:"text" jsonschema:"What the issue is about, as you would describe it to gh-create"`
-	Model      string `json:"model,omitempty" jsonschema:"Model for the coding CLI that runs gh-create"`
+	Model      string `json:"model,omitempty" jsonschema:"Model for the CLI provider that runs gh-create"`
 }
 
 type projectGitHubImportArgs struct {
@@ -124,7 +124,7 @@ func retryScheduledJob(taskID string) (map[string]any, error) {
 func registerProjectTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_status",
-		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, allowed commenters, quota per coding CLI, and recent log lines",
+		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectStatusArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_status", func(m *projects.Manager) (map[string]any, error) {

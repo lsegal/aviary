@@ -49,7 +49,7 @@ type ProjectsConfig struct {
 	// Its model and fallbacks are the provider and model defaults of their
 	// jobs.
 	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
-	// Yolo disables the coding CLIs' sandboxes and permission checks.
+	// Yolo disables the CLI providers' sandboxes and permission checks.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
 	NoMerge bool `yaml:"no_merge,omitempty" json:"no_merge,omitempty"`

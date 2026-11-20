@@ -316,7 +316,7 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(stats).toContainText("Waiting1");
 	await expect(stats).toContainText("Merged (24h)3");
 	await expect(stats).not.toContainText("Completed");
-	const clis = page.getByRole("region", { name: "Coding CLIs" });
+	const clis = page.getByRole("region", { name: "CLI providers" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
 

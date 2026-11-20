@@ -193,7 +193,7 @@ var startupWatches []projects.Watch
 // saving them to aviary.yaml.
 func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
 
-// configureCLIProviders installs the models: section's coding-CLI providers in
+// configureCLIProviders installs the models: section's CLI providers in
 // core's provider layer, which Projects and every other CLI caller resolve
 // through.
 func configureCLIProviders(cfg *config.Config) {
@@ -201,7 +201,7 @@ func configureCLIProviders(cfg *config.Config) {
 		return
 	}
 	if err := llm.ConfigureCLIProviders(cfg.Models.CLIDefinitions); err != nil {
-		slog.Error("server: coding-CLI providers not applied", "err", err)
+		slog.Error("server: providers reached through a CLI not applied", "err", err)
 	}
 }
 
@@ -291,11 +291,11 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/", webFileServer())
 }
 
-// codingSkillsSyncInterval is how often the server looks for coding CLIs set
-// up since the last check, so they get the coding-CLI skills.
+// codingSkillsSyncInterval is how often the server looks for providers set
+// up since the last check, so they get the skills Aviary ships.
 const codingSkillsSyncInterval = 15 * time.Minute
 
-// updateCodingSkills moves every signed-in coding CLI's skills to version, the
+// updateCodingSkills moves every signed-in CLI's skills to version, the
 // release an upgrade installs.
 func updateCodingSkills(ctx context.Context, version string) error {
 	result, err := codingskills.Default().UpdateTo(ctx, version)
@@ -327,11 +327,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	update.CleanupStaging(exe)
 	go s.runSelfUpdater(ctx)
 
-	// Keep the coding-CLI skills installed and matching this release, and
+	// Keep the skills Aviary ships installed and matching this release, and
 	// move them to the new release when Aviary upgrades.
 	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
-	saferestart.RegisterSkillsUpdater("coding-cli", updateCodingSkills)
-	defer saferestart.UnregisterSkillsUpdater("coding-cli")
+	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
+	defer saferestart.UnregisterSkillsUpdater("shipped")
 
 	// The marker is read once, so a later start never mistakes this one for
 	// its own safe restart.

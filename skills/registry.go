@@ -113,8 +113,8 @@ func ListInstalled(cfg *config.Config) ([]Definition, error) {
 			return nil, err
 		}
 		for _, sk := range disk {
-			// The coding-CLI skills share ~/.agents/skills but are for coding
-			// CLIs, not Aviary's own agents.
+			// The skills Aviary ships share ~/.agents/skills but are for
+			// providers, not Aviary's own agents.
 			if slices.Contains(aviary.CodingSkillNames, sk.Name) {
 				continue
 			}

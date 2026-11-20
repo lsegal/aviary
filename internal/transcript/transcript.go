@@ -1,5 +1,5 @@
 // Package transcript defines the normalized per-job event schema Projects
-// records for every coding-CLI run, and the mappers that turn each CLI's
+// records for every CLI run, and the mappers that turn each CLI's
 // machine-readable event stream into it.
 package transcript
 
@@ -17,7 +17,7 @@ import (
 // Kind names one event type in a job transcript.
 type Kind string
 
-// The event kinds of a job transcript. The first eight come from the coding
+// The event kinds of a job transcript. The first eight come from the
 // CLI's own stream; comment_relay and system are recorded by Projects itself.
 const (
 	KindMessage      Kind = "message"

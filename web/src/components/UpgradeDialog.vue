@@ -11,7 +11,7 @@
           <span v-else>{{ latestVersion }}</span>
         </h3>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Aviary installs the release, updates skills for every signed-in coding CLI, and restarts.
+          Aviary installs the release, updates skills for every signed-in CLI provider, and restarts.
         </p>
       </div>
 
