@@ -12,7 +12,7 @@
 			<div class="min-w-0 flex-1">
 				<h2 class="text-sm font-semibold text-gray-900 dark:text-white">Prompt chat</h2>
 				<p class="truncate text-xs text-gray-500 dark:text-gray-400">
-					Ask the <b>{{ PROJECTS_AGENT }}</b> agent about {{ props.project }} and this instance's jobs.
+					Ask the <b>{{ PROJECTS_AGENT }}</b> agent about <b>{{ props.project }}</b>.
 				</p>
 			</div>
 			<button type="button" aria-label="Close prompt chat" title="Close"
