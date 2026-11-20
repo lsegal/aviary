@@ -360,7 +360,7 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 				if spec.channelConfig.EffectiveGroupChatHistory() <= 0 {
 					continue
 				}
-				if !matchesAnyAllowedGroup(spec.channelConfig.AllowFrom, msg.Channel) {
+				if !matchesAnyAllowedGroup(ch.resolvedEntriesForRouting(spec.channelConfig.AllowFrom), msg.Channel) {
 					continue
 				}
 				if !shouldProcessIncomingMessage(spec.metadata, msg) {
@@ -438,9 +438,10 @@ func routedSlackMessage(ch *SlackChannel, spec channelSpec, msg IncomingMessage)
 	if botUserID == "" {
 		botUserID = spec.channelConfig.ID
 	}
-	result := checkAllowed(spec.channelConfig.AllowFrom, msg.From, msg.Channel, msg.Text, isGroup, botUserID, false)
+	allowFrom := ch.resolvedEntriesForRouting(spec.channelConfig.AllowFrom)
+	result := checkAllowed(allowFrom, msg.From, msg.Channel, msg.Text, isGroup, botUserID, false)
 	if !result.allowed && msg.IsThreadReply {
-		result = checkAllowedReplyContinuation(spec.channelConfig.AllowFrom, msg.From, msg.Channel, isGroup)
+		result = checkAllowedReplyContinuation(allowFrom, msg.From, msg.Channel, isGroup)
 	}
 	if !result.allowed {
 		return IncomingMessage{}, false
