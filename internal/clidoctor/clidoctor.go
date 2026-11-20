@@ -33,6 +33,7 @@ const (
 const (
 	StatusOK      = "ok"
 	StatusWarn    = "warn"
+	StatusUnknown = "unknown"
 	StatusMissing = "missing"
 )
 
@@ -78,17 +79,42 @@ type Report struct {
 func (r Report) Installed() bool { return r.Path != "" }
 
 // StatusKey summarizes the report: missing when the CLI is not installed, a
-// warning when it is installed but something about it needs attention, and ok
-// otherwise.
+// warning when it is installed but a problem StatusNote names needs
+// attention, unknown when nothing is wrong but its sign-in cannot be
+// confirmed, and ok only when it is installed and signed in. Stale skills
+// are not a problem with the CLI itself, so they leave the key alone and
+// SkillsNote reports them on their own.
 func (r Report) StatusKey() string {
 	switch {
 	case !r.Installed():
 		return StatusMissing
-	case r.VersionNote != "" || r.Auth == SignedOut || r.SkillsNote != "":
+	case r.VersionNote != "" || r.Auth == SignedOut:
 		return StatusWarn
+	case r.Auth != SignedIn:
+		return StatusUnknown
 	default:
 		return StatusOK
 	}
+}
+
+// StatusNote says in words why StatusKey is not ok: each problem behind a
+// warning, or that the sign-in state is unknown. It is empty for an ok or
+// missing CLI, whose key needs no explaining.
+func (r Report) StatusNote() string {
+	if !r.Installed() {
+		return ""
+	}
+	var problems []string
+	if r.VersionNote != "" {
+		problems = append(problems, "version "+r.VersionNote)
+	}
+	if r.Auth == SignedOut {
+		problems = append(problems, "signed out")
+	}
+	if len(problems) == 0 && r.Auth != SignedIn {
+		return "sign-in state unknown"
+	}
+	return strings.Join(problems, "; ")
 }
 
 // Doctor probes the CLIs a registry defines. Every process it runs is behind
