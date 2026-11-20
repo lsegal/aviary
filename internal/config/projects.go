@@ -50,9 +50,6 @@ type ProjectsConfig struct {
 	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
 	// AgentBinaries overrides the executable of a coding CLI by agent name.
 	AgentBinaries map[string]string `yaml:"agent_binaries,omitempty" json:"agent_binaries,omitempty"`
-	// CLIDefinitions overrides built-in coding-CLI definitions field by field
-	// and adds new ones, keyed by agent name. A null field drops it.
-	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 	// Yolo disables the coding CLIs' sandboxes and permission checks.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
@@ -270,7 +267,7 @@ func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 && len(p.Agents) == 0 && len(p.AgentBinaries) == 0 &&
-		len(p.CLIDefinitions) == 0 && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
+		!p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }

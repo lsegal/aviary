@@ -40,7 +40,6 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"job", "pause"}, "project_job_pause", "number", "Pause a job, pushing a running agent's work"},
 	{[]string{"job", "resume"}, "project_job_resume", "number", "Resume a paused job"},
 	{[]string{"job", "stop"}, "project_job_stop", "number", "Stop a job and wait for its agent to exit"},
-	{[]string{"cli", "list"}, "project_cli_list", "", "Check every coding CLI: installed, version, sign-in, quota and models"},
 	{[]string{"clone", "list"}, "project_clone_list", "", "List job clones and whether they are in use"},
 	{[]string{"clone", "clear"}, "project_clone_clear", "", "Remove unused job clones"},
 	{[]string{"unblock"}, "project_unblock_run", "number", "Run a stuck-job watchdog round now"},
