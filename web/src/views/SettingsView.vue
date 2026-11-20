@@ -368,6 +368,7 @@ import {
 	KNOWN_PROVIDERS,
 	useProviderAuth,
 } from "../composables/useProviderAuth";
+import { projectTargets } from "../lib/projectSettings";
 import {
 	clampToolNamesForPreset,
 	groupTools,
@@ -592,6 +593,7 @@ const agentSubtabs = [
 	"channels",
 	"files",
 	"tasks",
+	"projects",
 ] as const;
 type AgentSubtab = (typeof agentSubtabs)[number];
 
@@ -628,18 +630,16 @@ const selectedTaskIdx = ref<number | null>(
 	draft.value.agents[selectedAgentIdx.value]?.tasks?.length ? 0 : null,
 );
 
-/** The watched projects a "project" task can run against. */
+/** The selected agent's projects, which its "project" tasks run against. */
 const watchedProjectTargets = computed((): string[] => [
 	...new Set(
-		(draft.value.projects?.list ?? [])
-			.map((project) => (project.target ?? "").trim())
-			.filter(Boolean),
+		projectTargets(draft.value.agents[selectedAgentIdx.value]?.projects),
 	),
 ]);
 
 /**
- * The projects a task's editor offers: the watched ones, plus the task's own
- * project when it is no longer watched, so opening the editor keeps it.
+ * The projects a task's editor offers: its agent's, plus the task's own
+ * project when the agent no longer owns it, so opening the editor keeps it.
  */
 function projectTargetOptions(task: AgentTask): string[] {
 	const current = (task.project ?? "").trim();
@@ -1613,7 +1613,6 @@ function emptyConfig(): AppConfig {
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
-		projects: {},
 	};
 }
 
@@ -2832,6 +2831,10 @@ function normalizedDraftConfig(): AppConfig {
 			target: (task.target ?? "").trim(),
 			run_once: Boolean(task.run_once),
 		})),
+		projects:
+			agent.projects && Object.keys(agent.projects).length
+				? agent.projects
+				: undefined,
 		permissions:
 			(agent.permissions?.tools?.length ?? 0) > 0 ||
 			(agent.permissions?.disabled_tools?.length ?? 0) > 0 ||

@@ -74,6 +74,8 @@ export interface AgentEntry {
 	permissions?: AgentPermissions;
 	channels: AgentChannel[];
 	tasks: AgentTask[];
+	/** The GitHub projects this agent owns and their settings (non-default values only). */
+	projects?: ProjectsSection;
 }
 
 export type AgentTaskType = "prompt" | "script" | "project";
@@ -88,7 +90,7 @@ export interface AgentTask {
 	run_once?: boolean;
 	watch?: string;
 	target?: string;
-	/** The watched project a "project" task runs its prompt against. */
+	/** The project of this agent's that a "project" task runs its prompt against. */
 	project?: string;
 	/** Overrides the project agent's model for a "project" task's runs; empty uses the agent's own. */
 	model?: string;
@@ -152,8 +154,6 @@ export interface AppConfig {
 	scheduler: SchedulerConfig;
 	skills: Record<string, SkillConfig>;
 	coding_skills?: CodingSkillsConfig;
-	/** The projects: section (non-default values only); edited on project settings pages. */
-	projects: ProjectsSection;
 }
 
 /** Normalizes a task's type, which defaults to prompt. */
@@ -175,7 +175,6 @@ function defaultConfig(): AppConfig {
 		search: { web: { brave_api_key: "" } },
 		scheduler: { concurrency: "", precompute_tasks: true },
 		skills: {},
-		projects: {},
 	};
 }
 
@@ -256,7 +255,6 @@ export const useSettingsStore = defineStore("settings", () => {
 				},
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
 				skills: parsed.skills ?? {},
-				projects: parsed.projects ?? {},
 			};
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
