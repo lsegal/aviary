@@ -28,6 +28,9 @@ type Config struct {
 	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
 	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Projects  ProjectsConfig         `yaml:"projects,omitempty"  json:"projects,omitzero"`
+	// Approval is how much CLI providers may do without asking; see
+	// ApprovalConfig.
+	Approval ApprovalConfig `yaml:"approval,omitempty" json:"approval,omitzero"`
 	// CodingSkills controls how Aviary keeps the skills it ships for
 	// providers (gh-fix, gh-discuss, gh-create, gh-safe-merge) installed and current.
 	CodingSkills *CodingSkillsConfig `yaml:"coding_skills,omitempty" json:"coding_skills,omitempty"`

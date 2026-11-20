@@ -43,6 +43,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
+	v.checkApproval(cfg.Approval, cfg.Projects)
 	return v.issues
 }
 
@@ -59,6 +60,17 @@ func (v *validator) errorf(field, format string, args ...any) {
 
 func (v *validator) warnf(field, format string, args ...any) {
 	v.issues = append(v.issues, Issue{LevelWarning, field, fmt.Sprintf(format, args...)})
+}
+
+// checkApproval validates the approval modes.
+func (v *validator) checkApproval(a ApprovalConfig, p ProjectsConfig) {
+	for field, mode := range map[string]clidefs.ApprovalMode{
+		"approval.mode": a.Mode, "approval.chat": a.Chat, "projects.approval_mode": p.ApprovalMode,
+	} {
+		if err := clidefs.ValidateApprovalMode(mode); err != nil {
+			v.errorf(field, "%v", err)
+		}
+	}
 }
 
 // checkServer validates ServerConfig.

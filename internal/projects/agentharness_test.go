@@ -175,8 +175,9 @@ type agentContract struct {
 	// SessionID is the session the run carries: assigned by aviary, or
 	// announced by the agent, depending on the definition.
 	SessionID string
-	// Yolo and RemoteControl mirror the run's own flags.
-	Yolo, RemoteControl bool
+	// Approval and RemoteControl mirror the run's own settings.
+	Approval      clidefs.ApprovalMode
+	RemoteControl bool
 	// Stdout is what the agent prints on a successful run.
 	Stdout string
 	// WantRun and WantResume are the exact argv each mode has to render.
@@ -225,7 +226,7 @@ func (c agentContract) runner(t *testing.T, behaviour fakeAgentRun) (CommandRunn
 	}
 	return CommandRunner{
 		Agent: definition.Name, Definitions: registry, Repo: c.Repo,
-		Yolo: c.Yolo, RemoteControl: c.RemoteControl,
+		Approval: c.Approval, RemoteControl: c.RemoteControl,
 	}, record
 }
 
@@ -439,7 +440,7 @@ func TestOpencodeDefinitionRendersModelLevelAndVision(t *testing.T) {
 			// The run's own --yolo adds nothing: --auto is already the only
 			// permission mode a non-interactive opencode can work in.
 			name: "run in yolo mode", mode: clidefs.ModeRun,
-			values: clidefs.Values{Prompt: prompt, Yolo: true},
+			values: clidefs.Values{Prompt: prompt, Approval: clidefs.ApprovalFull},
 			want:   []string{"run", "--auto", "--format", "json", prompt},
 		},
 		{
@@ -529,7 +530,7 @@ func TestGeminiDefinitionYoloContract(t *testing.T) {
 		Repo:       "o/r",
 		Number:     7,
 		SessionID:  "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-		Yolo:       true,
+		Approval:   clidefs.ApprovalFull,
 		Stdout:     "working on it",
 		WantRun: []string{
 			"--session-id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301",

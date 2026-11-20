@@ -30,12 +30,16 @@
     "knownModels": ["opus", "sonnet", "haiku", "claude-opus-5-5"],
     "modelsNote": "known Claude aliases and model ids; the CLI may accept others"
   },
+  "approval": {
+    "read-only": ["--permission-mode", "dontAsk"],
+    "auto": ["--permission-mode", "auto"],
+    "full": ["--dangerously-skip-permissions"]
+  },
   "args": {
     "run": [
       {"args": ["-p"]},
       {"when": "session", "args": ["--session-id", "{session}"]},
-      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
-      {"when": "!yolo", "args": ["--permission-mode", "auto"]},
+      {"args": ["{approval}"]},
       {"when": "remoteControl", "args": ["--settings", "{settings}", "--rc", "{sessionName}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--effort", "{level}"]},
@@ -44,16 +48,14 @@
     ],
     "resume": [
       {"args": ["-p", "--resume", "{session}"]},
-      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
-      {"when": "!yolo", "args": ["--permission-mode", "auto"]},
+      {"args": ["{approval}"]},
       {"when": "remoteControl", "args": ["--settings", "{settings}", "--rc", "{sessionName}"]},
       {"args": ["--output-format", "stream-json", "--verbose"]},
       {"args": ["{prompt}"]}
     ],
     "vision": [
       {"args": ["-p"]},
-      {"when": "yolo", "args": ["--dangerously-skip-permissions"]},
-      {"when": "!yolo", "args": ["--permission-mode", "auto"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--effort", "{level}"]},
       {"args": ["{prompt}"]}

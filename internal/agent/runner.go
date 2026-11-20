@@ -15,6 +15,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/cliagent"
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -38,6 +39,9 @@ type AgentRunner struct {
 	provider llm.Provider    // nil until Phase 5 wiring; falls back to stub
 	factory  providerFactory // used to create fallback providers on demand
 	stopCh   chan struct{}
+	// approval is the chat surface's effective approval mode, which CLI
+	// turns translate into their CLI's permission flags. Guarded by mu.
+	approval clidefs.ApprovalMode
 	mu       sync.Mutex
 	active   sync.WaitGroup
 	canceled bool
@@ -60,6 +64,20 @@ func NewAgentRunner(a *domain.Agent, cfg *config.AgentConfig, provider llm.Provi
 		runner.factory = factory
 	}
 	return runner
+}
+
+// SetApproval records the chat surface's effective approval mode. A CLI
+// conversation started under another mode is replaced on its next turn.
+func (r *AgentRunner) SetApproval(mode clidefs.ApprovalMode) {
+	r.mu.Lock()
+	r.approval = mode
+	r.mu.Unlock()
+}
+
+func (r *AgentRunner) approvalMode() clidefs.ApprovalMode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.approval
 }
 
 // RunOverrides defines per-run overrides for model, fallbacks, and tools.

@@ -397,6 +397,28 @@
         }
       }
     },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How much CLI providers may do without asking. Each CLI launch translates its surface's mode into that CLI's own permission flags; CLI settings files are never modified.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["read-only", "auto", "full"],
+          "default": "auto",
+          "x-label": "Approval mode",
+          "x-order": 1,
+          "description": "General approval mode, used wherever no surface override applies. read-only: read and inspect only; auto: work in the workspace without asking, with the CLI's own sandbox or checks refusing riskier actions; full: no sandbox or permission checks."
+        },
+        "chat": {
+          "type": "string",
+          "enum": ["read-only", "auto", "full"],
+          "x-label": "Chat approval mode",
+          "x-order": 2,
+          "description": "Override for CLI-backed chat turns (web UI chat and the Projects prompt chat). Empty follows mode."
+        }
+      }
+    },
     "projects": {
       "type": "object",
       "additionalProperties": false,
@@ -516,6 +538,13 @@
           "x-label": "CLI providers",
           "x-order": 10,
           "description": "Model specs (AGENT/MODEL:LEVEL) jobs load balance across. Defaults to codex."
+        },
+        "approval_mode": {
+          "type": "string",
+          "enum": ["read-only", "auto", "full"],
+          "x-label": "Approval mode",
+          "x-order": 13,
+          "description": "Projects' approval-mode override for the CLI runs it launches. Empty follows approval.mode."
         },
         "yolo": {
           "type": "boolean",

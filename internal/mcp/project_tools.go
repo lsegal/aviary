@@ -257,7 +257,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
-			m.SetAgents(cfg.Agents, cfg.Models)
+			m.SetAgents(cfg.Agents, cfg.Models, cfg.Approval)
 			m.Reconcile(cfg.Projects)
 			return map[string]any{"target": target, "saved": true}, nil
 		})

@@ -70,6 +70,15 @@
 									{{ t.label }}
 								</label>
 							</div>
+							<label class="block max-w-xs">
+								<span :class="LABEL">CLI approval mode</span>
+								<select v-model="form.approvalMode" :class="INPUT" data-field="approval_mode">
+									<option value="">Same as the general approval mode</option>
+									<option v-for="m in APPROVAL_MODES" :key="m.value" :value="m.value">{{ m.label }}</option>
+								</select>
+								<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">How much jobs' CLI providers may do
+									without asking, translated into each CLI's own flags at launch.</span>
+							</label>
 							<details class="rounded-lg border border-gray-200 dark:border-gray-800" :open="advancedOpen">
 								<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Issue selection and checking</summary>
 								<div class="grid gap-4 border-t border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2">
@@ -256,6 +265,7 @@ import {
 	useProjectClones,
 } from "../composables/useProjectSettings";
 import { useProviderStatus } from "../composables/useProviderAuth";
+import { APPROVAL_MODES } from "../lib/approval";
 import {
 	cloneState,
 	DELIVERY_OPTIONS,
@@ -302,19 +312,10 @@ const SECTIONS = [
 	{ id: "delete", label: "Delete" },
 ];
 
-type ToggleKey =
-	| "merge"
-	| "changelog"
-	| "yolo"
-	| "browserVision"
-	| "browserVisible";
+type ToggleKey = "merge" | "changelog" | "browserVision" | "browserVisible";
 const TOGGLES: { key: ToggleKey; label: string }[] = [
 	{ key: "merge", label: "Merge pull requests when CI passes" },
 	{ key: "changelog", label: "Add a changelog entry to each pull request" },
-	{
-		key: "yolo",
-		label: "Run CLI providers without their sandboxes and permission checks",
-	},
 ];
 
 function DefaultTag(p: { on: boolean }) {

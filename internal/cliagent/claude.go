@@ -57,16 +57,16 @@ func claudeArgs(opts Options, resumeID string) []string {
 	if opts.SystemPrompt != "" {
 		args = append(args, "--system-prompt", opts.SystemPrompt)
 	}
-	if opts.BuiltinTools {
-		// Nobody is present to approve prompts; the agent's rules already
-		// granted these tools.
-		args = append(args, "--permission-mode", "bypassPermissions")
-	} else {
+	if !opts.BuiltinTools {
 		args = append(args, "--tools", "")
-		if opts.MCPURL != "" {
-			args = append(args, "--allowedTools", "mcp__"+MCPServerName)
-		}
 	}
+	if opts.MCPURL != "" {
+		// Aviary's own tools were already granted by the agent's permissions
+		// and are re-checked at Aviary's MCP boundary, so the CLI never asks
+		// for them separately, in any approval mode.
+		args = append(args, "--allowedTools", "mcp__"+MCPServerName)
+	}
+	args = append(args, opts.Approval...)
 	switch {
 	case opts.Ephemeral:
 		args = append(args, "--no-session-persistence")

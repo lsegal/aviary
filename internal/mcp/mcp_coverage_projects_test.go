@@ -199,7 +199,7 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 // takes: a runtime watch is watched without touching aviary.yaml.
 func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 	d, m := setupProjects(t)
-	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}})
+	m.SetAgents(nil, config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}, config.ApprovalConfig{})
 	path := config.DefaultPath()
 	before := readFile(t, path)
 	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"concurrency": 5, "no_merge": true}})

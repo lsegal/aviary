@@ -19,12 +19,16 @@
     "modelsJSON": "models[visibility=list].slug"
   },
   "promptStdin": ["-"],
+  "approval": {
+    "read-only": ["-c", "sandbox_mode=read-only"],
+    "auto": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"],
+    "full": ["--dangerously-bypass-approvals-and-sandbox"]
+  },
   "args": {
     "run": [
       {"args": ["exec", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
-      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
-      {"when": "!yolo", "args": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
       {"args": ["{prompt}"]}
@@ -32,15 +36,14 @@
     "resume": [
       {"args": ["exec", "resume", "--json"]},
       {"when": "noCheckout", "args": ["--skip-git-repo-check"]},
-      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
-      {"when": "!yolo", "args": ["-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
       {"args": ["{session}", "{prompt}"]}
     ],
     "vision": [
       {"args": ["exec", "--skip-git-repo-check", "--image", "{image}"]},
-      {"when": "yolo", "args": ["--dangerously-bypass-approvals-and-sandbox"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["-c", "model_reasoning_effort={level}"]},
       {"args": ["{prompt}"]}

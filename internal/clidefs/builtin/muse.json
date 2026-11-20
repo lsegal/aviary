@@ -37,12 +37,16 @@
     ],
     "timeout": "45s"
   },
+  "approval": {
+    "read-only": ["--approval-mode", "untrusted", "--disable-write"],
+    "auto": ["--approval-mode", "never"],
+    "full": ["--yolo"]
+  },
   "args": {
     "run": [
       {"args": ["exec"]},
       {"when": "session", "args": ["--session-id", "{session}"]},
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--reasoning-effort", "{level}"]},
       {"args": ["--user-input-auto-resolve", "--json"]},
@@ -50,8 +54,7 @@
     ],
     "resume": [
       {"args": ["exec", "--session-id", "{session}"]},
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--reasoning-effort", "{level}"]},
       {"args": ["--user-input-auto-resolve", "--json"]},
@@ -59,8 +62,7 @@
     ],
     "vision": [
       {"args": ["exec", "--image", "{image}"]},
-      {"when": "yolo", "args": ["--yolo"]},
-      {"when": "!yolo", "args": ["--approval-mode", "never"]},
+      {"args": ["{approval}"]},
       {"when": "model", "args": ["--model", "{model}"]},
       {"when": "level", "args": ["--reasoning-effort", "{level}"]},
       {"args": ["{prompt}"]}
