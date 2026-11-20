@@ -18,13 +18,23 @@ import (
 
 func setupTaskCLI(t *testing.T) *scheduler.Scheduler {
 	t.Helper()
+	return setupAgentsCLI(t, "bot")
+}
+
+// setupAgentsCLI points the CLI dispatcher at an in-process server with the
+// named agents configured.
+func setupAgentsCLI(t *testing.T, names ...string) *scheduler.Scheduler {
+	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
 	require.NoError(t, store.EnsureDirs())
 
-	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
+	cfg := &config.Config{}
+	for _, name := range names {
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{Name: name, Model: "test/x"})
+	}
 	require.NoError(t, config.Save("", cfg))
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
