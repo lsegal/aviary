@@ -202,16 +202,18 @@ test("the default model pickers offer the models of installed CLI providers", as
 		"default-model-selector",
 		"default-fallbacks-selector",
 	]) {
-		await page.getByTestId(testId).locator("input").click();
-		const options = page.locator(".absolute.z-50 .truncate.font-medium");
+		const selector = page.getByTestId(testId);
+		await selector.locator("input").click();
+		const options = selector.locator(".truncate.font-medium");
 		// Only installed CLIs with models contribute: codex, not the missing
 		// claude, acme and muse, nor gemini, which reports no models.
 		await expect(options).toHaveText(offered);
 		await page.keyboard.press("Escape");
 	}
 
-	await page.getByTestId("default-model-selector").locator("input").click();
-	await page.getByText("codex/gpt-5.5-mini", { exact: true }).click();
+	const defaultModel = page.getByTestId("default-model-selector");
+	await defaultModel.locator("input").click();
+	await defaultModel.getByText("codex/gpt-5.5-mini", { exact: true }).click();
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(() => saved).not.toBeNull();
 	expect(saved).toMatchObject({
