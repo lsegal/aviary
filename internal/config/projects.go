@@ -49,9 +49,6 @@ type ProjectsConfig struct {
 	// Its model and fallbacks are the provider and model defaults of their
 	// jobs.
 	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
-	// LegacyAgents is the coding-CLI spec list projects carried before they
-	// were attached to agents. Load migrates it onto an agent and clears it.
-	LegacyAgents []string `yaml:"agents,omitempty" json:"-"`
 	// Yolo disables the coding CLIs' sandboxes and permission checks.
 	Yolo bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 	// NoMerge asks gh-fix to leave finished pull requests for a human.
@@ -87,10 +84,6 @@ type ProjectConfig struct {
 	// project's jobs: a job runs on the first one whose quota is not used up.
 	// Empty uses the section's Agent.
 	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
-	// LegacyAgents is the coding-CLI spec list this project carried before
-	// projects were attached to agents. Load migrates it onto an agent and
-	// clears it.
-	LegacyAgents []string `yaml:"agents,omitempty" json:"-"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -273,7 +266,7 @@ func (p ProjectsConfig) Targets() []string {
 func (p ProjectsConfig) IsZero() bool {
 	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
-		len(p.AllowedCommenters) == 0 && p.Agent == "" && len(p.LegacyAgents) == 0 &&
+		len(p.AllowedCommenters) == 0 && p.Agent == "" &&
 		!p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil

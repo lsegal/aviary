@@ -219,7 +219,6 @@ func registerProjectTools(s *sdkmcp.Server) {
 				return nil, fmt.Errorf("agent %q is not configured", agent)
 			}
 			cfg.Projects.List = append(cfg.Projects.List, config.ProjectConfig{Target: target, Agent: agent, Reports: args.Reports})
-			config.MigrateProjectAgents(cfg)
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
