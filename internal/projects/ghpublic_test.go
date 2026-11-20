@@ -242,7 +242,7 @@ func TestPublicIssueSearchQuery(t *testing.T) {
 		selfLogin string
 		want      string
 	}{
-		{name: "default filter substitutes self login without repeating qualifiers", repo: "owner/repo", filter: defaultIssueFilter, selfLogin: "lsegal", want: "repo:owner/repo is:issue state:open assignee:lsegal author:lsegal"},
+		{name: "default filter substitutes self login without repeating qualifiers", repo: "owner/repo", filter: defaultIssueFilter, selfLogin: "lsegal", want: "repo:owner/repo is:issue state:open assignee:lsegal"},
 		{name: "all issues ignores filter", repo: "owner/repo", filter: defaultIssueFilter, allIssues: true, selfLogin: "lsegal", want: "repo:owner/repo is:issue state:open"},
 		{name: "custom filter without author", repo: "owner/repo", filter: "label:bug", want: "repo:owner/repo is:issue state:open label:bug"},
 		{name: "author filter still substitutes self login", repo: "owner/repo", filter: "author:@me", selfLogin: "lsegal", want: "repo:owner/repo is:issue state:open author:lsegal"},
@@ -721,55 +721,73 @@ func TestDefaultIssueFilterOmitsKindAndStateQualifiers(t *testing.T) {
 	}
 }
 
-// TestDefaultIssueFilterRequiresBothAssigneeAndAuthor pins the default filter to
-// requiring that the authenticated user both authored and is assigned to an
-// issue. Matching either qualifier alone would let anyone dispatch an agent by
-// assigning the authenticated user an issue they filed themselves.
-func TestDefaultIssueFilterRequiresBothAssigneeAndAuthor(t *testing.T) {
-	if defaultIssueFilter != "assignee:@me author:@me" {
-		t.Fatalf("defaultIssueFilter = %q, want both assignee:@me and author:@me", defaultIssueFilter)
+// TestDefaultIssueFilterIsAssigneeOnly pins the default filter to the
+// assignee qualifier alone (see issue #421). Assignment is the gate: only
+// someone with triage access can assign an issue, while anyone can author one,
+// so an author term protects nothing and only excludes issues someone else
+// wrote that the authenticated user was assigned.
+func TestDefaultIssueFilterIsAssigneeOnly(t *testing.T) {
+	if defaultIssueFilter != "assignee:@me" {
+		t.Fatalf("defaultIssueFilter = %q, want assignee:@me", defaultIssueFilter)
 	}
 	query := publicIssueSearchQuery("owner/repo", defaultIssueFilter, false, "lsegal")
-	for _, want := range []string{"assignee:lsegal", "author:lsegal"} {
-		if !strings.Contains(query, want) {
-			t.Fatalf("publicIssueSearchQuery() = %q, want it to contain %q", query, want)
-		}
+	if !strings.Contains(query, "assignee:lsegal") {
+		t.Fatalf("publicIssueSearchQuery() = %q, want it to contain assignee:lsegal", query)
+	}
+	if strings.Contains(query, "author:") {
+		t.Fatalf("publicIssueSearchQuery() = %q, want no author qualifier", query)
 	}
 	if strings.Contains(query, "@me") {
 		t.Fatalf("publicIssueSearchQuery() = %q, want every @me qualifier substituted", query)
 	}
 }
 
-// TestListIssuesSearchesOnceWithBothQualifiers guards against reintroducing the
-// two-search union that treated the default filter as an OR of assignee and
-// author (see issue #371): a single search must carry both qualifiers.
-func TestListIssuesSearchesOnceWithBothQualifiers(t *testing.T) {
-	var queries []string
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
-			return []byte(`{"private":true}`), nil, http.StatusOK, nil
-		},
-		runCommand: func(_ context.Context, args ...string) ([]byte, error) {
-			if len(args) > 1 && args[0] == "api" && args[1] == "search/issues" {
-				for i, arg := range args {
-					if arg == "-f" && i+1 < len(args) && strings.HasPrefix(args[i+1], "q=") {
-						queries = append(queries, strings.TrimPrefix(args[i+1], "q="))
+// TestListIssuesSearchesOnceWithFilter guards against reintroducing the
+// two-search union that split the filter's qualifiers into an OR (see issue
+// #371): a single search carries the filter exactly, whether it is the
+// assignee-only default or a configured filter that still names an author.
+func TestListIssuesSearchesOnceWithFilter(t *testing.T) {
+	for _, tt := range []struct {
+		filter      string
+		want, avoid []string
+	}{
+		{filter: defaultIssueFilter, want: []string{"assignee:@me"}, avoid: []string{"author:"}},
+		{filter: "assignee:@me author:@me", want: []string{"assignee:@me", "author:@me"}},
+	} {
+		var queries []string
+		gh := GHCLI{
+			publicRepoCache: &sync.Map{},
+			publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
+				return []byte(`{"private":true}`), nil, http.StatusOK, nil
+			},
+			runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+				if len(args) > 1 && args[0] == "api" && args[1] == "search/issues" {
+					for i, arg := range args {
+						if arg == "-f" && i+1 < len(args) && strings.HasPrefix(args[i+1], "q=") {
+							queries = append(queries, strings.TrimPrefix(args[i+1], "q="))
+						}
 					}
+					return []byte(`{"items":[{"number":7,"title":"bug"}]}`), nil
 				}
-				return []byte(`{"items":[{"number":7,"title":"bug"}]}`), nil
+				return []byte(`[]`), nil
+			},
+		}
+		gh.Filter = tt.filter
+		if _, err := gh.ListIssues(context.Background(), "owner/repo"); err != nil {
+			t.Fatalf("ListIssues(%q) error = %v", tt.filter, err)
+		}
+		if len(queries) != 1 {
+			t.Fatalf("filter %q: issue searches = %#v, want exactly one search", tt.filter, queries)
+		}
+		for _, want := range tt.want {
+			if !strings.Contains(queries[0], want) {
+				t.Errorf("filter %q: search query = %q, want it to contain %q", tt.filter, queries[0], want)
 			}
-			return []byte(`[]`), nil
-		},
-	}
-	gh.Filter = defaultIssueFilter
-	if _, err := gh.ListIssues(context.Background(), "owner/repo"); err != nil {
-		t.Fatalf("ListIssues() error = %v", err)
-	}
-	if len(queries) != 1 {
-		t.Fatalf("issue searches = %#v, want exactly one search carrying both qualifiers", queries)
-	}
-	if !strings.Contains(queries[0], "assignee:@me") || !strings.Contains(queries[0], "author:@me") {
-		t.Fatalf("search query = %q, want both assignee:@me and author:@me", queries[0])
+		}
+		for _, avoid := range tt.avoid {
+			if strings.Contains(queries[0], avoid) {
+				t.Errorf("filter %q: search query = %q, want it not to contain %q", tt.filter, queries[0], avoid)
+			}
+		}
 	}
 }
