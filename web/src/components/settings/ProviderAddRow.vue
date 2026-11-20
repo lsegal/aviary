@@ -2,7 +2,7 @@
 	<div ref="root" data-testid="provider-add" class="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
 		<button v-if="!open" ref="toggle" type="button" data-testid="provider-add-row" aria-expanded="false"
 			aria-controls="provider-add-kinds"
-			class="group flex w-full items-center gap-2 border-2 border-dashed border-transparent px-3 py-2.5 text-left text-sm font-semibold text-blue-600 transition hover:border-blue-300 hover:bg-blue-50/60 focus:outline-none focus-visible:border-blue-400 focus-visible:bg-blue-50/60 dark:text-blue-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30 dark:focus-visible:bg-blue-950/30"
+			class="group m-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-2.5 text-left text-sm font-semibold text-blue-600 transition hover:border-blue-300 hover:bg-blue-50/60 focus:outline-none focus-visible:border-blue-400 focus-visible:bg-blue-50/60 dark:border-gray-600 dark:text-blue-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30 dark:focus-visible:bg-blue-950/30"
 			@click="expand">
 			<span
 				class="flex h-6 w-6 items-center justify-center rounded-full border-2 border-dashed border-blue-400 text-base leading-none transition group-hover:rotate-90 group-hover:border-solid motion-reduce:transition-none motion-reduce:group-hover:rotate-0 dark:border-blue-500"

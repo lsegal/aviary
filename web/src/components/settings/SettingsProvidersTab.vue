@@ -346,8 +346,8 @@
 import { computed, defineComponent, inject, ref, toRefs, watch } from "vue";
 import { useProviderStatus } from "../../composables/useProviderAuth";
 import { type CLIStatus, cliAuthLabel } from "../../lib/cliProviders";
-import ProviderAddRow from "./ProviderAddRow.vue";
 import { settingsViewContextKey } from "./context";
+import ProviderAddRow from "./ProviderAddRow.vue";
 
 const CLI_DOT: Record<CLIStatus, string> = {
 	ok: "bg-green-500",
