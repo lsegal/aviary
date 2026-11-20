@@ -381,50 +381,80 @@ type cloneUsage struct {
 // paused job resumes from its checkout, so it is in use by definition.
 var inUseStatuses = map[string]bool{"active": true, "waiting": true, "queued": true, "paused": true, "stopping": true}
 
-// classifyClone decides whether rec may still be needed. Anything that cannot
-// be verified is reported in use, with the reason, so clearing keeps it.
-func classifyClone(rec cloneRecord, usage cloneUsage) (bool, string) {
-	if usage.workErr != nil {
-		return true, "kept: work state could not be read: " + usage.workErr.Error()
-	}
+// cloneVerdict is what classifyClone decides about a clone.
+type cloneVerdict int
+
+const (
+	// cloneUnused is a clone no live job of this instance holds; clearing
+	// removes it.
+	cloneUnused cloneVerdict = iota
+	// cloneInUse is a clone a live job of this instance holds.
+	cloneInUse
+	// cloneKept is a clone nothing holds that clearing still leaves alone,
+	// such as one outside the configured temp directories.
+	cloneKept
+)
+
+// errWorkStateUnreadable reports that the work state could not be read, so
+// no clone can be classified. It is surfaced as an error rather than as
+// every clone being in use.
+var errWorkStateUnreadable = errors.New("work state could not be read")
+
+// classifyClone decides whether a live job of this instance holds rec, and
+// says why. Only a live agent run or a job in an in-use status counts as
+// use; a clone no job here records is unused, not speculatively in use.
+func classifyClone(rec cloneRecord, usage cloneUsage) (cloneVerdict, string) {
 	for _, run := range usage.live {
 		if run.Checkout != "" && (cloneKey(run.Checkout) == cloneKey(rec.Path) || underRoots(run.Checkout, []string{rec.Path})) {
-			return true, fmt.Sprintf("in use: an agent is working in it for #%d", run.Number)
+			return cloneInUse, fmt.Sprintf("an agent is working in it for #%d", run.Number)
 		}
 		if run.Checkout == "" && rec.Issue != 0 && run.Number == rec.Issue {
-			return true, fmt.Sprintf("in use: an agent for #%d has not announced its checkout yet", run.Number)
+			return cloneInUse, fmt.Sprintf("an agent for #%d has not announced its checkout yet", run.Number)
 		}
 	}
 	if job, ok := usage.jobs[rec.Job]; ok && inUseStatuses[job.Status] {
-		return true, "in use: job is " + job.Status
+		return cloneInUse, "job is " + job.Status
 	}
 	state, known := usage.work[rec.Job]
 	if known && inUseStatuses[state.Status] {
-		return true, "in use: job is " + state.Status
+		return cloneInUse, "job is " + state.Status
 	}
 	for key, other := range usage.work {
 		if other.CheckoutDirectory != "" && cloneKey(other.CheckoutDirectory) == cloneKey(rec.Path) && inUseStatuses[other.Status] {
-			return true, fmt.Sprintf("in use: job %s is %s", key, other.Status)
+			return cloneInUse, fmt.Sprintf("job %s is %s", key, other.Status)
 		}
 	}
 	if !underRoots(rec.Path, usage.roots) {
-		return true, "kept: outside the configured temp directories; remove it by hand"
-	}
-	if rec.Adopted && !known {
-		return true, "kept: no job of this instance records it, so another instance may own it"
+		return cloneKept, "outside the configured temp directories; remove it by hand"
 	}
 	if _, err := os.Stat(rec.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return true, "kept: " + err.Error()
+		return cloneKept, err.Error()
 	}
 	if known && state.Status != "" {
-		return false, "unused: job is " + state.Status
+		return cloneUnused, "job is " + state.Status
 	}
-	return false, "unused: its job is no longer tracked"
+	if rec.Adopted {
+		return cloneUnused, "not owned by this instance: no job here records it"
+	}
+	return cloneUnused, "its job is no longer tracked"
+}
+
+// cloneEntry presents rec with its verdict.
+func cloneEntry(rec cloneRecord, verdict cloneVerdict, reason string) core.CloneEntry {
+	return core.CloneEntry{
+		Path: rec.Path, Repository: rec.Repository, Issue: rec.Issue,
+		PullRequest: rec.PullRequest, PullRequestRepository: rec.PullRequestRepository,
+		Job: rec.Job, InUse: verdict == cloneInUse, Kept: verdict == cloneKept, Reason: reason,
+	}
 }
 
 // listClones enumerates every recorded clone with its in-use decision,
-// filling in pull request numbers the published jobs know.
-func listClones(reg *cloneRegistry, usage cloneUsage) core.ClonesSnapshot {
+// filling in pull request numbers the published jobs know. It fails when the
+// work state could not be read, since no clone can be classified without it.
+func listClones(reg *cloneRegistry, usage cloneUsage) (core.ClonesSnapshot, error) {
+	if usage.workErr != nil {
+		return core.ClonesSnapshot{}, fmt.Errorf("%w: %v", errWorkStateUnreadable, usage.workErr)
+	}
 	snapshot := core.ClonesSnapshot{Roots: usage.roots, Clones: []core.CloneEntry{}}
 	for _, rec := range reg.list() {
 		if job, ok := usage.jobs[rec.Job]; ok && job.PullRequest != 0 {
@@ -438,29 +468,36 @@ func listClones(reg *cloneRegistry, usage cloneUsage) core.ClonesSnapshot {
 				continue
 			}
 		}
-		inUse, reason := classifyClone(rec, usage)
-		snapshot.Clones = append(snapshot.Clones, core.CloneEntry{
-			Path: rec.Path, Repository: rec.Repository, Issue: rec.Issue,
-			PullRequest: rec.PullRequest, PullRequestRepository: rec.PullRequestRepository,
-			Job: rec.Job, InUse: inUse, Reason: reason,
-		})
+		verdict, reason := classifyClone(rec, usage)
+		snapshot.Clones = append(snapshot.Clones, cloneEntry(rec, verdict, reason))
 	}
-	return snapshot
+	return snapshot, nil
 }
 
 // clearClones removes every unused clone and reports the space reclaimed.
 // The in-use decision is made again for each clone right before removing it.
-func clearClones(reg *cloneRegistry, usage func() cloneUsage) core.ClearClonesResult {
+func clearClones(reg *cloneRegistry, usage func() cloneUsage) (core.ClearClonesResult, error) {
+	snapshot, err := listClones(reg, usage())
+	if err != nil {
+		return core.ClearClonesResult{}, err
+	}
 	result := core.ClearClonesResult{Removed: []core.CloneEntry{}}
-	for _, entry := range listClones(reg, usage()).Clones {
-		if !entry.InUse {
+	for _, entry := range snapshot.Clones {
+		if !entry.InUse && !entry.Kept {
 			// Read again right before removing, so a job dispatched since
 			// the list was made keeps its clone.
+			current := usage()
+			if current.workErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v: %v", entry.Path, errWorkStateUnreadable, current.workErr))
+				result.Kept++
+				continue
+			}
 			if rec, ok := reg.get(entry.Path); ok {
-				entry.InUse, entry.Reason = classifyClone(rec, usage())
+				verdict, reason := classifyClone(rec, current)
+				entry = cloneEntry(rec, verdict, reason)
 			}
 		}
-		if entry.InUse {
+		if entry.InUse || entry.Kept {
 			result.Kept++
 			continue
 		}
@@ -475,7 +512,7 @@ func clearClones(reg *cloneRegistry, usage func() cloneUsage) core.ClearClonesRe
 		result.Reclaimed += size
 		result.Removed = append(result.Removed, entry)
 	}
-	return result
+	return result, nil
 }
 
 // dirSize totals the regular files under path. WalkDir never follows
