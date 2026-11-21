@@ -131,6 +131,12 @@ const router = useRouter();
 
 const sessions = computed(() => store.sessions(props.agent));
 const activeId = computed(() => {
+	// The list shows on every page; only the agent's chat pages select a chat.
+	if (
+		route.path.replace(/\/$/, "") !== chatPath(props.agent, "") &&
+		!route.path.startsWith(`${chatPath(props.agent, "")}/`)
+	)
+		return "";
 	if (typeof route.params.sessionId === "string") return route.params.sessionId;
 	return sessions.value.find(isMainChat)?.id ?? "";
 });

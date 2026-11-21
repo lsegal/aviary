@@ -264,6 +264,10 @@ test("the Chats list is expanded on load away from the chat page", async ({
 
 	await expect(chatRows(page)).toHaveText([/Main Chat/, /Chat 1/, /Chat 2/]);
 	await expect(page.getByTestId("sidebar-new-chat")).toBeVisible();
+	// No chat is selected away from the chat pages.
+	await expect(chatRows(page).first().getByRole("link")).not.toHaveClass(
+		/font-semibold/,
+	);
 });
 
 test("five or fewer chats are all shown without More", async ({ page }) => {
