@@ -92,8 +92,14 @@
       </nav>
     </div>
 
-    <nav v-if="!sidebarCollapsed" data-testid="sidebar" :style="{ width: `${sidebarWidth}px` }"
-      class="relative hidden shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
+    <!-- While collapsed, resting the pointer on the rail peeks the full
+         sidebar as an overlay above the rail and main content. -->
+    <nav v-if="!sidebarCollapsed || sidebarPeek" ref="sidebarEl" data-testid="sidebar"
+      :data-peek="sidebarPeek || undefined" :style="{ width: `${sidebarWidth}px` }"
+      class="hidden shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex"
+      :class="sidebarPeek ? 'fixed inset-y-0 left-0 z-40 shadow-xl' : 'relative'"
+      @mouseenter="cancelSidebarPeekClose" @mouseleave="closeSidebarPeekSoon" @click="closeSidebarPeekOnLink"
+      @focusout="closeSidebarPeekOnFocusOut">
       <div class="group/row mb-6 flex items-center gap-2">
         <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
         <div class="relative flex min-w-0 flex-1 items-center self-stretch">
@@ -125,7 +131,13 @@
               <path :d="link.iconPath" />
             </svg>
           </a>
-          <button type="button" data-testid="sidebar-collapse" aria-label="Collapse sidebar"
+          <button v-if="sidebarPeek" type="button" data-testid="sidebar-pin" aria-label="Expand sidebar"
+            :title="`Expand sidebar (${shortcutLabel})`"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            @click="sidebar.toggle()">
+            <ChevronDoubleRightIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+          <button v-else type="button" data-testid="sidebar-collapse" aria-label="Collapse sidebar"
             :title="`Collapse sidebar (${shortcutLabel})`"
             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             @click="sidebar.toggle()">
@@ -285,7 +297,7 @@
           </div>
         </div>
       </div>
-      <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize sidebar"
+      <div v-if="!sidebarPeek" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize sidebar"
         data-testid="sidebar-resize" :aria-valuenow="sidebarWidth" :aria-valuemin="SIDEBAR_MIN_WIDTH"
         :aria-valuemax="SIDEBAR_MAX_WIDTH" title="Drag to resize, double-click to reset"
         class="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize transition-colors hover:bg-blue-500/30 focus-visible:bg-blue-500/40 focus-visible:outline-none"
@@ -293,8 +305,9 @@
         @pointerdown="startSidebarResize" @dblclick="sidebar.resetWidth()" @keydown="resizeSidebarByKey" />
     </nav>
 
-    <nav v-else data-testid="sidebar-rail" aria-label="Main"
-      class="hidden w-14 shrink-0 flex-col items-center gap-1 border-r border-gray-200 bg-gray-50 py-3 dark:border-gray-800 dark:bg-gray-900 lg:flex">
+    <nav v-if="sidebarCollapsed" data-testid="sidebar-rail" aria-label="Main"
+      class="hidden w-14 shrink-0 flex-col items-center gap-1 border-r border-gray-200 bg-gray-50 py-3 dark:border-gray-800 dark:bg-gray-900 lg:flex"
+      @mouseenter="openSidebarPeekSoon" @mousemove="openSidebarPeekSoon" @mouseleave="cancelSidebarPeekOpen">
       <img :src="logoUrl" alt="Aviary logo" class="mb-1 h-8 w-8 object-contain" />
       <SidebarRailItem :label="`Expand sidebar (${shortcutLabel})`" data-testid="sidebar-expand" @click="sidebar.toggle()">
         <ChevronDoubleRightIcon aria-hidden="true" class="h-5 w-5" />
@@ -390,6 +403,7 @@ import {
 	markRaw,
 	onBeforeUnmount,
 	onMounted,
+	watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
@@ -592,7 +606,69 @@ function resizeSidebarByKey(e: KeyboardEvent) {
 	sidebar.setWidth(steps[e.key]);
 }
 
+// Hover peek: resting the pointer on the collapsed rail's background opens
+// the full sidebar as an overlay without changing the saved collapsed state
+// (#737).
+const SIDEBAR_PEEK_DELAY = 300;
+const sidebarPeek = ref(false);
+const sidebarEl = ref<HTMLElement | null>(null);
+let sidebarPeekOpenTimer: ReturnType<typeof setTimeout> | undefined;
+let sidebarPeekCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+function cancelSidebarPeekOpen() {
+	clearTimeout(sidebarPeekOpenTimer);
+}
+
+function cancelSidebarPeekClose() {
+	clearTimeout(sidebarPeekCloseTimer);
+}
+
+// Restarts on every pointer move, so the peek waits for the pointer to rest.
+// Resting on an icon shows its tooltip instead, so the overlay never covers
+// the icon about to be clicked.
+function openSidebarPeekSoon(e: MouseEvent) {
+	if (sidebarPeek.value) return;
+	cancelSidebarPeekOpen();
+	if ((e.target as Element).closest("a, button")) return;
+	sidebarPeekOpenTimer = setTimeout(() => {
+		sidebarPeek.value = true;
+	}, SIDEBAR_PEEK_DELAY);
+}
+
+function closeSidebarPeek() {
+	cancelSidebarPeekOpen();
+	cancelSidebarPeekClose();
+	sidebarPeek.value = false;
+}
+
+function closeSidebarPeekSoon() {
+	if (!sidebarPeek.value) return;
+	cancelSidebarPeekClose();
+	sidebarPeekCloseTimer = setTimeout(closeSidebarPeek, SIDEBAR_PEEK_DELAY);
+}
+
+function closeSidebarPeekOnLink(e: MouseEvent) {
+	if (sidebarPeek.value && (e.target as Element).closest("a")) {
+		closeSidebarPeek();
+	}
+}
+
+// Tabbing or clicking out of the overlay closes it, so focus is never held.
+function closeSidebarPeekOnFocusOut(e: FocusEvent) {
+	if (!sidebarPeek.value) return;
+	const next = e.relatedTarget as Node | null;
+	if (next && sidebarEl.value?.contains(next)) return;
+	closeSidebarPeek();
+}
+
+// Expanding for real, or collapsing again by dragging, ends the peek.
+watch(sidebarCollapsed, closeSidebarPeek);
+
 function onSidebarShortcut(e: KeyboardEvent) {
+	if (e.key === "Escape" && sidebarPeek.value) {
+		closeSidebarPeek();
+		return;
+	}
 	if (e.defaultPrevented || e.altKey || e.shiftKey) return;
 	if (!(isMac ? e.metaKey : e.ctrlKey) || e.key.toLowerCase() !== "b") return;
 	// Below lg the mobile header replaces the sidebar.
@@ -602,7 +678,10 @@ function onSidebarShortcut(e: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener("keydown", onSidebarShortcut));
-onBeforeUnmount(() => window.removeEventListener("keydown", onSidebarShortcut));
+onBeforeUnmount(() => {
+	window.removeEventListener("keydown", onSidebarShortcut);
+	closeSidebarPeek();
+});
 
 // System's first pages are always shown; the rest sit behind the expander in
 // their previous relative order.

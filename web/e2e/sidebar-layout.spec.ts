@@ -205,6 +205,97 @@ test("the width and collapsed state survive a reload without a flash", async ({
 	expect(await sidebarWidth(page)).toBe(480);
 });
 
+/** Rests the pointer on an empty part of the collapsed rail. */
+async function restOnRail(page: Page) {
+	const box = await page.getByTestId("sidebar-rail").boundingBox();
+	if (!box) throw new Error("no rail");
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height - 220);
+}
+
+function storedLayout(page: Page) {
+	return page.evaluate(() => ({
+		collapsed: localStorage.getItem("aviary.sidebar.collapsed"),
+		width: localStorage.getItem("aviary.sidebar.width"),
+	}));
+}
+
+test("resting on the collapsed rail peeks the full sidebar as an overlay", async ({
+	page,
+}) => {
+	await page.goto("/system/overview");
+	await page.getByTestId("sidebar-resize").focus();
+	await page.keyboard.press("ArrowRight");
+	await page.keyboard.press("ControlOrMeta+b");
+	await expect(page.getByTestId("sidebar-rail")).toBeVisible();
+	const main = page.locator("main");
+	const mainWidth = (await main.boundingBox())?.width;
+	const stored = await storedLayout(page);
+
+	await restOnRail(page);
+	const sidebar = page.getByTestId("sidebar");
+	await expect(sidebar).toBeVisible();
+	await expect(sidebar).toHaveAttribute("data-peek", "true");
+	expect(await sidebarWidth(page)).toBe(256);
+	await expect(page.getByTestId("sidebar-resize")).toHaveCount(0);
+	expect((await main.boundingBox())?.width).toBe(mainWidth);
+	expect(await storedLayout(page)).toEqual(stored);
+	await expect(sidebar.getByTestId("sidebar-pin")).toBeVisible();
+
+	// Leaving the overlay closes it after a short delay.
+	await page.mouse.move(800, 400);
+	await expect(sidebar).toBeVisible();
+	await expect(sidebar).toHaveCount(0);
+	await expect(page.getByTestId("sidebar-rail")).toBeVisible();
+
+	// Escape closes it too.
+	await restOnRail(page);
+	await expect(sidebar).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(sidebar).toHaveCount(0);
+
+	// Resting on an icon shows its tooltip instead of the overlay.
+	await page.getByTestId("sidebar-rail-files").hover();
+	await expect(page.getByRole("tooltip")).toHaveText("Files");
+	await page.waitForTimeout(500);
+	await expect(sidebar).toHaveCount(0);
+
+	// The peek is never saved: a reload restores the rail.
+	await restOnRail(page);
+	await expect(sidebar).toBeVisible();
+	await page.reload();
+	await expect(page.getByTestId("sidebar-rail")).toBeVisible();
+	await expect(sidebar).toHaveCount(0);
+	expect(await storedLayout(page)).toEqual(stored);
+});
+
+test("navigating from the peek closes it and its toggle expands the sidebar", async ({
+	page,
+}) => {
+	await page.goto("/system/overview");
+	await expect(page.getByTestId("sidebar")).toBeVisible();
+	await page.keyboard.press("ControlOrMeta+b");
+	await restOnRail(page);
+	const sidebar = page.getByTestId("sidebar");
+	await sidebar.getByTestId("sidebar-row-files").getByRole("link").click();
+	await expect(page).toHaveURL("/agents/assistant/files");
+	await expect(sidebar).toHaveCount(0);
+	await expect(page.getByTestId("sidebar-rail")).toBeVisible();
+
+	// The links in the overlay are reachable by keyboard, and tabbing out
+	// closes it.
+	await restOnRail(page);
+	await sidebar.getByTestId("sidebar-row-chat").getByRole("link").focus();
+	await page.getByTestId("sidebar-rail-system").focus();
+	await expect(sidebar).toHaveCount(0);
+
+	await restOnRail(page);
+	await sidebar.getByTestId("sidebar-pin").click();
+	await expect(page.getByTestId("sidebar-rail")).toHaveCount(0);
+	await expect(sidebar).not.toHaveAttribute("data-peek");
+	await expect(page.getByTestId("sidebar-resize")).toBeVisible();
+	expect((await storedLayout(page)).collapsed).toBe("0");
+});
+
 test.describe("at the narrowest desktop width", () => {
 	test.use({ viewport: { width: 1024, height: 768 } });
 
