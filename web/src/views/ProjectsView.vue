@@ -93,17 +93,17 @@
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
 									class="field-input pl-9!" />
 							</div>
-							<div role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+							<div role="tablist" aria-label="Project views" class="flex max-w-full shrink-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
 								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
-									class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+									class="shrink-0 px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 									@click="setView(v.key)">
 									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
 								</button>
 							</div>
 							<template v-if="view === 'board'">
-								<div role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+								<div role="tablist" aria-label="Job filter" class="flex max-w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
 									<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
-										class="px-3 py-1.5" :class="filter === f.key ? FILTER_ACTIVE[f.key] : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+										class="shrink-0 px-3 py-1.5" :class="filter === f.key ? FILTER_ACTIVE[f.key] : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 										@click="filter = f.key">
 										{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
 									</button>
