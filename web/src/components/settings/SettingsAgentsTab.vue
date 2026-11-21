@@ -11,7 +11,7 @@
 						<!-- Agent Settings is one page of stacked sections; Files, Tasks and
 						     GitHub Projects are pages of their own in the sidebar. -->
 						<section v-show="onAgentSettingsPage" id="agent-settings-general" data-agent-settings-section="general"
-							aria-labelledby="agent-settings-general-heading" class="scroll-mt-5 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							aria-labelledby="agent-settings-general-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<h3 id="agent-settings-general-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">General</h3>
 							<div class="space-y-4 p-5">
 							<div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
@@ -109,7 +109,7 @@
 						</div>
 
 						<section v-show="onAgentSettingsPage" id="agent-settings-permissions" data-agent-settings-section="permissions"
-							aria-labelledby="agent-settings-permissions-heading" class="scroll-mt-5 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							aria-labelledby="agent-settings-permissions-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<h3 id="agent-settings-permissions-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">Permissions</h3>
 							<div class="space-y-4 p-5">
 							<div class="grid gap-3 lg:max-w-xl">
@@ -239,7 +239,7 @@
 						</section>
 
 						<section v-show="onAgentSettingsPage" id="agent-settings-channels" data-agent-settings-section="channels"
-							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-5 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
 								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h3>
 								<button type="button"

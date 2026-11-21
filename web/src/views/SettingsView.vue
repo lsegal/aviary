@@ -1,6 +1,6 @@
 <template>
 	<AppLayout>
-		<div class="h-full overflow-y-auto">
+		<div ref="scrollRoot" class="h-full overflow-y-auto">
 			<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
 				<div
 					class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
@@ -627,9 +627,7 @@ function routeSubtab(): AgentSubtab | null {
 		route.params.section,
 		route.query.tab,
 		route.query.section,
-	].find((s): s is AgentSubtab =>
-		settingsSections.includes(s as AgentSubtab),
-	);
+	].find((s): s is AgentSubtab => settingsSections.includes(s as AgentSubtab));
 	return section ?? "general";
 }
 
@@ -837,14 +835,18 @@ watch(
 
 // A settings URL naming a section opens the page scrolled to it; the bare
 // settings URL opens it at the top.
+const scrollRoot = ref<HTMLElement>();
 watch(
 	() => [route.fullPath, loading.value, draft.value.agents.length],
 	() => {
 		if (loading.value || !onAgentSettingsPage.value) return;
-		const section = document.getElementById(
-			`agent-settings-${selectedAgentSubtab.value}`,
-		);
-		section?.scrollIntoView({ block: "start" });
+		if (selectedAgentSubtab.value === "general") {
+			scrollRoot.value?.scrollTo({ top: 0 });
+			return;
+		}
+		document
+			.getElementById(`agent-settings-${selectedAgentSubtab.value}`)
+			?.scrollIntoView({ block: "start" });
 	},
 	{ flush: "post" },
 );

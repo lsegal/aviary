@@ -10,14 +10,14 @@ Log in with the bearer token from `~/.config/aviary/token`.
 
 The sidebar has two top-level sections:
 
-- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Tasks**, **Files** and **Settings**. Moving from one agent to another keeps you on the same page.
+- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
 - **System** — the instance's own pages: **Overview**, **Settings**, **Providers & Auth**, **Usage** and **Jobs**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
 
 ---
 
 ## Agents
 
-Everything an agent owns lives under its entry (`/agents/<agent>/…`). Changes on the agent's Tasks, Files and Settings pages are validated before saving and take effect immediately upon write. A rotating backup is created on every save.
+Everything an agent owns lives under its entry (`/agents/<agent>/…`). Changes on the agent's Tasks, Files and Agent Settings pages are validated before saving and take effect immediately upon write. A rotating backup is created on every save.
 
 ### Chat (`/agents/<agent>/chat/:sessionId?`)
 
@@ -41,13 +41,14 @@ Add, edit, or remove the agent's scheduled and file-watch tasks.
 
 Browse and edit root-level markdown files in the agent's data directory (RULES.md, MEMORY.md, etc.).
 
-### Settings (`/agents/<agent>/settings`)
+### Agent Settings (`/agents/<agent>/settings`)
 
-The agent's own settings, in three tabs:
+The agent's own settings, as sections on one scrolling page. **Save Changes** saves every section at once, and **Reload** discards unsaved edits. A section's URL opens the page scrolled to it.
 
-- **General** — name, model, fallbacks, working directory, and verbose mode. **Remove Agent** deletes the agent.
+- **General** — name, model, fallbacks, working directory, and verbose mode.
 - **Permissions** (`/agents/<agent>/settings/permissions`) — preset selector, tool allow/blocklist, filesystem paths, and exec rules.
 - **Channels** (`/agents/<agent>/settings/channels`) — add, edit, or remove Slack/Discord/Signal channel connections and their `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels directly from the UI.
+- **Danger Zone** — **Remove Agent** deletes the agent, after a confirmation.
 
 ---
 

@@ -8,7 +8,7 @@ Currently supported channel systems are:
 - Discord
 - Signal
 
-You can configure channels either in `aviary.yaml` or in the control panel at **Agents > *agent* > Settings > Channels**.
+You can configure channels either in `aviary.yaml` or in the control panel at **Agents > *agent* > Agent Settings > Channels**.
 
 For the exact `agents[].channels` schema, see the [Configuration Reference](/reference/config#agents-channels).
 
@@ -122,7 +122,7 @@ Slack-specific notes:
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
 - Slack apps connected through Events API and Socket Mode cannot emit classic typing notifications, but Aviary uses Slack assistant thread status indicators when `show_typing` is enabled.
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
-- In the control panel, **Agents > *agent* > Settings > Channels > Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
+- In the control panel, **Agents > *agent* > Agent Settings > Channels > Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
 ### Common Confusions
 
