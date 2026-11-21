@@ -1,6 +1,7 @@
 import { loadSkills, type Skill } from "../.vitepress/skills/source.mts";
 
 declare const data: Skill[];
+
 export { data };
 
 export default {

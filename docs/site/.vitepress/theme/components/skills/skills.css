@@ -563,3 +563,19 @@
 		padding: 20px;
 	}
 }
+
+/* Cards also render inside .vp-doc (the home page); keep doc link styles off. */
+.vp-doc a.skill-card,
+.vp-doc a.skill-card:hover {
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.vp-doc a.skill-card .skill-card-eyebrow,
+.vp-doc a.skill-card .skill-card-foot {
+	color: var(--brand);
+}
+
+.vp-doc a.skill-card .skill-card-text {
+	color: var(--ink-2);
+}

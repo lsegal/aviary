@@ -66,9 +66,7 @@ export async function writeShareCards(outDir: string) {
 }
 
 function meta(html: string, key: string): string | undefined {
-	const re = new RegExp(
-		`<meta (?:property|name)="${key}" content="([^"]*)"`,
-	);
+	const re = new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`);
 	return html.match(re)?.[1];
 }
 
@@ -109,11 +107,18 @@ export function checkSharePages(outDir: string, baseUrl: string) {
 			continue;
 		}
 		const header = readFileSync(png).subarray(16, 24);
-		if (header.readUInt32BE(0) !== ogWidth || header.readUInt32BE(4) !== ogHeight) {
-			problems.push(`${page.route}: ${page.image} is not ${ogWidth}×${ogHeight}`);
+		if (
+			header.readUInt32BE(0) !== ogWidth ||
+			header.readUInt32BE(4) !== ogHeight
+		) {
+			problems.push(
+				`${page.route}: ${page.image} is not ${ogWidth}×${ogHeight}`,
+			);
 		}
 	}
 	if (problems.length) {
-		throw new Error(`Skill share cards are incomplete:\n${problems.join("\n")}`);
+		throw new Error(
+			`Skill share cards are incomplete:\n${problems.join("\n")}`,
+		);
 	}
 }

@@ -32,7 +32,10 @@ export default defineConfig({
 	},
 	transformHead({ pageData }) {
 		const page = findSharePage(pageData.relativePath);
-		const pageUrl = new URL(pageRoute(pageData.relativePath), baseUrl).toString();
+		const pageUrl = new URL(
+			pageRoute(pageData.relativePath),
+			baseUrl,
+		).toString();
 		// Skill pages get their own generated 1200×630 card (#763).
 		const share = page
 			? {

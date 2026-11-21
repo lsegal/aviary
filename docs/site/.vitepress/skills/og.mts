@@ -21,7 +21,9 @@ export interface ShareCard {
 const require = createRequire(import.meta.url);
 
 function font(pkg: string, file: string): Buffer {
-	return readFileSync(join(dirname(require.resolve(`${pkg}/package.json`)), "files", file));
+	return readFileSync(
+		join(dirname(require.resolve(`${pkg}/package.json`)), "files", file),
+	);
 }
 
 let fonts: Parameters<typeof satori>[1]["fonts"] | undefined;
@@ -42,13 +44,19 @@ function loadFonts() {
 		},
 		{
 			name: "Space Grotesk",
-			data: font("@fontsource/space-grotesk", "space-grotesk-latin-600-normal.woff"),
+			data: font(
+				"@fontsource/space-grotesk",
+				"space-grotesk-latin-600-normal.woff",
+			),
 			weight: 600,
 			style: "normal",
 		},
 		{
 			name: "IBM Plex Mono",
-			data: font("@fontsource/ibm-plex-mono", "ibm-plex-mono-latin-500-normal.woff"),
+			data: font(
+				"@fontsource/ibm-plex-mono",
+				"ibm-plex-mono-latin-500-normal.woff",
+			),
 			weight: 500,
 			style: "normal",
 		},
@@ -105,62 +113,99 @@ function card(input: ShareCard, logo: string): Node {
 				margin: "64px 72px",
 			},
 			[
-			h("div", { display: "flex", alignItems: "center", justifyContent: "space-between" }, [
-				h("div", { display: "flex", alignItems: "center", gap: 16 }, [
-					h("img", { width: 52, height: 52 }, undefined, { src: logo, width: 52, height: 52 }),
-					h("div", { fontSize: 32, fontWeight: 600, color: palette.brand, letterSpacing: 1 }, "Aviary"),
-				]),
-				h("div", { fontFamily: "IBM Plex Mono", fontSize: 22, color: palette.ink2 }, "aviary.bot/skills"),
-			]),
-			h("div", { display: "flex", flexDirection: "column" }, [
-				h(
-					"div",
-					{
-						fontFamily: "IBM Plex Mono",
-						fontSize: 24,
-						color: palette.brand,
-						letterSpacing: 4,
-						textTransform: "uppercase",
-						marginBottom: 22,
-					},
-					input.eyebrow,
-				),
 				h(
 					"div",
 					{
 						display: "flex",
-						flexWrap: "wrap",
-						fontFamily: "Fraunces",
-						fontSize: 92,
-						lineHeight: 1.02,
-						letterSpacing: -3,
+						alignItems: "center",
+						justifyContent: "space-between",
 					},
 					[
-						parts.before ? h("span", { whiteSpace: "pre" }, parts.before) : null,
-						parts.accent
-							? h("span", { fontStyle: "italic", color: palette.brand2 }, parts.accent)
-							: null,
-						parts.after ? h("span", { whiteSpace: "pre" }, parts.after) : null,
-					].filter(Boolean),
+						h("div", { display: "flex", alignItems: "center", gap: 16 }, [
+							h("img", { width: 52, height: 52 }, undefined, {
+								src: logo,
+								width: 52,
+								height: 52,
+							}),
+							h(
+								"div",
+								{
+									fontSize: 32,
+									fontWeight: 600,
+									color: palette.brand,
+									letterSpacing: 1,
+								},
+								"Aviary",
+							),
+						]),
+						h(
+							"div",
+							{
+								fontFamily: "IBM Plex Mono",
+								fontSize: 22,
+								color: palette.ink2,
+							},
+							"aviary.bot/skills",
+						),
+					],
 				),
-			]),
-			h("div", { display: "flex", alignItems: "center", gap: 20 }, [
-				h(
-					"div",
-					{
-						display: "flex",
-						padding: "8px 20px",
-						borderRadius: 999,
-						border: "2px solid rgba(184, 58, 29, 0.4)",
-						backgroundColor: "rgba(213, 77, 33, 0.12)",
-						color: palette.brand,
-						fontFamily: "IBM Plex Mono",
-						fontSize: 26,
-					},
-					input.tag,
-				),
-				h("div", { fontSize: 24, color: palette.ink2 }, input.footnote),
-			]),
+				h("div", { display: "flex", flexDirection: "column" }, [
+					h(
+						"div",
+						{
+							fontFamily: "IBM Plex Mono",
+							fontSize: 24,
+							color: palette.brand,
+							letterSpacing: 4,
+							textTransform: "uppercase",
+							marginBottom: 22,
+						},
+						input.eyebrow,
+					),
+					h(
+						"div",
+						{
+							display: "flex",
+							flexWrap: "wrap",
+							fontFamily: "Fraunces",
+							fontSize: 92,
+							lineHeight: 1.02,
+							letterSpacing: -3,
+						},
+						[
+							parts.before
+								? h("span", { whiteSpace: "pre" }, parts.before)
+								: null,
+							parts.accent
+								? h(
+										"span",
+										{ fontStyle: "italic", color: palette.brand2 },
+										parts.accent,
+									)
+								: null,
+							parts.after
+								? h("span", { whiteSpace: "pre" }, parts.after)
+								: null,
+						].filter(Boolean),
+					),
+				]),
+				h("div", { display: "flex", alignItems: "center", gap: 20 }, [
+					h(
+						"div",
+						{
+							display: "flex",
+							padding: "8px 20px",
+							borderRadius: 999,
+							border: "2px solid rgba(184, 58, 29, 0.4)",
+							backgroundColor: "rgba(213, 77, 33, 0.12)",
+							color: palette.brand,
+							fontFamily: "IBM Plex Mono",
+							fontSize: 26,
+						},
+						input.tag,
+					),
+					h("div", { fontSize: 24, color: palette.ink2 }, input.footnote),
+				]),
 			],
 		),
 	);
@@ -173,7 +218,9 @@ export async function renderShareCard(input: ShareCard): Promise<Buffer> {
 		height: ogHeight,
 		fonts: loadFonts(),
 	});
-	return new Resvg(svg, { fitTo: { mode: "width", value: ogWidth } }).render().asPng();
+	return new Resvg(svg, { fitTo: { mode: "width", value: ogWidth } })
+		.render()
+		.asPng();
 }
 
 export async function writeShareCard(path: string, input: ShareCard) {

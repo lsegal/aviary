@@ -76,7 +76,11 @@ export function loadSkill(name: string): Skill {
 	const landing = parse(readFileSync(join(dir, "landing.yaml"), "utf8"));
 	return {
 		name,
-		displayName: required(openai?.interface?.display_name, name, "display_name"),
+		displayName: required(
+			openai?.interface?.display_name,
+			name,
+			"display_name",
+		),
 		shortDescription: required(
 			openai?.interface?.short_description,
 			name,
