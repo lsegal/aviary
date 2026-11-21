@@ -80,7 +80,76 @@ var cliProcs = struct {
 	// missed holds the exchanges overflow turns answered that a conversation
 	// has not seen yet, delivered with its next turn.
 	missed map[string][]string
-}{m: map[string]*cliProc{}, overflow: map[string]int{}, missed: map[string][]string{}}
+	// turns holds the turn running on each conversation that a follow-up
+	// message can still fold into itself.
+	turns map[string]*cliTurn
+}{m: map[string]*cliProc{}, overflow: map[string]int{}, missed: map[string][]string{}, turns: map[string]*cliTurn{}}
+
+// cliTurn is a turn on a session's own CLI conversation. Until it answers,
+// a message that follows it in the same session folds it in: the turn is
+// cancelled and its messages are sent again with the follow-up as one turn,
+// so "what's your n" followed by "oops name" gets one reply (#818).
+type cliTurn struct {
+	cancel context.CancelFunc
+	// messages, media and promptMsgIDs are every message the turn carries,
+	// its own last.
+	messages     []string
+	media        []string
+	promptMsgIDs []string
+	// answered and folded are guarded by cliProcs.mu.
+	answered bool
+	folded   bool
+}
+
+// foldCLITurn takes over the unanswered turn running on the conversation at
+// key, cancelling it, or returns nil when there is none to take over.
+func foldCLITurn(key string) *cliTurn {
+	cliProcs.mu.Lock()
+	t := cliProcs.turns[key]
+	if t == nil || t.answered || t.folded {
+		cliProcs.mu.Unlock()
+		return nil
+	}
+	t.folded = true
+	delete(cliProcs.turns, key)
+	cliProcs.mu.Unlock()
+	t.cancel()
+	return t
+}
+
+// registerCLITurn makes t the turn a follow-up at key folds into, returning
+// the function that withdraws it.
+func registerCLITurn(key string, t *cliTurn) func() {
+	cliProcs.mu.Lock()
+	cliProcs.turns[key] = t
+	cliProcs.mu.Unlock()
+	return func() {
+		cliProcs.mu.Lock()
+		if cliProcs.turns[key] == t {
+			delete(cliProcs.turns, key)
+		}
+		cliProcs.mu.Unlock()
+	}
+}
+
+// answer marks t as having answered, after which no follow-up folds it in.
+// It reports false when a follow-up already did.
+func (t *cliTurn) answer() bool {
+	cliProcs.mu.Lock()
+	defer cliProcs.mu.Unlock()
+	if t.folded {
+		return false
+	}
+	t.answered = true
+	return true
+}
+
+// isFolded reports whether a follow-up took t over.
+func (t *cliTurn) isFolded() bool {
+	cliProcs.mu.Lock()
+	defer cliProcs.mu.Unlock()
+	return t.folded
+}
 
 // cliTurnInput is everything promptCore prepared for a CLI-backed turn.
 type cliTurnInput struct {
@@ -139,7 +208,27 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		key = newID("cli-ephemeral")
 	}
 
-	proc, resumed, err := r.acquireCLIProc(key, opts, in.tools, in.sessionID)
+	// A message that follows an unanswered turn in the same session takes
+	// that turn over, waiting for the session's own conversation rather than
+	// running beside it.
+	sendCtx, cancelSend := context.WithCancel(ctx)
+	defer cancelSend()
+	turnState := &cliTurn{cancel: cancelSend, messages: []string{in.message}, media: in.mediaURLs}
+	if in.promptMsgID != "" {
+		turnState.promptMsgIDs = []string{in.promptMsgID}
+	}
+	folding := false
+	if !opts.Ephemeral {
+		if prior := foldCLITurn(key); prior != nil {
+			folding = true
+			turnState.messages = append(append([]string(nil), prior.messages...), in.message)
+			turnState.media = append(append([]string(nil), prior.media...), in.mediaURLs...)
+			turnState.promptMsgIDs = append(append([]string(nil), prior.promptMsgIDs...), turnState.promptMsgIDs...)
+			defer registerCLITurn(key, turnState)()
+		}
+	}
+
+	proc, resumed, err := r.acquireCLIProc(key, opts, in.tools, in.sessionID, folding)
 	if err != nil {
 		in.usage.HasError = true
 		in.deliverError(err)
@@ -151,19 +240,41 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	persist := !opts.Ephemeral && !overflow
 	if persist {
 		defer r.scheduleCLIIdle(proc)
+		if !folding {
+			defer registerCLITurn(key, turnState)()
+		}
 	} else {
 		defer r.dropCLIProc(proc)
+	}
+	folded := func() bool {
+		if !turnState.isFolded() {
+			return false
+		}
+		in.emit(StreamEvent{Type: StreamEventDone})
+		return true
+	}
+	if folded() {
+		return
+	}
+	// Only output reaches the turn's consumers once the turn has answered;
+	// what a turn that was folded in produces is dropped.
+	emit := func(ev StreamEvent) {
+		if (ev.Type == StreamEventText || ev.Type == StreamEventTool) && !turnState.answer() {
+			return
+		}
+		in.emit(ev)
 	}
 
 	if proc.scope != nil {
 		proc.scope.setTurn(&cliTurnState{
-			ctx: ctx, runner: r, emit: in.emit, client: in.toolClient,
+			ctx: sendCtx, runner: r, emit: emit, client: in.toolClient,
 			sessionID: in.sessionID, usage: in.usage,
 		})
 		defer proc.scope.setTurn(nil)
 	}
 
-	turn := cliagent.Turn{Text: in.message, MediaURLs: in.mediaURLs}
+	message := strings.Join(turnState.messages, "\n\n")
+	turn := cliagent.Turn{Text: message, MediaURLs: turnState.media}
 	var prefix []string
 	if in.memoryContext != "" {
 		prefix = append(prefix, in.memoryContext)
@@ -190,7 +301,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		case cliagent.EventText:
 			sawOutput = true
 			streamed.WriteString(ev.Text)
-			in.emit(StreamEvent{Type: StreamEventText, Text: ev.Text})
+			emit(StreamEvent{Type: StreamEventText, Text: ev.Text})
 		case cliagent.EventSession:
 			if persist {
 				r.saveCLISessionID(in.sessionID, backend, ev.SessionID)
@@ -198,12 +309,12 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		case cliagent.EventToolStart:
 			sawOutput = true
 			in.usage.ToolCalls++
-			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args}})
+			emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args}})
 			if r.IsVerbose() {
-				in.emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(ev.Tool.Name, ev.Tool.Args)})
+				emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(ev.Tool.Name, ev.Tool.Args)})
 			}
 		case cliagent.EventToolResult:
-			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
+			emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
 				ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
 			}})
 			rec, _ := json.Marshal(toolEventRecord{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
@@ -217,8 +328,11 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		}
 	}
 
-	res, err := proc.sess.Send(ctx, turn, onEvent)
-	if err != nil && resumed && !sawOutput && ctx.Err() == nil {
+	res, err := proc.sess.Send(sendCtx, turn, onEvent)
+	if folded() {
+		return
+	}
+	if err != nil && resumed && !sawOutput && sendCtx.Err() == nil {
 		// The stored CLI session may be gone (deleted, expired, or from
 		// another machine). Start a fresh one seeded with Aviary's history.
 		slog.Warn("agent: CLI resume failed; starting a new CLI session", "agent", r.agent.Name, "err", err)
@@ -228,18 +342,21 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		opts.NewSessionID = newUUID()
 		opts.MCPURL, opts.MCPToken = proc.sessOptsMCP()
 		if proc.sess, err = newCLISession(opts); err == nil {
-			retry := cliagent.Turn{Text: in.message, MediaURLs: in.mediaURLs}
+			retry := cliagent.Turn{Text: message, MediaURLs: turnState.media}
 			if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
 				retry.Text = prior + "\n\n" + retry.Text
 			}
 			if in.memoryContext != "" {
 				retry.Text = in.memoryContext + "\n\n" + retry.Text
 			}
-			res, err = proc.sess.Send(ctx, retry, onEvent)
+			res, err = proc.sess.Send(sendCtx, retry, onEvent)
+		}
+		if folded() {
+			return
 		}
 	}
 	if err != nil {
-		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		if errors.Is(err, context.Canceled) || sendCtx.Err() != nil {
 			in.emit(StreamEvent{Type: StreamEventStop})
 			return
 		}
@@ -250,6 +367,10 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		return
 	}
 
+	if !turnState.answer() {
+		in.emit(StreamEvent{Type: StreamEventDone})
+		return
+	}
 	answer := strings.TrimSpace(res.Text)
 	if answer == "" {
 		answer = strings.TrimSpace(streamed.String())
@@ -261,14 +382,14 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	if answer != "" {
 		assistantMsgID = r.appendSessionMessage(in.sessionID, domain.MessageRoleAssistant, answer, nil, in.model)
 		if overflow {
-			noteCLIMissedTurn(proc.overflowOf, in.message, answer)
+			noteCLIMissedTurn(proc.overflowOf, message, answer)
 		}
 	}
-	if in.promptMsgID != "" {
+	for _, promptMsgID := range turnState.promptMsgIDs {
 		if assistantMsgID == "" {
 			assistantMsgID = newID("resp")
 		}
-		if err := MarkMessageResponded(r.agent.ID, in.sessionID, in.promptMsgID, assistantMsgID); err != nil {
+		if err := MarkMessageResponded(r.agent.ID, in.sessionID, promptMsgID, assistantMsgID); err != nil {
 			slog.Warn("agent: failed to mark message responded", "session", in.sessionID, "err", err)
 		}
 	}
@@ -291,8 +412,9 @@ func (p *cliProc) sessOptsMCP() (string, string) {
 // whether the conversation continues an existing CLI session. When the
 // conversation is busy with another turn, the returned proc is an overflow
 // conversation of its own, seeded from the session's history, so turns in one
-// session run concurrently up to cliMaxConcurrentTurns.
-func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []ToolInfo, sessionID string) (*cliProc, bool, error) {
+// session run concurrently up to cliMaxConcurrentTurns. With wait set, the
+// turn waits for the session's own conversation instead.
+func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []ToolInfo, sessionID string, wait bool) (*cliProc, bool, error) {
 	fp := cliFingerprint(opts, tools)
 
 	var proc *cliProc
@@ -313,7 +435,7 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 		case cur.mu.TryLock():
 			proc = cur
 			cliProcs.mu.Unlock()
-		case cliProcs.overflow[key] < cliMaxConcurrentTurns-1:
+		case !wait && cliProcs.overflow[key] < cliMaxConcurrentTurns-1:
 			proc = &cliProc{key: key + "\x00" + newID("overflow"), fingerprint: fp, backend: opts.Backend, overflowOf: key, counted: true}
 			proc.mu.Lock()
 			cliProcs.overflow[key]++
@@ -361,7 +483,7 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 		if id := r.loadCLISessionID(sessionID, opts.Backend); id != "" {
 			opts.ResumeID = id
 			resumed = true
-		} else if opts.Backend == cliagent.Claude {
+		} else if definition, ok := llm.CLIProvider(string(opts.Backend)); ok && definition.AssignsSessionID() {
 			opts.NewSessionID = newUUID()
 		}
 	}
