@@ -111,9 +111,9 @@
 			{{ error }}
 		</p>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+		<div class="relative flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 			<section class="flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
-				<div class="flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
+				<div class="relative flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
 					<div v-if="!detail && !error" class="py-12 text-center text-sm text-gray-400">Loading…</div>
 					<JobTimeline v-else-if="detail" :events="detail.events" />
 				</div>

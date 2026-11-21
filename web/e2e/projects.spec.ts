@@ -1522,6 +1522,51 @@ for (const { name, width, height, compact } of [
 	});
 }
 
+for (const { name, width, height } of [
+	{ name: "mobile", width: 390, height: 844 },
+	{ name: "wide desktop", width: 1600, height: 900 },
+]) {
+	test(`the job detail page never scrolls past its content at ${name} width (#854)`, async ({
+		page,
+	}) => {
+		// Each tool call carries a visually hidden, absolutely positioned
+		// status label, which must stay inside the transcript's scroller.
+		EVENTS[221] = Array.from({ length: 80 }, (_, i) => [
+			{
+				kind: "tool_call",
+				time: at(3),
+				call_id: `t${i}`,
+				name: "Read",
+				input: { file_path: `file${i}.go` },
+			},
+			{ kind: "tool_result", time: at(3), call_id: `t${i}`, output: "ok" },
+		]).flat();
+		try {
+			await page.setViewportSize({ width, height });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const calls = page
+				.getByRole("list", { name: "Activity" })
+				.locator('[data-event="tool_call"]');
+			await expect(calls).toHaveCount(80);
+			const overscroll = await page.evaluate(() => {
+				const doc = document.scrollingElement ?? document.documentElement;
+				return doc.scrollHeight - doc.clientHeight;
+			});
+			expect(overscroll).toBeLessThanOrEqual(0);
+
+			// The transcript itself still scrolls to its last entry and footer.
+			await calls.last().scrollIntoViewIfNeeded();
+			await expect(calls.last()).toBeInViewport();
+			const footer = page.getByText("Jobs only take instructions");
+			await footer.scrollIntoViewIfNeeded();
+			await expect(footer).toBeInViewport();
+		} finally {
+			delete EVENTS[221];
+		}
+	});
+}
+
 const SIGNED_OUT = {
 	signed_out: true,
 	signing_in: false,
