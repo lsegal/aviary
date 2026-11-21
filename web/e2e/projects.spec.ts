@@ -1073,7 +1073,7 @@ test("run view renders the typed event timeline read-only", async ({
 	);
 	await expect(commands.last().getByTestId("command-status")).toHaveText("ok");
 	await expect(timeline).not.toContainText("running");
-	await commands.first().getByText("go test ./internal/scheduler/...").click();
+	await commands.first().locator("summary").click();
 	await expect(commands.first()).toContainText("--- FAIL: TestBackoffCap");
 	const edit = timeline.locator('[data-event="file_change"]');
 	await expect(edit).toContainText("edit internal/scheduler/queue.go");

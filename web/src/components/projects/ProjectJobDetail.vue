@@ -77,23 +77,24 @@
 		</dl>
 
 		<div v-if="detail && !job?.scheduled" class="@container border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6">
-			<p data-testid="lifecycle-compact" class="mb-2 hidden text-xs font-medium text-gray-700 @max-2xl:block dark:text-gray-300">
+			<p data-testid="lifecycle-compact" class="mb-2 hidden text-xs font-medium text-gray-700 @max-4xl:block dark:text-gray-300">
 				{{ compactLabel }}
 			</p>
 			<ol data-testid="lifecycle" aria-label="Lifecycle" class="flex min-w-0 items-center gap-2 overflow-hidden text-sm">
 				<li v-for="(label, i) in LIFECYCLE_STEPS" :key="label" :data-step="stepState(i)"
-					class="flex min-w-0 items-center gap-2" :class="i < LIFECYCLE_STEPS.length - 1 ? 'flex-1' : 'shrink-0 @2xl:shrink'"
+					class="relative flex min-w-0 items-center gap-2" :class="i < LIFECYCLE_STEPS.length - 1 ? 'flex-1' : 'shrink-0 @4xl:shrink'"
 					:title="`Step ${i + 1} of ${LIFECYCLE_STEPS.length}: ${label} (${STEP_TEXT[stepState(i)]})`"
+					:aria-label="`${label}, ${STEP_TEXT[stepState(i)]}`"
 					:aria-current="stepState(i) === 'current' || stepState(i) === 'failed' ? 'step' : undefined">
 					<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
 						:class="STEP_CLASS[stepState(i)]">
-						<CheckIcon v-if="stepState(i) === 'done'" aria-hidden="true" class="h-3.5 w-3.5" />
+						<template v-if="stepState(i) === 'done'">✓</template>
 						<XMarkIcon v-else-if="stepState(i) === 'failed'" aria-hidden="true" class="h-3.5 w-3.5" />
 						<template v-else>{{ i + 1 }}</template>
 					</span>
-					<span class="min-w-0 truncate @max-2xl:sr-only"
+					<span class="min-w-0 truncate @max-4xl:sr-only"
 						:class="stepState(i) === 'current' || stepState(i) === 'failed' ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'">
-						<span class="sr-only">{{ stepState(i) === "done" ? "✓ " : "" }}</span>{{ label }}<span class="sr-only"> ({{ STEP_TEXT[stepState(i)] }})</span>
+						{{ label }}
 					</span>
 					<span v-if="i < LIFECYCLE_STEPS.length - 1" aria-hidden="true"
 						class="h-px min-w-3 flex-1 border-t-2"
@@ -156,7 +157,6 @@
 </template>
 
 <script setup lang="ts">
-import CheckIcon from "@heroicons/vue/20/solid/CheckIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import CodeBracketIcon from "@heroicons/vue/24/outline/CodeBracketIcon";
