@@ -78,11 +78,14 @@ function taskTriggerKind(task: AgentTask): TriggerFields["trigger"] {
 
 /** The trigger editor's fields for a task from aviary.yaml. */
 export function taskTriggerFields(task: AgentTask): TriggerFields {
+	const trigger = taskTriggerKind(task);
+	const timed = trigger === "daily" || trigger === "weekly";
 	return {
-		trigger: taskTriggerKind(task),
+		trigger,
 		schedule: task.schedule ?? "",
 		every: task.every ?? "",
-		at: task.at ?? "",
+		// The Daily and Weekly tabs start at 09:00, like a new Projects schedule.
+		at: task.at || (timed ? "" : "09:00"),
 		days: task.days ?? "",
 		startAt: task.start_at ?? "",
 		timezone: task.timezone ?? "",
@@ -112,6 +115,9 @@ export function applyTaskTrigger(task: AgentTask, fields: TriggerFields) {
 		set("start_at", args.start_at);
 	}
 	set("timezone", fields.trigger ? args.timezone : "");
-	set("overlap", fields.trigger && args.overlap !== "queue" ? args.overlap : "");
+	set(
+		"overlap",
+		fields.trigger && args.overlap !== "queue" ? args.overlap : "",
+	);
 	set("missed", fields.trigger && args.missed !== "skip" ? args.missed : "");
 }

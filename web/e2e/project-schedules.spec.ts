@@ -259,9 +259,9 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 		"aria-checked",
 		"true",
 	);
-	await expect(
-		editor.getByTestId("trigger-preview").locator("li"),
-	).toHaveCount(3);
+	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
+		3,
+	);
 	await expect(editor.getByTestId("schedule-runs").locator("li")).toHaveCount(
 		2,
 	);

@@ -103,7 +103,9 @@ const zoneListId = `trigger-timezones-${useId()}`;
 
 const value = computed(() => props.modelValue);
 const triggers = computed(() =>
-	props.optional ? [{ key: "" as const, label: "None" }, ...TRIGGERS] : TRIGGERS,
+	props.optional
+		? [{ key: "" as const, label: "None" }, ...TRIGGERS]
+		: TRIGGERS,
 );
 
 function set<K extends keyof TriggerFields>(key: K, v: TriggerFields[K]) {
