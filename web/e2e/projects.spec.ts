@@ -1267,7 +1267,7 @@ test("run view renders the typed event timeline read-only", async ({
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		"Cap scheduler retry backoff at 10 minutes",
 	);
 
 	const steps = page.getByTestId("lifecycle");
@@ -1904,7 +1904,7 @@ test("job details open under the project header, keeping the chat and logs panel
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByTestId("job-detail")).toContainText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		"Cap scheduler retry backoff at 10 minutes",
 	);
 	// The project header and its buttons stay.
 	await expect(
@@ -1982,7 +1982,7 @@ test("loading a job details URL shows the project header with that job open", as
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		"Cap scheduler retry backoff at 10 minutes",
 	);
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 });
