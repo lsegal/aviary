@@ -325,9 +325,13 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	update.CleanupStaging(exe)
 	go s.runSelfUpdater(ctx)
 
-	// Keep the skills Aviary ships installed and matching this release, and
-	// move them to the new release when Aviary upgrades.
-	go codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	// Install the skills Aviary ships globally on first launch, keep them
+	// installed and matching this release, and move them to the new release
+	// when Aviary upgrades.
+	go func() {
+		codingskills.Default().InstallOnFirstLaunch(ctx, config.BaseDir())
+		codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	}()
 	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
 	defer saferestart.UnregisterSkillsUpdater("shipped")
 
