@@ -90,6 +90,8 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | `skills` | object | no | none | The skills.sh target its skills install for. See [`skills`](#skills). |
 | `promptStdin` | string[] | no | none | Lets long prompts go to stdin. See [`promptStdin`](#promptstdin). |
 | `doctor` | object | no | none | The read-only probes the CLI report runs. See [`doctor`](#doctor). |
+| `mcp` | object | no | none | How a chat hands the CLI Aviary's MCP server. See [`mcp` and `systemPrompt`](#mcp-and-systemprompt). |
+| `systemPrompt` | object | no | none | How a chat hands the CLI the agent's system prompt. See [`mcp` and `systemPrompt`](#mcp-and-systemprompt). |
 
 ### Allow-lists
 
@@ -178,6 +180,62 @@ So `{when: model, args: [--model, "{model}"]}` passes a model only when one was 
 A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` and `full` and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
 
 A mode may also list `enforce`: flags, with no placeholders, that replace the mode's `approval` flags when the agent's rules are narrower than allowing every command (`*`) and the whole Aviary directory (`@/**`). A mode that skips the CLI's own permission checks would otherwise skip its allow rules too, and only `!` rules would bind. `claude` declares it for `full` as `[--permission-mode, dontAsk]`, plus allows for the tools the agent's rules do not govern (`WebFetch`, `WebSearch`, `Skill`), so in `full` a command or write the rules leave out is refused while everything they allow runs without asking. Because `dontAsk` still runs commands Claude classifies as read-only, such as `echo hi`, when the command rules are narrower than `*` Aviary also gives a Claude chat session a `PreToolUse` hook that checks every `Bash` and `PowerShell` call against Allowed Exec Commands, as Aviary's own `exec` tool does, and refuses a call they do not allow with the responsible rule named.
+
+### `mcp` and `systemPrompt`
+
+`claude` and `codex` chats get Aviary's tools from a scoped MCP endpoint and the agent's system prompt as real instructions. A chat on any other definition gets them only when the definition says how, through these two optional blocks. They apply to interactive chat turns only; Code Loop jobs ignore them.
+
+`mcp` registers an HTTP MCP server for each turn. The bearer token is never written anywhere: Aviary puts it in the environment, and the definition names the variable for the CLI to expand.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `args` | string[] | Arguments added to `args.run` and `args.resume` where their `{approval}` argument stands, so both templates need one. |
+| `env` | map of string | Extra environment for the turn. |
+| `file` | object | A JSON document written to a temporary file for each turn and removed afterwards. `{mcpFile}` names its path in `args` or `env`. A string that is exactly `{mcpTimeoutMs}` or `{mcpTimeoutSec}` is written as a number. |
+| `toolPrefix` | string | Required. How the CLI's output names a tool from the registered server, such as `mcp_{mcpName}_`. Aviary's MCP boundary reports those calls itself, so the chat leaves them out of what it reads from the CLI's output instead of reporting them twice. |
+
+Their strings may use these placeholders, and must use `{mcpUrl}` and one of the two token variables:
+
+| Placeholder | Value |
+| --- | --- |
+| `{mcpName}` | `aviary`, the name the server is registered under |
+| `{mcpUrl}` | the scoped MCP endpoint |
+| `{mcpTokenEnv}` | `AVIARY_MCP_TOKEN`, the variable holding the token |
+| `{mcpAuthEnv}` | `AVIARY_MCP_AUTHORIZATION`, the variable holding the whole `Bearer <token>` header value, for a CLI that only expands a variable standing for a whole setting |
+| `{mcpTimeoutMs}`, `{mcpTimeoutSec}` | how long the CLI should wait on one tool call (30 minutes) |
+| `{mcpFile}` | the path `file` was written to |
+
+::: v-pre
+A placeholder sits inside the CLI's own variable syntax, so `"Bearer ${{mcpTokenEnv}}"` renders as `Bearer ${AVIARY_MCP_TOKEN}`.
+:::
+
+`systemPrompt` writes the agent's system prompt to a temporary file for each turn, with `{systemPromptFile}` naming it. It has `args` (added where `{approval}` stands, as for `mcp`) and `env`, and must use `{systemPromptFile}` in one of them. Without it, the system prompt opens the session's first turn.
+
+The built-in `gemini` definition declares both. It writes the server to a settings file that `GEMINI_CLI_SYSTEM_SETTINGS_PATH` points at, which takes precedence over your own settings and stands in for any system-wide settings file during the chat, and passes the system prompt through `GEMINI_SYSTEM_MD`, which replaces Gemini CLI's built-in system prompt as `--system-prompt-file` does Claude Code's:
+
+```json
+"mcp": {
+  "env": {"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "{mcpFile}"},
+  "file": {
+    "mcpServers": {
+      "{mcpName}": {
+        "httpUrl": "{mcpUrl}",
+        "headers": {"Authorization": "Bearer ${{mcpTokenEnv}}"},
+        "trust": true,
+        "timeout": "{mcpTimeoutMs}"
+      }
+    }
+  },
+  "toolPrefix": "mcp_{mcpName}_"
+},
+"systemPrompt": {"env": {"GEMINI_SYSTEM_MD": "{systemPromptFile}"}}
+```
+
+`trust` skips Gemini CLI's own confirmation, since Aviary checks every call at its MCP boundary. Gemini CLI's read-only `plan` mode, used when the agent's built-in tools are off, still refuses MCP tools it does not know to be read-only.
+
+::: v-pre
+A CLI that takes per-run settings as arguments uses `args` instead, for example `["-c", "mcpServers.{mcpName}.url=\"{mcpUrl}\"", "-c", "mcpServers.{mcpName}.headers.Authorization=\"${{mcpAuthEnv}}\""]`.
+:::
 
 ### `minVersion`
 
