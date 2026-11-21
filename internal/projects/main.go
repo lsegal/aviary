@@ -1357,8 +1357,25 @@ type CommandRunner struct {
 	RecordUsage UsageRecorder
 }
 
-// UsageRecorder receives the token use of one agent run.
+// UsageRecorder receives the token use of one agent run, or one record of
+// Projects work.
 type UsageRecorder func(domain.UsageRecord)
+
+// recordProjectUsage reports Projects work on issue repo#number to core usage
+// tracking, so System → Usage can count the issues worked on, merged, and
+// failed, and the wall time spent on them.
+func (w *Engine) recordProjectUsage(at time.Time, repo string, number int, project domain.ProjectUsage) {
+	if w.RecordUsage == nil {
+		return
+	}
+	project.Issue = strings.ToLower(repo) + "#" + strconv.Itoa(number)
+	w.RecordUsage(domain.UsageRecord{
+		Timestamp: at,
+		SessionID: project.Issue,
+		AgentID:   UsageAgentID,
+		Project:   &project,
+	})
+}
 
 // UsageAgentID is the agent ID Projects job usage is recorded under.
 const UsageAgentID = "projects"
