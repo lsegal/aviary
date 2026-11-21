@@ -72,8 +72,8 @@ type Definition struct {
 	// is written, decoded as Claude's streaming envelope, or decoded by the
 	// generic JSONL decoder configured with the agent's own field paths.
 	Output Output `json:"output"`
-	// ProjectsUnavailable, when set, gates the agent out of Projects job
-	// dispatch and says why. Projects records a structured transcript for
+	// ProjectsUnavailable, when set, gates the agent out of Code Loop job
+	// dispatch and says why. Code Loop records a structured transcript for
 	// every job, so an agent whose CLI has no machine-readable output mode
 	// cannot run one; it stays usable everywhere else aviary invokes it.
 	ProjectsUnavailable string `json:"projectsUnavailable,omitempty"`
@@ -1085,10 +1085,10 @@ func (d Definition) LevelError() error {
 	return fmt.Errorf("agent level must be %s", JoinOr(d.Levels.Values()))
 }
 
-// ProjectsError says why the agent cannot run a Projects job, nil when it can.
+// ProjectsError says why the agent cannot run a Code Loop job, nil when it can.
 func (d Definition) ProjectsError() error {
 	if reason := strings.TrimSpace(d.ProjectsUnavailable); reason != "" {
-		return fmt.Errorf("agent %s is unavailable for Projects jobs: %s", d.Name, reason)
+		return fmt.Errorf("agent %s is unavailable for Code Loop jobs: %s", d.Name, reason)
 	}
 	return nil
 }

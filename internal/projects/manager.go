@@ -40,7 +40,7 @@ type Watch struct {
 	Settings config.ProjectsConfig `json:"settings,omitzero"`
 }
 
-// Manager owns the Projects engine inside the Aviary server. It builds the
+// Manager owns the Code Loop engine inside the Aviary server. It builds the
 // engine from the projects every agent in aviary.yaml owns plus any runtime
 // watches,
 // applies changed settings to the running engine, and restarts it when a
@@ -94,7 +94,7 @@ type Manager struct {
 	loginRetryDelay time.Duration
 	// ghRunCommand replaces the engine's gh calls in tests.
 	ghRunCommand func(context.Context, ...string) ([]byte, error)
-	// mentionRouter prompts the built-in Projects agent; see
+	// mentionRouter prompts the built-in Code Loop agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]
 	// aviaryRunner runs in-process agent definitions; see
@@ -105,11 +105,11 @@ type Manager struct {
 	usageRecorder atomic.Pointer[UsageRecorder]
 }
 
-// MentionRouter sends a prompt to the built-in Projects agent.
+// MentionRouter sends a prompt to the built-in Code Loop agent.
 type MentionRouter func(ctx context.Context, prompt string) error
 
 // SetMentionRouter makes engines started from now on send direct mentions on
-// finished or paused jobs to the Projects agent through route, which must not
+// finished or paused jobs to the Code Loop agent through route, which must not
 // block on the agent's answer.
 func (m *Manager) SetMentionRouter(route MentionRouter) {
 	m.mentionRouter.Store(&route)
@@ -117,7 +117,7 @@ func (m *Manager) SetMentionRouter(route MentionRouter) {
 
 // SetUsageRecorder makes engines started from now on report each agent run's
 // token use, each job run's wall time, and each issue's merged or failed
-// outcome to record, so Projects jobs count toward core usage tracking.
+// outcome to record, so Code Loop jobs count toward core usage tracking.
 func (m *Manager) SetUsageRecorder(record UsageRecorder) {
 	m.usageRecorder.Store(&record)
 }
@@ -188,7 +188,7 @@ func (m *Manager) SetBrowser(cfg config.BrowserConfig) {
 }
 
 // generalApprovalLocked is the general approval mode of the last
-// reconciled config, which jobs follow when Projects has no override.
+// reconciled config, which jobs follow when Code Loop has no override.
 func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 	if m.agents == nil {
 		return ""
@@ -888,7 +888,7 @@ func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
 	m.reports.setDelivery(deliver)
 }
 
-// logComponent is the slog component Projects logs under, which is how
+// logComponent is the slog component Code Loop logs under, which is how
 // project_status picks its lines out of core's log ring.
 const logComponent = "projects"
 
@@ -898,7 +898,7 @@ const logComponent = "projects"
 // line.
 type LogSource func(component string, offset, limit int) ([]string, int)
 
-// SetLogSource sets where project_status reads Projects log lines from.
+// SetLogSource sets where project_status reads Code Loop log lines from.
 // Without one it reports none.
 func (m *Manager) SetLogSource(source LogSource) {
 	m.logSource.Store(&source)
@@ -913,7 +913,7 @@ func (m *Manager) logf(format string, args ...any) {
 	m.Log(fmt.Sprintf(format, args...))
 }
 
-// logsSince returns the Projects log lines after offset, and the offset to ask
+// logsSince returns the Code Loop log lines after offset, and the offset to ask
 // from next time.
 func (m *Manager) logsSince(offset, limit int) ([]string, int) {
 	source := m.logSource.Load()

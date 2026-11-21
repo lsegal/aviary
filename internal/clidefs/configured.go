@@ -8,7 +8,7 @@ import "os"
 const Aviary = "aviary"
 
 // FromConfig builds the CLI registry from the models: section's
-// cli_definitions. `aviary doctor`, the providers and Projects dispatch all
+// cli_definitions. `aviary doctor`, the providers and Code Loop dispatch all
 // load it here, so a binary override in a definition is the executable the
 // doctor probes and the one jobs run. The aviary definition points at the
 // running executable unless cli_definitions names another.

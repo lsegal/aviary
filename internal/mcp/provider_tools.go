@@ -16,7 +16,7 @@ var cliStatuses = clidoctor.Statuses
 
 // registerProviderTools registers the tools that describe how Aviary reaches
 // models beyond stored credentials. The CLI providers are core providers: the
-// Providers settings and Projects both read them from here.
+// Providers settings and Code Loop both read them from here.
 func registerProviderTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "provider_cli_list",

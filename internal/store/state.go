@@ -24,7 +24,7 @@ type ChannelMetadata struct {
 type AppState struct {
 	Channels map[string]ChannelMetadata `json:"channels,omitempty"`
 	// InstanceID names this Aviary instance. It is generated on first run and
-	// kept so the instance signs its Projects claims with the same identity
+	// kept so the instance signs its Code Loop claims with the same identity
 	// across restarts.
 	InstanceID string `json:"instance_id,omitempty"`
 }

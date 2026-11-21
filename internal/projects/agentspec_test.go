@@ -180,7 +180,7 @@ func TestAgentThatTakesNoLevelRejectsOne(t *testing.T) {
 	}
 }
 
-// TestDispatchResolvesThroughCoreCLIProviders checks Projects has no CLI
+// TestDispatchResolvesThroughCoreCLIProviders checks Code Loop has no CLI
 // registry of its own: the cli_definitions configured in core's provider layer
 // are the ones a job spec parses against and the executable it runs, and
 // invalid definitions keep a run from starting.

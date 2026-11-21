@@ -56,7 +56,7 @@ func (l *ProfileLock) Release() {
 // the browser happens to run in.
 //
 // The same applies when Aviary's own browser (the one its browser tools drive)
-// is already running on the profile: Projects shares that profile by default,
+// is already running on the profile: Code Loop shares that profile by default,
 // so it runs beside that browser in a private directory instead.
 func ClaimProfile(profile string) (*ProfileLock, string, error) {
 	lock, err := LockProfile(profile)

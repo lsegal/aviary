@@ -33,7 +33,7 @@ func renderDefinition(backend Backend, mode clidefs.Mode, values clidefs.Values)
 // template, with the stored session ID, after that, so later turns send only
 // the new message. The session ID is assigned by Aviary or captured from the
 // CLI's output, as the definition's session.assign says. Its output is read
-// with the definition's transcript mapper, the one Projects jobs use.
+// with the definition's transcript mapper, the one Code Loop jobs use.
 //
 // The definition's mcp block, when declared, says how each turn hands the CLI
 // Aviary's MCP server, and its systemPrompt block how it hands the CLI the

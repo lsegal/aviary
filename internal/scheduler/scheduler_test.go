@@ -986,7 +986,7 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 
 	job, err := q.EnqueueWithType("alpha/triage", "project", "alpha", "Triage new issues", "Triage new issues", "", 1, "", "")
 	require.NoError(t, err)
-	assert.ErrorContains(t, p.executeJob(context.Background(), job), "Projects engine")
+	assert.ErrorContains(t, p.executeJob(context.Background(), job), "Code Loop engine")
 
 	var got ProjectRun
 	p.projectRunner = func(_ context.Context, run ProjectRun) (string, error) {

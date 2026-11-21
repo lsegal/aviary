@@ -17,7 +17,7 @@ func TestProfileDirUsesOverride(t *testing.T) {
 	}
 }
 
-// TestProfileDirDefaultsToAviarysBrowserProfile checks Projects reads GitHub
+// TestProfileDirDefaultsToAviarysBrowserProfile checks Code Loop reads GitHub
 // with the same profile Aviary's own browser signs in with.
 func TestProfileDirDefaultsToAviarysBrowserProfile(t *testing.T) {
 	dir, err := ProfileDir("")

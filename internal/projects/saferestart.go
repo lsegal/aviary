@@ -12,7 +12,7 @@ import (
 // restart.
 const restartSource = "projects"
 
-// RunningJobs lists the Projects jobs whose agents are running, for a safe
+// RunningJobs lists the Code Loop jobs whose agents are running, for a safe
 // restart. Waiting and paused jobs are left out: a restart leaves them alone.
 func (m *Manager) RunningJobs() []saferestart.Job {
 	jobs := []saferestart.Job{}

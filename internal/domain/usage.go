@@ -4,7 +4,7 @@ import "time"
 
 // UsageRecord captures token usage for a single LLM streaming call.
 // One record is written per agent.Prompt() invocation (after all tool rounds).
-// A record whose Project is set instead records Projects work: a job run's
+// A record whose Project is set instead records Code Loop work: a job run's
 // wall time or an issue's outcome, and carries no token use.
 type UsageRecord struct {
 	Timestamp        time.Time     `json:"timestamp"`
@@ -36,7 +36,7 @@ const (
 	ProjectOutcomeFailed = "failed"
 )
 
-// ProjectUsage is the Projects work one usage record reports: a job run on
+// ProjectUsage is the Code Loop work one usage record reports: a job run on
 // Issue that took DurationMS of wall time, or Issue's Outcome. A merged
 // outcome also carries the Additions and Deletions of the pull request that
 // merged.

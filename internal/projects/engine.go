@@ -1,4 +1,4 @@
-// Package projects is the Projects engine: it watches GitHub repositories,
+// Package projects is the Code Loop engine: it watches GitHub repositories,
 // project boards and Discussions boards for ready issues and runs CLI
 // jobs on them through the gh-fix and gh-discuss skills.
 package projects
@@ -230,7 +230,7 @@ type TargetAgentIdentifier interface {
 // UIReporter receives the engine's published state and log lines.
 type UIReporter = core.UIReporter
 
-// Engine is the Projects engine: it watches targets for ready issues, claims
+// Engine is the Code Loop engine: it watches targets for ready issues, claims
 // them, and runs coding-agent jobs on them up to a concurrency limit.
 type Engine struct {
 	Repo        string
@@ -261,11 +261,11 @@ type Engine struct {
 	// never polled.
 	Discussions DiscussionSource
 	Runner      AgentRunner
-	// RecordUsage receives the Projects usage the engine observes: each job
+	// RecordUsage receives the Code Loop usage the engine observes: each job
 	// run's wall time and each issue's merged or failed outcome. Nil records
 	// nothing.
 	RecordUsage UsageRecorder
-	// RouteMention hands a prompt to the built-in Projects agent. A direct
+	// RouteMention hands a prompt to the built-in Code Loop agent. A direct
 	// mention on a finished or paused job goes to it instead of restarting
 	// the job; nil restarts the job as before.
 	RouteMention func(ctx context.Context, prompt string) error
@@ -2537,7 +2537,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				mentioned := directMentions[mentionKey]
 				switch {
 				case wake == core.PausedStay && mentioned && !mentions.rechecks[mentionKey] && w.routeMention(ctx, mentions, issue, "paused", directMentions):
-					// The Projects agent decides whether the comment needs
+					// The Code Loop agent decides whether the comment needs
 					// work; the job stays paused until it resumes it.
 					pauseJob(issue, key, wakeReason, pausedOwn)
 					continue

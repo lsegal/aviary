@@ -445,7 +445,7 @@ func explainJob(job core.JobSnapshot, snapshot core.Snapshot) string {
 		return text + "."
 	case "paused":
 		if job.WaitReason == core.StalledPauseReason {
-			return "Its agent kept ending turns with the issue still open and no new commits, pull requests, or comments, so Projects stopped resuming it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it once the blocker is fixed, and project_job_stop clears it."
+			return "Its agent kept ending turns with the issue still open and no new commits, pull requests, or comments, so Code Loop stopped resuming it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it once the blocker is fixed, and project_job_stop clears it."
 		}
 		if job.WaitReason == core.ManualPauseReason {
 			return "The owner paused it. Nothing wakes it on its own, and the stuck-job watchdog leaves it alone: project_job_resume requeues it, and project_job_stop clears it."
@@ -454,11 +454,11 @@ func explainJob(job core.JobSnapshot, snapshot core.Snapshot) string {
 		if job.WaitReason != "" {
 			text += ": " + job.WaitReason
 		}
-		return text + ". Projects wakes it on its own once that changes on GitHub. The stuck-job watchdog covers it, project_unblock_run runs a round for it now, and project_job_resume clears the pause and requeues it at once."
+		return text + ". Code Loop wakes it on its own once that changes on GitHub. The stuck-job watchdog covers it, project_unblock_run runs a round for it now, and project_job_resume clears the pause and requeues it at once."
 	case "queued":
 		return fmt.Sprintf("It is queued for an agent slot; %d of %d slots are running.", snapshot.Running, snapshot.Concurrency)
 	case "stopping":
-		return "It was stopped and Projects is waiting for its agent to exit."
+		return "It was stopped and Code Loop is waiting for its agent to exit."
 	}
 	if job.WaitReason != "" {
 		return fmt.Sprintf("Its status is %s: %s.", job.Status, job.WaitReason)

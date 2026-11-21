@@ -32,7 +32,7 @@ const (
 // on.
 const ManualPauseReason = "paused by owner"
 
-// StalledPauseReason is what the dashboards say a job waits on when Projects
+// StalledPauseReason is what the dashboards say a job waits on when Code Loop
 // paused it because its agent kept ending turns with the issue still open and
 // nothing new on GitHub. Like a manual pause, only the owner retrying it
 // resumes it.
@@ -55,7 +55,7 @@ type PausedWork struct {
 	// PullRequests lists the work's own open pull requests.
 	PullRequests []int `json:"pullRequests,omitempty"`
 	// Reason overrides what the dashboards say a manual pause waits on, for
-	// one Projects made itself rather than the owner.
+	// one Code Loop made itself rather than the owner.
 	Reason string `json:"reason,omitempty"`
 }
 

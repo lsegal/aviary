@@ -47,7 +47,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 
 	m.cfg = cfg
 
-	// The built-in Projects agent runs alongside the configured ones.
+	// The built-in Code Loop agent runs alongside the configured ones.
 	agents := config.EffectiveAgents(cfg)
 	desired := make(map[string]*config.AgentConfig, len(agents))
 	for i := range agents {

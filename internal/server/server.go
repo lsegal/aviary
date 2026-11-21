@@ -198,7 +198,7 @@ var startupWatches []projects.Watch
 func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
 
 // configureCLIProviders installs the models: section's CLI providers in
-// core's provider layer, which Projects and every other CLI caller resolve
+// core's provider layer, which Code Loop and every other CLI caller resolve
 // through.
 func configureCLIProviders(cfg *config.Config) {
 	if cfg == nil {
@@ -220,7 +220,7 @@ func (s *Server) startProjects() {
 	}
 }
 
-// Projects returns the server's Projects manager.
+// Projects returns the server's Code Loop manager.
 func (s *Server) Projects() *projects.Manager { return s.projects }
 
 func (s *Server) applyConfigReload(newCfg *config.Config) {
@@ -354,7 +354,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		defer saferestart.Unregister("tasks")
 	}
 
-	// Start the Projects engine, with any watches `aviary watch` handed over.
+	// Start the Code Loop engine, with any watches `aviary watch` handed over.
 	if s.projects != nil {
 		// Jobs a safe restart stopped resume in their own sessions and are
 		// told that Aviary restarted.

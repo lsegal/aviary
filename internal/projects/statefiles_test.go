@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// TestStateFilesWriteAtomicallyWithPrivateMode checks that every Projects
+// TestStateFilesWriteAtomicallyWithPrivateMode checks that every Code Loop
 // state file is written through store.WriteJSON: parent directories are
 // created, the file is private, and no temp file is left beside it.
 func TestStateFilesWriteAtomicallyWithPrivateMode(t *testing.T) {

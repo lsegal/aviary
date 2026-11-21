@@ -15,7 +15,7 @@ const (
 	SessionTypeTask    SessionType = "task"
 	SessionTypeUser    SessionType = "user"
 	// SessionTypeHidden is a persisted session kept out of the Chats list,
-	// such as the Projects prompt chat.
+	// such as the Code Loop prompt chat.
 	SessionTypeHidden SessionType = "hidden"
 )
 
@@ -37,7 +37,7 @@ type Session struct {
 
 // Deletable reports whether the session may be deleted. Main Chat, which
 // channels and other features look up by name, and hidden sessions such as
-// the Projects prompt chat are permanent; they can only be cleared.
+// the Code Loop prompt chat are permanent; they can only be cleared.
 func (s *Session) Deletable() bool {
 	return s.Type != SessionTypeMain && s.Type != SessionTypeHidden
 }

@@ -922,7 +922,7 @@ func TestValidate_CLIModel(t *testing.T) {
 	}
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
-	// cline keeps no session, so it runs Projects jobs but only warns as an agent model.
+	// cline keeps no session, so it runs Code Loop jobs but only warns as an agent model.
 	assert.True(t, hasIssue(issues, "cannot answer agent prompts"))
 	assert.True(t, hasIssue(issues, "expected <cli>/<model> or cli/<cli>/<model>"))
 
@@ -1654,7 +1654,7 @@ func TestValidate_ProjectTask(t *testing.T) {
 	}}}}}
 	assert.True(t, hasIssue(Validate(badModel, nil), "expected format <provider>/<model-name>"))
 
-	// A coding CLI only Projects jobs run on is fine for a project task.
+	// A coding CLI only Code Loop jobs run on is fine for a project task.
 	projectsCLI := &Config{Agents: []AgentConfig{{Name: "bot", Model: "ollama/llama3", Tasks: []TaskConfig{{
 		Name: "triage", Type: "project", Every: "1h", Project: "o/r", Model: "cli/cline/some-model", Prompt: "p",
 	}}}}}

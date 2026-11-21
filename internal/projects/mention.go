@@ -819,7 +819,7 @@ func (c mentionComment) commentURL() string {
 	}
 }
 
-// mentionPrompt is what the Projects agent is asked about a direct mention on
+// mentionPrompt is what the Code Loop agent is asked about a direct mention on
 // a finished or paused job.
 func mentionPrompt(issue Issue, comment mentionComment) string {
 	link := fmt.Sprintf("https://github.com/%s/issues/%d", issue.Repository, issue.Number)
@@ -830,7 +830,7 @@ func mentionPrompt(issue Issue, comment mentionComment) string {
 }
 
 // routeMention hands a direct mention on a finished or paused job to the
-// Projects agent instead of restarting the job, and reports whether it did.
+// Code Loop agent instead of restarting the job, and reports whether it did.
 // The agent restarts the job only when the comment needs work.
 func (w *Engine) routeMention(ctx context.Context, scan *mentionScan, issue Issue, state string, directMentions map[string]bool) bool {
 	if w.RouteMention == nil {
@@ -838,12 +838,12 @@ func (w *Engine) routeMention(ctx context.Context, scan *mentionScan, issue Issu
 	}
 	key := issue.Repository + "#" + strconv.Itoa(issue.Number)
 	if err := w.RouteMention(ctx, mentionPrompt(issue, scan.comments[key])); err != nil {
-		w.logf("issue #%d direct mention of instance %s could not reach the Projects agent: %v; handling it as before", issue.Number, w.Identity, err)
+		w.logf("issue #%d direct mention of instance %s could not reach the Code Loop agent: %v; handling it as before", issue.Number, w.Identity, err)
 		return false
 	}
 	delete(directMentions, key)
 	delete(scan.rechecks, key)
 	delete(scan.comments, key)
-	w.logf("issue #%d direct mention of instance %s on its %s job sent to the Projects agent", issue.Number, w.Identity, state)
+	w.logf("issue #%d direct mention of instance %s on its %s job sent to the Code Loop agent", issue.Number, w.Identity, state)
 	return true
 }

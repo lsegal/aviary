@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Limits on the live snapshot the Projects agent gets with each request.
+// Limits on the live snapshot the Code Loop agent gets with each request.
 const (
 	chatContextJobLimit    = 60
 	chatContextOutputLines = 5
@@ -22,7 +22,7 @@ var chatContextStatusKeys = []string{
 	"quotas", "clis", "last_check", "webhook_online", "error",
 }
 
-// ChatContext is the context the Projects agent gets with each request: this
+// ChatContext is the context the Code Loop agent gets with each request: this
 // instance, its targets, the board the chat was opened from when project is
 // set, and a live snapshot of issue and job counts and per-job summaries,
 // read now.
@@ -63,7 +63,7 @@ func (m *Manager) ChatContext(ctx context.Context, project string) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "This Aviary instance's Projects identity is /aviary:%s.\n", m.Identity())
+	fmt.Fprintf(&b, "This Aviary instance's Code Loop identity is /aviary:%s.\n", m.Identity())
 	targets, _ := status["targets"].([]string)
 	if len(targets) > 0 {
 		fmt.Fprintf(&b, "It watches these projects: %s.\n", strings.Join(targets, ", "))
