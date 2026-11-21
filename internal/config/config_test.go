@@ -1656,7 +1656,7 @@ func TestValidate_ProjectTask(t *testing.T) {
 
 	// A coding CLI only Projects jobs run on is fine for a project task.
 	projectsCLI := &Config{Agents: []AgentConfig{{Name: "bot", Model: "ollama/llama3", Tasks: []TaskConfig{{
-		Name: "triage", Type: "project", Every: "1h", Project: "o/r", Model: "cli/gemini/gemini-2.5-pro", Prompt: "p",
+		Name: "triage", Type: "project", Every: "1h", Project: "o/r", Model: "cli/cline/some-model", Prompt: "p",
 	}}}}}
 	for _, issue := range Validate(projectsCLI, nil) {
 		assert.NotContains(t, issue.Field, ".model", issue.Message)

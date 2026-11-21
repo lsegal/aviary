@@ -126,7 +126,7 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	if s.definition.ReadsPromptFromStdinIn(mode) {
 		cmd.Stdin = strings.NewReader(text)
 	}
-	capture := &sessionCapture{pattern: s.definition.SessionPattern(), emit: onEvent, known: s.sessionID}
+	capture := &sessionCapture{pattern: s.definition.SessionPattern()}
 	stderr := &tailBuffer{max: 4096}
 	cmd.Stderr = io.MultiWriter(stderr, capture)
 	stdout, err := cmd.StdoutPipe()
@@ -169,11 +169,13 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 			return Result{}, fmt.Errorf("%s exited without resuming its session", name)
 		}
 	}
-	if capture.id != "" {
-		s.sessionID = capture.id
-	} else if assigned != "" {
-		s.sessionID = assigned
-		onEvent(Event{Type: EventSession, SessionID: assigned})
+	id := capture.captured()
+	if id == "" {
+		id = assigned
+	}
+	if id != "" && id != s.sessionID {
+		s.sessionID = id
+		onEvent(Event{Type: EventSession, SessionID: id})
 	}
 	return Result{Text: m.lastMessage}, nil
 }
@@ -194,36 +196,33 @@ func (s *definitionSession) Close() error { return nil }
 
 // sessionCapture reads a CLI-reported session ID out of its output with the
 // definition's session.capture expression, from stdout lines and stderr
-// alike, and reports a new one with an EventSession event.
+// alike. stderr is written from its own goroutine, so the ID is guarded and
+// read once the process ends.
 type sessionCapture struct {
 	pattern *regexp.Regexp
-	emit    func(Event)
-	known   string
-	id      string
 
 	mu      sync.Mutex
+	id      string
 	partial []byte
 }
 
 func (c *sessionCapture) line(line []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.match(line)
+}
+
+// match records the ID line reports. Called with c.mu held.
+func (c *sessionCapture) match(line []byte) {
 	if c.pattern == nil {
 		return
 	}
-	match := c.pattern.FindSubmatch(line)
-	if len(match) < 2 || len(match[1]) == 0 {
-		return
-	}
-	id := string(match[1])
-	if id == c.id {
-		return
-	}
-	c.id = id
-	if id != c.known {
-		c.emit(Event{Type: EventSession, SessionID: id})
+	if match := c.pattern.FindSubmatch(line); len(match) >= 2 && len(match[1]) > 0 {
+		c.id = string(match[1])
 	}
 }
 
-// Write splits stderr into lines for line.
+// Write splits stderr into lines for match.
 func (c *sessionCapture) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -233,13 +232,20 @@ func (c *sessionCapture) Write(p []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		c.line(c.partial[:i])
+		c.match(c.partial[:i])
 		c.partial = c.partial[i+1:]
 	}
 	if len(c.partial) > 64*1024 {
 		c.partial = c.partial[len(c.partial)-64*1024:]
 	}
 	return len(p), nil
+}
+
+// captured returns the last ID the output reported.
+func (c *sessionCapture) captured() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.id
 }
 
 // definitionMapper turns a CLI's output into Events with the transcript
