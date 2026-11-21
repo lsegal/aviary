@@ -1,9 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-	type ConfigSaveArgs,
-	mockMCP,
-	setAuthToken,
-} from "./helpers/mockMCP";
+import { type ConfigSaveArgs, mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const AGENTS = [
 	{
