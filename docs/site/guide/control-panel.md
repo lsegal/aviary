@@ -107,9 +107,9 @@ Browsable catalog of all registered MCP tools:
 
 ### Skills (`/system/skills`)
 
-Every installed skill on one page: the version of each skill Aviary ships installed in each provider's CLI, and the skills Aviary agents use, which you can search, filter, enable or disable, and configure with their per-skill settings. Skills are detected immediately when added or removed.
+Every installed skill on one page: the version of each skill Aviary ships installed in each provider's CLI, and the skills Aviary agents use, which you can search, filter, enable or disable, and configure with their per-skill settings. Counts show how many agent skills are installed, enabled and showing under the current filters. Skills are detected immediately when added or removed.
 
-Aviary detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`. You can search for installable skills with `npx skills find` or on [skills.sh](https://skills.sh/). This is also the easiest place to confirm that a skill installed with a command like `npx skills add --global -a universal 4ier/notion-cli` has been detected by Aviary.
+The **Looking for more skills?** card at the top is the skills browser: Aviary detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`. You can search for installable skills with `npx skills find` or on [skills.sh](https://skills.sh/), and the card shows an example install. This is also the easiest place to confirm that a skill installed with a command like `npx skills add --global -a universal 4ier/notion-cli` has been detected by Aviary.
 
 ### Sessions (`/system/sessions`)
 

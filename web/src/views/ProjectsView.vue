@@ -58,17 +58,17 @@
 								:disabled="checking" @click="onCheckNow">
 								{{ checking ? "Checking…" : "Check now" }}
 							</button>
-							<router-link :to="settingsPath" data-testid="project-settings-link"
-								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-								Settings
-							</router-link>
 							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
-								class="rounded-lg border px-3 py-1.5 text-sm"
+								aria-label="Prompt chat" title="Prompt chat"
+								class="rounded-lg border p-1.5"
 								:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 								@click="chatOpen = !chatOpen">
-								Prompt chat
+								<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
-							<button type="button" :class="ADD_BTN" @click="openAdd">+ Add project</button>
+							<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
+								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+								<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
+							</router-link>
 						</div>
 					</header>
 
@@ -179,8 +179,10 @@
 </template>
 
 <script setup lang="ts">
+import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
+import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -326,14 +328,9 @@ function openSchedule(id: string) {
 	selectedSchedule.value = id;
 }
 
-const ADD_BTN =
-	"rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700";
 // The add-project dialog is open while the URL carries ?add=1, so the
 // sidebar's "Add project" link can open it from anywhere.
 const adding = computed(() => route.query.add === "1");
-function openAdd() {
-	void router.push({ query: { ...route.query, add: "1" } });
-}
 function closeAdd() {
 	const { add: _, ...rest } = route.query;
 	void router.replace({ query: rest });
