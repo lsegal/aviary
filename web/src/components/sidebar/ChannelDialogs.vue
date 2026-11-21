@@ -16,9 +16,7 @@
 						class="field-input" placeholder="Team Slack" />
 
 					<label for="channel-type" class="field-label mt-3">Type</label>
-					<select id="channel-type" v-model="form.type" class="field-input">
-						<option v-for="t in CHANNEL_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-					</select>
+					<AppSelect id="channel-type" v-model="form.type" aria-label="Type" :options="[...CHANNEL_TYPES]" />
 
 					<p v-if="error" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
@@ -108,6 +106,7 @@ import {
 	channelSettingsPath,
 } from "../../lib/channels";
 import { useSettingsStore } from "../../stores/settings";
+import { AppSelect } from "../ui/select";
 
 const { dialog, close } = useChannelDialogs();
 const { callTool } = useMCP();

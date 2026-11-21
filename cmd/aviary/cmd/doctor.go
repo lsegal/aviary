@@ -181,7 +181,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// Agents gated out of Projects dispatch are listed with the reason, so a
 	// job that fails to start on one is explained before it is dispatched.
 	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
+	_, _ = fmt.Fprintln(os.Stdout, "Code Loop agents")
 	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
 	if registryErr != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", registryErr)
@@ -245,9 +245,9 @@ func writeProjectsAgentGates(out io.Writer, registry *clidefs.Registry) {
 			continue
 		}
 		gated++
-		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Projects: %s\n", name, definition.ProjectsUnavailable)
+		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Code Loop: %s\n", name, definition.ProjectsUnavailable)
 	}
 	if gated == 0 {
-		_, _ = fmt.Fprintln(out, "  (every agent can run Projects jobs)")
+		_, _ = fmt.Fprintln(out, "  (every agent can run Code Loop jobs)")
 	}
 }

@@ -18,7 +18,7 @@ func TestWriteProjectsAgentGates_ListsAgy(t *testing.T) {
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)
 	assert.Contains(t, out.String(), "agy")
-	assert.Contains(t, out.String(), "unavailable for Projects: agy has no machine-readable output mode")
+	assert.Contains(t, out.String(), "unavailable for Code Loop: agy has no machine-readable output mode")
 	assert.NotContains(t, out.String(), "claude")
 }
 
@@ -27,7 +27,7 @@ func TestWriteProjectsAgentGates_UngatedByConfig(t *testing.T) {
 	require.NoError(t, err)
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)
-	assert.Equal(t, "  (every agent can run Projects jobs)\n", out.String())
+	assert.Equal(t, "  (every agent can run Code Loop jobs)\n", out.String())
 }
 
 func TestDescribeCLIBackend(t *testing.T) {

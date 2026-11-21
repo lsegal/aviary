@@ -8,7 +8,7 @@ Currently supported channel systems are:
 - Discord
 - Signal
 
-You can configure channels either in `aviary.yaml` or in the control panel's **Channels** sidebar section, below **GitHub Projects** under each agent.
+You can configure channels either in `aviary.yaml` or in the control panel's **Channels** sidebar section, below **Code Loop** under each agent.
 
 ## The Channels Section
 

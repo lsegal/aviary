@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption } from "./helpers/select";
 
 interface Sess {
 	id: string;
@@ -364,7 +365,10 @@ test("Settings → Sessions offers Clear, not Remove, for Main Chat", async ({
 }) => {
 	const calls = await mockChats(page, twoChats(), { main: mainHistory() });
 	await page.goto("/system/sessions");
-	await page.getByRole("combobox").first().selectOption("assistant");
+	await chooseOption(
+		page.getByRole("combobox", { name: "Agent" }),
+		"assistant",
+	);
 
 	const buttons = page.getByTestId("session-remove-button");
 	await expect(buttons).toHaveText(["Clear", "Remove"]);

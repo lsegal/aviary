@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import {
+	chooseOption,
+	expectValue,
+	optionLabels,
+	searchOption,
+} from "./helpers/select";
+import {
 	agentPageLink,
 	openAgentPage,
 	openChannelSettings,
@@ -1115,34 +1121,30 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 		.click();
 
 	// A project that is no longer watched stays selected instead of clearing.
-	const project = page.getByRole("combobox", { name: "Project" });
-	await expect(project).toHaveValue("o/gone");
-	await expect(project.locator("option")).toHaveText([
-		"Select a watched project…",
-		"o/r",
-		"o/other",
-		"o/gone",
-	]);
+	const project = page.getByRole("combobox", { name: "Project", exact: true });
+	await expectValue(project, "o/gone");
+	expect(await optionLabels(project)).toEqual(["o/r", "o/other", "o/gone"]);
 	const model = page.getByTestId("task-model");
-	await expect(model).toContainText("cli/codex");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/codex");
 	await expect(page.getByPlaceholder("./docs/**/*.md")).toHaveCount(0);
 
-	await project.selectOption("o/r");
-	await model.getByRole("button").click();
-	await model.getByRole("textbox").fill("cli/claude/opus");
-	await model.getByRole("textbox").press("Enter");
-	await expect(model).toContainText("cli/claude/opus");
+	await chooseOption(project, "o/r");
+	await searchOption(model.getByRole("combobox"), "cli/claude/opus");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
 
 	// Turning the first task into a project task offers the watched projects.
 	await page
 		.getByTestId("sidebar-tasks")
 		.getByRole("link", { name: "daily-briefing" })
 		.click();
-	await page
-		.locator("select")
-		.filter({ has: page.locator('option[value="project"]') })
-		.selectOption("project");
-	await page.getByRole("combobox", { name: "Project" }).selectOption("o/other");
+	await chooseOption(
+		page.getByRole("combobox", { name: "Task type" }),
+		"Project",
+	);
+	await chooseOption(
+		page.getByRole("combobox", { name: "Project", exact: true }),
+		"o/other",
+	);
 
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
@@ -1226,16 +1228,16 @@ test("a task's session target is picked by name and saved by ID", async ({
 
 	// A saved session that no longer exists is shown as gone, not blank.
 	const session = page.getByRole("combobox", { name: "Session" });
-	await expect(session.locator("option")).toHaveText([
-		"Choose a session…",
+	expect(await optionLabels(session)).toEqual([
 		"Main Chat",
 		"Trip planning",
 		"Deleted session (no longer exists)",
 	]);
-	await expect(session).toHaveValue("sess_gone");
+	await expectValue(session, "sess_gone");
+	await expect(session).toHaveValue("Deleted session (no longer exists)");
 	await expect(page.locator('input[placeholder="Target ID"]')).toHaveCount(0);
 
-	await session.selectOption({ label: "Main Chat" });
+	await chooseOption(session, "Main Chat");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
 	expect(savedConfig).toMatchObject({
@@ -1278,8 +1280,8 @@ test("a task saved with a session name selects that session", async ({
 		.getByRole("link", { name: "daily-briefing" })
 		.click();
 	const session = page.getByRole("combobox", { name: "Session" });
-	await expect(session).toHaveValue("sess_main");
-	await expect(session.locator("option:checked")).toHaveText("Main Chat");
+	await expectValue(session, "sess_main");
+	await expect(session).toHaveValue("Main Chat");
 });
 
 test("settings deep links scroll to their section", async ({ page }) => {
@@ -1413,10 +1415,11 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 
 	await editor.getByRole("radio", { name: "Daily" }).click();
 	await editor.getByLabel("At", { exact: true }).fill("09:00");
-	await editor.getByLabel("Timezone").fill("America/Los_Angeles");
-	await editor
-		.getByLabel("If the last run is still going")
-		.selectOption("skip");
+	await searchOption(editor.getByLabel("Timezone"), "America/Los_Angeles");
+	await chooseOption(
+		editor.getByLabel("If the last run is still going"),
+		"Skip this run",
+	);
 	await expect
 		.poll(() => previews.at(-1))
 		.toMatchObject({

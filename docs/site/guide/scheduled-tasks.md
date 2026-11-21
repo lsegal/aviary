@@ -10,7 +10,7 @@ Aviary runs three kinds of scheduled work:
 
 **Script tasks** run a sandboxed Lua script directly against the agent's MCP tools. No LLM is involved at runtime. Executions are deterministic and cost zero tokens.
 
-**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs the project's agent on the prompt in an isolated clone of the repository (in place of [`/gh-fix`](/skills/gh-fix/)), and finishes when the agent's run ends. See [Scheduled prompts](#scheduled-prompts).
+**Project tasks** run a prompt as a [Code Loop](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs the project's agent on the prompt in an isolated clone of the repository (in place of [`/gh-fix`](/skills/gh-fix/)), and finishes when the agent's run ends. See [Scheduled prompts](#scheduled-prompts).
 
 All types support the same triggers and appear identically in the job queue. The difference is entirely in how they execute.
 
@@ -214,7 +214,7 @@ tasks:
 aviary task add assistant nightly-triage "Triage new issues" --project lsegal/aviary --model claude/opus --at 02:00
 ```
 
-Core's scheduler owns the schedule; Projects only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
+Core's scheduler owns the schedule; Code Loop only runs each fire as a job. Each fire appears on the board as a **Scheduled** job card with no issue link. Stop cancels the run and Retry fires the task again through the scheduler, so the rerun lands in the task's run history; a scheduled job cannot be paused, and the shutdown checkpoint skips it. The run's last line of output becomes its run-history summary. Project tasks need a schedule trigger, and the project must be watched when the task fires.
 
 Project tasks are scheduled tasks like any other: there is one list of them, one scheduler that runs them, and they are created and edited under **Agents → *agent* → Scheduled Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a **Model override**, the same model picker channels use, which the project's agent runs the task with instead of its own model.
 

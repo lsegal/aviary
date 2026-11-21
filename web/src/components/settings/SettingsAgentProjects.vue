@@ -74,23 +74,19 @@
 				<template v-if="reports.enabled">
 					<label class="block max-w-xs">
 						<span :class="LABEL">Aviary agent</span>
-						<select :value="reports.agent" :class="INPUT" data-field="reports_agent"
-							@change="updateReports({ agent: ($event.target as HTMLSelectElement).value })">
-							<option value="">Choose an agent…</option>
-							<option v-for="a in reportAgentOptions" :key="a" :value="a">{{ a }}</option>
-						</select>
+						<AppSelect :model-value="reports.agent" data-field="reports_agent" class="mt-1"
+							placeholder="Choose an agent…" :options="reportAgentOptions.map((a) => ({ value: a, label: a }))"
+							@update:model-value="updateReports({ agent: $event })" />
 					</label>
 					<div>
 						<span :class="LABEL">Targets</span>
 						<ul class="space-y-2">
 							<li v-for="(t, i) in reportTargets" :key="i" data-testid="report-target" class="flex flex-wrap items-center gap-2">
-								<select :value="t.channel" :class="TARGET_CHANNEL" :aria-label="`Target ${i + 1} channel`"
-									@change="setReportTarget(i, ($event.target as HTMLSelectElement).value, t.id)">
-									<option value="">Send to…</option>
-									<option v-for="c in reportChannels(t.channel)" :key="c.value" :value="c.value">{{ c.label }}</option>
-								</select>
+								<AppSelect :model-value="t.channel" class="w-44 shrink-0" :aria-label="`Target ${i + 1} channel`"
+									placeholder="Send to…" :options="reportChannels(t.channel)"
+									@update:model-value="setReportTarget(i, $event, t.id)" />
 								<div v-if="t.channel === 'session'" class="min-w-0 flex-1">
-									<SessionSelect :agent="reports.agent" :model-value="t.id" :select-class="INPUT"
+									<SessionSelect :agent="reports.agent" :model-value="t.id"
 										:aria-label="`Target ${i + 1} session`"
 										@update:model-value="setReportTarget(i, t.channel, $event)" />
 								</div>
@@ -154,6 +150,7 @@ import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectDialog from "../projects/DeleteProjectDialog.vue";
 import SessionSelect from "../SessionSelect.vue";
+import { AppSelect } from "../ui/select";
 
 const props = defineProps<{
 	/** The agent whose projects are edited; its projects field is updated in place. */
@@ -171,8 +168,6 @@ const LABEL =
 	"mb-1 flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300";
 const INPUT =
 	"w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white";
-// INPUT without w-full, so the choice sits beside its session.
-const TARGET_CHANNEL = `${INPUT.replace("w-full ", "")} w-44 shrink-0`;
 const ICON_BTN =
 	"rounded-md px-1.5 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800";
 

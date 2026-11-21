@@ -15,10 +15,9 @@
 					</p>
 				</div>
 				<div class="ml-auto flex items-center gap-2">
-					<select v-if="sessions.length > 1" v-model="selectedId" data-testid="channel-session-picker"
-						aria-label="Conversation" class="field-input max-w-xs py-1.5 text-sm">
-						<option v-for="s in sessions" :key="s.id" :value="s.id">{{ sessionLabel(s) }}</option>
-					</select>
+					<AppSelect v-if="sessions.length > 1" v-model="selectedId" data-testid="channel-session-picker"
+						aria-label="Conversation" class="max-w-xs"
+						:options="sessions.map((s) => ({ value: s.id, label: sessionLabel(s) }))" />
 					<router-link :to="channelSettingsPath(agent, channelName(channel))" data-testid="channel-settings-link"
 						aria-label="Channel settings" title="Channel settings"
 						class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -62,6 +61,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import MessagingLogo from "../components/MessagingLogo.vue";
+import { AppSelect } from "../components/ui/select";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
 import { useMCP } from "../composables/useMCP";
 import {

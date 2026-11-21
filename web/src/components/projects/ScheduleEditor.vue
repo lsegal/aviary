@@ -21,6 +21,7 @@
 				placeholder="Triage issues opened since the last run and label them." />
 			<span class="text-xs text-gray-500">Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</span>
 		</label>
+		<TaskCostFeedback :agent="draft.agent" :prompt="draft.prompt" type="project" :model="draft.model" />
 		<div data-testid="schedule-model" class="block text-sm">
 			<span class="font-medium text-gray-700 dark:text-gray-200">Model override (optional)</span>
 			<div class="mt-1">
@@ -80,6 +81,7 @@ import {
 import type { TriggerFields } from "../../lib/trigger";
 import { agentTaskPath } from "../../stores/settings";
 import ModelSelector from "../ModelSelector.vue";
+import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 
 const props = defineProps<{

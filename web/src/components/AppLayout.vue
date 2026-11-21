@@ -405,7 +405,7 @@ interface NavChild {
 	key: string;
 	label: string;
 	to: string;
-	/** Running jobs (a project's, or all of GitHub Projects'), shown as a
+	/** Running jobs (a project's, or all of Code Loop'), shown as a
 	 * gray badge when any. */
 	running?: number;
 	/** Overrides the path match, for items picked by a query. */
@@ -495,7 +495,7 @@ const brandLinks: BrandLink[] = [
 // Permissions sections; each channel's settings open from its own entry.
 const AGENT_PAGES = [
 	{ key: "chat", label: "Chats" },
-	{ key: "projects", label: "GitHub Projects" },
+	{ key: "projects", label: "Code Loop" },
 	{ key: "channels", label: "Channels" },
 	{ key: "tasks", label: "Scheduled Tasks" },
 	{ key: "files", label: "Files" },
@@ -736,7 +736,7 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		: undefined,
 );
 
-// The agent's projects list opens on its GitHub Projects pages and boards.
+// The agent's projects list opens on its Code Loop pages and boards.
 const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );
@@ -814,7 +814,7 @@ const mobileAdd = computed(() => {
 	return null;
 });
 
-// Add project opens the add dialog on the agent's GitHub Projects board.
+// Add project opens the add dialog on the agent's Code Loop board.
 function addProjectLink(agent: string) {
 	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }

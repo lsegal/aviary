@@ -88,7 +88,7 @@ import {
 } from "../../lib/projectSettings";
 import { useSettingsStore } from "../../stores/settings";
 
-// agent owns the new project: the agent whose GitHub Projects board the dialog
+// agent owns the new project: the agent whose Code Loop board the dialog
 // is opened from.
 const props = defineProps<{ initial?: string; agent: string }>();
 const emit = defineEmits<{

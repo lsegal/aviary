@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, chooseValue, optionLabels } from "./helpers/select";
 
 interface Channel {
 	type: string;
@@ -156,9 +157,7 @@ function sidebarRows(page: Page) {
 	);
 }
 
-test("the Channels section sits directly below GitHub Projects", async ({
-	page,
-}) => {
+test("the Channels section sits directly below Code Loop", async ({ page }) => {
 	await mockChannels(page, [TEAM]);
 	await page.goto("/agents/assistant/chat");
 	await expect(page.getByTestId("sidebar-row-channels")).toBeVisible();
@@ -211,7 +210,7 @@ test("+ adds a channel, creating its session, and opens its settings", async ({
 	await page.getByRole("button", { name: "Add channel" }).first().click();
 	const dialog = page.getByTestId("channel-dialog");
 	await dialog.getByLabel("Channel name").fill("Ops Discord");
-	await dialog.getByLabel("Type").selectOption("discord");
+	await chooseValue(dialog.getByRole("combobox", { name: "Type" }), "discord");
 	await dialog.getByRole("button", { name: "Create" }).click();
 
 	expect(calls.channel_create).toEqual([
@@ -313,12 +312,12 @@ test("a scheduled task delivers to a channel picked by name", async ({
 	});
 	await page.goto("/agents/assistant/tasks?task=daily-report");
 	const sendVia = page.getByTestId("task-send-via");
-	await expect(sendVia.locator("option")).toHaveText([
+	expect(await optionLabels(sendVia)).toEqual([
 		"silent",
 		"Session",
 		"Channel: Team Slack",
 	]);
-	await sendVia.selectOption({ label: "Channel: Team Slack" });
+	await chooseOption(sendVia, "Channel: Team Slack");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 
 	await expect.poll(() => calls.config_save?.length ?? 0).toBe(1);

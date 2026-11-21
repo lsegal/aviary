@@ -1327,6 +1327,7 @@ func (a taskTriggerArgs) fields(cronExpr string) schedule.Fields {
 
 func registerTaskTools(s *sdkmcp.Server) {
 	registerTaskManageTools(s)
+	registerTaskAnalyzeTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
 		Description: "List configured tasks and their trigger definitions",

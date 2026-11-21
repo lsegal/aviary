@@ -11,7 +11,7 @@
 					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
 						:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-5'">
 						<!-- Agent Settings is one page of stacked sections; Files, Tasks and
-						     GitHub Projects are pages of their own in the sidebar. -->
+						     Code Loop are pages of their own in the sidebar. -->
 						<section v-show="onAgentSettingsPage" id="agent-settings-general" data-agent-settings-section="general"
 							aria-labelledby="agent-settings-general-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<h3 id="agent-settings-general-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">General</h3>
@@ -137,7 +137,7 @@
 							<div class="grid gap-3 lg:max-w-xl">
 								<div>
 									<label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
-									<FancySelect :id="`tool-preset-${agent.name || i}`" :model-value="agentPermissionsPreset(agent)"
+									<AppSelect :id="`tool-preset-${agent.name || i}`" :model-value="agentPermissionsPreset(agent)"
 										:options="permissionPresetOptions()"
 										@update:model-value="updateAgentPermissionsPreset(agent, $event)" />
 									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -307,11 +307,7 @@
 								<div class="grid gap-3 lg:grid-cols-[160px_1fr]">
 									<div>
 										<label class="field-label">Type</label>
-										<select v-model="ch.type" class="field-input">
-											<option value="slack">slack</option>
-											<option value="discord">discord</option>
-											<option value="signal">signal</option>
-										</select>
+										<AppSelect v-model="ch.type" :options="CHANNEL_TYPE_OPTIONS" aria-label="Type" />
 									</div>
 									<div>
 										<label class="field-label">{{ channelPrimaryLabel(ch) }}</label>
@@ -752,11 +748,7 @@
 </div>
 <div>
 <label class="field-label">Task type</label>
-<select v-model="selectedTask.type" class="field-input">
-<option value="prompt">Prompt</option>
-<option value="script">Script</option>
-<option value="project">Project</option>
-</select>
+<AppSelect v-model="selectedTask.type" :options="TASK_TYPE_OPTIONS" aria-label="Task type" />
 </div>
 </div>
 
@@ -768,10 +760,8 @@
 <div v-if="selectedTask.type === 'project'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
 <label class="field-label">Project</label>
-<select v-model="selectedTask.project" class="field-input" aria-label="Project">
-<option value="">Select a watched project…</option>
-<option v-for="target in projectTargetOptions(selectedTask)" :key="target" :value="target">{{ target }}</option>
-</select>
+<AppCombobox v-model="selectedTask.project" aria-label="Project" placeholder="Select a watched project…"
+	empty-text="No matching projects" :options="projectTargetOptions(selectedTask).map((t: string) => ({ value: t, label: t }))" />
 <router-link v-if="selectedTask.project" data-testid="task-project-schedule-link"
 	:to="projectScheduleLink(agent.name, selectedTask)"
 	class="mt-1 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400">Open in the project's schedules</router-link>
@@ -791,10 +781,9 @@ placeholder="Default project agent model"
 </div>
 <div>
 <label class="field-label">Send Via</label>
-<select :value="taskChannelSelection(selectedTask)" data-testid="task-send-via" class="field-input" @change="setTaskChannelSelection(selectedTask, $event)">
-<option value="">silent</option>
-<option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
-</select>
+<AppSelect :model-value="taskChannelSelection(selectedTask)" aria-label="Send Via" data-testid="task-send-via"
+	:options="[{ value: '', label: 'silent' }, ...configuredTaskChannelOptions(agent)]"
+	@update:model-value="setTaskChannelSelection(selectedTask, $event)" />
 </div>
 </div>
 
@@ -804,7 +793,6 @@ placeholder="Default project agent model"
 <SessionSelect
 	:agent="agent.name"
 	:model-value="selectedTaskTarget(selectedTask)"
-	select-class="field-input"
 	aria-label="Session"
 	@update:model-value="setSelectedTaskTarget(selectedTask, $event)"
 />
@@ -814,6 +802,8 @@ placeholder="Default project agent model"
 <div class="mt-4">
 <label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
 <textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
+<TaskCostFeedback :agent="agent.name" :prompt="selectedTask.prompt ?? ''" :type="selectedTask.type || 'prompt'"
+	:target="selectedTask.target ?? ''" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
 <button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
@@ -864,15 +854,16 @@ import { channelName, channelPath } from "../../lib/channels";
 import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentTask, useSettingsStore } from "../../stores/settings";
-import FancySelect from "../FancySelect.vue";
 import FilePreviewSplit from "../files/FilePreviewSplit.vue";
 import FilePreviewToggle from "../files/FilePreviewToggle.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
+import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import TasksOverview from "../tasks/TasksOverview.vue";
+import { AppCombobox, AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -882,7 +873,8 @@ export default defineComponent({
 		DropdownMenuItem,
 		DropdownMenuRoot,
 		DropdownMenuTrigger,
-		FancySelect,
+		AppCombobox,
+		AppSelect,
 		FilePreviewSplit,
 		FilePreviewToggle,
 		MessagingLogo,
@@ -892,6 +884,7 @@ export default defineComponent({
 		SwitchRoot,
 		SwitchThumb,
 		TasksOverview,
+		TaskCostFeedback,
 		TriggerEditor,
 	},
 	setup() {
@@ -904,7 +897,7 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) => ({
 					value: option.value,
 					label: option.label,
-					caption: option.description,
+					description: option.description,
 				}),
 			);
 		const permissionPresetDescription = (agent: unknown) =>
@@ -912,6 +905,15 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) =>
 					option.value === settings.agentPermissionsPreset(agent),
 			)?.description;
+		const CHANNEL_TYPE_OPTIONS = ["slack", "discord", "signal"].map((t) => ({
+			value: t,
+			label: t,
+		}));
+		const TASK_TYPE_OPTIONS = [
+			{ value: "prompt", label: "Prompt" },
+			{ value: "script", label: "Script" },
+			{ value: "project", label: "Project" },
+		];
 		const agentFileHint =
 			"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 		const store = useSettingsStore();
@@ -999,6 +1001,8 @@ export default defineComponent({
 			channelName,
 			channelPath,
 			agentFileHint,
+			CHANNEL_TYPE_OPTIONS,
+			TASK_TYPE_OPTIONS,
 			agentFileMenuActions,
 			runAgentFileMenuAction,
 			projectScheduleLink,

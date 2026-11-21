@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
 	<div class="projects-page">
 		<section class="pp-hero pp-wrap">
 			<div>
-				<p class="pp-eyebrow reveal">Aviary · GitHub Projects</p>
+				<p class="pp-eyebrow reveal">Aviary · Code Loop</p>
 				<h1 class="reveal">Write the issue.<br />Aviary ships the fix.</h1>
 				<p class="pp-lede reveal">
 					Aviary watches your GitHub issues. Describe a problem, a proposal, or
@@ -211,9 +211,9 @@ onBeforeUnmount(() => {
 				<div class="pp-window reveal">
 					<div class="pp-window-bar">
 						<span class="tl"><span /><span /><span /></span>
-						<span>localhost:16677 · GitHub Projects</span>
+						<span>localhost:16677 · Code Loop</span>
 					</div>
-					<img :src="screenshot('projects-board')" alt="GitHub Projects board with running, paused, and merged jobs" />
+					<img :src="screenshot('projects-board')" alt="Code Loop board with running, paused, and merged jobs" />
 				</div>
 				<div>
 					<p class="pp-eyebrow">The board</p>
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
 						<span class="tl"><span /><span /><span /></span>
 						<span>localhost:16677 · job run</span>
 					</div>
-					<img :src="screenshot('projects-run')" alt="A Projects job's run view with plan, file changes, and test output" />
+					<img :src="screenshot('projects-run')" alt="A Code Loop job's run view with plan, file changes, and test output" />
 				</div>
 			</div>
 		</section>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
 						</li>
 					</ul>
 					<div class="pp-links">
-						<a class="pp-button" :href="withBase('/guide/projects')">Read the Projects guide</a>
+						<a class="pp-button" :href="withBase('/guide/projects')">Read the Code Loop guide</a>
 						<a class="pp-button ghost" :href="withBase('/guide/code-loop')">Follow one issue through the loop</a>
 					</div>
 				</div>

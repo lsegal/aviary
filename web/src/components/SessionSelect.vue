@@ -1,10 +1,7 @@
 <template>
-	<select :value="selected" :class="selectClass" :aria-label="ariaLabel" data-testid="session-select"
-		@change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)">
-		<option value="" disabled>{{ loading ? "Loading sessions…" : "Choose a session…" }}</option>
-		<option v-for="s in ordered" :key="s.id" :value="s.id">{{ chatDisplayName(s) }}</option>
-		<option v-if="missingLabel" :value="modelValue" data-missing="true">{{ missingLabel }}</option>
-	</select>
+	<AppCombobox :model-value="selected" :options="options" :aria-label="ariaLabel" data-testid="session-select"
+		:placeholder="loading ? 'Loading sessions…' : 'Choose a session…'" empty-text="No matching sessions"
+		@update:model-value="emit('update:modelValue', String($event))" />
 </template>
 
 <script setup lang="ts">
@@ -17,11 +14,11 @@ import {
 	isMainChat,
 	useChatSessionsStore,
 } from "../stores/chatSessions";
+import { AppCombobox, type SelectOption } from "./ui/select";
 
 const props = defineProps<{
 	agent: string;
 	modelValue: string;
-	selectClass?: string;
 	ariaLabel?: string;
 }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
@@ -66,4 +63,11 @@ const missingLabel = computed(() => {
 	if (v.startsWith("sess_")) return "Deleted session (no longer exists)";
 	return `${v} (created on first delivery)`;
 });
+
+const options = computed<SelectOption[]>(() => [
+	...ordered.value.map((s) => ({ value: s.id, label: chatDisplayName(s) })),
+	...(missingLabel.value
+		? [{ value: props.modelValue, label: missingLabel.value }]
+		: []),
+]);
 </script>

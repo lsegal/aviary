@@ -72,7 +72,7 @@ agents:
     model: codex/gpt-6-sol        # codex exec --model gpt-6-sol
 ```
 
-The same models written with a `cli/` prefix, such as `cli/claude/opus`, are accepted too. Only Claude Code and Codex can answer agent prompts; a model on another provider reached through a CLI, such as `gemini/<model>`, is valid for Projects jobs but warns when an agent uses it.
+The same models written with a `cli/` prefix, such as `cli/claude/opus`, are accepted too. Only Claude Code and Codex can answer agent prompts; a model on another provider reached through a CLI, such as `gemini/<model>`, is valid for Code Loop jobs but warns when an agent uses it.
 
 The CLI runs the agent loop. Aviary passes it the agent's system prompt and rules, and serves the agent's tools to it over MCP on a loopback-only endpoint with a token scoped to that session. The CLI's text, tool calls, and usage come back as ordinary chat events, so the chat UI, channels, session history and Usage work the same way.
 

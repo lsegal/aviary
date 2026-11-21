@@ -10,7 +10,7 @@ import (
 )
 
 // ProjectsConfig is the top-level projects: section in aviary.yaml: the one
-// set of Projects settings, shared by every project of every agent. Every
+// set of Code Loop settings, shared by every project of every agent. Every
 // field is optional and holds only a value that differs from its default, so
 // a watch started with defaults writes nothing here. The projects themselves
 // are listed under the agents that own them; see AgentProjectsConfig.

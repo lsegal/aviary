@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import {
+	chooseOption,
+	chooseValue,
+	expectValue,
+	optionLabels,
+} from "./helpers/select";
 import { systemList } from "./helpers/sidebar";
 
 const STATUS = {
@@ -201,14 +207,12 @@ function savedProjects(calls: Calls, agent: string) {
 const saveChanges = (page: Page) =>
 	page.getByRole("button", { name: "Save Changes" }).click();
 
-test('the Add project "+" on GitHub Projects opens Add project', async ({
-	page,
-}) => {
+test('the Add project "+" on Code Loop opens Add project', async ({ page }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ })
+		.getByRole("link", { name: /^Code Loop/ })
 		.hover();
 	await page.getByRole("link", { name: "Add project", exact: true }).click();
 	await expect(page).toHaveURL("/agents/coder/projects?add=1");
@@ -337,7 +341,7 @@ test("add-project checks report each failing prerequisite", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("a project's board names its agent and links to its projects in Projects settings", async ({
+test("a project's board names its agent and links to its projects in Code Loop settings", async ({
 	page,
 }) => {
 	await setup(page);
@@ -408,7 +412,7 @@ test("changing a setting writes only the differing values to the shared section"
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
 	// Browser delivery is the default and the only mode with browser switches.
-	await expect(page.locator('[data-field="delivery"]')).toHaveValue("browser");
+	await expectValue(page.locator('[data-field="delivery"]'), "browser");
 	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
 		"placeholder",
 		"20s",
@@ -419,7 +423,7 @@ test("changing a setting writes only the differing values to the shared section"
 		})
 		.click();
 	await expect(yaml).toContainText("browser_vision: true");
-	await page.locator('[data-field="delivery"]').selectOption("webhook");
+	await chooseValue(page.locator('[data-field="delivery"]'), "webhook");
 	await expect(
 		page.getByRole("switch", {
 			name: "Show the browser it reads GitHub with, for debugging",
@@ -455,7 +459,7 @@ test("changing a setting writes only the differing values to the shared section"
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
-	await page.locator('[data-field="delivery"]').selectOption("browser");
+	await chooseValue(page.locator('[data-field="delivery"]'), "browser");
 	await page
 		.getByRole("switch", {
 			name: "Read pages it no longer recognizes from capped screenshots",
@@ -470,7 +474,7 @@ test("changing a setting writes only the differing values to the shared section"
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 });
 
-test("Projects settings holds each agent's projects beside the shared settings", async ({
+test("Code Loop settings holds each agent's projects beside the shared settings", async ({
 	page,
 }) => {
 	await setup(page, { config: REPORTS_CONFIG });
@@ -500,9 +504,9 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 	});
 	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
-	await expect(mode).toHaveValue("full");
+	await expectValue(mode, "full");
 
-	await mode.selectOption("read-only");
+	await chooseValue(mode, "read-only");
 	const yaml = page.getByTestId("project-yaml");
 	await expect(yaml).toContainText("approval_mode: read-only");
 	await expect(yaml).not.toContainText("yolo");
@@ -525,8 +529,8 @@ test("following the general approval mode writes no Projects override", async ({
 	});
 	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
-	await expect(mode).toHaveValue("auto");
-	await mode.selectOption("");
+	await expectValue(mode, "auto");
+	await chooseValue(mode, "");
 	await expect(page.getByTestId("project-yaml")).not.toContainText(
 		"approval_mode",
 	);
@@ -703,13 +707,13 @@ test("a short clone list does not scroll", async ({ page }) => {
 	expect(box.scroll).toBe(box.client);
 });
 
-test("Projects settings live under the projects section, not System", async ({
+test("Code Loop settings live under the projects section, not System", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
 	await expect(page.getByTestId("settings-title")).toHaveText(
-		"Projects Settings",
+		"Code Loop Settings",
 	);
 	await expect(page.getByTestId("project-settings")).toBeVisible();
 	await expect(
@@ -722,7 +726,7 @@ test("Projects settings live under the projects section, not System", async ({
 	await expect(page.getByTestId("project-settings")).toHaveCount(0);
 });
 
-test("Projects settings shows this instance's ID", async ({ page }) => {
+test("Code Loop settings shows this instance's ID", async ({ page }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
 	const card = page.getByTestId("projects-instance-id");
@@ -816,33 +820,29 @@ test("reports can be turned on with an agent and a target, then off", async ({
 
 	await toggle.click();
 	// Reports go through the owning agent unless another is chosen.
-	await expect(page.locator('[data-field="reports_agent"]')).toHaveValue(
-		"coder",
-	);
+	await expectValue(page.locator('[data-field="reports_agent"]'), "coder");
 	await expect(page.getByTestId("reports-error")).toContainText(
 		"Reports need at least one target.",
 	);
-	await page.locator('[data-field="reports_agent"]').selectOption("atlas");
+	await chooseValue(page.locator('[data-field="reports_agent"]'), "atlas");
 
 	// A channel is picked by name: the report lands in its session.
-	await page
-		.getByRole("combobox", { name: "Target 1 channel" })
-		.selectOption({ label: "Channel: Team Slack" });
+	await chooseOption(
+		page.getByRole("combobox", { name: "Target 1 channel" }),
+		"Channel: Team Slack",
+	);
 	await expect(
 		page.getByRole("textbox", { name: "Target 1 delivery ID" }),
 	).toHaveCount(0);
 	await page.getByRole("button", { name: "Add a target" }).click();
-	await page
-		.getByRole("combobox", { name: "Target 2 channel" })
-		.selectOption("session");
+	await chooseValue(
+		page.getByRole("combobox", { name: "Target 2 channel" }),
+		"session",
+	);
 	// A session target is picked by name and saved by its ID.
 	const session = page.getByRole("combobox", { name: "Target 2 session" });
-	await expect(session.locator("option")).toHaveText([
-		"Choose a session…",
-		"Main Chat",
-		"Project reports",
-	]);
-	await session.selectOption({ label: "Project reports" });
+	expect(await optionLabels(session)).toEqual(["Main Chat", "Project reports"]);
+	await chooseOption(session, "Project reports");
 	await page.locator('[data-field="report_waiting"]').uncheck();
 	await expect(page.getByTestId("reports-error")).toHaveCount(0);
 	await expect(yaml).toContainText(
@@ -905,12 +905,11 @@ test("saved reports load into the form and are checked like the server does", as
 	await expect(
 		page.getByRole("switch", { name: "Send job reports" }),
 	).toHaveAttribute("aria-checked", "true");
-	await expect(page.locator('[data-field="reports_agent"]')).toHaveValue(
-		"atlas",
-	);
-	await expect(
+	await expectValue(page.locator('[data-field="reports_agent"]'), "atlas");
+	await expectValue(
 		page.getByRole("combobox", { name: "Target 1 channel" }),
-	).toHaveValue("channel:Team Slack");
+		"channel:Team Slack",
+	);
 	// No events filter means every event is reported.
 	for (const e of ["merged", "failed", "waiting"])
 		await expect(page.locator(`[data-field="report_${e}"]`)).toBeChecked();

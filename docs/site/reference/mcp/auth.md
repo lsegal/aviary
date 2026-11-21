@@ -224,7 +224,7 @@ Complete the GitHub Copilot login after the user has authorized the device code 
 
 ## provider_cli_list
 
-The providers reached through a CLI: for every CLI definition (the built-ins plus `models.cli_definitions`), whether it is installed and where, its version, sign-in state, quota, and the models it reports. A CLI that is not installed is still listed, with `installed: false` and `status: "missing"`. Settings → Providers & Authentication and Projects both read this list. Read-only, and allowed by the `standard` and `minimal` presets. CLI: `aviary models clis`.
+The providers reached through a CLI: for every CLI definition (the built-ins plus `models.cli_definitions`), whether it is installed and where, its version, sign-in state, quota, and the models it reports. A CLI that is not installed is still listed, with `installed: false` and `status: "missing"`. Settings → Providers & Authentication and Code Loop both read this list. Read-only, and allowed by the `standard` and `minimal` presets. CLI: `aviary models clis`.
 
 **Arguments:** none.
 

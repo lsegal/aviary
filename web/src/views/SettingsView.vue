@@ -634,8 +634,8 @@ watch(
 
 // An agent's pages: its Agent Settings page's General and Permissions
 // sections, one channel's settings (opened from the Channels sidebar
-// section), then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in Projects settings.
+// section), then Files and Tasks. Code Loop is the agent's board, with its
+// settings in Code Loop settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -1031,7 +1031,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects Settings",
+	projects: "Code Loop Settings",
 	providers: "Settings",
 	sessions: "Sessions",
 	skills: "Skills",
@@ -2498,8 +2498,7 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 		: "border-gray-200 bg-gray-50 opacity-75 dark:border-gray-800 dark:bg-gray-950";
 }
 
-function setTaskChannelSelection(task: AgentTask, event: Event) {
-	const selection = (event.target as HTMLSelectElement).value;
+function setTaskChannelSelection(task: AgentTask, selection: string) {
 	const parsed = parseTaskChannelValue(task.target);
 	if (selection === "session") task.target = `session:${parsed.target}`;
 	else task.target = selection;
