@@ -536,8 +536,9 @@ const projectsOpen = computed(() =>
 
 const addAgentLink = { path: "/agents", query: { add: "1" } };
 
+// + Add project opens the add dialog on the agent's GitHub Projects board.
 function addProjectLink(agent: string) {
-	return { path: agentPagePath(agent, "projects"), query: { new: "1" } };
+	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }
 
 // Runtime watches no agent owns sit with System's other pages.

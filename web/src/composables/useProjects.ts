@@ -80,12 +80,14 @@ export function useProjectList(interval = 10_000) {
 }
 
 /**
- * A project's live status and one page of its jobs with their recent output.
- * A non-empty search narrows the jobs to those with the text in any field,
- * including their output, and total then counts only the matches.
+ * The live status and one page of the jobs of a set of projects, with their
+ * recent output: one project's board, or an agent's board of all its
+ * projects. No projects means an empty board. A non-empty search narrows the
+ * jobs to those with the text in any field, including their output, and
+ * total then counts only the matches.
  */
 export function useProjectBoard(
-	project: Ref<string>,
+	targets: Ref<string[]>,
 	filter: Ref<BoardFilter>,
 	search: Ref<string> = ref(""),
 ) {
@@ -99,14 +101,14 @@ export function useProjectBoard(
 	const error = ref("");
 	const loading = ref(true);
 
-	async function listJobs(target: string) {
+	async function listJobs(projects: string[]) {
 		const statuses = filterStatuses(filter.value);
 		const query = search.value.trim() || undefined;
 		if (!statuses) {
 			const list = normalizeJobList(
 				parseToolJSON(
 					await callTool("project_job_list", {
-						target,
+						targets: projects,
 						query,
 						offset: page.value * JOBS_PAGE_SIZE,
 						limit: JOBS_PAGE_SIZE,
@@ -126,7 +128,7 @@ export function useProjectBoard(
 				normalizeJobList(
 					parseToolJSON(
 						await callTool("project_job_list", {
-							target,
+							targets: projects,
 							status: s,
 							query,
 							limit: ALL_JOBS_LIMIT,
@@ -148,15 +150,19 @@ export function useProjectBoard(
 	let latest = 0;
 	async function load() {
 		const call = ++latest;
-		const target = project.value;
-		if (!target) {
+		const projects = targets.value;
+		const key = projects.join(" ");
+		if (!projects.length) {
+			jobs.value = [];
+			total.value = 0;
+			unfilteredTotal.value = 0;
 			loading.value = false;
 			return;
 		}
 		try {
 			const [statusText, list] = await Promise.all([
 				callTool("project_status", {}),
-				listJobs(target),
+				listJobs(projects),
 			]);
 			// Every visible card shows its job's latest terminal output, which
 			// streams while the job runs.
@@ -179,7 +185,7 @@ export function useProjectBoard(
 					}
 				}),
 			);
-			if (target !== project.value || call !== latest) return;
+			if (key !== targets.value.join(" ") || call !== latest) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
 			jobs.value = list.jobs;
 			total.value = list.total;
@@ -194,7 +200,7 @@ export function useProjectBoard(
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
-	watch([project, filter], () => {
+	watch([() => targets.value.join(" "), filter], () => {
 		page.value = 0;
 		loading.value = true;
 		void refresh();
@@ -216,7 +222,12 @@ export function useProjectBoard(
 	}
 
 	async function checkNow() {
-		await callTool("project_refresh", { target: project.value });
+		// One check reads every project, so a board of several asks once.
+		const [target] = targets.value;
+		await callTool(
+			"project_refresh",
+			targets.value.length === 1 ? { target } : {},
+		);
 		await refresh();
 	}
 

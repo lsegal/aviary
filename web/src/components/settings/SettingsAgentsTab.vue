@@ -750,9 +750,6 @@
 							</div>
 						</div>
 
-						<!-- Projects subtab -->
-						<SettingsAgentProjects v-if="selectedAgentSubtab === 'projects'" :agent="agent" :config="draft" />
-
 						<!-- Tasks subtab -->
 						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
 							<div class="flex items-center justify-between">
@@ -945,7 +942,6 @@ import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import { settingsViewContextKey } from "./context";
-import SettingsAgentProjects from "./SettingsAgentProjects.vue";
 
 export default defineComponent({
 	name: "SettingsAgentsTab",
@@ -954,7 +950,6 @@ export default defineComponent({
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
-		SettingsAgentProjects,
 		SwitchRoot,
 		SwitchThumb,
 	},

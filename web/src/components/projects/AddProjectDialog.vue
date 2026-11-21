@@ -175,7 +175,7 @@ async function start() {
 function changeSettings() {
 	emit("close");
 	void router.push(
-		`/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
+		`/system/projects?${new URLSearchParams({ agent: agent.value, add: normalized.value })}`,
 	);
 }
 
