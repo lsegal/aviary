@@ -9,6 +9,7 @@ import (
 )
 
 type compiledRule struct {
+	raw     string
 	negated bool
 	matcher *regexp.Regexp
 }
@@ -36,17 +37,24 @@ func New(patterns []string) (*Policy, error) {
 
 // Allows reports whether command is allowed by the ordered rule set.
 func (p *Policy) Allows(command string) bool {
+	allowed, _ := p.Decide(command)
+	return allowed
+}
+
+// Decide reports whether command is allowed and the rule that decided it, as
+// written: the last rule that matches. The rule is empty when none matches.
+func (p *Policy) Decide(command string) (bool, string) {
 	if p == nil {
-		return false
+		return false, ""
 	}
 	cmd := normalize(command)
-	allowed := false
+	allowed, decided := false, ""
 	for _, rule := range p.rules {
 		if rule.matcher.MatchString(cmd) {
-			allowed = !rule.negated
+			allowed, decided = !rule.negated, rule.raw
 		}
 	}
-	return allowed
+	return allowed, decided
 }
 
 func compileRule(raw string) (compiledRule, bool, error) {
@@ -65,7 +73,7 @@ func compileRule(raw string) (compiledRule, bool, error) {
 	if err != nil {
 		return compiledRule{}, false, fmt.Errorf("compiling command allowlist rule %q: %w", raw, err)
 	}
-	return compiledRule{negated: negated, matcher: re}, true, nil
+	return compiledRule{raw: strings.TrimSpace(raw), negated: negated, matcher: re}, true, nil
 }
 
 func normalize(command string) string {

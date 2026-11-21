@@ -113,7 +113,7 @@ func resolveSearchRoot(ctx context.Context, rawPath, operation string) (string, 
 		return "", nil, err
 	}
 	if !access.Allows(root) && !access.MayAllowWithin(root) {
-		return "", nil, fmt.Errorf("%s path is outside the filesystem allowlist: %s", operation, root)
+		return "", nil, fmt.Errorf("%s refused by Aviary: the agent's Filesystem Allowed Paths have no rule allowing anything within it: %s", operation, root)
 	}
 	if _, err := os.Stat(root); err != nil {
 		return "", nil, fmt.Errorf("reading %s path: %w", operation, err)

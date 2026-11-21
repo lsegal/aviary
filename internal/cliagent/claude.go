@@ -68,6 +68,7 @@ func claudeArgs(opts Options, resumeID string) []string {
 	}
 	args = append(args, opts.Approval...)
 	args = append(args, opts.ExtraDir...)
+	args = append(args, opts.Permissions...)
 	switch {
 	case opts.Ephemeral:
 		args = append(args, "--no-session-persistence")
@@ -190,6 +191,7 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 	}
 
 	m := newClaudeMapper(onEvent)
+	m.tools.refusalNote = s.opts.RefusalNote
 	for {
 		select {
 		case <-ctx.Done():

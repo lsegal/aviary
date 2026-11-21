@@ -112,6 +112,11 @@ type Definition struct {
 	// mode left out falls back as Approval does. Chat sessions use it to
 	// keep the agent's own directory in scope wherever it works (#534).
 	ExtraDir map[ApprovalMode][]string `json:"extraDir,omitempty"`
+	// Permissions are, per approval mode, the arguments that pass each of a
+	// chat agent's exec and filesystem rules on to the CLI's own allow and
+	// deny rules, so what the agent's permissions allow is not then refused
+	// by the CLI (#560). A mode left out falls back as Approval does.
+	Permissions map[ApprovalMode]PermissionTemplates `json:"permissions,omitempty"`
 	// Doctor names the read-only probes `aviary agents` runs to report on the
 	// agent: whether its CLI is signed in, and which models it accepts. An
 	// agent that declares none is reported from what the definition already
@@ -956,6 +961,9 @@ func (d Definition) Validate() error {
 		return err
 	}
 	if err := d.validateExtraDir(); err != nil {
+		return err
+	}
+	if err := d.validatePermissions(); err != nil {
 		return err
 	}
 	if err := d.ConfigHome.validate(); err != nil {

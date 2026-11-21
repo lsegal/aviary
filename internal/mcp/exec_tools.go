@@ -85,13 +85,22 @@ func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecP
 	if err != nil {
 		return nil, "", err
 	}
-	if !policy.Allows(command) {
-		return nil, "", fmt.Errorf("command is outside the exec allowlist: %s", strings.TrimSpace(command))
+	if allowed, rule := policy.Decide(command); !allowed {
+		return nil, "", fmt.Errorf("refused by Aviary: agent %q's Allowed Exec Commands %s: %s", runner.Agent().Name, refusingRule(rule), strings.TrimSpace(command))
 	}
 	if grantRoot, ok := agent.FilesystemGrantFromContext(ctx); ok {
 		return cfg.Permissions.Exec, grantRoot, nil
 	}
 	return cfg.Permissions.Exec, store.AgentDir(agentID), nil
+}
+
+// refusingRule describes the allowlist rule behind a refusal: the deny rule
+// that matched last, or that no rule allows it.
+func refusingRule(rule string) string {
+	if rule == "" {
+		return "have no rule allowing it"
+	}
+	return fmt.Sprintf("deny it with rule %q", rule)
 }
 
 func runExecCommand(ctx context.Context, perms *config.ExecPermissionsConfig, args execArgs, agentDir string) (execResult, error) {

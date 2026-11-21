@@ -1,6 +1,8 @@
 package cliagent
 
 import (
+	"strings"
+
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -13,6 +15,24 @@ type toolTranslator struct {
 	// reports its calls itself.
 	skip    func(name string) bool
 	pending map[string]*ToolEvent
+	// refusalNote is added to a tool error that is the CLI's own permission
+	// refusal, naming that layer; empty adds nothing.
+	refusalNote string
+}
+
+// cliRefusalPhrases are the CLI's own wording for a call its permission
+// check refused, as it reports them in a tool result.
+var cliRefusalPhrases = []string{"haven't granted", "requires approval", "has been denied"}
+
+// isCLIRefusal reports whether a tool error is the CLI's permission refusal.
+func isCLIRefusal(output string) bool {
+	lower := strings.ToLower(output)
+	for _, phrase := range cliRefusalPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func newToolTranslator(emit func(Event), skip func(string) bool) *toolTranslator {
@@ -101,6 +121,9 @@ func (t *toolTranslator) finish(id, output string, isError bool) {
 		done.Error = output
 		if done.Error == "" {
 			done.Error = "failed"
+		}
+		if t.refusalNote != "" && isCLIRefusal(output) {
+			done.Error += "\n\n" + t.refusalNote
 		}
 	} else {
 		done.Result = output
