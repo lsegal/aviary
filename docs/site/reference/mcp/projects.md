@@ -30,9 +30,9 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, delivery mode, poll interval, ready label, last check, quota per CLI provider, the configured agent specs, and recent log lines.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`), delivery mode, poll interval, ready label, last check, quota per CLI provider, the configured agent specs, and recent log lines.
 
-**Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way.
+**Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
 ## project_job_list
 

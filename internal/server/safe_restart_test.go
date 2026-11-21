@@ -221,33 +221,67 @@ func TestSafeRestart_RejectsUnknownWhen(t *testing.T) {
 	assert.ErrorContains(t, err, `when must be "now" or "idle"`)
 }
 
-func TestSafeRestart_GitModePullsWithoutRestart(t *testing.T) {
+// A pull leaves the backend on its old code until it restarts, so under the
+// dev supervisor the pull is followed by a safe restart that rebuilds it.
+func TestSafeRestart_GitModeRestartsOntoPulledCode(t *testing.T) {
 	srv, p, log := setupSafeRestart(t, "dev", update.CheckResult{})
-	p.setJobs([]saferestart.Job{{Source: "test", ID: "job-1"}})
+	job := saferestart.Job{Source: "test", ID: "job-1"}
+	p.setJobs([]saferestart.Job{job})
 	gitCheckout = func() string { return "/src/aviary" }
 	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
 		*log = append(*log, "pull "+dir)
-		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1, HotReload: true}, nil
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1, Supervised: true}, nil
 	}
 
 	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
-	if err != nil {
-		t.Fatalf("requestRestart: %v", err)
+	require.NoError(t, err)
+	assert.False(t, st.Noop)
+	assert.Equal(t, saferestart.PhaseWaiting, st.Phase)
+	assert.Equal(t, []saferestart.Job{job}, st.Jobs, "the dialog lists the jobs the restart stops")
+	assert.Contains(t, st.Message, "Pulled 1 commit")
+	assert.Contains(t, st.Message, "restarts")
+
+	waitReexec(t, srv)
+	assert.Equal(t, []string{"pull /src/aviary", "checkpoint"}, *log, "the pull is followed by a checkpointed restart, never a release install")
+	_, markers := p.snapshot()
+	require.Len(t, markers, 1)
+	assert.Equal(t, []saferestart.Job{job}, markers[0].Jobs)
+}
+
+func TestSafeRestart_GitModeUnsupervisedSaysRestartNeeded(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
+		*log = append(*log, "pull "+dir)
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1}, nil
 	}
-	if !st.Noop || !strings.Contains(st.Message, "Pulled 1 commit") || !strings.Contains(st.Message, "Hot reload") {
-		t.Fatalf("status = %+v, want a no-restart pull message", st)
-	}
-	if got := strings.Join(*log, "|"); got != "pull /src/aviary" {
-		t.Fatalf("log = %q, want only the pull (no install, checkpoint, or restart)", got)
-	}
-	if srv.RestartStatus().Phase != saferestart.PhaseIdle || saferestart.Held() {
-		t.Fatalf("restart status = %+v, want idle and not holding jobs", srv.RestartStatus())
-	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Noop)
+	assert.Contains(t, st.Message, "Restart Aviary to run the new code.")
+	assert.Equal(t, []string{"pull /src/aviary"}, *log, "re-executing would only run the old binary again")
+	assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
+	assert.False(t, saferestart.Held())
 	select {
 	case <-srv.reexecCh:
-		t.Fatal("git-mode update requested a re-exec")
+		t.Fatal("an unsupervised git-mode update requested a re-exec")
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+func TestSafeRestart_GitModeUpToDateDoesNotRestart(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		return update.GitPullResult{From: "bbb2222", To: "bbb2222", Supervised: true}, nil
+	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Noop)
+	assert.Contains(t, st.Message, "already up to date")
+	assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
 }
 
 func TestSafeRestart_GitModeRefusalIsReported(t *testing.T) {

@@ -92,13 +92,13 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if !reflect.DeepEqual(s.Agents, []string{"codex"}) {
 		t.Fatalf("agents = %v", s.Agents)
 	}
-	if got := m.Status(t.Context(), 0)["agents"]; !reflect.DeepEqual(got, []string{"codex", "claude/opus", "codex:high"}) {
+	if got := m.Status(t.Context(), 0, nil)["agents"]; !reflect.DeepEqual(got, []string{"codex", "claude/opus", "codex:high"}) {
 		t.Fatalf("status agents = %v", got)
 	}
 	// Each provider is listed once, carrying the models its jobs run on,
 	// including the default model a bare provider spec resolves to.
 	want := []StatusCLI{{Name: "codex", Models: []string{"gpt-5.6-terra"}}, {Name: "claude", Models: []string{"opus"}}}
-	if got := m.Status(t.Context(), 0)["clis"]; !reflect.DeepEqual(got, want) {
+	if got := m.Status(t.Context(), 0, nil)["clis"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("status clis = %+v", got)
 	}
 }
@@ -218,11 +218,11 @@ func TestManagerWatchesComeAndGo(t *testing.T) {
 
 func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
 	m := newTestManager(t)
-	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{}) {
+	if got := m.Status(t.Context(), 0, nil)["allowed_commenters"]; !reflect.DeepEqual(got, []string{}) {
 		t.Fatalf("unconfigured allowed_commenters = %#v, want an empty list", got)
 	}
 	m.Reconcile(ownedBy(config.ProjectsConfig{AllowedCommenters: []string{"alice", "bob"}}, "o/r"))
-	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"alice", "bob"}) {
+	if got := m.Status(t.Context(), 0, nil)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"alice", "bob"}) {
 		t.Fatalf("configured allowed_commenters = %v", got)
 	}
 	// A running engine reports the commenters it enforces, such as the
@@ -232,7 +232,7 @@ func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
 	m.mu.Lock()
 	m.running = &engineRun{}
 	m.mu.Unlock()
-	if got := m.Status(t.Context(), 0)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"me"}) {
+	if got := m.Status(t.Context(), 0, nil)["allowed_commenters"]; !reflect.DeepEqual(got, []string{"me"}) {
 		t.Fatalf("running allowed_commenters = %v", got)
 	}
 	m.mu.Lock()
@@ -243,7 +243,7 @@ func TestManagerStatusReportsAllowedCommenters(t *testing.T) {
 func TestManagerRejectsABadUnblockInterval(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(ownedBy(config.ProjectsConfig{UnblockInterval: "soon"}, "o/r"))
-	if status := m.Status(t.Context(), 0); status["error"] == nil {
+	if status := m.Status(t.Context(), 0, nil); status["error"] == nil {
 		t.Fatalf("status = %v, want the settings error", status)
 	}
 }
@@ -327,13 +327,13 @@ func TestManagerLogsThroughSlog(t *testing.T) {
 	if !slices.Contains(recorder.records, [2]string{"projects", "engine started"}) {
 		t.Fatalf("records = %v, want the line under the projects component", recorder.records)
 	}
-	status := m.Status(t.Context(), 0)
+	status := m.Status(t.Context(), 0, nil)
 	if logs := status["recent_logs"]; !reflect.DeepEqual(logs, []string{"engine started"}) {
 		t.Fatalf("recent_logs = %v", logs)
 	}
 	offset := status["log_offset"].(int)
 	m.Log("new")
-	status = m.Status(t.Context(), offset)
+	status = m.Status(t.Context(), offset, nil)
 	if logs := status["recent_logs"]; !reflect.DeepEqual(logs, []string{"new"}) || status["log_offset"] != offset+1 {
 		t.Fatalf("recent_logs = %v, log_offset = %v", logs, status["log_offset"])
 	}

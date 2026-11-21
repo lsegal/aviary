@@ -65,10 +65,9 @@ export interface ProjectStatus {
 	allowedCommenters: string[];
 	slotsUsed: number;
 	slotsTotal: number;
-	activeJobs: number;
-	waitingJobs: number;
+	/** The jobs in each board state, counted as the board's filters count them. */
+	states: Record<BoardState, number>;
 	merged24h: number;
-	failed: number;
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
 	log: string[];
@@ -125,6 +124,10 @@ export interface ProjectJob {
 	progressTotal: number;
 	startedAt: string;
 	cloneDir: string;
+	/** Where the job's clone stands; only the job detail reports it. */
+	cloneState: CloneState;
+	/** The job that was handed this job's clone, when cloneState is "reused". */
+	cloneReusedBy: number;
 	session: string;
 	actions: JobActions;
 	output: string[];
@@ -273,6 +276,18 @@ function repoOf(url: string): string {
 	return m ? m[1] : "";
 }
 
+/**
+ * Where a job's clone stands: none assigned yet, on disk, handed to a later
+ * job on the same repository, or deleted.
+ */
+export type CloneState = "none" | "present" | "reused" | "removed";
+
+function normalizeCloneState(v: unknown, cloneDir: string): CloneState {
+	if (v === "none" || v === "present" || v === "reused" || v === "removed")
+		return v;
+	return cloneDir ? "present" : "none";
+}
+
 export function normalizeJob(v: unknown): ProjectJob {
 	const raw = obj(v);
 	const progress = obj(raw.progress);
@@ -305,6 +320,11 @@ export function normalizeJob(v: unknown): ProjectJob {
 		progressTotal: num(progress.total),
 		startedAt: str(raw.started),
 		cloneDir: str(raw.checkout_directory),
+		cloneState: normalizeCloneState(
+			raw.checkout_state,
+			str(raw.checkout_directory),
+		),
+		cloneReusedBy: num(raw.checkout_reused_by),
 		session: str(raw.session_id),
 		actions: {
 			retry: actions.retry !== false,
@@ -444,6 +464,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const raw = obj(v);
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
+	const states = obj(raw.states);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -457,10 +478,10 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
-		activeJobs: num(jobs.running),
-		waitingJobs: num(jobs.queued) + num(jobs.paused),
+		states: Object.fromEntries(
+			BOARD_STATES.map((s) => [s, num(states[s])]),
+		) as Record<BoardState, number>,
 		merged24h: num(jobs.merged_24h),
-		failed: num(jobs.failed),
 		github: normalizeGitHubSession(raw.github),
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
@@ -559,15 +580,17 @@ export const LIFECYCLE_STEPS = [
 
 /**
  * The lifecycle step a job is on (0-based) and whether it finished, derived
- * from its state and the system events it has emitted.
+ * from its state and the system events it has emitted. The pull request's
+ * state, which the board's PR icon shows, sets the lowest step it can be on.
  */
 export function lifecycleStep(detail: JobDetail): {
 	step: number;
 	done: boolean;
 } {
 	const { job, events } = detail;
+	if (job.prState === "merged") return { step: 5, done: true };
 	if (job.status === "complete" && job.pr > 0) return { step: 5, done: true };
-	let step = job.pr > 0 ? 1 : 0;
+	let step = job.prState === "open" ? 4 : job.pr > 0 ? 1 : 0;
 	for (const e of events) {
 		if (e.kind === "system") {
 			const t = e.text.toLowerCase();

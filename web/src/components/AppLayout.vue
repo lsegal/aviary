@@ -100,7 +100,8 @@
       <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
-          {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
+          {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span><ProjectRunningBadge
+            :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
         <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
@@ -171,14 +172,14 @@
               <SidebarRowAction v-else-if="rowAddLabel(child.key)" :label="rowAddLabel(child.key)"
                 @click="openAdd(child.key, soleAgent.name)" />
             </div>
-            <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
+            <ChatSessionList v-if="child.key === 'chat'" :agent="soleAgent.name" />
             <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
             <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+                <ProjectRunningBadge :running="p.running ?? 0" />
               </router-link>
             </div>
           </template>
@@ -213,14 +214,14 @@
                   <SidebarRowAction v-else-if="rowAddLabel(child.key)" :label="rowAddLabel(child.key)"
                     @click="openAdd(child.key, a.name)" />
                 </div>
-                <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
+                <ChatSessionList v-if="child.key === 'chat'" :agent="a.name" />
                 <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
                 <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                    <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+                    <ProjectRunningBadge :running="p.running ?? 0" />
                   </router-link>
                 </div>
               </template>
@@ -247,6 +248,7 @@
               :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
               <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+              <ProjectRunningBadge :running="child.running ?? 0" />
             </router-link>
           </template>
         </div>
@@ -346,6 +348,7 @@ import { useChatSessionsStore } from "../stores/chatSessions";
 import { agentTaskPath, useSettingsStore } from "../stores/settings";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
@@ -357,6 +360,8 @@ interface NavChild {
 	label: string;
 	to: string;
 	count?: string;
+	/** A project's running jobs, shown as a gray badge when any. */
+	running?: number;
 	/** Overrides the path match, for items picked by a query. */
 	active?: boolean;
 }
@@ -473,18 +478,12 @@ const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
 
-function projectCount(p: ProjectSummary): string {
-	if (p.running > 0) return `${p.running} running`;
-	if (p.waiting > 0) return `${p.waiting} waiting`;
-	return "idle";
-}
-
 function projectChild(owner: string, p: ProjectSummary): NavChild {
 	return {
 		key: p.name,
 		label: p.name,
 		to: projectPath(owner, p.name),
-		count: projectCount(p),
+		running: p.running,
 	};
 }
 
@@ -558,9 +557,6 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		? agentNav.value[0]
 		: undefined,
 );
-
-// The agent's Chats list opens on its chat pages.
-const chatsOpen = computed(() => /^\/agents\/[^/]+\/chat(\/|$)/.test(route.path));
 
 // The agent's projects list opens on its GitHub Projects pages and boards.
 const projectsOpen = computed(() =>

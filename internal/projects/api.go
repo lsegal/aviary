@@ -50,10 +50,11 @@ func (m *Manager) InFlightJobs(target string) []int {
 }
 
 // Status is project_status: identity, targets with issue counts, job counts,
-// delivery and the last check, quota per CLI, each CLI provider once with its
-// models and quota, and recent log lines. Passing
-// logOffset returns only the lines logged since that offset.
-func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
+// the jobs in each board state, delivery and the last check, quota per CLI,
+// each CLI provider once with its models and quota, and recent log lines.
+// Passing logOffset returns only the lines logged since that offset. Passing
+// targets counts board states over only their jobs, as project_job_list does.
+func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map[string]any {
 	snapshot := m.currentSnapshot()
 	m.mu.Lock()
 	settings, settingsErr := m.settingsLocked()
@@ -64,12 +65,12 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	if logOffset > 0 {
 		logs, nextOffset = m.logsSince(logOffset, 0)
 	}
-	targets := snapshot.Targets
-	if len(targets) == 0 {
-		targets = settings.Targets
+	watched := snapshot.Targets
+	if len(watched) == 0 {
+		watched = settings.Targets
 	}
-	if targets == nil {
-		targets = []string{}
+	if watched == nil {
+		watched = []string{}
 	}
 	// A running engine publishes the commenters it enforces, which include
 	// the authenticated gh user it falls back to; otherwise report the
@@ -84,8 +85,9 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
-		"targets":      targets,
+		"targets":      watched,
 		"issue_counts": snapshot.IssueCounts,
+		"states":       boardStateCounts(snapshot.Jobs, targets),
 		"jobs": map[string]int{
 			"running":    snapshot.Running,
 			"queued":     snapshot.Queued,
@@ -122,6 +124,22 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	status["agents"] = allAgentSpecs(settings)
 	status["clis"] = statusCLIs(allAgentSpecs(settings), snapshot.Quotas)
 	return status
+}
+
+// boardStateCounts counts the jobs of targets, or of every project without
+// targets, in each board state, so the board's counts match its filters.
+func boardStateCounts(jobs []JobSnapshot, targets []string) map[string]int {
+	counts := make(map[string]int, len(core.BoardStates))
+	for _, state := range core.BoardStates {
+		counts[state] = 0
+	}
+	for _, job := range jobs {
+		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
+			continue
+		}
+		counts[job.BoardState()]++
+	}
+	return counts
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
@@ -204,7 +222,8 @@ func jobMatches(job core.JobSnapshot, query string) bool {
 // scrollback. lines and events limit the scrollback lines and transcript
 // events returned; 0 uses the defaults and a negative value returns all.
 func (m *Manager) GetJob(target string, number, lines, events int) (map[string]any, error) {
-	job, err := findJob(m.currentSnapshot().Jobs, target, number)
+	jobs := m.currentSnapshot().Jobs
+	job, err := findJob(jobs, target, number)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +235,11 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 	}
 	detail := jobSummary(job)
 	detail["checkout_directory"] = job.CheckoutDirectory
+	state, holder := checkoutState(job, jobs)
+	detail["checkout_state"] = state
+	if holder != nil {
+		detail["checkout_reused_by"] = holder.Number
+	}
 	detail["session_id"] = job.SessionID
 	detail["effort"] = job.Effort
 	scrollback := job.Log

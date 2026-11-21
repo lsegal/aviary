@@ -250,8 +250,9 @@ type SignalChannel struct {
 	sendReadReceipts bool // send read receipts for messages the agent will respond to
 
 	// daemon is set in managed mode; nil in external mode.
-	// It is the shared subprocess for this phone number.
-	daemon *sharedDaemon
+	// It is the shared subprocess for this phone number. Start sets it while
+	// other goroutines may already be reading it (e.g. Manager.List).
+	daemon atomic.Pointer[sharedDaemon]
 
 	// addr and addrMu are used in external mode only.
 	addrMu sync.RWMutex
@@ -310,8 +311,8 @@ func (c *SignalChannel) SetLogSink(s *LogSink) {
 // getAddr returns the current daemon TCP address. In managed mode it reads
 // from the shared daemon; in external mode it reads from the channel's own addr.
 func (c *SignalChannel) getAddr() string {
-	if c.daemon != nil {
-		return c.daemon.getAddr()
+	if d := c.daemon.Load(); d != nil {
+		return d.getAddr()
 	}
 	c.addrMu.RLock()
 	defer c.addrMu.RUnlock()
@@ -701,7 +702,7 @@ func (c *SignalChannel) Start(ctx context.Context) error {
 
 	// Managed mode: share one signal-cli daemon per phone number.
 	d := globalDaemonHub.acquire(c.phone)
-	c.daemon = d
+	c.daemon.Store(d)
 	d.addSub(c)
 	d.once.Do(func() {
 		dCtx, cancel := context.WithCancel(ctx)
@@ -735,16 +736,17 @@ func (c *SignalChannel) DaemonInfo() *DaemonInfo {
 	if c.initAddr != "" {
 		return &DaemonInfo{Addr: c.initAddr, External: true}
 	}
-	if c.daemon == nil {
+	d := c.daemon.Load()
+	if d == nil {
 		return nil
 	}
-	c.daemon.procMu.RLock()
-	pid := c.daemon.procPID
-	started := c.daemon.procStarted
-	c.daemon.procMu.RUnlock()
+	d.procMu.RLock()
+	pid := d.procPID
+	started := d.procStarted
+	d.procMu.RUnlock()
 	// Return a non-nil DaemonInfo even when PID==0 so the daemons handler can
 	// deduplicate entries for channels sharing the same managed daemon.
-	return &DaemonInfo{PID: pid, Addr: c.daemon.getAddr(), Started: started}
+	return &DaemonInfo{PID: pid, Addr: d.getAddr(), Started: started}
 }
 
 // runLoop runs the reconnect loop against a known daemon address.

@@ -83,7 +83,7 @@
 						<template v-if="view === 'board'">
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
-						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
+						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7" aria-label="Job counts">
 							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
 								<p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ s.label }}</p>
 								<p class="text-2xl font-bold">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
@@ -232,6 +232,7 @@ import {
 	age,
 	BOARD_STATES,
 	type BoardFilter,
+	type BoardState,
 	type ProjectJob,
 	projectPath,
 	stateLabel,
@@ -363,8 +364,9 @@ function openSchedule(id: string) {
 }
 
 // The add-project dialog is open while the URL carries ?add=1, so the
-// sidebar's "Add project" link can open it from anywhere.
-const adding = computed(() => route.query.add === "1");
+// sidebar's "Add project" link can open it from anywhere. The new project
+// belongs to the board's agent, so a watch no agent owns has no dialog.
+const adding = computed(() => route.query.add === "1" && !!routeAgent.value);
 function openAdd() {
 	void router.push({ query: { ...route.query, add: "1" } });
 }
@@ -393,7 +395,22 @@ const online = computed(
 );
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 
-const statCards = computed(() => {
+// Each board state's stat card, in its pill's colors; Starting is orange.
+const STATE_CARD: Record<BoardState, string> = {
+	starting:
+		"border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300",
+	paused:
+		"border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+	running:
+		"border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+	done: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
+	failed:
+		"border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+};
+
+const statCards = computed<
+	{ label: string; value: number; suffix?: string; cls: string }[]
+>(() => {
 	const s = status.value;
 	if (!s) return [];
 	return [
@@ -403,25 +420,15 @@ const statCards = computed(() => {
 			suffix: `of ${s.slotsTotal} busy`,
 			cls: "border-gray-200 text-gray-900 dark:border-gray-800 dark:text-white",
 		},
-		{
-			label: "Running",
-			value: s.activeJobs,
-			cls: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-		},
-		{
-			label: "Waiting",
-			value: s.waitingJobs,
-			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-		},
+		...BOARD_STATES.map((state) => ({
+			label: stateLabel(state),
+			value: s.states[state],
+			cls: STATE_CARD[state],
+		})),
 		{
 			label: "Merged (24h)",
 			value: s.merged24h,
-			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
-		},
-		{
-			label: "Failed",
-			value: s.failed,
-			cls: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+			cls: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
 		},
 	];
 });

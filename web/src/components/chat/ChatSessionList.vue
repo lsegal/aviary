@@ -1,6 +1,6 @@
 <template>
-	<div data-testid="sidebar-chats">
-		<SidebarItemList :items="sessions" :item-key="(s) => s.id" more-testid="sidebar-chats-more">
+	<div>
+		<SidebarItemList data-testid="sidebar-chats" :items="ordered" :item-key="(s) => s.id" more-testid="sidebar-chats-more">
 			<template #default="{ item: s }">
 				<SidebarItemRow data-testid="chat-row" :data-session="s.id" :to="chatPath(agent, s.id)"
 					:label="chatDisplayName(s)" :active="s.id === activeId" :actions="chatActions(s)"
@@ -65,9 +65,10 @@ import {
 	AlertDialogRoot,
 	AlertDialogTitle,
 } from "radix-vue";
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { age } from "../../lib/projects";
+import { useAuthStore } from "../../stores/auth";
 import {
 	type ChatSession,
 	chatDisplayName,
@@ -81,15 +82,33 @@ import type { SidebarItemAction } from "../sidebar/types";
 const props = defineProps<{ agent: string }>();
 
 const store = useChatSessionsStore();
+const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 
 const sessions = computed(() => store.sessions(props.agent));
 const activeId = computed(() => {
+	// The list shows on every page; only the agent's chat pages select a chat.
+	if (
+		route.path.replace(/\/$/, "") !== chatPath(props.agent, "") &&
+		!route.path.startsWith(`${chatPath(props.agent, "")}/`)
+	)
+		return "";
 	if (typeof route.params.sessionId === "string") return route.params.sessionId;
 	return sessions.value.find(isMainChat)?.id ?? "";
 });
 
+const lastActive = (s: ChatSession) =>
+	Date.parse(s.last_message_at || s.created_at) || 0;
+
+// Main Chat leads; the rest follow, most recent message first.
+const ordered = computed(() =>
+	[...sessions.value].sort(
+		(a, b) =>
+			Number(isMainChat(b)) - Number(isMainChat(a)) ||
+			lastActive(b) - lastActive(a),
+	),
+);
 const renameAction: SidebarItemAction = { key: "edit", label: "Rename" };
 const deleteAction: SidebarItemAction = {
 	key: "delete",
@@ -103,12 +122,56 @@ function chatActions(s: ChatSession): SidebarItemAction[] {
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
+let ws: WebSocket | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+function reload() {
+	store
+		.load(props.agent)
+		.catch((e) => console.error("Failed to load chats", e));
+}
+
+// New messages and generated titles change the list, on any page.
+function watchSessions() {
+	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+	const tok = auth.getToken();
+	const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
+	ws = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	ws.onmessage = (e) => {
+		try {
+			const data = JSON.parse(e.data as string) as {
+				type?: string;
+				agent_id?: string;
+			};
+			if (data.type !== "session_message") return;
+			if (
+				data.agent_id !== props.agent &&
+				data.agent_id !== `agent_${props.agent}`
+			)
+				return;
+			clearTimeout(refreshTimer);
+			refreshTimer = setTimeout(reload, 300);
+		} catch {
+			// ignore malformed frames
+		}
+	};
+}
+
+watch(() => props.agent, reload);
+
 onMounted(() => {
 	clock = setInterval(() => {
 		now.value = Date.now();
 	}, 30_000);
+	reload();
+	watchSessions();
 });
-onUnmounted(() => clearInterval(clock));
+onUnmounted(() => {
+	clearInterval(clock);
+	clearTimeout(refreshTimer);
+	ws?.close();
+	ws = null;
+});
 
 function chatPath(agent: string, sessionId: string): string {
 	const base = `/agents/${encodeURIComponent(agent)}/chat`;
