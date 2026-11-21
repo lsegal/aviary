@@ -149,3 +149,150 @@ func TestNewSession_RejectsDefinitionWithoutResume(t *testing.T) {
 	_, err := NewSession(Options{Backend: "cline", Model: "m"})
 	assert.ErrorContains(t, err, `unknown CLI backend "cline"`)
 }
+
+// fakeWired stands in for a definition-driven CLI whose definition declares
+// how to take Aviary's MCP server and a system prompt. It calls one tool from
+// the registered server and one of its own, then answers with what it was
+// handed: its argv, the settings file FAKE_SETTINGS names, the system prompt
+// file --sys names, and the token from the variable --token-env names.
+func fakeWired() {
+	args := os.Args[1:]
+	value := func(flag string) string {
+		if i := slices.Index(args, flag); i >= 0 && i+1 < len(args) {
+			return args[i+1]
+		}
+		return ""
+	}
+	read := func(path string) string {
+		if path == "" {
+			return ""
+		}
+		data, _ := os.ReadFile(path)
+		return string(data)
+	}
+	var settings any
+	_ = json.Unmarshal([]byte(read(os.Getenv("FAKE_SETTINGS"))), &settings)
+	reply, _ := json.Marshal(map[string]any{
+		"argv":     args,
+		"settings": settings,
+		"system":   read(value("--sys")),
+		"url":      value("--mcp-url"),
+		"token":    os.Getenv(value("--token-env")),
+		"prompt":   value("-p"),
+	})
+	out := json.NewEncoder(os.Stdout)
+	_ = out.Encode(map[string]any{"type": "tool_use", "tool_name": "mcp_aviary_echo", "tool_id": "t1", "parameters": map[string]any{"text": "hi"}})
+	_ = out.Encode(map[string]any{"type": "tool_result", "tool_id": "t1", "status": "success", "output": "hi"})
+	_ = out.Encode(map[string]any{"type": "tool_use", "tool_name": "read_file", "tool_id": "t2", "parameters": map[string]any{"file_path": "a.txt"}})
+	_ = out.Encode(map[string]any{"type": "tool_result", "tool_id": "t2", "status": "success", "output": "a"})
+	_ = out.Encode(map[string]any{"type": "message", "role": "assistant", "content": string(reply)})
+}
+
+// useWiredDefinition installs a registry holding a definition for fakeWired
+// that declares an mcp block, with a settings file and arguments, and a
+// systemPrompt block.
+func useWiredDefinition(t *testing.T) Options {
+	t.Helper()
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
+		Name:    "wiredcli",
+		Binary:  exe,
+		Session: clidefs.Session{Assign: clidefs.AssignEngine},
+		Output:  clidefs.Output{Format: clidefs.FormatGeminiJSON},
+		MCP: &clidefs.MCP{
+			Args: []string{"--mcp-url", "{mcpUrl}", "--token-env", "{mcpTokenEnv}"},
+			Env:  map[string]string{"FAKE_SETTINGS": "{mcpFile}"},
+			File: map[string]any{"mcpServers": map[string]any{"{mcpName}": map[string]any{
+				"httpUrl": "{mcpUrl}",
+				"headers": map[string]any{"Authorization": "Bearer ${{mcpTokenEnv}}"},
+				"timeout": "{mcpTimeoutMs}",
+			}}},
+			ToolPrefix: "mcp_{mcpName}_",
+		},
+		SystemPrompt: &clidefs.SystemPrompt{Args: []string{"--sys", "{systemPromptFile}"}},
+		Args: clidefs.Args{
+			Run: []clidefs.Fragment{
+				{Args: []string{"--session-id", "{session}"}},
+				{Args: []string{"{approval}"}},
+				{Args: []string{"-p", "{prompt}"}},
+			},
+			Resume: []clidefs.Fragment{
+				{Args: []string{"--resume", "{session}"}},
+				{Args: []string{"{approval}"}},
+				{Args: []string{"-p", "{prompt}"}},
+			},
+		},
+	})
+	require.NoError(t, err)
+	llm.SetCLIProviderRegistry(registry)
+	t.Cleanup(func() { llm.SetCLIProviderRegistry(nil) })
+	return Options{Backend: "wiredcli", WorkDir: t.TempDir(), NewSessionID: "s1", Env: []string{"CLIAGENT_FAKE=wired"}}
+}
+
+type wiredReply struct {
+	Argv     []string       `json:"argv"`
+	Settings map[string]any `json:"settings"`
+	System   string         `json:"system"`
+	URL      string         `json:"url"`
+	Token    string         `json:"token"`
+	Prompt   string         `json:"prompt"`
+}
+
+func TestDefinitionSession_PassesMCPAndSystemPrompt(t *testing.T) {
+	opts := useWiredDefinition(t)
+	assert.True(t, opts.Backend.ServesAviaryTools(), "a definition with an mcp block is offered Aviary's tools")
+	opts.SystemPrompt = "be brief"
+	opts.MCPURL = "http://127.0.0.1:1/mcp/scoped"
+	opts.MCPToken = "secret-token"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+
+	for _, text := range []string{"hello", "again"} {
+		var events []Event
+		r, err := s.Send(context.Background(), Turn{Text: text}, collect(&events))
+		require.NoError(t, err)
+		var reply wiredReply
+		require.NoError(t, json.Unmarshal([]byte(r.Text), &reply), r.Text)
+
+		assert.Equal(t, text, reply.Prompt, "the system prompt is not prepended to the turn")
+		assert.Equal(t, "be brief", reply.System, "the system prompt arrives through the declared file")
+		assert.Equal(t, opts.MCPURL, reply.URL)
+		assert.Equal(t, "secret-token", reply.Token, "the token reaches the CLI through the variable the definition names")
+		assert.NotContains(t, strings.Join(reply.Argv, " "), "secret-token", "the token stays off the command line")
+		assert.Equal(t, map[string]any{"mcpServers": map[string]any{"aviary": map[string]any{
+			"httpUrl": opts.MCPURL,
+			"headers": map[string]any{"Authorization": "Bearer ${AVIARY_MCP_TOKEN}"},
+			"timeout": float64(MCPToolTimeout.Milliseconds()),
+		}}}, reply.Settings)
+
+		var tools []string
+		for _, event := range events {
+			if event.Type == EventToolStart {
+				tools = append(tools, event.Tool.Name)
+			}
+		}
+		assert.Equal(t, []string{"read_file"}, tools, "Aviary's own tools are reported by its MCP boundary, not again from the CLI's output")
+	}
+}
+
+func TestDefinitionSession_WithoutMCPURLPassesNoServer(t *testing.T) {
+	opts := useWiredDefinition(t)
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	var events []Event
+	r, err := s.Send(context.Background(), Turn{Text: "hello"}, collect(&events))
+	require.NoError(t, err)
+	var reply wiredReply
+	require.NoError(t, json.Unmarshal([]byte(r.Text), &reply), r.Text)
+	assert.Empty(t, reply.URL, "a chat without tools registers no server")
+	assert.Nil(t, reply.Settings)
+	assert.Empty(t, reply.System, "an empty system prompt writes no file")
+	var tools []string
+	for _, event := range events {
+		if event.Type == EventToolStart {
+			tools = append(tools, event.Tool.Name)
+		}
+	}
+	assert.Equal(t, []string{"mcp_aviary_echo", "read_file"}, tools, "without Aviary's server every tool is the CLI's own")
+}

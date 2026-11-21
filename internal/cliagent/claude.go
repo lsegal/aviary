@@ -113,13 +113,18 @@ func claudeMCPConfig(opts Options) string {
 	return string(data)
 }
 
-// mcpTokenEnv is the environment variable that carries the scoped MCP token.
-const mcpTokenEnv = "AVIARY_MCP_TOKEN"
+// mcpTokenEnv is the environment variable that carries the scoped MCP token,
+// and mcpAuthEnv the one that carries the whole "Bearer <token>" header value
+// for a CLI that only expands a variable standing for a whole setting.
+const (
+	mcpTokenEnv = "AVIARY_MCP_TOKEN"
+	mcpAuthEnv  = "AVIARY_MCP_AUTHORIZATION"
+)
 
 func cliEnv(opts Options) []string {
 	env := append(os.Environ(), opts.Env...)
 	if opts.MCPToken != "" {
-		env = append(env, mcpTokenEnv+"="+opts.MCPToken)
+		env = append(env, mcpTokenEnv+"="+opts.MCPToken, mcpAuthEnv+"=Bearer "+opts.MCPToken)
 	}
 	if opts.CommandHook != nil {
 		env = append(env, commandHookEnvValue(opts.CommandHook))
@@ -134,19 +139,29 @@ func writeSystemPromptFile(prompt string) (string, func(), error) {
 	if prompt == "" {
 		return "", func() {}, nil
 	}
-	file, err := os.CreateTemp("", "aviary-system-prompt-*.md")
+	path, cleanup, err := writeTempFile("aviary-system-prompt-*.md", []byte(prompt))
 	if err != nil {
 		return "", nil, fmt.Errorf("writing the system prompt file: %w", err)
 	}
+	return path, cleanup, nil
+}
+
+// writeTempFile writes data to a new temporary file named after pattern and
+// returns its path and a cleanup that removes it.
+func writeTempFile(pattern string, data []byte) (string, func(), error) {
+	file, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", nil, err
+	}
 	path := file.Name()
 	cleanup := func() { _ = os.Remove(path) }
-	_, err = file.WriteString(prompt)
+	_, err = file.Write(data)
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("writing the system prompt file: %w", err)
+		return "", nil, err
 	}
 	return path, cleanup, nil
 }
