@@ -20,10 +20,6 @@ export function modelNameOf(model: string): string {
 	return idx > 0 ? model.slice(idx + 1) : model;
 }
 
-export const SUPPORTED_PROVIDERS = Array.from(
-	new Set(MODEL_CATALOG.map((entry) => providerOf(entry.id)).filter(Boolean)),
-);
-
 export const MODEL_CATALOG_BY_ID = new Map(
 	MODEL_CATALOG.map((entry) => [entry.id, entry] as const),
 );

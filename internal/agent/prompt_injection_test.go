@@ -200,6 +200,7 @@ func runnerDone(t *testing.T, runner *AgentRunner, msg string) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 }
 
 func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {

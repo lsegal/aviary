@@ -171,6 +171,12 @@ export interface AppConfig {
 	projects?: ProjectsSection;
 }
 
+/** The Tasks page of an agent, optionally opened on one task. */
+export function agentTaskPath(agent: string, task = "") {
+	const path = `/agents/${encodeURIComponent(agent)}/tasks`;
+	return task ? { path, query: { task } } : { path };
+}
+
 /** Normalizes a task's type, which defaults to prompt. */
 export function agentTaskType(type: string | undefined): AgentTaskType {
 	return type === "script" || type === "project" ? type : "prompt";
@@ -294,5 +300,42 @@ export const useSettingsStore = defineStore("settings", () => {
 		}
 	}
 
-	return { config, loading, saving, error, fetchConfig, saveConfig };
+	/** Saves the agent's tasks as update returns them, leaving the rest of the saved config as it is. */
+	async function saveAgentTasks(
+		agent: string,
+		update: (tasks: AgentTask[]) => AgentTask[],
+	): Promise<void> {
+		if (!config.value) await fetchConfig();
+		if (!config.value) throw new Error("Settings are not loaded.");
+		const next = JSON.parse(JSON.stringify(config.value)) as AppConfig;
+		const entry = next.agents.find((a) => a.name === agent);
+		if (!entry) throw new Error(`Agent ${agent} not found.`);
+		entry.tasks = update(entry.tasks ?? []);
+		await saveConfig(next);
+	}
+
+	/** Renames a task, moving its file when it has one. */
+	async function renameTask(
+		agent: string,
+		from: string,
+		to: string,
+	): Promise<void> {
+		await callTool("config_task_rename", {
+			agent,
+			task: from,
+			new_name: to,
+		});
+		await fetchConfig();
+	}
+
+	return {
+		config,
+		loading,
+		saving,
+		error,
+		fetchConfig,
+		saveConfig,
+		saveAgentTasks,
+		renameTask,
+	};
 });
