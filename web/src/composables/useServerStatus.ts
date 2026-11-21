@@ -179,6 +179,17 @@ export function useServerStatus() {
 		reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
 	}
 
+	// Retries a lost connection now instead of waiting out the back-off.
+	function reconnect() {
+		if (destroyed || ws) return;
+		if (reconnectTimer !== null) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+		reconnectDelay = 1_000;
+		connect();
+	}
+
 	function applyCheck(data: VersionCheck) {
 		latestVersion.value = data.latestVersion ?? "";
 		upgradeAvailable.value = data.upgradeAvailable === true;
@@ -304,6 +315,7 @@ export function useServerStatus() {
 		restart,
 		upgradeDialogOpen,
 		refreshVersionStatus,
+		reconnect,
 		openUpgradeDialog,
 		triggerUpgrade,
 		triggerRestart,

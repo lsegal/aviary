@@ -95,6 +95,7 @@ func claudeMCPConfig(opts Options) string {
 			"type":    "http",
 			"url":     opts.MCPURL,
 			"headers": map[string]string{"Authorization": "Bearer ${" + mcpTokenEnv + "}"},
+			"timeout": MCPToolTimeout.Milliseconds(),
 		}
 	}
 	data, _ := json.Marshal(map[string]any{"mcpServers": servers})

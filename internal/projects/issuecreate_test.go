@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -49,6 +51,82 @@ func TestCreateIssueRunsGhCreateWithTheIdentity(t *testing.T) {
 	}
 	if len(prompts) != calls {
 		t.Errorf("invalid requests ran the agent %d times", len(prompts)-calls)
+	}
+}
+
+// A gh-create run that outlasts its caller keeps filing, and asking again
+// with the same request waits for that run's issue instead of filing a
+// duplicate (issue #710).
+func TestCreateIssueOutlastingItsCallerFilesOnce(t *testing.T) {
+	var runs atomic.Int32
+	release := make(chan struct{})
+	w := &Engine{Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Out: &syncBuffer{}}
+	w.oneShotRun = func(ctx context.Context, _ agentSpec, _ string) (string, error) {
+		runs.Add(1)
+		select {
+		case <-release: // gh-create takes longer than its first caller waits
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+		return "Filed https://github.com/o/r/issues/12\n", nil
+	}
+	request := core.IssueCreate{Repository: "o/r", Text: "Add a dark mode"}
+
+	// The first caller gives up, the way the CLI's MCP client does.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := w.CreateIssue(ctx, request); err == nil || !strings.Contains(err.Error(), "still filing") || !strings.Contains(err.Error(), "call project_issue_create again") {
+		t.Fatalf("a caller that stopped waiting got %v", err)
+	}
+
+	// Asking again joins the run still filing.
+	type outcome struct {
+		result core.IssueCreateResult
+		err    error
+	}
+	again := make(chan outcome, 1)
+	go func() {
+		result, err := w.CreateIssue(context.Background(), core.IssueCreate{Repository: "O/R", Text: " Add a dark mode "})
+		again <- outcome{result, err}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	got := <-again
+	if got.err != nil || got.result.URL != "https://github.com/o/r/issues/12" {
+		t.Fatalf("asking again = %+v, %v", got.result, got.err)
+	}
+
+	// Once filed, the same request returns the issue without filing again.
+	result, err := w.CreateIssue(context.Background(), request)
+	if err != nil || result.URL != "https://github.com/o/r/issues/12" {
+		t.Fatalf("asking after it filed = %+v, %v", result, err)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("gh-create ran %d times, want 1", n)
+	}
+
+	// A different request files its own issue.
+	if _, err := w.CreateIssue(context.Background(), core.IssueCreate{Repository: "o/r", Text: "Add a light mode"}); err != nil || runs.Load() != 2 {
+		t.Errorf("a different request ran gh-create %d times in all, %v", runs.Load(), err)
+	}
+}
+
+// A failed filing is not remembered, so asking again retries it.
+func TestCreateIssueRetriesAFailedFiling(t *testing.T) {
+	output := "I could not file it: gh is signed out."
+	runs := 0
+	w := &Engine{Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Out: &syncBuffer{}}
+	w.oneShotRun = func(context.Context, agentSpec, string) (string, error) {
+		runs++
+		return output, nil
+	}
+	request := core.IssueCreate{Repository: "o/r", Text: "x"}
+	if _, err := w.CreateIssue(context.Background(), request); err == nil {
+		t.Fatal("a filing with no new issue succeeded")
+	}
+	output = "Filed https://github.com/o/r/issues/4"
+	if result, err := w.CreateIssue(context.Background(), request); err != nil || result.URL != "https://github.com/o/r/issues/4" || runs != 2 {
+		t.Errorf("retry = %+v, %v after %d runs", result, err, runs)
 	}
 }
 

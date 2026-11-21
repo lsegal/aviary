@@ -137,7 +137,8 @@ func TestProjectStatusAndJobsWithNothingWatched(t *testing.T) {
 	assert.Equal(t, "browser", status["delivery"])
 	assert.Equal(t, "20s", status["poll_interval"])
 	assert.Equal(t, map[string]any{"signed_out": false, "signing_in": false}, status["github"])
-	assert.Equal(t, "ready", status["ready_label"])
+	assert.Equal(t, "assignee:@me", status["issue_filter"])
+	assert.NotContains(t, status, "ready_label", "pickup needs no label, so status reports none")
 	assert.EqualValues(t, 3, status["concurrency"])
 
 	jobs := callJSON(t, d, "project_job_list", map[string]any{"status": "active"})

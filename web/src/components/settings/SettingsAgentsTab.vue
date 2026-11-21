@@ -884,6 +884,21 @@ Select a task to edit.
 </div>
 
 						</div>
+
+						<section v-if="selectedAgentSubtab === 'tasks' && selectedTask?.name" data-testid="task-danger-zone" aria-labelledby="task-danger-zone-heading"
+							class="rounded-xl border border-red-200 bg-white dark:border-red-900/60 dark:bg-gray-900">
+							<h3 id="task-danger-zone-heading" class="border-b border-red-200 px-5 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:text-red-400">Danger Zone</h3>
+							<div class="flex flex-wrap items-center justify-between gap-4 p-5">
+								<p class="text-sm text-gray-600 dark:text-gray-400">
+									Remove this scheduled task from the agent's configuration<template v-if="selectedTask.from_file">, including its definition file {{ taskDefinedIn(selectedTask) }}</template>. It will no longer run.
+								</p>
+								<button type="button"
+									class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+									@click="removeTask(agent.name, selectedTask.name)">
+									Remove Task
+								</button>
+							</div>
+						</section>
 					</div>
 				</section>
 </template>
@@ -1021,6 +1036,9 @@ export default defineComponent({
 			),
 			query: { tab: "schedules", schedule: `${agentName}/${task.name}` },
 		});
+		// The sidebar's delete dialog confirms and removes the task.
+		const removeTask = (agent: string, name: string) =>
+			openItemDialog({ kind: "task", agent, mode: "delete", name });
 		return Object.assign(settings, {
 			agentFileHint,
 			agentFileMenuActions,
@@ -1028,6 +1046,7 @@ export default defineComponent({
 			projectScheduleLink,
 			permissionPresetDescription,
 			permissionPresetOptions,
+			removeTask,
 		});
 	},
 });
