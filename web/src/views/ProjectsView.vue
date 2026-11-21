@@ -355,6 +355,10 @@ function openSchedule(id: string) {
 // The add-project dialog is open while the URL carries ?add=1, so the
 // sidebar's "Add project" link can open it from anywhere.
 const adding = computed(() => route.query.add === "1");
+// An agent's board with no projects offers to add one.
+function openAdd() {
+	void router.push({ query: { ...route.query, add: "1" } });
+}
 function closeAdd() {
 	const { add: _, ...rest } = route.query;
 	void router.replace({ query: rest });
