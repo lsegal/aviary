@@ -807,49 +807,57 @@ function chatFixtures(calls: Calls): ToolFixtures {
 		session_list: (args?: Record<string, unknown>) => {
 			record("session_list", args);
 			return [
-				{ id: "p1", agent_id: "projects", name: "main", created_at: at(60) },
+				{ id: "main", agent_id: "projects", name: "main", created_at: at(60) },
 			];
 		},
-		session_messages: () => [
-			{
-				id: "m1",
-				session_id: "p1",
-				role: "user",
-				content: "What does the board look like?",
-				media_url: PNG,
-				timestamp: at(5),
-			},
-			{
-				id: "m2",
-				session_id: "p1",
-				role: "assistant",
-				content: "Here is the failing run.",
-				media_url: PNG,
-				timestamp: at(4),
-			},
-			// What the server persists once a prompt has run.
-			...(calls.agent_run ?? []).flatMap((run, i) => [
-				{
-					id: `r${i}`,
-					session_id: "p1",
-					role: "user",
-					content: run.message,
-					timestamp: at(0),
-				},
-				{
-					id: `a${i}`,
-					session_id: "p1",
-					role: "assistant",
-					content: "#218 is clamping the retry delay.",
-					timestamp: at(0),
-				},
-			]),
-		],
+		session_messages: (args?: Record<string, unknown>) => {
+			record("session_messages", args);
+			return chatLog(calls);
+		},
 		agent_run: (args?: Record<string, unknown>) => {
 			record("agent_run", args);
 			return { stream: ["#218 is clamping the retry delay."], result: "" };
 		},
 	};
+}
+
+/** The prompt chat's persisted log: two seeded messages, then every prompt. */
+function chatLog(calls: Calls) {
+	return [
+		{
+			id: "m1",
+			session_id: "projects-chat",
+			role: "user",
+			content: "What does the board look like?",
+			media_url: PNG,
+			timestamp: at(5),
+		},
+		{
+			id: "m2",
+			session_id: "projects-chat",
+			role: "assistant",
+			content: "Here is the failing run.",
+			media_url: PNG,
+			timestamp: at(4),
+		},
+		// What the server persists once a prompt has run.
+		...(calls.agent_run ?? []).flatMap((run, i) => [
+			{
+				id: `r${i}`,
+				session_id: "projects-chat",
+				role: "user",
+				content: run.message,
+				timestamp: at(0),
+			},
+			{
+				id: `a${i}`,
+				session_id: "projects-chat",
+				role: "assistant",
+				content: "#218 is clamping the retry delay.",
+				timestamp: at(0),
+			},
+		]),
+	];
 }
 
 test("prompt chat opens beside the board and remembers it is open", async ({
@@ -866,8 +874,14 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await expect(chat).toContainText(
 		"Ask the projects agent about lsegal/aviary",
 	);
-	// It talks to the built-in Projects agent, never to a job.
-	await expect.poll(() => calls.session_list?.at(-1)?.agent).toBe("projects");
+	// It talks to the built-in Projects agent's one hidden session, never to
+	// a job, and offers no other chats (#624).
+	await expect
+		.poll(() => calls.session_messages?.at(-1))
+		.toMatchObject({ agent: "projects", session_id: "projects-chat" });
+	await expect(chat.getByTestId("chat-picker")).toHaveCount(0);
+	await expect(chat.getByRole("button", { name: "New chat" })).toHaveCount(0);
+	expect(calls.session_list ?? []).toHaveLength(0);
 	// Images show in both directions.
 	await expect(chat.locator("img")).toHaveCount(2);
 	await expect(chat).toContainText("Here is the failing run.");
@@ -1001,11 +1015,54 @@ test("Summarize sends the job to the prompt chat", async ({ page }) => {
 		message: "Summarize the current session log of work on lsegal/aviary#218",
 		// The board's project goes with every prompt (#516).
 		project: "lsegal/aviary",
+		session: "projects-chat",
 	});
+	expect(calls.agent_run[0].session_id).toBeUndefined();
 	await expect(chat).toContainText(
 		"Summarize the current session log of work on lsegal/aviary#218",
 	);
 	await expect(chat).toContainText("#218 is clamping the retry delay.");
+});
+
+test("every board shares one prompt chat log with its own project hint", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	let chat = page.getByTestId("project-chat");
+	await expect(chat).toContainText("about lsegal/aviary");
+	const input = chat.getByPlaceholder("Type a message or paste an image…");
+	await input.fill("What is stuck here?");
+	await input.press("Enter");
+	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
+	await expect(chat).toContainText("What is stuck here?");
+
+	// The all-projects board opens the same log, now about every project.
+	await page.goto("/agents/coder/projects");
+	chat = page.getByTestId("project-chat");
+	await expect(chat).toContainText("about every project");
+	await expect(chat).toContainText("Here is the failing run.");
+	await expect(chat).toContainText("What is stuck here?");
+	await chat
+		.getByPlaceholder("Type a message or paste an image…")
+		.fill("And everywhere?");
+	await chat
+		.getByPlaceholder("Type a message or paste an image…")
+		.press("Enter");
+	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(2);
+
+	// Only the project hint changed; both prompts went to the one session.
+	expect(calls.agent_run[0]).toMatchObject({
+		session: "projects-chat",
+		project: "lsegal/aviary",
+	});
+	expect(calls.agent_run[1].session).toBe("projects-chat");
+	expect(calls.agent_run[1].project).toBeUndefined();
+	expect(
+		new Set((calls.session_messages ?? []).map((a) => a.session_id)),
+	).toEqual(new Set(["projects-chat"]));
 });
 
 test.describe("phone width", () => {

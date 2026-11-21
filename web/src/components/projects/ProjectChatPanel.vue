@@ -20,7 +20,7 @@
 				@click="emit('close')">✕</button>
 		</header>
 		<div class="min-h-0 flex-1">
-			<ChatView ref="chat" :agent="PROJECTS_AGENT" :project="props.project" />
+			<ChatView ref="chat" :agent="PROJECTS_AGENT" :session="PROJECTS_CHAT_SESSION" :project="props.project" />
 		</div>
 	</aside>
 </template>
@@ -31,6 +31,9 @@ import ChatView from "../../views/ChatView.vue";
 
 /** The built-in Aviary agent behind the prompt chat (config.ProjectsAgentName). */
 const PROJECTS_AGENT = "projects";
+/** Its one chat, shared by every board and hidden from the Chats list
+ * (config.ProjectsChatSession). */
+const PROJECTS_CHAT_SESSION = "projects-chat";
 const WIDTH_KEY = "aviary.projects.chatWidth";
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 420;
