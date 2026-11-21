@@ -50,7 +50,8 @@ func (m *Manager) InFlightJobs(target string) []int {
 }
 
 // Status is project_status: identity, targets with issue counts, job counts,
-// delivery and the last check, quota per CLI, and recent log lines. Passing
+// delivery and the last check, quota per CLI, each CLI provider once with its
+// models and quota, and recent log lines. Passing
 // logOffset returns only the lines logged since that offset.
 func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 	snapshot := m.currentSnapshot()
@@ -119,6 +120,7 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 		status["error"] = lastError
 	}
 	status["agents"] = allAgentSpecs(settings)
+	status["clis"] = statusCLIs(allAgentSpecs(settings), snapshot.Quotas)
 	return status
 }
 

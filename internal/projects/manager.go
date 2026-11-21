@@ -820,6 +820,55 @@ func quotaAgentNames(s engineSettings) []string {
 	return names
 }
 
+// StatusCLI is one CLI provider in project_status: the models its jobs run
+// on, from the provider/model agent specs, and the provider's own quota. A
+// provider/model pair is a model of its provider, not a second provider.
+type StatusCLI struct {
+	Name   string   `json:"name"`
+	Models []string `json:"models"`
+	Quota  string   `json:"quota"`
+}
+
+// statusCLIs lists each provider once: those the agent specs name, in spec
+// order, then any other provider with a quota reading, by name.
+func statusCLIs(specs []string, quotas map[string]string) []StatusCLI {
+	clis := []StatusCLI{}
+	index := map[string]int{}
+	add := func(name string) int {
+		if i, ok := index[name]; ok {
+			return i
+		}
+		index[name] = len(clis)
+		clis = append(clis, StatusCLI{Name: name, Models: []string{}, Quota: quotas[name]})
+		return len(clis) - 1
+	}
+	for _, value := range specs {
+		spec, err := parseAgentSpec(value)
+		if err != nil {
+			spec = agentSpec{Name: value}
+		}
+		name, model := spec.Name, spec.Model
+		if name == "" {
+			continue
+		}
+		i := add(name)
+		if model != "" && !slices.Contains(clis[i].Models, model) {
+			clis[i].Models = append(clis[i].Models, model)
+		}
+	}
+	extra := make([]string, 0, len(quotas))
+	for name := range quotas {
+		if _, ok := index[name]; !ok && name != "" {
+			extra = append(extra, name)
+		}
+	}
+	slices.Sort(extra)
+	for _, name := range extra {
+		add(name)
+	}
+	return clis
+}
+
 func (m *Manager) latestQuotas() map[string]string {
 	if readings := m.quotas.Load(); readings != nil {
 		return *readings

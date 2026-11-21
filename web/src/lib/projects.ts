@@ -22,8 +22,10 @@ export interface ProjectSummary {
 	issues: number;
 }
 
+/** One CLI provider: the models the board's jobs run on and its quota. */
 export interface CLIStatus {
 	name: string;
+	models: string[];
 	quota: string;
 	signedIn: boolean;
 }
@@ -408,10 +410,6 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const raw = obj(v);
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
-	const quotas = obj(raw.quotas);
-	const cliNames = [
-		...new Set([...arr(raw.agents).map(str), ...Object.keys(quotas)]),
-	].filter(Boolean);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -434,14 +432,18 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 			name: str(t),
 			issues: num(counts[str(t)]),
 		})),
-		clis: cliNames.map((name) => {
-			const quota = str(quotas[name]);
-			return {
-				name,
-				quota,
-				signedIn: !/signed out|not signed in|unauthenticated/i.test(quota),
-			};
-		}),
+		clis: arr(raw.clis)
+			.map(obj)
+			.filter((c) => str(c.name))
+			.map((c) => {
+				const quota = str(c.quota);
+				return {
+					name: str(c.name),
+					models: arr(c.models).map(str).filter(Boolean),
+					quota,
+					signedIn: !/signed out|not signed in|unauthenticated/i.test(quota),
+				};
+			}),
 		log: lines(raw.recent_logs),
 	};
 }

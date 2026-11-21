@@ -30,7 +30,12 @@ const STATUS = {
 		codex: "quota ok",
 		gemini: "signed out",
 	},
-	agents: ["claude", "codex", "gemini"],
+	agents: ["claude/opus", "codex", "gemini"],
+	clis: [
+		{ name: "claude", models: ["opus"], quota: "38% of 5h quota left" },
+		{ name: "codex", models: ["gpt-5.6-terra"], quota: "quota ok" },
+		{ name: "gemini", models: [], quota: "signed out" },
+	],
 	recent_logs:
 		"12:03:58 checked lsegal/aviary: 6 ready issues\n12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
 	log_offset: 2,
@@ -366,6 +371,13 @@ test("board shows status, ordered job cards and live output", async ({
 	const clis = page.getByRole("region", { name: "CLI providers" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
+	// A provider/model agent is its provider running a model, not a second
+	// provider without a quota reading.
+	const claude = clis.locator("> span", { hasText: "claude" });
+	await expect(claude).toHaveCount(1);
+	await expect(claude).toHaveText(/claudes*opuss*38% of 5h quota left/);
+	await expect(clis).not.toContainText("claude/opus");
+	await expect(clis).not.toContainText("no quota reported");
 
 	const cards = page.getByTestId("job-card");
 	await expect(cards).toHaveCount(5);

@@ -18,6 +18,7 @@ const STATUS = {
 	poll_interval: "30s",
 	ready_label: "ready",
 	quotas: {},
+	clis: [],
 	agents: ["claude"],
 	recent_logs: "",
 	log_offset: 0,
