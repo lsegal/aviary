@@ -14,12 +14,6 @@
 						class="field-input font-mono" :placeholder="dialog?.kind === 'file' ? 'IDENTITY.md' : 'daily-briefing'" />
 
 					<template v-if="dialog?.kind === 'task'">
-						<template v-if="dialog.project && dialog.mode === 'create'">
-							<label for="agent-task-agent" class="field-label mt-3">Agent</label>
-							<select id="agent-task-agent" v-model="form.agent" class="field-input">
-								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
-							</select>
-						</template>
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="!taskProject" />
 						</div>
@@ -160,7 +154,6 @@ const form = reactive({
 	trigger: taskTriggerFields({ name: "" }),
 	prompt: "",
 	type: "prompt",
-	agent: "",
 	precompute: true,
 	/** Where runs forward their output: "" or session:<id> of a channel session. */
 	target: "",
@@ -177,18 +170,11 @@ const taskProject = computed(() => {
 	return task?.type === "project" ? (task.project ?? "") : "";
 });
 
-/** The agents a project task may be created under, its default first. */
-const agentChoices = computed(() => {
-	const d = dialog.value;
-	if (!d) return [];
-	return [...new Set([d.agent, ...(d.agents ?? [])].filter(Boolean))];
-});
-
 /** The agent a new task is created under. */
 const taskAgent = computed(() => {
 	const d = dialog.value;
 	if (d?.kind !== "task" || d.mode !== "create") return "";
-	return d.project ? form.agent || d.agent : d.agent;
+	return d.agent;
 });
 
 /** The task agent's chats that forward to a channel, offered as Send To. */
@@ -199,7 +185,7 @@ const channelSessions = computed(() =>
 );
 
 // Each dialog opening reloads the chats, so a newly bound channel shows up;
-// picking another agent clears a Send To that named one of the old agent's.
+// another agent clears a Send To that named one of the old agent's.
 watch([dialog, taskAgent], ([, agent], [, prev]) => {
 	if (!agent) return;
 	if (prev && agent !== prev) form.target = "";
@@ -251,7 +237,6 @@ watch(dialog, (d) => {
 	editorKey.value++;
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
-	form.agent = d?.agent ?? "";
 	form.precompute =
 		!d?.project && settings.config?.scheduler?.precompute_tasks !== false;
 	form.target = "";
@@ -283,7 +268,6 @@ function showing(kind: "task" | "file", agent: string, name: string): boolean {
 async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 	const project = mode === "create" ? dialog.value?.project : undefined;
 	const onCreated = dialog.value?.onCreated;
-	if (project) agent = form.agent || agent;
 	const name = form.name.trim();
 	const clash = agentTasks(agent).some(
 		(t) => t.name === name && t.name !== from,
