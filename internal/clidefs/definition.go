@@ -992,6 +992,24 @@ func hasPromptArg(fragments []Fragment) bool {
 // ReadsPromptFromStdin reports whether the agent can take its prompt on stdin.
 func (d Definition) ReadsPromptFromStdin() bool { return d.PromptStdin != nil }
 
+// ReadsPromptFromStdinIn reports whether a mode's template can take its prompt
+// on stdin: the agent reads stdin and the template passes the prompt as the
+// argument of its own that promptStdin replaces.
+func (d Definition) ReadsPromptFromStdinIn(mode Mode) bool {
+	if !d.ReadsPromptFromStdin() {
+		return false
+	}
+	switch mode {
+	case ModeRun:
+		return hasPromptArg(d.Args.Run)
+	case ModeResume:
+		return hasPromptArg(d.resumeFragments())
+	case ModeVision:
+		return hasPromptArg(d.Args.Vision)
+	}
+	return false
+}
+
 func validateFragments(mode string, fragments []Fragment) error {
 	for i, fragment := range fragments {
 		if condition := strings.TrimPrefix(fragment.When, "!"); condition != "" && !contains(knownConditions, condition) {
