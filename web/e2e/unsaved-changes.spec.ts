@@ -169,7 +169,7 @@ async function mockFiles(page: Page) {
 			{ id: "assistant", name: "assistant", model: "x/y", state: "idle" },
 		],
 		config_get: { agents: [{ name: "assistant", model: "x/y", tasks: [] }] },
-		config_save: "ok",
+		config_save: () => "ok",
 		config_validate: [],
 		job_list: [],
 		session_list: [],
