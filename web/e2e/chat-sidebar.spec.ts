@@ -118,6 +118,14 @@ test("the Chats list shows Main Chat first, titles, and last-message time on hov
 	await expect(time).toBeVisible();
 	await expect(time).toHaveText("3h");
 
+	// The time is the last message's, never the chat's creation time (#661).
+	const main = chatRows(page).nth(0);
+	await main.hover();
+	await expect(main.getByTestId("chat-last-message")).toHaveText("11h");
+	const empty = chatRows(page).nth(2);
+	await empty.hover();
+	await expect(empty.getByTestId("chat-last-message")).toHaveCount(0);
+
 	await groceries.getByRole("link").click();
 	await expect(page).toHaveURL("/agents/assistant/chat/sess_1");
 });

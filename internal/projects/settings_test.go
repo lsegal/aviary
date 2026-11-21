@@ -139,11 +139,11 @@ func TestEngineApplySettingsReadyStateAndAllowedCommenters(t *testing.T) {
 	go func() { done <- w.Run(ctx) }()
 
 	commenters := []string{"alice", "bob"}
-	snapshot, err := w.ApplySettings(ctx, SettingsUpdate{ReadyState: strPtr("Agent Ready"), AllowedCommenters: &commenters})
+	snapshot, err := w.ApplySettings(ctx, SettingsUpdate{ReadyState: strPtr("Todo"), AllowedCommenters: &commenters})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.ReadyState != "Agent Ready" {
+	if snapshot.ReadyState != "Todo" {
 		t.Fatalf("readyState = %q", snapshot.ReadyState)
 	}
 	if len(snapshot.AllowedCommenters) != 2 || snapshot.AllowedCommenters[0] != "alice" || snapshot.AllowedCommenters[1] != "bob" {
@@ -276,12 +276,12 @@ func TestEngineApplySettingsReadyStateDefaultReflectsUnsetFallback(t *testing.T)
 		t.Fatalf("readyStateDefault = %q, want %q", snapshot.ReadyStateDefault, "Todo")
 	}
 
-	snapshot, err = w.ApplySettings(ctx, SettingsUpdate{ReadyState: strPtr("Agent Ready")})
+	snapshot, err = w.ApplySettings(ctx, SettingsUpdate{ReadyState: strPtr("Ready")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.ReadyStateDefault != "Agent Ready" {
-		t.Fatalf("readyStateDefault after configuring = %q, want %q", snapshot.ReadyStateDefault, "Agent Ready")
+	if snapshot.ReadyStateDefault != "Ready" {
+		t.Fatalf("readyStateDefault after configuring = %q, want %q", snapshot.ReadyStateDefault, "Ready")
 	}
 
 	cancel()
@@ -346,7 +346,7 @@ func TestEngineApplySettingsSucceedsOnceRunBecomesReady(t *testing.T) {
 // at once from the configured values even before Run is looping, rather
 // than waiting for it the way a change must.
 func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
-	w := &Engine{Concurrency: 3, ReadyState: "Agent Ready", AllowedCommenters: []string{"octocat"}, notReadyWait: 5 * time.Second}
+	w := &Engine{Concurrency: 3, ReadyState: "Ready", AllowedCommenters: []string{"octocat"}, notReadyWait: 5 * time.Second}
 	start := time.Now()
 	for _, read := range []func() (SettingsSnapshot, error){
 		func() (SettingsSnapshot, error) { return w.CurrentSettings(context.Background()) },
@@ -356,7 +356,7 @@ func TestEngineReadsSettingsBeforeRunStarts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if snapshot.Concurrency != 3 || snapshot.ReadyState != "Agent Ready" || len(snapshot.AllowedCommenters) != 1 {
+		if snapshot.Concurrency != 3 || snapshot.ReadyState != "Ready" || len(snapshot.AllowedCommenters) != 1 {
 			t.Fatalf("snapshot = %#v, want the configured settings", snapshot)
 		}
 	}

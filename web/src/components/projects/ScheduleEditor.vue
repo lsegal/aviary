@@ -118,10 +118,10 @@
 			<h3 class="mb-1 font-medium text-gray-700 dark:text-gray-200">Recent runs</h3>
 			<ul data-testid="schedule-runs" class="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
 				<li v-for="run in schedule.history" :key="run.fireTime" class="flex items-center gap-2 px-3 py-1.5 text-xs">
-					<span class="h-2 w-2 shrink-0 rounded-full" :class="runDot(run.status)" />
+					<span class="h-2 w-2 shrink-0 rounded-full" :class="scheduleRunDot(run.status)" />
 					<span class="w-16 shrink-0 text-gray-500">{{ run.status }}</span>
 					<span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200" :title="run.summary">{{ run.summary || run.reason }}</span>
-					<span class="shrink-0 tabular-nums text-gray-400">{{ duration(run.durationMS) }}</span>
+					<span class="shrink-0 tabular-nums text-gray-400">{{ runDuration(run.durationMS) }}</span>
 					<span class="shrink-0 text-gray-400">{{ formatFire(run.fireTime) }}</span>
 				</li>
 			</ul>
@@ -132,7 +132,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
-import type { ProjectSchedule, ScheduleTrigger } from "../../lib/projects";
+import {
+	formatFire,
+	type ProjectSchedule,
+	runDuration,
+	type ScheduleTrigger,
+	scheduleRunDot,
+} from "../../lib/projects";
 import ModelSelector from "../ModelSelector.vue";
 
 const props = defineProps<{
@@ -240,40 +246,6 @@ watch(
 	},
 	{ immediate: true },
 );
-
-function formatFire(iso: string) {
-	const t = Date.parse(iso);
-	return Number.isNaN(t)
-		? iso
-		: new Date(t).toLocaleString(undefined, {
-				weekday: "short",
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-}
-
-function duration(ms: number) {
-	if (!ms) return "";
-	const s = Math.round(ms / 1000);
-	return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-function runDot(status: string) {
-	switch (status) {
-		case "completed":
-			return "bg-green-500";
-		case "failed":
-			return "bg-red-500";
-		case "running":
-		case "queued":
-		case "retrying":
-			return "bg-blue-500";
-		default:
-			return "bg-gray-400";
-	}
-}
 
 const busy = ref(false);
 const error = ref("");

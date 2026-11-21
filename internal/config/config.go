@@ -65,8 +65,8 @@ type ServerConfig struct {
 	// the agent gives up and notifies the session instead of resuming.
 	// Accepts Go duration strings like "6h", "30m". Defaults to 6h if unset.
 	FailedTaskTimeout string `yaml:"failed_task_timeout,omitempty" json:"failed_task_timeout,omitempty"`
-	// AutoUpdate installs new releases automatically, but only while no jobs
-	// are running.
+	// AutoUpdate installs new releases automatically as soon as they are
+	// available, checkpointing running jobs so they resume after the restart.
 	AutoUpdate bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
 }
 
