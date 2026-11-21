@@ -77,7 +77,7 @@
 						     file's editor, under one bar with its name and actions. -->
 						<div v-show="selectedAgentSubtab === 'files'" class="flex min-h-0 flex-1 flex-col">
 							<div data-testid="agent-file-bar"
-								class="flex items-center justify-between gap-3 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
+								class="flex items-center justify-between gap-3 border-b border-gray-200/80 bg-white/90 px-4 pb-4 pt-10 backdrop-blur sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
 								<h2 class="flex min-w-0 items-center gap-2 text-xl font-bold text-gray-900 dark:text-white">
 									<span data-testid="agent-file-name" class="truncate font-mono">{{ getAgentFileState(agent.name).selectedFile || 'Files' }}</span>
 									<span v-if="isProtectedAgentFile(getAgentFileState(agent.name).selectedFile)" data-testid="agent-file-builtin"

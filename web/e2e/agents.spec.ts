@@ -1024,7 +1024,8 @@ test("agent files editor opens the file picked in the sidebar", async ({
 	);
 	// Without a ?file the page opens the first file.
 	await expect(editor).toHaveValue("# Agents");
-	await expect(page.getByTestId("agent-file-name")).toContainText("Built-in");
+	await expect(page.getByTestId("agent-file-name")).toHaveText("AGENTS.md");
+	await expect(page.getByTestId("agent-file-builtin")).toBeVisible();
 
 	await files.filter({ hasText: "IDENTITY.md" }).getByRole("link").click();
 	await expect(page).toHaveURL(
@@ -1032,6 +1033,7 @@ test("agent files editor opens the file picked in the sidebar", async ({
 	);
 	await expect(editor).toHaveValue("# Identity");
 	await expect(page.getByTestId("agent-file-name")).toHaveText("IDENTITY.md");
+	await expect(page.getByTestId("agent-file-builtin")).toHaveCount(0);
 });
 
 test("agent files editor auto-syncs templates when an older agent has no root files", async ({
