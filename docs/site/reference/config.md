@@ -484,12 +484,12 @@ Each CLI definition's `approval` field maps the modes to flags. Where a CLI has 
 | `claude` | `--permission-mode dontAsk` | `--permission-mode auto` | `--dangerously-skip-permissions` |
 | `codex` | `-c sandbox_mode=read-only` | `-c sandbox_mode=workspace-write` with network access | `--dangerously-bypass-approvals-and-sandbox` |
 | `gemini` | `--approval-mode plan` | `--approval-mode auto_edit` | `--yolo` |
-| `muse` | `--approval-mode untrusted --disable-write` | `--approval-mode never` | `--yolo` |
+| `muse` | `--permission-profile :read-only` | `--approval-mode never` | `--yolo` |
 | `agy` | `--mode plan` | `--mode auto` | `--dangerously-skip-permissions` |
 | `cline` | `--plan --auto-approve true` | `--auto-approve true` | same as `auto` |
 | `opencode` | `--agent plan` | `--auto` | same as `auto` |
 
-Claude's `dontAsk` runs only pre-approved tools and refuses the rest, so reads work but edits and shell commands do not. Cline and opencode have no sandbox and no partial-approval mode that can run unattended: the only way to keep them from changing files is their plan mode, so `auto` is their default auto-approving mode, the same as `full`. Pick `read-only` to keep them from making changes.
+Claude's `dontAsk` runs only pre-approved tools and refuses the rest, so reads work but edits and shell commands do not. Muse's built-in `:read-only` permission profile reads files and runs commands in a sandbox that refuses writes; its `--approval-mode untrusted` would instead wait headlessly on an approval prompt nobody can answer. Cline and opencode have no sandbox and no partial-approval mode that can run unattended: the only way to keep them from changing files is their plan mode, so `auto` is their default auto-approving mode, the same as `full`. Pick `read-only` to keep them from making changes.
 
 In a chat turn, Aviary's own MCP tools are always pre-approved for the CLI, so a mode never blocks them behind a separate prompt. The agent's [permissions](#agents-permissions) still decide which Aviary tools it gets, and Aviary checks every call. The mode governs the CLI's own tools, which a chat turn only gets with the `full` preset and `cli_builtin_tools`.
 

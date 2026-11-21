@@ -43,8 +43,49 @@ func TestBuiltinGeminiTakesMCPAndSystemPrompt(t *testing.T) {
 	if got := gemini.MCPToolPrefix("aviary"); got != "mcp_aviary_" {
 		t.Errorf("MCPToolPrefix = %q", got)
 	}
-	if got := gemini.SystemPromptEnv("/tmp/p.md"); !reflect.DeepEqual(got, []string{"GEMINI_SYSTEM_MD=/tmp/p.md"}) {
+	if got := gemini.SystemPromptEnv(SystemPromptValues{Prompt: "p", File: "/tmp/p.md"}); !reflect.DeepEqual(got, []string{"GEMINI_SYSTEM_MD=/tmp/p.md"}) {
 		t.Errorf("SystemPromptEnv = %q", got)
+	}
+}
+
+// TestBuiltinMuseTakesMCPAndSystemPrompt pins how a muse chat is handed
+// Aviary's MCP server, through -c settings in a trusted workspace whose header
+// is a whole variable, and the system prompt, appended through a -c setting
+// whose value is the prompt as a JSON string.
+func TestBuiltinMuseTakesMCPAndSystemPrompt(t *testing.T) {
+	muse, ok := MustBuiltin().Lookup("muse")
+	if !ok || !muse.TakesMCP() || !muse.TakesSystemPrompt() {
+		t.Fatalf("muse declares mcp %t and systemPrompt %t", muse.TakesMCP(), muse.TakesSystemPrompt())
+	}
+	values := MCPValues{Name: "aviary", URL: "http://127.0.0.1:1/mcp", TokenEnv: "TOK", AuthEnv: "AUTH", Timeout: 30 * time.Minute}
+	want := []string{
+		"--trust-workspace",
+		"-c", `mcpServers.aviary.url="http://127.0.0.1:1/mcp"`,
+		"-c", `mcpServers.aviary.headers.Authorization="${AUTH}"`,
+	}
+	if got := muse.MCPArgs(values); !reflect.DeepEqual(got, want) {
+		t.Errorf("MCPArgs = %q", got)
+	}
+	if muse.MCPWritesFile() || len(muse.MCPEnv(values)) > 0 {
+		t.Error("muse takes its server as arguments only")
+	}
+	if got := muse.MCPToolPrefix("aviary"); got != "mcp__aviary__" {
+		t.Errorf("MCPToolPrefix = %q", got)
+	}
+	if muse.SystemPromptWritesFile() {
+		t.Error("muse takes the system prompt inline, so no file is written")
+	}
+	prompt := "Be <brief>.\nSay \"hi\" & stop."
+	got := muse.SystemPromptArgs(SystemPromptValues{Prompt: prompt})
+	if len(got) != 2 || got[0] != "-c" || !strings.HasPrefix(got[1], "run.system_prompt_append=") {
+		t.Fatalf("SystemPromptArgs = %q", got)
+	}
+	var decoded string
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(got[1], "run.system_prompt_append=")), &decoded); err != nil || decoded != prompt {
+		t.Errorf("setting value %q decodes to %q (%v), want the prompt", got[1], decoded, err)
+	}
+	if strings.Contains(got[1], `\u003c`) {
+		t.Errorf("setting value %q escapes HTML characters it need not", got[1])
 	}
 }
 
@@ -52,7 +93,7 @@ func TestBuiltinGeminiTakesMCPAndSystemPrompt(t *testing.T) {
 // renders nothing for them.
 func TestBuiltinsWithoutMCP(t *testing.T) {
 	cline, _ := MustBuiltin().Lookup("cline")
-	if cline.TakesMCP() || cline.TakesSystemPrompt() || cline.MCPArgs(MCPValues{URL: "u"}) != nil || cline.SystemPromptEnv("f") != nil {
+	if cline.TakesMCP() || cline.TakesSystemPrompt() || cline.MCPArgs(MCPValues{URL: "u"}) != nil || cline.SystemPromptEnv(SystemPromptValues{File: "f"}) != nil {
 		t.Error("cline renders MCP or system prompt wiring it does not declare")
 	}
 }
@@ -83,6 +124,7 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 		{"mcp", map[string]any{"args": []any{"-c", `auth="${{mcpAuthEnv}}"`, "-c", `url="{mcpUrl}"`}, "toolPrefix": "x_"}},
 		{"systemPrompt", map[string]any{"args": []any{"--system-file", "{systemPromptFile}"}}},
 		{"systemPrompt", map[string]any{"env": map[string]any{"PROMPT_FILE": "{systemPromptFile}"}}},
+		{"systemPrompt", map[string]any{"args": []any{"-c", "instructions={systemPromptJSON}"}}},
 	}
 	for _, c := range valid {
 		if err := define(c.block, c.value); err != nil {
@@ -103,7 +145,7 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 		{"mcp", map[string]any{"args": []any{"{mcpFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "toolPrefix": "x_"}, `declares no "mcp.file"`},
 		{"mcp", map[string]any{"env": map[string]any{"S": "{mcpFile}"}, "file": map[string]any{"self": "{mcpFile}", "u": "{mcpUrl}", "t": "{mcpTokenEnv}"}, "toolPrefix": "x_"}, `own path`},
 		{"mcp", map[string]any{"env": map[string]any{"A=B": "{mcpUrl}{mcpTokenEnv}"}, "toolPrefix": "x_"}, `usable variable name`},
-		{"systemPrompt", map[string]any{"args": []any{"--system"}}, `{systemPromptFile}`},
+		{"systemPrompt", map[string]any{"args": []any{"--system"}}, `{systemPromptFile} or pass the prompt with {systemPromptJSON}`},
 		{"systemPrompt", map[string]any{"args": []any{"{systemPromptFile}", "{mcpUrl}"}}, `may only use`},
 	}
 	for _, c := range invalid {

@@ -37,8 +37,17 @@
     ],
     "timeout": "45s"
   },
+  "mcp": {
+    "args": [
+      "--trust-workspace",
+      "-c", "mcpServers.{mcpName}.url=\"{mcpUrl}\"",
+      "-c", "mcpServers.{mcpName}.headers.Authorization=\"${{mcpAuthEnv}}\""
+    ],
+    "toolPrefix": "mcp__{mcpName}__"
+  },
+  "systemPrompt": {"args": ["-c", "run.system_prompt_append={systemPromptJSON}"]},
   "approval": {
-    "read-only": ["--approval-mode", "untrusted", "--disable-write"],
+    "read-only": ["--permission-profile", ":read-only"],
     "auto": ["--approval-mode", "never"],
     "full": ["--yolo"]
   },

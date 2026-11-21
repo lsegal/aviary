@@ -209,7 +209,7 @@ Their strings may use these placeholders, and must use `{mcpUrl}` and one of the
 A placeholder sits inside the CLI's own variable syntax, so `"Bearer ${{mcpTokenEnv}}"` renders as `Bearer ${AVIARY_MCP_TOKEN}`.
 :::
 
-`systemPrompt` writes the agent's system prompt to a temporary file for each turn, with `{systemPromptFile}` naming it. It has `args` (added where `{approval}` stands, as for `mcp`) and `env`, and must use `{systemPromptFile}` in one of them. Without it, the system prompt opens the session's first turn.
+`systemPrompt` hands the CLI the agent's system prompt for each turn, either written to a temporary file that `{systemPromptFile}` names or inline as `{systemPromptJSON}`, the prompt as a quoted JSON string for a CLI that takes JSON setting values. It has `args` (added where `{approval}` stands, as for `mcp`) and `env`, and must use one of the two placeholders in one of them. Without it, the system prompt opens the session's first turn.
 
 The built-in `gemini` definition declares both. It writes the server to a settings file that `GEMINI_CLI_SYSTEM_SETTINGS_PATH` points at, which takes precedence over your own settings and stands in for any system-wide settings file during the chat, and passes the system prompt through `GEMINI_SYSTEM_MD`, which replaces Gemini CLI's built-in system prompt as `--system-prompt-file` does Claude Code's:
 
@@ -233,9 +233,21 @@ The built-in `gemini` definition declares both. It writes the server to a settin
 
 `trust` skips Gemini CLI's own confirmation, since Aviary checks every call at its MCP boundary. Gemini CLI's read-only `plan` mode, used when the agent's built-in tools are off, still refuses MCP tools it does not know to be read-only.
 
-::: v-pre
-A CLI that takes per-run settings as arguments uses `args` instead, for example `["-c", "mcpServers.{mcpName}.url=\"{mcpUrl}\"", "-c", "mcpServers.{mcpName}.headers.Authorization=\"${{mcpAuthEnv}}\""]`.
-:::
+A CLI that takes per-run settings as arguments uses `args` instead. The built-in `muse` definition does, since Muse Code takes one JSON setting per `-c` flag and expands a variable only when it stands for a whole value:
+
+```json
+"mcp": {
+  "args": [
+    "--trust-workspace",
+    "-c", "mcpServers.{mcpName}.url=\"{mcpUrl}\"",
+    "-c", "mcpServers.{mcpName}.headers.Authorization=\"${{mcpAuthEnv}}\""
+  ],
+  "toolPrefix": "mcp__{mcpName}__"
+},
+"systemPrompt": {"args": ["-c", "run.system_prompt_append={systemPromptJSON}"]}
+```
+
+Muse Code loads MCP servers only in a trusted workspace, so the block adds `--trust-workspace`, which also loads the workspace's own skills and rules for the turn. It offers the server's tools as `mcp__aviary.<tool>` and reports a call as `mcp__aviary__<tool>`. `run.system_prompt_append` adds the prompt after Muse Code's built-in instructions instead of replacing them; Muse Code has no setting that reads the prompt from a file and does not expand variables in it, so the prompt goes on the command line, as it does for `codex`.
 
 ### `minVersion`
 
