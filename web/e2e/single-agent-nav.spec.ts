@@ -38,17 +38,17 @@ test("a single agent's pages are the sidebar's top level", async ({ page }) => {
 		sole.getByRole("link", { name: "Chats", exact: true }),
 	).toHaveAttribute("href", "/agents/assistant/chat");
 
-	// System follows the agent's pages and + Add Agent comes last.
+	// System follows the agent's pages.
 	const order = await sidebar
-		.locator(
-			"[data-testid=sidebar-sole-agent], [data-testid=sidebar-system], [data-testid=sidebar-add-agent]",
-		)
+		.locator("[data-testid=sidebar-sole-agent], [data-testid=sidebar-system]")
 		.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
-	expect(order).toEqual([
-		"sidebar-sole-agent",
-		"sidebar-system",
-		"sidebar-add-agent",
-	]);
+	expect(order).toEqual(["sidebar-sole-agent", "sidebar-system"]);
+	// With no Agents row, Add agent is the "+" on the Aviary row (#638).
+	await expect(sidebar.getByTestId("sidebar-add-agent")).toHaveCount(0);
+	await expect(page.getByTestId("sidebar-add-agent")).toHaveAttribute(
+		"aria-label",
+		"Add agent",
+	);
 });
 
 test("a second agent restores the agent tree and removing it collapses again", async ({
@@ -66,7 +66,10 @@ test("a second agent restores the agent tree and removing it collapses again", a
 	const list = sidebar.getByTestId("sidebar-agent-list");
 	await expect(list.locator("[data-agent=assistant]")).toBeVisible();
 	await expect(list.locator("[data-agent=helper]")).toBeVisible();
-	await expect(list.getByTestId("sidebar-add-agent")).toBeVisible();
+	await expect(sidebar.getByTestId("sidebar-add-agent")).toHaveAttribute(
+		"aria-label",
+		"Add agent",
+	);
 
 	state.names = ["assistant"];
 	await page.reload();
@@ -81,7 +84,7 @@ test("adding an agent from a single-agent sidebar shows the agent tree", async (
 	await page.goto("/agents/assistant/chat");
 	const sidebar = page.getByTestId("sidebar-nav");
 	await expect(sidebar.getByTestId("sidebar-sole-agent")).toBeVisible();
-	await sidebar.getByTestId("sidebar-add-agent").click();
+	await page.getByTestId("sidebar-add-agent").click();
 	await expect(page).toHaveURL(/\/agents\/_1\//);
 	await expect(sidebar.getByTestId("sidebar-sole-agent")).toHaveCount(0);
 	const list = sidebar.getByTestId("sidebar-agent-list");

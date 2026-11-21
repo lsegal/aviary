@@ -103,14 +103,11 @@ test("the Chats list shows Main Chat first, titles, and last-message time on hov
 		/Groceries/,
 		/New chat/,
 	]);
-	// "+ New chat" comes after every chat row.
+	// New chat is the "+" on the Chats row, not a row in the list (#638).
 	await expect(
-		page
-			.getByTestId("sidebar-chats")
-			.locator(
-				':has([data-testid="chat-row"]) + [data-testid="sidebar-new-chat"]',
-			),
-	).toBeVisible();
+		page.getByTestId("sidebar-chats").getByTestId("sidebar-new-chat"),
+	).toHaveCount(0);
+	await expect(page.getByTestId("sidebar-new-chat")).toHaveCount(1);
 	// The top tabs are gone on wide screens.
 	await expect(page.getByTestId("chat-picker")).toBeHidden();
 
@@ -237,4 +234,84 @@ test("a new chat takes its generated name after the first message", async ({
 	await input.press("Enter");
 
 	await expect(chatRows(page)).toHaveText([/Main Chat/, /Weekend trip plans/]);
+});
+
+/** Opacity of the "+" row action, which hover-capable pointers fade in. */
+function opacity(page: Page, testid: string) {
+	return page
+		.getByTestId(testid)
+		.evaluate((el) => Number(getComputedStyle(el).opacity));
+}
+
+test('the Chats "+" shows on hover or keyboard focus and creates a new chat', async ({
+	page,
+}) => {
+	await mockChats(page, [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: hoursAgo(2),
+		},
+	]);
+	await page.goto("/agents/assistant/chat");
+
+	const plus = page.getByTestId("sidebar-new-chat");
+	await expect(plus).toHaveAttribute("aria-label", "New chat");
+	await expect(plus).toHaveAttribute("title", "New chat");
+	await expect.poll(() => opacity(page, "sidebar-new-chat")).toBe(0);
+
+	const chats = page
+		.getByTestId("sidebar-sole-agent")
+		.getByRole("link", { name: "Chats", exact: true });
+	await chats.hover();
+	await expect.poll(() => opacity(page, "sidebar-new-chat")).toBe(1);
+
+	await page.mouse.move(800, 600);
+	await expect.poll(() => opacity(page, "sidebar-new-chat")).toBe(0);
+	await chats.focus();
+	await expect.poll(() => opacity(page, "sidebar-new-chat")).toBe(1);
+	await page.keyboard.press("Tab");
+	await expect(plus).toBeFocused();
+	await expect.poll(() => opacity(page, "sidebar-new-chat")).toBe(1);
+
+	await page.keyboard.press("Enter");
+	await expect(page).toHaveURL("/agents/assistant/chat/sess_new");
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /New chat/]);
+});
+
+test('on a touch screen the sidebar\'s "+" actions show without hovering', async ({
+	browser,
+}) => {
+	const context = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+		hasTouch: true,
+		isMobile: true,
+	});
+	const page = await context.newPage();
+	await mockChats(page, [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: hoursAgo(2),
+		},
+	]);
+	await page.goto("/agents/assistant/chat");
+	expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(
+		true,
+	);
+
+	await expect(page.getByTestId("sidebar-sole-agent")).toBeVisible();
+	for (const testid of [
+		"sidebar-new-chat",
+		"sidebar-add-project",
+		"sidebar-add-agent",
+	]) {
+		await expect.poll(() => opacity(page, testid)).toBe(1);
+	}
+
+	await page.getByTestId("sidebar-new-chat").tap();
+	await expect(page).toHaveURL("/agents/assistant/chat/sess_new");
+	await context.close();
 });

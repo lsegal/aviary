@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -89,7 +90,7 @@ func (m *SessionManager) GetOrCreate(agentID string) (*domain.Session, error) {
 // The session type is inferred from the name: "main" → main, names containing
 // ":" → channel, anything else → user.
 func (m *SessionManager) GetOrCreateNamed(agentID, name string) (*domain.Session, error) {
-	return m.GetOrCreateNamedTyped(agentID, name, inferSessionType(name))
+	return m.GetOrCreateNamedTyped(agentID, name, sessionTypeFor(agentID, name))
 }
 
 // GetOrCreateNamedTyped is like GetOrCreateNamed but uses the provided session
@@ -152,7 +153,7 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 			updated = created
 		}
 		if sessType == "" {
-			sessType = inferSessionType(name)
+			sessType = sessionTypeFor(agentID, name)
 		}
 		if storedName == "" {
 			storedName = name
@@ -184,6 +185,15 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 		return nil, fmt.Errorf("creating session %q: %w", name, err)
 	}
 	return sess, nil
+}
+
+// sessionTypeFor is the type of agentID's session named name: the Projects
+// prompt chat is hidden, and every other name is inferred.
+func sessionTypeFor(agentID, name string) domain.SessionType {
+	if agentID == config.ProjectsAgentName && name == config.ProjectsChatSession {
+		return domain.SessionTypeHidden
+	}
+	return inferSessionType(name)
 }
 
 // inferSessionType guesses the session type from the session name.
@@ -256,7 +266,7 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 			}
 		}
 		if sessType == "" {
-			sessType = inferSessionType(name)
+			sessType = sessionTypeFor(agentID, name)
 		}
 		s := &domain.Session{
 			ID:            id,
