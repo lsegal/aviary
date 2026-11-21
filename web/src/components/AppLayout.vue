@@ -119,10 +119,15 @@
 
     <nav
       class="hidden w-60 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
-      <div class="mb-6 flex items-center gap-2">
+      <div class="group/row mb-6 flex items-center gap-2">
         <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
-        <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
-        <div class="ml-auto flex items-center gap-1">
+        <div class="relative flex min-w-0 flex-1 items-center self-stretch">
+          <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
+          <!-- With one agent there is no Agents row, so its pages hang off
+               Aviary itself and Add agent sits here. -->
+          <SidebarRowAction v-if="soleAgent" label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
+        </div>
+        <div class="flex items-center gap-1">
           <a
             v-for="link in brandLinks"
             :key="link.label"
@@ -150,12 +155,19 @@
       <div class="min-h-0 flex-1 space-y-1 overflow-y-auto" data-testid="sidebar-nav">
         <div v-if="soleAgent" class="mb-3 space-y-1" data-testid="sidebar-sole-agent" :data-agent="soleAgent.name">
           <template v-for="child in soleAgent.children" :key="child.key">
-            <router-link :to="child.to" :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-              <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
-                class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
-              <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
-            </router-link>
+            <div class="group/row relative">
+              <router-link :to="child.to"
+                :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? 'pr-9' : '']">
+                <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+                <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
+                  class="shrink-0 rounded-full bg-green-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
+                <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+              </router-link>
+              <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
+                :to="addProjectLink(soleAgent.name)" />
+              <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
+                :disabled="creatingChat" @click="newChat(soleAgent.name)" />
+            </div>
             <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
@@ -163,31 +175,37 @@
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
                 <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
               </router-link>
-              <router-link :to="addProjectLink(soleAgent.name)" data-testid="sidebar-add-project"
-                class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
-                + Add project
-              </router-link>
             </div>
           </template>
         </div>
         <template v-else>
-        <router-link to="/agents" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-agents">
-          Agents
-        </router-link>
+        <div class="group/row relative">
+          <router-link to="/agents" :class="[topLevelLinkClass(false, false), 'flex items-center pr-9']" data-testid="sidebar-agents">
+            Agents
+          </router-link>
+          <SidebarRowAction label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
+        </div>
         <div class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-agent-list">
           <template v-for="a in agentNav" :key="a.name">
             <router-link :to="a.to" :data-agent="a.name"
               :class="[childLinkClass(a.active && !a.children.length, false), 'flex items-center gap-2', a.active ? 'font-semibold text-gray-950 dark:text-white' : '']">
               <span class="min-w-0 flex-1 truncate">{{ a.label }}</span>
               <span v-if="a.running > 0" data-testid="agent-running-badge"
-                class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ a.running }}</span>
+                class="shrink-0 rounded-full bg-green-600 px-1.5 text-xs font-semibold text-white">{{ a.running }}</span>
             </router-link>
             <div v-if="a.children.length" class="space-y-1 border-l border-gray-200 pl-2 dark:border-gray-800" :data-testid="`sidebar-agent-${a.name}`">
               <template v-for="child in a.children" :key="child.key">
-                <router-link :to="child.to" :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-                  <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-                  <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
-                </router-link>
+                <div class="group/row relative">
+                  <router-link :to="child.to"
+                    :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? 'pr-9' : '']">
+                    <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+                    <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+                  </router-link>
+                  <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
+                    :to="addProjectLink(a.name)" />
+                  <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
+                    :disabled="creatingChat" @click="newChat(a.name)" />
+                </div>
                 <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
@@ -195,18 +213,10 @@
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
                     <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
                   </router-link>
-                  <router-link :to="addProjectLink(a.name)" data-testid="sidebar-add-project"
-                    class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
-                    + Add project
-                  </router-link>
                 </div>
               </template>
             </div>
           </template>
-          <router-link :to="addAgentLink" data-testid="sidebar-add-agent"
-            class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
-            + Add Agent
-          </router-link>
         </div>
         </template>
 
@@ -231,10 +241,6 @@
             </router-link>
           </template>
         </div>
-        <router-link v-if="soleAgent" :to="addAgentLink" data-testid="sidebar-add-agent"
-          class="block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
-          + Add Agent
-        </router-link>
       </div>
       <div class="mt-auto flex flex-col gap-2">
         <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
@@ -316,14 +322,16 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import { type Component, computed, markRaw } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
 import { projectOwner } from "../lib/projectSettings";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
+import { useChatSessionsStore } from "../stores/chatSessions";
 import { useSettingsStore } from "../stores/settings";
+import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
@@ -542,9 +550,29 @@ const projectsOpen = computed(() =>
 
 const addAgentLink = { path: "/agents", query: { add: "1" } };
 
-// + Add project opens the add dialog on the agent's GitHub Projects board.
+// Add project opens the add dialog on the agent's GitHub Projects board.
 function addProjectLink(agent: string) {
 	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
+}
+
+// Rows whose "+" sits over their right edge keep room for it.
+function hasRowAction(child: NavChild): boolean {
+	return child.key === "projects" || child.key === "chat";
+}
+
+const chatSessions = useChatSessionsStore();
+const router = useRouter();
+const creatingChat = ref(false);
+async function newChat(agent: string) {
+	creatingChat.value = true;
+	try {
+		const sess = await chatSessions.create(agent);
+		await router.push(`${agentPagePath(agent, "chat")}/${sess.id}`);
+	} catch (e) {
+		console.error("Failed to create chat", e);
+	} finally {
+		creatingChat.value = false;
+	}
 }
 
 // Runtime watches no agent owns sit with System's other pages.
