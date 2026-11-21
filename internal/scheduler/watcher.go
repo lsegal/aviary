@@ -64,6 +64,8 @@ func (fw *FileWatcher) Remove(name string) {
 
 // Start begins dispatching file events. Blocks until Stop is called.
 func (fw *FileWatcher) Start() {
+	// pending is shared with the debounce timers' goroutines.
+	var pendingMu sync.Mutex
 	pending := make(map[string]*time.Timer) // path → debounce timer
 
 	for {
@@ -77,10 +79,15 @@ func (fw *FileWatcher) Start() {
 			}
 			path := event.Name
 			// Debounce: reset timer on each event for the same path.
+			pendingMu.Lock()
 			if t, ok := pending[path]; ok {
 				t.Reset(watchDebounce)
 			} else {
 				pending[path] = time.AfterFunc(watchDebounce, func() {
+					pendingMu.Lock()
+					delete(pending, path)
+					pendingMu.Unlock()
+
 					fw.mu.Lock()
 					handlers := make([]watchEntry, 0, len(fw.handlers))
 					for _, h := range fw.handlers {
@@ -94,9 +101,9 @@ func (fw *FileWatcher) Start() {
 							h.fn(path)
 						}
 					}
-					delete(pending, path)
 				})
 			}
+			pendingMu.Unlock()
 
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {

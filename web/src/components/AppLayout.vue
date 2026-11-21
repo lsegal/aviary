@@ -168,7 +168,7 @@
               <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                 :disabled="creatingChat" @click="newChat(soleAgent.name)" />
             </div>
-            <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
+            <ChatSessionList v-if="child.key === 'chat'" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -206,7 +206,7 @@
                   <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                     :disabled="creatingChat" @click="newChat(a.name)" />
                 </div>
-                <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
+                <ChatSessionList v-if="child.key === 'chat'" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -539,9 +539,6 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		? agentNav.value[0]
 		: undefined,
 );
-
-// The agent's Chats list opens on its chat pages.
-const chatsOpen = computed(() => /^\/agents\/[^/]+\/chat(\/|$)/.test(route.path));
 
 // The agent's projects list opens on its GitHub Projects pages and boards.
 const projectsOpen = computed(() =>

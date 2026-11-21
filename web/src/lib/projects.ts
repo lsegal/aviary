@@ -65,10 +65,9 @@ export interface ProjectStatus {
 	allowedCommenters: string[];
 	slotsUsed: number;
 	slotsTotal: number;
-	activeJobs: number;
-	waitingJobs: number;
+	/** The jobs in each board state, counted as the board's filters count them. */
+	states: Record<BoardState, number>;
 	merged24h: number;
-	failed: number;
 	targets: ProjectTarget[];
 	clis: CLIStatus[];
 	log: string[];
@@ -444,6 +443,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const raw = obj(v);
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
+	const states = obj(raw.states);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -457,10 +457,10 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
-		activeJobs: num(jobs.running),
-		waitingJobs: num(jobs.queued) + num(jobs.paused),
+		states: Object.fromEntries(
+			BOARD_STATES.map((s) => [s, num(states[s])]),
+		) as Record<BoardState, number>,
 		merged24h: num(jobs.merged_24h),
-		failed: num(jobs.failed),
 		github: normalizeGitHubSession(raw.github),
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
