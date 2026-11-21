@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import toolArguments from "./toolArguments.json" with { type: "json" };
 
 /** Common argument shapes for MCP tool handlers used in tests. */
 export interface AgentFileArgs {
@@ -55,6 +56,20 @@ function isMCPStreamFixture(value: unknown): value is MCPStreamFixture {
 		value !== null &&
 		Array.isArray((value as MCPStreamFixture).stream)
 	);
+}
+
+/**
+ * The arguments that tools/call passes and the real server's schema for that
+ * tool does not declare, which the server rejects. toolArguments.json is kept
+ * current by TestToolArgumentsFileIsCurrent in internal/mcp.
+ */
+export function undeclaredArguments(
+	tool: string,
+	args: Record<string, unknown> = {},
+): string[] {
+	const declared = (toolArguments as Record<string, string[]>)[tool];
+	if (!declared) return [];
+	return Object.keys(args).filter((name) => !declared.includes(name));
 }
 
 type MCPStreamEvent =
@@ -120,6 +135,16 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 			const fixture = toolName in fixtures ? fixtures[toolName] : [];
 			let data: unknown;
 			try {
+				// The real server validates arguments before any handler runs.
+				const undeclared = undeclaredArguments(
+					toolName,
+					body.params?.arguments,
+				);
+				if (undeclared.length) {
+					throw new Error(
+						`validating "arguments": validating root: unexpected additional properties ${JSON.stringify(undeclared)}`,
+					);
+				}
 				data =
 					typeof fixture === "function"
 						? await fixture(body.params?.arguments)

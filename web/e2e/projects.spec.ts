@@ -109,6 +109,24 @@ const job = (fields: {
 	...(fields.waitReason ? { wait_reason: fields.waitReason } : {}),
 });
 
+/** The clone each job's detail reports. */
+const CLONES: Record<number, Record<string, unknown>> = {
+	218: {
+		checkout_directory: "/tmp/aviary-gh-fix-200",
+		checkout_state: "present",
+	},
+	221: { checkout_directory: "", checkout_state: "none" },
+	209: {
+		checkout_directory: "/tmp/aviary-gh-fix-209",
+		checkout_state: "removed",
+	},
+	200: {
+		checkout_directory: "/tmp/aviary-gh-fix-200",
+		checkout_state: "reused",
+		checkout_reused_by: 218,
+	},
+};
+
 const JOBS = [
 	job({
 		number: 218,
@@ -312,7 +330,7 @@ async function setup(
 			if (!found) throw new Error("no such job");
 			return {
 				...found,
-				checkout_directory: `~/.aviary/clones/aviary-${found.number}`,
+				...CLONES[found.number],
 				session_id: "7f3c…a9",
 				scrollback: scrollback(found.number),
 				events: found.number === 218 ? EVENTS_218 : [],
@@ -366,6 +384,43 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 		"href",
 		"/agents/coder/projects?add=1",
 	);
+});
+
+test('the GitHub Projects count bubble is green and the Add project "+" sits beside it on hover', async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/overview");
+	const badge = page
+		.getByTestId("sidebar-sole-agent")
+		.getByTestId("agent-running-badge");
+	await expect(badge).toHaveText("2");
+	const [bg, green] = await badge.evaluate((el) => {
+		const ref = document.createElement("div");
+		ref.style.backgroundColor = "var(--color-green-600)";
+		document.body.append(ref);
+		const want = getComputedStyle(ref).backgroundColor;
+		ref.remove();
+		return [getComputedStyle(el).backgroundColor, want];
+	});
+	expect(bg).toBe(green);
+
+	const plus = page.getByTestId("sidebar-add-project");
+	await expect(plus).toHaveAttribute("aria-label", "Add project");
+	const opacity = () =>
+		plus.evaluate((el) => Number(getComputedStyle(el).opacity));
+	await expect.poll(opacity).toBe(0);
+	await page
+		.getByTestId("sidebar-nav")
+		.getByRole("link", { name: /^GitHub Projects/ })
+		.hover();
+	await expect.poll(opacity).toBe(1);
+
+	const badgeBox = await badge.boundingBox();
+	const plusBox = await plus.boundingBox();
+	expect(badgeBox && plusBox).toBeTruthy();
+	if (!badgeBox || !plusBox) return;
+	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
 });
 
 test("a project's running badge follows its jobs live in the sidebar", async ({
@@ -632,6 +687,42 @@ test("job actions are icon buttons with tooltips", async ({ page }) => {
 		await expect(action).toHaveText("");
 		await expect(action).toHaveAttribute("title", /\S/);
 	}
+});
+
+test("job detail shows the job's clone path, copyable, or why it has none", async ({
+	page,
+	context,
+}) => {
+	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+	await setup(page);
+	const clone = page.getByTestId("job-clone");
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	await expect(page.getByTestId("job-clone-path")).toHaveText(
+		"/tmp/aviary-gh-fix-200",
+	);
+	await clone.getByRole("button", { name: "Copy clone path" }).click();
+	await expect(
+		clone.getByRole("button", { name: "Copied clone path" }),
+	).toBeVisible();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+		"/tmp/aviary-gh-fix-200",
+	);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+	await expect(clone).toContainText("No clone yet.");
+	await expect(clone.getByRole("button")).toHaveCount(0);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/209");
+	await expect(clone).toContainText(
+		"This job's clone was removed: /tmp/aviary-gh-fix-209",
+	);
+	await expect(clone.getByRole("button")).toHaveCount(0);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/200");
+	await expect(clone).toContainText(
+		"This job's clone was handed to #218: /tmp/aviary-gh-fix-200",
+	);
 });
 
 test("run view renders the typed event timeline read-only", async ({

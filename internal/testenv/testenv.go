@@ -9,9 +9,22 @@ import (
 	"sync"
 )
 
-const configHomeEnv = "AVIARY_TEST_CONFIG_HOME"
+const (
+	configHomeEnv = "AVIARY_TEST_CONFIG_HOME"
+	configBaseEnv = "AVIARY_CONFIG_BASE_DIR"
+)
 
 var configHomeOnce sync.Once
+
+// A shell spawned by a running Aviary exports AVIARY_CONFIG_BASE_DIR pointing
+// at the real config directory, and config.BaseDir prefers it over every other
+// source. Drop the inherited value so test binaries never write there; tests
+// that need it still set it themselves with t.Setenv.
+func init() {
+	if IsGoTestProcess() {
+		_ = os.Unsetenv(configBaseEnv)
+	}
+}
 
 // GoTestConfigHome returns an isolated config root for Go test binaries.
 // It returns an empty string outside go test.

@@ -1,0 +1,493 @@
+{
+	"agent_add": [
+		"fallbacks",
+		"model",
+		"name"
+	],
+	"agent_delete": [
+		"name"
+	],
+	"agent_file_delete": [
+		"agent",
+		"file"
+	],
+	"agent_file_list": [
+		"agent"
+	],
+	"agent_file_read": [
+		"agent",
+		"file"
+	],
+	"agent_file_write": [
+		"agent",
+		"content",
+		"file"
+	],
+	"agent_get": [
+		"name"
+	],
+	"agent_list": [],
+	"agent_rules_get": [
+		"name"
+	],
+	"agent_rules_set": [
+		"agent",
+		"content"
+	],
+	"agent_run": [
+		"bare",
+		"file",
+		"history",
+		"include_tool_progress",
+		"media_url",
+		"message",
+		"name",
+		"project",
+		"session",
+		"session_id",
+		"stream_events",
+		"workdir"
+	],
+	"agent_run_script": [
+		"agent",
+		"script",
+		"session",
+		"session_id"
+	],
+	"agent_stop": [
+		"name",
+		"session",
+		"session_id"
+	],
+	"agent_template_sync": [
+		"agent"
+	],
+	"agent_update": [
+		"fallbacks",
+		"model",
+		"name"
+	],
+	"auth_delete": [
+		"name"
+	],
+	"auth_get": [
+		"name"
+	],
+	"auth_list": [],
+	"auth_login_anthropic": [],
+	"auth_login_anthropic_complete": [
+		"code"
+	],
+	"auth_login_gemini": [],
+	"auth_login_gemini_complete": [],
+	"auth_login_github_copilot": [],
+	"auth_login_github_copilot_complete": [],
+	"auth_login_openai": [],
+	"auth_login_openai_complete": [],
+	"auth_set": [
+		"name",
+		"value"
+	],
+	"browser_click": [
+		"selector",
+		"tab_id"
+	],
+	"browser_close": [
+		"tab_id"
+	],
+	"browser_eval": [
+		"javascript",
+		"tab_id"
+	],
+	"browser_fill": [
+		"selector",
+		"tab_id",
+		"text"
+	],
+	"browser_keystroke": [
+		"selector",
+		"tab_id",
+		"text"
+	],
+	"browser_navigate": [
+		"tab_id",
+		"url"
+	],
+	"browser_open": [
+		"url"
+	],
+	"browser_query": [
+		"count",
+		"include_html",
+		"max_text_length",
+		"selector",
+		"tab_id"
+	],
+	"browser_resize": [
+		"height",
+		"tab_id",
+		"width"
+	],
+	"browser_screenshot": [
+		"tab_id"
+	],
+	"browser_tabs": [],
+	"browser_text": [
+		"max_length",
+		"selector",
+		"tab_id"
+	],
+	"browser_wait": [
+		"selector",
+		"tab_id",
+		"timeout_ms"
+	],
+	"channel_send_file": [
+		"caption",
+		"file_path"
+	],
+	"coding_skills_install": [
+		"cli",
+		"skill",
+		"update_only"
+	],
+	"coding_skills_list": [],
+	"config_get": [],
+	"config_restore_latest_backup": [],
+	"config_save": [
+		"config"
+	],
+	"config_task_convert_to_script": [
+		"agent",
+		"task"
+	],
+	"config_task_move_to_file": [
+		"agent",
+		"task"
+	],
+	"config_task_rename": [
+		"agent",
+		"new_name",
+		"task"
+	],
+	"config_validate": [],
+	"exec": [
+		"command",
+		"cwd"
+	],
+	"file_append": [
+		"content",
+		"encoding",
+		"path"
+	],
+	"file_copy": [
+		"destination",
+		"source"
+	],
+	"file_delete": [
+		"path"
+	],
+	"file_edit": [
+		"new_string",
+		"old_string",
+		"path",
+		"replace_all"
+	],
+	"file_glob": [
+		"include_ignored",
+		"path",
+		"pattern"
+	],
+	"file_grep": [
+		"case_insensitive",
+		"context",
+		"glob",
+		"include_ignored",
+		"limit",
+		"mode",
+		"path",
+		"pattern"
+	],
+	"file_move": [
+		"destination",
+		"source"
+	],
+	"file_multi_edit": [
+		"edits",
+		"path"
+	],
+	"file_read": [
+		"limit",
+		"offset",
+		"path"
+	],
+	"file_truncate": [
+		"path",
+		"size"
+	],
+	"file_write": [
+		"content",
+		"encoding",
+		"path"
+	],
+	"job_list": [
+		"task"
+	],
+	"job_logs": [
+		"id"
+	],
+	"job_query": [
+		"agent",
+		"end",
+		"id",
+		"start",
+		"status"
+	],
+	"job_run_now": [
+		"id"
+	],
+	"job_stop": [
+		"id"
+	],
+	"models_list": [
+		"auth",
+		"base_uri",
+		"provider"
+	],
+	"ping": [],
+	"project_add": [
+		"agent",
+		"reports",
+		"runtime",
+		"settings",
+		"target"
+	],
+	"project_check": [
+		"ready_label",
+		"target"
+	],
+	"project_clone_clear": [],
+	"project_clone_list": [],
+	"project_github_import": [
+		"profile"
+	],
+	"project_github_signin": [],
+	"project_github_use_polling": [],
+	"project_issue_comment": [
+		"number",
+		"repository",
+		"text"
+	],
+	"project_issue_create": [
+		"model",
+		"repository",
+		"text"
+	],
+	"project_job_explain": [
+		"number",
+		"target"
+	],
+	"project_job_get": [
+		"events",
+		"lines",
+		"number",
+		"target"
+	],
+	"project_job_list": [
+		"limit",
+		"offset",
+		"query",
+		"state",
+		"status",
+		"target",
+		"targets"
+	],
+	"project_job_pause": [
+		"number",
+		"target"
+	],
+	"project_job_resume": [
+		"number",
+		"target"
+	],
+	"project_job_retry": [
+		"number",
+		"target"
+	],
+	"project_job_stop": [
+		"number",
+		"target"
+	],
+	"project_refresh": [
+		"target"
+	],
+	"project_remove": [
+		"runtime",
+		"target"
+	],
+	"project_status": [
+		"log_offset",
+		"targets"
+	],
+	"project_unblock_run": [
+		"number",
+		"target"
+	],
+	"provider_cli_list": [],
+	"server_restart": [
+		"cancel",
+		"when"
+	],
+	"server_status": [],
+	"server_upgrade": [
+		"version",
+		"when"
+	],
+	"server_version_check": [],
+	"session_create": [
+		"agent"
+	],
+	"session_history": [
+		"agent",
+		"id",
+		"limit",
+		"order",
+		"session_id",
+		"skip"
+	],
+	"session_list": [
+		"agent"
+	],
+	"session_messages": [
+		"agent",
+		"id",
+		"limit",
+		"order",
+		"session_id",
+		"skip"
+	],
+	"session_remove": [
+		"agent",
+		"session",
+		"session_id"
+	],
+	"session_rename": [
+		"agent",
+		"name",
+		"session_id"
+	],
+	"session_send": [
+		"agent",
+		"content",
+		"session_id"
+	],
+	"session_set_target": [
+		"agent",
+		"channel_id",
+		"channel_type",
+		"session_id",
+		"target"
+	],
+	"session_stop": [
+		"agent",
+		"session",
+		"session_id"
+	],
+	"skills_list": [],
+	"slack_channels_list": [
+		"bot_token"
+	],
+	"task_compile_get": [
+		"id"
+	],
+	"task_compile_query": [
+		"agent",
+		"end",
+		"id",
+		"start",
+		"status"
+	],
+	"task_delete": [
+		"agent",
+		"name"
+	],
+	"task_list": [],
+	"task_preview": [
+		"agent",
+		"at",
+		"count",
+		"days",
+		"every",
+		"missed",
+		"name",
+		"overlap",
+		"run_once",
+		"schedule",
+		"start_at",
+		"timezone",
+		"trigger"
+	],
+	"task_run": [
+		"name"
+	],
+	"task_schedule": [
+		"agent",
+		"at",
+		"content",
+		"days",
+		"every",
+		"in",
+		"missed",
+		"model",
+		"name",
+		"overlap",
+		"precompile",
+		"project",
+		"run_discovery",
+		"run_once",
+		"schedule",
+		"start_at",
+		"target",
+		"timezone",
+		"trigger",
+		"trigger_type",
+		"type"
+	],
+	"task_stop": [
+		"job_id",
+		"name"
+	],
+	"task_upcoming": [
+		"limit",
+		"per_task",
+		"project"
+	],
+	"task_update": [
+		"agent",
+		"at",
+		"content",
+		"days",
+		"enabled",
+		"every",
+		"missed",
+		"model",
+		"name",
+		"overlap",
+		"project",
+		"run_once",
+		"schedule",
+		"start_at",
+		"target",
+		"timezone",
+		"trigger",
+		"watch"
+	],
+	"usage_query": [
+		"end",
+		"start"
+	],
+	"web_search": [
+		"count",
+		"query"
+	]
+}

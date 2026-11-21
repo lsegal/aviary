@@ -58,11 +58,6 @@
 			@click="showAll = !showAll">
 			{{ showAll ? "Less" : "More" }}
 		</button>
-		<button type="button" data-testid="sidebar-new-chat"
-			class="block w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-gray-800"
-			:disabled="creating" @click="newChat">
-			+ New chat
-		</button>
 
 		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
 			<AlertDialogPortal>
@@ -216,19 +211,6 @@ onUnmounted(() => {
 function chatPath(agent: string, sessionId: string): string {
 	const base = `/agents/${encodeURIComponent(agent)}/chat`;
 	return sessionId ? `${base}/${sessionId}` : base;
-}
-
-const creating = ref(false);
-async function newChat() {
-	creating.value = true;
-	try {
-		const sess = await store.create(props.agent);
-		await router.push(chatPath(props.agent, sess.id));
-	} catch (e) {
-		console.error("Failed to create chat", e);
-	} finally {
-		creating.value = false;
-	}
 }
 
 const menuId = ref("");

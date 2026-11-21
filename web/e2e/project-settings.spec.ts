@@ -203,6 +203,22 @@ function savedProjects(calls: Calls, agent: string) {
 const saveChanges = (page: Page) =>
 	page.getByRole("button", { name: "Save Changes" }).click();
 
+test('the Add project "+" on GitHub Projects opens Add project', async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page
+		.getByTestId("sidebar-nav")
+		.getByRole("link", { name: /^GitHub Projects/ })
+		.hover();
+	await page.getByRole("link", { name: "Add project", exact: true }).click();
+	await expect(page).toHaveURL("/agents/coder/projects?add=1");
+	await expect(
+		page.getByRole("dialog", { name: "Watch a repository" }),
+	).toBeVisible();
+});
+
 test("adding a project from the single field saves it to the board's agent", async ({
 	page,
 }) => {

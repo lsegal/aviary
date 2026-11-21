@@ -56,13 +56,14 @@ func (f *fakeSource) ListIssues(_ context.Context, _ string) ([]Issue, error) {
 	return f.batches[n], nil
 }
 
-// webhookDispatchWait is how long the webhook tests allow the run loop to act
-// on a delivery. These tests assert ordering, not latency: the work itself
-// takes microseconds, but a loaded CI runner can stall a goroutine for far
-// longer than that, and a one-second deadline turned that stall into a
-// spurious failure. The deadline only has to be short enough to
-// fail before the package timeout.
-const webhookDispatchWait = 30 * time.Second
+// runLoopWait is how long tests allow the run loop to act on a delivery, a
+// poll, or the initial dispatch they need before asserting anything. These
+// tests assert ordering, not latency: the work itself takes microseconds, but
+// a loaded CI runner (most often Windows) can stall a goroutine for far longer
+// than that, and a one-second deadline turned that stall into a spurious
+// failure (#640). The deadline only has to be short enough to fail before the
+// package timeout.
+const runLoopWait = 30 * time.Second
 
 // sendWebhookEvent delivers event to a run loop over an unbuffered channel, so
 // the send returns only once the loop has actually received it. That is the
@@ -73,8 +74,8 @@ func sendWebhookEvent(t *testing.T, events chan WebhookEvent, event WebhookEvent
 	t.Helper()
 	select {
 	case events <- event:
-	case <-time.After(webhookDispatchWait):
-		t.Fatalf("run loop did not receive webhook event %+v within %s", event, webhookDispatchWait)
+	case <-time.After(runLoopWait):
+		t.Fatalf("run loop did not receive webhook event %+v within %s", event, runLoopWait)
 	}
 }
 
@@ -83,7 +84,7 @@ func sendWebhookEvent(t *testing.T, events chan WebhookEvent, event WebhookEvent
 // delivery to have been received.
 func waitForListCalls(t *testing.T, src *fakeSource, want int) {
 	t.Helper()
-	deadline := time.Now().Add(webhookDispatchWait)
+	deadline := time.Now().Add(runLoopWait)
 	for time.Now().Before(deadline) {
 		src.mu.Lock()
 		calls := src.calls
@@ -93,7 +94,7 @@ func waitForListCalls(t *testing.T, src *fakeSource, want int) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("source listed issues fewer than %d time(s) within %s", want, webhookDispatchWait)
+	t.Fatalf("source listed issues fewer than %d time(s) within %s", want, runLoopWait)
 }
 
 type fakeDiscussionSource struct {
@@ -323,7 +324,7 @@ func TestEngineRetriesWebhookRefreshUntilIssueIsIndexed(t *testing.T) {
 
 	sendWebhookEvent(t, events, WebhookEvent{Kind: "issues", Action: "opened", IssueNumber: 7})
 
-	deadline := time.Now().Add(webhookDispatchWait)
+	deadline := time.Now().Add(runLoopWait)
 	for time.Now().Before(deadline) {
 		runner.mu.Lock()
 		got := append([]int(nil), runner.got...)
@@ -2566,7 +2567,7 @@ func TestEngineResumesFailedReferencedWorkWhenPullRequestCloses(t *testing.T) {
 		if !got.Resume || got.ID != want.SessionID || got.Agent != want.Agent || got.CheckoutDirectory != want.CheckoutDirectory {
 			t.Fatalf("resumed session = %#v, want persisted %#v", got, want)
 		}
-	case <-time.After(webhookDispatchWait):
+	case <-time.After(runLoopWait):
 		t.Fatal("closed pull request did not immediately resume referenced work")
 	}
 	cancel()
@@ -2608,7 +2609,7 @@ func TestEngineNegotiatesReferencedWorkWhenPullRequestCloses(t *testing.T) {
 		if got != 7 {
 			t.Fatalf("dispatched issue #%d, want #7", got)
 		}
-	case <-time.After(webhookDispatchWait):
+	case <-time.After(runLoopWait):
 		t.Fatal("closed pull request did not dispatch referenced work after handoff")
 	}
 	posted, err := comments.ListComments(context.Background(), "o/r", 8)
@@ -2657,7 +2658,7 @@ func TestEngineStopsWebhookFollowUpOnceIssueIsObserved(t *testing.T) {
 		if n != 1 {
 			t.Fatalf("dispatched issue #%d, want #1", n)
 		}
-	case <-time.After(webhookDispatchWait):
+	case <-time.After(runLoopWait):
 		t.Fatal("issue #1 was not dispatched")
 	}
 
@@ -2704,7 +2705,7 @@ func TestEngineKeepsWebhookFollowUpWhenAnotherDeliveryArrives(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	sendWebhookEvent(t, events, WebhookEvent{Kind: "issues", Action: "opened", IssueNumber: 2})
 
-	deadline := time.Now().Add(webhookDispatchWait)
+	deadline := time.Now().Add(runLoopWait)
 	for time.Now().Before(deadline) {
 		r.mu.Lock()
 		got := append([]int(nil), r.got...)
@@ -2752,7 +2753,7 @@ func TestEngineReloadsChangedStateAfterDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 	released := false
-	deadline := time.Now().Add(stateReloadDebounce + webhookDispatchWait)
+	deadline := time.Now().Add(stateReloadDebounce + runLoopWait)
 	for time.Now().Before(deadline) {
 		r.mu.Lock()
 		got := append([]int(nil), r.got...)
@@ -3559,10 +3560,10 @@ func TestEngineReleasesClaimWhenDispatchIsSkippedAfterHandshake(t *testing.T) {
 
 	// A 5-second deadline here turned a stalled goroutine into a spurious
 	// failure on a loaded CI runner, the same failure mode
-	// webhookDispatchWait already exists to avoid: the work
+	// runLoopWait already exists to avoid: the work
 	// itself takes microseconds, but go test -race across the whole module
 	// can starve this goroutine for well over five seconds.
-	deadline := time.Now().Add(webhookDispatchWait)
+	deadline := time.Now().Add(runLoopWait)
 	var posted []Comment
 	for time.Now().Before(deadline) {
 		posted, _ = comments.ListComments(context.Background(), "o/r", 7)
