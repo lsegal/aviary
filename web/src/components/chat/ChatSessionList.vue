@@ -160,7 +160,9 @@ let ws: WebSocket | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
 function reload() {
-	store.load(props.agent).catch((e) => console.error("Failed to load chats", e));
+	store
+		.load(props.agent)
+		.catch((e) => console.error("Failed to load chats", e));
 }
 
 // New messages and generated titles change the list, on any page.
@@ -176,7 +178,10 @@ function watchSessions() {
 				agent_id?: string;
 			};
 			if (data.type !== "session_message") return;
-			if (data.agent_id !== props.agent && data.agent_id !== `agent_${props.agent}`)
+			if (
+				data.agent_id !== props.agent &&
+				data.agent_id !== `agent_${props.agent}`
+			)
 				return;
 			clearTimeout(refreshTimer);
 			refreshTimer = setTimeout(reload, 300);
