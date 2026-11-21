@@ -569,9 +569,7 @@ test("new schedule sets every trigger type, timezone and policy, and they round-
 		expectSavedTrigger(task, c);
 
 		// Its card summarizes the trigger, cron expression included.
-		const card = page
-			.getByTestId("scheduled-card")
-			.filter({ hasText: name });
+		const card = page.getByTestId("scheduled-card").filter({ hasText: name });
 		if (c.label === "Cron")
 			await expect(card.getByTestId("scheduled-trigger")).toHaveText(
 				"cron 0 * * * * (America/Los_Angeles)",
@@ -669,7 +667,10 @@ test("the Scheduled chip counts, filters and persists with the job state chips",
 	// No chip selected shows the scheduled items and every job, and the
 	// total counts both: one job and two scheduled items.
 	await expect(chip(page, "Scheduled")).toHaveText(/^Scheduled\s*2$/);
-	await expect(chip(page, "Scheduled")).toHaveAttribute("aria-pressed", "false");
+	await expect(chip(page, "Scheduled")).toHaveAttribute(
+		"aria-pressed",
+		"false",
+	);
 	await expect(scheduled).toHaveCount(2);
 	await expect(jobs).toHaveCount(1);
 	await expect(total).toHaveText("3 items");
