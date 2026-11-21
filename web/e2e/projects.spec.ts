@@ -838,7 +838,11 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 		.toMatchObject({ agent: "projects", session_id: "projects-chat" });
 	await expect(chat.getByTestId("chat-picker")).toHaveCount(0);
 	await expect(chat.getByRole("button", { name: "New chat" })).toHaveCount(0);
-	expect(calls.session_list ?? []).toHaveLength(0);
+	// The sidebar lists the sole agent's own chats; none are the Projects
+	// agent's.
+	expect(
+		(calls.session_list ?? []).filter((c) => c.agent === "projects"),
+	).toHaveLength(0);
 	// Images show in both directions.
 	await expect(chat.locator("img")).toHaveCount(2);
 	await expect(chat).toContainText("Here is the failing run.");
