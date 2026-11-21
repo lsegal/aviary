@@ -1451,6 +1451,8 @@ interface AgentFileEditorState {
 	files: string[];
 	selectedFile: string;
 	content: string;
+	/** The open file's content as last read from or saved to disk. */
+	savedContent: string;
 	loaded: boolean;
 	loading: boolean;
 	saving: boolean;
@@ -1467,6 +1469,7 @@ function getAgentFileState(agentName: string): AgentFileEditorState {
 			files: [],
 			selectedFile: "",
 			content: "",
+			savedContent: "",
 			loaded: false,
 			loading: false,
 			saving: false,
@@ -1496,6 +1499,7 @@ async function readAgentFile(agentName: string, file: string) {
 		agent: agentName,
 		file,
 	});
+	state.savedContent = state.content;
 	state.selectedFile = file;
 }
 
@@ -1508,31 +1512,33 @@ function routeAgentFile(): string {
 }
 
 /** Opens the routed file, else keeps the open one, else opens the first. */
-async function openAgentFile(agentName: string) {
+async function openAgentFile(agentName: string, reread = false) {
 	const state = getAgentFileState(agentName);
 	const wanted = routeAgentFile();
 	const file = [wanted, state.selectedFile].find(
 		(f) => f && state.files.includes(f),
 	);
 	if (file) {
-		if (file !== state.selectedFile || !state.loaded)
+		if (reread || file !== state.selectedFile || !state.loaded)
 			await readAgentFile(agentName, file);
 	} else if (state.files.length > 0) {
 		await readAgentFile(agentName, state.files[0]);
 	} else {
 		state.selectedFile = "";
 		state.content = "";
+		state.savedContent = "";
 	}
 }
 
-async function loadAgentFiles(agentName: string) {
+/** Loads the agent's file list; `reread` also re-reads the open file. */
+async function loadAgentFiles(agentName: string, reread = false) {
 	if (!agentName) return;
 	const state = getAgentFileState(agentName);
 	state.loading = true;
 	state.error = "";
 	try {
 		state.files = await agentFilesStore.load(agentName);
-		await openAgentFile(agentName);
+		await openAgentFile(agentName, reread);
 		state.loaded = true;
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
@@ -1645,6 +1651,7 @@ async function saveAgentFile(agentName: string) {
 			file: state.selectedFile,
 			content: state.content,
 		});
+		state.savedContent = state.content;
 		flashAgentFileSave(agentName);
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
@@ -1667,6 +1674,20 @@ async function syncAgentTemplates(agentName: string) {
 	} finally {
 		state.syncing = false;
 	}
+}
+
+/** The file bar's Refresh: reloads the list and the open file from disk,
+ * asking before it replaces unsaved edits. Declining keeps the edits and
+ * reloads only the list. */
+async function refreshAgentFiles(agentName: string) {
+	const state = getAgentFileState(agentName);
+	const dirty = state.selectedFile && state.content !== state.savedContent;
+	const reread =
+		!dirty ||
+		window.confirm(
+			`Discard unsaved changes to ${state.selectedFile} and reload it from disk?`,
+		);
+	await loadAgentFiles(agentName, reread);
 }
 
 async function preloadAgentFiles() {
@@ -3480,7 +3501,7 @@ const settingsContext = proxyRefs({
 	isProtectedAgentFile,
 	isTaskEnabled,
 	isToolEnabled,
-	loadAgentFiles,
+	refreshAgentFiles,
 	loadInstalledSkills,
 	loadSessions,
 	moveTaskToFile,
