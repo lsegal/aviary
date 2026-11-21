@@ -216,6 +216,15 @@ type DisplayItem =
 	| { type: "date-divider"; key: string; label: string }
 	| MessageItem;
 
+/** What a session's running turn has streamed so far, kept by the server so
+ * any client that opens the chat mid-turn shows the same live state. */
+interface ActiveTurn {
+	agent_id?: string;
+	session_id?: string;
+	processing?: boolean;
+	items?: Array<{ text?: string; media_url?: string; tool?: ToolData }>;
+}
+
 interface PersistedMessage {
 	id?: string;
 	session_id?: string;
@@ -449,6 +458,12 @@ watch([input, attachments], ([text, atts]) => {
 	if (draftKey.value) setChatDraft(draftKey.value, { text, attachments: atts });
 });
 const messages = ref<Message[]>([]);
+// The selected session's running turn as the server reports it. A client
+// streaming its own reply shows that stream instead.
+const liveTurn = ref<ActiveTurn | null>(null);
+watch(selectedSessionId, () => {
+	liveTurn.value = null;
+});
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.
 const activeStreams = ref(0);
@@ -459,6 +474,8 @@ const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
 let ws: WebSocket | null = null;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let unmounted = false;
 let nextMessageKey = 0;
 let loadMessagesSeq = 0;
 
@@ -466,15 +483,57 @@ const showBelowScroller = computed(
 	() => hasScrollOverflow.value && !isAtBottom.value,
 );
 
+/** The running turn's entries, minus tool calls already stored. */
+const liveMessages = computed((): Message[] => {
+	const items = liveTurn.value?.items;
+	if (isStreaming.value || !items?.length) return [];
+	const stored = new Set(
+		messages.value.flatMap((m) =>
+			m.role === "tool" && m.toolData?.id ? [m.toolData.id] : [],
+		),
+	);
+	const out: Message[] = [];
+	items.forEach((item, i) => {
+		if (item.tool) {
+			const id = item.tool.id;
+			if (id && stored.has(id)) return;
+			out.push({
+				localKey: id ? `live-tool-${id}` : `live-${i}`,
+				role: "tool",
+				text: item.tool.name,
+				toolData: item.tool,
+				toolPending: !item.tool.done,
+			});
+		} else if (item.media_url) {
+			out.push({
+				localKey: `live-${i}`,
+				role: "assistant",
+				text: "",
+				mediaURLs: [item.media_url],
+			});
+		} else if (item.text) {
+			out.push({ localKey: `live-${i}`, role: "assistant", text: item.text });
+		}
+	});
+	return out;
+});
+
+const shownMessages = computed(() =>
+	liveMessages.value.length
+		? [...messages.value, ...liveMessages.value]
+		: messages.value,
+);
+
 const displayItems = computed((): DisplayItem[] => {
 	const items: DisplayItem[] = [];
+	const list = shownMessages.value;
 	const userItems = new Map<string, MessageItem>();
 	// An error with no recorded message belongs to the user message before
 	// it, unless a reply came in between.
 	let lastUserItem: MessageItem | undefined;
 	let lastDateKey = "";
-	for (let i = 0; i < messages.value.length; i++) {
-		const msg = messages.value[i];
+	for (let i = 0; i < list.length; i++) {
+		const msg = list[i];
 		if (msg.role === "assistant" && msg.isError) {
 			const owner = msg.errorFor
 				? userItems.get(msg.errorFor)
@@ -500,7 +559,7 @@ const displayItems = computed((): DisplayItem[] => {
 			}
 		}
 		// A message is last-in-group when the next message has a different role
-		const next = messages.value[i + 1];
+		const next = list[i + 1];
 		const isLastInGroup =
 			msg.role !== "tool" && (!next || next.role !== msg.role);
 		const item: MessageItem = {
@@ -623,7 +682,9 @@ function pushChatPath() {
 }
 
 onUnmounted(() => {
+	unmounted = true;
 	clearTimeout(sessionsRefreshTimer);
+	clearTimeout(wsReconnectTimer);
 	document.removeEventListener("visibilitychange", onVisible);
 	window.removeEventListener("keydown", onWindowKeydown);
 	if (ws) {
@@ -640,23 +701,40 @@ function closeExpandedImage() {
 	expandedImageURL.value = "";
 }
 
-function connectSessionWS() {
+function connectSessionWS(reconnect = false) {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
 	const tok = authStore.getToken();
 	const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
-	ws = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	const socket = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	ws = socket;
+	// Events missed while disconnected are caught up by reloading the chat.
+	socket.onopen = () => {
+		if (reconnect && !isStreaming.value && !hasInlineError.value)
+			void loadSessionMessages();
+	};
+	socket.onclose = () => {
+		if (unmounted || ws !== socket) return;
+		ws = null;
+		wsReconnectTimer = setTimeout(() => connectSessionWS(true), 2000);
+	};
 	// Events name agents by ID, which is the agent's name.
 	const forSelectedAgent = (id?: string) =>
 		!!selectedAgent.value &&
 		(id === selectedAgent.value || id === `agent_${selectedAgent.value}`);
-	ws.onmessage = async (e) => {
+	socket.onmessage = async (e) => {
 		try {
 			const data = JSON.parse(e.data as string) as {
 				type?: string;
 				agent_id?: string;
 				session_id?: string;
 				is_processing?: boolean;
+				turn?: ActiveTurn;
 			};
+			if (data.type === "session_turn" && data.turn) {
+				if (!forSelectedAgent(data.agent_id)) return;
+				await applyTurn(data.turn);
+				return;
+			}
 			if (data.type === "session_processing" && data.session_id) {
 				if (!forSelectedAgent(data.agent_id)) return;
 				sessionProcessing.value = {
@@ -815,10 +893,13 @@ async function loadSessionMessages(force = false) {
 	const requestSessionId = selectedSessionId.value;
 	const requestAgent = selectedAgent.value;
 	try {
-		const raw = await callTool("session_messages", {
-			session_id: requestSessionId,
-			agent: requestAgent,
-		});
+		const [raw, turn] = await Promise.all([
+			callTool("session_messages", {
+				session_id: requestSessionId,
+				agent: requestAgent,
+			}),
+			fetchTurn(requestAgent, requestSessionId),
+		]);
 		if (
 			requestSeq !== loadMessagesSeq ||
 			requestSessionId !== selectedSessionId.value ||
@@ -827,6 +908,7 @@ async function loadSessionMessages(force = false) {
 		) {
 			return;
 		}
+		setTurn(requestSessionId, turn);
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
 		messages.value = dedupeToolMessages(
 			persisted
@@ -869,6 +951,59 @@ async function loadSessionMessages(force = false) {
 			updateScrollState();
 		}
 	}
+}
+
+/** Reads the session's running turn, or null when the server has none. */
+async function fetchTurn(
+	agent: string,
+	sessionId: string,
+): Promise<ActiveTurn | null> {
+	try {
+		const raw = await callTool("session_turn", {
+			agent,
+			session_id: sessionId,
+		});
+		const turn = JSON.parse(raw) as ActiveTurn | null;
+		return turn && typeof turn === "object" && !Array.isArray(turn)
+			? turn
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Records a session's running turn: its busy flag, and for the selected
+ * chat the tool calls and partial text it has streamed so far. */
+function setTurn(sessionId: string, turn: ActiveTurn | null) {
+	const processing = turn?.processing === true;
+	if (turn || sessionProcessing.value[sessionId] !== processing) {
+		sessionProcessing.value = {
+			...sessionProcessing.value,
+			[sessionId]: processing,
+		};
+	}
+	if (sessionId === selectedSessionId.value) {
+		liveTurn.value = processing ? turn : null;
+	}
+}
+
+/** Applies a turn update pushed by the server. A finished turn's reply is
+ * loaded before its live entries go, so the reply never blinks out. */
+async function applyTurn(turn: ActiveTurn) {
+	const sessionId = turn.session_id ?? "";
+	if (!sessionId) return;
+	if (
+		!turn.processing &&
+		sessionId === selectedSessionId.value &&
+		liveTurn.value &&
+		!isStreaming.value &&
+		!hasInlineError.value
+	) {
+		await loadSessionMessages();
+		return;
+	}
+	setTurn(sessionId, turn);
+	if (sessionId === selectedSessionId.value && turn.processing) scrollBottom();
 }
 
 function updateScrollState() {
@@ -1092,6 +1227,9 @@ async function runTurn(
 		}
 	} finally {
 		activeStreams.value -= 1;
+		// This client streamed the turn itself, so the server's copy of it
+		// is stale and must not show once the stream is gone.
+		if (activeStreams.value === 0) liveTurn.value = null;
 	}
 	// The last reply to finish reloads the canonical messages; reloading
 	// earlier would drop replies still streaming. Skip if we showed an inline
