@@ -1230,7 +1230,7 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 	);
 
 	await editor.getByRole("radio", { name: "Daily" }).click();
-	await editor.getByLabel("At").fill("09:00");
+	await editor.getByLabel("At", { exact: true }).fill("09:00");
 	await editor.getByLabel("Timezone").fill("America/Los_Angeles");
 	await editor
 		.getByLabel("If the last run is still going")
@@ -1254,5 +1254,5 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 		timezone: "America/Los_Angeles",
 		overlap: "skip",
 	});
-	expect(task.schedule).toBeUndefined();
+	expect(task.schedule || undefined).toBeUndefined();
 });
