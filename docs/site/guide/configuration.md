@@ -197,10 +197,10 @@ agents:
       - name: daily-summary
         schedule: "0 9 * * 1-5"   # weekdays at 9 AM
         prompt: "Summarize open issues and post to Slack."
-        target: slack:workspace-bot:#team-updates
+        target: channel:Team Slack
 ```
 
-Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`. See the [Channels guide](/guide/channels#delivery-targets) for channel-specific routing examples.
+A task target picks one of the agent's channels by name (`channel:<name>`), which delivers into that channel's session, or a session (`session:<name>`). See the [Channels guide](/guide/channels#delivery-targets).
 
 ## Skills
 

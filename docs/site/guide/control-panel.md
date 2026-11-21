@@ -55,13 +55,16 @@ Clicking a task opens its editor (`/agents/<agent>/tasks?task=<name>`), which ha
 
 Browse and edit root-level markdown files in the agent's data directory (RULES.md, MEMORY.md, etc.).
 
+### Channels (`/agents/<agent>/channels`)
+
+The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Edit**, **Rename** (keeping its session) and **Remove**, which archives or deletes its sessions. The old `/agents/<agent>/settings/channels` address redirects here.
+
 ### Agent Settings (`/agents/<agent>/settings`)
 
 The agent's own settings, as sections on one scrolling page. **Save Changes** saves every section at once, and **Reload** discards unsaved edits. A section's URL opens the page scrolled to it.
 
 - **General** — name, model, fallbacks, working directory, and verbose mode.
 - **Permissions** (`/agents/<agent>/settings/permissions`) — preset selector, tool allow/blocklist, filesystem paths, and exec rules.
-- **Channels** (`/agents/<agent>/settings/channels`) — add, edit, or remove Slack/Discord/Signal channel connections and their `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels directly from the UI.
 - **Danger Zone** — **Remove Agent** deletes the agent, after a confirmation.
 
 ---

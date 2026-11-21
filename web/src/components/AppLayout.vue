@@ -147,6 +147,7 @@
                 @click="openAdd(child.key, soleAgent.name)" />
             </div>
             <ChatSessionList v-if="child.key === 'chat'" :agent="soleAgent.name" />
+            <AgentChannelList v-if="child.key === 'channels'" :agent="soleAgent.name" />
             <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
             <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
@@ -186,6 +187,7 @@
                     @click="openAdd(child.key, a.name)" />
                 </div>
                 <ChatSessionList v-if="child.key === 'chat'" :agent="a.name" />
+                <AgentChannelList v-if="child.key === 'channels'" :agent="a.name" />
                 <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
                 <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
@@ -324,6 +326,7 @@
     </main>
 
     <AgentItemDialogs />
+    <ChannelDialogs />
 
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
       :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
@@ -350,6 +353,7 @@ import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
 import Squares2X2Icon from "@heroicons/vue/24/outline/Squares2X2Icon";
+import HashtagIcon from "@heroicons/vue/24/outline/HashtagIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
 import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
 import {
@@ -363,6 +367,8 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+import { useChannelDialogs } from "../composables/useChannelDialogs";
+import { channelName, channelPath } from "../lib/channels";
 import { useServerStatus } from "../composables/useServerStatus";
 import {
 	SIDEBAR_KEY_STEP,
@@ -386,6 +392,8 @@ import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
+import AgentChannelList from "./sidebar/AgentChannelList.vue";
+import ChannelDialogs from "./sidebar/ChannelDialogs.vue";
 import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
@@ -483,11 +491,12 @@ const brandLinks: BrandLink[] = [
 	},
 ];
 
-// An agent's pages, in sidebar order. Settings holds its General,
-// Permissions and Channels tabs.
+// An agent's pages, in sidebar order. Settings holds its General and
+// Permissions sections; each channel's settings open from its own entry.
 const AGENT_PAGES = [
 	{ key: "chat", label: "Chats" },
 	{ key: "projects", label: "Code Loop" },
+	{ key: "channels", label: "Channels" },
 	{ key: "tasks", label: "Scheduled Tasks" },
 	{ key: "files", label: "Files" },
 	{ key: "settings", label: "Agent Settings" },
@@ -497,6 +506,7 @@ const AGENT_PAGES = [
 const pageIcons: Record<string, Component> = {
 	chat: markRaw(ChatBubbleLeftRightIcon),
 	projects: markRaw(Squares2X2Icon),
+	channels: markRaw(HashtagIcon),
 	tasks: markRaw(ClockIcon),
 	files: markRaw(DocumentTextIcon),
 	settings: markRaw(Cog6ToothIcon),
@@ -586,7 +596,11 @@ function cancelSidebarPeekClose() {
 function openSidebarPeekSoon(e: MouseEvent) {
 	if (sidebarPeek.value) return;
 	cancelSidebarPeekOpen();
-	if ((e.target as Element).closest("a, button")) return;
+	// mouseenter targets the rail itself, also when a page change remounts it
+	// under a pointer resting on one of its icons; ask what is under the
+	// pointer instead.
+	const under = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
+	if ((under as Element | null)?.closest?.("a, button")) return;
 	sidebarPeekOpenTimer = setTimeout(() => {
 		sidebarPeek.value = true;
 	}, SIDEBAR_PEEK_DELAY);
@@ -678,6 +692,7 @@ const agentPageTail = computed(() => {
 	const tail = match?.[1] ?? "chat";
 	if (tail.startsWith("chat")) return "chat";
 	if (tail.startsWith("projects")) return "projects";
+	if (tail.startsWith("channels")) return "channels";
 	return tail;
 });
 
@@ -729,24 +744,42 @@ const projectsOpen = computed(() =>
 // An agent's Scheduled Tasks and Files list their items on their own pages.
 const tasksOpen = computed(() => /^\/agents\/[^/]+\/tasks\/?$/.test(route.path));
 const filesOpen = computed(() => /^\/agents\/[^/]+\/files\/?$/.test(route.path));
+// An agent's Channels pages: its channels' views and settings.
+const channelsOpen = computed(() =>
+	/^\/agents\/[^/]+\/channels(\/|$)/.test(route.path),
+);
 
 const { open: openItemDialog } = useAgentItemDialogs();
 const agentFiles = useAgentFilesStore();
 
 /** The "+" of an agent's page row, or "" when the page has none. */
 function rowAddLabel(page: string): string {
+	if (page === "channels") return "Add channel";
 	if (page === "tasks") return "Add task";
 	if (page === "files") return "Add file";
 	return "";
 }
 
+const { open: openChannelDialog } = useChannelDialogs();
+
 function openAdd(page: string, agent: string) {
-	if (page === "tasks" || page === "files")
+	if (page === "channels") openChannelDialog({ mode: "create", agent });
+	else if (page === "tasks" || page === "files")
 		openItemDialog({ kind: page === "tasks" ? "task" : "file", agent, mode: "create" });
 }
 
-/** The active agent's tasks or files, for the narrow-screen second row. */
+/** The active agent's channels, tasks or files, for the narrow-screen second row. */
 function agentItems(agent: string): NavChild[] {
+	if (channelsOpen.value) {
+		const channels =
+			settingsStore.config?.agents.find((a) => a.name === agent)?.channels ??
+			[];
+		return channels.map((c) => ({
+			key: `channel:${channelName(c)}`,
+			label: channelName(c),
+			to: channelPath(agent, channelName(c)),
+		}));
+	}
 	if (tasksOpen.value) {
 		const tasks =
 			settingsStore.config?.agents.find((a) => a.name === agent)?.tasks ?? [];
@@ -775,6 +808,7 @@ function agentItems(agent: string): NavChild[] {
 const mobileAdd = computed(() => {
 	const agent = agentNav.value.find((a) => a.active);
 	if (!agent) return null;
+	if (channelsOpen.value) return { page: "channels", agent: agent.name };
 	if (tasksOpen.value) return { page: "tasks", agent: agent.name };
 	if (filesOpen.value) return { page: "files", agent: agent.name };
 	return null;

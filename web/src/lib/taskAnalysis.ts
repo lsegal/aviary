@@ -39,11 +39,15 @@ export function parseTaskAnalysis(text: string): TaskAnalysis | null {
 	}
 }
 
-/** A token count, shortened past a thousand: 950, 2.3k, 12k. */
+/** A token count, shortened past a thousand: 950, 2.3k, 12k, 1.4M. */
 export function formatTokens(n: number): string {
 	if (n < 1000) return String(Math.round(n));
-	const k = n / 1000;
-	return `${k < 10 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)}k`;
+	if (n < 999_500) return shorten(n / 1000, "k");
+	return shorten(n / 1_000_000, "M");
+}
+
+function shorten(v: number, unit: string): string {
+	return `${v < 10 ? v.toFixed(1).replace(/\.0$/, "") : Math.round(v)}${unit}`;
 }
 
 /** A USD amount with enough precision for a fraction of a cent. */
@@ -58,12 +62,31 @@ export function formatEstimate(e: TaskRunEstimate): string {
 	if (!e.available)
 		return `Estimate unavailable: ${e.reason || "depends on the task's input"}`;
 	if (e.max_tokens <= 0) return "≈ 0 tokens/run";
+	return formatRange(e, 1, "run");
+}
+
+/**
+ * The estimate over runs runs in 30 days, such as "≈ 1.4M–3.7M tokens/month",
+ * or "" when there is nothing to project: no recurring runs, an unavailable
+ * estimate, or runs that need no tokens.
+ */
+export function formatMonthlyEstimate(
+	e: TaskRunEstimate,
+	runs: number,
+): string {
+	if (runs <= 0 || !e.available || e.max_tokens <= 0) return "";
+	return formatRange(e, runs, "month");
+}
+
+function formatRange(e: TaskRunEstimate, times: number, per: string): string {
+	const min = e.min_tokens * times;
+	const max = e.max_tokens * times;
 	const tokens =
-		e.min_tokens === e.max_tokens
-			? formatTokens(e.max_tokens)
-			: `${formatTokens(e.min_tokens)}–${formatTokens(e.max_tokens)}`;
-	let text = `≈ ${tokens} tokens/run`;
+		min === max
+			? formatTokens(max)
+			: `${formatTokens(min)}–${formatTokens(max)}`;
+	let text = `≈ ${tokens} tokens/${per}`;
 	if (e.min_cost_usd != null && e.max_cost_usd != null)
-		text += ` (${formatUSD(e.min_cost_usd)}–${formatUSD(e.max_cost_usd)})`;
+		text += ` (${formatUSD(e.min_cost_usd * times)}–${formatUSD(e.max_cost_usd * times)})`;
 	return text;
 }

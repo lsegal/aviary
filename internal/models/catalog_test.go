@@ -95,3 +95,32 @@ func TestMetaModelsMatchTheMuseLineup(t *testing.T) {
 	ember, _ := Lookup("meta/muse-ember-1.0")
 	assert.Equal(t, 524288, ember.OutputTokens)
 }
+
+// TestCatalogPricesAreSetTogether checks that every catalog price is positive
+// and that input and output prices are only ever set as a pair, so cost
+// estimates never price one side of a run at zero.
+func TestCatalogPricesAreSetTogether(t *testing.T) {
+	priced := 0
+	for _, entry := range Entries() {
+		in, out := entry.InputCostPerMTok, entry.OutputCostPerMTok
+		if in == 0 && out == 0 {
+			continue
+		}
+		priced++
+		assert.Positive(t, in, entry.ID)
+		assert.Positive(t, out, entry.ID)
+	}
+	assert.NotZero(t, priced)
+
+	opus, _ := Lookup("anthropic/claude-opus-5-5")
+	assert.Equal(t, 4.0, opus.InputCostPerMTok)
+	assert.Equal(t, 20.0, opus.OutputCostPerMTok)
+
+	// Subscription-billed providers have no per-token price to show.
+	for _, provider := range []string{"openai-codex", "github-copilot", "google-gemini"} {
+		for _, entry := range EntriesByProvider(provider) {
+			assert.Zero(t, entry.InputCostPerMTok, entry.ID)
+			assert.Zero(t, entry.OutputCostPerMTok, entry.ID)
+		}
+	}
+}

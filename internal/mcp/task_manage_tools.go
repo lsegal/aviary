@@ -68,6 +68,9 @@ type taskPreviewResult struct {
 	Description string   `json:"description,omitempty"`
 	Timezone    string   `json:"timezone,omitempty"`
 	Next        []string `json:"next"`
+	// RunsPer30Days is how often a recurring trigger fires in 30 days; it is
+	// omitted for once and run-once triggers.
+	RunsPer30Days int `json:"runs_per_30_days,omitempty"`
 }
 
 func registerTaskManageTools(s *sdkmcp.Server) {
@@ -113,7 +116,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		task.Missed = strings.ToLower(task.Missed)
 
 		if task.Target != "" && !config.ValidTaskTarget(task.Target) {
-			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", task.Target)
+			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", task.Target)
 		}
 		if strings.EqualFold(task.Type, "project") && task.Project == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require a project")
@@ -214,7 +217,12 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		} else {
 			next = spec.Preview(time.Now(), count)
 		}
-		out := taskPreviewResult{Description: spec.Describe(), Timezone: spec.Location.String(), Next: []string{}}
+		out := taskPreviewResult{
+			Description:   spec.Describe(),
+			Timezone:      spec.Location.String(),
+			Next:          []string{},
+			RunsPer30Days: spec.RunsIn(time.Now(), 30*24*time.Hour),
+		}
 		for _, t := range next {
 			out.Next = append(out.Next, t.In(spec.Location).Format(time.RFC3339))
 		}

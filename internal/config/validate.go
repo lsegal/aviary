@@ -176,6 +176,18 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				channelKeys[key] = j
 			}
 		}
+		channelNames := map[string]int{}
+		for j, ch := range a.Channels {
+			name := strings.ToLower(ch.EffectiveName())
+			if name == "" {
+				continue
+			}
+			if prev, seen := channelNames[name]; seen {
+				v.errorf(fmt.Sprintf("%s.channels[%d].name", f, j), "duplicate channel name %q within agent %q (also at channels[%d])", ch.EffectiveName(), a.Name, prev)
+			} else {
+				channelNames[name] = j
+			}
+		}
 
 		taskNames := map[string]int{}
 		for j, t := range a.Tasks {
@@ -246,14 +258,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			}
 
 			if !validTaskTarget(t.Target) {
-				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", t.Target)
+				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or channel:<channel name>", t.Target)
+			} else if name, ok := ChannelTargetName(t.Target); ok && a.ChannelByName(name) < 0 {
+				v.errorf(tf+".target", "agent %q has no channel named %q", a.Name, name)
 			}
 		}
 	}
 }
 
 // ValidTaskTarget reports whether target is a valid task delivery target:
-// empty, "silent", "session:<name-or-id>", or "<channel>:<configured-id>:<target>".
+// empty, "silent", "session:<name-or-id>", or "channel:<channel name>".
 func ValidTaskTarget(target string) bool {
 	return validTaskTarget(target)
 }
@@ -266,8 +280,8 @@ func validTaskTarget(target string) bool {
 	if strings.HasPrefix(target, "session:") {
 		return strings.TrimSpace(strings.TrimPrefix(target, "session:")) != ""
 	}
-	parts := strings.SplitN(target, ":", 3)
-	return len(parts) == 3 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" && strings.TrimSpace(parts[2]) != ""
+	name, ok := ChannelTargetName(target)
+	return ok && name != ""
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.

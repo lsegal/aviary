@@ -1030,25 +1030,19 @@ onBeforeUnmount(() => {
 .landing-section-title,
 .landing-showcase-copy h3,
 .landing-final-cta h2 {
-	font-family: var(--serif);
-	font-variation-settings: "opsz" 72;
+	font-family: var(--sans);
+	font-weight: 600;
+	letter-spacing: -0.025em;
 }
 
 .landing-hero-title {
 	margin: 0 0 24px;
 	font-size: clamp(44px, 6.4vw, 84px);
-	font-weight: 400;
-	line-height: 0.98;
-	letter-spacing: -0.03em;
+	line-height: 1.02;
 }
 
 .landing-hero-title .brand {
 	color: var(--brand);
-	letter-spacing: 0.1rem;
-}
-
-.landing-hero-title .subtitle {
-	letter-spacing: -0.15rem;
 }
 
 .landing-hero-title .accent,
@@ -1057,7 +1051,7 @@ onBeforeUnmount(() => {
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
-	font-style: italic;
+	font-style: normal;
 }
 
 .landing-section-title em {
@@ -1330,9 +1324,7 @@ onBeforeUnmount(() => {
 	max-width: 22ch;
 	margin: 0 0 16px;
 	font-size: clamp(32px, 4.2vw, 52px);
-	font-weight: 400;
-	line-height: 1.04;
-	letter-spacing: -0.02em;
+	line-height: 1.1;
 }
 
 .landing-section-sub {
@@ -1599,7 +1591,7 @@ onBeforeUnmount(() => {
 .landing-showcase-copy h3 {
 	margin: 0 0 10px;
 	font-size: 28px;
-	font-weight: 500;
+	line-height: 1.1;
 }
 
 .landing-showcase-copy p {
@@ -2350,9 +2342,7 @@ onBeforeUnmount(() => {
 	max-width: 20ch;
 	margin: 0 0 12px;
 	font-size: clamp(28px, 3.6vw, 44px);
-	font-weight: 400;
-	line-height: 1.05;
-	letter-spacing: -0.02em;
+	line-height: 1.1;
 }
 
 .landing-final-cta p {

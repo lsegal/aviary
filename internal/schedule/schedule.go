@@ -240,6 +240,45 @@ func (s Spec) Preview(after time.Time, n int) []time.Time {
 	return out
 }
 
+// maxCountedFires bounds the fires RunsIn walks one by one; denser triggers
+// are extrapolated from the time those fires span.
+const maxCountedFires = 10000
+
+// RunsIn returns how many times a recurring trigger fires in the window
+// [from, from+d). The window opens at from, or at StartAt when that is later, so a
+// trigger that starts in the future is counted at its steady rate. It returns
+// 0 for once and run-once triggers, which have no rate.
+func (s Spec) RunsIn(from time.Time, d time.Duration) int {
+	if s.Kind == KindOnce || s.RunOnce || d <= 0 {
+		return 0
+	}
+	if s.StartAt.After(from) {
+		from = s.StartAt
+	}
+	if s.Kind == KindInterval {
+		return int(d / s.Every)
+	}
+	until := from.Add(d)
+	after := from.Add(-time.Nanosecond)
+	var first time.Time
+	n := 0
+	for {
+		next := s.Next(after)
+		if next.IsZero() || !next.Before(until) {
+			return n
+		}
+		if n == 0 {
+			first = next
+		}
+		n++
+		after = next
+		if n == maxCountedFires {
+			// n fires span n-1 gaps from first to next.
+			return int(float64(n-1) * float64(d) / float64(next.Sub(first)))
+		}
+	}
+}
+
 // Describe summarizes the trigger in a short human-readable phrase.
 func (s Spec) Describe() string {
 	var desc string

@@ -9,6 +9,10 @@
 					<span class="text-gray-400"> · </span>
 					<span data-testid="task-cost-estimate">{{ estimate }}</span>
 				</template>
+				<template v-if="monthly">
+					<span class="text-gray-400"> · </span>
+					<span data-testid="task-cost-monthly">{{ monthly }}</span>
+				</template>
 				<button v-if="state === 'error'" type="button" data-testid="task-cost-retry"
 					class="ml-2 text-blue-600 hover:underline dark:text-blue-400" @click="retry">Retry</button>
 			</p>
@@ -27,11 +31,18 @@ const cache = new Map<string, TaskAnalysis>();
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMCP } from "../composables/useMCP";
-import { formatEstimate, parseTaskAnalysis } from "../lib/taskAnalysis";
+import { useTriggerRuns } from "../composables/useTriggerPreview";
+import {
+	formatEstimate,
+	formatMonthlyEstimate,
+	parseTaskAnalysis,
+} from "../lib/taskAnalysis";
+import type { TriggerFields } from "../lib/trigger";
 
 /**
  * Live feedback under a task's prompt: whether the precompile step would
- * compile it into a script, and what each run is estimated to cost.
+ * compile it into a script, and what each run is estimated to cost, plus
+ * what a month of runs costs when the task has a recurring trigger.
  */
 const props = withDefaults(
 	defineProps<{
@@ -41,6 +52,8 @@ const props = withDefaults(
 		type?: string;
 		target?: string;
 		model?: string;
+		/** The task's trigger as edited, for the monthly projection. */
+		trigger?: TriggerFields | null;
 		/** Whether saving the editor precompiles the task. */
 		precompile?: boolean;
 		/** How long typing must pause before the prompt is analyzed. */
@@ -50,6 +63,7 @@ const props = withDefaults(
 		type: "prompt",
 		target: "",
 		model: "",
+		trigger: null,
 		precompile: false,
 		debounceMs: 1200,
 	},
@@ -146,6 +160,34 @@ onBeforeUnmount(() => {
 	seq++;
 });
 
+// How often the trigger fires in 30 days, from task_preview so the count
+// follows the scheduler's own trigger semantics.
+const triggerRuns = useTriggerRuns();
+const runs = ref(0);
+let runsTimer: ReturnType<typeof setTimeout> | undefined;
+let runsSeq = 0;
+watch(
+	() => JSON.stringify(props.trigger ?? null),
+	() => {
+		if (runsTimer) clearTimeout(runsTimer);
+		const id = ++runsSeq;
+		const trigger = props.trigger;
+		if (!trigger?.trigger || trigger.trigger === "once") {
+			runs.value = 0;
+			return;
+		}
+		runsTimer = setTimeout(async () => {
+			const n = await triggerRuns(trigger);
+			if (id === runsSeq) runs.value = n;
+		}, 300);
+	},
+	{ immediate: true },
+);
+onBeforeUnmount(() => {
+	if (runsTimer) clearTimeout(runsTimer);
+	runsSeq++;
+});
+
 function retry() {
 	void analyze();
 }
@@ -193,6 +235,11 @@ const estimate = computed(() => {
 		return "Estimate unavailable: depends on the work the Code Loop job does";
 	if (state.value !== "ready" || !result.value) return "";
 	return formatEstimate(result.value.estimate);
+});
+
+const monthly = computed(() => {
+	if (state.value !== "ready" || !result.value) return "";
+	return formatMonthlyEstimate(result.value.estimate, runs.value);
 });
 
 const note = computed(() => {

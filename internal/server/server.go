@@ -242,6 +242,9 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
 		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)
 	}
+	if err := sessiontarget.EnsureChannels(newCfg, s.channels); err != nil {
+		slog.Warn("server: failed to set up channel sessions", "err", err)
+	}
 	cdpPort := newCfg.Browser.CDPPort
 	if cdpPort == 0 {
 		cdpPort = config.DefaultCDPPort
@@ -389,6 +392,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
 	s.loadSessionDeliveries()
+	if err := sessiontarget.EnsureChannels(s.cfg, s.channels); err != nil {
+		slog.Warn("server: failed to set up channel sessions", "err", err)
+	}
 
 	for {
 		ln, err := s.listen()
@@ -1062,23 +1068,34 @@ func (s *Server) deliverTaskOutput(agentName, route, text string) error {
 		}
 		return agent.AppendReplyToSession(agentName, sess.ID, text)
 	}
-	parts := strings.SplitN(route, ":", 3)
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid task target %q", route)
+	name, ok := config.ChannelTargetName(route)
+	if !ok || name == "" {
+		return fmt.Errorf("invalid task target %q; use channel:<channel name> or session:<name>", route)
 	}
-	channelType := strings.TrimSpace(parts[0])
-	configuredID := strings.TrimSpace(parts[1])
-	targetID := strings.TrimSpace(parts[2])
-	if channelType == "" {
-		return fmt.Errorf("task target channel type is required")
+	return s.deliverToChannel(agentName, name, text)
+}
+
+// deliverToChannel appends text to the own session of agentName's channel
+// named name, which sends it on to the channel's DeliverTo conversation.
+func (s *Server) deliverToChannel(agentName, name, text string) error {
+	if s.cfg == nil {
+		return fmt.Errorf("no configuration loaded")
 	}
-	if configuredID == "" {
-		return fmt.Errorf("task target configured channel id is required")
+	for _, a := range s.cfg.Agents {
+		if a.Name != agentName {
+			continue
+		}
+		idx := a.ChannelByName(name)
+		if idx < 0 {
+			return fmt.Errorf("agent %q has no channel named %q", agentName, name)
+		}
+		sess, err := sessiontarget.EnsureChannel(agentName, a.Channels[idx], s.channels)
+		if err != nil {
+			return fmt.Errorf("resolving channel %q session: %w", name, err)
+		}
+		return agent.AppendReplyToSession(agentName, sess.ID, text)
 	}
-	if targetID == "" {
-		return fmt.Errorf("task target delivery id is required")
-	}
-	return s.channels.SendOnConfiguredChannel(agentName, channelType, configuredID, targetID, text)
+	return fmt.Errorf("agent %q is not configured", agentName)
 }
 
 func stageOutgoingMedia(channelType, sourcePath string) (string, error) {

@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1019,12 +1020,12 @@ func (g GHCLI) HydrateIssue(ctx context.Context, repo string, issue *Issue) erro
 var dependencyPattern = regexp.MustCompile(`(?i)\bdepends\s+on\s+#(\d+)`)
 
 func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) error {
-	dependencies := make(map[int]IssueDependency)
+	dependencies := make(map[string]IssueDependency)
 	public := repo != "" && g.isPublicRepo(ctx, repo)
 	for _, match := range dependencyPattern.FindAllStringSubmatch(issue.Body, -1) {
 		number := 0
 		if _, err := fmt.Sscanf(match[1], "%d", &number); err == nil && number > 0 {
-			dependency := IssueDependency{Number: number}
+			dependency := IssueDependency{Number: number, Repository: repo}
 			if repo != "" {
 				output, viewErr := g.dependencyIssueView(ctx, public, repo, number)
 				if viewErr != nil {
@@ -1038,7 +1039,7 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 				}
 				dependency.State = state.State
 			}
-			dependencies[number] = dependency
+			dependencies[dependencyKey(dependency)] = dependency
 		}
 	}
 	if repo != "" {
@@ -1046,12 +1047,20 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 		if err != nil {
 			return fmt.Errorf("list dependencies for issue #%d: %w: %s", issue.Number, err, strings.TrimSpace(string(output)))
 		}
-		var related []IssueDependency
+		var related []struct {
+			Number        int    `json:"number"`
+			State         string `json:"state"`
+			RepositoryURL string `json:"repository_url"`
+		}
 		if err := json.Unmarshal(output, &related); err != nil {
 			return fmt.Errorf("decode dependencies for issue #%d: %w", issue.Number, err)
 		}
-		for _, dependency := range related {
-			dependencies[dependency.Number] = dependency
+		for _, blocker := range related {
+			dependency := IssueDependency{Number: blocker.Number, State: blocker.State, Repository: repositoryFromAPIURL(blocker.RepositoryURL)}
+			if dependency.Repository == "" {
+				dependency.Repository = repo
+			}
+			dependencies[dependencyKey(dependency)] = dependency
 		}
 		subIssues, err := g.apiGETPaginated(ctx, public, "repos/"+repo+"/issues/"+fmt.Sprint(issue.Number)+"/sub_issues", "--header", "X-GitHub-Api-Version: 2022-11-28")
 		if err != nil {
@@ -1075,8 +1084,30 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 	for _, dependency := range dependencies {
 		issue.DependsOn = append(issue.DependsOn, dependency)
 	}
-	slices.SortFunc(issue.DependsOn, func(a, b IssueDependency) int { return a.Number - b.Number })
+	slices.SortFunc(issue.DependsOn, func(a, b IssueDependency) int {
+		return cmp.Or(strings.Compare(a.Repository, b.Repository), a.Number-b.Number)
+	})
 	return nil
+}
+
+// dependencyKey identifies a dependency across repositories, so a blocker
+// #50 in another repository never collapses into this repository's #50.
+func dependencyKey(dependency IssueDependency) string {
+	return strings.ToLower(dependency.Repository) + "#" + strconv.Itoa(dependency.Number)
+}
+
+// repositoryFromAPIURL reads OWNER/REPO from a REST repository_url such as
+// https://api.github.com/repos/OWNER/REPO.
+func repositoryFromAPIURL(raw string) string {
+	_, path, ok := strings.Cut(raw, "/repos/")
+	if !ok {
+		return ""
+	}
+	owner, name, ok := strings.Cut(strings.Trim(path, "/"), "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return owner + "/" + name
 }
 
 // PostComment posts a comment on an issue or pull request.

@@ -148,9 +148,28 @@
 		"tab_id",
 		"timeout_ms"
 	],
+	"channel_create": [
+		"agent",
+		"name",
+		"type"
+	],
+	"channel_remove": [
+		"agent",
+		"channel",
+		"sessions"
+	],
+	"channel_rename": [
+		"agent",
+		"channel",
+		"new_name"
+	],
 	"channel_send_file": [
 		"caption",
 		"file_path"
+	],
+	"channel_sessions": [
+		"agent",
+		"channel"
 	],
 	"coding_skills_install": [
 		"cli",
@@ -392,13 +411,6 @@
 		"agent",
 		"content",
 		"session_id"
-	],
-	"session_set_target": [
-		"agent",
-		"channel_id",
-		"channel_type",
-		"session_id",
-		"target"
 	],
 	"session_stop": [
 		"agent",

@@ -130,7 +130,7 @@ func TestProjectReportsRoundTrip(t *testing.T) {
 	cfg := Default()
 	cfg.Agents = []AgentConfig{{Name: "bot", Model: "m", Projects: AgentProjectsConfig{
 		{Target: "acme/quiet"},
-		{Target: "acme/app", Reports: &ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"failed"}}},
+		{Target: "acme/app", Reports: &ProjectReportsConfig{Agent: "bot", Targets: []string{"channel:Main"}, Events: []string{"failed"}}},
 	}}}
 	if err := Save(path, &cfg); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestProjectReportsRoundTrip(t *testing.T) {
 		t.Fatalf("quiet project loaded reports: %+v", loaded.Agents[0].Projects[0].Reports)
 	}
 	reports := loaded.Agents[0].Projects[1].Reports
-	if !reports.Enabled() || reports.Agent != "bot" || reports.Targets[0] != "slack:main:C1" || !reports.Reports(ProjectReportFailed) || reports.Reports(ProjectReportMerged) {
+	if !reports.Enabled() || reports.Agent != "bot" || reports.Targets[0] != "channel:Main" || !reports.Reports(ProjectReportFailed) || reports.Reports(ProjectReportMerged) {
 		t.Fatalf("loaded reports = %+v", reports)
 	}
 }

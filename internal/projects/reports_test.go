@@ -35,7 +35,7 @@ func reportsConfig(reports *config.ProjectReportsConfig) []config.ProjectConfig 
 }
 
 func TestReporterSendsLifecycleEventsThroughEveryTarget(t *testing.T) {
-	r, sent := testReporter(reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1", "session:projects"}}))
+	r, sent := testReporter(reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"channel:Main", "session:projects"}}))
 
 	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
 	if len(*sent) != 0 {
@@ -48,7 +48,7 @@ func TestReporterSendsLifecycleEventsThroughEveryTarget(t *testing.T) {
 	if len(*sent) != 2 {
 		t.Fatalf("sent %d reports, want one per target: %+v", len(*sent), *sent)
 	}
-	for i, target := range []string{"slack:main:C1", "session:projects"} {
+	for i, target := range []string{"channel:Main", "session:projects"} {
 		got := (*sent)[i]
 		if got.agent != "bot" || got.target != target {
 			t.Errorf("report %d went to %s via %s", i, got.target, got.agent)

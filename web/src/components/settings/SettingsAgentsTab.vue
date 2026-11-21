@@ -260,54 +260,23 @@
 						</div>
 						</section>
 
-						<section v-show="onAgentSettingsPage" id="agent-settings-channels" data-agent-settings-section="channels"
+						<section v-if="selectedAgentSubtab === 'channels'" id="agent-settings-channels" data-agent-settings-section="channels"
+							data-testid="channel-settings"
 							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
-								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h3>
-								<button type="button"
-									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									@click="addChannel(i)">+ Add Channel</button>
+								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channel</h3>
+								<router-link v-if="selectedChannel" :to="channelPath(agent.name, channelName(selectedChannel))"
+									data-testid="channel-open-conversation"
+									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Open conversation</router-link>
 							</div>
 							<div class="space-y-4 p-5">
-
-							<div v-if="!agent.channels?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No channels configured for this agent.
-							</div>
-
-							<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-								<div class="min-w-0">
-									<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-										<div v-if="agent.channels?.length" class="space-y-1">
-											<div v-for="(ch, k) in agent.channels" :key="`ch-button-${i}-${k}`" class="flex items-center gap-1">
-												<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium"
-													:class="channelListButtonClass(ch, selectedChannelIdx === k)"
-													@click="selectedChannelIdx = k">
-													<div class="flex items-center gap-2">
-														<span :class="channelTypeIconClass(ch, selectedChannelIdx === k)">
-															<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
-															<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
-														</span>
-														<span class="truncate">{{ ch.id || `${ch.type} channel ${Number(k) + 1}` }}</span>
-													</div>
-												</button>
-												<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete channel" @click="removeChannel(i, k)">
-													<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-														<path d="M3 6h18" />
-														<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-														<path d="M10 11v6" />
-														<path d="M14 11v6" />
-														<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-													</svg>
-												</button>
-											</div>
-										</div>
-										<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No channels configured for this agent.</p>
-									</div>
-								</div>
-
-								<div>
-							<div v-for="(ch, k) in agent.channels" v-show="selectedChannelIdx === k" :key="`ch-${i}-${k}`"
+							<p v-if="channelNotFound || !selectedChannel"
+								class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+								No channel named {{ $route.params.channel }}.
+							</p>
+							<template v-else>
+							<template v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`">
+							<div v-if="selectedChannelIdx === k"
 								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
@@ -315,7 +284,7 @@
 											<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
 											<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
 										</span>
-										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ Number(k) + 1 }}</h5>
+										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ channelName(ch) }}</h5>
 									</div>
 									<div class="flex items-center gap-2">
 										<SwitchRoot
@@ -330,20 +299,6 @@
 												:class="isChannelEnabled(ch) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
 											/>
 										</SwitchRoot>
-										<button
-											type="button"
-											class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
-											aria-label="Remove channel"
-											title="Remove channel"
-											@click="removeChannel(i, k)">
-											<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-												<path d="M3 6h18" />
-												<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-												<path d="M10 11v6" />
-												<path d="M14 11v6" />
-												<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-											</svg>
-										</button>
 									</div>
 								</div>
 								<p v-if="!isChannelEnabled(ch)" class="text-xs text-gray-500 dark:text-gray-400">
@@ -365,6 +320,23 @@
 										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 											{{ channelPrimaryHelp(ch) }}
 										</p>
+									</div>
+								</div>
+
+								<div class="grid gap-3 lg:grid-cols-2">
+									<div>
+										<label class="field-label" for="channel-deliver-to">Deliver to</label>
+										<input id="channel-deliver-to" v-model="ch.deliver_to" data-testid="channel-deliver-to" type="text"
+											class="field-input" :placeholder="channelDeliverToPlaceholder(ch)" />
+										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+											Scheduled tasks, project reports and other deliveries pick this channel by name. They land in its
+											conversation here and are sent to this {{ ch.type === 'signal' ? 'number or group' : 'channel' }}.
+										</p>
+									</div>
+									<div>
+										<span class="field-label">Agent</span>
+										<p class="py-2 text-sm text-gray-700 dark:text-gray-300" data-testid="channel-owner">{{ agent.name }}</p>
+										<p class="text-xs text-gray-400 dark:text-gray-500">The channel's messages run as this agent.</p>
 									</div>
 								</div>
 
@@ -705,12 +677,9 @@
 									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
 								</div>
 							</div>
-								<div v-if="agent.channels?.length && selectedChannelIdx === null" class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-									Select a channel to edit.
-								</div>
-								</div>
+							</template>
+							</template>
 							</div>
-						</div>
 						</section>
 
 						<section v-show="onAgentSettingsPage" data-testid="agent-danger-zone" aria-labelledby="agent-danger-zone-heading"
@@ -812,38 +781,20 @@ placeholder="Default project agent model"
 </div>
 <div>
 <label class="field-label">Send Via</label>
-<AppSelect :model-value="taskChannelSelection(selectedTask)" aria-label="Send Via"
+<AppSelect :model-value="taskChannelSelection(selectedTask)" aria-label="Send Via" data-testid="task-send-via"
 	:options="[{ value: '', label: 'silent' }, ...configuredTaskChannelOptions(agent)]"
 	@update:model-value="setTaskChannelSelection(selectedTask, $event)" />
 </div>
 </div>
 
-<div v-if="taskChannelSelection(selectedTask)" class="grid gap-3 lg:grid-cols-2 mt-3">
+<div v-if="taskChannelSelection(selectedTask) === 'session'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
-<label class="field-label">{{ taskDeliveryTargetLabel(agent, selectedTask) }}</label>
+<label class="field-label">Session</label>
 <SessionSelect
-	v-if="taskChannelSelection(selectedTask) === 'session'"
 	:agent="agent.name"
 	:model-value="selectedTaskTarget(selectedTask)"
 	aria-label="Session"
 	@update:model-value="setSelectedTaskTarget(selectedTask, $event)"
-/>
-<AppCombobox
-	v-else-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
-	:model-value="selectedTaskTarget(selectedTask)"
-	placeholder="Select a Slack channel…"
-	empty-text="No matching channels"
-	aria-label="Slack channel"
-	:options="slackChannelsForTask(i, agent, selectedTask).map((c: { id: string; name: string }) => ({ value: c.id, label: `#${c.name}`, description: c.id }))"
-	@update:model-value="setSelectedTaskTarget(selectedTask, String($event))"
-/>
-<input
-	v-else
-	:value="selectedTaskTarget(selectedTask)"
-	type="text"
-	class="field-input"
-	:placeholder="slackTargetPlaceholder(agent, selectedTask)"
-	@input="setSelectedTaskTarget(selectedTask, ($event.target as HTMLInputElement).value)"
 />
 </div>
 </div>
@@ -852,7 +803,7 @@ placeholder="Default project agent model"
 <label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
 <textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
 <TaskCostFeedback :agent="agent.name" :prompt="selectedTask.prompt ?? ''" :type="selectedTask.type || 'prompt'"
-	:target="selectedTask.target ?? ''" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''" />
+	:target="selectedTask.target ?? ''" :trigger="taskTrigger(selectedTask)" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
 <button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
@@ -899,6 +850,7 @@ import {
 } from "radix-vue";
 import { type Component, defineComponent, inject } from "vue";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
+import { channelName, channelPath } from "../../lib/channels";
 import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentTask, useSettingsStore } from "../../stores/settings";
@@ -1038,7 +990,16 @@ export default defineComponent({
 		// The sidebar's delete dialog confirms and removes the task.
 		const removeTask = (agent: string, name: string) =>
 			openItemDialog({ kind: "task", agent, mode: "delete", name });
+		const channelDeliverToPlaceholder = (ch: { type: string }) => {
+			if (ch.type === "slack") return "C1234567890";
+			if (ch.type === "discord") return "123456789012345678";
+			if (ch.type === "signal") return "+15551234567 or group ID";
+			return "Conversation ID";
+		};
 		return Object.assign(settings, {
+			channelDeliverToPlaceholder,
+			channelName,
+			channelPath,
 			agentFileHint,
 			CHANNEL_TYPE_OPTIONS,
 			TASK_TYPE_OPTIONS,

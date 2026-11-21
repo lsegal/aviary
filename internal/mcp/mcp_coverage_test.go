@@ -1175,11 +1175,13 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 
 	cfg, err := config.Load("")
 	assert.NoError(t, err)
-	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "slack", ID: "alerts"}}
+	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "slack", ID: "alerts", DeliverTo: "C123"}}
 	err = config.Save("", cfg)
 	assert.NoError(t, err)
 	s.Reconcile(cfg)
 
+	// Asked from the channel's own conversation, the task delivers to the
+	// channel by name.
 	ctx := agent.WithChannelSession(context.Background(), "slack", "alerts", "C123")
 	_, err = d.CallTool(ctx, "task_schedule", map[string]any{
 		"agent":    "bot",
@@ -1189,10 +1191,25 @@ func TestTaskSchedule_RecurringTaskDefaultsToOriginChannelRoute(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	// So does one asked for from another conversation the channel received.
+	ctx = agent.WithSessionID(agent.WithChannelSession(context.Background(), "slack", "alerts", "C999"), "slack:C999")
+	_, err = d.CallTool(ctx, "task_schedule", map[string]any{
+		"agent":    "bot",
+		"name":     "other-report",
+		"content":  "write report",
+		"schedule": "0 0 11 * * *",
+	})
+	assert.NoError(t, err)
+
 	updated, err := config.Load("")
 	assert.NoError(t, err)
-	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
-		assert.Equal(t, "slack:alerts:C123", updated.Agents[0].Tasks[0].Target)
+	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 2) {
+		targets := map[string]string{}
+		for _, task := range updated.Agents[0].Tasks {
+			targets[task.Name] = task.Target
+		}
+		assert.Equal(t, "channel:alerts", targets["daily-report"])
+		assert.Equal(t, "channel:alerts", targets["other-report"])
 	}
 }
 
@@ -1201,7 +1218,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 
 	cfg, err := config.Load("")
 	assert.NoError(t, err)
-	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "signal", ID: "+15550001111"}}
+	cfg.Agents[0].Channels = []config.ChannelConfig{{Type: "signal", ID: "+15550001111", Name: "Phone"}}
 	err = config.Save("", cfg)
 	assert.NoError(t, err)
 	s.Reconcile(cfg)
@@ -1211,7 +1228,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 		"name":         "daily-report",
 		"content":      "write report",
 		"schedule":     "0 0 10 * * *",
-		"target":       "signal:+15550001111:+15552223333",
+		"target":       "channel:Phone",
 		"trigger_type": "cron",
 	})
 	assert.NoError(t, err)
@@ -1219,7 +1236,7 @@ func TestTaskSchedule_RecurringTaskAcceptsExplicitTargetAndTriggerType(t *testin
 	updated, err := config.Load("")
 	assert.NoError(t, err)
 	if assert.Len(t, updated.Agents, 1) && assert.Len(t, updated.Agents[0].Tasks, 1) {
-		assert.Equal(t, "signal:+15550001111:+15552223333", updated.Agents[0].Tasks[0].Target)
+		assert.Equal(t, "channel:Phone", updated.Agents[0].Tasks[0].Target)
 	}
 }
 

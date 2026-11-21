@@ -1,6 +1,6 @@
 # Session Tools
 
-Session tools manage the conversation history between agents and their callers. Each agent can have multiple named sessions; sessions persist messages and can be targeted to deliver output to a channel.
+Session tools manage the conversation history between agents and their callers. Each agent can have multiple named sessions; sessions persist messages, and a channel's sessions deliver output to that channel.
 
 ---
 
@@ -22,7 +22,7 @@ Message roles follow the standard LLM convention: `user`, `assistant`, and `tool
 
 ## session_list
 
-List all sessions for an agent. Creates the `"main"` session if it does not exist.
+List all sessions for an agent, leaving out hidden sessions and the sessions of its channels (see [Channel Sessions](#channel-sessions)). Creates the `"main"` session if it does not exist.
 
 **Arguments:**
 
@@ -208,20 +208,49 @@ Send a plain-text assistant message to a session. If the session has a configure
 
 ---
 
-## session_set_target
+## Channel Sessions
 
-Attach a channel delivery target to a session. Subsequent messages sent or generated in the session will be delivered to the specified channel.
+Each of an agent's channels owns its sessions: its own session, created with the channel and keyed by its type and ID, and the conversations it receives. They live under the channel, not in `session_list`.
 
-**Arguments:**
+### channel_sessions
+
+List a channel's sessions: its own session first (where messages delivered to the channel by name land), then the conversations it received, most recent first.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `agent` | string | yes | Agent name |
-| `session_id` | string | yes | Session ID |
-| `channel_type` | string | yes | Channel type: `"slack"`, `"discord"`, or `"signal"` |
-| `channel_id` | string | yes | Channel or conversation ID |
-| `target` | string | yes | Delivery target string (platform-specific) |
+| `channel` | string | yes | Channel name |
 
-**Returns:** Text confirmation including the delivery route.
+**Returns:** JSON array of sessions in `session_list`'s shape, each with `own` set on the channel's own session.
 
-**Side effects:** Persists the channel target in the session sidecar file.
+### channel_create
+
+Add a channel to an agent and create its session. The channel starts disabled until its connection settings are filled in; its ID is derived from its name.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `name` | string | yes | Channel name, unique within the agent |
+| `type` | string | yes | `"slack"`, `"discord"`, or `"signal"` |
+
+**Returns:** JSON object with the new `channel` and its `session_id`.
+
+### channel_rename
+
+Rename a channel. Its session and history stay, and task and report targets that pick it by name follow the new name.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Current channel name |
+| `new_name` | string | yes | New channel name |
+
+### channel_remove
+
+Remove a channel. Task and report targets that pick it by name are cleared.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Channel name |
+| `sessions` | string | yes | `"archive"` keeps its sessions, with their history, as regular chats; `"delete"` removes them |

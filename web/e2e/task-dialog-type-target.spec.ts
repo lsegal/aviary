@@ -9,6 +9,7 @@ interface Config {
 		name: string;
 		model: string;
 		projects?: unknown[];
+		channels?: unknown[];
 		tasks: Task[];
 	}[];
 	[key: string]: unknown;
@@ -49,6 +50,7 @@ async function setup(page: Page) {
 				name: "assistant",
 				model: "x/y",
 				projects: [{ target: "lsegal/aviary" }],
+				channels: [{ type: "slack", id: "standup", name: "Team standup" }],
 				tasks: [{ ...SCRIPT_TASK }, { ...PROJECT_TASK }],
 			},
 			{
@@ -76,16 +78,7 @@ async function setup(page: Page) {
 		config_task_convert_to_script: "task_compile_1",
 		auth_list: [],
 		tool_list: [],
-		session_list: [
-			{
-				id: "sess_slack",
-				agent_id: "assistant",
-				name: "sess_slack",
-				title: "Team standup",
-				created_at: new Date().toISOString(),
-				channels: ["slack"],
-			},
-		],
+		session_list: [],
 		job_query: [],
 		job_list: [],
 		task_compile_query: [],
