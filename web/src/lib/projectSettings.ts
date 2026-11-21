@@ -172,8 +172,8 @@ export function projectSettingsPath(
 	target: string,
 ): string {
 	const owner = projectOwner(cfg, target);
-	if (!owner) return "/settings/agents";
-	return `/settings/agents/${encodeURIComponent(owner)}/projects?project=${encodeURIComponent(target)}`;
+	if (!owner) return "/agents";
+	return `/agents/${encodeURIComponent(owner)}/projects?project=${encodeURIComponent(target)}`;
 }
 
 /** The section with target added to its list, unless already listed. */

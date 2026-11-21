@@ -95,8 +95,12 @@ import {
 } from "../../lib/projectSettings";
 import { useSettingsStore } from "../../stores/settings";
 
-const props = defineProps<{ initial?: string }>();
-const emit = defineEmits<{ close: []; added: [target: string] }>();
+// agent preselects the owning agent, as when adding from its GitHub Projects.
+const props = defineProps<{ initial?: string; agent?: string }>();
+const emit = defineEmits<{
+	close: [];
+	added: [target: string, agent: string];
+}>();
 
 const router = useRouter();
 const store = useSettingsStore();
@@ -117,13 +121,14 @@ const startError = ref("");
 onMounted(async () => {
 	input.value?.focus();
 	if (!store.config) await store.fetchConfig();
-	if (!agent.value) agent.value = agentNames.value[0] ?? "";
+	if (!agent.value || !agentNames.value.includes(agent.value))
+		agent.value = agentNames.value[0] ?? "";
 });
 
 const agentNames = computed(() =>
 	(store.config?.agents ?? []).map((a) => a.name).filter(Boolean),
 );
-const agent = ref(agentNames.value[0] ?? "");
+const agent = ref(props.agent || agentNames.value[0] || "");
 
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
@@ -159,7 +164,7 @@ async function start() {
 		// The config watcher reloads the server; refresh the copy here so the
 		// board shows the new project's agent.
 		await store.fetchConfig();
-		emit("added", normalized.value);
+		emit("added", normalized.value, agent.value);
 	} catch (e) {
 		startError.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -170,7 +175,7 @@ async function start() {
 function changeSettings() {
 	emit("close");
 	void router.push(
-		`/settings/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
+		`/agents/${encodeURIComponent(agent.value)}/projects?add=${encodeURIComponent(normalized.value)}`,
 	);
 }
 

@@ -4,7 +4,7 @@
 			<header class="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6 lg:flex-row lg:items-center">
 				<div class="min-w-0">
 					<p class="text-xs text-gray-500">
-						<router-link to="/projects" class="text-blue-600 hover:underline">Projects</router-link> /
+						<router-link :to="projectsIndexPath" class="text-blue-600 hover:underline">{{ projectsIndexLabel }}</router-link> /
 						<router-link :to="boardPath" class="text-blue-600 hover:underline">{{ project }}</router-link> /
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
@@ -108,16 +108,26 @@ import JobStatusPill from "../components/projects/JobStatusPill.vue";
 import JobTimeline from "../components/projects/JobTimeline.vue";
 import { useProjectJob } from "../composables/useProjects";
 import {
-	encodeProject,
 	githubURL,
 	LIFECYCLE_STEPS,
 	lifecycleStep,
+	projectPath,
 } from "../lib/projects";
 
 const route = useRoute();
 const project = computed(() => String(route.params.project ?? ""));
 const number = computed(() => Number(route.params.number ?? 0));
-const boardPath = computed(() => `/projects/${encodeProject(project.value)}`);
+const agent = computed(() => String(route.params.agent ?? ""));
+const boardPath = computed(() => projectPath(agent.value, project.value));
+// A watch no agent owns has no GitHub Projects page above its board.
+const projectsIndexPath = computed(() =>
+	agent.value
+		? `/agents/${encodeURIComponent(agent.value)}/projects`
+		: boardPath.value,
+);
+const projectsIndexLabel = computed(() =>
+	agent.value ? `${agent.value} · GitHub Projects` : "Watches",
+);
 
 const { detail, error, allowedCommenters, retry, stop } = useProjectJob(
 	project,

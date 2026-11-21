@@ -126,7 +126,7 @@ Select a provider, then choose between API key entry or OAuth login. The wizard 
 
 **Option 2 — Control panel**
 
-1. In the control panel, go to **Settings → Providers**.
+1. In the control panel, go to **System → Providers & Auth**.
 2. Click **Log in with Anthropic** (or the provider of your choice).
 3. Complete the sign-in flow in the browser tab that opens.
 4. Return to the control panel — the provider should show as connected.

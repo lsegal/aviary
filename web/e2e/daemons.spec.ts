@@ -52,7 +52,7 @@ test("daemon cards show restart controls and call restart API", async ({
 		});
 	});
 
-	await page.goto("/daemons");
+	await page.goto("/system/daemons");
 
 	const cards = page.locator(".grid > div.rounded-xl");
 	await expect(cards).toHaveCount(2);
@@ -90,7 +90,7 @@ test("non-managed channels do not show empty logs panels or NaN labels", async (
 		});
 	});
 
-	await page.goto("/daemons");
+	await page.goto("/system/daemons");
 
 	const card = page.locator(".grid > div.rounded-xl").first();
 	await expect(card.getByText("ony (slack slack-main)")).toBeVisible();
@@ -135,7 +135,7 @@ test("daemon list retries transient 500s before showing an error", async ({
 		});
 	});
 
-	await page.goto("/daemons");
+	await page.goto("/system/daemons");
 
 	await expect(page.getByText("Aviary Server")).toBeVisible();
 	await expect(page.getByText("Error: HTTP 500")).toHaveCount(0);

@@ -49,7 +49,7 @@ test("shows agent and job counts", async ({ page }) => {
 		job_list: JOBS,
 		config_validate: [],
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("2").first()).toBeVisible(); // 2 agents
 	// scope to the Jobs card to avoid matching the agent state badge
@@ -63,7 +63,7 @@ test("health card is green when no config issues", async ({ page }) => {
 		job_list: [],
 		config_validate: [],
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("Healthy")).toBeVisible();
 	await expect(page.getByText("No issues found")).toBeVisible();
@@ -89,7 +89,7 @@ test("health card is red and shows errors", async ({ page }) => {
 		job_list: [],
 		config_validate: issues,
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("Errors")).toBeVisible();
 	await expect(page.getByText("1 error, 1 warning")).toBeVisible();
@@ -110,7 +110,7 @@ test("health card is yellow when warnings only", async ({ page }) => {
 		job_list: [],
 		config_validate: issues,
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("Warnings")).toBeVisible();
 	await expect(page.getByText(/^1 warning$/)).toBeVisible();
@@ -129,7 +129,7 @@ test("re-check button refreshes doctor status", async ({ page }) => {
 		job_list: [],
 		config_validate: issues,
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 	await expect(page.getByText("Errors")).toBeVisible();
 
 	// Fix the issue, re-intercept with clean result.
@@ -210,7 +210,7 @@ test("recovers when the MCP session expires", async ({ page }) => {
 		return route.fulfill({ status: 200, body: "{}" });
 	});
 
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("2").first()).toBeVisible();
 	await expect(page.getByText("No issues found")).toBeVisible();
@@ -281,7 +281,7 @@ test("retries a transient MCP 502 during overview load", async ({ page }) => {
 		return route.fulfill({ status: 200, body: "{}" });
 	});
 
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByText("2").first()).toBeVisible();
 	await expect(page.getByText("No issues found")).toBeVisible();
@@ -293,8 +293,8 @@ test("stat cards link to their detail views", async ({ page }) => {
 		job_list: [],
 		config_validate: [],
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await page.getByText("Agents").first().click();
-	await expect(page).toHaveURL(/\/settings\/agents/);
+	await expect(page).toHaveURL(/\/agents/);
 });

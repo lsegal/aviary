@@ -60,7 +60,7 @@ test("shows CLI-reported cost for mixed records", async ({ page }) => {
 		config_validate: [],
 		usage_query: MIXED_RECORDS,
 	});
-	await page.goto("/usage");
+	await page.goto("/system/usage");
 
 	await expect(page.getByTestId("usage-total-cost")).toHaveText("$1.75");
 	await expect(
@@ -90,7 +90,7 @@ test("hides cost when no record reports one", async ({ page }) => {
 		config_validate: [],
 		usage_query: MIXED_RECORDS.filter((r) => !("cost_usd" in r)),
 	});
-	await page.goto("/usage");
+	await page.goto("/system/usage");
 
 	await expect(
 		breakdownRow(page, "Top Models", "cli/codex/gpt-5"),

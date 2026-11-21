@@ -1,45 +1,41 @@
 # Control Panel Surface
 
-This page summarizes the implemented browser UI as it exists today.
+This page summarizes the implemented browser UI as it exists today. The sidebar has two top-level sections: **Agents**, listing every agent with **+ Add Agent**, and **System**.
 
-## Route Groups
+## Agent Pages
 
-| Area | Primary Routes | User Value |
+Each agent's pages, in sidebar order:
+
+| Page | Route | Exposed Functionality |
 | --- | --- | --- |
-| Login | `/login` | Token-based access to the local control plane. |
-| Overview | `/overview` | Health, counts, validation, and initial setup. |
-| Chat | `/chat/:agent?/:sessionId?` | Real-time conversation and session management. |
-| Settings | `/settings/*` | Live configuration editing across runtime domains. |
-| Usage | `/usage` | Token and session analytics. |
-| Jobs | `/jobs` | Scheduled work, queue state, logs, and compile attempts. |
+| Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
+| GitHub Projects | `/agents/<agent>/projects` | The agent's projects: add, configure, remove; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
+| Tasks | `/agents/<agent>/tasks` | The agent's task definitions. |
+| Files | `/agents/<agent>/files` | The agent's root markdown files. |
+| Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), Permissions (`/settings/permissions`) and Channels (`/settings/channels`) tabs. |
+
+`/agents` opens the first agent's chat; `/agents?add=1` adds an agent.
+
+## System Pages
+
+| Page | Route | Exposed Functionality |
+| --- | --- | --- |
+| Overview | `/system/overview` | Health, counts, validation, and initial setup. |
+| Settings | `/system/settings` | Server, models, browser, scheduler, and search settings. |
+| Projects | `/system/projects` | The Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
+| Providers & Auth | `/system/providers` | API keys, OAuth flows, and secret management. |
+| Usage | `/system/usage` | Token and session analytics. |
+| Jobs | `/system/jobs` | Scheduled work, queue state, logs, run-now, and compile attempts. |
 | Tools | `/system/tools` | MCP tool catalog and direct invocation. |
-| Skills | `/system/skills` | Every installed skill on one page: the installed version of each skill Aviary ships in each provider's CLI, and browsing and activation control for the skills Aviary agents use. |
+| Skills | `/system/skills` | Every installed skill on one page: the installed version of each skill Aviary ships in each provider's CLI, and search, filtering, activation and per-skill settings for the skills Aviary agents use. |
+| Sessions | `/system/sessions` | Session list, stop, create, and remove operations. |
 | Models | `/system/models` | Built-in provider and model catalog. |
-| Logs | `/logs` | Streaming log inspection and filtering. |
-| Daemons | `/daemons` | Process monitoring and restart support. |
+| Logs | `/system/logs` | Streaming log inspection and filtering. |
+| Daemons | `/system/daemons` | Process monitoring and restart support. |
+| Watches | `/system/watches/<owner%2Frepo>` | Boards of runtime watches no agent owns. |
 
-## Settings Tabs
+Overview, Settings, Providers & Auth, Usage and Jobs are always shown; the rest sit behind **More**.
 
-| Tab | Exposed Functionality |
-| --- | --- |
-| General | Server, models, browser, scheduler, and search settings. |
-| Agents | Agent definitions, task definitions, permissions, channels, and agent root files. |
-| Skills | Config-backed skill enablement and settings. |
-| Sessions | Session list, stop, create, and remove operations. |
-| Providers | API keys, OAuth flows, and secret management. |
+Skills detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`, and is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
 
-Settings detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skill`, including skills installed from [skills.sh](https://skills.sh/).
-
-## System Tabs
-
-| Tab | Exposed Functionality |
-| --- | --- |
-| Usage | Token analytics and session cost-style breakdowns. |
-| Jobs | Job history, schedules, compile attempts, and outputs. |
-| Tools | Tool and skill catalog plus runner UI. |
-| Skills | Marketplace-style installed skill management. |
-| Models | Searchable model catalog. |
-| Logs | Live runtime logs. |
-| Daemons | Running process inspection and restart actions. |
-
-The Skills view is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
+Other routes: `/login` (token-based access to the local control plane) and `/onboarding` (the setup wizard).

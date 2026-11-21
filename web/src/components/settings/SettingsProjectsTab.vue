@@ -1,8 +1,8 @@
 <template>
 	<section v-show="activeTab === 'projects'" class="space-y-5 pb-8" data-testid="projects-settings-tab">
 		<p class="text-xs text-gray-500 dark:text-gray-400">
-			These settings apply to every project. Each project belongs to an agent and is added on that agent's
-			Projects subtab under <router-link to="/settings/agents" class="text-blue-600 hover:underline dark:text-blue-400">Agents &amp; Tasks</router-link>.
+			These settings apply to every project of every agent. Each project belongs to an agent and is added on
+			that agent's GitHub Projects page.
 		</p>
 	<section :class="CARD" data-testid="project-settings">
 		<h3 :class="CARD_HEAD">

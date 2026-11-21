@@ -30,7 +30,7 @@ test("upgrade notice links the version to its release page", async ({
 		config_validate: [],
 		server_version_check: versionCheck([]),
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(page.getByRole("link", { name: "v0.7.0" })).toHaveAttribute(
 		"href",
@@ -57,7 +57,7 @@ test("upgrade dialog lists the running jobs it will stop", async ({ page }) => {
 			};
 		},
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	const dialog = page.getByRole("dialog");
@@ -97,7 +97,7 @@ test("upgrading when no jobs are running holds new jobs and can be canceled", as
 			return { phase: "idle", jobs: runningJobs.slice(0, 1), held: false };
 		},
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect(page.getByRole("dialog")).toContainText("this running job");
@@ -126,7 +126,7 @@ test("upgrade dialog says nothing will stop when no jobs run", async ({
 		config_validate: [],
 		server_version_check: versionCheck([]),
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect(page.getByRole("dialog")).toContainText(
 		"No jobs are running, so nothing will be stopped.",
@@ -174,7 +174,7 @@ test("dev checkout pulls from git without restarting", async ({ page }) => {
 			};
 		},
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	const dialog = page.getByRole("dialog");
@@ -205,7 +205,7 @@ test("dev checkout with local changes blocks the update and says why", async ({
 		config_validate: [],
 		server_version_check: gitCheck(true),
 	});
-	await page.goto("/overview");
+	await page.goto("/system/overview");
 
 	await expect(
 		page.getByRole("button", { name: "Upgrade", exact: true }),
