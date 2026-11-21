@@ -844,17 +844,13 @@ const projectRunEvents = [
 		kind: "tool_result",
 		time: minutesAgo(11),
 		call_id: "c1",
-		output: "package scheduler
-…",
+		output: "package scheduler\n…",
 	},
 	{
 		kind: "file_change",
 		time: minutesAgo(10),
 		path: "internal/scheduler/queue.go",
-		diff: "@@ -40,3 +40,3 @@
- delay := base << attempt
--return delay
-+return min(delay, 10*time.Minute)",
+		diff: "@@ -40,3 +40,3 @@\n delay := base << attempt\n-return delay\n+return min(delay, 10*time.Minute)",
 	},
 	{
 		kind: "comment_relay",
@@ -910,8 +906,7 @@ const projectsFixtures = {
 		quotas: { claude: "62% of 5h quota left", codex: "quota ok" },
 		agents: ["claude", "codex"],
 		recent_logs:
-			"12:03:58 checked lsegal/aviary: 4 ready issues
-12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
+			"12:03:58 checked lsegal/aviary: 4 ready issues\n12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
 		log_offset: 2,
 		last_check: minutesAgo(0.1),
 	},
@@ -929,8 +924,7 @@ const projectsFixtures = {
 			"▸ read internal/scheduler/queue.go",
 			"$ go test ./internal/scheduler/...",
 			"ok  internal/scheduler 2.41s",
-		].join("
-"),
+		].join("\n"),
 		events: projectRunEvents,
 		raw_output: "",
 	},
@@ -1252,7 +1246,7 @@ async function main() {
 				browser,
 				fixtures: projectsFixtures,
 				pathname: "/agents/coder/projects/lsegal%2Faviary",
-				readySelector: 'text=Cap scheduler retry backoff at 10 minutes',
+				readySelector: "text=Cap scheduler retry backoff at 10 minutes",
 				outputName: "projects-board.png",
 				viewport: { width: 1040, height: 980 },
 				theme,
@@ -1262,9 +1256,9 @@ async function main() {
 				browser,
 				fixtures: projectsFixtures,
 				pathname: "/agents/coder/projects/lsegal%2Faviary/jobs/218",
-				readySelector: 'text=go test ./internal/scheduler/...',
+				readySelector: '[data-event="file_change"]',
 				outputName: "projects-run.png",
-				viewport: { width: 1040, height: 980 },
+				viewport: { width: 1440, height: 980 },
 				theme,
 			});
 

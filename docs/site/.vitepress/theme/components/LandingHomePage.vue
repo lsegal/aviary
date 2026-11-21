@@ -112,7 +112,10 @@ const projectsItems: ShowcaseItem[] = [
 
 const projectsSteps = [
 	{ title: "Watch", description: "Repositories, Project boards, Discussions." },
-	{ title: "Claim", description: "Issues by label and filter, one owner each." },
+	{
+		title: "Claim",
+		description: "Issues by label and filter, one owner each.",
+	},
 	{ title: "Draft PR", description: "Clone, branch, and open a draft." },
 	{ title: "Implement", description: "On your configured CLI providers." },
 	{ title: "Repair CI", description: "Read failing logs, push fixes." },
@@ -2091,6 +2094,7 @@ onBeforeUnmount(() => {
 }
 
 .landing-projects-steps li {
+	margin: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
