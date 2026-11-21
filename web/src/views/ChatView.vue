@@ -406,7 +406,7 @@ const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
-const chatInputEl = ref<InstanceType<typeof ChatComposerInput> | null>(null);
+const chatInputEl = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
