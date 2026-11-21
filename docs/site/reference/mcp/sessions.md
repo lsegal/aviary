@@ -10,6 +10,8 @@ A **session** is an ordered log of messages between one agent and one caller. Ea
 
 - **`id`** — a stable UUID assigned at creation; use this when calling tools that accept `session_id`
 - **`name`** — a human-readable label (defaults to `"main"` for the first session)
+- **`title`** — the display name, set by `session_rename` or generated from a new chat's first prompt; absent until then
+- **`last_message_at`** — when the last user or assistant message was sent; absent for an empty session
 
 The `"main"` session is created automatically on first use. Additional sessions can be created explicitly with `session_create`.
 
@@ -37,6 +39,7 @@ List all sessions for an agent. Creates the `"main"` session if it does not exis
     "agent_id": "assistant",
     "created_at": "2026-03-01T09:00:00Z",
     "updated_at": "2026-03-22T14:30:00Z",
+    "last_message_at": "2026-03-22T14:30:05Z",
     "is_processing": false
   }
 ]
@@ -55,6 +58,8 @@ Create a new session for an agent.
 | `agent` | string | yes | Agent name |
 
 **Returns:** JSON session object (same shape as `session_list` entries).
+
+The first prompt sent to a chat created this way names it: Aviary asks the agent's model for a short title from that prompt and stores it as the session's `title`, falling back to the prompt's opening words.
 
 ---
 
@@ -131,7 +136,23 @@ Permanently delete a session and all of its messages.
 
 **Returns:** Text confirmation.
 
-**Side effects:** Removes the session file from disk. This operation is irreversible.
+**Side effects:** Removes the session file and its sidecar files from disk. This operation is irreversible.
+
+---
+
+## session_rename
+
+Set a session's display title. The session's `name` and `id` do not change, so channels and the `"main"` session still resolve to it.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `session_id` | string | yes | Session ID |
+| `name` | string | yes | New display title |
+
+**Returns:** Text confirmation.
 
 ---
 

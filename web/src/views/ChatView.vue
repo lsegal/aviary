@@ -1,79 +1,32 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
-			<!-- Session subtabs -->
-			<div v-if="selectedAgent"
-				class="flex items-end border-b border-gray-200 bg-gray-50 px-4 select-none dark:border-gray-800 dark:bg-gray-900/50">
-				<!-- Mobile: session dropdown (Radix) -->
-				<div class="sm:hidden w-full">
-					<DropdownMenuRoot>
-						<DropdownMenuTrigger asChild>
-							<button
-								type="button"
-								class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 text-left dark:border-gray-700 dark:bg-gray-800 dark:text-white">
-								{{ selectedSessionName }}
-							</button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent class="mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900">
-							<DropdownMenuItem v-for="s in sessions" :key="s.id" @select="selectSession(s.id)"
-								class="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800">
-								{{ s.name || s.id }}
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenuRoot>
-				</div>
-				<!-- Desktop: dropdown when >5 sessions, scrollable tabs otherwise -->
-				<div v-if="sessions.length > 5" class="hidden sm:flex flex-1 min-w-0 items-center gap-1.5 py-1.5">
-					<DropdownMenuRoot>
-						<DropdownMenuTrigger asChild>
-							<button type="button"
-								class="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-700/60">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5 shrink-0 opacity-60"><rect x="1" y="5" width="14" height="9" rx="1.5"/><rect x="1" y="2" width="5" height="4" rx="1"/></svg>
-								<span class="max-w-36 truncate">{{ selectedSessionName }}</span>
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0 opacity-50"><path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
-							</button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="start" :side-offset="4" class="z-50 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-1 shadow-md dark:border-gray-700 dark:bg-gray-900">
-							<DropdownMenuItem v-for="s in sessions" :key="s.id"
-								class="cursor-pointer rounded px-3 py-1.5 text-xs transition-colors"
-								:class="selectedSessionId === s.id
-									? 'font-semibold text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40'
-									: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
-								@select="selectSession(s.id)">
-								{{ s.name || s.id }}
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenuRoot>
-					<button type="button" title="New session"
-						class="shrink-0 rounded px-2 py-1.5 text-sm leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-						:disabled="sessionsLoading" @click="createSession">+</button>
-				</div>
-				<div v-else class="hidden sm:flex flex-1 items-end min-w-0">
-					<button v-if="sessionTabsCanScrollLeft" type="button" aria-label="Scroll left"
-						class="shrink-0 self-center mb-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-						@click="scrollSessionTabs(-120)">
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5"><path fill-rule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" /></svg>
-					</button>
-					<div ref="sessionTabsEl" class="scrollbar-none flex flex-1 items-end overflow-x-auto" @scroll="updateSessionTabsScroll">
-						<button v-for="s in sessions" :key="s.id" type="button"
-							class="-mb-px shrink-0 border-b-2 px-3 py-2 text-xs transition-colors"
-							:class="selectedSessionId === s.id
-								? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-								: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-							@click="selectSession(s.id)">
-							{{ s.name || s.id }}
+			<!-- Chat picker: the sidebar's Chats list covers wide screens. -->
+			<div v-if="selectedAgent" data-testid="chat-picker"
+				class="items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 select-none dark:border-gray-800 dark:bg-gray-900/50"
+				:class="props.agent ? 'flex' : 'flex lg:hidden'">
+				<DropdownMenuRoot>
+					<DropdownMenuTrigger asChild>
+						<button type="button"
+							class="min-w-0 flex-1 truncate rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+							{{ selectedSessionName }}
 						</button>
-						<button type="button" title="New session"
-							class="-mb-px shrink-0 border-b-2 border-transparent px-2.5 py-2 text-base leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-							:disabled="sessionsLoading" @click="createSession">+</button>
-					</div>
-					<button v-if="sessionTabsCanScrollRight" type="button" aria-label="Scroll right"
-						class="shrink-0 self-center mb-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-						@click="scrollSessionTabs(120)">
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L9.94 8 7.28 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
-					</button>
-				</div>
-				<span v-if="sessionsLoading" class="shrink-0 pb-2 text-xs text-gray-400">Loading…</span>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="start" :side-offset="4"
+						class="z-50 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-md dark:border-gray-700 dark:bg-gray-900">
+						<DropdownMenuItem v-for="s in sessions" :key="s.id" @select="selectSession(s.id)"
+							class="cursor-pointer rounded px-3 py-1.5 text-sm transition-colors"
+							:class="selectedSessionId === s.id
+								? 'font-semibold text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40'
+								: 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'">
+							{{ chatDisplayName(s) }}
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenuRoot>
+				<button type="button" title="New chat" aria-label="New chat"
+					class="shrink-0 rounded px-2 py-1 text-base leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+					:disabled="sessionsLoading" @click="createSession">+</button>
+				<span v-if="sessionsLoading" class="shrink-0 text-xs text-gray-400">Loading…</span>
 			</div>
 
 			<!-- Messages -->
@@ -213,14 +166,11 @@ import { useStream } from "../composables/useStream";
 import { renderMarkdown } from "../lib/markdown";
 import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
-
-interface Session {
-	id: string;
-	agent_id: string;
-	name: string;
-	created_at: string;
-	is_processing?: boolean;
-}
+import {
+	chatDisplayName,
+	isMainChat,
+	useChatSessionsStore,
+} from "../stores/chatSessions";
 
 interface ToolData {
 	name: string;
@@ -265,6 +215,7 @@ const props = defineProps<{
 }>();
 
 const agentsStore = useAgentsStore();
+const chatSessions = useChatSessionsStore();
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
@@ -429,10 +380,12 @@ const selectedAgent = ref("");
 const selectedSessionId = ref("");
 const selectedSessionName = computed(() => {
 	const s = sessions.value.find((x) => x.id === selectedSessionId.value);
-	return s ? s.name || s.id : "Select a session";
+	return s ? chatDisplayName(s) : "Select a chat";
 });
-const sessions = ref<Session[]>([]);
-const sessionsLoading = ref(false);
+const sessions = computed(() => chatSessions.sessions(selectedAgent.value));
+const sessionsLoading = computed(
+	() => chatSessions.loading[selectedAgent.value] === true,
+);
 const input = ref("");
 const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
@@ -579,6 +532,7 @@ function pushChatPath() {
 }
 
 onUnmounted(() => {
+	clearTimeout(sessionsRefreshTimer);
 	document.removeEventListener("visibilitychange", onVisible);
 	window.removeEventListener("keydown", onWindowKeydown);
 	if (ws) {
@@ -600,6 +554,10 @@ function connectSessionWS() {
 	const tok = authStore.getToken();
 	const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
 	ws = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	// Events name agents by ID, which is the agent's name.
+	const forSelectedAgent = (id?: string) =>
+		!!selectedAgent.value &&
+		(id === selectedAgent.value || id === `agent_${selectedAgent.value}`);
 	ws.onmessage = async (e) => {
 		try {
 			const data = JSON.parse(e.data as string) as {
@@ -609,7 +567,7 @@ function connectSessionWS() {
 				is_processing?: boolean;
 			};
 			if (data.type === "session_processing" && data.session_id) {
-				if (data.agent_id !== `agent_${selectedAgent.value}`) return;
+				if (!forSelectedAgent(data.agent_id)) return;
 				sessionProcessing.value = {
 					...sessionProcessing.value,
 					[data.session_id]: data.is_processing === true,
@@ -627,8 +585,10 @@ function connectSessionWS() {
 				return;
 			}
 			if (data.type !== "session_message") return;
+			if (!forSelectedAgent(data.agent_id)) return;
+			// New messages and titles change the Chats list.
+			scheduleSessionsRefresh();
 			if (!selectedSessionId.value) return;
-			if (data.agent_id !== `agent_${selectedAgent.value}`) return;
 			if (data.session_id !== selectedSessionId.value) return;
 			// Skip WS-triggered reloads while streaming — ongoing chunks would be
 			// lost if messages.value is replaced mid-stream.
@@ -643,22 +603,19 @@ function connectSessionWS() {
 
 async function loadSessions(preferredSessionId = "") {
 	if (!selectedAgent.value) return;
-	sessionsLoading.value = true;
 	try {
-		const raw = await callTool("session_list", { agent: selectedAgent.value });
-		sessions.value = (JSON.parse(raw) as Session[]) ?? [];
+		const listed = await chatSessions.load(selectedAgent.value);
 		const nextProcessing: Record<string, boolean> = {};
-		for (const sess of sessions.value) {
+		for (const sess of listed) {
 			nextProcessing[sess.id] = sess.is_processing === true;
 		}
 		sessionProcessing.value = nextProcessing;
 		// Prefer explicit session ID, then "main", then first.
 		const preferred = preferredSessionId
-			? sessions.value.find((s) => s.id === preferredSessionId)
+			? listed.find((s) => s.id === preferredSessionId)
 			: undefined;
-		const main = sessions.value.find((s) => s.name === "main");
-		selectedSessionId.value =
-			preferred?.id ?? main?.id ?? sessions.value[0]?.id ?? "";
+		const main = listed.find(isMainChat);
+		selectedSessionId.value = preferred?.id ?? main?.id ?? listed[0]?.id ?? "";
 		await loadSessionMessages();
 	} catch (e) {
 		console.error("Failed to load sessions", e);
@@ -668,9 +625,16 @@ async function loadSessions(preferredSessionId = "") {
 			messages.value = [];
 			sessionProcessing.value = {};
 		}
-	} finally {
-		sessionsLoading.value = false;
 	}
+}
+
+let sessionsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+/** Reloads the Chats list once a burst of session events settles. */
+function scheduleSessionsRefresh() {
+	clearTimeout(sessionsRefreshTimer);
+	sessionsRefreshTimer = setTimeout(() => {
+		void refreshSessionProcessing();
+	}, 300);
 }
 
 /** Switches to the agent the sidebar navigated to, keeping its session in the URL. */
@@ -679,7 +643,6 @@ async function selectAgent(name: string, sessionId = "") {
 	loadMessagesSeq += 1;
 	selectedAgent.value = name;
 	selectedSessionId.value = "";
-	sessions.value = [];
 	messages.value = [];
 	resetHistoryNavigation();
 	updateScrollState();
@@ -705,27 +668,41 @@ watch(
 	},
 );
 
-async function selectSession(id: string) {
+async function selectSession(id: string, push = true) {
 	if (selectedSessionId.value === id) return;
 	loadMessagesSeq += 1;
 	selectedSessionId.value = id;
 	messages.value = [];
 	resetHistoryNavigation();
 	updateScrollState();
-	pushChatPath();
+	if (push) pushChatPath();
 	await loadSessionMessages();
 }
 
-// (previous mobile handler removed; Radix dropdown calls `selectSession` directly)
+// The sidebar's Chats list links to each chat; a bare chat path is Main Chat.
+watch(
+	() => route.params.sessionId,
+	async (param) => {
+		if (props.agent || typeof route.params.agent !== "string") return;
+		await mounted;
+		if (route.params.agent !== selectedAgent.value) return;
+		const id =
+			typeof param === "string" && param
+				? param
+				: (sessions.value.find(isMainChat)?.id ?? "");
+		if (!id || id === selectedSessionId.value) return;
+		if (!sessions.value.some((s) => s.id === id)) {
+			await loadSessions(id);
+			return;
+		}
+		await selectSession(id, false);
+	},
+);
 
 async function createSession() {
 	if (!selectedAgent.value) return;
 	try {
-		const raw = await callTool("session_create", {
-			agent: selectedAgent.value,
-		});
-		const sess = JSON.parse(raw) as Session;
-		sessions.value.push(sess);
+		const sess = await chatSessions.create(selectedAgent.value);
 		selectedSessionId.value = sess.id;
 		pushChatPath();
 		loadMessagesSeq += 1;
@@ -1070,33 +1047,10 @@ async function stopSession() {
 	}
 }
 
-const sessionTabsEl = ref<HTMLElement | null>(null);
-const sessionTabsCanScrollLeft = ref(false);
-const sessionTabsCanScrollRight = ref(false);
-
-function updateSessionTabsScroll() {
-	const el = sessionTabsEl.value;
-	if (!el) {
-		sessionTabsCanScrollLeft.value = false;
-		sessionTabsCanScrollRight.value = false;
-		return;
-	}
-	sessionTabsCanScrollLeft.value = el.scrollLeft > 1;
-	sessionTabsCanScrollRight.value =
-		el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-}
-
-function scrollSessionTabs(delta: number) {
-	const el = sessionTabsEl.value;
-	if (!el) return;
-	el.scrollBy({ left: delta, behavior: "smooth" });
-}
-
 async function refreshSessionProcessing() {
 	if (!selectedAgent.value) return;
 	try {
-		const raw = await callTool("session_list", { agent: selectedAgent.value });
-		const listed = (JSON.parse(raw) as Session[]) ?? [];
+		const listed = await chatSessions.load(selectedAgent.value);
 		const next = { ...sessionProcessing.value };
 		for (const sess of listed) {
 			next[sess.id] = sess.is_processing === true;
