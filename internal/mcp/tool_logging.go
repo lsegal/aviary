@@ -12,7 +12,9 @@ const (
 )
 
 func logToolCall(source, name string, args any) {
-	if strings.TrimSpace(name) == "" {
+	// Projects tools run constantly (every check, status and board
+	// operation), so a per-call line for them is only noise.
+	if strings.TrimSpace(name) == "" || strings.HasPrefix(name, "project_") {
 		return
 	}
 	slog.Info(

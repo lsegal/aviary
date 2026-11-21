@@ -545,13 +545,14 @@ func (r *AgentRunner) loadCLISessionID(sessionID string, backend cliagent.Backen
 
 func (r *AgentRunner) saveCLISessionID(sessionID string, backend cliagent.Backend, id string) {
 	path := store.SessionMetaPath(r.agent.ID, sessionID)
-	meta, _ := store.ReadSessionMeta(path)
-	if id == "" {
-		meta.CLI = nil
-	} else {
-		meta.CLI = &store.CLISessionMeta{Backend: string(backend), ID: id}
-	}
-	if err := store.WriteSessionMeta(path, meta); err != nil {
+	err := store.UpdateSessionMeta(path, func(meta *store.SessionMeta) {
+		if id == "" {
+			meta.CLI = nil
+		} else {
+			meta.CLI = &store.CLISessionMeta{Backend: string(backend), ID: id}
+		}
+	})
+	if err != nil {
 		slog.Warn("agent: failed to save CLI session", "session", sessionID, "err", err)
 	}
 }
