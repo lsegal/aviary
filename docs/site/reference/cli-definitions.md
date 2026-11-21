@@ -175,7 +175,9 @@ So `{when: model, args: [--model, "{model}"]}` passes a model only when one was 
 | `allowPath` | each `filesystem.allowed_paths` rule | `{path}` and `{pathPosix}` (the expanded pattern), `{dir}` and `{dirPosix}` (the directory its globs sit under) |
 | `denyPath` | each `!` path rule | the same as `allowPath` |
 
-A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` only and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
+A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` and `full` and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
+
+A mode may also list `enforce`: flags, with no placeholders, that replace the mode's `approval` flags when the agent's rules are narrower than allowing every command (`*`) and the whole Aviary directory (`@/**`). A mode that skips the CLI's own permission checks would otherwise skip its allow rules too, and only `!` rules would bind. `claude` declares it for `full` as `[--permission-mode, dontAsk]`, plus allows for the tools the agent's rules do not govern (`WebFetch`, `WebSearch`, `Skill`), so in `full` a command or write the rules leave out is refused while everything they allow runs without asking.
 
 ### `minVersion`
 

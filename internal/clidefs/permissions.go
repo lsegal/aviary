@@ -24,7 +24,13 @@ var (
 // PermissionTemplates are the CLI arguments that pass one of an agent's
 // permission rules on to the CLI session in its own allow and deny terms,
 // one template per kind of rule. A kind left out passes nothing for it.
+//
+// Enforce, when set, replaces the mode's approval arguments for an agent
+// whose rules are narrower than allowing every command and the whole Aviary
+// directory, so the CLI refuses what those rules leave out instead of
+// skipping the check that would (#577).
 type PermissionTemplates struct {
+	Enforce      []string `json:"enforce,omitempty"`
 	AllowCommand []string `json:"allowCommand,omitempty"`
 	DenyCommand  []string `json:"denyCommand,omitempty"`
 	AllowPath    []string `json:"allowPath,omitempty"`
@@ -91,6 +97,18 @@ func (d Definition) PermissionArgs(mode ApprovalMode, commands []Rule, paths []P
 	return args
 }
 
+// EnforceArgs are the arguments that replace the approval arguments of a
+// session running in mode when the agent's rules are narrower than its
+// mode would otherwise let the CLI go, or nil when the mode passes its
+// approval arguments unchanged. A mode left out falls back as Approval does.
+func (d Definition) EnforceArgs(mode ApprovalMode) []string {
+	templates, ok := modeTemplates(d.Permissions, mode)
+	if !ok || len(templates.Enforce) == 0 {
+		return nil
+	}
+	return append([]string(nil), templates.Enforce...)
+}
+
 // modeTemplates returns byMode's templates for mode, or for the closest less
 // permissive mode it declares.
 func modeTemplates(byMode map[ApprovalMode]PermissionTemplates, mode ApprovalMode) (PermissionTemplates, bool) {
@@ -123,6 +141,11 @@ func (d Definition) validatePermissions() error {
 	for mode, templates := range d.Permissions {
 		if !mode.Valid() {
 			return fmt.Errorf(`field "permissions": unknown mode %q; known modes are %s`, mode, approvalModeNames())
+		}
+		for _, arg := range templates.Enforce {
+			if placeholderPattern.MatchString(arg) {
+				return fmt.Errorf(`field "permissions.%s.enforce": %q cannot contain a placeholder`, mode, arg)
+			}
 		}
 		for _, field := range []struct {
 			name    string

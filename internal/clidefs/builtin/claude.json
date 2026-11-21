@@ -51,6 +51,9 @@
       "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
     },
     "full": {
+      "enforce": ["--permission-mode", "dontAsk", "--allowedTools", "WebFetch", "--allowedTools", "WebSearch", "--allowedTools", "Skill"],
+      "allowCommand": ["--allowedTools", "Bash{commandSpec}", "--allowedTools", "PowerShell{commandSpec}"],
+      "allowPath": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{pathPosix})"],
       "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
       "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
     }
