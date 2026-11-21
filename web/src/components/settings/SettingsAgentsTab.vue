@@ -85,7 +85,7 @@
 									<button type="button"
 										class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
 										:disabled="!agent.name || getAgentFileState(agent.name).loading"
-										@click="loadAgentFiles(agent.name)">
+										@click="refreshAgentFiles(agent.name)">
 										{{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
 									</button>
 									<button type="button"

@@ -139,6 +139,56 @@ test("the file bar's Save, Cmd/Ctrl+S, Refresh and Sync Templates work", async (
 	).toHaveText(["AGENTS.md", "NOTES.md", "SYSTEM.md"]);
 });
 
+test("Refresh re-reads the open file and asks before discarding edits", async ({
+	page,
+}) => {
+	const { store } = await mockFiles(page, { "MEMORY.md": "# Memory v1" });
+	await page.goto("/agents/assistant/files?file=MEMORY.md");
+	const refresh = page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name: "Refresh", exact: true });
+	const editor = page.getByTestId("agent-file-editor");
+	await expect(editor).toHaveValue("# Memory v1");
+
+	// An agent edits the open file on disk; Refresh shows the new content.
+	store.set("MEMORY.md", "# Memory v2");
+	await refresh.click();
+	await expect(editor).toHaveValue("# Memory v2");
+
+	// With unsaved edits, declining the confirmation keeps them.
+	store.set("MEMORY.md", "# Memory v3");
+	await editor.fill("# My unsaved edit");
+	const prompts: string[] = [];
+	page.once("dialog", (dialog) => {
+		prompts.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await refresh.click();
+	await expect
+		.poll(() => prompts)
+		.toEqual(["Discard unsaved changes to MEMORY.md and reload it from disk?"]);
+	await expect(refresh).toBeEnabled();
+	await expect(editor).toHaveValue("# My unsaved edit");
+
+	// Accepting replaces them with the file on disk.
+	page.once("dialog", (dialog) => void dialog.accept());
+	await refresh.click();
+	await expect(editor).toHaveValue("# Memory v3");
+
+	// Once saved, edits are no longer unsaved, so Refresh does not ask.
+	await editor.fill("# Saved edit");
+	await editor.press("ControlOrMeta+s");
+	await expect.poll(() => store.get("MEMORY.md")).toBe("# Saved edit");
+	store.set("MEMORY.md", "# Memory v4");
+	page.once("dialog", (dialog) => {
+		prompts.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await refresh.click();
+	await expect(editor).toHaveValue("# Memory v4");
+	expect(prompts).toHaveLength(1);
+});
+
 test("other agent pages keep the settings page header", async ({ page }) => {
 	await mockFiles(page, { "AGENTS.md": "# Agents" });
 	await page.goto("/agents/assistant/settings");
