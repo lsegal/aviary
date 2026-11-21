@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1145,6 +1146,9 @@ func registerSessionTools(s *sdkmcp.Server) {
 			LastMessageAt string `json:"last_message_at,omitempty"`
 			IsProcessing  bool   `json:"is_processing"`
 			Deletable     bool   `json:"deletable"`
+			// Channels names the channel types the session forwards its
+			// replies to, such as "slack", making it a channel session.
+			Channels []string `json:"channels,omitempty"`
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
@@ -1164,6 +1168,13 @@ func registerSessionTools(s *sdkmcp.Server) {
 			}
 			if sess.LastMessageAt != nil {
 				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
+			}
+			if chs, err := store.ReadSessionChannels(sess.AgentID, sess.ID); err == nil {
+				for _, ch := range chs.Channels {
+					if ch.Type != "" && !slices.Contains(dto.Channels, ch.Type) {
+						dto.Channels = append(dto.Channels, ch.Type)
+					}
+				}
 			}
 			out = append(out, dto)
 		}
