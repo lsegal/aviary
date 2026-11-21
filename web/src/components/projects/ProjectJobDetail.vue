@@ -74,7 +74,7 @@
 		</p>
 
 		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-			<section class="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
+			<section class="flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
 				<div class="flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
 					<p v-if="job" class="mb-3 text-center text-xs text-gray-500">
 						{{ [job.skill, job.cli, job.session ? `session ${job.session}` : ""].filter(Boolean).join(" · ") }}
@@ -83,7 +83,7 @@
 					<JobTimeline v-else-if="detail" :events="detail.events" />
 				</div>
 				<footer v-if="job && !job.scheduled"
-					class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:flex-row sm:items-center sm:px-6">
+					class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:px-6 2xl:flex-row 2xl:items-center">
 					<p class="flex-1">
 						Jobs only take instructions from GitHub comments by allowed commenters<template
 							v-if="allowedCommenters.length">
