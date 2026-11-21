@@ -2,7 +2,7 @@
 # reads this file, SKILL.md and agents/openai.yaml at build time.
 eyebrow: GitHub issue closer
 # Wrap the accent word in *asterisks*.
-headline: From open issue to *merged.*
+headline: Closes GitHub issues with a *merged* fix.
 tagline: Takes ownership of a GitHub issue and drives the whole delivery loop, from code and proof through CI and the merge to the loose ends after it.
 usage: /gh-fix owner/repo#123
 steps:

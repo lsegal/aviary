@@ -90,7 +90,7 @@ The command returns immediately and runs compilation in the background. Use `tas
 
 **Web UI:** In **Agents → *agent* → Scheduled Tasks**, each prompt-type task shows a **Convert to Script** button. Clicking it starts compilation in the background and opens a notification banner with a link to the Jobs page.
 
-## Moving Tasks from aviary.yaml to Files
+## Migrating Inline Tasks
 
 Tasks that were originally defined inline in `aviary.yaml` can be migrated to the file-based format without losing any configuration. This is useful when you want to manage tasks as plain files alongside your agent's workspace.
 
