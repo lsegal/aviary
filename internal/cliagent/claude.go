@@ -72,6 +72,9 @@ func claudeArgs(opts Options, resumeID, systemPromptFile string) []string {
 	args = append(args, opts.Approval...)
 	args = append(args, opts.ExtraDir...)
 	args = append(args, opts.Permissions...)
+	if opts.BuiltinTools && opts.CommandHook != nil {
+		args = append(args, "--settings", claudeHookSettings(opts.CommandHook))
+	}
 	switch {
 	case opts.Ephemeral:
 		args = append(args, "--no-session-persistence")
@@ -105,6 +108,9 @@ func cliEnv(opts Options) []string {
 	env := append(os.Environ(), opts.Env...)
 	if opts.MCPToken != "" {
 		env = append(env, mcpTokenEnv+"="+opts.MCPToken)
+	}
+	if opts.CommandHook != nil {
+		env = append(env, commandHookEnvValue(opts.CommandHook))
 	}
 	return env
 }

@@ -2,27 +2,26 @@ package projects
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/store"
 )
 
-// Identity uniquely names one running aviary instance. It lives only in
-// memory: a restarted instance gets a new identity, which is why ownership
-// of previously claimed work must be renegotiated rather than assumed.
+// Identity uniquely names one aviary instance. It is the instance ID kept in
+// Aviary's state, so a restarted instance recognizes its own prior claims;
+// ownership claimed by other instances is still renegotiated.
 type Identity string
 
 func newIdentity() (Identity, error) {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("create instance identity: %w", err)
+	id, err := store.InstanceID()
+	if err != nil {
+		return "", fmt.Errorf("load instance identity: %w", err)
 	}
-	return Identity(strings.ToUpper(hex.EncodeToString(b))), nil
+	return Identity(id), nil
 }
 
 // The comment types live in package core so the browser driver can implement

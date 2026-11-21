@@ -435,10 +435,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 				}
 			case agent.StreamEventTool:
 				if progressToken != nil && args.IncludeToolProgress && e.Tool != nil {
-					payload, err := json.Marshal(map[string]any{
-						"name": e.Tool.Name,
-						"args": e.Tool.Args,
-					})
+					payload, err := json.Marshal(events.toolProgress(e.Tool))
 					if err == nil {
 						progressCount++
 						_ = req.Session.NotifyProgress(ctx, &sdkmcp.ProgressNotificationParams{

@@ -1,11 +1,14 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
@@ -20,6 +23,37 @@ type ChannelMetadata struct {
 // AppState stores runtime metadata that should not live in aviary.yaml.
 type AppState struct {
 	Channels map[string]ChannelMetadata `json:"channels,omitempty"`
+	// InstanceID names this Aviary instance. It is generated on first run and
+	// kept so the instance signs its Projects claims with the same identity
+	// across restarts.
+	InstanceID string `json:"instance_id,omitempty"`
+}
+
+// instanceIDMu serializes the read-generate-write of the instance ID so two
+// callers in one process cannot mint different IDs.
+var instanceIDMu sync.Mutex
+
+// InstanceID returns this Aviary instance's persisted ID, generating and
+// saving an 8-character uppercase hex ID on first run.
+func InstanceID() (string, error) {
+	instanceIDMu.Lock()
+	defer instanceIDMu.Unlock()
+	state, err := ReadAppState()
+	if err != nil {
+		return "", err
+	}
+	if state.InstanceID != "" {
+		return state.InstanceID, nil
+	}
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("create instance id: %w", err)
+	}
+	state.InstanceID = strings.ToUpper(hex.EncodeToString(b))
+	if err := WriteAppState(state); err != nil {
+		return "", err
+	}
+	return state.InstanceID, nil
 }
 
 // StatePath returns the on-disk location for Aviary runtime metadata.

@@ -101,7 +101,7 @@ models:
 
 Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the CLI provider treats comments by anyone else in the thread as untrusted information rather than instructions.
 
-Every Aviary server has a random instance identity. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
+Every Aviary server has an instance identity, an 8-character ID generated on first run and kept in Aviary's state, so a restarted server keeps the same ID and recognizes its own claims. The Projects board header and System → Projects both show it. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
 On a finished or paused job, a mention goes to the Projects agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
 

@@ -8,7 +8,7 @@
 						<div class="min-w-0">
 							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
 							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
-							<div class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">GitHub Projects</h1>
 								<span v-if="aggregate" data-testid="board-projects"
 									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -25,6 +25,11 @@
 									<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
 									{{ online ? "live" : "offline" }}
 								</span>
+								<span v-if="status?.instanceID" data-testid="instance-id"
+									class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
+									:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
+									Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
+								</span>
 							</div>
 							<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
 								Issues labeled <b>{{ status.readyLabel }}</b>
@@ -34,24 +39,10 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<div v-if="!aggregate" role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
-								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
-									class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-									@click="setView(v.key)">
-									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
-								</button>
-							</div>
-							<div v-if="view === 'board'" role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
-								<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
-									class="px-3 py-1.5" :class="filter === f.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-									@click="filter = f.key">
-									{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
-								</button>
-							</div>
-							<button v-if="view === 'board'" type="button"
-								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+							<button v-if="view === 'board'" type="button" aria-label="Check now" title="Check now"
+								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
-								{{ checking ? "Checking…" : "Check now" }}
+								<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
 							</button>
 							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
@@ -81,12 +72,7 @@
 							{{ error }}
 						</p>
 
-						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
-							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
-							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
-							:preview="previewSchedule" />
-
-						<template v-else>
+						<template v-if="view === 'board'">
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
 						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
@@ -102,12 +88,15 @@
 								class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
 								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
+								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
 								<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
 							</span>
 						</section>
 
+						</template>
+
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
-							<div class="relative min-w-0 flex-1 sm:max-w-xs">
+							<div v-if="view === 'board'" class="relative min-w-0 flex-1 sm:max-w-xs">
 								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
 									aria-hidden="true" data-testid="search-icon">
 									<MagnifyingGlassIcon class="h-4 w-4" />
@@ -115,23 +104,54 @@
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
 									class="field-input pl-9!" />
 							</div>
-							<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
-								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
-							</span>
-							<nav v-if="searching || pageCount > 1" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
-								<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-									:disabled="page === 0" @click="page--">
-									<ChevronLeftIcon aria-hidden="true" class="h-4 w-4" />
+							<div v-if="!aggregate" role="tablist" aria-label="Project views" class="flex max-w-full shrink-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
+									class="shrink-0 px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+									@click="setView(v.key)">
+									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
 								</button>
-								<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
-								<button type="button" aria-label="Next page" title="Next page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-									:disabled="page + 1 >= pageCount" @click="page++">
-									<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
+							</div>
+							<template v-if="view === 'board'">
+								<div role="tablist" aria-label="Job filter" class="flex max-w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+									<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
+										class="shrink-0 px-3 py-1.5" :class="filter === f.key ? FILTER_ACTIVE[f.key] : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+										@click="filter = f.key">
+										{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
+									</button>
+								</div>
+								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
+									:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+									:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+									class="rounded-lg border p-1.5"
+									:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+									@click="kanban = !kanban">
+									<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
 								</button>
-							</nav>
+								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
+									{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
+								</span>
+								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
+									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+										:disabled="page === 0" @click="page--">
+										<ChevronLeftIcon aria-hidden="true" class="h-4 w-4" />
+									</button>
+									<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
+									<button type="button" aria-label="Next page" title="Next page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+										:disabled="page + 1 >= pageCount" @click="page++">
+										<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
+									</button>
+								</nav>
+							</template>
 						</div>
 
+						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
+							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
+							:preview="previewSchedule" />
+
+						<template v-else>
 						<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
+						<KanbanBoard v-else-if="kanban" :jobs="jobs" :filter="filter" :now="now" />
 						<div v-else-if="!jobs.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -158,7 +178,6 @@
 						</details>
 
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-							<span v-if="status.instanceID">Instance <code class="font-mono">{{ status.instanceID }}</code></span>
 							<span v-if="status.targets.length">
 								Targets:
 								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ t.issues }})</template>
@@ -175,17 +194,20 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
+import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
+import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
@@ -204,9 +226,11 @@ import {
 } from "../lib/projectSettings";
 import {
 	age,
+	BOARD_STATES,
 	type BoardFilter,
 	type ProjectJob,
 	projectPath,
+	stateLabel,
 	summarizePrompt,
 	targetURL,
 } from "../lib/projects";
@@ -215,11 +239,17 @@ import { useSettingsStore } from "../stores/settings";
 
 const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "all", label: "All" },
-	{ key: "running", label: "Running" },
-	{ key: "waiting", label: "Waiting" },
-	{ key: "done", label: "Done" },
-	{ key: "failed", label: "Failed" },
+	...BOARD_STATES.map((key) => ({ key, label: stateLabel(key) })),
 ];
+// A selected state tab takes that state's color; Starting is orange.
+const FILTER_ACTIVE: Record<BoardFilter, string> = {
+	all: "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
+	starting: "bg-orange-500 text-white",
+	paused: "bg-amber-500 text-white",
+	running: "bg-blue-600 text-white",
+	done: "bg-green-600 text-white",
+	failed: "bg-red-600 text-white",
+};
 
 type ProjectView = "board" | "schedules";
 const VIEWS: { key: ProjectView; label: string }[] = [
@@ -272,6 +302,10 @@ const filter = ref<BoardFilter>("all");
 // whole list rather than one page.
 const search = ref("");
 const searching = computed(() => search.value.trim() !== "");
+// The kanban layout survives reloads, like the prompt chat's open state.
+const KANBAN_KEY = "aviary.projects.kanban";
+const kanban = ref(localStorage.getItem(KANBAN_KEY) === "1");
+watch(kanban, (on) => localStorage.setItem(KANBAN_KEY, on ? "1" : "0"));
 const { version } = useServerStatus();
 const {
 	status,
@@ -287,7 +321,7 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(targets, filter, search);
+} = useProjectBoard(targets, filter, search, kanban);
 const {
 	schedules,
 	upcoming,

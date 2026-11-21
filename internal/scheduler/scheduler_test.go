@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -236,6 +237,16 @@ func TestFileWatcher_AddStartAndRemove(t *testing.T) {
 	_, ok = fw.handlers["watch1"]
 	assert.False(t, ok)
 
+}
+
+func TestFileWatcher_StopWithoutStartClosesWatcher(t *testing.T) {
+	fw, err := NewFileWatcher()
+	require.NoError(t, err)
+
+	fw.Stop()
+	fw.Stop()
+
+	assert.ErrorIs(t, fw.watcher.Add(t.TempDir()), fsnotify.ErrClosed)
 }
 
 func TestScheduler_NewStartStopAndReconcile(t *testing.T) {

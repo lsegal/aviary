@@ -1403,7 +1403,7 @@ func TestTaskStopTool(t *testing.T) {
 		Agents: []config.AgentConfig{{
 			Name:  "bot",
 			Model: "test/x",
-			Tasks: []config.TaskConfig{{Name: "daily", Prompt: "run now", Schedule: "0 9 * * * *"}},
+			Tasks: []config.TaskConfig{{Name: "daily", Prompt: "run now"}},
 		}},
 	}
 	mgr.Reconcile(cfg)
@@ -1419,7 +1419,7 @@ func TestTaskStopTool(t *testing.T) {
 
 	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "task_stop", map[string]any{"name": "bot/daily"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "stopped 1 pending/running task job"))
+	assert.Equal(t, `stopped 1 pending/running task job(s) matching "bot/daily"`, out)
 
 	persisted, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
 	assert.NoError(t, err)

@@ -16,6 +16,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 func newTestManager(t *testing.T) *Manager {
@@ -93,6 +94,27 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	}
 	if got := m.Status(t.Context(), 0)["agents"]; !reflect.DeepEqual(got, []string{"codex", "claude/opus", "codex:high"}) {
 		t.Fatalf("status agents = %v", got)
+	}
+	// Each provider is listed once, carrying the models its jobs run on,
+	// including the default model a bare provider spec resolves to.
+	want := []StatusCLI{{Name: "codex", Models: []string{"gpt-5.6-terra"}}, {Name: "claude", Models: []string{"opus"}}}
+	if got := m.Status(t.Context(), 0)["clis"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("status clis = %+v", got)
+	}
+}
+
+func TestStatusCLIsListEachProviderOnce(t *testing.T) {
+	got := statusCLIs(
+		[]string{"claude/opus", "claude", "codex:high", "claude/sonnet", "claude/opus:high"},
+		map[string]string{"claude": "week 66% left", "gemini": "signed out"},
+	)
+	want := []StatusCLI{
+		{Name: "claude", Models: []string{"opus", "sonnet"}, Quota: "week 66% left"},
+		{Name: "codex", Models: []string{"gpt-5.6-terra"}},
+		{Name: "gemini", Models: []string{}, Quota: "signed out"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("statusCLIs = %+v, want %+v", got, want)
 	}
 }
 
@@ -426,5 +448,29 @@ func TestManagerSettingsResolveApprovalMode(t *testing.T) {
 	}
 	if got := approval(); got != clidefs.ApprovalFull {
 		t.Fatalf("watch --yolo: approval = %q, want full", got)
+	}
+}
+
+func TestManagerIdentityIsRememberedAcrossRestarts(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	first, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Identity() == "" || restarted.Identity() != first.Identity() {
+		t.Fatalf("restarted identity = %q, want %q", restarted.Identity(), first.Identity())
+	}
+	state, err := store.ReadAppState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.InstanceID != first.Identity() {
+		t.Fatalf("stored instance id = %q, want %q", state.InstanceID, first.Identity())
 	}
 }

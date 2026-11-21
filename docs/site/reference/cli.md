@@ -102,6 +102,18 @@ aviary doctor [flags]
 
 ---
 
+## aviary install-skills
+
+Install the skills Aviary ships (`gh-create`, `gh-discuss`, `gh-fix` and `gh-safe-merge`) globally with `npx skills` (skills.sh): into `~/.agents/skills` and the skills directory of every CLI provider on the `PATH`. A release installs them from its own tag; a development build installs the copies bundled with it. Skills already installed are refreshed, so running it again is safe. Aviary runs the same install on its first launch. Requires Node.js.
+
+```
+aviary install-skills
+```
+
+No flags.
+
+---
+
 ## aviary configure
 
 Interactive configuration wizard for initial setup and ongoing configuration. Covers providers, agents, server settings, and more.

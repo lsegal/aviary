@@ -11,7 +11,7 @@
 						<h1 class="text-lg font-bold text-gray-900 dark:text-white">
 							{{ job?.scheduled ? "" : `#${number} ` }}{{ job?.title ?? "" }}
 						</h1>
-						<JobStatusPill v-if="job" :status="job.status" />
+						<JobStatusPill v-if="job" :state="job.state" />
 						<span v-if="job?.scheduled"
 							class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 							Scheduled
