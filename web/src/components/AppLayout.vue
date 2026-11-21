@@ -100,7 +100,8 @@
       <nav class="flex gap-2 overflow-x-auto pb-1">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
-          {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
+          {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span><ProjectRunningBadge
+            :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
           <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
@@ -173,7 +174,7 @@
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+                <ProjectRunningBadge :running="p.running ?? 0" />
               </router-link>
             </div>
           </template>
@@ -211,7 +212,7 @@
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                    <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+                    <ProjectRunningBadge :running="p.running ?? 0" />
                   </router-link>
                 </div>
               </template>
@@ -238,6 +239,7 @@
               :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
               <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+              <ProjectRunningBadge :running="child.running ?? 0" />
             </router-link>
           </template>
         </div>
@@ -333,6 +335,7 @@ import { useChatSessionsStore } from "../stores/chatSessions";
 import { useSettingsStore } from "../stores/settings";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
@@ -341,6 +344,8 @@ interface NavChild {
 	label: string;
 	to: string;
 	count?: string;
+	/** A project's running jobs, shown as a gray badge when any. */
+	running?: number;
 }
 
 interface AgentNav {
@@ -454,18 +459,12 @@ const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
 
-function projectCount(p: ProjectSummary): string {
-	if (p.running > 0) return `${p.running} running`;
-	if (p.waiting > 0) return `${p.waiting} waiting`;
-	return "idle";
-}
-
 function projectChild(owner: string, p: ProjectSummary): NavChild {
 	return {
 		key: p.name,
 		label: p.name,
 		to: projectPath(owner, p.name),
-		count: projectCount(p),
+		running: p.running,
 	};
 }
 
