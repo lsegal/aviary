@@ -121,7 +121,7 @@
 				<p v-if="attachmentNotice" class="px-6 pt-2 text-xs text-amber-600 dark:text-amber-400" role="status">
 					{{ attachmentNotice }}
 				</p>
-				<form class="flex gap-3 px-6 py-4" @submit.prevent="send">
+				<form class="flex items-end gap-3 px-6 py-4" @submit.prevent="send">
 					<input ref="attachmentInputEl" type="file" accept="image/*" multiple class="hidden"
 						data-testid="chat-attachment-input" @change="onAttachmentInputChange" />
 					<button type="button" :disabled="!selectedAgent || !selectedSessionId"
@@ -133,10 +133,10 @@
 								d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
 						</svg>
 					</button>
-					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
+					<ChatComposerInput ref="chatInputEl" v-model="input" :disabled="!selectedAgent || !selectedSessionId"
 						placeholder="Type a message or paste an image…"
-						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" />
+						class="max-h-48 flex-1 resize-none overflow-y-auto rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" @send="send" />
 					<button v-if="currentSessionProcessing" type="button" @click="stopSession" :disabled="!selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 						aria-label="Stop response" title="Stop">
@@ -180,6 +180,7 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import ChatComposerInput from "../components/chat/ChatComposerInput.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
@@ -429,7 +430,7 @@ const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
-const chatInputEl = ref<HTMLInputElement | null>(null);
+const chatInputEl = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -908,7 +909,7 @@ function resetHistoryNavigation() {
 
 function onChatInput(e: Event) {
 	if (historyIndex.value === -1) return;
-	input.value = (e.target as HTMLInputElement).value;
+	input.value = (e.target as HTMLTextAreaElement).value;
 	historyDraft.value = input.value;
 	historyIndex.value = -1;
 }
@@ -916,7 +917,7 @@ function onChatInput(e: Event) {
 function setChatInputValue(value: string) {
 	input.value = value;
 	void nextTick(() => {
-		const el = chatInputEl.value;
+		const el = chatInputEl.value?.textarea;
 		if (!el) return;
 		const end = value.length;
 		el.setSelectionRange(end, end);
@@ -930,6 +931,13 @@ function onChatInputKeydown(e: KeyboardEvent) {
 
 	const history = userMessageHistory.value;
 	if (history.length === 0) return;
+	// In a multi-line draft the arrows move the caret between lines first.
+	const el = e.target as HTMLTextAreaElement;
+	if (el.selectionStart !== el.selectionEnd) return;
+	const before = el.value.slice(0, el.selectionStart);
+	const after = el.value.slice(el.selectionEnd);
+	if (e.key === "ArrowUp" && before.includes("\n")) return;
+	if (e.key === "ArrowDown" && after.includes("\n")) return;
 
 	if (e.key === "ArrowUp") {
 		e.preventDefault();

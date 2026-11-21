@@ -222,7 +222,8 @@ func jobMatches(job core.JobSnapshot, query string) bool {
 // scrollback. lines and events limit the scrollback lines and transcript
 // events returned; 0 uses the defaults and a negative value returns all.
 func (m *Manager) GetJob(target string, number, lines, events int) (map[string]any, error) {
-	job, err := findJob(m.currentSnapshot().Jobs, target, number)
+	jobs := m.currentSnapshot().Jobs
+	job, err := findJob(jobs, target, number)
 	if err != nil {
 		return nil, err
 	}
@@ -234,6 +235,11 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 	}
 	detail := jobSummary(job)
 	detail["checkout_directory"] = job.CheckoutDirectory
+	state, holder := checkoutState(job, jobs)
+	detail["checkout_state"] = state
+	if holder != nil {
+		detail["checkout_reused_by"] = holder.Number
+	}
 	detail["session_id"] = job.SessionID
 	detail["effort"] = job.Effort
 	scrollback := job.Log

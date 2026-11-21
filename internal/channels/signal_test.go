@@ -1011,7 +1011,7 @@ func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
 	d.addrMu.Lock()
 	d.addr = "127.0.0.1:9999"
 	d.addrMu.Unlock()
-	ch.daemon = d
+	ch.daemon.Store(d)
 
 	info := ch.DaemonInfo()
 	assert.NotNil(t, info)

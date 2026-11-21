@@ -44,7 +44,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test ./...
+      # Linux also runs the race detector so data races fail CI (#632).
+      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }} ./...
 
   installer:
     name: "Test: Installer (${{ matrix.name }})"
