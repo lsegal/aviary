@@ -2,10 +2,10 @@
 	<AppLayout>
 		<div class="flex h-full min-h-0">
 			<div class="flex h-full min-w-0 flex-1 flex-col">
-			<div class="min-h-0 flex-1 overflow-y-auto">
+			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<template v-if="project || aggregate">
 					<header
-						class="flex flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
+						class="flex shrink-0 flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
 						<div class="min-w-0">
 							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
 							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
@@ -67,7 +67,8 @@
 						</div>
 					</header>
 
-					<div class="space-y-4 px-4 py-4 sm:px-6">
+					<router-view v-if="jobOpen" />
+					<div v-else class="space-y-4 px-4 py-4 sm:px-6">
 						<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
 							@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
 							@import="onGitHub(() => importProfile($event))" />
@@ -313,6 +314,9 @@ const settingsPath = computed(() =>
 		? agentProjectsSettingsPath(routeAgent.value)
 		: projectSettingsPath(settingsStore.config, project.value),
 );
+// A job's details open under the header, in place of the board, so the
+// header, its panels and the board's filters stay put.
+const jobOpen = computed(() => route.matched.length > 1);
 const filter = ref<BoardFilter>("all");
 // The search narrows the jobs within the filter, across every field and the
 // whole list rather than one page.
