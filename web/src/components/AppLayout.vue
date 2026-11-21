@@ -31,6 +31,8 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
+          <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            @restart="triggerRestart()" />
           <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
@@ -77,18 +79,6 @@
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
-        <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
-          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            :disabled="upgrading || restartPending" @click="triggerRestart()">
-            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
-          <button type="button" aria-label="Log out" title="Log out"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-            @click="auth.logout(); $router.push('/login')">
-            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
-        </div>
       </nav>
     </div>
 
@@ -212,7 +202,7 @@
         </template>
 
         <div class="relative">
-          <router-link to="/system/overview" :class="[topLevelLinkClass(systemActive && systemCollapsed), 'flex items-center pr-9']" data-testid="sidebar-system">
+          <router-link to="/system/overview" :class="[topLevelLinkClass(systemHeaderActive), 'flex items-center pr-9']" data-testid="sidebar-system">
             System
           </router-link>
           <button type="button" data-testid="sidebar-system-toggle" :aria-expanded="!systemCollapsed"
@@ -224,22 +214,11 @@
           </button>
         </div>
         <div v-if="!systemCollapsed" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
-          <router-link v-for="child in systemPrimary" :key="child.key" :to="child.to" :class="childLinkClass(isChildActive(child), false)">
-            {{ child.label }}
+          <router-link v-for="child in systemChildren" :key="child.key" :to="child.to"
+            :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
+            <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+            <ProjectRunningBadge :running="child.running ?? 0" />
           </router-link>
-          <button type="button" data-testid="sidebar-system-more" :aria-expanded="systemMoreOpen"
-            class="mt-1 flex w-full items-center gap-1 rounded-lg px-3 py-2 text-left text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            @click="systemMoreToggled = !systemMoreOpen">
-            <span aria-hidden="true" class="inline-block w-3 transition-transform" :class="systemMoreOpen ? 'rotate-90' : ''">›</span>
-            {{ systemMoreOpen ? "Less" : "More" }}
-          </button>
-          <template v-if="systemMoreOpen">
-            <router-link v-for="child in systemMore" :key="child.key" :to="child.to"
-              :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-              <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <ProjectRunningBadge :running="child.running ?? 0" />
-            </router-link>
-          </template>
         </div>
       </div>
       <div class="mt-auto flex flex-col gap-2">
@@ -272,20 +251,12 @@
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex items-center gap-2 px-1" data-testid="sidebar-footer">
+          <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            @restart="triggerRestart()" />
           <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
-            <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-              :disabled="upgrading || restartPending" @click="triggerRestart()">
-              <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
-            </button>
-            <button type="button" aria-label="Log out" title="Log out"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              @click="auth.logout(); $router.push('/login')">
-              <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-            </button>
           </div>
         </div>
       </div>
@@ -343,13 +314,8 @@
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <ConnectionIndicator :status="status" @retry="reconnect()" />
-        <SidebarRailItem label="Restart" data-testid="restart-button" :disabled="upgrading || restartPending"
-          @click="triggerRestart()">
-          <ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="restartPending ? 'animate-spin' : ''" />
-        </SidebarRailItem>
-        <SidebarRailItem label="Log out" tone="danger" @click="auth.logout(); $router.push('/login')">
-          <ArrowRightOnRectangleIcon aria-hidden="true" class="h-5 w-5" />
-        </SidebarRailItem>
+        <SidebarGearMenu rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+          @restart="triggerRestart()" />
       </div>
     </nav>
 
@@ -368,15 +334,12 @@
 <script lang="ts">
 import { ref } from "vue";
 
-// Shared by every page's layout, so the System expander and the System
-// section's collapse stay as toggled.
-const systemMoreState = ref<boolean | null>(null);
-const systemCollapsedState = ref(false);
+// Shared by every page's layout, so the System section's collapse stays as
+// toggled. It starts collapsed; the overview lists every System page.
+const systemCollapsedState = ref(true);
 </script>
 
 <script setup lang="ts">
-import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
-import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
@@ -410,6 +373,7 @@ import {
 } from "../composables/useSidebarLayout";
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
+import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
@@ -424,6 +388,7 @@ import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
 import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
+import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
@@ -675,23 +640,6 @@ onBeforeUnmount(() => {
 	closeSidebarPeek();
 });
 
-// System's first pages are always shown; the rest sit behind the expander in
-// their previous relative order.
-const systemPrimary: NavChild[] = [
-	{ key: "overview", label: "Overview", to: "/system/overview" },
-	{ key: "settings", label: "Settings", to: "/system/settings" },
-	{ key: "providers", label: "Providers & Auth", to: "/system/providers" },
-	{ key: "usage", label: "Usage", to: "/system/usage" },
-];
-const systemRest: NavChild[] = [
-	{ key: "tools", label: "Tools", to: "/system/tools" },
-	{ key: "skills", label: "Skills", to: "/system/skills" },
-	{ key: "sessions", label: "Sessions", to: "/system/sessions" },
-	{ key: "models", label: "Models", to: "/system/models" },
-	{ key: "logs", label: "Logs", to: "/system/logs" },
-	{ key: "daemons", label: "Daemons", to: "/system/daemons" },
-];
-
 const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
@@ -873,20 +821,24 @@ const watchChildren = computed<NavChild[]>(() =>
 		.map((p) => ({ ...projectChild("", p), label: `Watch: ${p.name}` })),
 );
 
-const systemMore = computed(() => [...systemRest, ...watchChildren.value]);
+// The System item is the overview, so its pages list without one.
+const systemChildren = computed<NavChild[]>(() => [
+	...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
+	...watchChildren.value,
+]);
 
-const systemActive = computed(() => route.path.startsWith("/system/"));
+// Settings' tabs live under /system but open from the gear menu instead.
+const systemActive = computed(
+	() => route.path.startsWith("/system/") && !isSettingsPath(route.path),
+);
 
-// The expander opens itself while one of its pages is showing; a click
-// overrides that until the next page load.
-const systemMoreToggled = systemMoreState;
 // Collapsed, only the System header shows; it then stands in for whichever
 // System page is current.
 const systemCollapsed = systemCollapsedState;
-const systemMoreOpen = computed(
+const systemHeaderActive = computed(
 	() =>
-		systemMoreToggled.value ??
-		systemMore.value.some((child) => isChildActive(child)),
+		route.path === "/system/overview" ||
+		(systemActive.value && systemCollapsed.value),
 );
 
 function isChildActive(child: NavChild): boolean {
@@ -923,12 +875,12 @@ const mobileChildren = computed<NavChild[]>(() => {
 		: [];
 	if (agent && soleAgent.value) return items;
 	if (agent) return [...agent.children, ...items];
-	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
+	if (systemActive.value) return systemChildren.value;
 	return [];
 });
 
 // The narrow-screen main row: a sole agent's pages, or one pill per agent,
-// plus System. Agents are added from System → Settings. Items that do not fit go behind "…".
+// plus System. Agents are added from Settings. Items that do not fit go behind "…".
 const mobileMainItems = computed<MobileNavItem[]>(() => {
 	const system: MobileNavItem = {
 		key: "system",
