@@ -125,7 +125,7 @@ async function setup(
 		config?: unknown;
 		jobs?: { number: number; status: string }[];
 		clonesError?: string;
-		sessions?: unknown[];
+		sessions?: object[];
 	} = {},
 ) {
 	await setAuthToken(page);
