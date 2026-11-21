@@ -90,17 +90,19 @@
 						<template v-if="view === 'board'">
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
-						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7" aria-label="Job counts">
-							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
-								<p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ s.label }}</p>
-								<p class="text-2xl font-bold">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
+						<!-- Columns follow the width the board actually has, not the viewport, so
+							the cards reflow onto more rows instead of squeezing their values. -->
+						<section v-if="status" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3" aria-label="Job counts">
+							<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-xl border px-4 py-3" :class="s.cls" data-testid="stat-card">
+								<p class="truncate text-xs font-semibold uppercase tracking-wide opacity-80" :title="s.label" data-testid="stat-label">{{ s.label }}</p>
+								<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
 							</div>
 						</section>
 
 						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
 							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
 							<span v-for="cli in status.clis" :key="cli.name"
-								class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
+								class="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
 								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
 								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
