@@ -775,7 +775,10 @@ watch(
 		if (selectedAgentSubtab.value !== "channels" || channelNotFound.value)
 			return;
 		const current = route.params.channel;
-		if (typeof current !== "string" || current.toLowerCase() !== prev.toLowerCase())
+		if (
+			typeof current !== "string" ||
+			current.toLowerCase() !== prev.toLowerCase()
+		)
 			return;
 		void router.replace(
 			`/agents/${agentRouteId(selectedAgentIdx.value)}/channels/${encodeURIComponent(name)}/settings`,

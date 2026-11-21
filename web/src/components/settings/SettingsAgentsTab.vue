@@ -271,7 +271,8 @@
 								No channel named {{ $route.params.channel }}.
 							</p>
 							<template v-else>
-							<div v-for="(ch, k) in agent.channels" v-show="selectedChannelIdx === k" :key="`ch-${i}-${k}`"
+							<template v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`">
+							<div v-if="selectedChannelIdx === k"
 								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
@@ -676,6 +677,7 @@
 									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
 								</div>
 							</div>
+							</template>
 							</template>
 							</div>
 						</section>

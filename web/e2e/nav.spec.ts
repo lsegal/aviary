@@ -107,7 +107,7 @@ test("the System section collapses to its header and stays collapsed across page
 	await expect(header).not.toHaveClass(/bg-white/);
 });
 
-test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Agent Settings", async ({
+test("an agent's pages are Chats, GitHub Projects, Channels, Scheduled Tasks, Files and Agent Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -128,6 +128,7 @@ test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Ag
 	).toHaveText([
 		"Chats",
 		"GitHub Projects",
+		"Channels",
 		"Scheduled Tasks",
 		"Files",
 		"Agent Settings",
@@ -146,7 +147,7 @@ test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Ag
 	await expect(
 		page.getByRole("navigation", { name: "Agent settings" }),
 	).toHaveCount(0);
-	for (const section of ["General", "Permissions", "Channels", "Danger Zone"]) {
+	for (const section of ["General", "Permissions", "Danger Zone"]) {
 		await expect(
 			page.getByRole("heading", { name: section, exact: true }),
 		).toBeVisible();

@@ -100,6 +100,7 @@ test("adding an agent from a single-agent sidebar shows the agent tree", async (
 const ALL_PAGES = [
 	"Chats",
 	"GitHub Projects",
+	"Channels",
 	"Scheduled Tasks",
 	"Files",
 	"Agent Settings",

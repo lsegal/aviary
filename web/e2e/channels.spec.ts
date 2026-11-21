@@ -66,7 +66,8 @@ async function mockChannels(
 			(c) =>
 				(c.name || c.id).toLowerCase() === String(name ?? "").toLowerCase(),
 		);
-		if (i < 0) throw new Error(`agent "assistant" has no channel named ${name}`);
+		if (i < 0)
+			throw new Error(`agent "assistant" has no channel named ${name}`);
 		return i;
 	};
 	const messages: Record<string, unknown[]> = {
@@ -108,7 +109,9 @@ async function mockChannels(
 			messages[String(args?.session_id)] ?? [],
 		channel_sessions: (args?: Record<string, unknown>) => {
 			record("channel_sessions", args);
-			return [sessionOf((config.agents[0].channels ?? [])[find(args?.channel)])];
+			return [
+				sessionOf((config.agents[0].channels ?? [])[find(args?.channel)]),
+			];
 		},
 		channel_create: (args?: Record<string, unknown>) => {
 			record("channel_create", args);
@@ -148,7 +151,9 @@ const TEAM: Channel = {
 };
 
 function sidebarRows(page: Page) {
-	return page.locator("[data-testid=sidebar-sole-agent] > div[data-testid^=sidebar-row-]");
+	return page.locator(
+		"[data-testid=sidebar-sole-agent] > div[data-testid^=sidebar-row-]",
+	);
 }
 
 test("the Channels section sits directly below GitHub Projects", async ({
@@ -156,6 +161,7 @@ test("the Channels section sits directly below GitHub Projects", async ({
 }) => {
 	await mockChannels(page, [TEAM]);
 	await page.goto("/agents/assistant/chat");
+	await expect(page.getByTestId("sidebar-row-channels")).toBeVisible();
 
 	const keys = await sidebarRows(page).evaluateAll((rows) =>
 		rows.map((r) => r.getAttribute("data-testid")),
@@ -220,7 +226,9 @@ test("+ adds a channel, creating its session, and opens its settings", async ({
 	// Its conversation opens on the channel's own session.
 	await page.getByTestId("channel-open-conversation").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Ops%20Discord$/);
-	await expect.poll(() => calls.channel_sessions?.length ?? 0).toBeGreaterThan(0);
+	await expect
+		.poll(() => calls.channel_sessions?.length ?? 0)
+		.toBeGreaterThan(0);
 });
 
 test("a channel's view shows its conversation and its gear opens its settings", async ({
@@ -228,7 +236,10 @@ test("a channel's view shows its conversation and its gear opens its settings", 
 }) => {
 	await mockChannels(page, [TEAM]);
 	await page.goto("/agents/assistant/chat");
-	await page.getByTestId("channel-row").getByTestId("sidebar-item-link").click();
+	await page
+		.getByTestId("channel-row")
+		.getByTestId("sidebar-item-link")
+		.click();
 
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Team%20Slack$/);
 	await expect(page.getByTestId("channel-title")).toHaveText("Team Slack");

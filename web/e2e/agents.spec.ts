@@ -124,12 +124,14 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("heading", { name: "Scheduled Tasks", exact: true }),
 	).toBeVisible();
 
-	// The agent's Settings page stacks General, Permissions and Channels.
+	// The agent's Settings page stacks General and Permissions; each channel
+	// has its own settings page.
 	await agentPageLink(page, "Agent Settings").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);
 	await expect(
 		page.getByRole("heading", { name: "Channels", exact: true }),
-	).toBeVisible();
+	).toHaveCount(0);
+	await openChannelSettings(page, "+15551234567");
 	await expect(
 		page.locator('input[placeholder="e.g. +15551234567"]').first(),
 	).toHaveValue("+15551234567");
@@ -427,9 +429,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 	await expect(page.getByText("Joined", { exact: true })).toBeVisible();
 });
 
-test("each channel has its own settings page", async ({
-	page,
-}) => {
+test("each channel has its own settings page", async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		config_get: {
@@ -729,7 +729,8 @@ test("tool permissions inspector shows resolved final tool set", async ({
 	).toContainText('"finalTools": [\n    "task_run"\n  ]');
 	await page.getByRole("button", { name: "Close" }).click();
 
-	// Channels is a section further down the same page.
+	// A channel's allow-from entries inspect from the channel's settings.
+	await openChannelSettings(page, "+15551234567");
 	await page
 		.getByTestId("entry-tool-permissions-inspect-assistant-0-0")
 		.click();
@@ -1320,20 +1321,23 @@ test("Save Changes saves every settings section at once", async ({ page }) => {
 	await page
 		.getByPlaceholder("Default: process working directory", { exact: false })
 		.fill("/srv/assistant");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [{ working_dir: "/srv/assistant" }],
+	});
+
+	// A channel's settings save the same way, from its own page.
+	await openChannelSettings(page, "+15551234567");
 	await page
 		.locator('input[placeholder="+15551234567"]')
 		.first()
 		.fill("+15550000000");
 	await page.getByRole("button", { name: "Save Changes" }).click();
-
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
 	expect(savedConfig).toMatchObject({
-		agents: [
-			{
-				working_dir: "/srv/assistant",
-				channels: [{ id: "+15550000000" }],
-			},
-		],
+		agents: [{ channels: [{ id: "+15550000000" }] }],
 	});
 });
 
