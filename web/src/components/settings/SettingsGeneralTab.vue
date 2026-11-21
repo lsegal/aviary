@@ -1,57 +1,6 @@
 ﻿<template>
 				<section v-show="activeTab === 'general'" class="space-y-6 pb-8">
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Server</h3>
-						<div class="grid gap-4 lg:grid-cols-3">
-							<div>
-								<label class="field-label">Port</label>
-								<input :value="serverPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input"
-									placeholder="16677" @input="updateServerPortInput" />
-							</div>
-							<div>
-								<label class="field-label">TLS Cert</label>
-								<input v-model="draft.server.tls.cert" type="text" class="field-input"
-									placeholder="/path/to/cert.pem" />
-							</div>
-							<div>
-								<label class="field-label">TLS Key</label>
-								<input v-model="draft.server.tls.key" type="text" class="field-input" placeholder="/path/to/key.pem" />
-							</div>
-						</div>
-						<div class="mt-4 flex flex-wrap gap-6">
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.server.external_access" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Expose service externally
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(bind to 0.0.0.0 instead of
-										127.0.0.1)</span>
-								</span>
-							</label>
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.server.no_tls" type="checkbox"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Disable TLS
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(plain HTTP — not recommended)</span>
-								</span>
-							</label>
-							<label class="flex cursor-pointer items-center gap-3">
-								<input v-model="draft.server.auto_update" type="checkbox" data-testid="auto-update"
-									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-								<span class="text-sm text-gray-700 dark:text-gray-300">
-									Update automatically
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(applies updates as soon as they are available)</span>
-								</span>
-							</label>
-						</div>
-						<p v-if="draft.server.external_access || draft.server.no_tls"
-							class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-							Changing server settings will restart the service.
-						</p>
-					</div>
-
-					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Models</h3>
 						<div class="grid gap-4 lg:grid-cols-2">
 							<div>
@@ -66,6 +15,8 @@
 							</div>
 						</div>
 					</div>
+
+					<SettingsAgentList />
 
 					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900" data-testid="approval-settings">
 						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Approval</h3>
@@ -155,6 +106,57 @@
 							secrets available yet. Choose <span class="font-medium text-gray-500 dark:text-gray-400">Add new
 								secret</span> to create one here.</p>
 					</div>
+
+					<div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900" data-testid="settings-server">
+						<h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Server</h3>
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div>
+								<label class="field-label">Port</label>
+								<input :value="serverPortInput" type="text" inputmode="numeric" pattern="[0-9]*" class="field-input"
+									placeholder="16677" @input="updateServerPortInput" />
+							</div>
+							<div>
+								<label class="field-label">TLS Cert</label>
+								<input v-model="draft.server.tls.cert" type="text" class="field-input"
+									placeholder="/path/to/cert.pem" />
+							</div>
+							<div>
+								<label class="field-label">TLS Key</label>
+								<input v-model="draft.server.tls.key" type="text" class="field-input" placeholder="/path/to/key.pem" />
+							</div>
+						</div>
+						<div class="mt-4 flex flex-wrap gap-6">
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.server.external_access" type="checkbox"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Expose service externally
+									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(bind to 0.0.0.0 instead of
+										127.0.0.1)</span>
+								</span>
+							</label>
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.server.no_tls" type="checkbox"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Disable TLS
+									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(plain HTTP — not recommended)</span>
+								</span>
+							</label>
+							<label class="flex cursor-pointer items-center gap-3">
+								<input v-model="draft.server.auto_update" type="checkbox" data-testid="auto-update"
+									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+								<span class="text-sm text-gray-700 dark:text-gray-300">
+									Update automatically
+									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(applies updates as soon as they are available)</span>
+								</span>
+							</label>
+						</div>
+						<p v-if="draft.server.external_access || draft.server.no_tls"
+							class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+							Changing server settings will restart the service.
+						</p>
+					</div>
 				</section>
 </template>
 
@@ -162,11 +164,12 @@
 import { defineComponent, inject } from "vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
+import SettingsAgentList from "./SettingsAgentList.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
 	name: "SettingsGeneralTab",
-	components: { ModelSelector, SecretSelect },
+	components: { ModelSelector, SecretSelect, SettingsAgentList },
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

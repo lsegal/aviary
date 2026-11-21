@@ -889,7 +889,7 @@ watch(
 );
 
 // /agents alone opens the first agent's chat, or adds an agent with ?add
-// (the sidebar's + Add Agent). With no agents it shows the empty state.
+// (System → Settings' + Add agent). With no agents it shows the empty state.
 function resolveAgentsIndex() {
 	if (loading.value || activeTab.value !== "agents") return;
 	// /agents/NAME alone opens that agent's chat.
@@ -2044,6 +2044,39 @@ function confirmRemoveAgent() {
 		// Index unchanged but the agent at this slot may have changed; update URL.
 		void router.replace(agentRoutePath(next, selectedAgentSubtab.value));
 	}
+}
+
+// System → Settings' Agents list renames and deletes an agent straight away.
+// Only that change is saved; other unsaved edits stay in the draft. An agent
+// that was never saved only changes in the draft.
+async function saveAgentListChange(
+	name: string,
+	change: (agents: AgentEntry[], idx: number) => void,
+) {
+	const saved = JSON.parse(lastSavedSnapshot.value) as AppConfig;
+	const idx = name ? saved.agents.findIndex((a) => a.name === name) : -1;
+	if (idx < 0) return;
+	change(saved.agents, idx);
+	await store.saveConfig(saved);
+	lastSavedSnapshot.value = JSON.stringify(saved);
+}
+
+async function renameAgentEntry(index: number, name: string) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents[idx].name = name;
+	});
+	entry.name = name;
+}
+
+async function deleteAgentEntry(index: number) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents.splice(idx, 1);
+	});
+	draft.value.agents.splice(index, 1);
 }
 
 function onAgentNameChange(agentEntry: AgentEntry) {
@@ -3460,6 +3493,8 @@ const settingsContext = proxyRefs({
 	activeTab,
 	approvalModes: APPROVAL_MODES,
 	addAgent,
+	deleteAgentEntry,
+	renameAgentEntry,
 	addAllowFrom,
 	addChannel,
 	addProviderApiKey,
