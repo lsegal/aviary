@@ -411,6 +411,15 @@
 	"slack_channels_list": [
 		"bot_token"
 	],
+	"task_analyze": [
+		"agent",
+		"content",
+		"editor",
+		"model",
+		"precompile",
+		"target",
+		"type"
+	],
 	"task_compile_get": [
 		"id"
 	],

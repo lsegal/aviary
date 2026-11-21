@@ -18,6 +18,10 @@ type Entry struct {
 	InputTokens        int    `json:"input_tokens"`
 	OutputTokens       int    `json:"output_tokens"`
 	SupportsImageInput bool   `json:"supports_image_input"`
+	// InputCostPerMTok and OutputCostPerMTok are the model's USD price per
+	// million input and output tokens, when known.
+	InputCostPerMTok  float64 `json:"input_cost_per_mtok,omitempty"`
+	OutputCostPerMTok float64 `json:"output_cost_per_mtok,omitempty"`
 }
 
 var supportedModels []Entry
