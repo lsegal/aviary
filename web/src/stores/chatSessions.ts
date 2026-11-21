@@ -19,7 +19,9 @@ export function isMainChat(s: Pick<ChatSession, "name">): boolean {
 }
 
 /** The name a chat shows in the Chats list. */
-export function chatDisplayName(s: ChatSession): string {
+export function chatDisplayName(
+	s: Pick<ChatSession, "id" | "name" | "title">,
+): string {
 	if (s.title) return s.title;
 	if (isMainChat(s)) return "Main Chat";
 	// A chat from session_create is named by its ID until it gets a title.

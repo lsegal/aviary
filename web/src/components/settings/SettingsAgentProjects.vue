@@ -89,8 +89,13 @@
 									<option value="">Channel…</option>
 									<option v-for="c in reportChannels(t.channel)" :key="c.value" :value="c.value">{{ c.label }}</option>
 								</select>
-								<input :value="t.id" type="text" :class="[INPUT, 'min-w-0 flex-1 font-mono']" :aria-label="`Target ${i + 1} delivery ID`"
-									:placeholder="t.channel === 'session' ? 'Session name' : 'Channel, chat or user ID'"
+								<div v-if="t.channel === 'session'" class="min-w-0 flex-1">
+									<SessionSelect :agent="reports.agent" :model-value="t.id" :select-class="INPUT"
+										:aria-label="`Target ${i + 1} session`"
+										@update:model-value="setReportTarget(i, t.channel, $event)" />
+								</div>
+								<input v-else :value="t.id" type="text" :class="[INPUT, 'min-w-0 flex-1 font-mono']" :aria-label="`Target ${i + 1} delivery ID`"
+									placeholder="Channel, chat or user ID"
 									@input="setReportTarget(i, t.channel, ($event.target as HTMLInputElement).value)" />
 								<button type="button" :class="ICON_BTN" :aria-label="`Remove target ${i + 1}`" @click="removeReportTarget(i)">✕</button>
 							</li>
@@ -150,6 +155,7 @@ import {
 import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectDialog from "../projects/DeleteProjectDialog.vue";
+import SessionSelect from "../SessionSelect.vue";
 
 const props = defineProps<{
 	/** The agent whose projects are edited; its projects field is updated in place. */

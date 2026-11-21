@@ -1194,6 +1194,119 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	});
 });
 
+test("a task's session target is picked by name and saved by ID", async ({
+	page,
+}) => {
+	let savedConfig: unknown = null;
+	const config = {
+		...CONFIG,
+		agents: [
+			{
+				...CONFIG.agents[0],
+				tasks: [
+					{
+						name: "daily-briefing",
+						schedule: "0 9 * * *",
+						prompt: "Summarize updates",
+						target: "session:sess_gone",
+					},
+				],
+			},
+		],
+	};
+	await mockMCP(page, {
+		config_get: config,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [
+			{
+				id: "sess_planning",
+				agent_id: "assistant",
+				name: "sess_planning",
+				title: "Trip planning",
+				created_at: "",
+			},
+			{ id: "sess_main", agent_id: "assistant", name: "main", created_at: "" },
+		],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		agent_file_list: [],
+	});
+
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
+
+	// A saved session that no longer exists is shown as gone, not blank.
+	const session = page.getByRole("combobox", { name: "Session" });
+	await expect(session.locator("option")).toHaveText([
+		"Choose a session…",
+		"Main Chat",
+		"Trip planning",
+		"Deleted session (no longer exists)",
+	]);
+	await expect(session).toHaveValue("sess_gone");
+	await expect(page.locator('input[placeholder="Target ID"]')).toHaveCount(0);
+
+	await session.selectOption({ label: "Main Chat" });
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [{ tasks: [{ target: "session:sess_main" }] }],
+	});
+});
+
+test("a task saved with a session name selects that session", async ({
+	page,
+}) => {
+	const config = {
+		...CONFIG,
+		agents: [
+			{
+				...CONFIG.agents[0],
+				tasks: [
+					{
+						name: "daily-briefing",
+						schedule: "0 9 * * *",
+						prompt: "Summarize updates",
+						target: "session:main",
+					},
+				],
+			},
+		],
+	};
+	await mockMCP(page, {
+		config_get: config,
+		auth_list: [],
+		session_list: [
+			{ id: "sess_main", agent_id: "assistant", name: "main", created_at: "" },
+		],
+		agent_list: [{ id: "a1", name: "assistant", state: "idle" }],
+		agent_file_list: [],
+	});
+
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
+	const session = page.getByRole("combobox", { name: "Session" });
+	await expect(session).toHaveValue("sess_main");
+	await expect(session.locator("option:checked")).toHaveText("Main Chat");
+});
+
 test("tasks use the shared trigger editor and save a daily trigger without cron", async ({
 	page,
 }) => {
