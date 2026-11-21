@@ -358,8 +358,8 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	await page.goto("/system/overview");
 	// coder is the only agent, so its pages, GitHub Projects among them, are
 	// the sidebar's top level (#538).
-	const agent = page.getByTestId("sidebar-sole-agent");
-	await expect(agent.getByTestId("agent-running-badge")).toHaveText("2");
+	const row = page.getByTestId("sidebar-row-projects");
+	await expect(row.getByTestId("project-running-badge")).toHaveText("2");
 	await expect(
 		page.getByTestId("sidebar-nav").getByRole("link", { name: /^GitHub/ }),
 	).toHaveAttribute("href", "/agents/coder/projects");
@@ -386,24 +386,17 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
-test('the GitHub Projects count bubble is green and the Add project "+" sits beside it on hover', async ({
+test('the GitHub Projects running badge is gray and the Add project "+" sits beside it on hover', async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/system/overview");
-	const badge = page
-		.getByTestId("sidebar-sole-agent")
-		.getByTestId("agent-running-badge");
+	const row = page.getByTestId("sidebar-row-projects");
+	const badge = row.getByTestId("project-running-badge");
 	await expect(badge).toHaveText("2");
-	const [bg, green] = await badge.evaluate((el) => {
-		const ref = document.createElement("div");
-		ref.style.backgroundColor = "var(--color-green-600)";
-		document.body.append(ref);
-		const want = getComputedStyle(ref).backgroundColor;
-		ref.remove();
-		return [getComputedStyle(el).backgroundColor, want];
-	});
-	expect(bg).toBe(green);
+	await expect(badge).toHaveAttribute("aria-label", "2 running jobs");
+	await expect(badge).toHaveClass(/\bbg-gray-200\b/);
+	await expect(row.getByTestId("agent-running-badge")).toHaveCount(0);
 
 	const plus = page.getByTestId("sidebar-add-project");
 	await expect(plus).toHaveAttribute("aria-label", "Add project");
@@ -439,7 +432,7 @@ test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', 
 	const header = page
 		.getByTestId("sidebar-nav")
 		.getByRole("link", { name: /^GitHub Projects/ });
-	const headerBadge = header.getByTestId("agent-running-badge");
+	const headerBadge = header.getByTestId("project-running-badge");
 	const project = page
 		.getByTestId("sidebar-agent-projects")
 		.getByRole("link", { name: /lsegal\/aviary/ });
@@ -495,6 +488,80 @@ test("a project's running badge follows its jobs live in the sidebar", async ({
 	await page.clock.runFor(10_000);
 	await expect(badge).toHaveCount(0);
 	await expect(row).toHaveText("lsegal/zvidlib");
+});
+
+// One watched project with no running jobs shows no badge on the GitHub
+// Projects row, not the number of watched projects (#701).
+async function setupOneProject(page: Page, running: () => number) {
+	await setup(page, () => ({ ...STATUS, targets: ["lsegal/aviary"] }), {
+		config_get: {
+			agents: [
+				{
+					name: "coder",
+					model: "cli/claude/opus",
+					projects: [{ target: "lsegal/aviary" }],
+				},
+			],
+		},
+		project_job_list: () => {
+			const jobs = Array.from({ length: running() }, (_, i) => ({
+				...JOBS[0],
+				number: 900 + i,
+				status: "active",
+			}));
+			return { jobs, total: jobs.length, offset: 0, limit: 50 };
+		},
+	});
+}
+
+test("the GitHub Projects row counts running jobs, not watched projects", async ({
+	page,
+}) => {
+	await page.clock.install();
+	let running = 0;
+	await setupOneProject(page, () => running);
+	await page.goto("/system/overview");
+	const row = page
+		.getByTestId("sidebar-row-projects")
+		.getByRole("link", { name: /^GitHub Projects/ });
+	await expect(row).toHaveText("GitHub Projects");
+	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
+
+	running = 1;
+	await page.clock.runFor(10_000);
+	await expect(row.getByTestId("project-running-badge")).toHaveText("1");
+
+	running = 0;
+	await page.clock.runFor(10_000);
+	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
+	await expect(row).toHaveText("GitHub Projects");
+});
+
+test.describe("on a phone", () => {
+	test.use({ viewport: { width: 390, height: 844 } });
+
+	test("the GitHub Projects tab counts running jobs, not watched projects", async ({
+		page,
+	}) => {
+		await page.clock.install();
+		let running = 0;
+		await setupOneProject(page, () => running);
+		await page.goto("/system/overview");
+		const tab = page
+			.getByRole("navigation", { name: "Main" })
+			.getByRole("link", { name: /^GitHub Projects/ });
+		await expect(tab).toHaveText("GitHub Projects");
+		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
+
+		running = 1;
+		await page.clock.runFor(10_000);
+		await expect(tab.getByTestId("project-running-badge")).toHaveText("1");
+
+		running = 0;
+		await page.clock.runFor(10_000);
+		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
+		await expect(tab).toHaveText("GitHub Projects");
+	});
 });
 
 test("a board watching a project URL links its header to that URL", async ({
