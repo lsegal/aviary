@@ -121,14 +121,7 @@
           <span>{{ jobsRangeLabel }}</span>
           <label class="flex items-center gap-2">
             <span>Per page</span>
-            <select
-              v-model.number="jobsPageSize"
-              class="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            >
-              <option :value="25">25</option>
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-            </select>
+            <AppSelect v-model="jobsPageSize" size="sm" class="w-auto" :options="PAGE_SIZE_OPTIONS" />
           </label>
         </div>
       </div>
@@ -506,6 +499,12 @@ import { useLogs } from "../../composables/useLogs";
 import type { Job, SessionMessage, TaskCompile } from "../../stores/jobs";
 import { formatDuration, jobDurationMs, useJobsStore } from "../../stores/jobs";
 import { agentTaskType, useSettingsStore } from "../../stores/settings";
+import { AppSelect } from "../ui/select";
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100].map((n) => ({
+	value: n,
+	label: String(n),
+}));
 
 // The Scheduled Tasks page's "More analytics": the agent's runs by day, its
 // compile attempts and its job queue, whose rows open a detail drawer.

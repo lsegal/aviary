@@ -2,8 +2,15 @@ import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import {
+	chooseOption,
+	expectValue,
+	optionLabels,
+	searchOption,
+} from "./helpers/select";
+import {
 	agentPageLink,
 	openAgentPage,
+	openChannelSettings,
 	openGearMenuItem,
 	systemList,
 } from "./helpers/sidebar";
@@ -37,7 +44,7 @@ const CONFIG = {
 					name: "daily-briefing",
 					schedule: "0 * * * * *",
 					prompt: "Summarize updates",
-					target: "signal:+15551234567:+15551234567",
+					target: "channel:+15551234567",
 				},
 			],
 			permissions: {
@@ -126,12 +133,14 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("heading", { name: "Scheduled Tasks", exact: true }),
 	).toBeVisible();
 
-	// The agent's Settings page stacks General, Permissions and Channels.
+	// The agent's Settings page stacks General and Permissions; each channel
+	// has its own settings page.
 	await agentPageLink(page, "Agent Settings").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);
 	await expect(
 		page.getByRole("heading", { name: "Channels", exact: true }),
-	).toBeVisible();
+	).toHaveCount(0);
+	await openChannelSettings(page, "+15551234567");
 	await expect(
 		page.locator('input[placeholder="e.g. +15551234567"]').first(),
 	).toHaveValue("+15551234567");
@@ -411,7 +420,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 		},
 	});
 
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "workspace-bot");
 	await page.getByRole("button", { name: "Browse Channels" }).click();
 
 	await expect(
@@ -426,9 +435,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 	await expect(page.getByText("Joined", { exact: true })).toBeVisible();
 });
 
-test("channels use a left list with a reusable right-side editor", async ({
-	page,
-}) => {
+test("each channel has its own settings page", async ({ page }) => {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		config_get: {
@@ -483,18 +490,14 @@ test("channels use a left list with a reusable right-side editor", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "+15551234567");
 
-	await expect(
-		page.getByRole("button", { name: "Signal +15551234567" }),
-	).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "Discord server-bot" }),
-	).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "Slack workspace-bot" }),
-	).toBeVisible();
-	await expect(page.getByLabel("Delete channel")).toHaveCount(3);
+	// One channel, with no list of the others and no delete button: a
+	// channel is removed from its sidebar entry.
+	await expect(page.getByTestId("channel-settings")).toBeVisible();
+	await expect(page.getByLabel("Delete channel")).toHaveCount(0);
+	await expect(page.getByLabel("Remove channel")).toHaveCount(0);
+	await expect(page.getByTestId("channel-owner")).toHaveText("assistant");
 	await expect(
 		page.locator('input[placeholder="+15551234567"]').first(),
 	).toBeVisible();
@@ -502,7 +505,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		page.getByTestId("channel-secret-assistant-1-token"),
 	).toBeHidden();
 
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 
 	await expect(
 		page.getByTestId("channel-secret-assistant-1-token"),
@@ -523,7 +526,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		page.getByText("auth:discord_bot_token", { exact: true }),
 	).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await openChannelSettings(page, "workspace-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-2-url"),
 	).toContainText("slack_app_token");
@@ -589,9 +592,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings/channels");
-
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-0-token"),
 	).toContainText("discord****");
@@ -602,7 +603,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		page.getByText("discord-plaintext-token", { exact: true }),
 	).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await openChannelSettings(page, "workspace-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-1-url"),
 	).toContainText("xapp-pl****");
@@ -673,8 +674,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 		/border-red-300/,
 	);
 
-	await openAgentPage(page, "settings/channels");
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-0-token"),
 	).toContainText("missing_discord_token");
@@ -735,7 +735,8 @@ test("tool permissions inspector shows resolved final tool set", async ({
 	).toContainText('"finalTools": [\n    "task_run"\n  ]');
 	await page.getByRole("button", { name: "Close" }).click();
 
-	// Channels is a section further down the same page.
+	// A channel's allow-from entries inspect from the channel's settings.
+	await openChannelSettings(page, "+15551234567");
 	await page
 		.getByTestId("entry-tool-permissions-inspect-assistant-0-0")
 		.click();
@@ -753,7 +754,7 @@ test("tool permissions inspector shows resolved final tool set", async ({
 test("saving settings preserves default-on signal channel checkboxes", async ({
 	page,
 }) => {
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "+15551234567");
 
 	const phoneInput = page.locator('input[placeholder="+15551234567"]').first();
 
@@ -763,6 +764,8 @@ test("saving settings preserves default-on signal channel checkboxes", async ({
 	await expect(page.getByLabel("Send read receipts")).toBeChecked();
 
 	await phoneInput.fill("+12132957731");
+	// The channel is named by its ID, so the address follows the edit.
+	await expect(page).toHaveURL(/\/channels\/%2B12132957731\/settings$/);
 	await page.getByRole("button", { name: "Save Changes" }).click();
 
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
@@ -1118,34 +1121,30 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 		.click();
 
 	// A project that is no longer watched stays selected instead of clearing.
-	const project = page.getByRole("combobox", { name: "Project" });
-	await expect(project).toHaveValue("o/gone");
-	await expect(project.locator("option")).toHaveText([
-		"Select a watched project…",
-		"o/r",
-		"o/other",
-		"o/gone",
-	]);
+	const project = page.getByRole("combobox", { name: "Project", exact: true });
+	await expectValue(project, "o/gone");
+	expect(await optionLabels(project)).toEqual(["o/r", "o/other", "o/gone"]);
 	const model = page.getByTestId("task-model");
-	await expect(model).toContainText("cli/codex");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/codex");
 	await expect(page.getByPlaceholder("./docs/**/*.md")).toHaveCount(0);
 
-	await project.selectOption("o/r");
-	await model.getByRole("button").click();
-	await model.getByRole("textbox").fill("cli/claude/opus");
-	await model.getByRole("textbox").press("Enter");
-	await expect(model).toContainText("cli/claude/opus");
+	await chooseOption(project, "o/r");
+	await searchOption(model.getByRole("combobox"), "cli/claude/opus");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
 
 	// Turning the first task into a project task offers the watched projects.
 	await page
 		.getByTestId("sidebar-tasks")
 		.getByRole("link", { name: "daily-briefing" })
 		.click();
-	await page
-		.locator("select")
-		.filter({ has: page.locator('option[value="project"]') })
-		.selectOption("project");
-	await page.getByRole("combobox", { name: "Project" }).selectOption("o/other");
+	await chooseOption(
+		page.getByRole("combobox", { name: "Task type" }),
+		"Project",
+	);
+	await chooseOption(
+		page.getByRole("combobox", { name: "Project", exact: true }),
+		"o/other",
+	);
 
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
@@ -1229,16 +1228,16 @@ test("a task's session target is picked by name and saved by ID", async ({
 
 	// A saved session that no longer exists is shown as gone, not blank.
 	const session = page.getByRole("combobox", { name: "Session" });
-	await expect(session.locator("option")).toHaveText([
-		"Choose a session…",
+	expect(await optionLabels(session)).toEqual([
 		"Main Chat",
 		"Trip planning",
 		"Deleted session (no longer exists)",
 	]);
-	await expect(session).toHaveValue("sess_gone");
+	await expectValue(session, "sess_gone");
+	await expect(session).toHaveValue("Deleted session (no longer exists)");
 	await expect(page.locator('input[placeholder="Target ID"]')).toHaveCount(0);
 
-	await session.selectOption({ label: "Main Chat" });
+	await chooseOption(session, "Main Chat");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
 	expect(savedConfig).toMatchObject({
@@ -1281,8 +1280,8 @@ test("a task saved with a session name selects that session", async ({
 		.getByRole("link", { name: "daily-briefing" })
 		.click();
 	const session = page.getByRole("combobox", { name: "Session" });
-	await expect(session).toHaveValue("sess_main");
-	await expect(session.locator("option:checked")).toHaveText("Main Chat");
+	await expectValue(session, "sess_main");
+	await expect(session).toHaveValue("Main Chat");
 });
 
 test("settings deep links scroll to their section", async ({ page }) => {
@@ -1290,18 +1289,19 @@ test("settings deep links scroll to their section", async ({ page }) => {
 	const heading = (name: string) =>
 		page.getByRole("heading", { name, exact: true });
 
-	await openAgentPage(page, "settings/channels");
-	await expect(heading("Channels")).toBeInViewport();
-	await expect(heading("General")).not.toBeInViewport();
-
 	await openAgentPage(page, "settings/permissions");
 	await expect(heading("Permissions")).toBeInViewport();
 	await expect(heading("General")).not.toBeInViewport();
 
 	// The old tab query params land on the same sections.
-	await page.goto("/agents/assistant/settings?tab=channels");
-	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/channels$/);
-	await expect(heading("Channels")).toBeInViewport();
+	await page.goto("/agents/assistant/settings?tab=permissions");
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/permissions$/);
+	await expect(heading("Permissions")).toBeInViewport();
+
+	// Channels moved to their own sidebar section; the old address goes there.
+	await page.goto("/agents/assistant/settings/channels");
+	await expect(page).toHaveURL(/\/agents\/assistant\/channels$/);
+	await expect(heading("Channels")).toHaveCount(0);
 
 	await agentPageLink(page, "Agent Settings").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);
@@ -1327,20 +1327,23 @@ test("Save Changes saves every settings section at once", async ({ page }) => {
 	await page
 		.getByPlaceholder("Default: process working directory", { exact: false })
 		.fill("/srv/assistant");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [{ working_dir: "/srv/assistant" }],
+	});
+
+	// A channel's settings save the same way, from its own page.
+	await openChannelSettings(page, "+15551234567");
 	await page
 		.locator('input[placeholder="+15551234567"]')
 		.first()
 		.fill("+15550000000");
 	await page.getByRole("button", { name: "Save Changes" }).click();
-
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
 	expect(savedConfig).toMatchObject({
-		agents: [
-			{
-				working_dir: "/srv/assistant",
-				channels: [{ id: "+15550000000" }],
-			},
-		],
+		agents: [{ channels: [{ id: "+15550000000" }] }],
 	});
 });
 
@@ -1412,10 +1415,11 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 
 	await editor.getByRole("radio", { name: "Daily" }).click();
 	await editor.getByLabel("At", { exact: true }).fill("09:00");
-	await editor.getByLabel("Timezone").fill("America/Los_Angeles");
-	await editor
-		.getByLabel("If the last run is still going")
-		.selectOption("skip");
+	await searchOption(editor.getByLabel("Timezone"), "America/Los_Angeles");
+	await chooseOption(
+		editor.getByLabel("If the last run is still going"),
+		"Skip this run",
+	);
 	await expect
 		.poll(() => previews.at(-1))
 		.toMatchObject({

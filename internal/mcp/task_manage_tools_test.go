@@ -67,6 +67,7 @@ func TestTaskPreview_UnsavedAndSaved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2*time.Hour, second.Sub(first))
 	assert.True(t, first.After(time.Now()))
+	assert.Equal(t, 360, res.RunsPer30Days)
 
 	_, err = d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent": "bot", "name": "nightly", "content": "x", "at": "23:00", "precompile": false,
@@ -76,6 +77,14 @@ func TestTaskPreview_UnsavedAndSaved(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal([]byte(out), &res))
 	assert.Len(t, res.Next, 5)
+	assert.InDelta(t, 30, res.RunsPer30Days, 1)
+
+	out, err = d.CallTool(context.Background(), "task_preview", map[string]any{"trigger": "once", "start_at": "2099-01-01T00:00:00Z"})
+	require.NoError(t, err)
+	res = taskPreviewResult{}
+	require.NoError(t, json.Unmarshal([]byte(out), &res))
+	assert.Zero(t, res.RunsPer30Days)
+	assert.NotContains(t, out, "runs_per_30_days")
 
 	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_preview", map[string]any{})), "no schedule trigger")
 }

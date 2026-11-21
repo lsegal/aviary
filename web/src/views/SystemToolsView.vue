@@ -185,30 +185,23 @@
                     </span>
                   </div>
 
-                  <select
+                  <AppSelect
                     v-if="field.kind === 'boolean'"
                     v-model="runModal.values[field.name]"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">{{ field.placeholder }}</option>
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
+                    :aria-label="field.name"
+                    :options="[
+                      { value: '', label: field.placeholder },
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]"
+                  />
 
-                  <select
+                  <AppSelect
                     v-else-if="field.kind === 'enum'"
                     v-model="runModal.values[field.name]"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">{{ field.placeholder }}</option>
-                    <option
-                      v-for="choice in field.enumOptions"
-                      :key="choice.value"
-                      :value="choice.value"
-                    >
-                      {{ choice.label }}
-                    </option>
-                  </select>
+                    :aria-label="field.name"
+                    :options="[{ value: '', label: field.placeholder }, ...(field.enumOptions ?? [])]"
+                  />
 
                   <textarea
                     v-else-if="field.kind === 'json'"
@@ -279,6 +272,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";

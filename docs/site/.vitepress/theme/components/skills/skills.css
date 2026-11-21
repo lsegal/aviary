@@ -86,22 +86,21 @@
 .skill-title,
 .skill-section-title {
 	margin: 0;
-	font-family: var(--serif);
-	font-variation-settings: "opsz" 72;
-	font-weight: 400;
-	letter-spacing: -0.03em;
+	font-family: var(--sans);
+	font-weight: 600;
+	letter-spacing: -0.025em;
 }
 
 .skill-title {
 	margin-bottom: 22px;
 	font-size: clamp(42px, 6.4vw, 80px);
-	line-height: 1;
+	line-height: 1.02;
 }
 
 .skill-section-title {
 	margin-bottom: 18px;
 	font-size: clamp(30px, 4vw, 46px);
-	line-height: 1.05;
+	line-height: 1.1;
 }
 
 .skill-title em,
@@ -112,7 +111,7 @@
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
-	font-style: italic;
+	font-style: normal;
 }
 
 .dark .skill-title em,
@@ -301,7 +300,7 @@
 
 .skill-flow {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	grid-template-columns: repeat(var(--flow-cols, 4), minmax(0, 1fr));
 	gap: 14px;
 	margin: 12px 0 0;
 	padding: 0;
@@ -359,6 +358,7 @@
 	margin: 0;
 	font-size: 21px;
 	font-weight: 600;
+	letter-spacing: -0.025em;
 }
 
 .skill-panel p {
@@ -502,9 +502,10 @@
 }
 
 .skill-card-title {
-	font-family: var(--serif);
 	font-size: 24px;
-	line-height: 1.15;
+	font-weight: 600;
+	line-height: 1.1;
+	letter-spacing: -0.025em;
 }
 
 .skill-card-text {
@@ -552,6 +553,10 @@
 	.skill-band {
 		padding-top: 52px;
 	}
+
+	.skill-flow {
+		grid-template-columns: repeat(var(--flow-cols-md, 2), minmax(0, 1fr));
+	}
 }
 
 @media (max-width: 560px) {
@@ -561,6 +566,10 @@
 
 	.skill-panel {
 		padding: 20px;
+	}
+
+	.skill-flow {
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
 

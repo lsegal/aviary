@@ -95,8 +95,7 @@ type ProjectReportsConfig struct {
 	// Agent is the Aviary agent whose channels deliver the reports.
 	Agent string `yaml:"agent" json:"agent"`
 	// Targets are where reports go, in the same form as a scheduled task's
-	// target: "<channel type>:<configured channel id>:<delivery id>" or
-	// "session:<name>".
+	// target: "channel:<channel name>" or "session:<name>".
 	Targets []string `yaml:"targets" json:"targets"`
 	// Events limits reports to these job events. Empty means every event in
 	// ProjectReportEvents.
@@ -159,6 +158,18 @@ func (c *Config) ValidateProjectReports(r *ProjectReportsConfig) error {
 	}
 	if !r.Enabled() {
 		return fmt.Errorf("reports need at least one target")
+	}
+	owner := c.Agents[slices.IndexFunc(c.Agents, func(a AgentConfig) bool { return a.Name == agent })]
+	for _, target := range r.Targets {
+		if strings.TrimSpace(target) == "" {
+			continue
+		}
+		if !validTaskTarget(target) || strings.EqualFold(strings.TrimSpace(target), "silent") {
+			return fmt.Errorf("invalid report target %q; use channel:<channel name> or session:<name>", target)
+		}
+		if name, ok := ChannelTargetName(target); ok && owner.ChannelByName(name) < 0 {
+			return fmt.Errorf("agent %q has no channel named %q", agent, name)
+		}
 	}
 	for _, event := range r.Events {
 		if !slices.Contains(ProjectReportEvents, strings.ToLower(strings.TrimSpace(event))) {

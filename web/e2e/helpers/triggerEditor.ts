@@ -1,4 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
+import { chooseOption, expectValue, searchOption } from "./select";
 
 /**
  * A trigger as set through the shared trigger editor (TriggerEditor.vue),
@@ -52,13 +53,15 @@ export async function fillTrigger(scope: Locator, c: TriggerCase) {
 		await editor.getByLabel(label, { exact: true }).fill(value);
 	for (const d of c.days ?? [])
 		await editor.getByRole("button", { name: d, exact: true }).click();
-	await editor.getByLabel("Timezone").fill(TIMEZONE);
-	await editor
-		.getByLabel("If the last run is still going")
-		.selectOption("skip");
-	await editor
-		.getByLabel("Runs missed while asleep or stopped")
-		.selectOption("run_once");
+	await searchOption(editor.getByLabel("Timezone"), TIMEZONE);
+	await chooseOption(
+		editor.getByLabel("If the last run is still going"),
+		"Skip this run",
+	);
+	await chooseOption(
+		editor.getByLabel("Runs missed while asleep or stopped"),
+		"Run once to catch up",
+	);
 	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
 		3,
 	);
@@ -77,12 +80,14 @@ export async function expectTrigger(scope: Locator, c: TriggerCase) {
 			editor.getByRole("button", { name: d, exact: true }),
 		).toHaveAttribute("aria-pressed", "true");
 	await expect(editor.getByLabel("Timezone")).toHaveValue(TIMEZONE);
-	await expect(editor.getByLabel("If the last run is still going")).toHaveValue(
+	await expectValue(
+		editor.getByLabel("If the last run is still going"),
 		"skip",
 	);
-	await expect(
+	await expectValue(
 		editor.getByLabel("Runs missed while asleep or stopped"),
-	).toHaveValue("run_once");
+		"run_once",
+	);
 	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
 		3,
 	);

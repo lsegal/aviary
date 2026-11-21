@@ -26,18 +26,14 @@
 						<div class="grid gap-4 lg:grid-cols-2">
 							<div>
 								<label class="field-label" for="approval-mode">Approval mode</label>
-								<select id="approval-mode" v-model="draft.approval!.mode" class="field-input" data-testid="approval-mode">
-									<option value="">Auto (default)</option>
-									<option v-for="m in approvalModes" :key="m.value" :value="m.value">{{ m.label }}</option>
-								</select>
+								<AppSelect id="approval-mode" v-model="draft.approval!.mode" data-testid="approval-mode"
+									:options="[{ value: '', label: 'Auto (default)' }, ...approvalModes]" />
 								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Used everywhere without its own override.</p>
 							</div>
 							<div>
 								<label class="field-label" for="approval-chat">Chat approval mode</label>
-								<select id="approval-chat" v-model="draft.approval!.chat" class="field-input" data-testid="approval-chat">
-									<option value="">Same as approval mode</option>
-									<option v-for="m in approvalModes" :key="m.value" :value="m.value">{{ m.label }}</option>
-								</select>
+								<AppSelect id="approval-chat" v-model="draft.approval!.chat" data-testid="approval-chat"
+									:options="[{ value: '', label: 'Same as approval mode' }, ...approvalModes]" />
 								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Override for CLI-backed chat, including the
 									Code Loop prompt chat.</p>
 							</div>
@@ -164,12 +160,13 @@
 import { defineComponent, inject } from "vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
+import { AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 import SettingsAgentList from "./SettingsAgentList.vue";
 
 export default defineComponent({
 	name: "SettingsGeneralTab",
-	components: { ModelSelector, SecretSelect, SettingsAgentList },
+	components: { AppSelect, ModelSelector, SecretSelect, SettingsAgentList },
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

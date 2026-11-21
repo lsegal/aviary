@@ -9,7 +9,14 @@
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
 						<h2 data-testid="job-detail-title" class="min-w-0 break-words text-lg font-bold text-gray-900 dark:text-white">
-							{{ job?.title ?? "" }}
+							<template v-if="!job?.scheduled">
+								<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" data-testid="job-detail-issue-link"
+									:title="`Open issue #${number} on GitHub`" class="text-blue-600 hover:underline dark:text-blue-400">#{{ number }}</a>
+								<template v-else>#{{ number }}</template>
+								<template v-if="job?.pr"> •
+									<PullRequestLink :job="job" data-testid="job-detail-pr-link" :title="`Open PR ${prLabel} on GitHub`"
+										class="align-baseline text-blue-600 dark:text-blue-400" /></template>{{ " " }}
+							</template>{{ job?.title ?? "" }}
 						</h2>
 						<JobStatusPill v-if="job" :state="job.state" />
 						<span v-if="job?.scheduled"
@@ -17,16 +24,6 @@
 							Scheduled
 						</span>
 					</div>
-					<!-- The issue and its pull request, linked, in the same spot for every job. -->
-					<p v-if="issueURL" data-testid="job-detail-refs"
-						class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-sm text-gray-500 dark:text-gray-400">
-						<a :href="issueURL" target="_blank" rel="noreferrer" data-testid="job-detail-issue"
-							:title="`Open #${job?.number} on GitHub`" class="font-medium hover:underline">#{{ job?.number }}</a>
-						<template v-if="job?.pr">
-							<span aria-hidden="true">•</span>
-							<PullRequestLink :job="job" />
-						</template>
-					</p>
 				</div>
 				<div data-testid="job-detail-actions" class="flex min-w-0 shrink-0 items-center gap-2 @2xl:justify-end">
 					<template v-if="job">
@@ -35,7 +32,7 @@
 							class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
 							:class="showRaw ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 							@click="showRaw = !showRaw">
-							<CommandLineIcon aria-hidden="true" class="h-4 w-4" />
+							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" />
 						</button>
 						<button type="button" :disabled="busy || !job.actions.retry"
 							aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
@@ -45,10 +42,10 @@
 							class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border w-8 border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
 							@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
 					</template>
-					<!-- Closing the pane is navigation, not a job action, so it is a borderless ghost set apart from them. -->
+					<!-- Closing the pane is navigation, not a job action, so a divider sets it apart. -->
 					<span aria-hidden="true" class="ml-auto h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-700 @2xl:ml-1" />
 					<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close details" title="Close details"
-						class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-5 w-5" /></router-link>
+						class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
 				</div>
 			</div>
 		</header>
@@ -166,7 +163,7 @@
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
-import CommandLineIcon from "@heroicons/vue/24/outline/CommandLineIcon";
+import CodeBracketIcon from "@heroicons/vue/24/outline/CodeBracketIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
 import {
@@ -299,6 +296,12 @@ const prURL = computed(() =>
 		? job.value.prURL || githubURL(job.value.prRepo, "pull", job.value.pr)
 		: "",
 );
+const prLabel = computed(() =>
+	job.value?.pr
+		? `${job.value.prRepo !== job.value.repo ? job.value.prRepo : ""}#${job.value.pr}`
+		: "",
+);
+
 // The raw CLI output is noisy, so it stays closed until asked for, and the
 // choice is remembered.
 const RAW_OUTPUT_KEY = "aviary.projects.jobRawOutput";

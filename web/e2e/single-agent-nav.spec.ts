@@ -93,6 +93,7 @@ test("adding an agent from a single-agent sidebar shows the agent tree", async (
 const ALL_PAGES = [
 	"Chats",
 	"Code Loop",
+	"Channels",
 	"Scheduled Tasks",
 	"Files",
 	"Agent Settings",

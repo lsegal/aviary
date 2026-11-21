@@ -14,6 +14,15 @@ const skill = computed(() => {
 	return found;
 });
 const headline = computed(() => skill.value.headlineParts);
+// Columns for the step grid, chosen so rows stay even and no card is left
+// alone on the last row: up to six steps fit one row, more split in two.
+const flowColumns = computed(() => {
+	const count = skill.value.steps.length;
+	return {
+		"--flow-cols": count <= 6 ? count : Math.ceil(count / 2),
+		"--flow-cols-md": Math.ceil(count / 2),
+	};
+});
 const otherSkills = computed(() =>
 	skills.filter((item) => item.name !== props.name),
 );
@@ -108,7 +117,7 @@ const ghCommand = computed(
 			<div class="skill-wrap">
 				<div class="skill-section-eyebrow">How it works</div>
 				<h2 class="skill-section-title">Step by <em>step.</em></h2>
-				<ol class="skill-flow">
+				<ol class="skill-flow" :style="flowColumns">
 					<li v-for="(step, index) in skill.steps" :key="step.title">
 						<span class="num">{{ String(index + 1).padStart(2, "0") }}</span>
 						<span class="tit">{{ step.title }}</span>

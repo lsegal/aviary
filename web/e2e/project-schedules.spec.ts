@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, optionLabels, searchOption } from "./helpers/select";
 import {
 	expectSavedTrigger,
 	expectTrigger,
@@ -151,7 +152,11 @@ async function setup(
 		// System → Watches.
 		config_get: {
 			agents: [
-				{ name: "assistant", model: "cli/codex/gpt-5.5" },
+				{
+					name: "assistant",
+					model: "cli/codex/gpt-5.5",
+					channels: [{ type: "discord", id: "ops", name: "ops" }],
+				},
 				...(opts.owner
 					? [
 							{
@@ -215,13 +220,6 @@ async function setup(
 		session_list: (args?: Args) =>
 			args?.agent === "assistant"
 				? [
-						{
-							id: "sess_discord",
-							agent_id: "assistant",
-							name: "ops",
-							created_at: minutesFromNow(-60),
-							channels: ["discord"],
-						},
 						{
 							id: "sess_plain",
 							agent_id: "assistant",
@@ -465,11 +463,9 @@ test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 
 	// The model override is the shared model picker, holding the task's model.
 	const model = editor.getByTestId("schedule-model");
-	await expect(model).toContainText("cli/claude/opus");
-	await model.getByRole("button").click();
-	await model.getByRole("textbox").fill("cli/codex/gpt-5.5");
-	await model.getByRole("textbox").press("Enter");
-	await expect(model).toContainText("cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
+	await searchOption(model.getByRole("combobox"), "cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/codex/gpt-5.5");
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -550,13 +546,13 @@ test("the header Schedule button creates a project scheduled task through the sh
 		"data-state",
 		"project",
 	);
-	// Send To offers the agent's channel sessions by name.
+	// Send To offers the agent's channels by name.
 	const sendTo = dialog.getByLabel("Send To");
-	await expect(sendTo.locator("option")).toHaveText([
+	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
 		"ops · discord",
 	]);
-	await sendTo.selectOption({ label: "ops · discord" });
+	await chooseOption(sendTo, "ops · discord");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.config_task_convert_to_script).toBeUndefined();
@@ -571,7 +567,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 			project: "lsegal/aviary",
 			schedule: "0 * * * *",
 			prompt: "Rerun flaky CI jobs on open PRs.",
-			target: "session:sess_discord",
+			target: "channel:ops",
 			enabled: true,
 		}),
 	]);

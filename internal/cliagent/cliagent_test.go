@@ -25,6 +25,9 @@ func TestMain(m *testing.M) {
 	case "codex":
 		fakeCodex()
 		os.Exit(0)
+	case "generic":
+		fakeGeneric()
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -187,13 +190,20 @@ func TestParseModel(t *testing.T) {
 	assert.Equal(t, Codex, b)
 	assert.Equal(t, "gpt-6-sol", m)
 
-	_, _, err = ParseModel("cli/gemini/pro")
-	assert.ErrorContains(t, err, `unknown CLI backend "gemini"`)
+	// Any CLI provider whose definition resumes its sessions backs a chat.
+	b, m, err = ParseModel("cli/gemini/pro")
+	require.NoError(t, err)
+	assert.Equal(t, Backend("gemini"), b)
+	assert.Equal(t, "pro", m)
+	_, _, err = ParseModel("cli/cline/x")
+	assert.ErrorContains(t, err, `unknown CLI backend "cline"`, "cline keeps no session to resume")
+	_, _, err = ParseModel("cli/aviary/main")
+	assert.ErrorContains(t, err, `unknown CLI backend "aviary"`, "the in-process provider is not a CLI")
 	_, _, err = ParseModel("cli/claude")
-	assert.ErrorContains(t, err, "expected <claude|codex>/<model> or cli/<claude|codex>/<model>")
+	assert.ErrorContains(t, err, "expected <cli>/<model> or cli/<cli>/<model>")
 	_, _, err = ParseModel("anthropic/claude-opus")
 	assert.ErrorContains(t, err, "is not a CLI model")
-	_, _, err = ParseModel("gemini/pro")
+	_, _, err = ParseModel("opencode/x")
 	assert.ErrorContains(t, err, "is not a CLI model")
 
 	assert.True(t, IsCLIModel("cli/claude/opus"))
@@ -218,7 +228,9 @@ func TestParseModel_BackendAsProvider(t *testing.T) {
 
 	assert.True(t, IsCLIModel("claude/opus"))
 	assert.True(t, IsCLIModel(" codex/gpt-6-sol"))
-	assert.False(t, IsCLIModel("gemini/pro"))
+	assert.True(t, IsCLIModel("gemini/pro"))
+	assert.True(t, IsCLIModel("muse/muse-spark-1.3"))
+	assert.False(t, IsCLIModel("cline/x"))
 	assert.False(t, IsCLIModel("claude"))
 }
 

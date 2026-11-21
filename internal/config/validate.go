@@ -176,6 +176,18 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				channelKeys[key] = j
 			}
 		}
+		channelNames := map[string]int{}
+		for j, ch := range a.Channels {
+			name := strings.ToLower(ch.EffectiveName())
+			if name == "" {
+				continue
+			}
+			if prev, seen := channelNames[name]; seen {
+				v.errorf(fmt.Sprintf("%s.channels[%d].name", f, j), "duplicate channel name %q within agent %q (also at channels[%d])", ch.EffectiveName(), a.Name, prev)
+			} else {
+				channelNames[name] = j
+			}
+		}
 
 		taskNames := map[string]int{}
 		for j, t := range a.Tasks {
@@ -246,14 +258,16 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			}
 
 			if !validTaskTarget(t.Target) {
-				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", t.Target)
+				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or channel:<channel name>", t.Target)
+			} else if name, ok := ChannelTargetName(t.Target); ok && a.ChannelByName(name) < 0 {
+				v.errorf(tf+".target", "agent %q has no channel named %q", a.Name, name)
 			}
 		}
 	}
 }
 
 // ValidTaskTarget reports whether target is a valid task delivery target:
-// empty, "silent", "session:<name-or-id>", or "<channel>:<configured-id>:<target>".
+// empty, "silent", "session:<name-or-id>", or "channel:<channel name>".
 func ValidTaskTarget(target string) bool {
 	return validTaskTarget(target)
 }
@@ -266,8 +280,8 @@ func validTaskTarget(target string) bool {
 	if strings.HasPrefix(target, "session:") {
 		return strings.TrimSpace(strings.TrimPrefix(target, "session:")) != ""
 	}
-	parts := strings.SplitN(target, ":", 3)
-	return len(parts) == 3 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" && strings.TrimSpace(parts[2]) != ""
+	name, ok := ChannelTargetName(target)
+	return ok && name != ""
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.
@@ -316,7 +330,7 @@ func (v *validator) checkModel(field, model string) {
 
 // checkProjectTaskModel validates a project task's model override as any
 // model is checked, except that a provider reached through a CLI that only
-// Projects jobs run on, such as cli/gemini/<model>, is fine: the task runs as
+// Projects jobs run on, such as cli/cline/<model>, is fine: the task runs as
 // a Projects job, never as an agent prompt.
 func (v *validator) checkProjectTaskModel(field, model string) {
 	if _, ok := v.projectsOnlyCLI(model); ok {
@@ -338,45 +352,52 @@ func cliRegistry(models ModelsConfig) *clidefs.Registry {
 // checkCLIModel checks a CLI provider model string, "<cli>/<model>" or
 // "cli/<cli>/<model>", and that the backend's CLI is installed.
 func (v *validator) checkCLIModel(field, model string) {
-	backend, _, err := cliagent.ParseModel(model)
+	registry := cliRegistry(v.models)
+	backend, _, err := cliagent.ParseModelIn(registry, model)
 	if err != nil {
 		if name, ok := v.projectsOnlyCLI(model); ok {
-			v.warnf(field, "%s is a provider reached through a CLI that runs Projects jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
+			v.warnf(field, "%s is a provider reached through a CLI that runs Projects jobs, but its definition resumes no session, so it cannot answer agent prompts; %q will not respond to messages", name, model)
 			return
 		}
 		v.errorf(field, "%v", err)
 		return
 	}
-	if _, err := exec.LookPath(backend.Binary()); err != nil {
+	definition, _ := registry.Lookup(string(backend))
+	binary := definition.Binary
+	if binary == "" {
+		binary = string(backend)
+	}
+	if _, err := exec.LookPath(binary); err != nil {
 		v.errorf(field, "%s CLI not found in PATH; install it to use model %q", backend, model)
 	}
 }
 
 // projectsOnlyCLI reports the CLI provider a model names when it is one of
-// the providers reached through a CLI, built in or from models.cli_definitions, that
-// Projects jobs run on but agent turns cannot, such as gemini/<model> or
-// cli/gemini/<model>.
+// the providers reached through a CLI, built in or from models.cli_definitions,
+// that Projects jobs run on but agent turns cannot, because its definition
+// resumes no session of its own, such as cline/<model> or cli/cline/<model>.
 func (v *validator) projectsOnlyCLI(model string) (string, bool) {
 	rest, _ := strings.CutPrefix(strings.TrimSpace(model), cliagent.ModelPrefix)
 	name, _, _ := strings.Cut(rest, "/")
 	name, _, _ = strings.Cut(name, ":")
-	if name == "" || cliagent.Backend(name).Valid() {
+	if name == "" {
 		return "", false
 	}
-	if _, ok := v.models.CLIDefinitions[name]; ok {
-		return name, true
+	if definition, ok := cliRegistry(v.models).Lookup(name); ok {
+		return name, !definition.ResumesSessions()
 	}
-	_, ok := cliRegistry(v.models).Lookup(name)
+	_, ok := v.models.CLIDefinitions[name]
 	return name, ok
 }
 
 // CLIBackends returns the CLI backends referenced by any agent model,
 // fallback, or model default.
 func CLIBackends(cfg *Config) []cliagent.Backend {
+	registry := cliRegistry(cfg.Models)
 	seen := map[cliagent.Backend]bool{}
 	var out []cliagent.Backend
 	add := func(model string) {
-		if b, _, err := cliagent.ParseModel(model); err == nil && !seen[b] {
+		if b, _, err := cliagent.ParseModelIn(registry, model); err == nil && !seen[b] {
 			seen[b] = true
 			out = append(out, b)
 		}

@@ -12,9 +12,9 @@
 				{{ badgeText }}
 			</span>
 		</summary>
-		<div class="mt-1 min-w-0 space-y-1.5 pl-8">
-			<pre class="whitespace-pre-wrap font-mono [overflow-wrap:anywhere] text-xs text-gray-600 dark:text-gray-400">$ {{ command }}</pre>
-			<pre class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 [overflow-wrap:anywhere] font-mono text-xs text-slate-200">{{ output || (running ? "Running…" : "No output") }}</pre>
+		<div class="mt-1 space-y-1.5 pl-8">
+			<pre class="whitespace-pre-wrap break-all font-mono text-xs text-gray-600 dark:text-gray-400">$ {{ command }}</pre>
+			<pre class="max-h-64 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-200">{{ output || (running ? "Running…" : "No output") }}</pre>
 		</div>
 	</details>
 </template>

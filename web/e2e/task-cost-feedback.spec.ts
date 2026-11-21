@@ -74,7 +74,7 @@ async function mockAnalyzer(
 		config_save: () => "ok",
 		config_validate: [],
 		config_task_convert_to_script: () => "task_compile_1",
-		task_preview: () => ({ description: "preview", next: [] }),
+		task_preview: (args?: Record<string, unknown>) => taskPreview(args ?? {}),
 		task_analyze: (args?: Record<string, unknown>) => {
 			calls.push(args ?? {});
 			return analyze(args ?? {});
@@ -86,6 +86,20 @@ async function mockAnalyzer(
 		agent_file_list: [],
 	});
 	return calls;
+}
+
+/**
+ * task_preview's answer for args, with runs_per_30_days as the server gives
+ * it: hourly interval and cron triggers fire 720 times, daily ones 30 times,
+ * and one-time triggers have no rate.
+ */
+function taskPreview(args: Record<string, unknown>) {
+	const out = { description: "preview", next: [] as string[] };
+	if (args.every === "1h" || args.schedule === "0 * * * *")
+		return { ...out, runs_per_30_days: 720 };
+	if (args.trigger === "daily" && args.at)
+		return { ...out, runs_per_30_days: 30 };
+	return out;
 }
 
 async function openAddTask(page: Page): Promise<Locator> {
@@ -301,3 +315,90 @@ function taskType(page: Page): Locator {
 		.locator("select")
 		.filter({ has: page.locator('option[value="script"]') });
 }
+
+test("a recurring trigger adds a monthly projection to the per-run estimate", async ({
+	page,
+}) => {
+	await mockAnalyzer(page, () => PARTIAL);
+	const dialog = await openAddTask(page);
+	const feedback = dialog.getByTestId("task-cost-feedback");
+	const monthly = feedback.getByTestId("task-cost-monthly");
+	const editor = dialog.getByTestId("trigger-editor");
+
+	await dialog.getByLabel("Prompt").fill("summarize the news");
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 4.6k–12k tokens/run ($0.014–$0.050)",
+	);
+	// No trigger: nothing to project.
+	await expect(monthly).toHaveCount(0);
+
+	await editor.getByRole("radio", { name: "Interval" }).click();
+	await editor.getByLabel("Every").fill("1h");
+	await expect(monthly).toHaveText("≈ 3.3M–8.9M tokens/month ($10.08–$36.00)");
+
+	await editor.getByRole("radio", { name: "Daily" }).click();
+	await editor.getByLabel("At", { exact: true }).fill("09:00");
+	await expect(monthly).toHaveText("≈ 138k–372k tokens/month ($0.420–$1.50)");
+
+	await editor.getByRole("radio", { name: "Cron" }).click();
+	await editor.getByLabel("Cron expression").fill("0 * * * *");
+	await expect(monthly).toHaveText("≈ 3.3M–8.9M tokens/month ($10.08–$36.00)");
+
+	// A one-time task has no monthly rate.
+	await editor.getByRole("radio", { name: "Once" }).click();
+	await expect(monthly).toHaveCount(0);
+	await expect(feedback.getByTestId("task-cost-estimate")).toBeVisible();
+});
+
+test("the monthly projection is omitted for 0-token and unavailable estimates, and has no USD without pricing", async ({
+	page,
+}) => {
+	const verdicts: Record<string, Analysis> = {
+		check: DETERMINISTIC,
+		unbounded: UNAVAILABLE,
+		non: NONDETERMINISTIC,
+	};
+	await mockAnalyzer(page, (args) => verdicts[String(args.content)]);
+	const dialog = await openAddTask(page);
+	const prompt = dialog.getByLabel("Prompt");
+	const feedback = dialog.getByTestId("task-cost-feedback");
+	const monthly = feedback.getByTestId("task-cost-monthly");
+	const editor = dialog.getByTestId("trigger-editor");
+	await editor.getByRole("radio", { name: "Interval" }).click();
+	await editor.getByLabel("Every").fill("1h");
+
+	await prompt.fill("non");
+	await expect(monthly).toHaveText("≈ 1.7M tokens/month");
+
+	await prompt.fill("check");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
+	);
+	await expect(monthly).toHaveCount(0);
+
+	await prompt.fill("unbounded");
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"Estimate unavailable: depends on the size of fetched data",
+	);
+	await expect(monthly).toHaveCount(0);
+});
+
+test("the settings task editor projects a saved task's trigger", async ({
+	page,
+}) => {
+	await mockAnalyzer(page, () => PARTIAL, [
+		{ name: "hourly", prompt: "summarize the news", every: "1h" },
+		{ name: "manual", prompt: "summarize the news" },
+	]);
+	await page.goto("/agents/assistant/tasks?task=hourly");
+	const feedback = page.getByTestId("task-cost-feedback");
+	await expect(feedback.getByTestId("task-cost-monthly")).toHaveText(
+		"≈ 3.3M–8.9M tokens/month ($10.08–$36.00)",
+	);
+
+	await page.goto("/agents/assistant/tasks?task=manual");
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 4.6k–12k tokens/run ($0.014–$0.050)",
+	);
+	await expect(feedback.getByTestId("task-cost-monthly")).toHaveCount(0);
+});

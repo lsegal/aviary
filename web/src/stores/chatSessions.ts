@@ -17,8 +17,6 @@ export interface ChatSession {
 	 * permanent chats can only be cleared.
 	 */
 	deletable?: boolean;
-	/** Channel types the chat forwards its replies to, such as "slack". */
-	channels?: string[];
 }
 
 /** The default chat, which every agent has. */

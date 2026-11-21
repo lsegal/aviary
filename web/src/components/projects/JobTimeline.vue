@@ -1,9 +1,10 @@
 <template>
-	<ol class="min-w-0 space-y-3 [overflow-wrap:anywhere]" aria-label="Activity">
+	<!-- Rich content wraps to the pane; nothing in it scrolls sideways (#835). -->
+	<ol class="space-y-3 [overflow-wrap:anywhere]" aria-label="Activity">
 		<li v-if="!events.length" class="py-8 text-center text-sm text-gray-400">No activity yet.</li>
-		<li v-for="(e, i) in events" :key="i" :data-event="e.kind" class="min-w-0">
+		<li v-for="(e, i) in events" :key="i" :data-event="e.kind">
 			<div v-if="e.kind === 'message'"
-				class="prose min-w-0 max-w-2xl rounded-xl bg-gray-100 px-4 py-2 [&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere] [&_table]:table-fixed [&_table]:w-full text-gray-900 dark:prose-invert dark:bg-gray-800 dark:text-gray-100"
+				class="prose max-w-2xl rounded-xl bg-gray-100 px-4 py-2 prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed text-gray-900 dark:prose-invert dark:bg-gray-800 dark:text-gray-100"
 				v-html="renderMarkdown(e.text)" />
 
 			<details v-else-if="e.kind === 'reasoning'" class="max-w-2xl text-sm text-gray-500 dark:text-gray-400">
@@ -25,17 +26,17 @@
 					<span class="text-green-600">+{{ diffStat(e.diff).added }}</span>
 					<span class="text-red-600">-{{ diffStat(e.diff).removed }}</span>
 				</summary>
-				<pre class="mt-1.5 max-h-80 overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-200 font-mono text-xs dark:border-gray-800"><span
+				<pre class="mt-1.5 max-h-80 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg border border-gray-200 font-mono text-xs dark:border-gray-800"><span
 					v-for="(l, j) in diffLines(e.diff)" :key="j" class="block px-3" :class="DIFF_CLASS[l.kind]">{{ l.text || " " }}</span></pre>
 			</details>
 
 			<div v-else-if="e.kind === 'plan'" class="max-w-2xl rounded-xl border border-gray-200 px-4 py-3 text-sm dark:border-gray-800">
 				<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Plan</p>
 				<ul class="space-y-0.5">
-					<li v-for="(item, j) in e.items" :key="j" class="flex min-w-0 gap-2"
+					<li v-for="(item, j) in e.items" :key="j" class="flex gap-2"
 						:class="item.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'">
 						<span aria-hidden="true">{{ item.status === "completed" ? "☑" : item.status === "in_progress" ? "▸" : "☐" }}</span>
-						<span class="min-w-0">{{ item.text }}</span>
+						<span>{{ item.text }}</span>
 					</li>
 				</ul>
 			</div>
@@ -51,7 +52,7 @@
 					· sent to the job
 					<a v-if="e.url" :href="e.url" target="_blank" rel="noreferrer" class="text-blue-600 hover:underline">view</a>
 				</p>
-				<div class="prose prose-sm mt-1 max-w-none dark:prose-invert [&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere] [&_table]:table-fixed [&_table]:w-full" v-html="renderMarkdown(e.body)" />
+				<div class="prose prose-sm mt-1 max-w-none prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed dark:prose-invert" v-html="renderMarkdown(e.body)" />
 			</div>
 
 			<p v-else-if="e.kind === 'system'" class="text-center text-xs text-gray-500 dark:text-gray-400">

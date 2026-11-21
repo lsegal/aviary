@@ -6,7 +6,7 @@
 				<Cog6ToothIcon aria-hidden="true" :class="rail ? 'h-5 w-5' : 'h-4 w-4'" />
 			</button>
 		</DropdownMenuTrigger>
-		<DropdownMenuContent :side="rail ? 'right' : 'top'" :align="rail ? 'end' : 'start'" :side-offset="6"
+		<DropdownMenuContent :side="rail ? 'right' : 'top'" align="end" :side-offset="6"
 			data-testid="gear-menu"
 			class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
 			<DropdownMenuItem :class="itemClass" data-testid="gear-menu-settings" @select="router.push('/system/settings')">

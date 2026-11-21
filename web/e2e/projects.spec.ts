@@ -1217,6 +1217,114 @@ test("job actions are icon buttons with tooltips", async ({ page }) => {
 	}
 });
 
+test("job detail links #NNN and PR #YYY in the title, with icon-only actions (#835)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const title = page.getByTestId("job-detail-title");
+	await expect(title.getByRole("link", { name: "#218" })).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/issues/218",
+	);
+	await expect(title.getByRole("link", { name: "PR #233" })).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/pull/233",
+	);
+	// The header row has no Issue/PR button links left, only icon buttons.
+	const actions = page.getByTestId("job-detail-actions");
+	await expect(actions.getByRole("link", { name: /#\d+/ })).toHaveCount(0);
+	const toggle = page.getByTestId("raw-output-toggle");
+	for (const width of [390, 820, 1600]) {
+		await page.setViewportSize({ width, height: 900 });
+		await expect(toggle).toHaveText("");
+		await expect(toggle.locator("svg")).toHaveCount(1);
+		await expect(toggle).toHaveAttribute("aria-label", "Raw output");
+		await expect(toggle).toHaveAttribute("title", /\S/);
+	}
+	// Closing the details is a plain dismiss icon, not a bordered action.
+	expect(
+		await page
+			.getByTestId("job-detail-close")
+			.evaluate((el) => getComputedStyle(el).borderTopWidth),
+	).toBe("0px");
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+	await expect(title).toHaveText(
+		"#221 Export a session as Markdown from the chat menu",
+	);
+	await expect(title.getByRole("link")).toHaveCount(1);
+});
+
+for (const width of [390, 1600]) {
+	test(`job detail's rich transcript wraps instead of scrolling sideways at ${width}px (#835)`, async ({
+		page,
+	}) => {
+		const long = `${"x".repeat(400)} ${"/very/long/path".repeat(30)}`;
+		EVENTS[221] = [
+			{
+				kind: "message",
+				time: at(5),
+				text: `Long \`${long}\`\n\n\`\`\`\n${long}\n\`\`\``,
+			},
+			{
+				kind: "tool_call",
+				time: at(4),
+				call_id: "t1",
+				name: "Read",
+				input: { file_path: long },
+			},
+			{ kind: "tool_result", time: at(4), call_id: "t1", output: long },
+			{
+				kind: "file_change",
+				time: at(3),
+				path: "a.go",
+				diff: `@@ -1 +1 @@\n-${long}\n+${long}`,
+			},
+			{
+				kind: "command",
+				time: at(2),
+				call_id: "b1",
+				command: `echo ${long}`,
+				status: "running",
+			},
+			{
+				kind: "command",
+				time: at(2),
+				call_id: "b1",
+				output: long,
+				exit_code: 0,
+			},
+		];
+		try {
+			await page.setViewportSize({ width, height: 900 });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const timeline = page.getByRole("list", { name: "Activity" });
+			await expect(timeline.locator('[data-event="command"]')).toHaveCount(1);
+			for (const summary of await timeline.locator("summary").all()) {
+				await summary.click();
+			}
+			await expect(timeline.locator("details[open]")).toHaveCount(3);
+			// Nothing scrolls sideways: not the pane, the list, or any scroller in it.
+			const overflowing = await timeline.evaluate((list) =>
+				[list.parentElement as Element, list, ...list.querySelectorAll("*")]
+					.filter(
+						(el) =>
+							(el === list ||
+								el === list.parentElement ||
+								/auto|scroll/.test(getComputedStyle(el).overflowX)) &&
+							el.scrollWidth - el.clientWidth > 1,
+					)
+					.map((el) => el.outerHTML.slice(0, 100)),
+			);
+			expect(overflowing).toEqual([]);
+		} finally {
+			delete EVENTS[221];
+		}
+	});
+}
+
 test("job detail shows the job's clone path, copyable, or why it has none", async ({
 	page,
 	context,
@@ -1267,7 +1375,7 @@ test("run view renders the typed event timeline read-only", async ({
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"Cap scheduler retry backoff at 10 minutes",
+		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 
 	const steps = page.getByTestId("lifecycle");
@@ -1904,7 +2012,7 @@ test("job details open under the project header, keeping the chat and logs panel
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByTestId("job-detail")).toContainText(
-		"Cap scheduler retry backoff at 10 minutes",
+		/#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes/,
 	);
 	// The project header and its buttons stay.
 	await expect(
@@ -1982,7 +2090,7 @@ test("loading a job details URL shows the project header with that job open", as
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"Cap scheduler retry backoff at 10 minutes",
+		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 });
@@ -2692,7 +2800,7 @@ for (const { name, width } of [
 		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
 
 		const buttons = actions.locator(":scope > a, :scope > button");
-		// Raw output, Retry, Stop and close; the issue and PR links live in the title.
+		// Raw output, Retry, Stop and close; the Issue/PR links live in the title (#835).
 		await expect(buttons).toHaveCount(4);
 		const boxes = await buttons.evaluateAll((els) =>
 			els.map((el) => {
@@ -2745,40 +2853,24 @@ for (const { name, width } of [
 	});
 }
 
-test("job detail title links the issue and its PR, with no separate buttons (#834)", async ({
+test("job detail's title PR link shows the PR state (#834)", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
-	const refs = page.getByTestId("job-detail-refs");
-	await expect(refs).toContainText("#218•");
-	await expect(refs.getByTestId("job-pr")).toContainText("PR #233");
-	const issue = refs.getByRole("link", { name: "#218", exact: true });
-	await expect(issue).toHaveAttribute(
-		"href",
-		"https://github.com/lsegal/aviary/issues/218",
-	);
-	await expect(issue).toHaveAttribute("target", "_blank");
-	const pr = refs.getByTestId("job-pr");
-	await expect(pr).toHaveAttribute(
-		"href",
-		"https://github.com/lsegal/aviary/pull/233",
-	);
+	const pr = page.getByTestId("job-detail-pr-link");
 	await expect(pr).toHaveAttribute("target", "_blank");
 	await expect(pr).toHaveAttribute("data-pr-state", "draft");
-	// The title line holds the links, so the action row has none.
-	const actions = page.getByTestId("job-detail-actions");
-	await expect(actions.getByRole("link", { name: /#\d/ })).toHaveCount(0);
-	await expect(actions.getByRole("link")).toHaveCount(1);
-
-	// A job with no PR shows the issue link alone.
-	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
-	await expect(refs).toHaveText("#221");
-	await expect(refs.getByRole("link", { name: "#221" })).toHaveAttribute(
-		"href",
-		"https://github.com/lsegal/aviary/issues/221",
+	await expect(pr.getByTestId("pr-state-icon")).toHaveAttribute(
+		"aria-label",
+		"Draft pull request",
 	);
-	await expect(refs.getByTestId("job-pr")).toHaveCount(0);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/200");
+	await expect(pr).toHaveAttribute("data-pr-state", "merged");
+	await expect(page.getByTestId("job-detail-issue-link")).toHaveAttribute(
+		"target",
+		"_blank",
+	);
 });
 
 test("job detail's Raw output is an icon button that toggles its panel (#834)", async ({
