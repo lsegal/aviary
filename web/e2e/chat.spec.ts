@@ -905,7 +905,9 @@ test("a failed turn's error attaches to its message and its icon Retry re-runs i
 	await input.press("Enter");
 
 	// The error hangs off the sent message's bubble, not as its own entry.
-	const sent = page.locator(".text-right").filter({ hasText: "summarize" });
+	const sent = page
+		.getByTestId("chat-user-message")
+		.filter({ hasText: "summarize" });
 	const error = sent.getByTestId("chat-message-error");
 	await expect(error).toContainText("Error: MCP error: 502 Bad Gateway");
 	await expect(error).toContainText("claude/opus");
@@ -1102,4 +1104,66 @@ test("the waiting indicator goes away once reply text streams", async ({
 
 	await expect(page.getByText("Here is the answer")).toBeVisible();
 	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
+});
+
+test("user bubbles stay docked right with their text left-aligned", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: [
+			{
+				id: "m1",
+				session_id: "s1",
+				role: "user",
+				content: "a much longer first line of text\nshort",
+				timestamp: "2026-03-12T12:00:00Z",
+			},
+		],
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const text = page
+		.getByTestId("chat-user-message")
+		.locator(".whitespace-pre-wrap", { hasText: "short" });
+	await expect(text).toBeVisible();
+	expect(["left", "start"]).toContain(
+		await text.evaluate((el) => getComputedStyle(el).textAlign),
+	);
+
+	// Each line starts at the bubble's left padding edge.
+	const bubble = text.locator("xpath=..");
+	const [bubbleBox, textBox] = await Promise.all([
+		bubble.boundingBox(),
+		text.boundingBox(),
+	]);
+	const padding = await bubble.evaluate((el) =>
+		Number.parseFloat(getComputedStyle(el).paddingLeft),
+	);
+	expect(textBox?.x).toBeCloseTo((bubbleBox?.x ?? 0) + padding, 0);
+
+	// The bubble itself still sits on the right side of the chat.
+	const row = bubble.locator("xpath=..");
+	const rowBox = await row.boundingBox();
+	expect((bubbleBox?.x ?? 0) + (bubbleBox?.width ?? 0)).toBeCloseTo(
+		(rowBox?.x ?? 0) + (rowBox?.width ?? 0),
+		0,
+	);
 });
