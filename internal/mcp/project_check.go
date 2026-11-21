@@ -26,9 +26,6 @@ const (
 	projectCheckFail = "fail"
 )
 
-// projectDefaultReadyLabel is checked when the caller names no ready label.
-const projectDefaultReadyLabel = "ready"
-
 // projectCheckTimeout bounds every gh call so a stalled GitHub read cannot
 // hang the add-project dialog.
 const projectCheckTimeout = 15 * time.Second
@@ -48,8 +45,7 @@ var (
 var projectSkills = []string{"gh-fix"}
 
 type projectCheckArgs struct {
-	Target     string `json:"target" jsonschema:"repository (owner/repo or a GitHub URL), Project board or Discussions board to check"`
-	ReadyLabel string `json:"ready_label,omitempty" jsonschema:"ready label to look for; defaults to ready"`
+	Target string `json:"target" jsonschema:"repository (owner/repo or a GitHub URL), Project board or Discussions board to check"`
 }
 
 // ProjectCheck is one add-project prerequisite and its outcome.
@@ -68,14 +64,13 @@ type ProjectCheckCLI struct {
 
 // ProjectCheckResult is project_check's response.
 type ProjectCheckResult struct {
-	Target     string            `json:"target"`
-	Repo       string            `json:"repo,omitempty"`
-	Kind       string            `json:"kind"`
-	ReadyLabel string            `json:"ready_label"`
-	Fork       bool              `json:"fork"`
-	OK         bool              `json:"ok"`
-	Checks     []ProjectCheck    `json:"checks"`
-	CLIs       []ProjectCheckCLI `json:"clis"`
+	Target string            `json:"target"`
+	Repo   string            `json:"repo,omitempty"`
+	Kind   string            `json:"kind"`
+	Fork   bool              `json:"fork"`
+	OK     bool              `json:"ok"`
+	Checks []ProjectCheck    `json:"checks"`
+	CLIs   []ProjectCheckCLI `json:"clis"`
 }
 
 var (
@@ -111,27 +106,21 @@ func parseProjectTarget(raw string) (target, kind, repo string, err error) {
 }
 
 // runProjectCheck checks everything a new project needs: GitHub access,
-// installed CLI providers and their skills, the ready label, and whether pull
-// requests must come from a fork.
+// installed CLI providers and their skills, and whether pull requests
+// must come from a fork.
 func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckResult, error) {
 	target, kind, repo, err := parseProjectTarget(args.Target)
 	if err != nil {
 		return nil, err
 	}
-	label := strings.TrimSpace(args.ReadyLabel)
-	if label == "" {
-		label = projectDefaultReadyLabel
-	}
-	res := &ProjectCheckResult{Target: target, Repo: repo, Kind: kind, ReadyLabel: label}
+	res := &ProjectCheckResult{Target: target, Repo: repo, Kind: kind}
 	add := func(name, status, format string, a ...any) {
 		res.Checks = append(res.Checks, ProjectCheck{Name: name, Status: status, Message: fmt.Sprintf(format, a...)})
 	}
 
 	signedIn := checkGHAuth(ctx, add)
 	if signedIn && repo != "" {
-		if checkRepoAccess(ctx, repo, res, add) && kind == "repo" {
-			checkReadyLabel(ctx, repo, label, add)
-		}
+		checkRepoAccess(ctx, repo, res, add)
 	} else if signedIn {
 		add("github", projectCheckOK, "gh is signed in")
 	}
@@ -158,11 +147,11 @@ func checkGHAuth(ctx context.Context, add func(string, string, string, ...any)) 
 	return true
 }
 
-func checkRepoAccess(ctx context.Context, repo string, res *ProjectCheckResult, add func(string, string, string, ...any)) bool {
+func checkRepoAccess(ctx context.Context, repo string, res *ProjectCheckResult, add func(string, string, string, ...any)) {
 	out, err := projectGH(ctx, "api", "repos/"+repo)
 	if err != nil {
 		add("github", projectCheckFail, "gh is signed in but cannot read %s: %v", repo, err)
-		return false
+		return
 	}
 	var info struct {
 		FullName    string `json:"full_name"`
@@ -173,37 +162,17 @@ func checkRepoAccess(ctx context.Context, repo string, res *ProjectCheckResult, 
 	}
 	if err := json.Unmarshal(out, &info); err != nil {
 		add("github", projectCheckFail, "unexpected response reading %s: %v", repo, err)
-		return false
+		return
 	}
 	if info.Archived {
 		add("github", projectCheckFail, "%s is archived, so no pull requests can be opened", repo)
-		return false
+		return
 	}
 	add("github", projectCheckOK, "gh is signed in and can read %s", repo)
 	if !info.Permissions.Push {
 		res.Fork = true
 		add("fork", projectCheckWarn, "You can't push to %s, so pull requests will come from your fork", repo)
 	}
-	return true
-}
-
-func checkReadyLabel(ctx context.Context, repo, label string, add func(string, string, string, ...any)) {
-	if _, err := projectGH(ctx, "api", "repos/"+repo+"/labels/"+url.PathEscape(label)); err != nil {
-		add("ready_label", projectCheckFail, "%s has no %q label; create it or pick another ready label", repo, label)
-		return
-	}
-	q := fmt.Sprintf("repo:%s is:issue is:open label:%q", repo, label)
-	out, err := projectGH(ctx, "api", "-X", "GET", "search/issues", "-f", "q="+q, "-f", "per_page=1", "--jq", ".total_count")
-	count := strings.TrimSpace(string(out))
-	if err != nil || count == "" {
-		add("ready_label", projectCheckOK, "%q exists", label)
-		return
-	}
-	noun := "issues"
-	if count == "1" {
-		noun = "issue"
-	}
-	add("ready_label", projectCheckOK, "%q exists, with %s open %s", label, count, noun)
 }
 
 func checkCLIProviders(res *ProjectCheckResult, add func(string, string, string, ...any)) {
@@ -315,7 +284,7 @@ func registerProjectCheckTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name: "project_check",
 		Description: "Check whether a repository, Project board or Discussions board can be watched as a project: " +
-			"GitHub access, installed CLI providers and their gh-fix skill, the ready label, and whether pull requests must come from a fork. " +
+			"GitHub access, installed CLI providers and their gh-fix skill, and whether pull requests must come from a fork. " +
 			"Read-only; writes nothing.",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {

@@ -62,7 +62,8 @@ export interface ProjectStatus {
 	deliveryOnline: boolean;
 	lastChecked: string;
 	interval: string;
-	readyLabel: string;
+	/** The issue search that selects work; empty picks up every open issue. */
+	issueFilter: string;
 	/** GitHub logins whose comments may steer jobs. */
 	allowedCommenters: string[];
 	slotsUsed: number;
@@ -476,7 +477,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		deliveryOnline: raw.webhook_online !== false,
 		lastChecked: str(raw.last_check),
 		interval: str(raw.poll_interval),
-		readyLabel: str(raw.ready_label) || "ready",
+		issueFilter: str(raw.issue_filter),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
@@ -848,17 +849,18 @@ export function runDuration(ms: number): string {
 /** The schedule's trigger in words, as the scheduler describes it. */
 export function triggerSummary(s: ProjectSchedule): string {
 	if (s.description) return s.description;
+	const zone = ` (${s.timezone || "Local"})`;
 	switch (s.trigger) {
 		case "once":
 			return s.startAt ? `once at ${formatFire(s.startAt)}` : "once";
 		case "interval":
-			return `every ${s.every}`;
+			return `every ${s.every}${zone}`;
 		case "daily":
-			return `daily at ${s.at}`;
+			return `daily at ${s.at}${zone}`;
 		case "weekly":
-			return `weekly on ${s.days} at ${s.at}`;
+			return `weekly on ${s.days} at ${s.at}${zone}`;
 		case "cron":
-			return `cron ${s.schedule}`;
+			return `cron ${s.schedule}${zone}`;
 	}
 }
 

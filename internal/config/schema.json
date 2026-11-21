@@ -495,12 +495,6 @@
           "x-order": 4,
           "description": "How GitHub changes arrive: poll (default) or webhook (an ngrok tunnel and repository webhooks)."
         },
-        "ready_label": {
-          "type": "string",
-          "x-label": "Ready label",
-          "x-order": 5,
-          "description": "Label a repository issue needs to be picked up. Defaults to ready; an empty string turns it off."
-        },
         "ready_state": {
           "type": "string",
           "x-label": "Ready state",
@@ -520,7 +514,7 @@
           "type": "boolean",
           "x-label": "All issues",
           "x-order": 8,
-          "description": "Drop the issue filter; the ready label still applies."
+          "description": "Drop the issue filter and pick up every open issue."
         },
         "allowed_commenters": {
           "type": "array",

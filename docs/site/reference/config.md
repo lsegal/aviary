@@ -431,10 +431,9 @@ projects:
 | `concurrency` | int | `3` | Jobs that run at once across every project |
 | `interval` | duration | `30s` | Time between GitHub polls |
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
-| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
 | `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
 | `filter` | string[] | `assignee:@me` | Issue search filter |
-| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
+| `all_issues` | bool | `false` | Drop the issue filter and pick up every open issue |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `approval_mode` | string | `approval.mode` | Projects' [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
 | `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |

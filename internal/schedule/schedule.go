@@ -67,6 +67,8 @@ type Spec struct {
 	Times   []ClockTime
 	Days    []time.Weekday
 	Cron    cron.Schedule
+	// Expr is the cron trigger's expression, as configured.
+	Expr    string
 	Overlap string
 	Missed  string
 }
@@ -168,6 +170,7 @@ func Parse(f Fields) (Spec, error) {
 		if expr == "" {
 			return Spec{}, fmt.Errorf("cron trigger requires schedule")
 		}
+		spec.Expr = expr
 		spec.Cron, err = cronutil.Parser().Parse(expr)
 		if err != nil {
 			return Spec{}, fmt.Errorf("invalid cron expression %q: %w", expr, err)
@@ -254,7 +257,7 @@ func (s Spec) Describe() string {
 		}
 		desc = "weekly on " + strings.Join(names, ", ") + " at " + joinTimes(s.Times)
 	case KindCron:
-		desc = "cron"
+		desc = "cron " + s.Expr
 	}
 	return desc + " (" + s.Location.String() + ")"
 }

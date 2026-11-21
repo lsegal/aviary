@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import {
+	expectSavedTrigger,
+	expectTrigger,
+	fillTrigger,
+	TRIGGER_CASES,
+} from "./helpers/triggerEditor";
 
 // Fixtures follow the payloads of task_list, task_upcoming and task_preview
 // (internal/mcp) and of project_* for a scheduled run's job.
@@ -16,7 +22,7 @@ const STATUS = {
 	concurrency: 4,
 	delivery: "poll",
 	poll_interval: "30s",
-	ready_label: "ready",
+	issue_filter: "assignee:@me",
 	quotas: {},
 	clis: [],
 	agents: ["claude"],
@@ -155,6 +161,7 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 								...t,
 								id: `${agent.name}/${t.name}`,
 								agent_name: agent.name,
+								trigger_type: t.trigger ?? (t.schedule ? "cron" : ""),
 							}),
 						);
 			return "ok";
@@ -469,7 +476,14 @@ test("new schedule creates a project scheduled task through the shared Add task 
 	await expect(dialog).toContainText("lsegal/aviary");
 	await expect(dialog.getByLabel("Agent")).toHaveValue("assistant");
 	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
-	await dialog.getByLabel("Schedule").fill("0 * * * *");
+	// A project task needs a time trigger: no None tab, daily by default.
+	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
+	await expect(dialog.getByRole("radio", { name: "Daily" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
 	// Project tasks run as Projects jobs, so the dialog offers precompute but
 	// it cannot apply to them.
@@ -504,6 +518,49 @@ test("new schedule creates a project scheduled task through the shared Add task 
 		"href",
 		"/agents/assistant/tasks?task=hourly-ci-watch",
 	);
+});
+
+test("new schedule sets every trigger type, timezone and policy, and they round-trip", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
+
+	for (const c of TRIGGER_CASES) {
+		const name = `schedule-${c.label.toLowerCase()}`;
+		await page.getByTestId("schedule-new").click();
+		const dialog = page.getByRole("dialog", {
+			name: "Add project scheduled task",
+		});
+		await dialog.getByLabel("Task name").fill(name);
+		await expect(dialog.getByLabel("Schedule")).toHaveCount(0);
+		await fillTrigger(dialog, c);
+		// The preview follows the edited trigger before it is saved.
+		await expect
+			.poll(() => calls.task_preview?.at(-1))
+			.toMatchObject({ timezone: "America/Los_Angeles", ...c.saved });
+		await dialog.getByLabel("Prompt").fill(`Run ${name}`);
+		await dialog.getByRole("button", { name: "Create" }).click();
+		await expect(dialog).toBeHidden();
+
+		const config = JSON.parse(String(calls.config_save?.at(-1)?.config)) as {
+			agents: { tasks: Record<string, unknown>[] }[];
+		};
+		const task = config.agents[0].tasks.find((t) => t.name === name);
+		expect(task).toMatchObject({ type: "project", project: "lsegal/aviary" });
+		expectSavedTrigger(task, c);
+
+		// The saved task reopens in the schedule editor with every field kept.
+		await expect(page).toHaveURL(new RegExp(`schedule=assistant/${name}`));
+		const editor = page.getByTestId("schedule-editor");
+		await expect(editor.getByLabel("Name")).toHaveValue(name);
+		await expectTrigger(editor, c);
+		// Its list entry summarizes the trigger, cron expression included.
+		if (c.label === "Cron")
+			await expect(
+				page.getByTestId("schedule-row").filter({ hasText: name }),
+			).toContainText("cron 0 * * * * (America/Los_Angeles)");
+	}
 });
 
 test.describe("phone width", () => {

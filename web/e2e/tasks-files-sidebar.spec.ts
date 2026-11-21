@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import {
+	expectSavedTrigger,
+	expectTrigger,
+	fillTrigger,
+	TRIGGER_CASES,
+} from "./helpers/triggerEditor";
 
 interface Task {
 	name: string;
@@ -29,6 +35,7 @@ async function mockAgent(
 	};
 	const saved: Config[] = [];
 	const converted: Record<string, unknown>[] = [];
+	const previews: Record<string, unknown>[] = [];
 	const store = new Map(Object.entries(files));
 	await setAuthToken(page);
 	await mockMCP(page, {
@@ -51,6 +58,12 @@ async function mockAgent(
 			return "task_compile_1";
 		},
 		config_validate: [],
+		task_preview: (args?: Record<string, unknown>) => {
+			previews.push(args ?? {});
+			const at = (h: number) =>
+				new Date(Date.now() + h * 3_600_000).toISOString();
+			return { description: "preview", next: [at(1), at(2), at(3)] };
+		},
 		job_list: [],
 		session_list: [
 			{
@@ -73,7 +86,7 @@ async function mockAgent(
 			return "ok";
 		},
 	});
-	return { saved, store, converted };
+	return { saved, store, converted, previews };
 }
 
 const FILES = {
@@ -121,7 +134,8 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	const dialog = page.getByRole("dialog", { name: "Add task" });
 	await expect(dialog).toBeVisible();
 	await dialog.getByLabel("Task name").fill("weekly-report");
-	await dialog.getByLabel("Schedule").fill("0 8 * * 1");
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");
 	await dialog.getByLabel("Prompt").fill("Write the weekly report");
 	// scheduler.precompute_tasks defaults on, so the new task is precomputed.
 	await expect(dialog.getByLabel("Try to precompute task")).toBeChecked();
@@ -147,6 +161,52 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	]);
 });
 
+test("the add-task modal sets every trigger type, timezone and policy, and they round-trip", async ({
+	page,
+}) => {
+	const { saved, previews } = await mockAgent(page, [], FILES);
+	await page.goto("/agents/assistant/tasks");
+
+	for (const c of TRIGGER_CASES) {
+		const name = `task-${c.label.toLowerCase()}`;
+		await sidebarRow(page, "tasks").hover();
+		await sidebarRow(page, "tasks")
+			.getByRole("button", { name: "Add task" })
+			.click();
+		const dialog = page.getByRole("dialog", { name: "Add task" });
+		await dialog.getByLabel("Task name").fill(name);
+		// The add modal is the shared trigger editor, not a raw cron field.
+		await expect(dialog.getByLabel("Schedule")).toHaveCount(0);
+		await fillTrigger(dialog, c);
+		// The preview follows the edited trigger before it is saved.
+		await expect
+			.poll(() => previews.at(-1))
+			.toMatchObject({ timezone: "America/Los_Angeles", ...c.saved });
+		await dialog.getByLabel("Prompt").fill(`Run ${name}`);
+		await dialog.getByRole("button", { name: "Create" }).click();
+		await expect(dialog).toBeHidden();
+
+		const task = saved.at(-1)?.agents[0].tasks.find((t) => t.name === name) as
+			| Record<string, unknown>
+			| undefined;
+		expectSavedTrigger(task, c);
+
+		// The task's own page edits it with the same trigger editor.
+		await expect(page).toHaveURL(new RegExp(`\\?task=${name}$`));
+		await expectTrigger(page.locator("main"), c);
+
+		// Reopening it in the edit modal keeps every field.
+		const row = taskRows(page).filter({ hasText: name });
+		await row.hover();
+		await row.getByTestId("task-menu-button").click();
+		await page.getByRole("menuitem", { name: "Edit" }).click();
+		const edit = page.getByRole("dialog", { name: "Edit task" });
+		await expectTrigger(edit, c);
+		await edit.getByRole("button", { name: "Cancel" }).click();
+		await expect(edit).toBeHidden();
+	}
+});
+
 test("the add-task modal's precompute choice follows the setting and applies to that task", async ({
 	page,
 }) => {
@@ -163,7 +223,8 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).not.toBeChecked();
 	await dialog.getByLabel("Task name").fill("stays-prompt");
-	await dialog.getByLabel("Schedule").fill("0 8 * * 1");
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");
 	await dialog.getByLabel("Prompt").fill("Summarize the week");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
@@ -179,7 +240,8 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 		.click();
 	await expect(precompute).not.toBeChecked();
 	await dialog.getByLabel("Task name").fill("compiled");
-	await dialog.getByLabel("Schedule").fill("*/5 * * * *");
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("*/5 * * * *");
 	await dialog.getByLabel("Prompt").fill("Print the time");
 	await precompute.check();
 	await dialog.getByRole("button", { name: "Create" }).click();
@@ -246,9 +308,13 @@ test("the … menu edits and deletes tasks", async ({ page }) => {
 
 	const dialog = page.getByRole("dialog", { name: "Edit task" });
 	await expect(dialog.getByLabel("Task name")).toHaveValue("cleanup");
-	await expect(dialog.getByLabel("Schedule")).toHaveValue("0 0 * * *");
+	await expect(dialog.getByRole("radio", { name: "Cron" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await expect(dialog.getByLabel("Cron expression")).toHaveValue("0 0 * * *");
 	await dialog.getByLabel("Task name").fill("nightly-cleanup");
-	await dialog.getByLabel("Schedule").fill("30 1 * * *");
+	await dialog.getByLabel("Cron expression").fill("30 1 * * *");
 	await dialog.getByRole("button", { name: "Save" }).click();
 
 	await expect(dialog).toBeHidden();
