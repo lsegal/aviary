@@ -27,11 +27,14 @@ async function mockAgent(
 	page: Page,
 	tasks: Task[],
 	files: Record<string, string>,
+	extra: Record<string, unknown> = {},
 ) {
 	let config: Config = {
 		agents: [{ name: "assistant", model: "x/y", tasks }],
+		...extra,
 	};
 	const saved: Config[] = [];
+	const converted: Record<string, unknown>[] = [];
 	const previews: Record<string, unknown>[] = [];
 	const store = new Map(Object.entries(files));
 	await setAuthToken(page);
@@ -49,6 +52,10 @@ async function mockAgent(
 			for (const t of config.agents[0].tasks)
 				if (t.name === args?.task) t.name = String(args?.new_name);
 			return "renamed";
+		},
+		config_task_convert_to_script: (args?: Record<string, unknown>) => {
+			converted.push(args ?? {});
+			return "task_compile_1";
 		},
 		config_validate: [],
 		task_preview: (args?: Record<string, unknown>) => {
@@ -79,7 +86,7 @@ async function mockAgent(
 			return "ok";
 		},
 	});
-	return { saved, store, previews };
+	return { saved, store, converted, previews };
 }
 
 const FILES = {
@@ -105,7 +112,7 @@ function fileRows(page: Page) {
 test("the Tasks + opens the add-task modal and the new task joins the sidebar", async ({
 	page,
 }) => {
-	const { saved } = await mockAgent(
+	const { saved, converted } = await mockAgent(
 		page,
 		[{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" }],
 		FILES,
@@ -114,6 +121,8 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
 	// No inline add-task input remains on the page.
 	await expect(page.getByPlaceholder("task-name")).toHaveCount(0);
+	// Precompute is chosen per task in the dialog, not on the page.
+	await expect(page.getByText(/Try to precompute/)).toHaveCount(0);
 
 	const add = sidebarRow(page, "tasks").getByRole("button", {
 		name: "Add task",
@@ -128,10 +137,13 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");
 	await dialog.getByLabel("Prompt").fill("Write the weekly report");
+	// scheduler.precompute_tasks defaults on, so the new task is precomputed.
+	await expect(dialog.getByLabel("Try to precompute task")).toBeChecked();
 	await dialog.getByRole("button", { name: "Create" }).click();
 
 	await expect(dialog).toBeHidden();
 	await expect(taskRows(page)).toHaveText(["daily-briefing", "weekly-report"]);
+	expect(converted).toEqual([{ agent: "assistant", task: "weekly-report" }]);
 	await expect(page).toHaveURL(
 		/\/agents\/assistant\/tasks\?task=weekly-report$/,
 	);
@@ -193,6 +205,48 @@ test("the add-task modal sets every trigger type, timezone and policy, and they 
 		await edit.getByRole("button", { name: "Cancel" }).click();
 		await expect(edit).toBeHidden();
 	}
+});
+
+test("the add-task modal's precompute choice follows the setting and applies to that task", async ({
+	page,
+}) => {
+	const { saved, converted } = await mockAgent(page, [], FILES, {
+		scheduler: { precompute_tasks: false },
+	});
+	await page.goto("/agents/assistant/tasks");
+	await sidebarRow(page, "tasks").hover();
+	await sidebarRow(page, "tasks")
+		.getByRole("button", { name: "Add task" })
+		.click();
+
+	const dialog = page.getByRole("dialog", { name: "Add task" });
+	const precompute = dialog.getByLabel("Try to precompute task");
+	await expect(precompute).not.toBeChecked();
+	await dialog.getByLabel("Task name").fill("stays-prompt");
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");
+	await dialog.getByLabel("Prompt").fill("Summarize the week");
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
+		{ name: "stays-prompt", type: "prompt" },
+	]);
+	expect(converted).toEqual([]);
+
+	// Checking it precomputes just the task being created.
+	await sidebarRow(page, "tasks").hover();
+	await sidebarRow(page, "tasks")
+		.getByRole("button", { name: "Add task" })
+		.click();
+	await expect(precompute).not.toBeChecked();
+	await dialog.getByLabel("Task name").fill("compiled");
+	await dialog.getByRole("radio", { name: "Cron" }).click();
+	await dialog.getByLabel("Cron expression").fill("*/5 * * * *");
+	await dialog.getByLabel("Prompt").fill("Print the time");
+	await precompute.check();
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+	expect(converted).toEqual([{ agent: "assistant", task: "compiled" }]);
 });
 
 test("the Files + creates a file that joins the sidebar, and the page has no file tabs", async ({
@@ -282,6 +336,51 @@ test("the … menu edits and deletes tasks", async ({ page }) => {
 	await expect(confirm).toContainText("nightly-cleanup");
 	await confirm.getByRole("button", { name: "Delete" }).click();
 
+	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
+	expect(saved.at(-1)?.agents[0].tasks.map((t) => t.name)).toEqual([
+		"daily-briefing",
+	]);
+});
+
+test("the task editor's Danger Zone removes the open task", async ({
+	page,
+}) => {
+	const { saved } = await mockAgent(
+		page,
+		[
+			{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" },
+			{
+				name: "cleanup",
+				schedule: "0 0 * * *",
+				prompt: "Clean",
+				from_file: true,
+				file: "tasks/cleanup.md",
+			},
+		],
+		FILES,
+	);
+	await page.goto("/agents/assistant/tasks?task=cleanup");
+
+	const dangerZone = page.getByTestId("task-danger-zone");
+	await expect(
+		dangerZone.getByRole("heading", { name: "Danger Zone" }),
+	).toBeVisible();
+	await expect(dangerZone).toContainText(
+		"Remove this scheduled task from the agent's configuration, including its definition file tasks/cleanup.md.",
+	);
+	await dangerZone.getByRole("button", { name: "Remove Task" }).click();
+
+	const confirm = page.getByRole("alertdialog", { name: "Delete task?" });
+	await expect(confirm).toContainText("cleanup");
+	await confirm.getByRole("button", { name: "Cancel" }).click();
+	await expect(confirm).toBeHidden();
+	await expect(taskRows(page)).toHaveText(["daily-briefing", "cleanup"]);
+
+	await dangerZone.getByRole("button", { name: "Remove Task" }).click();
+	await confirm.getByRole("button", { name: "Delete" }).click();
+
+	await expect(confirm).toBeHidden();
 	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
 	expect(saved.at(-1)?.agents[0].tasks.map((t) => t.name)).toEqual([

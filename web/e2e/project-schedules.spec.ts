@@ -192,6 +192,7 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 		},
 		task_update: record("task_update"),
 		task_schedule: record("task_schedule"),
+		config_task_convert_to_script: record("config_task_convert_to_script"),
 		task_run: record("task_run"),
 		task_delete: record("task_delete"),
 	});
@@ -484,8 +485,14 @@ test("new schedule creates a project scheduled task through the shared Add task 
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
+	// Project tasks run as Projects jobs, so the dialog offers precompute but
+	// it cannot apply to them.
+	const precompute = dialog.getByLabel("Try to precompute task");
+	await expect(precompute).toBeDisabled();
+	await expect(precompute).not.toBeChecked();
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
+	expect(calls.config_task_convert_to_script).toBeUndefined();
 
 	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
 		agents: { name: string; tasks: unknown[] }[];

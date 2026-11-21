@@ -26,6 +26,19 @@
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
+						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
+							:class="dialog.project ? 'opacity-60' : ''">
+							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
+								:disabled="!!dialog.project" aria-describedby="agent-task-precompute-help"
+								class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800" />
+							<div>
+								<label for="agent-task-precompute" class="text-sm text-gray-700 dark:text-gray-300"
+									:class="dialog.project ? 'cursor-not-allowed' : 'cursor-pointer'">Try to precompute task</label>
+								<p id="agent-task-precompute-help" class="text-xs text-gray-500 dark:text-gray-400">{{ dialog.project
+									? "Project tasks run as Projects jobs, so they are never precomputed"
+									: "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs" }}</p>
+							</div>
+						</div>
 					</template>
 					<p v-else class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 						Root-level <span class="font-mono">.md</span> only; <span class="font-mono">.md</span> is added when missing.
@@ -98,6 +111,7 @@ import {
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
+import { useMCP } from "../../composables/useMCP";
 import { useTriggerPreview } from "../../composables/useTriggerPreview";
 import {
 	applyTaskTrigger,
@@ -118,6 +132,7 @@ const settings = useSettingsStore();
 const files = useAgentFilesStore();
 const route = useRoute();
 const router = useRouter();
+const { callTool } = useMCP();
 const previewTrigger = useTriggerPreview();
 
 const busy = ref(false);
@@ -128,6 +143,7 @@ const form = reactive({
 	prompt: "",
 	type: "prompt",
 	agent: "",
+	precompute: true,
 });
 // Remounts the trigger editor for each dialog, so its preview starts afresh.
 const editorKey = ref(0);
@@ -194,6 +210,8 @@ watch(dialog, (d) => {
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
 	form.agent = d?.agent ?? "";
+	form.precompute =
+		!d?.project && settings.config?.scheduler?.precompute_tasks !== false;
 });
 
 /**
@@ -245,6 +263,14 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 			trigger,
 		);
 		await settings.saveAgentTasks(agent, (tasks) => [...tasks, task]);
+		// Precompute runs in the background, as Convert to Script does; the
+		// task already exists, so a failure to start it does not fail creation.
+		if (!project && form.precompute && form.prompt.trim()) {
+			await callTool("config_task_convert_to_script", {
+				agent,
+				task: name,
+			}).catch((e) => console.error("precompute task", e));
+		}
 		if (onCreated) onCreated(agent, name);
 		else await router.push(agentTaskPath(agent, name));
 		return;
