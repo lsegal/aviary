@@ -98,7 +98,10 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 		store.SetDataDir("")
 	})
 	srv := New(&config.Config{}, "tok")
-	srv.runCtx = context.Background()
+	// Stop a restart the test left waiting before the next test's setup.
+	ctx, stop := context.WithCancel(context.Background())
+	srv.runCtx = ctx
+	t.Cleanup(stop)
 	return srv, p, &log
 }
 

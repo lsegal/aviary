@@ -107,7 +107,7 @@ func TestSelfUpdater_AutoUpdateWaitsForSlowMCPCall(t *testing.T) {
 	waitReexec(t, srv)
 	logMu.Lock()
 	defer logMu.Unlock()
-	assert.Equal(t, []string{"slow call done", "install v1.3.0", "checkpoint"}, *log,
+	assert.Equal(t, []string{"slow call done", "install v1.3.0", "skills v1.3.0", "checkpoint"}, *log,
 		"the call finishes before the update installs and restarts")
 }
 
