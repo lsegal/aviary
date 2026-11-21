@@ -30,11 +30,6 @@
       </div>
     </div>
 
-    <!-- Setup wizard: shown until at least one agent exists -->
-    <div v-else-if="showWizard" class="h-full overflow-y-auto">
-      <SetupWizard @skip="dismissed = true" />
-    </div>
-
     <div v-else class="px-6 py-6">
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">Overview</h2>
@@ -227,10 +222,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SetupWizard from "../components/SetupWizard.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useProjectList } from "../composables/useProjects";
 import { projectOwner } from "../lib/projectSettings";
@@ -240,7 +233,6 @@ import { useOverviewStore } from "../stores/overview";
 import { agentTaskPath, useSettingsStore } from "../stores/settings";
 
 const store = useOverviewStore();
-const route = useRoute();
 const settingsStore = useSettingsStore();
 const { projects } = useProjectList();
 
@@ -258,15 +250,6 @@ const systemPages = computed<SystemPage[]>(() => [
 		})),
 ]);
 onMounted(() => store.fetchAll());
-
-const dismissed = ref(false);
-const forceOnboarding = computed(() => route.path === "/onboarding");
-const showWizard = computed(
-	() =>
-		store.fetched &&
-		(forceOnboarding.value || (!store.error && store.agents.length === 0)) &&
-		!dismissed.value,
-);
 
 // --- Agents ---
 const agentStateCounts = computed(() => {

@@ -231,9 +231,21 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 }
 
 /** Sets the auth token in localStorage before page scripts run. */
-export function setAuthToken(page: Page, token = "test-token") {
+/**
+ * Signs the page in. Unless `onboarding` is set, the setup wizard counts as
+ * skipped, so specs whose fixtures list no agents still reach their page.
+ */
+export function setAuthToken(
+	page: Page,
+	token = "test-token",
+	{ onboarding = false } = {},
+) {
 	return page.addInitScript(
-		(t) => localStorage.setItem("aviary_token", t),
-		token,
+		({ t, onboarding }) => {
+			localStorage.setItem("aviary_token", t);
+			if (!onboarding)
+				sessionStorage.setItem("aviary_onboarding_skipped", "1");
+		},
+		{ t: token, onboarding },
 	);
 }

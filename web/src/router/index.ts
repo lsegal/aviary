@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { installUnsavedChanges } from "../composables/useUnsavedChanges";
+import { needsOnboarding } from "../lib/onboarding";
 import { useAuthStore } from "../stores/auth";
 
 const SettingsView = () => import("../views/SettingsView.vue");
@@ -14,8 +15,8 @@ const router = createRouter({
 		{ path: "/login", component: () => import("../views/LoginView.vue") },
 		{
 			path: "/onboarding",
-			component: () => import("../views/OverviewView.vue"),
-			meta: { requiresAuth: true, forceOnboarding: true },
+			component: () => import("../views/OnboardingView.vue"),
+			meta: { requiresAuth: true },
 		},
 		// Channels moved out of Agent Settings into their own sidebar section.
 		{
@@ -124,10 +125,19 @@ const router = createRouter({
 	],
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
 	const auth = useAuthStore();
 	if (to.meta.requiresAuth && !auth.isLoggedIn) {
 		return "/login";
+	}
+	// With no agent configured, every page sends the user through the setup
+	// wizard first, wherever the login or link landed.
+	if (
+		to.meta.requiresAuth &&
+		to.path !== "/onboarding" &&
+		(await needsOnboarding())
+	) {
+		return "/onboarding";
 	}
 });
 installUnsavedChanges(router);
