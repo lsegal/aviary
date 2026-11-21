@@ -255,7 +255,7 @@ type Engine struct {
 	clones cloneState
 	// filings are the create-issue requests still filing or recently filed.
 	filings issueFilings
-	Issues IssueSource
+	Issues  IssueSource
 	// Discussions lists unanswered top-level Discussion threads for
 	// Discussions-board targets. When nil, Discussions-board targets are
 	// never polled.
