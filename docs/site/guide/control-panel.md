@@ -80,7 +80,7 @@ The home screen. It shows:
 - **Agent health** — count of configured agents and their current state (idle, running, error).
 - **Job summary** — count of recent jobs, in-progress indicators, and failure flags.
 - **Config validation** — any errors or warnings in `aviary.yaml`, refreshed on each load.
-- **Setup wizard** — appears automatically when no agents have been configured yet. Walks through provider auth and first-agent creation.
+- **Setup wizard** — while no agent has been configured, every page opens the wizard first, even when a provider such as an installed CLI is already detected. Walks through provider auth and first-agent creation; **Skip for now** opens the control panel without an agent for the rest of the browser session.
 
 ### Settings (`/system/settings`)
 

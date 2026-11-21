@@ -29,7 +29,7 @@ export interface MCPStreamFixture {
 
 /** Fixture data keyed by MCP tool name. */
 export interface ToolFixtures {
-	agent_list?: object[] | string;
+	agent_list?: ToolHandler | object[] | string;
 	job_list?: object[] | null;
 	config_validate?: object[];
 	session_list?: ToolHandler | object[] | string;
@@ -243,8 +243,7 @@ export function setAuthToken(
 	return page.addInitScript(
 		({ t, onboarding }) => {
 			localStorage.setItem("aviary_token", t);
-			if (!onboarding)
-				sessionStorage.setItem("aviary_onboarding_skipped", "1");
+			if (!onboarding) sessionStorage.setItem("aviary_onboarding_skipped", "1");
 		},
 		{ t: token, onboarding },
 	);
