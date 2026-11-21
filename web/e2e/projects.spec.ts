@@ -227,10 +227,18 @@ const EVENTS_218 = [
 	{
 		kind: "command",
 		time: at(9),
+		call_id: "b1",
 		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(9),
+		call_id: "b1",
 		output: "--- FAIL: TestBackoffCap (0.01s)",
 		exit_code: 1,
-		status: "completed",
+		is_error: true,
+		status: "done",
 	},
 	{
 		kind: "comment_relay",
@@ -242,10 +250,17 @@ const EVENTS_218 = [
 	{
 		kind: "command",
 		time: at(7),
+		call_id: "b2",
 		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(7),
+		call_id: "b2",
 		output: "ok  internal/scheduler 2.41s",
 		exit_code: 0,
-		status: "completed",
+		status: "done",
 	},
 	{
 		kind: "usage",
@@ -253,6 +268,13 @@ const EVENTS_218 = [
 		usage: { input_tokens: 182000, output_tokens: 9100, cost_usd: 1.42 },
 	},
 ];
+
+// The typed events and raw stdout project_job_get returns per job; tests may
+// grow them to stand in for a running job.
+const EVENTS: Record<number, object[]> = { 218: EVENTS_218 };
+const RAW_OUTPUT: Record<number, string> = {
+	218: '{"type":"assistant","message":{"content":[{"type":"text","text":"I can reproduce it"}]}}\n',
+};
 
 // project_job_list's project filter: the board passes targets, one or more.
 // The board's toggle chip for one job state.
@@ -339,11 +361,8 @@ async function setup(
 				...CLONES[found.number],
 				session_id: "7f3c…a9",
 				scrollback: scrollback(found.number),
-				events: found.number === 218 ? EVENTS_218 : [],
-				raw_output:
-					found.number === 218
-						? '{"type":"assistant","message":{"content":[{"type":"text","text":"I can reproduce it"}]}}\n'
-						: "",
+				events: EVENTS[found.number] ?? [],
+				raw_output: RAW_OUTPUT[found.number] ?? "",
 			};
 		},
 		project_job_retry: ok("project_job_retry"),
@@ -1046,9 +1065,16 @@ test("run view renders the typed event timeline read-only", async ({
 
 	const timeline = page.getByRole("list", { name: "Activity" });
 	await expect(timeline.locator("strong")).toHaveText("without a cap");
+	// Each command is one row whose badge carries its result.
 	const commands = timeline.locator('[data-event="command"]');
-	await expect(commands.first()).toContainText("exit 1");
-	await expect(commands.last()).toContainText("exit 0");
+	await expect(commands).toHaveCount(2);
+	await expect(commands.first().getByTestId("command-status")).toHaveText(
+		"failed · exit 1",
+	);
+	await expect(commands.last().getByTestId("command-status")).toHaveText("ok");
+	await expect(timeline).not.toContainText("running");
+	await commands.first().locator("summary").click();
+	await expect(commands.first()).toContainText("--- FAIL: TestBackoffCap");
 	const edit = timeline.locator('[data-event="file_change"]');
 	await expect(edit).toContainText("edit internal/scheduler/queue.go");
 	await expect(edit).toContainText("+2");
@@ -1068,7 +1094,8 @@ test("run view renders the typed event timeline read-only", async ({
 	);
 	await expect(timeline.locator('[data-event="usage"]')).toContainText("$1.42");
 
-	// Raw CLI stdout sits beside the timeline.
+	// Raw CLI stdout sits beside the timeline once opened.
+	await page.getByTestId("raw-output-toggle").click();
 	await expect(page.getByTestId("run-output")).toContainText(
 		'"type":"assistant"',
 	);
@@ -1130,6 +1157,158 @@ test("the run view stepper shows a merged PR as done", async ({ page }) => {
 	await expect(steps.locator('[aria-current="step"]')).toHaveCount(0);
 	await expect(steps.locator("li").nth(5)).toContainText("✓");
 });
+
+test("job detail commands are single rows whose badge resolves in place (#774)", async ({
+	page,
+}) => {
+	const events: object[] = [
+		{
+			kind: "command",
+			time: at(3),
+			call_id: "r1",
+			command: "pnpm lint",
+			status: "running",
+		},
+	];
+	EVENTS[221] = events;
+	try {
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+		const rows = page
+			.getByRole("list", { name: "Activity" })
+			.locator('[data-event="command"]');
+		await expect(rows).toHaveCount(1);
+		const badge = rows.first().getByTestId("command-status");
+		await expect(badge).toHaveText("running");
+
+		events.push({
+			kind: "command",
+			time: at(2),
+			call_id: "r1",
+			output: "Checked 107 files",
+			exit_code: 0,
+			status: "done",
+		});
+		await expect(badge).toHaveText("ok");
+		await expect(badge).toHaveAttribute("title", "Succeeded");
+		await expect(rows).toHaveCount(1);
+
+		events.push(
+			{
+				kind: "command",
+				time: at(1),
+				call_id: "r2",
+				command: "go test ./...",
+				status: "running",
+			},
+			{
+				kind: "command",
+				time: at(1),
+				call_id: "r2",
+				output: "FAIL",
+				exit_code: 2,
+				is_error: true,
+				status: "done",
+			},
+		);
+		await expect(rows).toHaveCount(2);
+		const failed = rows.last().getByTestId("command-status");
+		await expect(failed).toHaveText("failed · exit 2");
+		await expect(failed).toHaveAttribute("title", "Failed with exit code 2");
+		await expect(page.getByText(/^exit \d/)).toHaveCount(0);
+	} finally {
+		delete EVENTS[221];
+	}
+});
+
+test("job detail's raw Output starts collapsed, toggles, remembers, and hides heartbeats (#774)", async ({
+	page,
+}) => {
+	RAW_OUTPUT[221] = [
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}',
+		'{"type":"tool_progress","tool_use_id":"t1","heartbeat":true,"elapsed_time_seconds":30}',
+	].join("\n");
+	try {
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+		const toggle = page.getByTestId("raw-output-toggle");
+		const panel = page.getByTestId("raw-output");
+		await expect(page.getByRole("list", { name: "Activity" })).toBeVisible();
+		await expect(panel).toHaveCount(0);
+		await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+		await toggle.click();
+		await expect(panel).toBeVisible();
+		const output = page.getByTestId("run-output");
+		await expect(output).toContainText('"text":"Working"');
+		await expect(output).not.toContainText("tool_progress");
+		await page.getByTestId("raw-output-heartbeats").check();
+		await expect(output).toContainText('"heartbeat":true');
+
+		await page.reload();
+		await expect(panel).toBeVisible();
+		await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+		await toggle.click();
+		await expect(panel).toHaveCount(0);
+		await page.reload();
+		await expect(page.getByRole("list", { name: "Activity" })).toBeVisible();
+		await expect(panel).toHaveCount(0);
+	} finally {
+		delete RAW_OUTPUT[221];
+	}
+});
+
+test("job detail shows the clone with session and agent above the stepper (#774)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const meta = page.getByTestId("job-meta");
+	await expect(meta.getByTestId("job-session")).toHaveText("7f3c…a9");
+	await expect(meta.getByTestId("job-agent")).toContainText("claude");
+	await expect(meta.getByTestId("job-clone-path")).toBeVisible();
+	const clone = await meta.getByTestId("job-clone").boundingBox();
+	const steps = await page.getByTestId("lifecycle").boundingBox();
+	expect(clone && steps && clone.y + clone.height <= steps.y).toBe(true);
+});
+
+for (const { name, width, height, compact } of [
+	{ name: "mobile", width: 390, height: 844, compact: true },
+	{ name: "narrow desktop", width: 820, height: 800, compact: true },
+	{ name: "wide desktop", width: 1600, height: 900, compact: false },
+]) {
+	test(`the job detail stepper never scrolls sideways at ${name} width (#774)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		const steps = page.getByTestId("lifecycle");
+		await expect(steps.locator('[aria-current="step"]')).toContainText(
+			"Implementing",
+		);
+		const overflow = await steps.evaluate(
+			(el) => el.scrollWidth - el.clientWidth,
+		);
+		expect(overflow).toBeLessThanOrEqual(0);
+		const summary = page.getByTestId("lifecycle-compact");
+		if (compact) {
+			await expect(summary).toBeVisible();
+			await expect(summary).toHaveText("3/6 · Implementing");
+		} else {
+			await expect(summary).toBeHidden();
+		}
+		await expect(steps.locator("li").nth(2)).toHaveAttribute(
+			"title",
+			"Step 3 of 6: Implementing (current)",
+		);
+		await expect(steps.locator("li").nth(0)).toHaveAttribute(
+			"data-step",
+			"done",
+		);
+	});
+}
 
 const SIGNED_OUT = {
 	signed_out: true,

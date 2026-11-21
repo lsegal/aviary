@@ -15,16 +15,8 @@
 				:error="e.result?.error ? e.result.output || 'Error' : undefined" :images="e.result?.images"
 				:pending="!e.result" />
 
-			<details v-else-if="e.kind === 'command'" class="group max-w-full">
-				<summary class="flex cursor-pointer list-none items-baseline gap-2 font-mono text-xs text-gray-600 dark:text-gray-300">
-					<span class="text-gray-400">&gt;_</span>
-					<span class="min-w-0 truncate">{{ e.command }}</span>
-					<span v-if="e.running" class="text-blue-500">running…</span>
-					<span v-else-if="e.exitCode === 0" class="text-green-600">exit 0</span>
-					<span v-else-if="e.exitCode !== null" class="text-red-600">exit {{ e.exitCode }}</span>
-				</summary>
-				<pre class="mt-1.5 max-h-64 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-200">{{ e.output || "No output" }}</pre>
-			</details>
+			<JobCommandRow v-else-if="e.kind === 'command'" :command="e.command" :output="e.output" :exit-code="e.exitCode"
+				:running="e.running" :failed="e.failed" />
 
 			<details v-else-if="e.kind === 'file_change'" class="max-w-full">
 				<summary class="flex cursor-pointer list-none items-baseline gap-2 font-mono text-xs text-gray-600 dark:text-gray-300">
@@ -73,6 +65,7 @@
 import { renderMarkdown } from "../../lib/markdown";
 import { diffLines, diffStat, type JobEvent } from "../../lib/projects";
 import ChatToolCall from "../chat/ChatToolCall.vue";
+import JobCommandRow from "./JobCommandRow.vue";
 
 defineProps<{ events: JobEvent[] }>();
 

@@ -161,10 +161,12 @@ export type JobEvent =
 	| {
 			kind: "command";
 			time: string;
+			callID: string;
 			command: string;
 			output: string;
 			exitCode: number | null;
 			running: boolean;
+			failed: boolean;
 	  }
 	| { kind: "file_change"; time: string; path: string; diff: string }
 	| {
@@ -380,15 +382,19 @@ function normalizeEvent(v: unknown): JobEvent | null {
 				name: str(raw.name),
 				input: raw.input,
 			};
-		case "command":
+		case "command": {
+			const exitCode = typeof raw.exit_code === "number" ? raw.exit_code : null;
 			return {
 				kind: "command",
 				time,
+				callID: str(raw.call_id),
 				command: str(raw.command),
 				output: str(raw.output),
-				exitCode: typeof raw.exit_code === "number" ? raw.exit_code : null,
+				exitCode,
 				running: str(raw.status) === "running",
+				failed: raw.is_error === true || (exitCode !== null && exitCode !== 0),
 			};
+		}
 		case "file_change":
 			return {
 				kind: "file_change",
@@ -433,10 +439,14 @@ function normalizeEvent(v: unknown): JobEvent | null {
 	}
 }
 
-/** Normalizes typed job events, attaching each tool_result to its tool_call. */
+/**
+ * Normalizes typed job events, attaching each tool_result to its tool_call
+ * and folding each command's completion into the row that started it.
+ */
 export function normalizeEvents(v: unknown): JobEvent[] {
 	const events: JobEvent[] = [];
 	const calls = new Map<string, Extract<JobEvent, { kind: "tool_call" }>>();
+	const commands = new Map<string, Extract<JobEvent, { kind: "command" }>>();
 	for (const item of arr(v)) {
 		const raw = obj(item);
 		if (str(raw.kind) === "tool_result") {
@@ -454,6 +464,18 @@ export function normalizeEvents(v: unknown): JobEvent[] {
 		if (!event) continue;
 		if (event.kind === "tool_call" && event.callID)
 			calls.set(event.callID, event);
+		if (event.kind === "command" && event.callID) {
+			const started = commands.get(event.callID);
+			if (started) {
+				started.command ||= event.command;
+				started.output = event.output || started.output;
+				started.exitCode = event.exitCode;
+				started.running = event.running;
+				started.failed = event.failed;
+				continue;
+			}
+			commands.set(event.callID, event);
+		}
 		events.push(event);
 	}
 	return events;
@@ -613,6 +635,17 @@ export function lifecycleStep(detail: JobDetail): {
 		}
 	}
 	return { step, done: false };
+}
+
+/** Whether a raw output line is a stream-json heartbeat with nothing to read. */
+export function isHeartbeatLine(line: string): boolean {
+	if (!line.includes("heartbeat")) return false;
+	try {
+		const raw = obj(JSON.parse(line));
+		return raw.type === "tool_progress" && raw.heartbeat === true;
+	} catch {
+		return false;
+	}
 }
 
 /** The prompt chat's request for a summary of a job's session log. */
