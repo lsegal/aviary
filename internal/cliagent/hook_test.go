@@ -2,6 +2,7 @@ package cliagent
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -11,7 +12,8 @@ import (
 )
 
 func TestClaudeArgs_CommandHook(t *testing.T) {
-	hook := &CommandHook{Executable: `C:\aviary\aviary.exe`, Agent: "a", Rules: []string{"gh *"}}
+	exe := filepath.Join(t.TempDir(), "aviary")
+	hook := &CommandHook{Executable: exe, Agent: "a", Rules: []string{"gh *"}}
 	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, CommandHook: hook}, "", "")
 	i := slices.Index(args, "--settings")
 	require.GreaterOrEqual(t, i, 0)
@@ -32,7 +34,7 @@ func TestClaudeArgs_CommandHook(t *testing.T) {
 	assert.Equal(t, "Bash|PowerShell", entry.Matcher)
 	require.Len(t, entry.Hooks, 1)
 	assert.Equal(t, "command", entry.Hooks[0].Type)
-	assert.Equal(t, `"C:/aviary/aviary.exe" cli-hook`, entry.Hooks[0].Command)
+	assert.Equal(t, `"`+filepath.ToSlash(exe)+`" cli-hook`, entry.Hooks[0].Command)
 
 	env := cliEnv(Options{CommandHook: hook})
 	assert.Contains(t, env, `AVIARY_COMMAND_HOOK={"agent":"a","rules":["gh *"]}`)
