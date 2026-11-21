@@ -11,7 +11,7 @@ test("the mock server rejects arguments a tool does not declare", () => {
 		}),
 	).toEqual([]);
 	expect(
-		undeclaredArguments("project_status", { targets: ["lsegal/aviary"] }),
+		undeclaredArguments("project_refresh", { targets: ["lsegal/aviary"] }),
 	).toEqual(["targets"]);
 	expect(
 		undeclaredArguments("project_refresh", { target: "a", bogus: 1 }),
