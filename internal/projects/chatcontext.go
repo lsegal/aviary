@@ -17,7 +17,7 @@ const (
 // chatContextStatusKeys are the project_status fields the snapshot carries;
 // logs and agent specs stay behind project_status.
 var chatContextStatusKeys = []string{
-	"identity", "running", "targets", "issue_counts", "jobs", "concurrency",
+	"identity", "running", "targets", "issue_counts", "jobs", "states", "concurrency",
 	"delivery", "poll_interval", "ready_label", "allowed_commenters",
 	"quotas", "clis", "last_check", "webhook_online", "error",
 }
@@ -28,7 +28,7 @@ var chatContextStatusKeys = []string{
 // read now.
 func (m *Manager) ChatContext(ctx context.Context, project string) string {
 	project = strings.TrimSpace(project)
-	status := m.Status(ctx, 0)
+	status := m.Status(ctx, 0, nil)
 	snapshot := map[string]any{}
 	for _, key := range chatContextStatusKeys {
 		if value, ok := status[key]; ok {
