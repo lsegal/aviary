@@ -69,7 +69,6 @@ func (fw *FileWatcher) Start() {
 	for {
 		select {
 		case <-fw.stop:
-			fw.watcher.Close() //nolint:errcheck
 			return
 
 		case event, ok := <-fw.watcher.Events:
@@ -108,7 +107,11 @@ func (fw *FileWatcher) Start() {
 	}
 }
 
-// Stop halts the file watcher.
+// Stop halts the file watcher and releases its OS watch handle, whether or
+// not Start ran.
 func (fw *FileWatcher) Stop() {
-	fw.once.Do(func() { close(fw.stop) })
+	fw.once.Do(func() {
+		close(fw.stop)
+		fw.watcher.Close() //nolint:errcheck
+	})
 }
