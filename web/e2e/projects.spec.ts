@@ -877,8 +877,28 @@ test("search filters the whole job list across every field", async ({
 	await expect(cards).toHaveCount(12);
 	await expect(page.getByTestId("search-count")).toHaveCount(0);
 
+	// Paging uses chevron icon buttons that still name themselves and disable
+	// at either end.
+	const prev = pages.getByRole("button", { name: "Previous page" });
+	const next = pages.getByRole("button", { name: "Next page" });
+	for (const [button, title] of [
+		[prev, "Previous page"],
+		[next, "Next page"],
+	] as const) {
+		await expect(button).toHaveAttribute("title", title);
+		await expect(button).toHaveText("");
+		await expect(button.locator("svg")).toHaveCount(1);
+	}
+	await expect(prev).toBeDisabled();
+	await expect(next).toBeEnabled();
+	await next.click();
+	await next.click();
+	await expect(pages).toContainText("Page 3 of 3");
+	await expect(next).toBeDisabled();
+	await expect(prev).toBeEnabled();
+	await prev.click();
+
 	// Typing filters at once and lands on the first page of the matches.
-	await pages.getByRole("button", { name: "Next" }).click();
 	await expect(pages).toContainText("Page 2 of 3");
 	await search.pressSequentially("351");
 	await expect(pages).toContainText("Page 1 of 1");
