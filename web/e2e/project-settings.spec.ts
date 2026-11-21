@@ -335,7 +335,7 @@ test("add-project checks report each failing prerequisite", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("a project's board names its agent and links to its projects in System → Projects", async ({
+test("a project's board names its agent and links to its projects in Projects settings", async ({
 	page,
 }) => {
 	await setup(page);
@@ -361,7 +361,7 @@ test("a project's board names its agent and links to its projects in System → 
 	);
 	await settings.click();
 	await expect(page).toHaveURL(
-		"/system/projects?agent=coder&project=lsegal%2Faviary",
+		"/projects/settings?agent=coder&project=lsegal%2Faviary",
 	);
 	await expect(
 		page.getByRole("tab", { name: "coder", selected: true }),
@@ -381,7 +381,7 @@ test("changing a setting writes only the differing values to the shared section"
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 
 	const yaml = page.getByTestId("project-yaml");
 	await expect(yaml).toHaveText(
@@ -468,11 +468,11 @@ test("changing a setting writes only the differing values to the shared section"
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 });
 
-test("System → Projects holds each agent's projects beside the shared settings", async ({
+test("Projects settings holds each agent's projects beside the shared settings", async ({
 	page,
 }) => {
 	await setup(page, { config: REPORTS_CONFIG });
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 	await expect(page.getByTestId("project-settings")).toBeVisible();
 	const agents = page.getByTestId("agent-projects-agent");
 	await expect(agents).toHaveText(["atlas 0", "scout 0", "coder 1"]);
@@ -481,7 +481,7 @@ test("System → Projects holds each agent's projects beside the shared settings
 		"atlas owns no projects yet.",
 	);
 	await agents.nth(2).click();
-	await expect(page).toHaveURL("/system/projects?agent=coder");
+	await expect(page).toHaveURL("/projects/settings?agent=coder");
 	await expect(page.getByTestId("agent-project")).toHaveCount(1);
 	await page.getByTestId("agent-board-link").click();
 	await expect(page).toHaveURL("/agents/coder/projects");
@@ -496,7 +496,7 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 			projects: { ...PROJECTS, yolo: true },
 		},
 	});
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
 	await expect(mode).toHaveValue("full");
 
@@ -521,7 +521,7 @@ test("following the general approval mode writes no Projects override", async ({
 			projects: { ...PROJECTS, approval_mode: "auto" },
 		},
 	});
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
 	await expect(mode).toHaveValue("auto");
 	await mode.selectOption("");
@@ -537,7 +537,7 @@ test("an agent's projects run their jobs on its model and fallbacks", async ({
 	page,
 }) => {
 	await setup(page);
-	await page.goto("/system/projects?agent=coder");
+	await page.goto("/projects/settings?agent=coder");
 	const models = page.getByTestId("job-models").locator("li");
 	await expect(models).toHaveCount(2);
 	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
@@ -546,7 +546,7 @@ test("an agent's projects run their jobs on its model and fallbacks", async ({
 	await expect(models.nth(1)).toContainText("fallback");
 
 	// An agent on an API model runs the job itself.
-	await page.goto("/system/projects?agent=atlas");
+	await page.goto("/projects/settings?agent=atlas");
 	await expect(models).toHaveCount(1);
 	await expect(models.nth(0)).toHaveAttribute("data-spec", "aviary/atlas");
 	await expect(models.nth(0)).toContainText("runs on the agent itself");
@@ -571,7 +571,7 @@ test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async
 			],
 		},
 	});
-	await page.goto("/system/projects?agent=coder");
+	await page.goto("/projects/settings?agent=coder");
 
 	const models = page.getByTestId("job-models").locator("li");
 	await expect(models).toHaveCount(3);
@@ -585,7 +585,7 @@ test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async
 
 test("projects are added to an agent in its settings", async ({ page }) => {
 	const calls = await setup(page);
-	await page.goto("/system/projects?agent=atlas");
+	await page.goto("/projects/settings?agent=atlas");
 	const field = page.locator('[data-field="new_project"]');
 	const add = page.getByRole("button", { name: "Add", exact: true });
 
@@ -630,9 +630,11 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 	const rows = page.getByTestId("clone-row");
 	await expect(rows).toHaveCount(3);
+	// A long list scrolls inside the card instead of stretching the page.
+	await expect(page.getByTestId("clone-list")).toHaveCSS("overflow-y", "auto");
 	await expect(rows.first()).toContainText("lsegal/aviary#209");
 	await expect(rows.first().getByTestId("clone-state")).toHaveText(
 		"unused: not owned by this instance: no job here records it",
@@ -659,9 +661,29 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	expect(calls.project_clone_clear).toEqual([{}]);
 });
 
-test("System → Projects shows this instance's ID", async ({ page }) => {
+test("Projects settings live under the projects section, not System", async ({
+	page,
+}) => {
 	await setup(page);
+	await page.goto("/projects/settings");
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"Projects Settings",
+	);
+	await expect(page.getByTestId("project-settings")).toBeVisible();
+	await page.getByTestId("sidebar-system-more").click();
+	await expect(
+		page.getByTestId("sidebar-system-list").getByRole("link", {
+			name: "Projects",
+			exact: true,
+		}),
+	).toHaveCount(0);
 	await page.goto("/system/projects");
+	await expect(page.getByTestId("project-settings")).toHaveCount(0);
+});
+
+test("Projects settings shows this instance's ID", async ({ page }) => {
+	await setup(page);
+	await page.goto("/projects/settings");
 	const card = page.getByTestId("projects-instance-id");
 	await expect(card).toContainText("Instance ID");
 	await expect(card.locator("code").first()).toHaveText("7F3CA91B");
@@ -674,7 +696,7 @@ test("an unreadable work state shows an error instead of clones", async ({
 	await setup(page, {
 		clonesError: "work state could not be read: unexpected end of JSON",
 	});
-	await page.goto("/system/projects");
+	await page.goto("/projects/settings");
 	await expect(
 		page.getByText(
 			"Couldn't list clones: work state could not be read: unexpected end of JSON",
@@ -695,7 +717,7 @@ test("change settings first opens the agent's projects with the new one listed",
 	);
 	await dialog.getByRole("button", { name: "Change settings first" }).click();
 	await expect(page).toHaveURL(
-		"/system/projects?agent=coder&add=lsegal%2Fzvidlib",
+		"/projects/settings?agent=coder&add=lsegal%2Fzvidlib",
 	);
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
 	await expect(page.getByTestId("agent-project-yaml")).toContainText(
@@ -743,7 +765,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 			},
 		],
 	});
-	await page.goto("/system/projects?agent=coder");
+	await page.goto("/projects/settings?agent=coder");
 	const yaml = page.getByTestId("agent-project-yaml");
 	const toggle = page.getByRole("switch", { name: "Send job reports" });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -835,7 +857,7 @@ test("saved reports load into the form and are checked like the server does", as
 			],
 		},
 	});
-	await page.goto("/system/projects?agent=coder");
+	await page.goto("/projects/settings?agent=coder");
 	await expect(
 		page.getByRole("switch", { name: "Send job reports" }),
 	).toHaveAttribute("aria-checked", "true");
@@ -881,7 +903,7 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 			{ number: 15, status: "complete" },
 		],
 	});
-	await page.goto("/system/projects?agent=coder");
+	await page.goto("/projects/settings?agent=coder");
 	const projects = page.getByTestId("agent-project");
 	await expect(projects).toHaveCount(2);
 	// Every saved row carries its own ✕; there is no separate Delete section.
@@ -932,7 +954,7 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 
 test("a project being added has nothing to delete", async ({ page }) => {
 	await setup(page);
-	await page.goto("/system/projects?agent=coder&add=lsegal%2Fzvidlib");
+	await page.goto("/projects/settings?agent=coder&add=lsegal%2Fzvidlib");
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
 	await expect(
 		page.getByRole("button", { name: "lsegal/zvidlib", exact: true }),

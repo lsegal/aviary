@@ -10,6 +10,7 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
 | GitHub Projects | `/agents/<agent>/projects` | One board of the jobs of every project the agent owns, with no settings; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
+| Projects Settings | `/projects/settings` | Opened from the boards' Settings gear: each agent's projects (add, remove, reports), the Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
 | Tasks | `/agents/<agent>/tasks` | The agent's task definitions. |
 | Files | `/agents/<agent>/files` | The agent's root markdown files. |
 | Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), Permissions (`/settings/permissions`) and Channels (`/settings/channels`) tabs. |
@@ -22,7 +23,6 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Overview | `/system/overview` | Health, counts, validation, and initial setup. |
 | Settings | `/system/settings` | Server, models, browser, scheduler, and search settings. |
-| Projects | `/system/projects` | Each agent's projects (add, remove, reports), the Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
 | Providers & Auth | `/system/providers` | API keys, OAuth flows, and secret management. |
 | Usage | `/system/usage` | Token and session analytics. |
 | Jobs | `/system/jobs` | Scheduled work, queue state, logs, run-now, and compile attempts. |

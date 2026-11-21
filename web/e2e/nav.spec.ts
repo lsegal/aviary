@@ -47,7 +47,6 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	await expect(system.getByRole("link")).toHaveText([
 		"Overview",
 		"Settings",
-		"Projects",
 		"Providers & Auth",
 		"Usage",
 		"Jobs",
@@ -56,7 +55,6 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	await expect(system.getByRole("link")).toHaveText([
 		"Overview",
 		"Settings",
-		"Projects",
 		"Providers & Auth",
 		"Usage",
 		"Jobs",

@@ -819,12 +819,12 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	);
 
 	// No settings live on the route: no form fields, and Settings opens the
-	// agent's projects in System → Projects.
+	// agent's projects in Projects settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
 		"href",
-		"/system/projects?agent=coder",
+		"/projects/settings?agent=coder",
 	);
 
 	// Filters and search narrow the whole board, as on one project's.
