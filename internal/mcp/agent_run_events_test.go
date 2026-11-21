@@ -83,3 +83,28 @@ func TestCallToolWithProgressDeliversProgressBeforeReturning(t *testing.T) {
 		t.Fatalf("progress = %v", got)
 	}
 }
+
+// A tool call's announcement and its result reach the web chat as tool
+// progress with the same ID, and the result carries its outcome, so the chat
+// can finish the call's one block instead of adding a second (#610).
+func TestToolProgressSharesIDBetweenCallAndResult(t *testing.T) {
+	events := &agentRunEvents{}
+	args := map[string]any{"command": "gh repo view"}
+	got := []toolProgress{
+		events.toolProgress(&agent.ToolEvent{Name: "exec", Args: args}),
+		events.toolProgress(&agent.ToolEvent{Name: "exec", Args: args, Result: "public", Done: true}),
+		events.toolProgress(&agent.ToolEvent{Name: "exec", Args: args}),
+		events.toolProgress(&agent.ToolEvent{Name: "exec", Args: args, Error: "denied", Done: true}),
+		events.toolProgress(&agent.ToolEvent{ID: "toolu_1", Name: "Bash", Args: args}),
+	}
+	want := []toolProgress{
+		{ID: "call_1", Name: "exec", Args: args},
+		{ID: "call_1", Name: "exec", Args: args, Result: "public", Done: true},
+		{ID: "call_2", Name: "exec", Args: args},
+		{ID: "call_2", Name: "exec", Args: args, Error: "denied", Done: true},
+		{ID: "toolu_1", Name: "Bash", Args: args},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("progress =\n%+v\nwant\n%+v", got, want)
+	}
+}

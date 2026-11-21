@@ -64,3 +64,27 @@ func (a *agentRunEvents) fromStream(e agent.StreamEvent) (AgentRunEvent, bool) {
 	}
 	return AgentRunEvent{}, false
 }
+
+// toolProgress is the JSON payload of the "[tool]" progress messages
+// agent_run sends with include_tool_progress. A call and its result share an
+// ID, so the web chat updates one block per call instead of adding one per
+// message.
+type toolProgress struct {
+	ID     string         `json:"id,omitempty"`
+	Name   string         `json:"name"`
+	Args   map[string]any `json:"args,omitempty"`
+	Result string         `json:"result,omitempty"`
+	Error  string         `json:"error,omitempty"`
+	Done   bool           `json:"done,omitempty"`
+}
+
+func (a *agentRunEvents) toolProgress(tool *agent.ToolEvent) toolProgress {
+	return toolProgress{
+		ID:     a.ids.ID(tool),
+		Name:   tool.Name,
+		Args:   tool.Args,
+		Result: tool.Result,
+		Error:  tool.Error,
+		Done:   tool.Done,
+	}
+}

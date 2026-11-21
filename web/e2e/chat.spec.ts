@@ -263,3 +263,59 @@ test("stale session reloads cannot overwrite newer messages", async ({
 	await page.waitForTimeout(200);
 	await expect(page.getByText("new streamed message")).toBeVisible();
 });
+
+test("a streamed tool call and its result share one block", async ({
+	page,
+}) => {
+	let ran = false;
+	const call = (fields: Record<string, unknown>) =>
+		`[tool]${JSON.stringify({ name: "exec", args: { command: "gh repo view" }, ...fields })}`;
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "claude/opus",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		agent_run: () => {
+			ran = true;
+			return {
+				stream: [
+					call({ id: "call_1" }),
+					call({ id: "call_1", result: "public", done: true }),
+					call({ id: "call_2" }),
+				],
+				result: "",
+			};
+		},
+		config_validate: [],
+		// Hold the reload that follows the run so the streamed blocks stay.
+		session_messages: () => (ran ? new Promise(() => {}) : []),
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	await input.fill("check visibility");
+	await input.press("Enter");
+
+	const blocks = page.locator("details").filter({
+		has: page.locator("summary", { hasText: "exec" }),
+	});
+	await expect(blocks).toHaveCount(2);
+	await blocks.nth(0).locator("summary").click();
+	await expect(blocks.nth(0)).toContainText("public");
+	await expect(blocks.nth(0)).not.toContainText("Running…");
+	await blocks.nth(1).locator("summary").click();
+	await expect(blocks.nth(1)).toContainText("Running…");
+});
