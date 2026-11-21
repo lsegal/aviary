@@ -227,14 +227,14 @@ type Request struct {
 
 // Status describes the current restart state and the jobs a restart would stop.
 type Status struct {
-	Phase    string `json:"phase"`
-	When     string `json:"when,omitempty"`
-	Upgrade  bool   `json:"upgrade,omitempty"`
-	Version  string `json:"version,omitempty"`
-	Force    bool   `json:"force,omitempty"`
+	Phase   string `json:"phase"`
+	When    string `json:"when,omitempty"`
+	Upgrade bool   `json:"upgrade,omitempty"`
+	Version string `json:"version,omitempty"`
+	Force   bool   `json:"force,omitempty"`
 	// MCPCalls is how many MCP calls a draining restart is waiting on.
-	MCPCalls int   `json:"mcpCalls,omitempty"`
-	Jobs     []Job `json:"jobs"`
+	MCPCalls int    `json:"mcpCalls,omitempty"`
+	Jobs     []Job  `json:"jobs"`
 	Held     bool   `json:"held"`
 	Noop     bool   `json:"noop,omitempty"`
 	Emulated bool   `json:"emulated,omitempty"`
