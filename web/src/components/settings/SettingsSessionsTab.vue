@@ -45,8 +45,8 @@
 												<button type="button" class="danger-btn" :disabled="!s.is_processing"
 													:class="!s.is_processing ? 'opacity-40 cursor-not-allowed' : ''"
 													@click="stopSession(s.id)">Stop</button>
-												<button type="button" class="danger-btn"
-													@click="removeTarget = s; removeTargetOpen = true">Remove</button>
+												<button type="button" class="danger-btn" data-testid="session-remove-button"
+													@click="askRemoveSession(s)">{{ s.deletable ? 'Remove' : 'Clear' }}</button>
 											</div>
 										</td>
 									</tr>

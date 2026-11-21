@@ -1,4 +1,4 @@
-/** One entry of a sidebar item's "…" menu; danger entries delete. */
+/** One entry of a sidebar item's "…" menu; danger entries delete or clear. */
 export interface SidebarItemAction {
 	key: string;
 	label: string;
