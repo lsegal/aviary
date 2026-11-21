@@ -171,6 +171,12 @@ type agentRunArgs struct {
 	Project             string `json:"project,omitempty"`               // the Projects board the chat was opened from; read only for the Projects agent
 }
 
+type sessionRenameArgs struct {
+	Agent     string `json:"agent"`
+	SessionID string `json:"session_id"`
+	Name      string `json:"name"`
+}
+
 type agentNameArgs struct {
 	Name string `json:"name"`
 }
@@ -402,6 +408,9 @@ func registerAgentTools(s *sdkmcp.Server) {
 		var requestContext string
 		if !args.Bare {
 			requestContext = projectsAgentContext(ctx, agentName, args.Project)
+			if needsAutoTitle(sess) {
+				go autoTitleSession(agentName, sess, args.Message)
+			}
 		}
 		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
 			Bare:    args.Bare,
@@ -1102,28 +1111,35 @@ func registerSessionTools(s *sdkmcp.Server) {
 			sessions[0].Name = "main"
 		}
 		type sessionDTO struct {
-			ID           string `json:"id"`
-			AgentID      string `json:"agent_id"`
-			Name         string `json:"name,omitempty"`
-			TaskID       string `json:"task_id,omitempty"`
-			CreatedAt    string `json:"created_at"`
-			UpdatedAt    string `json:"updated_at"`
-			IsProcessing bool   `json:"is_processing"`
+			ID            string `json:"id"`
+			AgentID       string `json:"agent_id"`
+			Name          string `json:"name,omitempty"`
+			TaskID        string `json:"task_id,omitempty"`
+			Title         string `json:"title,omitempty"`
+			CreatedAt     string `json:"created_at"`
+			UpdatedAt     string `json:"updated_at"`
+			LastMessageAt string `json:"last_message_at,omitempty"`
+			IsProcessing  bool   `json:"is_processing"`
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
 			if sess == nil {
 				continue
 			}
-			out = append(out, sessionDTO{
+			dto := sessionDTO{
 				ID:           sess.ID,
 				AgentID:      sess.AgentID,
 				Name:         sess.Name,
 				TaskID:       sess.TaskID,
+				Title:        sess.Title,
 				CreatedAt:    sess.CreatedAt.Format(time.RFC3339Nano),
 				UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339Nano),
 				IsProcessing: agent.IsSessionProcessing(sess.AgentID, sess.ID),
-			})
+			}
+			if sess.LastMessageAt != nil {
+				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
+			}
+			out = append(out, dto)
 		}
 		return jsonResult(out)
 	})
@@ -1217,6 +1233,27 @@ func registerSessionTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("session %q removed", sid))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "session_rename",
+		Description: "Rename a session's display title; its name and ID do not change",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionRenameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		sid := strings.TrimSpace(args.SessionID)
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		agentID, _, err := resolveAgentIdentity(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		if err := agent.NewSessionManager().Rename(agentID, sid, args.Name); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("session %q renamed to %q", sid, strings.TrimSpace(args.Name)))
 	})
 
 	addTool(s, &sdkmcp.Tool{
