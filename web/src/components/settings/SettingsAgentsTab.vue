@@ -1,5 +1,6 @@
 ﻿<template>
-				<section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
+				<section v-show="activeTab === 'agents'"
+					:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-5 pb-8'">
 					<div v-if="!draft.agents.length"
 						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
 						No agents configured.
@@ -8,7 +9,7 @@
 					</div>
 
 					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
-						class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+						:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'">
 						<!-- The Settings page's tabs; Files, Tasks and GitHub Projects are
 						     pages of their own in the sidebar. -->
 						<div v-if="['general', 'permissions', 'channels'].includes(selectedAgentSubtab)"
@@ -72,62 +73,67 @@
 							</div>
 						</div>
 
-						<!-- Files page: the sidebar lists the files; this edits the open one. -->
-						<div v-show="selectedAgentSubtab === 'files'" class="p-5">
-							<div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<h4 data-testid="agent-file-name" class="flex min-w-0 items-center gap-2 font-mono text-sm font-semibold text-gray-800 dark:text-gray-200">
-										<span class="truncate">{{ getAgentFileState(agent.name).selectedFile || 'Files' }}</span>
-										<span v-if="isProtectedAgentFile(getAgentFileState(agent.name).selectedFile)"
-											class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
-									</h4>
-									<div class="flex flex-wrap items-center gap-1.5">
-										<transition name="save-indicator">
-											<div v-if="getAgentFileState(agent.name).saveFlash"
-												class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"
-													aria-hidden="true">
-													<path fill-rule="evenodd"
-														d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
-														clip-rule="evenodd" />
-												</svg>
-												<span class="text-[11px] font-medium">Saved</span>
-											</div>
-										</transition>
-										<button type="button"
-											class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-											:disabled="!agent.name || getAgentFileState(agent.name).loading"
-											@click="loadAgentFiles(agent.name)">
-											{{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
-										</button>
-										<button type="button"
-											class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-											:disabled="!agent.name || getAgentFileState(agent.name).syncing"
-											@click="syncAgentTemplates(agent.name)">
-											{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
-										</button>
-										<button type="button"
-											class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-											:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving"
-											@click="saveAgentFile(agent.name)">
-											{{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
-										</button>
-									</div>
+						<!-- Files page: the sidebar lists the files; the page is the open
+						     file's editor, under one bar with its name and actions. -->
+						<div v-show="selectedAgentSubtab === 'files'" class="flex min-h-0 flex-1 flex-col">
+							<div data-testid="agent-file-bar"
+								class="flex items-center justify-between gap-3 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
+								<h2 class="flex min-w-0 items-center gap-2 text-xl font-bold text-gray-900 dark:text-white">
+									<span data-testid="agent-file-name" class="truncate font-mono">{{ getAgentFileState(agent.name).selectedFile || 'Files' }}</span>
+									<span v-if="isProtectedAgentFile(getAgentFileState(agent.name).selectedFile)" data-testid="agent-file-builtin"
+										class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
+									<span data-testid="agent-file-hint" role="img" :aria-label="agentFileHint" :title="agentFileHint"
+										class="shrink-0 cursor-help text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+											<path fill-rule="evenodd"
+												d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z"
+												clip-rule="evenodd" />
+										</svg>
+									</span>
+								</h2>
+								<div class="flex shrink-0 items-center gap-2">
+									<transition name="save-indicator">
+										<div v-if="getAgentFileState(agent.name).saveFlash"
+											class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"
+												aria-hidden="true">
+												<path fill-rule="evenodd"
+													d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
+													clip-rule="evenodd" />
+											</svg>
+											<span class="text-xs font-medium">Saved</span>
+										</div>
+									</transition>
+									<button type="button"
+										class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+										:disabled="!agent.name || getAgentFileState(agent.name).loading"
+										@click="loadAgentFiles(agent.name)">
+										{{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
+									</button>
+									<button type="button"
+										class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+										:disabled="!agent.name || getAgentFileState(agent.name).syncing"
+										@click="syncAgentTemplates(agent.name)">
+										{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
+									</button>
+									<button type="button"
+										class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+										:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving"
+										@click="saveAgentFile(agent.name)">
+										{{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
+									</button>
 								</div>
-								<textarea :value="getAgentFileState(agent.name).content"
-									@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
-									@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
-									class="field-input min-h-[50vh] w-full resize-y py-2 font-mono text-xs"
-									:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
-									:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
-								<p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">
-									{{ getAgentFileState(agent.name).error }}
-								</p>
-								<p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span
-										class="font-mono">.md</span> only. <span class="font-mono">AGENTS.md</span>, <span class="font-mono">SYSTEM.md</span>, <span
-										class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are built in and cannot be renamed or deleted.
-								</p>
 							</div>
+							<p v-if="getAgentFileState(agent.name).error"
+								class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+								{{ getAgentFileState(agent.name).error }}
+							</p>
+							<textarea data-testid="agent-file-editor" :value="getAgentFileState(agent.name).content"
+								@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
+								@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
+								class="min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-white px-4 py-4 font-mono text-sm leading-6 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60 sm:px-6 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+								:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
+								:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
 						</div>
 
 						<!-- Permissions subtab -->
@@ -898,7 +904,10 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) =>
 					option.value === settings.agentPermissionsPreset(agent),
 			)?.description;
+		const agentFileHint =
+			"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 		return Object.assign(settings, {
+			agentFileHint,
 			permissionPresetDescription,
 			permissionPresetOptions,
 		});
