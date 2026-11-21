@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 )
 
 func TestActiveTurnRecordsToolsAndText(t *testing.T) {

@@ -30,10 +30,10 @@ type wsEvent struct {
 	IsProcessing *bool  `json:"is_processing,omitempty"`
 	// Turn is set on "session_turn" events: what the session's running turn
 	// has streamed so far, or an idle turn once it ends.
-	Turn *agent.ActiveTurn `json:"turn,omitempty"`
-	OK           bool   `json:"ok,omitempty"`
-	Version      string `json:"version,omitempty"`
-	GOOS         string `json:"goos,omitempty"`
+	Turn    *agent.ActiveTurn `json:"turn,omitempty"`
+	OK      bool              `json:"ok,omitempty"`
+	Version string            `json:"version,omitempty"`
+	GOOS    string            `json:"goos,omitempty"`
 	// Restart is set on "restart" events and on health events while a
 	// restart is waiting or in progress, so every dashboard shows it.
 	Restart *saferestart.Status `json:"restart,omitempty"`

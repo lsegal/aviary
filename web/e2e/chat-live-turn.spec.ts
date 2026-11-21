@@ -222,9 +222,7 @@ test("restoring a turn already partly stored shows each tool call once", async (
 	page,
 }) => {
 	const server = new Server();
-	server.messages.push(
-		toolRecord("call_1", "exec", new Date().toISOString()),
-	);
+	server.messages.push(toolRecord("call_1", "exec", new Date().toISOString()));
 	await server.attach(page);
 	await page.goto("/agents/assistant/chat");
 	await expectLiveTurn(page);
