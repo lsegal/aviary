@@ -733,6 +733,225 @@ test("long wrapped output never grows a card past half the viewport (#718)", asy
 	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
 });
 
+/** project_job_get for the board's fixtures, with #218's events from events(). */
+const jobGetWithEvents =
+	(events: () => unknown[]) => (args?: Record<string, unknown>) => {
+		const found = JOBS.find(
+			(j) => j.target === args?.target && j.number === args?.number,
+		);
+		if (!found) throw new Error("no such job");
+		return {
+			...found,
+			...CLONES[found.number],
+			scrollback: `$ go test ./... (#${found.number})`,
+			events: found.number === 218 ? events() : [],
+			raw_output: "",
+		};
+	};
+
+test("job cards show the transcript in a rich view by default, falling back to raw (#769)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const rich = card.getByTestId("job-output-rich");
+	await expect(rich).toBeVisible();
+	await expect(card.getByTestId("job-output")).toHaveCount(0);
+	// Cards read enough events to fill their output area.
+	expect(calls.project_job_get?.[0]?.events).toBe(40);
+
+	// Agent messages render as markdown.
+	await expect(rich.locator('[data-row="message"] strong')).toHaveText(
+		"without a cap",
+	);
+	// Each tool call is one row with its summary and a status badge, its
+	// full text in a tooltip.
+	const read = rich.locator('[data-call-id="c1"]');
+	await expect(read).toHaveCount(1);
+	await expect(read).toContainText("Read internal/scheduler/queue.go");
+	await expect(read.getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(read.locator("span.font-mono")).toHaveAttribute(
+		"title",
+		"Read internal/scheduler/queue.go",
+	);
+	const commands = rich.locator('[data-row="tool"]', {
+		hasText: "go test ./internal/scheduler/...",
+	});
+	await expect(commands.first().getByTestId("tool-status")).toHaveText(
+		"✕ exit 1",
+	);
+	await expect(commands.last().getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(
+		rich.locator('[data-row="tool"]', { hasText: "edit internal/scheduler" }),
+	).toContainText("+2 −1");
+
+	// The toggle sits in the action row, rich selected.
+	await expect(
+		card.getByRole("button", { name: "Rich output" }),
+	).toHaveAttribute("aria-pressed", "true");
+	await expect(
+		card.getByRole("button", { name: "Raw output" }),
+	).toHaveAttribute("title", /raw terminal scrollback/);
+
+	// A job with no events shows its scrollback, with no error.
+	const fallback = page.getByTestId("job-card").filter({ hasText: "#221" });
+	await expect(fallback.getByTestId("job-output")).toContainText(
+		"read internal/scheduler/queue.go (#221)",
+	);
+	await expect(fallback.getByTestId("job-output-rich")).toHaveCount(0);
+});
+
+test("the rich/raw toggle applies to every card and survives a reload (#769)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(5);
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
+
+	await cards
+		.filter({ hasText: "#209" })
+		.getByRole("button", { name: "Raw output" })
+		.click();
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
+	await expect(page.getByTestId("job-output")).toHaveCount(5);
+	const card = cards.filter({ hasText: "#218" });
+	await expect(card.getByTestId("job-output")).toContainText(
+		"read internal/scheduler/queue.go (#218)",
+	);
+	await expect(
+		card.getByRole("button", { name: "Raw output" }),
+	).toHaveAttribute("aria-pressed", "true");
+
+	await page.reload();
+	await expect(cards).toHaveCount(5);
+	await expect(page.getByTestId("job-output")).toHaveCount(5);
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
+	// Raw output keeps streaming.
+	const output = card.getByTestId("job-output");
+	const first = await output.textContent();
+	await expect(output).not.toHaveText(first ?? "", { timeout: 5_000 });
+
+	// The run view shares the choice.
+	await card.getByRole("link", { name: "Details" }).click();
+	await expect(page.getByTestId("run-output")).toBeVisible();
+	await page.getByRole("button", { name: "Rich output" }).click();
+	await expect(page.getByTestId("run-output-rich")).toContainText(
+		"Read internal/scheduler/queue.go",
+	);
+	await page.getByTestId("job-detail-close").click();
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
+});
+
+test("a tool call's status updates in place without duplicate rows (#769)", async ({
+	page,
+}) => {
+	let finished = false;
+	let failed = false;
+	const events = () => [
+		{ kind: "message", time: at(2), text: "Running the tests." },
+		{
+			kind: "tool_call",
+			time: at(2),
+			call_id: "t1",
+			name: "Bash",
+			input: { command: "go test ./internal/scheduler/... -run TestBackoff" },
+		},
+		...(finished
+			? [
+					{
+						kind: "tool_result",
+						time: at(1),
+						call_id: "t1",
+						output: "ok",
+					},
+				]
+			: []),
+		{
+			kind: "tool_call",
+			time: at(1),
+			call_id: "t2",
+			name: "Read",
+			input: { file_path: "missing.go" },
+		},
+		...(failed
+			? [
+					{
+						kind: "tool_result",
+						time: at(1),
+						call_id: "t2",
+						output: "no such file",
+						is_error: true,
+					},
+				]
+			: []),
+	];
+	await setup(page, () => STATUS, {
+		project_job_get: jobGetWithEvents(events),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const rich = page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByTestId("job-output-rich");
+	const bash = rich.locator('[data-call-id="t1"]');
+	const read = rich.locator('[data-call-id="t2"]');
+	await expect(bash.getByTestId("tool-status")).toHaveText("running");
+	await expect(read.getByTestId("tool-status")).toHaveText("running");
+
+	finished = true;
+	failed = true;
+	await expect(bash.getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(read.getByTestId("tool-status")).toHaveText("✕ error");
+	await expect(read.getByTestId("tool-status")).toHaveAttribute(
+		"title",
+		"no such file",
+	);
+	await expect(rich.locator('[data-row="tool"]')).toHaveCount(2);
+	await expect(bash).toHaveCount(1);
+	await expect(read).toHaveCount(1);
+});
+
+test("rich card output stays pinned to the bottom unless scrolled up (#769)", async ({
+	page,
+}) => {
+	let count = 30;
+	const events = () =>
+		Array.from({ length: count }, (_, i) => ({
+			kind: "message",
+			time: at(1),
+			text: `Step ${i + 1} of the plan is done.`,
+		}));
+	await setup(page, () => STATUS, {
+		project_job_get: jobGetWithEvents(events),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const rich = page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByTestId("job-output-rich");
+	const gap = () =>
+		rich.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+	await expect(rich).toContainText("Step 30 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+
+	// New output keeps the view at the bottom.
+	count = 34;
+	await expect(rich).toContainText("Step 34 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+
+	// Scrolled up, it stays put as output arrives.
+	await rich.evaluate((el) => {
+		el.scrollTop = 0;
+		el.dispatchEvent(new Event("scroll"));
+	});
+	count = 38;
+	await expect(rich).toContainText("Step 38 of the plan");
+	expect(await rich.evaluate((el) => el.scrollTop)).toBe(0);
+});
+
 /** Asserts el's right edge sits at the card's right padding. */
 async function expectRightAligned(card: Locator, el: Locator) {
 	const c = await card.boundingBox();
@@ -2155,223 +2374,4 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 		"aria-pressed",
 		"true",
 	);
-});
-
-/** project_job_get for the board's fixtures, with #218's events from events(). */
-const jobGetWithEvents =
-	(events: () => unknown[]) => (args?: Record<string, unknown>) => {
-		const found = JOBS.find(
-			(j) => j.target === args?.target && j.number === args?.number,
-		);
-		if (!found) throw new Error("no such job");
-		return {
-			...found,
-			...CLONES[found.number],
-			scrollback: `$ go test ./... (#${found.number})`,
-			events: found.number === 218 ? events() : [],
-			raw_output: "",
-		};
-	};
-
-test("job cards show the transcript in a rich view by default, falling back to raw (#769)", async ({
-	page,
-}) => {
-	const calls = await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
-	const rich = card.getByTestId("job-output-rich");
-	await expect(rich).toBeVisible();
-	await expect(card.getByTestId("job-output")).toHaveCount(0);
-	// Cards read enough events to fill their output area.
-	expect(calls.project_job_get?.[0]?.events).toBe(40);
-
-	// Agent messages render as markdown.
-	await expect(rich.locator('[data-row="message"] strong')).toHaveText(
-		"without a cap",
-	);
-	// Each tool call is one row with its summary and a status badge, its
-	// full text in a tooltip.
-	const read = rich.locator('[data-call-id="c1"]');
-	await expect(read).toHaveCount(1);
-	await expect(read).toContainText("Read internal/scheduler/queue.go");
-	await expect(read.getByTestId("tool-status")).toHaveText("✓ ok");
-	await expect(read.locator("span.font-mono")).toHaveAttribute(
-		"title",
-		"Read internal/scheduler/queue.go",
-	);
-	const commands = rich.locator('[data-row="tool"]', {
-		hasText: "go test ./internal/scheduler/...",
-	});
-	await expect(commands.first().getByTestId("tool-status")).toHaveText(
-		"✕ exit 1",
-	);
-	await expect(commands.last().getByTestId("tool-status")).toHaveText("✓ ok");
-	await expect(
-		rich.locator('[data-row="tool"]', { hasText: "edit internal/scheduler" }),
-	).toContainText("+2 −1");
-
-	// The toggle sits in the action row, rich selected.
-	await expect(
-		card.getByRole("button", { name: "Rich output" }),
-	).toHaveAttribute("aria-pressed", "true");
-	await expect(
-		card.getByRole("button", { name: "Raw output" }),
-	).toHaveAttribute("title", /raw terminal scrollback/);
-
-	// A job with no events shows its scrollback, with no error.
-	const fallback = page.getByTestId("job-card").filter({ hasText: "#221" });
-	await expect(fallback.getByTestId("job-output")).toContainText(
-		"read internal/scheduler/queue.go (#221)",
-	);
-	await expect(fallback.getByTestId("job-output-rich")).toHaveCount(0);
-});
-
-test("the rich/raw toggle applies to every card and survives a reload (#769)", async ({
-	page,
-}) => {
-	await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const cards = page.getByTestId("job-card");
-	await expect(cards).toHaveCount(5);
-	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
-
-	await cards
-		.filter({ hasText: "#209" })
-		.getByRole("button", { name: "Raw output" })
-		.click();
-	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
-	await expect(page.getByTestId("job-output")).toHaveCount(5);
-	const card = cards.filter({ hasText: "#218" });
-	await expect(card.getByTestId("job-output")).toContainText(
-		"read internal/scheduler/queue.go (#218)",
-	);
-	await expect(
-		card.getByRole("button", { name: "Raw output" }),
-	).toHaveAttribute("aria-pressed", "true");
-
-	await page.reload();
-	await expect(cards).toHaveCount(5);
-	await expect(page.getByTestId("job-output")).toHaveCount(5);
-	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
-	// Raw output keeps streaming.
-	const output = card.getByTestId("job-output");
-	const first = await output.textContent();
-	await expect(output).not.toHaveText(first ?? "", { timeout: 5_000 });
-
-	// The run view shares the choice.
-	await card.getByRole("link", { name: "Details" }).click();
-	await expect(page.getByTestId("run-output")).toBeVisible();
-	await page.getByRole("button", { name: "Rich output" }).click();
-	await expect(page.getByTestId("run-output-rich")).toContainText(
-		"Read internal/scheduler/queue.go",
-	);
-	await page.getByTestId("job-detail-close").click();
-	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
-});
-
-test("a tool call's status updates in place without duplicate rows (#769)", async ({
-	page,
-}) => {
-	let finished = false;
-	let failed = false;
-	const events = () => [
-		{ kind: "message", time: at(2), text: "Running the tests." },
-		{
-			kind: "tool_call",
-			time: at(2),
-			call_id: "t1",
-			name: "Bash",
-			input: { command: "go test ./internal/scheduler/... -run TestBackoff" },
-		},
-		...(finished
-			? [
-					{
-						kind: "tool_result",
-						time: at(1),
-						call_id: "t1",
-						output: "ok",
-					},
-				]
-			: []),
-		{
-			kind: "tool_call",
-			time: at(1),
-			call_id: "t2",
-			name: "Read",
-			input: { file_path: "missing.go" },
-		},
-		...(failed
-			? [
-					{
-						kind: "tool_result",
-						time: at(1),
-						call_id: "t2",
-						output: "no such file",
-						is_error: true,
-					},
-				]
-			: []),
-	];
-	await setup(page, () => STATUS, {
-		project_job_get: jobGetWithEvents(events),
-	});
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const rich = page
-		.getByTestId("job-card")
-		.filter({ hasText: "#218" })
-		.getByTestId("job-output-rich");
-	const bash = rich.locator('[data-call-id="t1"]');
-	const read = rich.locator('[data-call-id="t2"]');
-	await expect(bash.getByTestId("tool-status")).toHaveText("running");
-	await expect(read.getByTestId("tool-status")).toHaveText("running");
-
-	finished = true;
-	failed = true;
-	await expect(bash.getByTestId("tool-status")).toHaveText("✓ ok");
-	await expect(read.getByTestId("tool-status")).toHaveText("✕ error");
-	await expect(read.getByTestId("tool-status")).toHaveAttribute(
-		"title",
-		"no such file",
-	);
-	await expect(rich.locator('[data-row="tool"]')).toHaveCount(2);
-	await expect(bash).toHaveCount(1);
-	await expect(read).toHaveCount(1);
-});
-
-test("rich card output stays pinned to the bottom unless scrolled up (#769)", async ({
-	page,
-}) => {
-	let count = 30;
-	const events = () =>
-		Array.from({ length: count }, (_, i) => ({
-			kind: "message",
-			time: at(1),
-			text: `Step ${i + 1} of the plan is done.`,
-		}));
-	await setup(page, () => STATUS, {
-		project_job_get: jobGetWithEvents(events),
-	});
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const rich = page
-		.getByTestId("job-card")
-		.filter({ hasText: "#218" })
-		.getByTestId("job-output-rich");
-	const gap = () =>
-		rich.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
-	await expect(rich).toContainText("Step 30 of the plan");
-	await expect.poll(gap).toBeLessThanOrEqual(1);
-
-	// New output keeps the view at the bottom.
-	count = 34;
-	await expect(rich).toContainText("Step 34 of the plan");
-	await expect.poll(gap).toBeLessThanOrEqual(1);
-
-	// Scrolled up, it stays put as output arrives.
-	await rich.evaluate((el) => {
-		el.scrollTop = 0;
-		el.dispatchEvent(new Event("scroll"));
-	});
-	count = 38;
-	await expect(rich).toContainText("Step 38 of the plan");
-	expect(await rich.evaluate((el) => el.scrollTop)).toBe(0);
 });
