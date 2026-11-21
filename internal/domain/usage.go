@@ -21,7 +21,14 @@ type UsageRecord struct {
 	HasError         bool          `json:"has_error,omitempty"`
 	HasThrottle      bool          `json:"has_throttle,omitempty"`
 	Project          *ProjectUsage `json:"project,omitempty"`
+	// Source names what spent the tokens when it is not a session's prompt,
+	// such as UsageSourceTaskEditor.
+	Source string `json:"source,omitempty"`
 }
+
+// UsageSourceTaskEditor marks the tokens a task editor's live determinism
+// analysis spent, attributed to the editor rather than to any task.
+const UsageSourceTaskEditor = "task_editor"
 
 // The outcomes a ProjectUsage records for an issue.
 const (
