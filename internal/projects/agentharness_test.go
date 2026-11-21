@@ -15,9 +15,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 // The contract harness proves what an agent definition claims, without any
