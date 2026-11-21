@@ -316,7 +316,7 @@ test("clearing Main Chat after confirmation empties it and keeps it in the list"
 	// The draft goes with the messages.
 	await expect(composer).toHaveValue("");
 	await expect(chatRows(page)).toHaveText([/Main Chat/, /Groceries/]);
-	await expect(page).toHaveURL("/agents/assistant/chat");
+	await expect(page).toHaveURL("/agents/assistant/chat/main");
 	expect(calls).toContainEqual({
 		tool: "session_clear",
 		args: { agent: "assistant", session_id: "main" },
