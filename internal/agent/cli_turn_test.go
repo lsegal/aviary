@@ -570,3 +570,29 @@ func posixDrive(path string) string {
 	}
 	return path
 }
+
+func TestCompleteCLIText_AsksTheCLIModelWithoutToolsOrSession(t *testing.T) {
+	fb := useFakeCLI(t)
+
+	got, err := CompleteCLIText(context.Background(), "claude/haiku", "Name this chat.", "plan a trip")
+	require.NoError(t, err)
+	assert.Equal(t, "hello there", got)
+
+	require.Len(t, fb.sessions, 1)
+	s := fb.sessions[0]
+	assert.True(t, s.closed)
+	assert.Equal(t, cliagent.Claude, s.opts.Backend)
+	assert.Equal(t, "haiku", s.opts.Model)
+	assert.Equal(t, "Name this chat.", s.opts.SystemPrompt)
+	assert.True(t, s.opts.Ephemeral)
+	assert.False(t, s.opts.BuiltinTools)
+	assert.Empty(t, s.opts.MCPURL)
+	require.Len(t, fb.turns, 1)
+	assert.Equal(t, "plan a trip", fb.turns[0].text)
+}
+
+func TestCompleteCLIText_RejectsAPIModels(t *testing.T) {
+	useFakeCLI(t)
+	_, err := CompleteCLIText(context.Background(), "anthropic/claude-haiku", "s", "p")
+	assert.Error(t, err)
+}
