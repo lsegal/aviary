@@ -103,75 +103,8 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 	}
 	id := name
 
-	// Try finding existing session first.
-	if p := store.FindSessionPath(agentID, id); p != "" {
-		// Read as generic maps and reconstruct session metadata from the
-		// stored session metadata.
-		lines, err := store.ReadJSONL[map[string]any](p)
-		var created, updated time.Time
-		var sessType domain.SessionType
-		storedID := ""
-		storedName := ""
-		if err == nil {
-			for _, m := range lines {
-				if v, ok := m["id"]; ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						storedID = strings.TrimSpace(s)
-					}
-				}
-				if v, ok := m["name"]; ok {
-					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-						storedName = strings.TrimSpace(s)
-					}
-				}
-				if v, ok := m["created_at"]; ok {
-					if s, ok := v.(string); ok {
-						if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-							created = t
-						}
-					}
-				}
-				if v, ok := m["updated_at"]; ok {
-					if s, ok := v.(string); ok {
-						if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-							updated = t
-						}
-					}
-				}
-				if v, ok := m["type"]; ok {
-					if s, ok := v.(string); ok {
-						sessType = domain.SessionType(s)
-					}
-				}
-				if !created.IsZero() {
-					break
-				}
-			}
-		}
-		if created.IsZero() {
-			created = time.Now()
-		}
-		if updated.IsZero() {
-			updated = created
-		}
-		if sessType == "" {
-			sessType = sessionTypeFor(agentID, name)
-		}
-		if storedName == "" {
-			storedName = name
-		}
-		if storedID == "" {
-			storedID = id
-		}
-		sess := &domain.Session{
-			ID:        storedID,
-			AgentID:   agentID,
-			Name:      storedName,
-			Type:      sessType,
-			CreatedAt: created,
-			UpdatedAt: updated,
-		}
-		return sess, nil
+	if store.FindSessionPath(agentID, id) != "" {
+		return m.Load(agentID, id)
 	}
 
 	path := store.SessionPath(agentID, id)
@@ -187,6 +120,76 @@ func (m *SessionManager) GetOrCreateNamedTyped(agentID, name string, typ domain.
 		return nil, fmt.Errorf("creating session %q: %w", name, err)
 	}
 	return sess, nil
+}
+
+// Load reads agentID's session sessionID from disk. A session file that
+// starts with a message instead of its header, as happens when messages land
+// after the session file was removed, is repaired by writing the header back,
+// so the session keeps resolving to its agent.
+func (m *SessionManager) Load(agentID, sessionID string) (*domain.Session, error) {
+	p := store.FindSessionPath(agentID, sessionID)
+	if p == "" {
+		return nil, fmt.Errorf("session %q not found for agent %q", sessionID, agentID)
+	}
+	lines, err := store.ReadJSONL[map[string]any](p)
+	if err != nil {
+		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
+	}
+	header := sessionHeader(lines)
+	if header == nil {
+		header = newSessionHeader(agentID, sessionID, firstRecordAt(lines))
+		if err := store.RewriteJSONL(p, append([]map[string]any{header}, lines...)); err != nil {
+			return nil, fmt.Errorf("session %q is missing its header and repairing it failed (%w); clear the session to start it fresh", sessionID, err)
+		}
+		slog.Warn("agent: repaired session missing its header", "agent", agentID, "session", sessionID)
+	}
+	return sessionFromHeader(agentID, sessionID, header), nil
+}
+
+// newSessionHeader is the header record for agentID's session sessionID,
+// created at created or now when created is zero.
+func newSessionHeader(agentID, sessionID string, created time.Time) map[string]any {
+	if created.IsZero() {
+		created = time.Now()
+	}
+	at := created.Format(time.RFC3339Nano)
+	return map[string]any{
+		"id":         sessionID,
+		"name":       sessionID,
+		"type":       string(sessionTypeFor(agentID, sessionID)),
+		"created_at": at,
+		"updated_at": at,
+	}
+}
+
+// sessionFromHeader builds agentID's session sessionID from its header record.
+func sessionFromHeader(agentID, sessionID string, header map[string]any) *domain.Session {
+	sess := &domain.Session{ID: sessionID, AgentID: agentID, Name: sessionID}
+	if s, _ := header["id"].(string); strings.TrimSpace(s) != "" {
+		sess.ID = strings.TrimSpace(s)
+	}
+	if s, _ := header["name"].(string); strings.TrimSpace(s) != "" {
+		sess.Name = strings.TrimSpace(s)
+	}
+	if s, _ := header["type"].(string); s != "" {
+		sess.Type = domain.SessionType(s)
+	}
+	if sess.Type == "" {
+		sess.Type = sessionTypeFor(agentID, sess.Name)
+	}
+	if s, _ := header["created_at"].(string); s != "" {
+		sess.CreatedAt, _ = time.Parse(time.RFC3339Nano, s)
+	}
+	if s, _ := header["updated_at"].(string); s != "" {
+		sess.UpdatedAt, _ = time.Parse(time.RFC3339Nano, s)
+	}
+	if sess.CreatedAt.IsZero() {
+		sess.CreatedAt = time.Now()
+	}
+	if sess.UpdatedAt.IsZero() {
+		sess.UpdatedAt = sess.CreatedAt
+	}
+	return sess
 }
 
 // sessionTypeFor is the type of agentID's session named name: the Projects
@@ -495,7 +498,7 @@ func AppendMessageToSessionWithSender(agentID, sessionID string, role domain.Mes
 // session's last message when it is a user or assistant message, and fires the
 // session-message observer.
 func appendSessionMessage(agentID, sessionID string, msg domain.Message) error {
-	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
+	if err := appendSessionRecord(agentID, sessionID, msg); err != nil {
 		return err
 	}
 	if msg.Role == domain.MessageRoleUser || msg.Role == domain.MessageRoleAssistant {
@@ -556,7 +559,20 @@ func MarkMessageResponded(agentID, sessionID, promptMsgID, responseMsgID string)
 		ID:         promptMsgID,
 		ResponseID: responseMsgID,
 	}
-	return store.AppendJSONL(store.SessionPath(agentID, sessionID), marker)
+	return appendSessionRecord(agentID, sessionID, marker)
+}
+
+// appendSessionRecord appends rec to the session file, writing the session's
+// header first when the file does not exist, so a session file always starts
+// with its header.
+func appendSessionRecord(agentID, sessionID string, rec any) error {
+	path := store.SessionPath(agentID, sessionID)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := store.AppendJSONL(path, newSessionHeader(agentID, sessionID, time.Time{})); err != nil {
+			return err
+		}
+	}
+	return store.AppendJSONL(path, rec)
 }
 
 // UnansweredUserMessageID returns the ID of the session's latest user

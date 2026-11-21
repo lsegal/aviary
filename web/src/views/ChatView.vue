@@ -90,17 +90,18 @@
 									class="relative z-[1] -mt-2 mr-6 flex justify-end">
 									<div
 										class="inline-flex max-w-lg flex-col items-start gap-1 rounded-b-xl rounded-tl-xl border border-red-200 bg-red-50 px-3 py-1.5 text-left text-red-700 shadow-sm dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-										<div class="flex items-start gap-3">
-											<span class="whitespace-pre-wrap font-mono text-sm">{{ item.error.text }}</span>
-											<button type="button" data-testid="chat-message-retry"
-												class="shrink-0 rounded border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-700 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800"
+										<span class="whitespace-pre-wrap font-mono text-sm">{{ item.error.text }}</span>
+										<div class="flex items-center gap-1.5 self-end text-xs text-red-400 dark:text-red-500">
+											<span v-if="item.error.timestamp">
+												{{ formatTime(item.error.timestamp) }}{{ item.error.model ? ' | ' + item.error.model : '' }}
+											</span>
+											<button type="button" data-testid="chat-message-retry" aria-label="Retry"
+												title="Retry this message"
+												class="rounded-full p-0.5 text-red-500 transition-colors hover:bg-red-100 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900 dark:hover:text-red-200"
 												@click="retryMessage(item.msg, item.error)">
-												Retry
+												<ArrowPathIcon aria-hidden="true" class="h-3.5 w-3.5" />
 											</button>
 										</div>
-										<span v-if="item.error.timestamp" class="self-end text-xs text-red-400 dark:text-red-500">
-											{{ formatTime(item.error.timestamp) }}{{ item.error.model ? ' | ' + item.error.model : '' }}
-										</span>
 									</div>
 								</div>
 							</div>
@@ -145,6 +146,7 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,

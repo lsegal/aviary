@@ -1550,13 +1550,15 @@ func TestAppendSessionMessageWithSender_PersistsSender(t *testing.T) {
 	sender := domain.NewMessageSender("u123", "Alice", true)
 	runner.appendSessionMessageWithSender("sess-sender", domain.MessageRoleUser, "Hello, world!", nil, "", sender)
 
+	// The new session file starts with its header, then the message.
 	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_sender", "sess-sender"))
-	assert.NoError(t, err)
-	assert.Len(t, lines, 1)
-	assert.NotNil(t, lines[0].Sender)
-	assert.Equal(t, "u123", lines[0].Sender.ID)
-	assert.Equal(t, "Alice", lines[0].Sender.Name)
-	assert.True(t, lines[0].Sender.Participant)
+	require.NoError(t, err)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "sess-sender", lines[0].ID)
+	require.NotNil(t, lines[1].Sender)
+	assert.Equal(t, "u123", lines[1].Sender.ID)
+	assert.Equal(t, "Alice", lines[1].Sender.Name)
+	assert.True(t, lines[1].Sender.Participant)
 }
 
 func TestResolveSessionID_FromContext(t *testing.T) {
