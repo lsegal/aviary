@@ -559,15 +559,17 @@ export const LIFECYCLE_STEPS = [
 
 /**
  * The lifecycle step a job is on (0-based) and whether it finished, derived
- * from its state and the system events it has emitted.
+ * from its state and the system events it has emitted. The pull request's
+ * state, which the board's PR icon shows, sets the lowest step it can be on.
  */
 export function lifecycleStep(detail: JobDetail): {
 	step: number;
 	done: boolean;
 } {
 	const { job, events } = detail;
+	if (job.prState === "merged") return { step: 5, done: true };
 	if (job.status === "complete" && job.pr > 0) return { step: 5, done: true };
-	let step = job.pr > 0 ? 1 : 0;
+	let step = job.prState === "open" ? 4 : job.pr > 0 ? 1 : 0;
 	for (const e of events) {
 		if (e.kind === "system") {
 			const t = e.text.toLowerCase();

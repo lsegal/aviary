@@ -203,7 +203,7 @@ function savedProjects(calls: Calls, agent: string) {
 const saveChanges = (page: Page) =>
 	page.getByRole("button", { name: "Save Changes" }).click();
 
-test("adding a project from the single field saves it to the chosen agent", async ({
+test("adding a project from the single field saves it to the board's agent", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -225,18 +225,18 @@ test("adding a project from the single field saves it to the chosen agent", asyn
 		"data-status",
 		"warn",
 	);
-	// The board's agent owns it unless another is chosen.
-	const agent = dialog.getByLabel("Agent that owns it");
-	await expect(agent).toHaveValue("coder");
-	await agent.selectOption("atlas");
-	await expect(dialog).toContainText("Runs on atlas: aviary/atlas");
-	await agent.selectOption("coder");
+	// The board's agent owns it; the dialog offers no other owner.
+	await expect(dialog.getByLabel("Agent that owns it")).toHaveCount(0);
+	await expect(dialog.getByRole("combobox")).toHaveCount(0);
 	await expect(dialog).toContainText(
 		"Runs on coder: claude/opus, codex/gpt-5.5",
 	);
 	await expect(dialog).toContainText("Up to 3 jobs at once");
 	await expect(dialog.locator("footer code")).toHaveText(
 		"aviary project add lsegal/zvidlib --agent coder",
+	);
+	await expect(dialog.locator("footer")).toContainText(
+		"saved to coder's projects",
 	);
 
 	await dialog.getByRole("button", { name: "Start watching" }).click();
@@ -254,8 +254,10 @@ test("a project another agent owns cannot be added again", async ({ page }) => {
 	const calls = await setup(page, {
 		check: { ...READY_CHECK, target: "lsegal/aviary", fork: false },
 	});
-	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
+	// Opened from atlas's board, so atlas would own it.
+	await page.goto("/agents/atlas/projects?add=1");
 	const dialog = page.getByRole("dialog");
+	await expect(dialog).toContainText("Runs on atlas: aviary/atlas");
 	await dialog.getByLabel("Repository or project board").fill("lsegal/aviary");
 	await expect(dialog.getByTestId("add-project-owned")).toHaveText(
 		"lsegal/aviary already belongs to agent coder.",
@@ -685,7 +687,6 @@ test("change settings first opens the agent's projects with the new one listed",
 	await expect(dialog.getByTestId("add-project-checks")).toContainText(
 		"Ready to go",
 	);
-	await dialog.getByLabel("Agent that owns it").selectOption("coder");
 	await dialog.getByRole("button", { name: "Change settings first" }).click();
 	await expect(page).toHaveURL(
 		"/system/projects?agent=coder&add=lsegal%2Fzvidlib",

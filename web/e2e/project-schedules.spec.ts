@@ -219,6 +219,15 @@ test("up next strip is hidden when no schedule is enabled", async ({
 	await expect(page.getByTestId("up-next")).toHaveCount(0);
 });
 
+test("a watch no agent owns opens no add-project dialog", async ({ page }) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary?add=1");
+	await expect(page.getByTestId("job-card")).toHaveCount(1);
+	await expect(
+		page.getByRole("dialog", { name: "Watch a repository" }),
+	).toHaveCount(0);
+});
+
 test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 	page,
 }) => {

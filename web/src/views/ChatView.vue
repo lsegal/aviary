@@ -113,11 +113,11 @@
 							@click="pastedMedia = ''" aria-label="Remove image">✕</button>
 					</div>
 				</div>
-				<form class="flex gap-3 px-6 py-4" @submit.prevent="send">
-					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
+				<form class="flex items-end gap-3 px-6 py-4" @submit.prevent="send">
+					<ChatComposerInput ref="chatInputEl" v-model="input" :disabled="!selectedAgent || !selectedSessionId"
 						placeholder="Type a message or paste an image…"
-						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" />
+						class="max-h-48 flex-1 resize-none overflow-y-auto rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" @send="send" />
 					<button v-if="currentSessionProcessing" type="button" @click="stopSession" :disabled="!selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 						aria-label="Stop response" title="Stop">
@@ -161,6 +161,7 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import ChatComposerInput from "../components/chat/ChatComposerInput.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
@@ -405,7 +406,7 @@ const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
-const chatInputEl = ref<HTMLInputElement | null>(null);
+const chatInputEl = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -845,7 +846,7 @@ function resetHistoryNavigation() {
 
 function onChatInput(e: Event) {
 	if (historyIndex.value === -1) return;
-	input.value = (e.target as HTMLInputElement).value;
+	input.value = (e.target as HTMLTextAreaElement).value;
 	historyDraft.value = input.value;
 	historyIndex.value = -1;
 }
@@ -853,7 +854,7 @@ function onChatInput(e: Event) {
 function setChatInputValue(value: string) {
 	input.value = value;
 	void nextTick(() => {
-		const el = chatInputEl.value;
+		const el = chatInputEl.value?.textarea;
 		if (!el) return;
 		const end = value.length;
 		el.setSelectionRange(end, end);
@@ -867,6 +868,13 @@ function onChatInputKeydown(e: KeyboardEvent) {
 
 	const history = userMessageHistory.value;
 	if (history.length === 0) return;
+	// In a multi-line draft the arrows move the caret between lines first.
+	const el = e.target as HTMLTextAreaElement;
+	if (el.selectionStart !== el.selectionEnd) return;
+	const before = el.value.slice(0, el.selectionStart);
+	const after = el.value.slice(el.selectionEnd);
+	if (e.key === "ArrowUp" && before.includes("\n")) return;
+	if (e.key === "ArrowDown" && after.includes("\n")) return;
 
 	if (e.key === "ArrowUp") {
 		e.preventDefault();
