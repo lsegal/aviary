@@ -10,7 +10,7 @@ Aviary runs three kinds of scheduled work:
 
 **Script tasks** run a sandboxed Lua script directly against the agent's MCP tools. No LLM is involved at runtime. Executions are deterministic and cost zero tokens.
 
-**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs the project's agent on the prompt in an isolated clone of the repository (in place of `/gh-fix`), and finishes when the agent's run ends. See [Scheduled prompts](#scheduled-prompts).
+**Project tasks** run a prompt as a [Projects](./projects) job instead of sending it to the agent's LLM. Each fire takes a slot on the project's board like any job, runs the project's agent on the prompt in an isolated clone of the repository (in place of [`/gh-fix`](/skills/gh-fix/)), and finishes when the agent's run ends. See [Scheduled prompts](#scheduled-prompts).
 
 All types support the same triggers and appear identically in the job queue. The difference is entirely in how they execute.
 

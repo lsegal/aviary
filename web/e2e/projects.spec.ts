@@ -2560,12 +2560,13 @@ test("prompt chat opened mid-turn shows the running turn (#764)", async ({
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");
-	await expect(chat.getByTestId("chat-typing")).toBeVisible();
 	await expect(chat.getByTestId("chat-tool-call")).toHaveCount(2);
 	await expect(chat.getByTestId("chat-tool-call").nth(1)).toHaveAttribute(
 		"data-pending",
 		"true",
 	);
+	// A running call shows on its chip, not in a typing bubble below it.
+	await expect(chat.getByTestId("chat-typing")).toHaveCount(0);
 	await expect(chat).toContainText("Reading the board");
 });
 
@@ -2658,3 +2659,99 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 		}
 	}
 });
+
+for (const { name, width } of [
+	{ name: "desktop", width: 1440 },
+	{ name: "narrow desktop", width: 1024 },
+	{ name: "mobile", width: 390 },
+]) {
+	test(`job detail header keeps its actions on one row at ${name} width (#797)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const title =
+			"Job detail view: rich single-row transcript, collapsible raw Output, prominent Clone, and a stepper that never scrolls sideways";
+		await setup(page, () => STATUS, {
+			project_job_get: (args?: Record<string, unknown>) => {
+				const found = JOBS.find(
+					(j) => j.target === args?.target && j.number === args?.number,
+				);
+				if (!found) throw new Error("no such job");
+				return {
+					...found,
+					title,
+					...CLONES[found.number],
+					scrollback: "",
+					events: [],
+					raw_output: "",
+				};
+			},
+		});
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		const header = page.getByTestId("job-detail-header");
+		const actions = page.getByTestId("job-detail-actions");
+		await expect(page.getByTestId("job-detail-title")).toContainText(title);
+		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
+
+		const buttons = actions.locator(":scope > a, :scope > button");
+		await expect(buttons).toHaveCount(6);
+		const boxes = await buttons.evaluateAll((els) =>
+			els.map((el) => {
+				const r = el.getBoundingClientRect();
+				return {
+					top: (el as HTMLElement).offsetTop,
+					height: r.height,
+					right: r.right,
+				};
+			}),
+		);
+		// Every action, the close button included, sits on one row at one height.
+		expect(new Set(boxes.map((b) => b.top)).size).toBe(1);
+		expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
+		await expect(page.getByTestId("job-detail-close")).toHaveAttribute(
+			"aria-label",
+			"Close job details",
+		);
+		const close = boxes[boxes.length - 1];
+
+		const layout = await header.evaluate((el) => {
+			const style = getComputedStyle(el);
+			const r = el.getBoundingClientRect();
+			const t = el
+				.querySelector("[data-testid=job-detail-title]")
+				?.getBoundingClientRect();
+			const a = el
+				.querySelector("[data-testid=job-detail-actions]")
+				?.getBoundingClientRect();
+			return {
+				contentRight: r.right - Number.parseFloat(style.paddingRight),
+				overflow: el.scrollWidth - el.clientWidth,
+				titleHeight: t?.height ?? 0,
+				titleRight: t?.right ?? 0,
+				titleBottom: t?.bottom ?? 0,
+				actionsLeft: a?.left ?? 0,
+				actionsTop: a?.top ?? 0,
+			};
+		});
+		expect(layout.overflow).toBeLessThanOrEqual(0);
+		// The Issue and PR links show their whole label, not an ellipsis.
+		for (const link of await actions
+			.getByRole("link", { name: /^(Issue|PR) #/ })
+			.all()) {
+			expect(
+				await link
+					.locator("span.truncate")
+					.evaluate((el) => el.scrollWidth - el.clientWidth),
+			).toBeLessThanOrEqual(0);
+		}
+		// The close button ends the row at the header's content edge.
+		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
+		// The long title wraps instead of squeezing or overlapping the actions.
+		expect(layout.titleHeight).toBeGreaterThan(40);
+		if (width >= 1024) {
+			expect(layout.titleRight).toBeLessThanOrEqual(layout.actionsLeft);
+		} else {
+			expect(layout.titleBottom).toBeLessThanOrEqual(layout.actionsTop);
+		}
+	});
+}

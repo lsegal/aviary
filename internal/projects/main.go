@@ -271,10 +271,12 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 			return OriginatingWorkState{}, fmt.Errorf("read pull request %s#%d state for issue #%d: %w: %s", pullRepo, pullRequest.Number, number, err, strings.TrimSpace(string(output)))
 		}
 		var currentPullRequest struct {
-			State    string     `json:"state"`
-			Body     string     `json:"body"`
-			MergedAt *time.Time `json:"merged_at"`
-			Draft    bool       `json:"draft"`
+			State     string     `json:"state"`
+			Body      string     `json:"body"`
+			MergedAt  *time.Time `json:"merged_at"`
+			Draft     bool       `json:"draft"`
+			Additions int        `json:"additions"`
+			Deletions int        `json:"deletions"`
 			// Comments and ReviewComments count the conversation and the
 			// review threads, and Head is the pushed head commit.
 			Comments       int `json:"comments"`
@@ -299,7 +301,7 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		if currentPullRequest.MergedAt != nil {
 			mergedAt = *currentPullRequest.MergedAt
 		}
-		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
+		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, Additions: currentPullRequest.Additions, Deletions: currentPullRequest.Deletions, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
 	}
 	return state, nil
 }
