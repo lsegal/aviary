@@ -2,7 +2,7 @@
 // CLI. It reads a CLI's agent definition and asks the installed binary what
 // the definition says to ask -- where it is, its version against the declared
 // minimum, whether it is signed in, which models it takes, and its quota -- so
-// `aviary doctor`, Settings → Providers and the Projects doctor all report
+// `aviary doctor`, System → Providers & Auth and the Projects doctor all report
 // from the same code.
 package clidoctor
 

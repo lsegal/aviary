@@ -241,6 +241,18 @@ async function setup(
 	};
 	await mockMCP(page, {
 		agent_list: [],
+		// coder owns both watched projects, so their boards sit under it.
+		config_get: {
+			agents: [
+				{
+					name: "coder",
+					model: "cli/claude/opus",
+					projects: {
+						list: [{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }],
+					},
+				},
+			],
+		},
 		project_status: (args?: Record<string, unknown>) => {
 			record("project_status", args);
 			return status();
@@ -283,28 +295,37 @@ async function setup(
 	return calls;
 }
 
-test("sidebar lists watched projects with live counts", async ({ page }) => {
+test("an agent's GitHub Projects in the sidebar list its projects with live counts", async ({
+	page,
+}) => {
 	await setup(page);
-	await page.goto("/overview");
-	const nav = page.locator("nav").last();
-	await expect(nav.getByRole("link", { name: /^GitHub/ })).toBeVisible();
-	await expect(nav.getByTestId("projects-running-badge")).toHaveText("2");
-
-	await page.goto("/projects");
-	await expect(page).toHaveURL("/projects/lsegal%2Faviary");
-	await expect(nav.getByRole("link", { name: /lsegal\/aviary/ })).toContainText(
-		"2 running",
-	);
+	await page.goto("/system/overview");
+	const agents = page.getByTestId("sidebar-agent-list");
+	await expect(agents.getByTestId("agent-running-badge")).toHaveText("2");
+	// No GitHub top level: projects live under their agent.
 	await expect(
-		nav.getByRole("link", { name: /lsegal\/zvidlib/ }),
+		page.getByTestId("sidebar-nav").getByRole("link", { name: /^GitHub/ }),
+	).toHaveCount(0);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const projects = page.getByTestId("sidebar-agent-projects");
+	await expect(
+		projects.getByRole("link", { name: /lsegal\/aviary/ }),
+	).toContainText("2 running");
+	await expect(
+		projects.getByRole("link", { name: /lsegal\/zvidlib/ }),
 	).toContainText("idle");
+	await expect(page.getByTestId("sidebar-add-project")).toHaveAttribute(
+		"href",
+		"/agents/coder/projects?new=1",
+	);
 });
 
 test("board shows status, ordered job cards and live output", async ({
 	page,
 }) => {
 	await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
 	await expect(
 		page.getByRole("heading", { name: "lsegal/aviary" }),
@@ -355,7 +376,7 @@ test("retry, stop, filters and check now call project tools", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
 	await card.getByRole("button", { name: "Retry" }).click();
 	await expect
@@ -389,13 +410,15 @@ test("run view renders the typed event timeline read-only", async ({
 	page,
 }) => {
 	await setup(page);
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page
 		.getByTestId("job-card")
 		.filter({ hasText: "#218" })
 		.getByRole("link", { name: "Details" })
 		.click();
-	await expect(page).toHaveURL("/projects/lsegal%2Faviary/jobs/218");
+	await expect(page).toHaveURL(
+		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
+	);
 	await expect(page.getByRole("heading", { level: 1 })).toHaveText(
 		"#218 Cap scheduler retry backoff at 10 minutes",
 	);
@@ -471,7 +494,7 @@ test.describe("GitHub sign-in banner", () => {
 		page,
 	}) => {
 		const calls = await setup(page, () => browserStatus(SIGNED_OUT));
-		await page.goto("/projects/lsegal%2Faviary");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		const banner = page.getByTestId("github-signin-banner");
 		await expect(banner).toContainText(
 			"Signed out of GitHub in Aviary's browser",
@@ -494,7 +517,7 @@ test.describe("GitHub sign-in banner", () => {
 
 	test("an open sign-in window replaces the buttons", async ({ page }) => {
 		await setup(page, () => browserStatus({ ...SIGNED_OUT, signing_in: true }));
-		await page.goto("/projects/lsegal%2Faviary");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		const banner = page.getByTestId("github-signin-banner");
 		await expect(banner).toContainText("Waiting for you to sign in to GitHub");
 		await expect(banner.getByRole("button")).toHaveCount(0);
@@ -511,7 +534,7 @@ test.describe("GitHub sign-in banner", () => {
 				last_error: "",
 			}),
 		);
-		await page.goto("/projects/lsegal%2Faviary");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		const banner = page.getByTestId("github-signin-banner");
 		await expect(banner.getByTestId("github-signin-no-window")).toContainText(
 			"no display server",
@@ -541,7 +564,7 @@ test.describe("GitHub sign-in banner", () => {
 			signing_in: false,
 		});
 		await setup(page, () => status);
-		await page.goto("/projects/lsegal%2Faviary");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		await expect(page.getByTestId("job-card").first()).toBeVisible();
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 		await expect(page.getByTestId("delivery-status")).toHaveText("live");
@@ -628,7 +651,7 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 }) => {
 	const calls: Calls = {};
 	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
 	await expect(page.getByTestId("project-chat")).toHaveCount(0);
 	await page.getByTestId("prompt-chat-toggle").click();
@@ -675,7 +698,7 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 test("Summarize sends the job to the prompt chat", async ({ page }) => {
 	const calls: Calls = {};
 	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
 	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
 	await card.getByTestId("job-summarize").click();
@@ -698,8 +721,8 @@ test.describe("phone width", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
 	for (const path of [
-		"/projects/lsegal%2Faviary",
-		"/projects/lsegal%2Faviary/jobs/218",
+		"/agents/coder/projects/lsegal%2Faviary",
+		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	]) {
 		test(`${path} has no horizontal overflow`, async ({ page }) => {
 			await setup(page);
@@ -721,7 +744,7 @@ test.describe("phone width", () => {
 
 	test("prompt chat opens as a bottom drawer", async ({ page }) => {
 		await setup(page, undefined, chatFixtures({}));
-		await page.goto("/projects/lsegal%2Faviary");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		await page.getByTestId("prompt-chat-toggle").click();
 		const chat = page.getByTestId("project-chat");
 		await expect(chat).toBeVisible();
@@ -795,7 +818,7 @@ test("search filters the whole job list across every field", async ({
 			};
 		},
 	});
-	await page.goto("/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const cards = page.getByTestId("job-card");
 	const pages = page.getByRole("navigation", { name: "Job pages" });
 	const search = page.getByRole("searchbox", { name: "Search jobs" });

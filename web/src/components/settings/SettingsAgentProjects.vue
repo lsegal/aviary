@@ -13,7 +13,7 @@
 						class="flex items-center gap-2 px-3 py-2" :class="t === selected ? 'bg-blue-50 dark:bg-blue-950/30' : ''">
 						<button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-sm text-gray-900 dark:text-white"
 							:aria-pressed="t === selected" @click="selected = t">{{ t }}</button>
-						<router-link :to="`/projects/${encodeProject(t)}`" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
+						<router-link :to="projectPath(agent.name, t)" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
 						<button v-if="!savedTargets.includes(t)" type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`"
 							title="Not saved yet" @click="removeProject(t)">✕</button>
 					</li>
@@ -22,7 +22,7 @@
 					<label class="block">
 						<span :class="LABEL">Add a repository or project board</span>
 						<div class="flex gap-2">
-							<input v-model="newTarget" type="text" autocomplete="off" spellcheck="false" placeholder="owner/repo"
+							<input ref="newTargetInput" v-model="newTarget" type="text" autocomplete="off" spellcheck="false" placeholder="owner/repo"
 								:class="[INPUT, 'font-mono']" data-field="new_project" />
 							<button type="submit" :disabled="!canAdd"
 								class="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">Add</button>
@@ -41,7 +41,7 @@
 			<h3 :class="CARD_HEAD">Jobs run on <span :class="CARD_NOTE">{{ agentLabel }}'s model, then down its fallbacks when quota runs out</span></h3>
 			<div class="space-y-2 p-4">
 				<p v-if="!models.length" class="text-sm text-red-600 dark:text-red-400" data-testid="agent-problem">
-					{{ agentLabel }} has no model a job can run on. Set one on the General subtab.
+					{{ agentLabel }} has no model a job can run on. Set one on its Settings page.
 				</p>
 				<ol v-else class="space-y-2" data-testid="job-models">
 					<li v-for="(m, i) in models" :key="m.spec" :data-spec="m.spec"
@@ -241,7 +241,7 @@
 
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
-import { computed, h, ref, watch } from "vue";
+import { computed, h, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import {
 	useProjectCheck,
@@ -276,7 +276,7 @@ import {
 	withReports,
 	withSettings,
 } from "../../lib/projectSettings";
-import { encodeProject } from "../../lib/projects";
+import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectSection from "../projects/DeleteProjectSection.vue";
 
@@ -370,6 +370,17 @@ watch(targets, (list) => {
 });
 
 const newTarget = ref("");
+// The sidebar's + Add project opens this page with ?new to focus the input.
+const newTargetInput = ref<HTMLInputElement | null>(null);
+watch(
+	() => route.query.new,
+	async (v) => {
+		if (v === undefined) return;
+		await nextTick();
+		newTargetInput.value?.focus();
+	},
+	{ immediate: true },
+);
 const check = useProjectCheck(newTarget);
 const checkResult = check.result;
 const checkError = check.error;

@@ -66,7 +66,7 @@
         </router-link>
 
         <!-- Jobs -->
-        <router-link to="/tasks"
+        <router-link to="/system/jobs"
           class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
           <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Jobs</span>
           <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.jobs.length }}</span>
@@ -82,7 +82,7 @@
         </router-link>
 
         <!-- Sessions -->
-        <router-link to="/sessions"
+        <router-link to="/system/sessions"
           class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
           <span
             class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Sessions</span>

@@ -102,11 +102,11 @@ test("one providers list holds the API providers and every CLI provider with its
 	await page.addInitScript((clis) => {
 		localStorage.setItem("aviary.providers.clis", JSON.stringify(clis));
 	}, CLIS.clis);
-	await page.goto("/settings/general");
+	await page.goto("/system/settings");
 	await expect(page.getByTestId("default-model-selector")).toBeVisible();
 	expect(calls).toEqual([]);
 
-	await page.goto("/settings/providers");
+	await page.goto("/system/providers");
 	const card = page.getByTestId("providers-list");
 	await expect(card).toBeVisible();
 	await expect(page.getByText("CLI providers", { exact: true })).toHaveCount(0);
@@ -211,7 +211,7 @@ test("saving settings keeps the CLI definitions", async ({ page }) => {
 	await setup(page, (config) => {
 		saved = config;
 	});
-	await page.goto("/settings/general");
+	await page.goto("/system/settings");
 	await page
 		.getByRole("checkbox", { name: /Expose service externally/i })
 		.check();
@@ -262,7 +262,7 @@ test("the default model pickers offer the models of installed CLI providers", as
 	});
 
 	// No CLI list is cached yet, so the General tab probes for one.
-	await page.goto("/settings/general");
+	await page.goto("/system/settings");
 	await expect.poll(() => calls).toEqual(["provider_cli_list"]);
 
 	const offered = ["codex/gpt-5.5", "codex/gpt-5.5-mini"];
@@ -299,7 +299,7 @@ test("an Add provider row expands into tiles of provider kinds that start the ad
 			return {};
 		},
 	});
-	await page.goto("/settings/providers");
+	await page.goto("/system/providers");
 	const card = page.getByTestId("providers-list");
 	await expect(card.locator("select")).toHaveCount(0);
 

@@ -49,7 +49,7 @@ session_list { agent: "assistant" }
 session_remove { agent: "assistant", session_id: "01HZ..." }
 ```
 
-Or use **Settings → Sessions** in the control panel to delete sessions across all agents at once.
+Or use **System → Sessions** in the control panel to delete sessions across all agents at once.
 
 **Resume a session:** Pass `session_id` to `agent_run` or select the session in the Chat view.
 
@@ -57,7 +57,7 @@ Or use **Settings → Sessions** in the control panel to delete sessions across 
 
 ## Scheduled Tasks and Jobs
 
-Tasks trigger automatically on their configured schedule. Use the Jobs dashboard (`/jobs`) or the MCP tools to monitor and intervene.
+Tasks trigger automatically on their configured schedule. Use the Jobs dashboard (System → Jobs, `/system/jobs`) or the MCP tools to monitor and intervene.
 
 **Check pending jobs:**
 
@@ -127,7 +127,7 @@ Backups rotate up to five copies in `~/.config/aviary/backups/`.
 
 Provider connectivity is checked asynchronously and cached for 30 seconds. Results appear in:
 
-- **Settings → Providers** — per-provider status badge
+- **System → Providers & Auth** — per-provider status badge
 - **config_validate** — `"provider connectivity check pending"` warnings become pass/fail on subsequent calls
 
 If a provider shows as unreachable:

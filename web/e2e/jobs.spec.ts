@@ -71,7 +71,7 @@ test("scheduled tasks panel uses task_list data rather than job history", async 
 		],
 	});
 
-	await page.goto("/jobs");
+	await page.goto("/system/jobs");
 
 	await expect(page.getByText("21 jobs")).toBeVisible();
 	await expect(page.getByText("5 configured")).toBeVisible();
@@ -160,7 +160,7 @@ test("initial jobs page load sequences MCP requests", async ({ page }) => {
 		});
 	});
 
-	await page.goto("/jobs");
+	await page.goto("/system/jobs");
 
 	await expect(page.getByText("0 jobs")).toBeVisible();
 	await expect(page.getByText("0 configured")).toBeVisible();
@@ -187,7 +187,7 @@ test("compile attempts panel shows only the newest five entries", async ({
 		task_compile_query: compiles,
 	});
 
-	await page.goto("/jobs");
+	await page.goto("/system/jobs");
 
 	await expect(page.getByText("5 shown of 7 recorded")).toBeVisible();
 	await expect(page.getByText("compile_7")).toBeVisible();
