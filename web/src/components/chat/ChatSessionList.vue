@@ -49,7 +49,7 @@
 						</DropdownMenuItem>
 						<DropdownMenuItem v-if="!isMainChat(s)"
 							class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 outline-none data-[highlighted]:bg-red-50 dark:text-red-400 dark:data-[highlighted]:bg-red-950/40"
-							@select="deleteTarget = s">
+							@select="askDelete(s)">
 							<TrashIcon aria-hidden="true" class="h-4 w-4" />
 							Delete
 						</DropdownMenuItem>
@@ -58,7 +58,7 @@
 			</template>
 		</div>
 
-		<AlertDialogRoot :open="!!deleteTarget" @update:open="(open) => { if (!open) deleteTarget = null }">
+		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
 			<AlertDialogPortal>
 				<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 				<AlertDialogContent
@@ -191,9 +191,16 @@ async function saveRename() {
 }
 
 const deleteTarget = ref<ChatSession | null>(null);
+const deleteOpen = ref(false);
+function askDelete(s: ChatSession) {
+	menuId.value = "";
+	deleteTarget.value = s;
+	deleteOpen.value = true;
+}
+
 async function confirmDelete() {
 	const s = deleteTarget.value;
-	deleteTarget.value = null;
+	deleteOpen.value = false;
 	if (!s) return;
 	try {
 		await store.remove(props.agent, s.id);
