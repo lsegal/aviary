@@ -726,18 +726,15 @@
 							</div>
 						</section>
 
-						<!-- Tasks page -->
-						<div v-show="selectedAgentSubtab === 'tasks'"
+						<!-- Tasks page: the overview, or the open task's editor -->
+						<TasksOverview v-if="selectedAgentSubtab === 'tasks' && tasksRoot" :agent="agent.name" />
+						<div v-show="selectedAgentSubtab === 'tasks' && !tasksRoot"
 							class="min-h-[60vh] space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between">
 								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Scheduled Tasks</h4>
 							</div>
 
 
-							<div v-if="!agent.tasks?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No scheduled tasks configured for this agent. Add one with the + on Scheduled Tasks in the sidebar.
-							</div>
 
 <!-- The sidebar lists the tasks; this edits the open one. -->
 <div>
@@ -919,6 +916,7 @@ import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
 import TriggerEditor from "../TriggerEditor.vue";
+import TasksOverview from "../tasks/TasksOverview.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -935,6 +933,7 @@ export default defineComponent({
 		SessionSelect,
 		SwitchRoot,
 		SwitchThumb,
+		TasksOverview,
 		TriggerEditor,
 	},
 	setup() {

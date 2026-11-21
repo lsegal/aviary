@@ -50,7 +50,6 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 		"Projects",
 		"Providers & Auth",
 		"Usage",
-		"Jobs",
 	]);
 	await page.getByTestId("sidebar-system-more").click();
 	await expect(system.getByRole("link")).toHaveText([
@@ -59,7 +58,6 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 		"Projects",
 		"Providers & Auth",
 		"Usage",
-		"Jobs",
 		"Tools",
 		"Skills",
 		"Sessions",
