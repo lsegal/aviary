@@ -1096,12 +1096,12 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 					},
 				],
 				// A project task runs against a project its own agent owns.
-				projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
+				projects: [{ target: "o/r" }, { target: "o/other" }],
 			},
 			{
 				name: "elsewhere",
 				model: "anthropic/claude-sonnet-4-5",
-				projects: { list: [{ target: "o/not-mine" }] },
+				projects: [{ target: "o/not-mine" }],
 			},
 		],
 	};
@@ -1173,9 +1173,9 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 						model: "cli/claude/opus",
 					},
 				],
-				projects: { list: [{ target: "o/r" }, { target: "o/other" }] },
+				projects: [{ target: "o/r" }, { target: "o/other" }],
 			},
-			{ name: "elsewhere", projects: { list: [{ target: "o/not-mine" }] } },
+			{ name: "elsewhere", projects: [{ target: "o/not-mine" }] },
 		],
 	});
 });

@@ -74,16 +74,13 @@ type ProjectsConfig struct {
 	Webhook *ProjectsWebhookConfig `yaml:"webhook,omitempty" json:"webhook,omitempty"`
 }
 
-// AgentProjectsConfig is an agent's projects: section in aviary.yaml: the
-// projects the agent owns. Their settings are the shared top-level projects:
+// AgentProjectsConfig is an agent's projects: list in aviary.yaml: the
+// projects the agent owns, which are repositories, project boards and
+// Discussions boards. Their settings are the shared top-level projects:
 // section.
-type AgentProjectsConfig struct {
-	// List is the watched projects: repositories, project boards and
-	// Discussions boards.
-	List []ProjectConfig `yaml:"list,omitempty" json:"list,omitempty"`
-}
+type AgentProjectsConfig []ProjectConfig
 
-// ProjectConfig is one watched project. The agent whose projects: section
+// ProjectConfig is one watched project. The agent whose projects: list
 // holds it owns it: that agent's model and fallbacks, in order, are the
 // provider and model defaults of the project's jobs, a job running on the
 // first one whose quota is not used up.
@@ -243,7 +240,7 @@ func (p ProjectsConfig) EffectiveFilter() string {
 func (p AgentProjectsConfig) Targets() []string {
 	var targets []string
 	seen := map[string]bool{}
-	for _, project := range p.List {
+	for _, project := range p {
 		target := strings.TrimSpace(project.Target)
 		if target == "" || seen[target] {
 			continue
@@ -256,7 +253,7 @@ func (p AgentProjectsConfig) Targets() []string {
 
 // IsZero reports whether the section holds nothing, so Save leaves it out.
 func (p AgentProjectsConfig) IsZero() bool {
-	return len(p.List) == 0
+	return len(p) == 0
 }
 
 // IsZero reports whether the section holds nothing, so Save leaves it out.
@@ -330,7 +327,7 @@ func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
 func (c *Config) ProjectList() []ProjectConfig {
 	var list []ProjectConfig
 	for _, agent := range c.Agents {
-		list = append(list, agent.Projects.List...)
+		list = append(list, agent.Projects...)
 	}
 	return list
 }
