@@ -320,6 +320,20 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
+test("a board watching a project URL links its header to that URL", async ({
+	page,
+}) => {
+	await setup(page);
+	const board = "https://github.com/users/lsegal/projects/3";
+	await page.goto(`/agents/coder/projects/${encodeURIComponent(board)}`);
+
+	const link = page
+		.getByRole("heading", { name: board })
+		.getByRole("link", { name: board });
+	await expect(link).toHaveAttribute("href", board);
+	await expect(link).toHaveAttribute("target", "_blank");
+});
+
 test("board shows status, ordered job cards and live output", async ({
 	page,
 }) => {
@@ -329,6 +343,14 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
+	const repoLink = page
+		.getByRole("heading", { name: "lsegal/aviary" })
+		.getByRole("link", { name: "lsegal/aviary" });
+	await expect(repoLink).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary",
+	);
+	await expect(repoLink).toHaveAttribute("target", "_blank");
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
 	const stats = page.getByRole("region", { name: "Job counts" });

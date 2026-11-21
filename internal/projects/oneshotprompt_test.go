@@ -17,6 +17,10 @@ import (
 
 const oneShotHelperEnv = "AVIARY_ONESHOT_HELPER"
 
+// oneShotHelperRecordEnv names a file the stand-in agent writes the prompt it
+// received to, wherever it arrived from, when the test sets it.
+const oneShotHelperRecordEnv = "AVIARY_ONESHOT_HELPER_RECORD"
+
 // promptFilePattern reads the prompt file path back out of the pointer prompt
 // an agent without stdin support is given.
 var promptFilePattern = regexp.MustCompile(`in the file (.+?)\. Read the whole file`)
@@ -24,7 +28,8 @@ var promptFilePattern = regexp.MustCompile(`in the file (.+?)\. Read the whole f
 // TestOneShotPromptHelperProcess is the stand-in agent: it reports how many
 // prompt arguments it got and how large a prompt reached it on stdin or
 // through the prompt file, which is all a test needs to see that the agent
-// started and was handed the whole prompt.
+// started and was handed the whole prompt. When the test names a record file,
+// the prompt itself is written there too.
 func TestOneShotPromptHelperProcess(_ *testing.T) {
 	if os.Getenv(oneShotHelperEnv) != "1" {
 		return
@@ -38,7 +43,9 @@ func TestOneShotPromptHelperProcess(_ *testing.T) {
 	}
 	stdin, _ := io.ReadAll(os.Stdin)
 	file := 0
+	received := string(stdin)
 	if len(args) == 1 {
+		received = args[0]
 		if match := promptFilePattern.FindStringSubmatch(args[0]); match != nil {
 			data, err := os.ReadFile(match[1])
 			if err != nil {
@@ -46,6 +53,13 @@ func TestOneShotPromptHelperProcess(_ *testing.T) {
 				os.Exit(1)
 			}
 			file = len(data)
+			received = string(data)
+		}
+	}
+	if record := os.Getenv(oneShotHelperRecordEnv); record != "" {
+		if err := os.WriteFile(record, []byte(received), 0o600); err != nil {
+			fmt.Printf("cannot record the prompt: %v\n", err)
+			os.Exit(1)
 		}
 	}
 	fmt.Printf("arguments=%d stdin=%d file=%d\n", len(args), len(stdin), file)
@@ -121,5 +135,61 @@ func TestOneShotPromptKeepsShortPromptsInArgv(t *testing.T) {
 	defer call.cleanup()
 	if call.Stdin != nil || call.Values.Prompt != "status?" || call.Values.PromptStdin {
 		t.Errorf("short prompt call = %+v", call)
+	}
+}
+
+// A scheduled run's prompt is user-authored and unbounded, so one past the
+// Windows command-line limit never travels in argv: an agent that reads stdin
+// gets it there, any other agent through a prompt file, and either way the
+// agent receives it word for word. A short prompt still travels as the
+// argument it always did.
+func TestScheduledRunDeliversLongPromptsOffArgv(t *testing.T) {
+	long := strings.Repeat("Summarize every open issue and list its labels. ", 700)
+	if len(long) <= windowsCommandLineLimit {
+		t.Fatalf("test prompt is %d characters, want more than %d", len(long), windowsCommandLineLimit)
+	}
+	registry := oneShotRegistry(t)
+	for _, tc := range []struct {
+		agent, prompt string
+		// argument, stdin, and file say where the prompt has to arrive.
+		argument, stdin, file bool
+	}{
+		{agent: "stdinagent", prompt: long, stdin: true},
+		{agent: "argvagent", prompt: long, file: true},
+		{agent: "stdinagent", prompt: "Triage new issues.", argument: true},
+		{agent: "argvagent", prompt: "Triage new issues.", argument: true},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", tc.agent, len(tc.prompt)), func(t *testing.T) {
+			record := filepath.Join(t.TempDir(), "prompt.md")
+			t.Setenv(oneShotHelperRecordEnv, record)
+			runner := CommandRunner{Agent: tc.agent, Definitions: registry}
+			issue := Issue{Prompt: tc.prompt, ScheduleID: "nightly", Title: "Nightly triage", Repository: "o/r"}
+			session := AgentSession{Agent: tc.agent}
+			var output strings.Builder
+			if err := runner.RunSessionWithOutput(context.Background(), issue, session, nil, &output); err != nil {
+				t.Fatalf("dispatch: %v (output %q)", err, output.String())
+			}
+			want := scheduledRunPrompt(runner, issue, session)
+			size := func(on bool) int {
+				if on {
+					return len(want)
+				}
+				return 0
+			}
+			arguments := 0
+			if tc.argument || tc.file {
+				arguments = 1
+			}
+			if got, wantLine := strings.TrimSpace(output.String()), fmt.Sprintf("arguments=%d stdin=%d file=%d", arguments, size(tc.stdin), size(tc.file)); got != wantLine {
+				t.Errorf("agent reported %q, want %q", got, wantLine)
+			}
+			got, err := os.ReadFile(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != want {
+				t.Errorf("agent received %d characters, want the %d-character prompt word for word", len(got), len(want))
+			}
+		})
 	}
 }

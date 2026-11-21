@@ -1588,6 +1588,17 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 }
 
 func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) []string {
+	definition, mode, values, ok := commandValuesForSession(r, issue, session)
+	if !ok {
+		return nil
+	}
+	return definition.Render(mode, values)
+}
+
+// commandValuesForSession resolves the definition a run dispatches to, the
+// mode it renders, and the values substituted into it, with the prompt still
+// in Values.Prompt for the caller to deliver.
+func commandValuesForSession(r CommandRunner, issue Issue, session AgentSession) (clidefs.Definition, clidefs.Mode, clidefs.Values, bool) {
 	target := issue.Target
 	if target == "" {
 		target = r.Repo
@@ -1596,7 +1607,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	spec := r.specForSession(session)
 	definition, ok := r.definition(spec.Name)
 	if !ok {
-		return nil
+		return definition, "", clidefs.Values{}, false
 	}
 	mode := clidefs.ModeRun
 	if session.Resume {
@@ -1610,7 +1621,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	// outside any git repository, which Codex refuses without
 	// --skip-git-repo-check.
 	_, inCheckout := sessionRunDir(session)
-	return definition.Render(mode, clidefs.Values{
+	return definition, mode, clidefs.Values{
 		Prompt:     prompt,
 		Session:    session.ID,
 		Model:      spec.Model,
@@ -1627,7 +1638,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 		RemoteControl: r.RemoteControl,
 		Settings:      remoteControlSettings,
 		SessionName:   remoteControlSessionName(target, issue),
-	})
+	}, true
 }
 
 // scheduledRunPrompt is what a scheduled run's agent is told in place of the
@@ -1791,7 +1802,8 @@ func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.C
 	// every restart, hung forever.
 	cmd.Cancel = func() error { return process.Kill(cmd) }
 	cmd.WaitDelay = agentCommandWaitDelay
-	// Stdin stays the null device: Codex treats any other stdin as an optional
+	// Stdin stays the null device unless the caller hands the prompt over on
+	// it as a complete reader: Codex treats any other stdin as an optional
 	// prompt stream, and an agent must not wait on an open pipe.
 	return cmd
 }
@@ -2150,8 +2162,19 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if err != nil {
 		return false, err
 	}
-	args := commandArgsForSession(r, issue, session)
+	_, mode, values, _ := commandValuesForSession(r, issue, session)
+	// A scheduled run's prompt is user-authored and unbounded, so one too
+	// large for argv reaches the agent on stdin or through a file instead.
+	call, err := newRunPrompt(definition, mode, values, os.TempDir())
+	if err != nil {
+		return false, err
+	}
+	defer call.cleanup()
+	args := definition.Render(mode, call.Values)
 	cmd := newAgentCommand(ctx, binary, args...)
+	if call.Stdin != nil {
+		cmd.Stdin = call.Stdin
+	}
 	// The definition's env is what the agent needs beyond aviary's own
 	// environment: Claude's headless print mode, for instance, caps how long
 	// it waits for in-flight background shell tasks before terminating them
