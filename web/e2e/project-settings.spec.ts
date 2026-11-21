@@ -327,7 +327,7 @@ test("add-project checks report each failing prerequisite", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("a project's board names its agent and links to the agent's projects", async ({
+test("a project's board names its agent and links to its projects in System → Projects", async ({
 	page,
 }) => {
 	await setup(page);
@@ -336,8 +336,11 @@ test("a project's board names its agent and links to the agent's projects", asyn
 	await expect(owner).toHaveText("agent: coder");
 	await page.getByTestId("project-settings-link").click();
 	await expect(page).toHaveURL(
-		"/agents/coder/projects?project=lsegal%2Faviary",
+		"/system/projects?agent=coder&project=lsegal%2Faviary",
 	);
+	await expect(
+		page.getByRole("tab", { name: "coder", selected: true }),
+	).toBeVisible();
 	const projects = page.getByTestId("agent-project");
 	await expect(projects).toHaveCount(1);
 	await expect(projects.first()).toHaveAttribute(
@@ -440,18 +443,23 @@ test("changing a setting writes only the differing values to the shared section"
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 });
 
-test("the agent's projects subtab lists its projects with no settings form", async ({
+test("System → Projects holds each agent's projects beside the shared settings", async ({
 	page,
 }) => {
-	await setup(page);
-	await page.goto("/agents/coder/projects");
-	await expect(page.getByTestId("agent-project")).toHaveCount(1);
-	const subtab = page.getByTestId("agent-projects");
-	await expect(subtab.locator('[data-field="concurrency"]')).toHaveCount(0);
-	await expect(page.getByTestId("project-settings")).toBeHidden();
-	await page.getByTestId("shared-settings-link").click();
-	await expect(page).toHaveURL("/system/projects");
+	await setup(page, { config: REPORTS_CONFIG });
+	await page.goto("/system/projects");
 	await expect(page.getByTestId("project-settings")).toBeVisible();
+	const agents = page.getByTestId("agent-projects-agent");
+	await expect(agents).toHaveText(["atlas 0", "scout 0", "coder 1"]);
+	// The first agent is shown until another is picked.
+	await expect(page.getByTestId("agent-project-list")).toContainText(
+		"atlas owns no projects yet.",
+	);
+	await agents.nth(2).click();
+	await expect(page).toHaveURL("/system/projects?agent=coder");
+	await expect(page.getByTestId("agent-project")).toHaveCount(1);
+	await page.getByTestId("agent-board-link").click();
+	await expect(page).toHaveURL("/agents/coder/projects");
 });
 
 test("yolo loads as the full approval mode and saves as the Projects override", async ({
@@ -504,7 +512,7 @@ test("an agent's projects run their jobs on its model and fallbacks", async ({
 	page,
 }) => {
 	await setup(page);
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects?agent=coder");
 	const models = page.getByTestId("job-models").locator("li");
 	await expect(models).toHaveCount(2);
 	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
@@ -513,7 +521,7 @@ test("an agent's projects run their jobs on its model and fallbacks", async ({
 	await expect(models.nth(1)).toContainText("fallback");
 
 	// An agent on an API model runs the job itself.
-	await page.goto("/agents/atlas/projects");
+	await page.goto("/system/projects?agent=atlas");
 	await expect(models).toHaveCount(1);
 	await expect(models.nth(0)).toHaveAttribute("data-spec", "aviary/atlas");
 	await expect(models.nth(0)).toContainText("runs on the agent itself");
@@ -538,7 +546,7 @@ test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async
 			],
 		},
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects?agent=coder");
 
 	const models = page.getByTestId("job-models").locator("li");
 	await expect(models).toHaveCount(3);
@@ -552,7 +560,7 @@ test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async
 
 test("projects are added to an agent in its settings", async ({ page }) => {
 	const calls = await setup(page);
-	await page.goto("/agents/atlas/projects");
+	await page.goto("/system/projects?agent=atlas");
 	const field = page.locator('[data-field="new_project"]');
 	const add = page.getByRole("button", { name: "Add", exact: true });
 
@@ -653,7 +661,9 @@ test("change settings first opens the agent's projects with the new one listed",
 	);
 	await dialog.getByLabel("Agent that owns it").selectOption("coder");
 	await dialog.getByRole("button", { name: "Change settings first" }).click();
-	await expect(page).toHaveURL("/agents/coder/projects?add=lsegal%2Fzvidlib");
+	await expect(page).toHaveURL(
+		"/system/projects?agent=coder&add=lsegal%2Fzvidlib",
+	);
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
 	await expect(page.getByTestId("agent-project-yaml")).toContainText(
 		"- target: lsegal/zvidlib",
@@ -688,7 +698,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	page,
 }) => {
 	const calls = await setup(page, { config: REPORTS_CONFIG });
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects?agent=coder");
 	const yaml = page.getByTestId("agent-project-yaml");
 	const toggle = page.getByRole("switch", { name: "Send job reports" });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -775,7 +785,7 @@ test("saved reports load into the form and are checked like the server does", as
 			],
 		},
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects?agent=coder");
 	await expect(
 		page.getByRole("switch", { name: "Send job reports" }),
 	).toHaveAttribute("aria-checked", "true");
@@ -821,7 +831,7 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 			{ number: 15, status: "complete" },
 		],
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects?agent=coder");
 	const projects = page.getByTestId("agent-project");
 	await expect(projects).toHaveCount(2);
 	// Every saved row carries its own ✕; there is no separate Delete section.
@@ -872,7 +882,7 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 
 test("a project being added has nothing to delete", async ({ page }) => {
 	await setup(page);
-	await page.goto("/agents/coder/projects?add=lsegal%2Fzvidlib");
+	await page.goto("/system/projects?agent=coder&add=lsegal%2Fzvidlib");
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
 	await expect(
 		page.getByRole("button", { name: "lsegal/zvidlib", exact: true }),
