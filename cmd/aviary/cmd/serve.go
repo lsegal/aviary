@@ -245,6 +245,11 @@ func runStart(_ *cobra.Command, _ []string) error {
 		if errors.Is(err, server.ErrReexecRequired) {
 			// Release the PID file first: the new process checks it on start.
 			_ = server.RemovePID()
+			if update.RequestRebuild() {
+				// scripts/dev-go.mjs rebuilds from the checkout and runs it.
+				slog.Info("server: restarting through the dev supervisor")
+				return nil
+			}
 			slog.Info("server: restarting")
 			return update.Reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
 		}

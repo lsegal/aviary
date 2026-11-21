@@ -1,7 +1,8 @@
 <template>
 	<AppLayout>
 		<div class="flex h-full min-h-0">
-			<div class="flex h-full min-w-0 flex-1 flex-col overflow-y-auto">
+			<div class="flex h-full min-w-0 flex-1 flex-col">
+			<div class="min-h-0 flex-1 overflow-y-auto">
 				<template v-if="project || aggregate">
 					<header
 						class="flex flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
@@ -39,10 +40,17 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<button v-if="view === 'board'" type="button"
-								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+							<button v-if="view === 'board'" type="button" aria-label="Check now" title="Check now"
+								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
-								{{ checking ? "Checking…" : "Check now" }}
+								<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
+							</button>
+							<button v-if="view === 'board'" type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+								aria-label="Logs" title="Logs"
+								class="rounded-lg border p-1.5"
+								:class="logsOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+								@click="logsOpen = !logsOpen">
+								<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
 							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
@@ -75,7 +83,7 @@
 						<template v-if="view === 'board'">
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
-						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
+						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7" aria-label="Job counts">
 							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
 								<p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ s.label }}</p>
 								<p class="text-2xl font-bold">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
@@ -169,14 +177,6 @@
 						</section>
 						</template>
 
-						<details v-if="status" class="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-							<summary class="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm">
-								<b class="text-gray-800 dark:text-gray-100">Project log</b>
-								<span class="min-w-0 flex-1 truncate font-mono text-xs text-gray-500">{{ status.log.at(-1) ?? "" }}</span>
-							</summary>
-							<pre class="max-h-64 overflow-auto border-t border-gray-200 px-4 py-3 font-mono text-xs text-gray-600 dark:border-gray-800 dark:text-gray-300">{{ status.log.join("\n") || "No log lines yet." }}</pre>
-						</details>
-
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
 							<span v-if="status.targets.length">
 								Targets:
@@ -187,6 +187,8 @@
 					</div>
 				</template>
 			</div>
+			<ProjectLogsPanel v-if="(project || aggregate) && logsOpen" :lines="status?.log ?? []" @close="logsOpen = false" />
+			</div>
 			<ProjectChatPanel v-if="(project || aggregate) && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
@@ -194,10 +196,12 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -208,6 +212,7 @@ import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
+import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import {
@@ -227,6 +232,7 @@ import {
 	age,
 	BOARD_STATES,
 	type BoardFilter,
+	type BoardState,
 	type ProjectJob,
 	projectPath,
 	stateLabel,
@@ -358,8 +364,9 @@ function openSchedule(id: string) {
 }
 
 // The add-project dialog is open while the URL carries ?add=1, so the
-// sidebar's "Add project" link can open it from anywhere.
-const adding = computed(() => route.query.add === "1");
+// sidebar's "Add project" link can open it from anywhere. The new project
+// belongs to the board's agent, so a watch no agent owns has no dialog.
+const adding = computed(() => route.query.add === "1" && !!routeAgent.value);
 function openAdd() {
 	void router.push({ query: { ...route.query, add: "1" } });
 }
@@ -388,7 +395,22 @@ const online = computed(
 );
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 
-const statCards = computed(() => {
+// Each board state's stat card, in its pill's colors; Starting is orange.
+const STATE_CARD: Record<BoardState, string> = {
+	starting:
+		"border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300",
+	paused:
+		"border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+	running:
+		"border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+	done: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
+	failed:
+		"border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+};
+
+const statCards = computed<
+	{ label: string; value: number; suffix?: string; cls: string }[]
+>(() => {
 	const s = status.value;
 	if (!s) return [];
 	return [
@@ -398,25 +420,15 @@ const statCards = computed(() => {
 			suffix: `of ${s.slotsTotal} busy`,
 			cls: "border-gray-200 text-gray-900 dark:border-gray-800 dark:text-white",
 		},
-		{
-			label: "Running",
-			value: s.activeJobs,
-			cls: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-		},
-		{
-			label: "Waiting",
-			value: s.waitingJobs,
-			cls: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-		},
+		...BOARD_STATES.map((state) => ({
+			label: stateLabel(state),
+			value: s.states[state],
+			cls: STATE_CARD[state],
+		})),
 		{
 			label: "Merged (24h)",
 			value: s.merged24h,
-			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
-		},
-		{
-			label: "Failed",
-			value: s.failed,
-			cls: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+			cls: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
 		},
 	];
 });
@@ -468,6 +480,12 @@ const CHAT_OPEN_KEY = "aviary.projects.chatOpen";
 const chatOpen = ref(localStorage.getItem(CHAT_OPEN_KEY) === "1");
 watch(chatOpen, (open) =>
 	localStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0"),
+);
+// The logs panel's open state survives reloads too.
+const LOGS_OPEN_KEY = "aviary.projects.logsOpen";
+const logsOpen = ref(localStorage.getItem(LOGS_OPEN_KEY) === "1");
+watch(logsOpen, (open) =>
+	localStorage.setItem(LOGS_OPEN_KEY, open ? "1" : "0"),
 );
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 

@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 type sessionProcessingObserver func(agentID, sessionID string, processing bool)
 
-var sessionProcessingObs sessionProcessingObserver
+// sessionProcessingObs is read by every prompt goroutine, so it is swapped
+// atomically rather than assigned directly.
+var sessionProcessingObs atomic.Pointer[sessionProcessingObserver]
 
 type sessionRunRegistry struct {
 	mu        sync.Mutex
@@ -20,7 +23,12 @@ var runs = &sessionRunRegistry{bySession: make(map[string]map[uint64]context.Can
 // SetSessionProcessingObserver registers an optional observer for processing
 // state changes in a session.
 func SetSessionProcessingObserver(obs func(agentID, sessionID string, processing bool)) {
-	sessionProcessingObs = obs
+	if obs == nil {
+		sessionProcessingObs.Store(nil)
+		return
+	}
+	o := sessionProcessingObserver(obs)
+	sessionProcessingObs.Store(&o)
 }
 
 // IsSessionProcessing returns true when at least one prompt is currently active
@@ -109,7 +117,7 @@ func trackSessionRun(agentID, sessionID string, cancel context.CancelFunc) func(
 }
 
 func notifySessionProcessing(agentID, sessionID string, processing bool) {
-	if sessionProcessingObs != nil {
-		sessionProcessingObs(agentID, sessionID, processing)
+	if obs := sessionProcessingObs.Load(); obs != nil {
+		(*obs)(agentID, sessionID, processing)
 	}
 }

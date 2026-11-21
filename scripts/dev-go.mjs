@@ -1,8 +1,10 @@
 // Runs the Aviary Go backend for development under forgo's hot reload
 // (`forgo run --watch`), installing the forgo toolchain first if it is missing.
+// A backend that asks to restart (for a safe restart or after pulling its
+// checkout) is run again, which rebuilds it from the current sources.
 import { execFileSync, spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
-import { homedir } from "node:os";
+import { accessSync, constants, existsSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,7 +66,7 @@ function resolveRunner() {
 			`warning: forgo publishes no release for ${platformKey}; ` +
 				"falling back to 'go run' without hot reload.",
 		);
-		return { bin: "go", args: ["run"], hotReload: false };
+		return { bin: "go", args: ["run"] };
 	}
 
 	let forgo = findForgo();
@@ -79,36 +81,48 @@ function resolveRunner() {
 		);
 		process.exit(1);
 	}
-	return { bin: forgo, args: ["run", "--watch"], hotReload: true };
+	return { bin: forgo, args: ["run", "--watch"] };
 }
 
-const { bin, args, hotReload } = resolveRunner();
-// Tells the backend's git-mode updater whether pulled sources go live on
-// their own or need a restart.
+const { bin, args } = resolveRunner();
+// The backend creates this file before exiting to be run again; see
+// update.RestartFileEnv.
+const restartFile = path.join(tmpdir(), `aviary-restart-${process.pid}`);
+rmSync(restartFile, { force: true });
 const env = { ...process.env };
 // The checkout root is authoritative for git mode, so the backend need not
 // run inside the checkout to find it.
 env.AVIARY_CHECKOUT = rootDir;
-if (hotReload) env.AVIARY_HOT_RELOAD = "1";
-else delete env.AVIARY_HOT_RELOAD;
-const child = spawn(bin, [...args, "./cmd/aviary", ...process.argv.slice(2)], {
-	cwd: rootDir,
-	env,
-	stdio: "inherit",
-});
+env.AVIARY_RESTART_FILE = restartFile;
 
+let child;
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => child.kill(signal));
 }
 
-child.on("exit", (code, signal) => {
-	if (signal) {
-		process.kill(process.pid, signal);
-		return;
-	}
-	process.exit(code ?? 0);
-});
-child.on("error", (err) => {
-	console.error(`error: failed to start ${bin}: ${err.message}`);
-	process.exit(1);
-});
+function run() {
+	child = spawn(bin, [...args, "./cmd/aviary", ...process.argv.slice(2)], {
+		cwd: rootDir,
+		env,
+		stdio: "inherit",
+	});
+	child.on("exit", (code, signal) => {
+		if (existsSync(restartFile)) {
+			rmSync(restartFile, { force: true });
+			console.log("Restarting Aviary from the current sources...");
+			run();
+			return;
+		}
+		if (signal) {
+			process.kill(process.pid, signal);
+			return;
+		}
+		process.exit(code ?? 0);
+	});
+	child.on("error", (err) => {
+		console.error(`error: failed to start ${bin}: ${err.message}`);
+		process.exit(1);
+	});
+}
+
+run();

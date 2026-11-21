@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,6 +36,39 @@ func TestDataDir_Fallback(t *testing.T) {
 		assert.False(t, strings.HasPrefix(got, filepath.Join(home, ".config", "aviary")))
 	}
 
+}
+
+// TestSetDataDir_ConcurrentReads verifies that resetting the data and
+// workspace dirs while other goroutines read them is race-free, as when a
+// test's cleanup runs while agent checkpoint recovery is still reading paths.
+func TestSetDataDir_ConcurrentReads(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		SetDataDir("")
+		SetWorkspaceDir("")
+	})
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 100 {
+				_ = DataDir()
+				_ = WorkspaceDir()
+			}
+		})
+	}
+	for range 100 {
+		SetDataDir(dir)
+		SetWorkspaceDir(dir)
+		SetDataDir("")
+		SetWorkspaceDir("")
+	}
+	wg.Wait()
+
+	SetDataDir(dir)
+	SetWorkspaceDir(dir)
+	assert.Equal(t, dir, DataDir())
+	assert.Equal(t, dir, WorkspaceDir())
 }
 
 // TestSubDir verifies that SubDir returns the correct path under DataDir.

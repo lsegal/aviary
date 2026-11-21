@@ -41,9 +41,9 @@ func TestRecentMergeRecorderCountsPullRequestsMergedInTheLastDay(t *testing.T) {
 func TestStatusReportsMergedInTheLastDay(t *testing.T) {
 	m := newTestManager(t)
 	m.snapshot.Store(&core.Snapshot{Completed: 5, Merged24h: 3})
-	jobs, ok := m.Status(t.Context(), 0)["jobs"].(map[string]int)
+	jobs, ok := m.Status(t.Context(), 0, nil)["jobs"].(map[string]int)
 	if !ok {
-		t.Fatalf("status jobs = %T", m.Status(t.Context(), 0)["jobs"])
+		t.Fatalf("status jobs = %T", m.Status(t.Context(), 0, nil)["jobs"])
 	}
 	if jobs["merged_24h"] != 3 || jobs["completed"] != 5 {
 		t.Fatalf("status jobs = %v, want merged_24h 3 and completed 5", jobs)
