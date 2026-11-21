@@ -31,18 +31,6 @@ let fonts: Parameters<typeof satori>[1]["fonts"] | undefined;
 function loadFonts() {
 	fonts ??= [
 		{
-			name: "Fraunces",
-			data: font("@fontsource/fraunces", "fraunces-latin-400-normal.woff"),
-			weight: 400,
-			style: "normal",
-		},
-		{
-			name: "Fraunces",
-			data: font("@fontsource/fraunces", "fraunces-latin-400-italic.woff"),
-			weight: 400,
-			style: "italic",
-		},
-		{
 			name: "Space Grotesk",
 			data: font(
 				"@fontsource/space-grotesk",
@@ -167,10 +155,10 @@ function card(input: ShareCard, logo: string): Node {
 						{
 							display: "flex",
 							flexWrap: "wrap",
-							fontFamily: "Fraunces",
+							fontWeight: 600,
 							fontSize: 92,
 							lineHeight: 1.02,
-							letterSpacing: -3,
+							letterSpacing: -2.3,
 						},
 						[
 							parts.before
@@ -179,7 +167,7 @@ function card(input: ShareCard, logo: string): Node {
 							parts.accent
 								? h(
 										"span",
-										{ fontStyle: "italic", color: palette.brand2 },
+										{ color: palette.brand2 },
 										parts.accent,
 									)
 								: null,
