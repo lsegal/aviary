@@ -1,0 +1,219 @@
+<template>
+	<div class="flex min-h-0 flex-1 flex-col" data-testid="job-detail">
+		<header class="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6 lg:flex-row lg:items-center">
+			<div class="min-w-0">
+				<p class="text-xs text-gray-500">
+					<router-link :to="boardPath" data-testid="job-detail-board-link" class="text-blue-600 hover:underline">Board</router-link> /
+				</p>
+				<div class="flex flex-wrap items-center gap-2">
+					<h2 class="text-lg font-bold text-gray-900 dark:text-white">
+						{{ job?.scheduled ? "" : `#${number} ` }}{{ job?.title ?? "" }}
+					</h2>
+					<JobStatusPill v-if="job" :state="job.state" />
+					<span v-if="job?.scheduled"
+						class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+						Scheduled
+					</span>
+				</div>
+			</div>
+			<div v-if="job" class="flex flex-wrap items-center gap-2 lg:ml-auto">
+				<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer"
+					class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+					Issue #{{ job.number }} ↗
+				</a>
+				<a v-if="job.pr" :href="prURL" target="_blank" rel="noreferrer"
+					class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+					PR {{ job.prRepo !== job.repo ? job.prRepo : "" }}#{{ job.pr }} ↗
+				</a>
+				<button type="button" :disabled="busy || !job.actions.retry"
+					aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
+					class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+					@click="run(retry)"><ArrowPathIcon aria-hidden="true" class="h-4 w-4" /></button>
+				<button v-if="stoppable" type="button" :disabled="busy" aria-label="Stop" title="Stop this job"
+					class="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
+					@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
+			</div>
+			<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close job details" title="Back to the board"
+				class="self-start rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 lg:self-auto"
+				:class="{ 'lg:ml-auto': !job }"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
+		</header>
+
+		<ol v-if="detail && !job?.scheduled" data-testid="lifecycle"
+			class="flex gap-2 overflow-x-auto border-b border-gray-200 px-4 py-3 text-sm dark:border-gray-800 sm:px-6">
+			<li v-for="(label, i) in LIFECYCLE_STEPS" :key="label" class="flex shrink-0 items-center gap-2"
+				:aria-current="i === lifecycle.step && !lifecycle.done ? 'step' : undefined">
+				<span class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
+					:class="i < lifecycle.step || lifecycle.done ? 'bg-green-600 text-white' : i === lifecycle.step ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'">
+					{{ i < lifecycle.step || lifecycle.done ? "✓" : i + 1 }}
+				</span>
+				<span :class="i === lifecycle.step && !lifecycle.done ? 'font-semibold text-blue-600' : 'text-gray-700 dark:text-gray-300'">{{ label }}</span>
+				<span v-if="i < LIFECYCLE_STEPS.length - 1" class="h-px w-6 bg-gray-300 dark:bg-gray-700 xl:w-12" />
+			</li>
+		</ol>
+
+		<div v-if="job && !job.scheduled" data-testid="job-clone"
+			class="flex min-w-0 items-center gap-2 border-b border-gray-200 px-4 py-2 text-sm dark:border-gray-800 sm:px-6">
+			<span class="shrink-0 font-medium text-gray-700 dark:text-gray-300">Clone</span>
+			<template v-if="job.cloneState === 'present'">
+				<code data-testid="job-clone-path" class="min-w-0 select-all truncate font-mono text-xs text-gray-600 dark:text-gray-400"
+					:title="job.cloneDir">{{ job.cloneDir }}</code>
+				<button type="button" :aria-label="copied ? 'Copied clone path' : 'Copy clone path'" title="Copy the clone path"
+					class="flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+					@click="copyClonePath">
+					<ClipboardDocumentIcon aria-hidden="true" class="h-3.5 w-3.5" />{{ copied ? "Copied" : "Copy" }}
+				</button>
+			</template>
+			<span v-else class="min-w-0 truncate text-gray-500">
+				{{ cloneMessage }}
+				<code v-if="job.cloneDir" class="select-all font-mono text-xs">{{ job.cloneDir }}</code>
+			</span>
+		</div>
+
+		<p v-if="error" class="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+			{{ error }}
+		</p>
+
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+			<section class="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
+				<div class="flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
+					<p v-if="job" class="mb-3 text-center text-xs text-gray-500">
+						{{ [job.skill, job.cli, job.session ? `session ${job.session}` : ""].filter(Boolean).join(" · ") }}
+					</p>
+					<div v-if="!detail && !error" class="py-12 text-center text-sm text-gray-400">Loading…</div>
+					<JobTimeline v-else-if="detail" :events="detail.events" />
+				</div>
+				<footer v-if="job && !job.scheduled"
+					class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:flex-row sm:items-center sm:px-6">
+					<p class="flex-1">
+						Jobs only take instructions from GitHub comments by allowed commenters<template
+							v-if="allowedCommenters.length">
+							(<span data-testid="allowed-commenters"><template v-for="(login, i) in allowedCommenters" :key="login">{{ i ? ", " : "" }}<a
+									:href="`https://github.com/${encodeURIComponent(login)}`" target="_blank" rel="noreferrer"
+									class="font-medium text-blue-600 hover:underline dark:text-blue-400">@{{ login }}</a></template></span>)</template>.
+						To steer this job, comment on the issue or its pull request.
+					</p>
+					<div class="flex flex-wrap gap-2">
+						<a v-if="issueURL" :href="`${issueURL}#new_comment_field`"
+							target="_blank" rel="noreferrer"
+							class="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-500">Comment on #{{ job.number }} ↗</a>
+						<a v-if="job.pr" :href="`${prURL}#new_comment_field`" target="_blank"
+							rel="noreferrer"
+							class="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Comment on PR #{{ job.pr }} ↗</a>
+					</div>
+				</footer>
+			</section>
+
+			<section class="flex h-80 shrink-0 flex-col bg-slate-950 text-slate-200 lg:h-auto lg:w-[40%]" aria-label="Output">
+				<div class="flex items-center gap-2 border-b border-slate-800 px-4 py-2 text-xs">
+					<b class="text-sm text-white">Output</b>
+					<label class="ml-auto flex shrink-0 items-center gap-1 text-slate-400">
+						<input v-model="follow" type="checkbox" class="h-3 w-3" /> following
+					</label>
+				</div>
+				<pre ref="outputEl" data-testid="run-output"
+					class="flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-xs leading-relaxed">{{ detail?.output.join("\n") || "No output yet." }}</pre>
+			</section>
+		</div>
+	</div>
+</template>
+
+<script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
+import StopIcon from "@heroicons/vue/24/outline/StopIcon";
+import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
+import { computed, nextTick, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { useProjectJob } from "../../composables/useProjects";
+import {
+	githubURL,
+	LIFECYCLE_STEPS,
+	lifecycleStep,
+	projectPath,
+} from "../../lib/projects";
+import JobStatusPill from "./JobStatusPill.vue";
+import JobTimeline from "./JobTimeline.vue";
+
+const route = useRoute();
+const project = computed(() => String(route.params.project ?? ""));
+const number = computed(() => Number(route.params.number ?? 0));
+const agent = computed(() => String(route.params.agent ?? ""));
+// Job details open inside the project page, so the way back is the board
+// under the same header.
+const boardPath = computed(() => projectPath(agent.value, project.value));
+
+const { detail, error, allowedCommenters, retry, stop } = useProjectJob(
+	project,
+	number,
+);
+const job = computed(() => detail.value?.job ?? null);
+
+// The Clone row: the path with a copy button, or why there is none.
+const cloneMessage = computed(() => {
+	const current = job.value;
+	if (!current) return "";
+	switch (current.cloneState) {
+		case "reused":
+			return current.cloneReusedBy
+				? `This job's clone was handed to #${current.cloneReusedBy}:`
+				: "This job's clone was handed to a later job:";
+		case "removed":
+			return "This job's clone was removed:";
+		default:
+			return "No clone yet.";
+	}
+});
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+async function copyClonePath() {
+	if (!job.value?.cloneDir) return;
+	try {
+		await navigator.clipboard.writeText(job.value.cloneDir);
+	} catch {
+		return;
+	}
+	copied.value = true;
+	clearTimeout(copiedTimer);
+	copiedTimer = setTimeout(() => {
+		copied.value = false;
+	}, 2000);
+}
+const lifecycle = computed(() =>
+	detail.value ? lifecycleStep(detail.value) : { step: 0, done: false },
+);
+const stoppable = computed(() => !!job.value?.actions.stop);
+const issueURL = computed(() =>
+	job.value && !job.value.scheduled
+		? job.value.issueURL ||
+			githubURL(job.value.repo, "issues", job.value.number)
+		: "",
+);
+const prURL = computed(() =>
+	job.value?.pr
+		? job.value.prURL || githubURL(job.value.prRepo, "pull", job.value.pr)
+		: "",
+);
+
+const follow = ref(true);
+const outputEl = ref<HTMLElement | null>(null);
+watch(
+	() => detail.value?.output.length,
+	async () => {
+		if (!follow.value) return;
+		await nextTick();
+		if (outputEl.value) outputEl.value.scrollTop = outputEl.value.scrollHeight;
+	},
+);
+
+const busy = ref(false);
+async function run(fn: () => Promise<void>) {
+	busy.value = true;
+	try {
+		await fn();
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		busy.value = false;
+	}
+}
+</script>
