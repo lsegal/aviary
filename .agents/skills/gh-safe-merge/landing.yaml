@@ -2,7 +2,7 @@
 # site reads this file, SKILL.md and agents/openai.yaml at build time.
 eyebrow: Outside contribution gatekeeper
 # Wrap the accent word in *asterisks*.
-headline: Safety-checked, then *merged.*
+headline: Merges outside pull requests *safely.*
 tagline: Accepts a pull request nobody on your side owns. It checks the change is safe and does what it says, then drives it through CI to a merge.
 usage: /gh-safe-merge owner/repo#123
 steps:

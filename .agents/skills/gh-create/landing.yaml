@@ -2,7 +2,7 @@
 # site reads this file, SKILL.md and agents/openai.yaml at build time.
 eyebrow: GitHub issue writer
 # Wrap the accent word in *asterisks*.
-headline: From quick note to *actionable.*
+headline: Turns a note into an *actionable* issue.
 tagline: Turns a one-line request into a structured, labeled GitHub issue with media attached, that a person or an agent can pick up and finish.
 usage: /gh-create owner/repo the save button crashes on empty files, see ./crash.png
 steps:
