@@ -89,8 +89,7 @@ const rows = computed(() =>
 							: e.exitCode !== null && e.exitCode !== 0
 								? "error"
 								: "ok",
-						badge:
-							!e.running && e.exitCode ? `exit ${e.exitCode}` : undefined,
+						badge: !e.running && e.exitCode ? `exit ${e.exitCode}` : undefined,
 					},
 				];
 			case "file_change": {

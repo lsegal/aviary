@@ -14,7 +14,10 @@
 <script setup lang="ts">
 import CommandLineIcon from "@heroicons/vue/24/outline/CommandLineIcon";
 import ListBulletIcon from "@heroicons/vue/24/outline/ListBulletIcon";
-import { type JobOutputMode, useJobOutputMode } from "../../composables/useJobOutput";
+import {
+	type JobOutputMode,
+	useJobOutputMode,
+} from "../../composables/useJobOutput";
 
 /** Styles the toggle for the run view's always-dark output panel. */
 const props = defineProps<{ dark?: boolean }>();
