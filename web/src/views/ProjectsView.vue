@@ -1,7 +1,8 @@
 <template>
 	<AppLayout>
 		<div class="flex h-full min-h-0">
-			<div class="flex h-full min-w-0 flex-1 flex-col overflow-y-auto">
+			<div class="flex h-full min-w-0 flex-1 flex-col">
+			<div class="min-h-0 flex-1 overflow-y-auto">
 				<template v-if="project || aggregate">
 					<header
 						class="flex flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
@@ -43,6 +44,13 @@
 								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
 								{{ checking ? "Checking…" : "Check now" }}
+							</button>
+							<button v-if="view === 'board'" type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+								aria-label="Logs" title="Logs"
+								class="rounded-lg border p-1.5"
+								:class="logsOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+								@click="logsOpen = !logsOpen">
+								<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
 							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
@@ -169,14 +177,6 @@
 						</section>
 						</template>
 
-						<details v-if="status" class="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-							<summary class="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm">
-								<b class="text-gray-800 dark:text-gray-100">Project log</b>
-								<span class="min-w-0 flex-1 truncate font-mono text-xs text-gray-500">{{ status.log.at(-1) ?? "" }}</span>
-							</summary>
-							<pre class="max-h-64 overflow-auto border-t border-gray-200 px-4 py-3 font-mono text-xs text-gray-600 dark:border-gray-800 dark:text-gray-300">{{ status.log.join("\n") || "No log lines yet." }}</pre>
-						</details>
-
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
 							<span v-if="status.targets.length">
 								Targets:
@@ -186,6 +186,8 @@
 						</footer>
 					</div>
 				</template>
+			</div>
+			<ProjectLogsPanel v-if="(project || aggregate) && logsOpen" :lines="status?.log ?? []" @close="logsOpen = false" />
 			</div>
 			<ProjectChatPanel v-if="(project || aggregate) && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
@@ -198,6 +200,7 @@ import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRig
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -208,6 +211,7 @@ import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
+import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import {
@@ -468,6 +472,12 @@ const CHAT_OPEN_KEY = "aviary.projects.chatOpen";
 const chatOpen = ref(localStorage.getItem(CHAT_OPEN_KEY) === "1");
 watch(chatOpen, (open) =>
 	localStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0"),
+);
+// The logs panel's open state survives reloads too.
+const LOGS_OPEN_KEY = "aviary.projects.logsOpen";
+const logsOpen = ref(localStorage.getItem(LOGS_OPEN_KEY) === "1");
+watch(logsOpen, (open) =>
+	localStorage.setItem(LOGS_OPEN_KEY, open ? "1" : "0"),
 );
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 
