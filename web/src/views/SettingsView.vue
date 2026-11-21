@@ -105,6 +105,17 @@
 					</div>
 				</div>
 				<template v-else>
+					<nav v-if="settingsTabActive" role="tablist" aria-label="Settings" data-testid="settings-tabs"
+						class="mb-6 flex gap-1 border-b border-gray-200 dark:border-gray-800">
+						<RouterLink v-for="tab in SETTINGS_TABS" :key="tab.key" :to="tab.to" role="tab"
+							:aria-selected="activeTab === tab.key" :data-testid="`settings-tab-${tab.key}`"
+							class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors"
+							:class="activeTab === tab.key
+								? 'border-blue-600 text-gray-950 dark:border-blue-400 dark:text-white'
+								: 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-white'">
+							{{ tab.label }}
+						</RouterLink>
+					</nav>
 					<SettingsGeneralTab />
 					<SettingsAgentsTab />
 					<SettingsSkillsTab />
@@ -353,6 +364,7 @@ import {
 } from "../composables/useUnsavedChanges";
 import { APPROVAL_MODES } from "../lib/approval";
 import { projectTargets } from "../lib/projectSettings";
+import { SETTINGS_TABS } from "../lib/systemNav";
 import {
 	clampToolNamesForPreset,
 	groupTools,
@@ -484,7 +496,8 @@ function safeJsonParse<T>(raw: string, fallback: T): T {
 const route = useRoute();
 const router = useRouter();
 
-// System pages map to their tab; System → Settings is the general tab.
+// System pages map to their tab. Settings, opened from the sidebar's gear,
+// has General and Providers & Authentication tabs.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
 	providers: "providers",
@@ -500,6 +513,9 @@ function routeToActiveTab(): Tab {
 }
 
 const activeTab = ref<Tab>(routeToActiveTab());
+const settingsTabActive = computed(() =>
+	SETTINGS_TABS.some((t) => t.key === activeTab.value),
+);
 
 watch(
 	() => route.path,
@@ -617,8 +633,8 @@ watch(
 );
 
 // An agent's pages: its Agent Settings page's General, Permissions and
-// Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in Projects settings.
+// Channels sections, then Files and Tasks. Code Loop is the agent's board, with its
+// settings in Code Loop settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -963,8 +979,8 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects Settings",
-	providers: "Providers & Auth",
+	projects: "Code Loop Settings",
+	providers: "Settings",
 	sessions: "Sessions",
 	skills: "Skills",
 };

@@ -299,6 +299,30 @@ test("stat cards link to their detail views", async ({ page }) => {
 	await expect(page).toHaveURL(/\/agents/);
 });
 
+test("cards below the overview list every System page (#822)", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
+	await page.goto("/system/overview");
+
+	const pages = page.getByTestId("overview-system-pages");
+	await expect(pages.getByRole("link").locator("span:first-child")).toHaveText([
+		"Usage",
+		"Tools",
+		"Skills",
+		"Sessions",
+		"Models",
+		"Logs",
+		"Daemons",
+	]);
+	await pages.getByTestId("overview-system-card-logs").click();
+	await expect(page).toHaveURL("/system/logs");
+});
+
 test("setup wizard names the first agent default", async ({ page }) => {
 	let saved: { agents?: { name: string }[] } | undefined;
 	await mockMCP(page, {

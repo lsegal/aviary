@@ -48,6 +48,8 @@
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
+						<TaskCostFeedback :agent="feedbackAgent" :prompt="form.prompt" :type="taskType"
+							:target="form.target" :precompile="dialog.mode === 'create' && canPrecompute && form.precompute" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<select id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" class="field-input">
@@ -163,6 +165,7 @@ import {
 	agentTaskType,
 	useSettingsStore,
 } from "../../stores/settings";
+import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import SegmentedControl, {
 	type SegmentedOption,
@@ -204,7 +207,7 @@ const typeOptions = computed((): SegmentedOption<TaskKind>[] => [
 		value: "script",
 		label: "Script",
 		disabled: form.targetKind === "project",
-		disabledReason: "Project tasks run a prompt as a Projects job",
+		disabledReason: "Project tasks run a prompt as a Code Loop job",
 	},
 ]);
 const targetOptions: SegmentedOption<TargetKind>[] = [
@@ -262,7 +265,7 @@ const taskType = computed(
 const canPrecompute = computed(() => taskType.value === "prompt");
 const precomputeHelp = computed(() => {
 	if (taskType.value === "project")
-		return "Project tasks run as Projects jobs, so they are never precomputed";
+		return "Project tasks run as Code Loop jobs, so they are never precomputed";
 	if (taskType.value === "script") return "Script tasks are already scripts";
 	return "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs";
 });
@@ -291,6 +294,11 @@ const otherTarget = computed(() => {
 		return "";
 	return dialog.value?.mode === "edit" ? t : "";
 });
+
+/** The agent whose model and tools the task's feedback is analyzed with. */
+const feedbackAgent = computed(
+	() => taskAgent.value || dialog.value?.agent || "",
+);
 
 /** The task agent's chats that forward to a channel, offered as Send To. */
 const channelSessions = computed(() =>

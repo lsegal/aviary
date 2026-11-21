@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
-import { agentPageLink, openAgentPage } from "./helpers/sidebar";
+import {
+	agentPageLink,
+	openAgentPage,
+	openGearMenuItem,
+	systemList,
+} from "./helpers/sidebar";
 
 const CONFIG = {
 	server: { port: 16677, tls: { cert: "", key: "" } },
@@ -138,10 +143,9 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 test("tab switching does not blank content", async ({ page }) => {
 	await page.goto("/system/settings");
 
-	const system = page.getByTestId("sidebar-system-list");
-	await page.getByTestId("sidebar-system-more").click();
+	const system = await systemList(page);
 	for (let i = 0; i < 3; i += 1) {
-		await system.getByRole("link", { name: "Settings", exact: true }).click();
+		await openGearMenuItem(page, "Settings");
 		await expect(
 			page.getByRole("heading", { name: "Server", exact: true }),
 		).toBeVisible();
@@ -157,9 +161,8 @@ test("tab switching does not blank content", async ({ page }) => {
 			page.getByRole("button", { name: "Refresh Sessions" }),
 		).toBeVisible();
 
-		await page
-			.getByRole("link", { name: "Providers & Auth", exact: true })
-			.click();
+		await openGearMenuItem(page, "Settings");
+		await page.getByTestId("settings-tab-providers").click();
 		await expect(
 			page.getByRole("heading", { name: "Providers", exact: true }),
 		).toBeVisible();
@@ -334,7 +337,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async ({
 test("providers auth tab shows credential controls", async ({ page }) => {
 	await page.goto("/system/settings");
 	await page
-		.getByRole("link", { name: "Providers & Auth", exact: true })
+		.getByRole("tab", { name: "Providers & Authentication", exact: true })
 		.click();
 
 	await expect(

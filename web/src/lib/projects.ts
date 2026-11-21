@@ -757,7 +757,7 @@ export function encodeProject(name: string): string {
 }
 
 /**
- * The board path of target: under its owning agent's GitHub Projects, or
+ * The board path of target: under its owning agent's Code Loop, or
  * under System → Watches for a runtime watch no agent owns.
  */
 export function projectPath(owner: string, target: string): string {

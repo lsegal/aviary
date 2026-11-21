@@ -91,7 +91,7 @@ test("rail icons navigate and name their page in a tooltip", async ({
 
 	for (const [key, label] of [
 		["chat", "Chats"],
-		["projects", "GitHub Projects"],
+		["projects", "Code Loop"],
 		["tasks", "Scheduled Tasks"],
 		["settings", "Agent Settings"],
 		["system", "System"],
@@ -102,13 +102,18 @@ test("rail icons navigate and name their page in a tooltip", async ({
 	await rail.getByTestId("sidebar-rail-system").click();
 	await expect(page).toHaveURL("/system/overview");
 
-	// The footer's connection, restart and logout stay reachable.
+	// The footer's connection and gear menu stay reachable.
 	await expect(rail.getByTestId("connection-status")).toHaveAttribute(
 		"aria-label",
 		/Connected|Connecting|Disconnected/,
 	);
-	await expect(rail.getByTestId("restart-button")).toBeVisible();
-	await expect(rail.getByRole("button", { name: "Log out" })).toBeVisible();
+	await rail.getByTestId("gear-menu-button").click();
+	const menu = page.getByTestId("gear-menu");
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Settings",
+		"Restart",
+		"Logout",
+	]);
 });
 
 test("with several agents the rail lists each agent and the active one's pages", async ({

@@ -10,7 +10,7 @@
 							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
 							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
 							<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">GitHub Projects</h1>
+								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">Code Loop</h1>
 								<span v-if="aggregate" data-testid="board-projects"
 									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 									:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
@@ -299,7 +299,7 @@ const project = computed(() =>
 const settingsStore = useSettingsStore();
 if (!settingsStore.config) void settingsStore.fetchConfig();
 const owner = computed(() => projectOwner(settingsStore.config, project.value));
-// The agent whose GitHub Projects this board sits under; a watch no agent
+// The agent whose Code Loop this board sits under; a watch no agent
 // owns sits under System instead.
 const routeAgent = computed(() =>
 	typeof route.params.agent === "string" ? route.params.agent : "",
@@ -310,9 +310,9 @@ const projectsIndexPath = computed(() =>
 		: route.path,
 );
 const projectsIndexLabel = computed(() =>
-	routeAgent.value ? `${routeAgent.value} · GitHub Projects` : "Watches",
+	routeAgent.value ? `${routeAgent.value} · Code Loop` : "Watches",
 );
-// Without a project the route is the agent's GitHub Projects: one board of
+// Without a project the route is the agent's Code Loop: one board of
 // every project it owns.
 const aggregate = computed(() => !project.value && !!routeAgent.value);
 const targets = computed(() =>

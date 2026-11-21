@@ -30,7 +30,7 @@ import "./skills.css";
 				</div>
 				<p class="skill-section-sub skill-index-foot">
 					Using Aviary? It installs these skills for every CLI it finds and runs
-					them through <a :href="withBase('/guide/projects')">Projects</a>. See
+					them through <a :href="withBase('/guide/projects')">Code Loop</a>. See
 					<a :href="withBase('/guide/skills/')">Skills for providers</a> for the details.
 				</p>
 			</div>

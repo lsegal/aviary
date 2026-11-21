@@ -16,7 +16,7 @@ Connect at `https://localhost:16677/mcp` using the bearer token from `~/.config/
 | [Auth Tools](./auth) | `auth_set`, `auth_get`, `auth_list`, `auth_delete`, `auth_login_anthropic`, `auth_login_anthropic_complete`, `auth_login_gemini`, `auth_login_openai`, `auth_login_github_copilot`, `auth_login_github_copilot_complete` | Credential storage and OAuth login flows |
 | [Auth Tools](./auth#provider_cli_list) | `provider_cli_list` | Providers reached through a CLI and their install, sign-in, quota and models |
 | [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `server_restart`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
-| [Projects Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_refresh`, `project_add`, `project_remove`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_check` | Watched GitHub projects and their CLI jobs |
+| [Code Loop Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_refresh`, `project_add`, `project_remove`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_check` | Watched GitHub projects and their CLI jobs |
 | [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `coding_skills_list`, `coding_skills_install`, `web_search` | Token analytics, skill discovery, skills Aviary ships, and web search |
 
 ## Permissions
@@ -31,4 +31,4 @@ Which tools are available to an agent depends on its [permissions preset](/refer
 
 Tools in the `agent`, `auth`, `exec`, `file`, and `server` groups are blocked by the `standard` preset. Add them via `permissions.tools` or switch to `full` to use them.
 
-The System → Providers & Auth panel and the Tools runner in the control panel expose all tools regardless of agent permissions.
+The Settings → Providers & Authentication panel and the Tools runner in the control panel expose all tools regardless of agent permissions.
