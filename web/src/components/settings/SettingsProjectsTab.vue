@@ -114,7 +114,7 @@
 			<p v-if="!clones.loaded.value" class="text-sm text-gray-500">Reading clones…</p>
 			<p v-else-if="clones.error.value" class="text-sm text-gray-500">Couldn't list clones: {{ clones.error.value }}</p>
 			<p v-else-if="!clones.clones.value.length" class="text-sm text-gray-500">No clones on disk.</p>
-			<ul v-else class="divide-y divide-gray-200 text-sm dark:divide-gray-800">
+			<ul v-else data-testid="clone-list" class="max-h-96 divide-y divide-gray-200 overflow-y-auto text-sm dark:divide-gray-800">
 				<li v-for="c in clones.clones.value" :key="c.path" data-testid="clone-row" class="flex items-center gap-3 py-2">
 					<div class="min-w-0 flex-1">
 						<p class="truncate font-mono text-xs text-gray-800 dark:text-gray-200">{{ c.path }}</p>
