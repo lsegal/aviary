@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -51,6 +52,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	check, err := update.Check(ctx, &http.Client{Timeout: 15 * time.Second})
 	if err != nil && check.LatestVersion == "" {
 		return err
+	}
+	if check.NoCheckout && upgradeVersion == "" {
+		return errors.New(check.Message)
 	}
 	targetVersion, upToDate := resolveUpgradeTarget(check, upgradeVersion)
 	if upToDate {

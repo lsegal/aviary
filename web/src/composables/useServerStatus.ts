@@ -43,6 +43,7 @@ interface VersionCheck {
 	upgradeAvailable?: boolean;
 	upgradeSupported?: boolean;
 	git?: GitState;
+	noCheckout?: boolean;
 	message?: string;
 	releaseUrl?: string;
 	restart?: RestartStatus;
@@ -68,6 +69,9 @@ export function useServerStatus() {
 	// with local changes; versionMessage says why.
 	const upgradeSupported = ref(true);
 	const git = ref<GitState | null>(null);
+	// True for a dev build that cannot find its source checkout, so it cannot
+	// tell whether an update exists; versionMessage says how to fix it.
+	const noCheckout = ref(false);
 	// Result of a git-mode update, shown once the update banner is gone.
 	const updateNotice = ref("");
 	const versionMessage = ref("");
@@ -172,6 +176,7 @@ export function useServerStatus() {
 		upgradeAvailable.value = data.upgradeAvailable === true;
 		upgradeSupported.value = data.upgradeSupported !== false;
 		git.value = data.git ?? null;
+		noCheckout.value = data.noCheckout === true;
 		if (upgradeAvailable.value) updateNotice.value = "";
 		versionMessage.value = data.message ?? "";
 		releaseUrl.value = data.releaseUrl ?? "";
@@ -277,6 +282,7 @@ export function useServerStatus() {
 		upgradeAvailable,
 		upgradeSupported,
 		git,
+		noCheckout,
 		updateNotice,
 		versionMessage,
 		checkingVersion,

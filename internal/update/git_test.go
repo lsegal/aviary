@@ -213,3 +213,81 @@ func TestCurrentVersion_ReleaseBuildUnchanged(t *testing.T) {
 		t.Fatalf("release: CurrentVersion() = %q, want 1.2.3", got)
 	}
 }
+
+func TestModulePath_ToleratesLineEndingsAndWhitespace(t *testing.T) {
+	for _, mod := range []string{
+		"module github.com/lsegal/aviary\n",
+		"module github.com/lsegal/aviary\r\n\r\ngo 1.25\r\n",
+		"// Aviary\n\n  module   github.com/lsegal/aviary  \t\n",
+		"module \"github.com/lsegal/aviary\" // quoted\n",
+		"module github.com/lsegal/aviary",
+	} {
+		if got := modulePath([]byte(mod)); got != aviaryModule {
+			t.Errorf("modulePath(%q) = %q, want %q", mod, got, aviaryModule)
+		}
+	}
+	if got := modulePath([]byte("module github.com/lsegal/aviary-fork\r\n")); got == aviaryModule {
+		t.Errorf("another module matched: %q", got)
+	}
+}
+
+// initCheckout creates a git checkout whose go.mod is written verbatim.
+func initCheckout(t *testing.T, gomod string) string {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := t.TempDir()
+	gitT(t, dir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
+func TestCheckoutDir_EnvIsAuthoritativeOutsideTheCheckout(t *testing.T) {
+	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n\r\ngo 1.25\r\n")
+	t.Chdir(t.TempDir())
+	t.Setenv(CheckoutEnv, filepath.Join(checkout, "internal"))
+	if got := checkoutDir(); got != checkout {
+		t.Fatalf("checkoutDir() = %q, want %q from %s", got, checkout, CheckoutEnv)
+	}
+	t.Setenv(CheckoutEnv, t.TempDir())
+	if got := checkoutDir(); got != "" {
+		t.Fatalf("checkoutDir() = %q for a non-checkout %s, want none", got, CheckoutEnv)
+	}
+}
+
+func TestCheckoutDir_FallsBackToWorkingDirectory(t *testing.T) {
+	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n")
+	t.Setenv(CheckoutEnv, "")
+	t.Chdir(filepath.Join(checkout, "internal"))
+	if got := checkoutDir(); got != checkout {
+		t.Fatalf("checkoutDir() = %q, want %q", got, checkout)
+	}
+	other := initCheckout(t, "module example.com/other\n")
+	t.Chdir(other)
+	if got := checkoutDir(); got != "" {
+		t.Fatalf("checkoutDir() = %q in another module, want none", got)
+	}
+}
+
+func TestCheck_DevBuildWithoutCheckoutReportsNoCheckout(t *testing.T) {
+	withGitMode(t, "dev", "", false)
+	check, err := Check(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !check.NoCheckout || check.Git != nil || check.UpgradeAvailable || check.LatestVersion != "" {
+		t.Fatalf("check = %+v, want the no-checkout state", check)
+	}
+	if !strings.Contains(check.Message, "no source checkout") {
+		t.Fatalf("message = %q", check.Message)
+	}
+}

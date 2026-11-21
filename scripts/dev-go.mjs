@@ -86,6 +86,9 @@ const { bin, args, hotReload } = resolveRunner();
 // Tells the backend's git-mode updater whether pulled sources go live on
 // their own or need a restart.
 const env = { ...process.env };
+// The checkout root is authoritative for git mode, so the backend need not
+// run inside the checkout to find it.
+env.AVIARY_CHECKOUT = rootDir;
 if (hotReload) env.AVIARY_HOT_RELOAD = "1";
 else delete env.AVIARY_HOT_RELOAD;
 const child = spawn(bin, [...args, "./cmd/aviary", ...process.argv.slice(2)], {

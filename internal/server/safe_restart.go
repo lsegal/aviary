@@ -112,6 +112,9 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		}
 		version = update.NormalizeVersion(req.Version)
 		if version == "" {
+			if check.NoCheckout {
+				return saferestart.Status{}, errors.New(check.Message)
+			}
 			if !check.UpgradeAvailable {
 				st := s.RestartStatus()
 				st.Noop = true
