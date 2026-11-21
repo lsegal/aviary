@@ -917,14 +917,14 @@ func TestValidate_CLIModel(t *testing.T) {
 		Agents: []AgentConfig{
 			{Name: "a", Model: "cli/nosuchcli/pro"},
 			{Name: "b", Model: "cli/claude"},
-			{Name: "c", Model: "cli/gemini/pro"},
+			{Name: "c", Model: "cli/cline/pro"},
 		},
 	}
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
-	// gemini is a provider reached through a CLI that Projects jobs run on, so it only warns.
-	assert.True(t, hasIssue(issues, "only claude and codex can answer agent prompts"))
-	assert.True(t, hasIssue(issues, "expected <claude|codex>/<model> or cli/<claude|codex>/<model>"))
+	// cline keeps no session, so it runs Projects jobs but only warns as an agent model.
+	assert.True(t, hasIssue(issues, "cannot answer agent prompts"))
+	assert.True(t, hasIssue(issues, "expected <cli>/<model> or cli/<cli>/<model>"))
 
 }
 
@@ -962,7 +962,7 @@ func TestValidate_CLIProviderModelNeedsInstalledCLI(t *testing.T) {
 }
 
 func TestValidate_ProjectsOnlyCLIProviderWarnsInBothForms(t *testing.T) {
-	for _, model := range []string{"gemini/pro", "cli/gemini/pro", "mycli/x", "cli/mycli/x"} {
+	for _, model := range []string{"cline/pro", "cli/cline/pro", "mycli/x", "cli/mycli/x"} {
 		cfg := &Config{
 			Agents: []AgentConfig{{Name: "a", Model: model}},
 			Models: ModelsConfig{CLIDefinitions: map[string]any{
@@ -980,7 +980,7 @@ func TestValidate_ProjectsOnlyCLIProviderWarnsInBothForms(t *testing.T) {
 		issues := Validate(cfg, nil)
 		require.Len(t, issues, 1, model)
 		assert.Equal(t, LevelWarning, issues[0].Level, model)
-		assert.Contains(t, issues[0].Message, "only claude and codex can answer agent prompts", model)
+		assert.Contains(t, issues[0].Message, "cannot answer agent prompts", model)
 	}
 }
 

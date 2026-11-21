@@ -109,6 +109,13 @@ func (b Backend) Definition() (clidefs.Definition, bool) {
 	return llm.CLIProvider(string(b))
 }
 
+// ServesAviaryTools reports whether the backend's CLI is pointed at Aviary's
+// MCP server. A CLI driven only through its definition has no declared way to
+// take one, so it runs on its own tools alone.
+func (b Backend) ServesAviaryTools() bool {
+	return b == Claude || b == Codex
+}
+
 // Binary returns the executable the backend's definition runs.
 func (b Backend) Binary() string {
 	if definition, ok := b.Definition(); ok && definition.Binary != "" {
