@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -56,5 +57,6 @@ func TestToolArgumentsFileIsCurrent(t *testing.T) {
 	}
 	got, err := os.ReadFile(toolArgumentsFile)
 	require.NoError(t, err)
-	assert.Equal(t, string(want), string(got), "tool arguments changed; regenerate %s with AVIARY_UPDATE_TOOL_ARGUMENTS=1", toolArgumentsFile)
+	// A Windows checkout may carry CRLF line endings.
+	assert.Equal(t, string(want), strings.ReplaceAll(string(got), "\r\n", "\n"), "tool arguments changed; regenerate %s with AVIARY_UPDATE_TOOL_ARGUMENTS=1", toolArgumentsFile)
 }
