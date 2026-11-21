@@ -108,6 +108,162 @@ test("up arrow recalls previous chat messages", async ({ page }) => {
 	await expect(input).toHaveValue("draft message");
 });
 
+/** Reads the composer's caret offset. */
+function caret(input: import("@playwright/test").Locator) {
+	return input.evaluate((el: HTMLTextAreaElement) => el.selectionStart);
+}
+
+test("up and down move between explicit lines before recalling history", async ({
+	page,
+}) => {
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	const draft = "line one\nline two\nline three";
+	await input.fill(draft);
+
+	// On the middle line both arrows move the caret and keep the text.
+	await input.evaluate((el: HTMLTextAreaElement) =>
+		el.setSelectionRange(12, 12),
+	);
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBeLessThan(9);
+	await input.evaluate((el: HTMLTextAreaElement) =>
+		el.setSelectionRange(12, 12),
+	);
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBeGreaterThan(17);
+
+	// Down on the last line does nothing before history is entered.
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+
+	// Up on the first line steps back through history.
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("second prompt");
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("first prompt");
+
+	// Down on the last line steps forward, ending at the kept draft.
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue("second prompt");
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBe(draft.length);
+});
+
+test("up and down treat soft-wrapped lines like explicit lines", async ({
+	page,
+}) => {
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	const draft = "word ".repeat(100).trim();
+	await input.fill(draft);
+	// The single line wraps onto at least three visual lines.
+	const lines = await input.evaluate((el: HTMLTextAreaElement) => {
+		const style = getComputedStyle(el);
+		const padding =
+			Number.parseFloat(style.paddingTop) +
+			Number.parseFloat(style.paddingBottom);
+		return (el.scrollHeight - padding) / Number.parseFloat(style.lineHeight);
+	});
+	expect(lines).toBeGreaterThanOrEqual(3);
+
+	// From the end, on the last visual line, Up moves the caret up a line.
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue(draft);
+	const middle = await caret(input);
+	expect(middle).toBeLessThan(draft.length);
+
+	// On a middle visual line both arrows move the caret.
+	await input.evaluate(
+		(el: HTMLTextAreaElement, at) => el.setSelectionRange(at, at),
+		Math.floor(draft.length / 2),
+	);
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBeGreaterThan(Math.floor(draft.length / 2));
+	await input.evaluate(
+		(el: HTMLTextAreaElement, at) => el.setSelectionRange(at, at),
+		Math.floor(draft.length / 2),
+	);
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBeLessThan(Math.floor(draft.length / 2));
+
+	// Only the first visual line recalls history, and only the last returns.
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(2, 2));
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("second prompt");
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(2, 2));
+	await input.press("ArrowDown");
+	await expect(input).toHaveValue(draft);
+	expect(await caret(input)).toBeGreaterThan(2);
+});
+
+test("modifiers, IME composition, and selections never recall history", async ({
+	page,
+}) => {
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill("draft");
+
+	for (const key of [
+		"Shift+ArrowUp",
+		"Alt+ArrowUp",
+		"Meta+ArrowUp",
+		"Control+ArrowUp",
+	]) {
+		await input.evaluate((el: HTMLTextAreaElement) =>
+			el.setSelectionRange(0, 0),
+		);
+		await input.press(key);
+		await expect(input, key).toHaveValue("draft");
+	}
+
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+	await input.evaluate((el) =>
+		el.dispatchEvent(
+			new KeyboardEvent("keydown", {
+				key: "ArrowUp",
+				isComposing: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		),
+	);
+	await expect(input).toHaveValue("draft");
+
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 5));
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("draft");
+
+	// Once in history, modified Down keeps the recalled entry too.
+	await input.press("End");
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("second prompt");
+	for (const key of ["Shift+ArrowDown", "Alt+ArrowDown", "Control+ArrowDown"]) {
+		await input.press("End");
+		await input.press(key);
+		await expect(input, key).toHaveValue("second prompt");
+	}
+
+	// An empty composer recalls history from Up.
+	await input.fill("");
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("second prompt");
+});
+
 test("Shift+Enter inserts a newline and Enter sends it with its line breaks", async ({
 	page,
 }) => {

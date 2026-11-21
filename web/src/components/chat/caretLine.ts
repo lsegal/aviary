@@ -47,7 +47,8 @@ export function caretLine(el: HTMLTextAreaElement): CaretLine {
 	mirror.style.boxSizing = "content-box";
 	// clientWidth leaves out the scrollbar, which narrows the wrapping width.
 	const paddingX =
-		Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+		Number.parseFloat(style.paddingLeft) +
+		Number.parseFloat(style.paddingRight);
 	mirror.style.width = `${el.clientWidth - paddingX}px`;
 
 	const caret = el.selectionStart;
