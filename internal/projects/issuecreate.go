@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -19,6 +20,11 @@ const maxIssueDescription = 4000
 // issue carries gh-create's created-by marker. A non-empty model
 // overrides the configured prompt-agent model for this call. It waits for the
 // skill to finish and reports the new issue's URL.
+//
+// A request identical to one still filing joins it, and one identical to an
+// issue filed within filedIssueMemory gets that issue back, so a caller that
+// gave up waiting and asks again never files a duplicate (issue #710). The
+// filing outlives a caller that stops waiting.
 func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (core.IssueCreateResult, error) {
 	text := strings.TrimSpace(request.Text)
 	switch {
@@ -41,21 +47,99 @@ func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (cor
 	if err != nil {
 		return core.IssueCreateResult{}, fmt.Errorf("the coding agent cannot run: %w", err)
 	}
-	prompt := createIssuePrompt(request.Repository, text, w.Identity)
-	w.logf("prompt agent (%s) filing an issue on %s: %s", spec, request.Repository, truncate(text, 120))
-	callCtx, cancel := context.WithTimeout(ctx, issueCreateTimeout)
-	defer cancel()
-	output, runErr := run(callCtx, spec, prompt)
-	url := createdIssueURL(output, request.Repository)
+	key := issueFilingKey{repository: strings.ToLower(request.Repository), text: text, model: config.Model}
+	filing, started := w.filings.start(key, time.Now())
+	if started {
+		prompt := createIssuePrompt(request.Repository, text, w.Identity)
+		w.logf("prompt agent (%s) filing an issue on %s: %s", spec, request.Repository, truncate(text, 120))
+		go func() {
+			callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), issueCreateTimeout)
+			defer cancel()
+			output, runErr := run(callCtx, spec, prompt)
+			result, err := createdIssueResult(output, runErr, request.Repository, spec)
+			if err == nil {
+				w.logf("prompt agent filed %s", result.URL)
+			}
+			w.filings.finish(key, filing, result, err, time.Now())
+		}()
+	}
+	select {
+	case <-filing.done:
+		return filing.result, filing.err
+	case <-ctx.Done():
+		return core.IssueCreateResult{}, fmt.Errorf("gh-create is still filing this issue on %s; call project_issue_create again with the same repository and text to wait for its URL, and do not file it any other way", request.Repository)
+	}
+}
+
+// createdIssueResult reads the issue gh-create reports filing on repository
+// out of its output, or says why it filed none.
+func createdIssueResult(output string, runErr error, repository string, spec agentSpec) (core.IssueCreateResult, error) {
+	url := createdIssueURL(output, repository)
 	if url == "" {
 		detail := lastLines(strings.TrimSpace(output), 15)
 		if runErr != nil {
 			return core.IssueCreateResult{}, fmt.Errorf("gh-create failed: %v: %s", runErr, detail)
 		}
-		return core.IssueCreateResult{}, fmt.Errorf("gh-create reported no new issue on %s: %s", request.Repository, detail)
+		return core.IssueCreateResult{}, fmt.Errorf("gh-create reported no new issue on %s: %s", repository, detail)
 	}
-	w.logf("prompt agent filed %s", url)
 	return core.IssueCreateResult{URL: url, Agent: spec.String()}, nil
+}
+
+// filedIssueMemory is how long a filed issue answers an identical request.
+const filedIssueMemory = time.Hour
+
+// issueFilingKey identifies one create-issue request.
+type issueFilingKey struct {
+	repository, text, model string
+}
+
+// issueFiling is one gh-create run; done closes once result or err is set.
+type issueFiling struct {
+	done     chan struct{}
+	result   core.IssueCreateResult
+	err      error
+	finished time.Time
+}
+
+// issueFilings holds the filings still running and the ones that filed an
+// issue within filedIssueMemory.
+type issueFilings struct {
+	mu      sync.Mutex
+	filings map[issueFilingKey]*issueFiling
+}
+
+// start returns the filing for key, starting one unless an identical request
+// is still filing or filed an issue recently. started reports whether the
+// caller has to run it.
+func (f *issueFilings) start(key issueFilingKey, now time.Time) (filing *issueFiling, started bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, old := range f.filings {
+		if !old.finished.IsZero() && now.Sub(old.finished) > filedIssueMemory {
+			delete(f.filings, k)
+		}
+	}
+	if old := f.filings[key]; old != nil {
+		return old, false
+	}
+	if f.filings == nil {
+		f.filings = map[issueFilingKey]*issueFiling{}
+	}
+	filing = &issueFiling{done: make(chan struct{})}
+	f.filings[key] = filing
+	return filing, true
+}
+
+// finish records filing's outcome. A failed filing is forgotten, so asking
+// again retries it.
+func (f *issueFilings) finish(key issueFilingKey, filing *issueFiling, result core.IssueCreateResult, err error, now time.Time) {
+	f.mu.Lock()
+	filing.result, filing.err, filing.finished = result, err, now
+	if err != nil && f.filings[key] == filing {
+		delete(f.filings, key)
+	}
+	f.mu.Unlock()
+	close(filing.done)
 }
 
 // createIssuePrompt invokes gh-create for repository with the description and
