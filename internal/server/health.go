@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/update"
 )
@@ -27,6 +28,9 @@ type wsEvent struct {
 	PoolID       string `json:"pool_id,omitempty"`
 	Role         string `json:"role,omitempty"`
 	IsProcessing *bool  `json:"is_processing,omitempty"`
+	// Turn is set on "session_turn" events: what the session's running turn
+	// has streamed so far, or an idle turn once it ends.
+	Turn *agent.ActiveTurn `json:"turn,omitempty"`
 	OK           bool   `json:"ok,omitempty"`
 	Version      string `json:"version,omitempty"`
 	GOOS         string `json:"goos,omitempty"`
@@ -149,6 +153,12 @@ func wsHandler(token string) http.HandlerFunc {
 		if err := wsWriteJSON(conn, healthEvent()); err != nil {
 			return
 		}
+		// A client connecting mid-turn restores each running turn's state.
+		for _, turn := range agent.ActiveTurns() {
+			if err := wsWriteJSON(conn, sessionTurnEvent(turn)); err != nil {
+				return
+			}
+		}
 
 		// Drain incoming frames so we detect client disconnects promptly.
 		done := make(chan struct{})
@@ -175,4 +185,8 @@ func wsHandler(token string) http.HandlerFunc {
 			}
 		}
 	}
+}
+
+func sessionTurnEvent(turn agent.ActiveTurn) wsEvent {
+	return wsEvent{Type: "session_turn", AgentID: turn.AgentID, SessionID: turn.SessionID, Turn: &turn}
 }

@@ -162,6 +162,8 @@ func (r *AgentRunner) promptCore(
 		promptCtx = WithWriteGuard(promptCtx)
 		untrack := trackSessionRun(r.agent.ID, sessionID, cancel)
 		defer untrack()
+		turn := beginActiveTurn(r.agent.ID, sessionID)
+		defer turn.end()
 
 		// Effective model for this run.
 		effectiveModel := overrides.Model
@@ -318,6 +320,7 @@ func (r *AgentRunner) promptCore(
 
 		emit := func(e StreamEvent) {
 			e.AgentID = r.agent.ID
+			turn.record(e)
 			for _, c := range consumers {
 				c(e)
 			}
