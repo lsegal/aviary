@@ -276,10 +276,11 @@ func readFile(t *testing.T, path string) string {
 
 func TestProjectAddWithReports(t *testing.T) {
 	d, _ := setupProjects(t)
-	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "m"}}}))
-	reports := map[string]any{"agent": "bot", "targets": []any{"slack:main:C1"}, "events": []any{"merged", "failed"}}
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "m", Channels: []config.ChannelConfig{{Type: "slack", ID: "main", Name: "Main"}}}}}))
+	reports := map[string]any{"agent": "bot", "targets": []any{"channel:Main"}, "events": []any{"merged", "failed"}}
 
-	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "reports": map[string]any{"agent": "ghost", "targets": []any{"slack:main:C1"}}}, `reports agent "ghost" is not configured`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "reports": map[string]any{"agent": "ghost", "targets": []any{"channel:Main"}}}, `reports agent "ghost" is not configured`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "agent": "bot", "reports": map[string]any{"agent": "bot", "targets": []any{"channel:Nope"}}}, `agent "bot" has no channel named "Nope"`)
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "reports": reports}, "reports apply only to a saved project")
 
 	added := callJSON(t, d, "project_add", map[string]any{"target": "o/r", "agent": "bot", "reports": reports})
@@ -287,7 +288,7 @@ func TestProjectAddWithReports(t *testing.T) {
 	cfg, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents[0].Projects, 1)
-	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Agents[0].Projects[0].Reports)
+	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"channel:Main"}, Events: []string{"merged", "failed"}}, cfg.Agents[0].Projects[0].Reports)
 }
 
 func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {

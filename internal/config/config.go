@@ -225,7 +225,17 @@ type ChannelConfig struct {
 	Enabled *bool  `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
 	Type    string `yaml:"type"                    json:"type"`
 	Token   string `yaml:"token,omitempty"         json:"token,omitempty"`
-	ID      string `yaml:"id,omitempty"            json:"id,omitempty"`
+	// ID is the channel's stable key within its agent and type. Its own
+	// session is keyed by it, so renaming the channel keeps that session.
+	ID string `yaml:"id,omitempty"            json:"id,omitempty"`
+	// Name is the channel's display name in the sidebar and the name
+	// delivery targets pick it by ("channel:<name>"). Empty means the ID.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+	// DeliverTo is the conversation the channel's own session sends to: a
+	// Slack or Discord channel ID, or a Signal phone number or group ID.
+	// Messages delivered to the channel by name land in that session and go
+	// out here. Empty keeps them in Aviary only.
+	DeliverTo string `yaml:"deliver_to,omitempty" json:"deliver_to,omitempty"`
 	// Primary optionally identifies the configured sender ID of the "primary"
 	// person for this channel (for example a Signal phone number or a Slack/
 	// Discord user ID). When set, messages originating from this ID will be
@@ -850,6 +860,7 @@ func Load(path string) (*Config, error) {
 			cfg.Agents[i].Tasks = mergeTasksByName(cfg.Agents[i].Tasks, fileTasks)
 		}
 	}
+	migrateChannelTargets(&cfg)
 
 	return &cfg, nil
 }

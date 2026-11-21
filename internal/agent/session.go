@@ -402,6 +402,87 @@ func (m *SessionManager) Clear(agentID, sessionID string) error {
 	return nil
 }
 
+// Archive keeps a session and its messages as a regular chat under a new ID,
+// detached from the channel it came from: it loses its channel delivery, and
+// a later message on that channel starts a fresh session. title becomes its
+// display title.
+func (m *SessionManager) Archive(agentID, sessionID, title string) (*domain.Session, error) {
+	id := newID("sess")
+	return m.relocate(agentID, sessionID, id, id, domain.SessionTypeUser, title, false)
+}
+
+// Rekey moves a named session, its messages and its channel delivery to the
+// new name, which is also its new ID, keeping its type and title. A channel
+// whose ID changes moves its own session this way.
+func (m *SessionManager) Rekey(agentID, sessionID, name string) (*domain.Session, error) {
+	if store.FindSessionPath(agentID, name) != "" {
+		return nil, fmt.Errorf("session %q already exists", name)
+	}
+	return m.relocate(agentID, sessionID, name, name, "", "", true)
+}
+
+// relocate rewrites a session under a new ID and name, optionally with a new
+// type and title, and removes the old one. keepChannels carries its channel
+// delivery sidecar over; otherwise the moved session has none.
+func (m *SessionManager) relocate(agentID, sessionID, id, name string, typ domain.SessionType, title string, keepChannels bool) (*domain.Session, error) {
+	p := store.FindSessionPath(agentID, sessionID)
+	if p == "" {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	lines, err := store.ReadJSONL[map[string]any](p)
+	if err != nil {
+		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
+	}
+	now := time.Now()
+	header := map[string]any{"created_at": now.Format(time.RFC3339Nano)}
+	if len(lines) > 0 {
+		if _, ok := lines[0]["created_at"]; ok {
+			header, lines = lines[0], lines[1:]
+		}
+	}
+	header["id"] = id
+	header["name"] = name
+	if typ != "" {
+		header["type"] = string(typ)
+	}
+	header["updated_at"] = now.Format(time.RFC3339Nano)
+	if err := store.RewriteJSONL(store.SessionPath(agentID, id), append([]map[string]any{header}, lines...)); err != nil {
+		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
+	}
+	meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, sessionID))
+	if title = strings.TrimSpace(title); title != "" {
+		meta.Title = title
+	}
+	if err := store.UpdateSessionMeta(store.SessionMetaPath(agentID, id), func(next *store.SessionMeta) {
+		*next = meta
+	}); err != nil {
+		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
+	}
+	if keepChannels {
+		if cfg, err := store.ReadSessionChannels(agentID, sessionID); err == nil && len(cfg.Channels) > 0 {
+			cfg.SessionID = id
+			if err := store.WriteSessionChannels(cfg); err != nil {
+				return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
+			}
+		}
+	}
+	if err := m.Delete(agentID, sessionID); err != nil {
+		return nil, err
+	}
+	ClearSessionDelivery(agentID, sessionID)
+	notifySessionMessage(agentID, id, "")
+	sessions, err := m.List(agentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, sess := range sessions {
+		if sess.ID == id {
+			return sess, nil
+		}
+	}
+	return nil, fmt.Errorf("moved session %q not found", id)
+}
+
 // Rename sets the session's display title. The session keeps its name, which
 // channels and the default "main" session look it up by.
 func (m *SessionManager) Rename(agentID, sessionID, title string) error {

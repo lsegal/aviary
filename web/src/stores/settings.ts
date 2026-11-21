@@ -37,7 +37,12 @@ export interface AgentChannel {
 	enabled?: boolean;
 	type: string;
 	token?: string;
+	/** Stable key within the agent and type; the channel's session uses it. */
 	id?: string;
+	/** Display name, and the name delivery targets pick it by. */
+	name?: string;
+	/** The conversation the channel's own session sends to. */
+	deliver_to?: string;
 	url?: string;
 	disabled_tools?: string[];
 	allow_from?: AllowFromEntry[];
