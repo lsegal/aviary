@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, expectValue, optionLabels } from "./helpers/select";
 import {
 	expectSavedTrigger,
 	expectTrigger,
@@ -276,14 +277,14 @@ test("the add-task modal's Send To forwards runs to a channel session, shown as 
 	const dialog = page.getByRole("dialog", { name: "Add task" });
 	const sendTo = dialog.getByLabel("Send To");
 	// Only chats bound to a channel are offered, by name, after the default.
-	await expect(sendTo).toHaveValue("");
-	await expect(sendTo.locator("option")).toHaveText([
+	await expectValue(sendTo, "");
+	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
 		"Team standup · slack",
 	]);
 	await dialog.getByLabel("Task name").fill("standup-digest");
 	await dialog.getByLabel("Prompt").fill("Summarize yesterday");
-	await sendTo.selectOption({ label: "Team standup · slack" });
+	await chooseOption(sendTo, "Team standup · slack");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
@@ -293,17 +294,18 @@ test("the add-task modal's Send To forwards runs to a channel session, shown as 
 	// The task's editor shows the same delivery in Send Via.
 	await expect(page).toHaveURL(/\?task=standup-digest$/);
 	const main = page.locator("main");
-	await expect(
-		main.locator("label", { hasText: "Send Via" }).locator("+ select"),
-	).toHaveValue("session");
-	await expect(main.getByTestId("session-select")).toHaveValue("sess_slack");
+	await expectValue(
+		main.getByRole("combobox", { name: "Send Via" }),
+		"session",
+	);
+	await expectValue(main.getByTestId("session-select"), "sess_slack");
 
 	// Left at the default, a new task forwards nowhere, as before.
 	await sidebarRow(page, "tasks").hover();
 	await sidebarRow(page, "tasks")
 		.getByRole("button", { name: "Add task" })
 		.click();
-	await expect(sendTo).toHaveValue("");
+	await expectValue(sendTo, "");
 	await dialog.getByLabel("Task name").fill("quiet");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();

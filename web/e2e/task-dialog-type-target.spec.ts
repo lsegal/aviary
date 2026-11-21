@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, expectValue, optionLabels } from "./helpers/select";
 
 type Task = Record<string, unknown> & { name: string };
 
@@ -172,20 +173,15 @@ test("Scheduled Tasks creates a project task under the project's agent, with no 
 }) => {
 	const { saved, tasks } = await setup(page);
 	const dialog = await openNewTask(page);
-	await expect(dialog.getByLabel("Agent", { exact: true })).toHaveValue(
-		"assistant",
-	);
+	await expectValue(dialog.getByLabel("Agent", { exact: true }), "assistant");
 	await radio(dialog, "Target", "Project").click();
 	await expect(dialog).toHaveAccessibleName("Add project scheduled task");
 	await expect(dialog.getByLabel("Agent", { exact: true })).toHaveCount(0);
 	await expect(radio(dialog, "Type", "Script")).toBeDisabled();
 	// Every agent's watched projects are offered.
 	const project = dialog.getByLabel("Project", { exact: true });
-	await expect(project.locator("option:not([disabled])")).toHaveText([
-		"lsegal/aviary",
-		"o/other",
-	]);
-	await project.selectOption("o/other");
+	expect(await optionLabels(project)).toEqual(["lsegal/aviary", "o/other"]);
+	await chooseOption(project, "o/other");
 	// A project task needs a time trigger: daily by default.
 	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
 	await expect(dialog.getByRole("radio", { name: "Daily" })).toHaveAttribute(
@@ -235,7 +231,7 @@ test("an Agent target can create the task under another agent", async ({
 }) => {
 	const { tasks } = await setup(page);
 	const dialog = await openNewTask(page);
-	await dialog.getByLabel("Agent", { exact: true }).selectOption("reviewer");
+	await chooseOption(dialog.getByLabel("Agent", { exact: true }), "reviewer");
 	await expect(dialog).toContainText("A scheduled task for reviewer.");
 	await dialog.getByLabel("Task name").fill("review-queue");
 	await dialog.getByLabel("Prompt", { exact: true }).fill("Review the queue.");
@@ -319,7 +315,7 @@ test("the trigger editor and Send To show for every type and target", async ({
 		);
 		await expect(dialog.getByTestId("trigger-editor")).toBeVisible();
 		await expect(dialog.getByLabel("Send To")).toBeVisible();
-		await expect(dialog.getByLabel("Send To").locator("option")).toHaveText([
+		expect(await optionLabels(dialog.getByLabel("Send To"))).toEqual([
 			"Task session only",
 			"Team standup · slack",
 		]);

@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import {
+	chooseOption,
+	chooseValue,
+	expectValue,
+	optionLabels,
+} from "./helpers/select";
 import { systemList } from "./helpers/sidebar";
 
 const STATUS = {
@@ -406,7 +412,7 @@ test("changing a setting writes only the differing values to the shared section"
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
 	// Browser delivery is the default and the only mode with browser switches.
-	await expect(page.locator('[data-field="delivery"]')).toHaveValue("browser");
+	await expectValue(page.locator('[data-field="delivery"]'), "browser");
 	await expect(page.locator('[data-field="interval"]')).toHaveAttribute(
 		"placeholder",
 		"20s",
@@ -417,7 +423,7 @@ test("changing a setting writes only the differing values to the shared section"
 		})
 		.click();
 	await expect(yaml).toContainText("browser_vision: true");
-	await page.locator('[data-field="delivery"]').selectOption("webhook");
+	await chooseValue(page.locator('[data-field="delivery"]'), "webhook");
 	await expect(
 		page.getByRole("switch", {
 			name: "Show the browser it reads GitHub with, for debugging",
@@ -453,7 +459,7 @@ test("changing a setting writes only the differing values to the shared section"
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
 		.click();
-	await page.locator('[data-field="delivery"]').selectOption("browser");
+	await chooseValue(page.locator('[data-field="delivery"]'), "browser");
 	await page
 		.getByRole("switch", {
 			name: "Read pages it no longer recognizes from capped screenshots",
@@ -498,9 +504,9 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 	});
 	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
-	await expect(mode).toHaveValue("full");
+	await expectValue(mode, "full");
 
-	await mode.selectOption("read-only");
+	await chooseValue(mode, "read-only");
 	const yaml = page.getByTestId("project-yaml");
 	await expect(yaml).toContainText("approval_mode: read-only");
 	await expect(yaml).not.toContainText("yolo");
@@ -523,8 +529,8 @@ test("following the general approval mode writes no Projects override", async ({
 	});
 	await page.goto("/projects/settings");
 	const mode = page.locator('[data-field="approval_mode"]');
-	await expect(mode).toHaveValue("auto");
-	await mode.selectOption("");
+	await expectValue(mode, "auto");
+	await chooseValue(mode, "");
 	await expect(page.getByTestId("project-yaml")).not.toContainText(
 		"approval_mode",
 	);
@@ -812,32 +818,28 @@ test("reports can be turned on with an agent and a target, then off", async ({
 
 	await toggle.click();
 	// Reports go through the owning agent unless another is chosen.
-	await expect(page.locator('[data-field="reports_agent"]')).toHaveValue(
-		"coder",
-	);
+	await expectValue(page.locator('[data-field="reports_agent"]'), "coder");
 	await expect(page.getByTestId("reports-error")).toContainText(
 		"Reports need at least one target.",
 	);
-	await page.locator('[data-field="reports_agent"]').selectOption("atlas");
+	await chooseValue(page.locator('[data-field="reports_agent"]'), "atlas");
 
-	await page
-		.getByRole("combobox", { name: "Target 1 channel" })
-		.selectOption("slack:main");
+	await chooseValue(
+		page.getByRole("combobox", { name: "Target 1 channel" }),
+		"slack:main",
+	);
 	await page
 		.getByRole("textbox", { name: "Target 1 delivery ID" })
 		.fill("C123");
 	await page.getByRole("button", { name: "Add a target" }).click();
-	await page
-		.getByRole("combobox", { name: "Target 2 channel" })
-		.selectOption("session");
+	await chooseValue(
+		page.getByRole("combobox", { name: "Target 2 channel" }),
+		"session",
+	);
 	// A session target is picked by name and saved by its ID.
 	const session = page.getByRole("combobox", { name: "Target 2 session" });
-	await expect(session.locator("option")).toHaveText([
-		"Choose a session…",
-		"Main Chat",
-		"Project reports",
-	]);
-	await session.selectOption({ label: "Project reports" });
+	expect(await optionLabels(session)).toEqual(["Main Chat", "Project reports"]);
+	await chooseOption(session, "Project reports");
 	await page.locator('[data-field="report_waiting"]').uncheck();
 	await expect(page.getByTestId("reports-error")).toHaveCount(0);
 	await expect(yaml).toContainText(
@@ -900,9 +902,7 @@ test("saved reports load into the form and are checked like the server does", as
 	await expect(
 		page.getByRole("switch", { name: "Send job reports" }),
 	).toHaveAttribute("aria-checked", "true");
-	await expect(page.locator('[data-field="reports_agent"]')).toHaveValue(
-		"atlas",
-	);
+	await expectValue(page.locator('[data-field="reports_agent"]'), "atlas");
 	await expect(
 		page.getByRole("textbox", { name: "Target 1 delivery ID" }),
 	).toHaveValue("C123");

@@ -36,6 +36,10 @@ type Values struct {
 	// Approval is the run's approval mode, rendered through the definition's
 	// approval arguments; empty means DefaultApprovalMode.
 	Approval ApprovalMode
+	// ApprovalArgs, when non-nil, replaces the arguments Approval renders,
+	// for a caller that has already worked out the CLI's permission flags,
+	// such as the enforce arguments that carry an agent's own rules.
+	ApprovalArgs []string
 	// RemoteControl mirrors the run's own flag.
 	RemoteControl bool
 	// PromptStdin renders the prompt argument as the definition's
@@ -112,7 +116,11 @@ func (d Definition) Render(mode Mode, values Values) []string {
 				continue
 			}
 			if arg == "{"+placeholderApproval+"}" {
-				args = append(args, d.ApprovalArgs(values.Approval)...)
+				if values.ApprovalArgs != nil {
+					args = append(args, values.ApprovalArgs...)
+				} else {
+					args = append(args, d.ApprovalArgs(values.Approval)...)
+				}
 				continue
 			}
 			args = append(args, substitute(arg, values))
@@ -210,4 +218,12 @@ func (d Definition) EnvList() []string {
 		env = append(env, key+"="+d.Env[key])
 	}
 	return env
+}
+
+// ResumesSessions reports whether the definition runs a CLI that keeps its own
+// session and continues it through its resume template, which is what lets an
+// interactive chat send only each new message rather than the whole
+// conversation. An in-process agent is core's own runner, not a CLI.
+func (d Definition) ResumesSessions() bool {
+	return !d.InProcess && d.Session.Assign != AssignNone && len(d.Args.Resume) > 0
 }
