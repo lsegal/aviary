@@ -690,7 +690,6 @@ const systemPrimary: NavChild[] = [
 	{ key: "settings", label: "Settings", to: "/system/settings" },
 	{ key: "providers", label: "Providers & Auth", to: "/system/providers" },
 	{ key: "usage", label: "Usage", to: "/system/usage" },
-	{ key: "jobs", label: "Jobs", to: "/system/jobs" },
 ];
 const systemRest: NavChild[] = [
 	{ key: "tools", label: "Tools", to: "/system/tools" },
@@ -815,11 +814,11 @@ function agentItems(agent: string): NavChild[] {
 		const q = route.query.task;
 		return tasks
 			.filter((t) => t.name)
-			.map((t, i) => ({
+			.map((t) => ({
 				key: `task:${t.name}`,
 				label: t.name,
 				to: router.resolve(agentTaskPath(agent, t.name)).fullPath,
-				active: typeof q === "string" && q ? q === t.name : i === 0,
+				active: q === t.name,
 			}));
 	}
 	if (filesOpen.value) {

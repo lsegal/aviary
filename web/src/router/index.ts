@@ -69,10 +69,11 @@ const router = createRouter({
 			component: () => import("../views/UsageView.vue"),
 			meta: { requiresAuth: true },
 		},
+		// Task runs and their analytics live on an agent's Scheduled Tasks.
 		{
 			path: "/system/jobs",
-			component: () => import("../views/JobsView.vue"),
 			meta: { requiresAuth: true },
+			redirect: () => ({ path: "/agents/_0/tasks", query: {} }),
 		},
 		{
 			path: "/system/tools",

@@ -1,17 +1,30 @@
 <template>
 	<details class="group inline-block max-w-full" :open="open">
-		<summary
+		<summary :data-state="state" :title="error || undefined"
 			class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs hover:border-gray-300 hover:bg-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-800"
 			:class="error
 				? 'border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400'
 				: 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'">
-			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0"
+			<svg v-if="state === 'running'" data-testid="tool-call-spinner" xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 16 16" fill="none" class="h-3 w-3 shrink-0 animate-spin text-blue-500 motion-reduce:animate-pulse dark:text-blue-400"
 				aria-hidden="true">
+				<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" />
+				<path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+			</svg>
+			<svg v-else-if="state === 'failed'" data-testid="tool-call-warning" xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3 shrink-0" aria-hidden="true">
 				<path fill-rule="evenodd"
-					d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.92 1.207 3.563 2.912 4.205l-1.69 3.668-.776-.776a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.172-.196l2-4.34A4.492 4.492 0 0 0 8 12.5c.578 0 1.131-.109 1.64-.307l2 4.34a.75.75 0 0 0 1.172.196l2-2a.75.75 0 1 0-1.06-1.06l-.777.776-1.69-3.668A4.5 4.5 0 1 0 5.433 2.304Zm3.388 6.787A3 3 0 1 1 8 3a3 3 0 0 1 .821 6.091Z"
+					d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 5a.75.75 0 0 1 .75.75v2.5a.75.75 0 0 1-1.5 0v-2.5A.75.75 0 0 1 8 5Zm0 6.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+					clip-rule="evenodd" />
+			</svg>
+			<svg v-else data-testid="tool-call-check" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"
+				fill="currentColor" class="h-3 w-3 shrink-0 text-green-600 dark:text-green-400" aria-hidden="true">
+				<path fill-rule="evenodd"
+					d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
 					clip-rule="evenodd" />
 			</svg>
 			<span>{{ name }}</span>
+			<span class="sr-only">({{ state }})</span>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
 				class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
 				<path fill-rule="evenodd"
@@ -56,6 +69,10 @@ const props = withDefaults(
 		open?: boolean;
 	}>(),
 	{ pending: true },
+);
+
+const state = computed(() =>
+	props.error ? "failed" : props.pending ? "running" : "succeeded",
 );
 
 const hasArgs = computed(() => {
