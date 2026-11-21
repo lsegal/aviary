@@ -195,3 +195,20 @@ func TestAnalyzeTaskDeterminismParsesAndCountsUsage(t *testing.T) {
 	require.Len(t, provider.requests, 1)
 	assert.Equal(t, taskDeterminismSystemPrompt, provider.requests[0].System)
 }
+
+func TestEstimateTaskRunPricesCatalogModels(t *testing.T) {
+	steps := []compiledTaskStep{
+		{Kind: "deterministic", Deterministic: true, Tool: "web_get"},
+		{Kind: "agent_run"},
+	}
+	est := estimateTaskRun("fetch the release notes and summarize them", nil, steps, "anthropic/claude-opus-5-5")
+	require.NotNil(t, est.MinCostUSD)
+	require.NotNil(t, est.MaxCostUSD)
+	// Claude Opus 5.5 costs $4 per million input tokens and $20 per million output tokens.
+	assert.InDelta(t, (float64(est.MinInputTokens)*4+float64(est.MinOutputTokens)*20)/1e6, *est.MinCostUSD, 1e-12)
+	assert.InDelta(t, (float64(est.MaxInputTokens)*4+float64(est.MaxOutputTokens)*20)/1e6, *est.MaxCostUSD, 1e-12)
+	assert.Greater(t, *est.MaxCostUSD, *est.MinCostUSD)
+
+	unpriced := estimateTaskRun("fetch the release notes and summarize them", nil, steps, "openai-codex/gpt-6-sol")
+	assert.Nil(t, unpriced.MinCostUSD, "subscription-billed models show tokens only")
+}
