@@ -72,6 +72,7 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, useId, watch } from "vue";
+import { formatFire } from "../lib/projects";
 import type { TriggerFields } from "../lib/trigger";
 
 // One trigger editor for every surface that schedules a task: Projects
@@ -171,17 +172,4 @@ watch(
 	{ immediate: true },
 );
 onUnmounted(() => clearTimeout(previewTimer));
-
-function formatFire(iso: string) {
-	const t = Date.parse(iso);
-	return Number.isNaN(t)
-		? iso
-		: new Date(t).toLocaleString(undefined, {
-				weekday: "short",
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-}
 </script>

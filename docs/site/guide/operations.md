@@ -161,7 +161,7 @@ An upgrade is a safe restart. Aviary installs the release, updates the skills fo
 
 `server_restart {}` restarts the same way without installing anything.
 
-**Automatic updates:** set `server.auto_update: true` to install new releases on their own. They are applied only while no jobs are running.
+**Automatic updates:** set `server.auto_update: true` to install new releases on their own. An available update is applied as soon as it is found, even while jobs are running: like a manual upgrade with **Now**, running jobs are checkpointed and resume after the restart.
 
 ### Dev checkouts
 
@@ -169,7 +169,7 @@ A dev build running from an Aviary git checkout (for example under `pnpm dev`, o
 
 `pnpm dev` tells the backend where the checkout is through `AVIARY_CHECKOUT`, so the backend finds it even when it runs, or restarts, outside the checkout directory. To run a dev build any other way, set `AVIARY_CHECKOUT` to the checkout root yourself; without it, Aviary looks for a checkout around its working directory. A dev build that finds no checkout says so in the update notice instead of appearing up to date.
 
-Updating, manually or automatically, runs `git pull --ff-only` in the checkout and then safely restarts Aviary, now or once no jobs are running, just like a release upgrade: running jobs are checkpointed and resumed. `pnpm dev` runs the restarted backend again from the pulled sources, so the backend never keeps running old code beside an updated frontend. Hot reload alone isn't relied on, because it patches the running program in place and keeps the old code for changes it can't apply. A dev build run any other way can't rebuild itself, so the pull still happens and Aviary tells you to restart it. Aviary never pulls over uncommitted changes or a branch that has diverged from its upstream; the notice names the git state that blocks the update instead. Setting `AVIARY_EMULATE_VERSIONS` keeps the release updater in force.
+Updating, manually or automatically, runs `git pull --ff-only` in the checkout and then safely restarts Aviary (automatic updates restart now; a manual update can also wait until no jobs are running), just like a release upgrade: running jobs are checkpointed and resumed. `pnpm dev` runs the restarted backend again from the pulled sources, so the backend never keeps running old code beside an updated frontend. Hot reload alone isn't relied on, because it patches the running program in place and keeps the old code for changes it can't apply. A dev build run any other way can't rebuild itself, so the pull still happens and Aviary tells you to restart it. Aviary never pulls over uncommitted changes or a branch that has diverged from its upstream; the notice names the git state that blocks the update instead. Setting `AVIARY_EMULATE_VERSIONS` keeps the release updater in force.
 
 ---
 

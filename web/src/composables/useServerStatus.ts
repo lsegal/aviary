@@ -29,8 +29,7 @@ export interface RestartStatus {
 /** Mirrors saferestart.AutoUpdate: an automatic update not applied yet. */
 export interface AutoUpdateStatus {
 	version?: string;
-	state?: "waiting-jobs" | "waiting-restart" | "applying";
-	jobs?: number;
+	state?: "waiting-restart" | "applying";
 	error?: string;
 }
 

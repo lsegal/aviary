@@ -118,13 +118,13 @@ func TestProjectCheckReportsEachFailure(t *testing.T) {
 		"auth status":              "",
 		"api repos/lsegal/zvidlib": `{"permissions":{"push":true}}`,
 	})
-	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/zvidlib", ReadyLabel: "agent-ready"})
+	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/zvidlib", ReadyLabel: "ready"})
 	require.NoError(t, err)
 	assert.False(t, res.OK)
 	assert.False(t, res.Fork)
 	checks := checkByName(res)
 	assert.Equal(t, projectCheckFail, checks["ready_label"].Status)
-	assert.Contains(t, checks["ready_label"].Message, `"agent-ready"`)
+	assert.Contains(t, checks["ready_label"].Message, `"ready"`)
 	assert.Equal(t, projectCheckFail, checks["skills"].Status)
 	assert.Equal(t, "gh-fix is not installed for codex", checks["skills"].Message)
 	_, hasFork := checks["fork"]

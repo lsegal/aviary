@@ -25,7 +25,7 @@
 				"auto_update": {
 					"type": "boolean",
 					"default": false,
-					"description": "Install new Aviary releases automatically, but only while no jobs are running."
+					"description": "Install new Aviary releases automatically as soon as they are available. Running jobs are checkpointed and resume after the restart."
 				},
 				"tls": {
 					"type": "object",
