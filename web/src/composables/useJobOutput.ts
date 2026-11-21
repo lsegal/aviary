@@ -1,8 +1,8 @@
 import { nextTick, onMounted, type Ref, ref, watch } from "vue";
 
-// How job output shows on board cards: the structured
-// transcript ("rich") or the terminal scrollback ("raw"). One choice applies
-// to every card and is remembered per browser.
+// How job output shows on board cards: the structured transcript ("rich") or
+// the terminal scrollback ("raw"). One choice applies to every card and is
+// remembered per browser.
 
 export type JobOutputMode = "rich" | "raw";
 
