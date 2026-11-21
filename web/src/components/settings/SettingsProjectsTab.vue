@@ -1,9 +1,26 @@
 <template>
 	<section v-show="activeTab === 'projects'" class="space-y-5 pb-8" data-testid="projects-settings-tab">
 		<p class="text-xs text-gray-500 dark:text-gray-400">
-			These settings apply to every project of every agent. Each project belongs to an agent and is added on
-			that agent's GitHub Projects page.
+			Every agent's projects, and the settings every project of every agent runs under. Each agent's GitHub
+			Projects page is the board of its projects' jobs.
 		</p>
+	<section :class="CARD" data-testid="agent-projects-settings">
+		<h3 :class="CARD_HEAD">Agents' projects <span :class="CARD_NOTE">Each project belongs to exactly one agent</span></h3>
+		<p v-if="!agents.length" class="p-4 text-sm text-gray-500 dark:text-gray-400">
+			No agents yet. <router-link to="/agents?add=1" class="text-blue-600 hover:underline dark:text-blue-400">Add an agent</router-link> to give it projects.
+		</p>
+		<template v-else>
+			<nav class="flex flex-wrap border-b border-gray-200 px-4 dark:border-gray-800" role="tablist" aria-label="Agent">
+				<button v-for="a in agents" :key="a.name" type="button" role="tab" data-testid="agent-projects-agent"
+					:aria-selected="a === agent" class="-mb-px border-b-2 px-3 py-2 text-sm"
+					:class="a === agent ? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'"
+					@click="selectAgent(a.name)">
+					{{ a.name }} <span class="text-xs font-normal text-gray-400">{{ projectTargets(a.projects).length }}</span>
+				</button>
+			</nav>
+			<SettingsAgentProjects v-if="agent && activeTab === 'projects'" :key="agent.name" :agent="agent" :config="settings.draft" />
+		</template>
+	</section>
 	<section :class="CARD" data-testid="project-settings">
 		<h3 :class="CARD_HEAD">
 			Settings <span :class="CARD_NOTE">One set for every project of every agent. Grey tags mark defaults that aren't saved</span>
@@ -136,6 +153,7 @@
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, inject, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useProjectClones } from "../../composables/useProjectSettings";
 import { APPROVAL_MODES } from "../../lib/approval";
 import {
@@ -148,11 +166,13 @@ import {
 	type ProjectsSection,
 	parseList,
 	projectsYAML,
+	projectTargets,
 	settingsFromSection,
 	withSettings,
 } from "../../lib/projectSettings";
 import type { AppConfig } from "../../stores/settings";
 import { settingsViewContextKey } from "./context";
+import SettingsAgentProjects from "./SettingsAgentProjects.vue";
 
 const context = inject(settingsViewContextKey) as
 	| { activeTab: string; draft: AppConfig }
@@ -203,6 +223,21 @@ function DefaultTag(p: { on: boolean }) {
 DefaultTag.props = ["on"];
 
 const clones = useProjectClones();
+
+// The agent whose projects are shown comes from ?agent, so the boards'
+// Settings links open on their agent.
+const route = useRoute();
+const router = useRouter();
+const agents = computed(() =>
+	settings.draft.agents.filter((a) => a.name.trim()),
+);
+const agent = computed(
+	() =>
+		agents.value.find((a) => a.name === route.query.agent) ?? agents.value[0],
+);
+function selectAgent(name: string) {
+	void router.replace({ query: { agent: name } });
+}
 
 const section = computed<ProjectsSection>(() => settings.draft.projects ?? {});
 

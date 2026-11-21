@@ -61,6 +61,8 @@
             </button>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+          <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
+          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -154,6 +156,7 @@
                 class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
               <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
             </router-link>
+            <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -185,6 +188,7 @@
                   <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                   <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
                 </router-link>
+                <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -249,6 +253,8 @@
             <template v-else>{{ shortVersion(latestVersion) }}</template>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+          <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
+          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -319,6 +325,7 @@ import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import ChatSessionList from "./chat/ChatSessionList.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
 interface NavChild {
@@ -370,6 +377,27 @@ const {
 const restartPending = computed(
 	() => !!restart.value && restart.value.phase !== "idle",
 );
+// Why an automatic update has not applied yet, and how its last attempt
+// failed, shown at the update notice.
+const autoUpdateWaiting = computed(() => {
+	const auto = restart.value?.autoUpdate;
+	switch (auto?.state) {
+		case "waiting-jobs": {
+			const n = auto.jobs ?? 0;
+			return `Auto update is waiting for ${n === 1 ? "1 running job" : `${n} running jobs`} to finish.`;
+		}
+		case "waiting-restart":
+			return "Auto update is waiting for the pending restart.";
+		case "applying":
+			return git.value ? "Auto update is pulling the checkout…" : "Auto update is applying…";
+		default:
+			return "";
+	}
+});
+const autoUpdateError = computed(() => {
+	const err = restart.value?.autoUpdate?.error;
+	return err ? `Auto update failed: ${err}` : "";
+});
 const logoUrl = "/logo.png";
 const brandLinks: BrandLink[] = [
 	{
@@ -388,7 +416,7 @@ const brandLinks: BrandLink[] = [
 // An agent's pages, in sidebar order. Settings holds its General,
 // Permissions and Channels tabs.
 const AGENT_PAGES = [
-	{ key: "chat", label: "Chat" },
+	{ key: "chat", label: "Chats" },
 	{ key: "projects", label: "GitHub Projects" },
 	{ key: "tasks", label: "Tasks" },
 	{ key: "files", label: "Files" },
@@ -504,6 +532,9 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		: undefined,
 );
 
+// The agent's Chats list opens on its chat pages.
+const chatsOpen = computed(() => /^\/agents\/[^/]+\/chat(\/|$)/.test(route.path));
+
 // The agent's projects list opens on its GitHub Projects pages and boards.
 const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
@@ -511,8 +542,9 @@ const projectsOpen = computed(() =>
 
 const addAgentLink = { path: "/agents", query: { add: "1" } };
 
+// + Add project opens the add dialog on the agent's GitHub Projects board.
 function addProjectLink(agent: string) {
-	return { path: agentPagePath(agent, "projects"), query: { new: "1" } };
+	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }
 
 // Runtime watches no agent owns sit with System's other pages.

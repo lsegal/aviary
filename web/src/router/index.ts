@@ -19,13 +19,20 @@ const router = createRouter({
 		// One record for every SettingsView-backed agent page, so moving between
 		// them (or adding an agent from /agents) keeps the unsaved draft.
 		{
-			path: "/agents/:agent?/:subtab(settings|files|tasks|projects)?/:section(permissions|channels)?",
+			path: "/agents/:agent?/:subtab(settings|files|tasks)?/:section(permissions|channels)?",
 			component: SettingsView,
 			meta: { requiresAuth: true },
 		},
 		{
 			path: "/agents/:agent/chat/:sessionId?",
 			component: () => import("../views/ChatView.vue"),
+			meta: { requiresAuth: true },
+		},
+		// GitHub Projects: the board for every project the agent owns, and
+		// one project's board. Their settings live in System → Projects.
+		{
+			path: "/agents/:agent/projects",
+			component: ProjectsView,
 			meta: { requiresAuth: true },
 		},
 		{

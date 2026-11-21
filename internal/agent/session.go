@@ -259,12 +259,14 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 			sessType = inferSessionType(name)
 		}
 		s := &domain.Session{
-			ID:        id,
-			AgentID:   agentID,
-			Name:      name,
-			Type:      sessType,
-			CreatedAt: created,
-			UpdatedAt: updated,
+			ID:            id,
+			AgentID:       agentID,
+			Name:          name,
+			Type:          sessType,
+			Title:         SessionTitle(agentID, id),
+			LastMessageAt: lastMessageAt(lines[1:]),
+			CreatedAt:     created,
+			UpdatedAt:     updated,
 		}
 		sessions = append(sessions, s)
 	}
@@ -291,7 +293,61 @@ func (m *SessionManager) Delete(agentID, sessionID string) error {
 	if err := os.Remove(p); err != nil {
 		return fmt.Errorf("deleting session %q: %w", sessionID, err)
 	}
+	for _, sidecar := range []string{store.SessionMetaPath(agentID, sessionID), store.SessionChannelsPath(agentID, sessionID)} {
+		if err := os.Remove(sidecar); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("deleting session %q: %w", sessionID, err)
+		}
+	}
 	return nil
+}
+
+// Rename sets the session's display title. The session keeps its name, which
+// channels and the default "main" session look it up by.
+func (m *SessionManager) Rename(agentID, sessionID, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("session name is required")
+	}
+	if store.FindSessionPath(agentID, sessionID) == "" {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	err := store.UpdateSessionMeta(store.SessionMetaPath(agentID, sessionID), func(meta *store.SessionMeta) {
+		meta.Title = title
+	})
+	if err != nil {
+		return fmt.Errorf("renaming session %q: %w", sessionID, err)
+	}
+	notifySessionMessage(agentID, sessionID, "")
+	return nil
+}
+
+// SessionTitle returns the session's display title, or "" when it has none.
+func SessionTitle(agentID, sessionID string) string {
+	meta, err := store.ReadSessionMeta(store.SessionMetaPath(agentID, sessionID))
+	if err != nil {
+		return ""
+	}
+	return meta.Title
+}
+
+// lastMessageAt returns the newest user or assistant message time among a
+// session's records, or nil when it has no such message.
+func lastMessageAt(records []map[string]any) *time.Time {
+	var last time.Time
+	for _, rec := range records {
+		role, _ := rec["role"].(string)
+		if role != string(domain.MessageRoleUser) && role != string(domain.MessageRoleAssistant) {
+			continue
+		}
+		s, _ := rec["timestamp"].(string)
+		if t, err := time.Parse(time.RFC3339Nano, s); err == nil && t.After(last) {
+			last = t
+		}
+	}
+	if last.IsZero() {
+		return nil
+	}
+	return &last
 }
 
 // AppendMessageToSession appends a message to an existing session and fires

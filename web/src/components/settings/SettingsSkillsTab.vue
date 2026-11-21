@@ -1,5 +1,53 @@
 ﻿<template>
 				<section v-show="activeTab === 'skills'" class="space-y-5 pb-8">
+					<div class="flex flex-wrap items-start justify-between gap-4">
+						<p class="max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+							Every installed skill: the ones Aviary installs into each provider's CLI, with the version installed in each,
+							and the ones Aviary agents use, which you can enable, disable and configure here.</p>
+						<button type="button"
+							class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+							:disabled="skillsLoading" @click="loadInstalledSkills">
+							{{ skillsLoading ? "Refreshing…" : "Refresh" }}
+						</button>
+					</div>
+
+					<div data-testid="skills-discovery"
+						class="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+						<div class="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)] lg:items-center">
+							<div>
+								<p class="font-medium text-gray-900 dark:text-white">Looking for more skills?</p>
+								<p class="mt-1 leading-6">
+									Bundled skills come from the Aviary binary. Aviary discovers disk-installed skills from
+									<code class="font-mono">~/.config/aviary/skills</code> and
+									<code class="font-mono">~/.agents/skills</code>. <br> You can search from the terminal with
+									<code class="font-mono">npx skills find</code>, or browse
+									<a href="https://skills.sh/" target="_blank" rel="noreferrer"
+										class="font-medium underline underline-offset-2">skills.sh</a>
+									as one option for discovering installable skills.
+								</p>
+							</div>
+							<div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-slate-100 shadow-sm dark:border-white/10">
+								<div class="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+									<div class="flex items-center gap-2">
+										<span class="h-2.5 w-2.5 rounded-full bg-rose-400" />
+										<span class="h-2.5 w-2.5 rounded-full bg-amber-300" />
+										<span class="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+									</div>
+									<span class="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">skill install</span>
+								</div>
+								<div class="px-4 py-5">
+									<pre class="overflow-x-auto font-mono text-[13px] leading-6 text-emerald-300">{{ skillsSnippet }}</pre>
+									<div class="mt-5 flex justify-center">
+										<a href="https://skills.sh/" target="_blank" rel="noreferrer"
+											class="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-slate-200 transition hover:bg-white/10">
+											Open skills.sh
+										</a>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
 					<section aria-labelledby="skills-in-providers">
 						<h3 id="skills-in-providers" class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
 							Installed in providers</h3>
@@ -7,23 +55,22 @@
 					</section>
 
 					<section aria-labelledby="skills-for-agents" class="space-y-5">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 id="skills-for-agents" class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-								Available to Aviary agents</h3>
-							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bundled skills come from the Aviary binary.
-								Disk-installed skills come from <code class="font-mono">AVIARY_CONFIG_BASE_DIR/skills</code> and
-								<code class="font-mono">~/.agents/skills</code>.</p>
-							<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Search with <code class="font-mono">npx skills find</code>
-								or browse <a href="https://skills.sh/" target="_blank" rel="noreferrer"
-									class="underline underline-offset-2">skills.sh</a>. Example install:
-								<code class="font-mono">npx skills add --global -a universal 4ier/notion-cli</code>.</p>
+					<h3 id="skills-for-agents" class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+						Available to Aviary agents</h3>
+
+					<div data-testid="skill-stats" class="grid gap-3 sm:grid-cols-3">
+						<div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+							<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Installed</p>
+							<p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{{ installedSkills.length }}</p>
 						</div>
-						<button type="button"
-							class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-							:disabled="skillsLoading" @click="loadInstalledSkills">
-							{{ skillsLoading ? "Loading…" : "Refresh Skills" }}
-						</button>
+						<div class="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+							<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">Enabled</p>
+							<p class="mt-2 text-3xl font-semibold text-emerald-700 dark:text-emerald-300">{{ enabledSkillCount }}</p>
+						</div>
+						<div class="rounded-xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+							<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400">Showing</p>
+							<p class="mt-2 text-3xl font-semibold text-amber-700 dark:text-amber-300">{{ filteredSkills.length }}</p>
+						</div>
 					</div>
 
 					<div v-if="installedSkills.length" data-testid="skill-filters"
@@ -42,7 +89,6 @@
 									{{ f.label }}
 								</button>
 							</div>
-							<span class="text-gray-500 dark:text-gray-400">{{ enabledSkillCount }} of {{ installedSkills.length }} enabled · showing {{ filteredSkills.length }}</span>
 						</div>
 					</div>
 
@@ -180,6 +226,8 @@ export default defineComponent({
 				{ label: "Built-in", value: "builtin" },
 				{ label: "Disk", value: "disk" },
 			] as { label: string; value: SourceFilter }[],
+			skillsSnippet:
+				"$ npx skills find notion\n$ npx skills add --global -a universal 4ier/notion-cli",
 			enabledSkillCount,
 			filteredSkills,
 			SKILL_FILTER_ON:

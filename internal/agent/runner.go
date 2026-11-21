@@ -671,12 +671,13 @@ func (r *AgentRunner) promptCore(
 			}
 			// Save the provider-native response ID for conversation continuity.
 			if lastResponseID != "" {
-				meta, _ := store.ReadSessionMeta(metaPath)
-				meta.Conversation = &store.ConversationMeta{
-					ID:         lastResponseID,
-					LastUsedAt: time.Now(),
-				}
-				if err := store.WriteSessionMeta(metaPath, meta); err != nil {
+				err := store.UpdateSessionMeta(metaPath, func(meta *store.SessionMeta) {
+					meta.Conversation = &store.ConversationMeta{
+						ID:         lastResponseID,
+						LastUsedAt: time.Now(),
+					}
+				})
+				if err != nil {
 					slog.Warn("agent: failed to save session meta", "session", sessionID, "err", err)
 				}
 			}

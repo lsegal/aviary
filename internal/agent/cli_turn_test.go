@@ -400,8 +400,10 @@ func TestCLITurn_GrantsTheAgentDirectory(t *testing.T) {
 }
 
 // TestCLILaunchEnvOverlaysCodexHome shows chat turns launch codex with
-// CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
-// trusted-project writes out of the user's config.toml (#528).
+// CODEX_HOME at aviary's own overlay of the user's directory, which keeps
+// codex's trusted-project writes out of the user's config.toml (#528) and
+// whose own config.toml is empty, so the user's settings are ignored while
+// aviary's per-turn profile is read (#573).
 func TestCLILaunchEnvOverlaysCodexHome(t *testing.T) {
 	home := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte("model = \"gpt-5\"\n"), 0o600))
@@ -413,8 +415,10 @@ func TestCLILaunchEnvOverlaysCodexHome(t *testing.T) {
 	require.Len(t, env, 1)
 	overlay, ok := strings.CutPrefix(env[0], "CODEX_HOME=")
 	require.True(t, ok, env[0])
-	assert.Equal(t, store.CLIHomesDir(), filepath.Dir(overlay))
-	assert.FileExists(t, filepath.Join(overlay, "config.toml"))
+	assert.Equal(t, filepath.Join(store.CLIHomesDir(), "chat"), filepath.Dir(overlay))
+	config, err := os.ReadFile(filepath.Join(overlay, "config.toml"))
+	require.NoError(t, err)
+	assert.Empty(t, config)
 
 }
 

@@ -523,12 +523,22 @@ func cliRefusalNote(backend cliagent.Backend, mode clidefs.ApprovalMode, agentNa
 // overlay cannot be prepared, the CLI runs against the user's directory.
 // The overlay also records workDir as trusted, so Claude applies its
 // workspace's permission allow entries (#565).
+//
+// Codex chat turns get aviary's own overlay instead, under cli-homes/chat:
+// its config.toml is empty, so the user's settings are ignored as
+// --ignore-user-config would, and each turn's system prompt is read from a
+// profile written there rather than passed on the command line (#573).
 func cliLaunchEnv(backend cliagent.Backend, workDir string) []string {
 	definition, ok := llm.CLIProvider(string(backend))
 	if !ok {
 		return nil
 	}
-	env, err := definition.HomeEnv(store.CLIHomesDir(), workDir)
+	homeEnv := definition.HomeEnv
+	base := store.CLIHomesDir()
+	if backend == cliagent.Codex {
+		homeEnv, base = definition.OwnHomeEnv, filepath.Join(base, "chat")
+	}
+	env, err := homeEnv(base, workDir)
 	if err != nil {
 		slog.Warn("agent: running CLI against its own settings directory", "backend", backend, "err", err)
 	}
@@ -565,13 +575,14 @@ func (r *AgentRunner) loadCLISessionID(sessionID string, backend cliagent.Backen
 
 func (r *AgentRunner) saveCLISessionID(sessionID string, backend cliagent.Backend, id string) {
 	path := store.SessionMetaPath(r.agent.ID, sessionID)
-	meta, _ := store.ReadSessionMeta(path)
-	if id == "" {
-		meta.CLI = nil
-	} else {
-		meta.CLI = &store.CLISessionMeta{Backend: string(backend), ID: id}
-	}
-	if err := store.WriteSessionMeta(path, meta); err != nil {
+	err := store.UpdateSessionMeta(path, func(meta *store.SessionMeta) {
+		if id == "" {
+			meta.CLI = nil
+		} else {
+			meta.CLI = &store.CLISessionMeta{Backend: string(backend), ID: id}
+		}
+	})
+	if err != nil {
 		slog.Warn("agent: failed to save CLI session", "session", sessionID, "err", err)
 	}
 }
