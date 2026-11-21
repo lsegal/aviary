@@ -2329,20 +2329,3 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 		"true",
 	);
 });
-
-for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844]] as const) {
-	test(`zz screenshot ${name}`, async ({ page }) => {
-		await page.setViewportSize({ width, height });
-		await setup(page);
-		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
-		await expect(page.getByTestId("lifecycle")).toBeVisible({ timeout: 30000 });
-		await page.waitForTimeout(800);
-		await page.screenshot({ path: `/tmp/shot774-${name}.png` });
-		if (name === "desktop") {
-			await page.getByTestId("raw-output-toggle").click();
-			await page.waitForTimeout(500);
-			await page.screenshot({ path: "/tmp/shot774-desktop-raw.png" });
-			await page.getByTestId("raw-output-toggle").click();
-		}
-	});
-}
