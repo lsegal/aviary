@@ -164,8 +164,8 @@
 import { defineComponent, inject } from "vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
-import SettingsAgentList from "./SettingsAgentList.vue";
 import { settingsViewContextKey } from "./context";
+import SettingsAgentList from "./SettingsAgentList.vue";
 
 export default defineComponent({
 	name: "SettingsGeneralTab",

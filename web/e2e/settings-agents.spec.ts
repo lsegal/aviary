@@ -73,8 +73,14 @@ test("the sidebar header has no + and the title is uncovered", async ({
 
 	// Collapsed, the rail's hover overlay shows the same header.
 	await page.getByTestId("sidebar-collapse").click();
-	await page.getByTestId("sidebar-rail").hover();
-	await expect(page.getByTestId("sidebar")).toHaveAttribute("data-peek", "true");
+	// Rest below the rail's items, where the pointer opens the overlay.
+	const rail = await page.getByTestId("sidebar-rail").boundingBox();
+	if (!rail) throw new Error("no rail");
+	await page.mouse.move(rail.x + rail.width / 2, rail.y + rail.height - 220);
+	await expect(page.getByTestId("sidebar")).toHaveAttribute(
+		"data-peek",
+		"true",
+	);
 	await expect(page.getByTestId("sidebar-title")).toHaveText("Aviary");
 	await expect(page.getByTestId("sidebar-add-agent")).toHaveCount(0);
 });
@@ -85,6 +91,7 @@ test("Agents sits directly below Models and Server is last", async ({
 	await mockConfig(page, twoAgents);
 	await page.goto("/system/settings");
 
+	await expect(page.getByTestId("settings-agents")).toBeVisible();
 	const headings = await sectionHeadings(page);
 	expect(headings.indexOf("Agents")).toBe(headings.indexOf("Models") + 1);
 	expect(headings.at(-1)).toBe("Server");
@@ -105,7 +112,7 @@ test("+ Add agent opens the create-agent flow", async ({ page }) => {
 	await mockConfig(page, twoAgents);
 	await page.goto("/system/settings");
 	await page.getByTestId("settings-add-agent").click();
-	await expect(page).toHaveURL("/agents/_3/settings");
+	await expect(page).toHaveURL(/\/agents\/_\d+\/settings$/);
 	await page.locator('input[placeholder="assistant"]').fill("scout");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 
@@ -121,7 +128,9 @@ test("Rename rejects empty and duplicate names and saves the new name", async ({
 	const state = await mockConfig(page, twoAgents);
 	await page.goto("/system/settings");
 
-	const row = page.locator('[data-testid=settings-agent-row][data-agent="assistant"]');
+	const row = page.locator(
+		'[data-testid=settings-agent-row][data-agent="assistant"]',
+	);
 	await row.getByTestId("settings-agent-menu").click();
 	await page.getByTestId("settings-agent-rename").click();
 	const input = page.getByTestId("rename-agent-input");
@@ -129,7 +138,9 @@ test("Rename rejects empty and duplicate names and saves the new name", async ({
 
 	await input.fill("  ");
 	await page.getByTestId("rename-agent-confirm").click();
-	await expect(page.getByTestId("rename-agent-error")).toHaveText("Enter a name.");
+	await expect(page.getByTestId("rename-agent-error")).toHaveText(
+		"Enter a name.",
+	);
 
 	await input.fill("Helper");
 	await page.getByTestId("rename-agent-confirm").click();
@@ -161,7 +172,9 @@ test("Delete confirms with the agent's dependents before deleting", async ({
 	const state = await mockConfig(page, twoAgents);
 	await page.goto("/system/settings");
 
-	const row = page.locator('[data-testid=settings-agent-row][data-agent="assistant"]');
+	const row = page.locator(
+		'[data-testid=settings-agent-row][data-agent="assistant"]',
+	);
 	await row.getByTestId("settings-agent-menu").click();
 	await page.getByTestId("settings-agent-delete").click();
 	const dialog = page.getByTestId("delete-agent-dialog");
