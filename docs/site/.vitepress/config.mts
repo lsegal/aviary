@@ -93,7 +93,10 @@ export default defineConfig({
 						{ text: "Index", link: "/reference/" },
 						{ text: "CLI Reference", link: "/reference/cli" },
 						{ text: "Configuration Reference", link: "/reference/config" },
-						{ text: "CLI Provider Definitions", link: "/reference/cli-definitions" },
+						{
+							text: "CLI Provider Definitions",
+							link: "/reference/cli-definitions",
+						},
 						{ text: "UI Surface", link: "/reference/ui/control-panel" },
 					],
 				},
