@@ -155,7 +155,7 @@
 						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
 							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
 							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
-							:preview="previewSchedule" />
+							:preview="previewSchedule" :refresh="refreshSchedules" />
 
 						<template v-else>
 						<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
@@ -338,6 +338,7 @@ const {
 	remove: removeSchedule,
 	runNow: runScheduleNow,
 	preview: previewSchedule,
+	refresh: refreshSchedules,
 } = useProjectSchedules(project);
 
 // The view and the schedule being edited live in the URL, so a reload or a

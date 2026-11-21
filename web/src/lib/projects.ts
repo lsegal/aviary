@@ -816,7 +816,7 @@ export function until(iso: string, now = Date.now()): string {
 }
 
 /**
- * The task_schedule / task_update arguments for a schedule's trigger. Fields
+ * The task_update and task_preview arguments for a schedule's trigger. Fields
  * the trigger does not use are cleared, so switching triggers on an existing
  * task does not leave the old one behind.
  */
@@ -852,28 +852,4 @@ export function triggerArgs(s: ProjectSchedule): Record<string, string> {
 			break;
 	}
 	return args;
-}
-
-export function emptySchedule(project: string): ProjectSchedule {
-	return {
-		id: "",
-		agent: "",
-		name: "",
-		project,
-		model: "",
-		prompt: "",
-		enabled: true,
-		trigger: "daily",
-		schedule: "",
-		every: "",
-		at: "09:00",
-		days: "",
-		startAt: "",
-		timezone: "",
-		overlap: "queue",
-		missed: "skip",
-		description: "",
-		nextRun: "",
-		history: [],
-	};
 }

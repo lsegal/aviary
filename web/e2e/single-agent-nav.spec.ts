@@ -29,7 +29,12 @@ test("a single agent's pages are the sidebar's top level", async ({ page }) => {
 	await expect(sidebar.getByTestId("sidebar-agents")).toHaveCount(0);
 	await expect(sidebar.getByTestId("sidebar-agent-list")).toHaveCount(0);
 	await expect(sole.getByRole("link", { name: "assistant" })).toHaveCount(0);
-	for (const label of ["Chats", "Settings", "Scheduled Tasks", "GitHub Projects"]) {
+	for (const label of [
+		"Chats",
+		"Settings",
+		"Scheduled Tasks",
+		"GitHub Projects",
+	]) {
 		await expect(
 			sole.getByRole("link", { name: label, exact: true }),
 		).toBeVisible();
