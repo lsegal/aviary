@@ -98,3 +98,14 @@ func DeliverMediaToSession(agentID, sessionID, caption, filePath string) {
 		fn(caption, filePath)
 	}
 }
+
+// ClearSessionDelivery drops every text and media delivery function
+// registered for the session, so its replies stay in Aviary until a new one
+// is registered.
+func ClearSessionDelivery(agentID, sessionID string) {
+	sessionKey := SessionRuntimeKey(agentID, sessionID)
+	deliveryRegistry.mu.Lock()
+	defer deliveryRegistry.mu.Unlock()
+	delete(deliveryRegistry.fns, sessionKey)
+	delete(deliveryRegistry.mfns, sessionKey)
+}

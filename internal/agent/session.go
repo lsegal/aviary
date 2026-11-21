@@ -324,6 +324,60 @@ func (m *SessionManager) Delete(agentID, sessionID string) error {
 	return nil
 }
 
+// Archive keeps a session and its messages as a regular chat under a new ID,
+// detached from the channel it came from: it loses its channel delivery, and
+// a later message on that channel starts a fresh session. title becomes its
+// display title.
+func (m *SessionManager) Archive(agentID, sessionID, title string) (*domain.Session, error) {
+	p := store.FindSessionPath(agentID, sessionID)
+	if p == "" {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	lines, err := store.ReadJSONL[map[string]any](p)
+	if err != nil {
+		return nil, fmt.Errorf("archiving session %q: %w", sessionID, err)
+	}
+	now := time.Now()
+	id := newID("sess")
+	header := map[string]any{"created_at": now.Format(time.RFC3339Nano)}
+	if len(lines) > 0 {
+		if _, ok := lines[0]["created_at"]; ok {
+			header, lines = lines[0], lines[1:]
+		}
+	}
+	header["id"] = id
+	header["name"] = id
+	header["type"] = string(domain.SessionTypeUser)
+	header["updated_at"] = now.Format(time.RFC3339Nano)
+	if err := store.RewriteJSONL(store.SessionPath(agentID, id), append([]map[string]any{header}, lines...)); err != nil {
+		return nil, fmt.Errorf("archiving session %q: %w", sessionID, err)
+	}
+	meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, sessionID))
+	if title = strings.TrimSpace(title); title != "" {
+		meta.Title = title
+	}
+	if err := store.UpdateSessionMeta(store.SessionMetaPath(agentID, id), func(next *store.SessionMeta) {
+		*next = meta
+	}); err != nil {
+		return nil, fmt.Errorf("archiving session %q: %w", sessionID, err)
+	}
+	if err := m.Delete(agentID, sessionID); err != nil {
+		return nil, err
+	}
+	ClearSessionDelivery(agentID, sessionID)
+	notifySessionMessage(agentID, id, "")
+	sessions, err := m.List(agentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, sess := range sessions {
+		if sess.ID == id {
+			return sess, nil
+		}
+	}
+	return nil, fmt.Errorf("archived session %q not found", id)
+}
+
 // Rename sets the session's display title. The session keeps its name, which
 // channels and the default "main" session look it up by.
 func (m *SessionManager) Rename(agentID, sessionID, title string) error {
