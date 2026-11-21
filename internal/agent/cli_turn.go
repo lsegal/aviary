@@ -393,17 +393,20 @@ func cliExtraDirArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, workDi
 	return definition.ExtraDirArgs(mode, agentDir)
 }
 
-// cliLaunchEnv points the backend's CLI at the settings overlay its provider
-// definition declares, as every Projects launch does. For codex that is
-// CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
-// trusted-project bookkeeping out of the user's config.toml (#528). When the
-// overlay cannot be prepared, the CLI runs against the user's directory.
+// cliLaunchEnv points the backend's CLI at an overlay of the settings
+// directory its provider definition declares. For codex that is CODEX_HOME at
+// aviary's own overlay of the user's directory: its config.toml is aviary's,
+// empty but for the per-turn profile that carries the system prompt (#573),
+// so the user's settings are ignored while sign-in and sessions are shared,
+// and codex's trusted-project bookkeeping stays out of the user's file
+// (#528). When the overlay cannot be prepared, the CLI runs against the
+// user's directory.
 func cliLaunchEnv(backend cliagent.Backend) []string {
 	definition, ok := llm.CLIProvider(string(backend))
 	if !ok {
 		return nil
 	}
-	env, err := definition.HomeEnv(store.CLIHomesDir())
+	env, err := definition.OwnHomeEnv(filepath.Join(store.CLIHomesDir(), "chat"))
 	if err != nil {
 		slog.Warn("agent: running CLI against its own settings directory", "backend", backend, "err", err)
 	}

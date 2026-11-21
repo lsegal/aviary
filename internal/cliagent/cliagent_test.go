@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -103,6 +104,9 @@ func fakeCodex() {
 		thread = args[len(args)-2]
 	}
 	prompt, _ := bufio.NewReader(os.Stdin).ReadString(0)
+	if prompt == "system" {
+		prompt = fakeCodexInstructions(args)
+	}
 	images := 0
 	for _, a := range args {
 		if a == "--image" {
@@ -121,6 +125,27 @@ func fakeCodex() {
 	_ = out.Encode(map[string]any{"type": "turn.completed", "usage": map[string]any{
 		"input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 2,
 	}})
+}
+
+// fakeCodexInstructions reads the developer instructions the way codex does:
+// from $CODEX_HOME/NAME.config.toml for --profile NAME, or from -c.
+func fakeCodexInstructions(args []string) string {
+	line := ""
+	if i := slices.Index(args, "--profile"); i >= 0 {
+		data, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), args[i+1]+".config.toml"))
+		if err != nil {
+			return err.Error()
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(string(data), "developer_instructions = "))
+	}
+	for _, a := range args {
+		if value, ok := strings.CutPrefix(a, "developer_instructions="); ok {
+			line = value
+		}
+	}
+	var text string
+	_ = json.Unmarshal([]byte(line), &text)
+	return text
 }
 
 func fakeOptions(t *testing.T, backend Backend) Options {
@@ -222,24 +247,33 @@ func TestClaudeArgs_BuiltinToolsOnAndResume(t *testing.T) {
 }
 
 func TestCodexArgs(t *testing.T) {
-	args := codexArgs(Options{Model: "gpt", SystemPrompt: "say \"hi\"\nnow", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret"}, "", []string{"/tmp/a.png"})
+	args := codexArgs(Options{Model: "gpt", SystemPrompt: "say \"hi\"\nnow", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret"}, "", "", []string{"/tmp/a.png"})
 	joined := strings.Join(args, " ")
 	assert.Equal(t, []string{"exec", "--json"}, args[:2])
 	assert.Contains(t, joined, `sandbox_mode="read-only"`)
 	assert.Contains(t, joined, `web_search="disabled"`)
 	// Without its own tools the agent stays read-only whatever the mode.
-	assert.NotContains(t, codexArgs(Options{Model: "gpt", Approval: []string{"--dangerously-bypass-approvals-and-sandbox"}}, "", nil), "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", Approval: []string{"--dangerously-bypass-approvals-and-sandbox"}}, "", "", nil), "--dangerously-bypass-approvals-and-sandbox")
 	for _, f := range codexBuiltinFeatures {
 		assert.Contains(t, joined, "--disable "+f)
 	}
 	assert.Contains(t, joined, `mcp_servers.aviary.url="http://127.0.0.1:1/mcp"`)
 	assert.Contains(t, joined, `mcp_servers.aviary.bearer_token_env_var="AVIARY_MCP_TOKEN"`)
 	assert.Contains(t, args, `developer_instructions="say \"hi\"\nnow"`)
+	assert.Contains(t, args, "--ignore-user-config")
+	assert.NotContains(t, args, "--profile")
 	assert.Contains(t, joined, "--image /tmp/a.png")
 	assert.NotContains(t, joined, "secret")
 	assert.Equal(t, "-", args[len(args)-1])
 
-	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", nil)
+	// With a profile codex reads its settings from aviary's own CODEX_HOME,
+	// the developer instructions among them (#573).
+	args = codexArgs(Options{Model: "gpt", SystemPrompt: "rules"}, "", "aviary-1", nil)
+	assert.Equal(t, "aviary-1", args[slices.Index(args, "--profile")+1])
+	assert.NotContains(t, args, "--ignore-user-config")
+	assert.NotContains(t, strings.Join(args, " "), "developer_instructions")
+
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", "", nil)
 	joined = strings.Join(args, " ")
 	assert.Equal(t, []string{"exec", "resume"}, args[:2])
 	assert.Equal(t, []string{"thread-1", "-"}, args[len(args)-2:])
@@ -250,9 +284,9 @@ func TestCodexArgs(t *testing.T) {
 	// The agent's own directory is writable beside the workspace (#534),
 	// including on resume, where codex takes no --add-dir.
 	extra := []string{"-c", `sandbox_workspace_write.writable_roots=["/data/agents/a"]`}
-	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, ExtraDir: extra}, "thread-1", nil)
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, ExtraDir: extra}, "thread-1", "", nil)
 	assert.Contains(t, args, extra[1])
-	assert.NotContains(t, codexArgs(Options{Model: "gpt", ExtraDir: extra}, "", nil), extra[1], "without its own tools nothing is made writable")
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", ExtraDir: extra}, "", "", nil), extra[1], "without its own tools nothing is made writable")
 }
 
 func TestClaudeMapper(t *testing.T) {
@@ -485,4 +519,42 @@ func TestCodexSession_MissingBinary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.Send(context.Background(), Turn{Text: "hi"}, nil)
 	assert.Error(t, err)
+}
+
+func TestCodexSession_LongSystemPrompt(t *testing.T) {
+	// A system prompt longer than Windows' 32,767-character command line
+	// reaches codex word for word through a profile in aviary's own
+	// CODEX_HOME rather than an argument (#573).
+	opts := fakeOptions(t, Codex)
+	home := t.TempDir()
+	opts.Env = append(opts.Env, "CODEX_HOME="+home)
+	opts.SystemPrompt = strings.Repeat("Follow the \"skill\" exactly.\n", 4000) + "end"
+	require.Greater(t, len(opts.SystemPrompt), 32767)
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+
+	profile, removeProfile, err := writeCodexProfile(opts)
+	require.NoError(t, err)
+	defer removeProfile()
+	for _, arg := range codexArgs(opts, "", profile, nil) {
+		assert.Less(t, len(arg), 1024, "no argument carries the system prompt")
+	}
+
+	r, err := s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 prompt="+opts.SystemPrompt, r.Text, "codex read the whole system prompt")
+	removeProfile()
+	entries, err := os.ReadDir(home)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "the profile is removed once the turn ends")
+
+	// Without aviary's own CODEX_HOME the user's config is ignored and the
+	// instructions stay on the command line.
+	opts = fakeOptions(t, Codex)
+	opts.SystemPrompt = "short rules"
+	s, err = NewSession(opts)
+	require.NoError(t, err)
+	r, err = s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 prompt=short rules", r.Text)
 }

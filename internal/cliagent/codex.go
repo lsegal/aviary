@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -40,8 +42,11 @@ func newCodexSession(opts Options) *codexSession {
 var codexBuiltinFeatures = []string{"shell_tool", "unified_exec", "view_image", "browser_use", "computer_use"}
 
 // codexArgs builds the command line for one Codex turn. The prompt is read
-// from stdin.
-func codexArgs(opts Options, threadID string, images []string) []string {
+// from stdin. With a profile, codex reads its settings, the developer
+// instructions among them, from aviary's own CODEX_HOME (see
+// writeCodexProfile); otherwise it ignores the user's config and the
+// instructions go on the command line.
+func codexArgs(opts Options, threadID, profile string, images []string) []string {
 	args := []string{"exec"}
 	if threadID != "" {
 		args = append(args, "resume")
@@ -49,14 +54,18 @@ func codexArgs(opts Options, threadID string, images []string) []string {
 	args = append(args,
 		"--json",
 		"--skip-git-repo-check",
-		"--ignore-user-config",
 		"--model", opts.Model,
 		"-c", "approval_policy="+tomlString("never"),
 	)
+	if profile != "" {
+		args = append(args, "--profile", profile)
+	} else {
+		args = append(args, "--ignore-user-config")
+	}
 	if opts.Ephemeral {
 		args = append(args, "--ephemeral")
 	}
-	if opts.SystemPrompt != "" {
+	if opts.SystemPrompt != "" && profile == "" {
 		args = append(args, "-c", "developer_instructions="+tomlString(opts.SystemPrompt))
 	}
 	if opts.BuiltinTools {
@@ -95,6 +104,43 @@ func tomlString(s string) string {
 	return string(data)
 }
 
+// writeCodexProfile writes the developer instructions into a codex profile in
+// the aviary-owned CODEX_HOME that opts.Env names, and returns the profile's
+// name and a cleanup that removes it. A long system prompt passed with -c can
+// exceed the Windows command-line limit (#573). Profiles are only read
+// without --ignore-user-config, which that home's empty config.toml makes
+// equivalent. Without such a home or a system prompt, no profile is written.
+func writeCodexProfile(opts Options) (string, func(), error) {
+	home := ""
+	for _, entry := range opts.Env {
+		if value, ok := strings.CutPrefix(entry, "CODEX_HOME="); ok {
+			home = value
+		}
+	}
+	if home == "" || opts.SystemPrompt == "" {
+		return "", func() {}, nil
+	}
+	file, err := os.CreateTemp(home, clidefs.LaunchFilePrefix+"*"+codexProfileSuffix)
+	if err != nil {
+		return "", nil, fmt.Errorf("writing the codex profile: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() { _ = os.Remove(path) }
+	_, err = file.WriteString("developer_instructions = " + tomlString(opts.SystemPrompt) + "\n")
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("writing the codex profile: %w", err)
+	}
+	return strings.TrimSuffix(filepath.Base(path), codexProfileSuffix), cleanup, nil
+}
+
+// codexProfileSuffix ends the name of the file codex reads `--profile NAME`
+// from: $CODEX_HOME/NAME.config.toml.
+const codexProfileSuffix = ".config.toml"
+
 func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event)) (Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -109,7 +155,13 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 		images = append(images, path)
 	}
 
-	cmd := exec.CommandContext(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, images)...) //nolint:gosec // binary is a fixed backend name
+	profile, removeProfile, err := writeCodexProfile(s.opts)
+	if err != nil {
+		return Result{}, err
+	}
+	defer removeProfile()
+
+	cmd := exec.CommandContext(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, profile, images)...) //nolint:gosec // binary is a fixed backend name
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	text := turn.Text

@@ -101,6 +101,36 @@ func (c ConfigHome) Home() (string, error) {
 // moved into the user's directory when that has none of the same name; and
 // every other entry of the user's directory is linked.
 func (c ConfigHome) Overlay(base string) (string, error) {
+	return c.overlay(base, refreshCopy)
+}
+
+// OwnOverlay prepares an overlay under base like Overlay, except that each
+// Private file is emptied rather than copied from the user's: the CLI reads
+// aviary's settings only, as `codex --ignore-user-config` would, while still
+// sharing the user's sign-in and sessions. Settings aviary adds for one
+// launch go in files named with LaunchFilePrefix, such as a codex profile.
+func (c ConfigHome) OwnOverlay(base string) (string, error) {
+	return c.overlay(base, func(_, dst string) error { return replaceEmpty(dst) })
+}
+
+// OwnHomeEnv points the CLI at its OwnOverlay under base when the definition
+// declares a ConfigHome, and is empty otherwise.
+func (d Definition) OwnHomeEnv(base string) ([]string, error) {
+	if d.ConfigHome == nil {
+		return nil, nil
+	}
+	dir, err := d.ConfigHome.OwnOverlay(base)
+	if err != nil {
+		return nil, err
+	}
+	return []string{d.ConfigHome.Env + "=" + dir}, nil
+}
+
+// LaunchFilePrefix starts the name of a file aviary writes into an overlay
+// for a single launch. Refreshing the overlay leaves such files alone.
+const LaunchFilePrefix = "aviary-"
+
+func (c ConfigHome) overlay(base string, fill func(src, dst string) error) (string, error) {
 	home, err := c.Home()
 	if err != nil {
 		return "", fmt.Errorf("locating the %s directory: %w", c.Env, err)
@@ -124,7 +154,7 @@ func (c ConfigHome) Overlay(base string) (string, error) {
 	for _, entry := range existing {
 		name := entry.Name()
 		path, target := filepath.Join(dir, name), filepath.Join(home, name)
-		if private[name] || strings.HasPrefix(name, ".aviary-") {
+		if private[name] || strings.HasPrefix(name, ".aviary-") || strings.HasPrefix(name, LaunchFilePrefix) {
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -142,7 +172,7 @@ func (c ConfigHome) Overlay(base string) (string, error) {
 		return "", err
 	}
 	for _, name := range c.Private {
-		if err := refreshCopy(filepath.Join(home, name), filepath.Join(dir, name)); err != nil {
+		if err := fill(filepath.Join(home, name), filepath.Join(dir, name)); err != nil {
 			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
 		}
 	}
@@ -214,4 +244,22 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// replaceEmpty replaces dst with an empty file, renamed into place like
+// refreshCopy's copy.
+func replaceEmpty(dst string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".aviary-"+filepath.Base(dst)+"-*")
+	if err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), dst); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
