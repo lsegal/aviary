@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, expectValue, optionLabels, searchOption } from "./helpers/select";
 import { agentPageLink, openAgentPage } from "./helpers/sidebar";
 
 const CONFIG = {
@@ -1409,10 +1410,11 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 
 	await editor.getByRole("radio", { name: "Daily" }).click();
 	await editor.getByLabel("At", { exact: true }).fill("09:00");
-	await editor.getByLabel("Timezone").fill("America/Los_Angeles");
-	await editor
-		.getByLabel("If the last run is still going")
-		.selectOption("skip");
+	await searchOption(editor.getByLabel("Timezone"), "America/Los_Angeles");
+	await chooseOption(
+		editor.getByLabel("If the last run is still going"),
+		"Skip this run",
+	);
 	await expect
 		.poll(() => previews.at(-1))
 		.toMatchObject({
