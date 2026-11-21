@@ -537,6 +537,28 @@ test("the GitHub Projects row counts running jobs, not watched projects", async 
 	await expect(row).toHaveText("GitHub Projects");
 });
 
+// The collapsed sidebar rail keeps the running count on its GitHub Projects
+// icon (#724).
+test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
+	page,
+}) => {
+	await page.clock.install();
+	let running = 2;
+	await setupOneProject(page, () => running);
+	await page.goto("/system/overview");
+	await page.getByTestId("sidebar-collapse").click();
+	const icon = page.getByTestId("sidebar-rail-projects");
+	await expect(icon.getByTestId("sidebar-rail-badge")).toHaveText("2");
+	await icon.hover();
+	await expect(page.getByRole("tooltip")).toHaveText(
+		"GitHub Projects · 2 running jobs",
+	);
+
+	running = 0;
+	await page.clock.runFor(10_000);
+	await expect(icon.getByTestId("sidebar-rail-badge")).toHaveCount(0);
+});
+
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
