@@ -77,7 +77,9 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { projectOwner } from "../../lib/projectSettings";
 import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";
+import { useSettingsStore } from "../../stores/settings";
 import JobStatusPill from "./JobStatusPill.vue";
 
 const props = defineProps<{
@@ -91,7 +93,14 @@ const emit = defineEmits<{
 	summarize: [job: ProjectJob];
 }>();
 
-const runPath = computed(() => jobPath(props.job.target, props.job.number));
+const settings = useSettingsStore();
+const runPath = computed(() =>
+	jobPath(
+		projectOwner(settings.config, props.job.target),
+		props.job.target,
+		props.job.number,
+	),
+);
 
 // Fork PRs live in another repository, so name it.
 const prLabel = computed(() =>

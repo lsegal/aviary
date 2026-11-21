@@ -148,23 +148,21 @@ test("system skills can disable and enable installed skills", async ({
 	await expect(
 		page.getByRole("heading", { name: "Skills", exact: true }),
 	).toBeVisible();
-	const disableButton = page
-		.locator("article")
-		.filter({ hasText: "gogcli" })
-		.getByRole("button", { name: "Disable" });
-	await expect(disableButton).toBeVisible();
-	await disableButton.click();
-	await expect(
-		page
-			.locator("article")
-			.filter({ hasText: "gogcli" })
-			.getByRole("button", { name: "Enable" }),
-	).toBeVisible();
+	const gogcli = page
+		.getByRole("region", { name: "Available to Aviary agents" })
+		.locator("div.rounded-xl")
+		.filter({ hasText: "Control GOG Galaxy tasks." });
+	const enabled = gogcli.getByRole("checkbox", { name: "Enabled" });
+	await expect(enabled).toBeChecked();
+	await enabled.uncheck();
+	await expect(gogcli.getByText("disabled", { exact: true })).toBeVisible();
 
-	await page.getByRole("button", { name: "Disabled" }).click();
-	await expect(
-		page.locator("article").filter({ hasText: "deploy" }),
-	).toBeVisible();
+	// The status filter narrows the list to the disabled skills.
+	await page.getByRole("button", { name: "Disabled", exact: true }).click();
+	await expect(page.getByText("C:/skills/deploy/SKILL.md")).toBeVisible();
+	await expect(page.getByText("skills/gogcli/SKILL.md")).toBeVisible();
+	await page.getByRole("button", { name: "Enabled", exact: true }).click();
+	await expect(page.getByText("No skills match.")).toBeVisible();
 });
 
 test("settings leaves server and cdp ports unset until the user enters them", async ({
@@ -196,7 +194,7 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 		tool_list: [],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	const portInput = page.getByPlaceholder("16677");
 	const cdpPortInput = page.getByPlaceholder("9222");
@@ -256,7 +254,7 @@ test("settings can disable browser tab reuse", async ({ page }) => {
 		tool_list: [],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	const reuseTabs = page.getByRole("checkbox", {
 		name: /Reuse matching tabs/i,
@@ -301,7 +299,7 @@ async function setupApprovalSettings(
 		skills_list: [],
 		tool_list: [],
 	});
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 	return saved;
 }
 
@@ -342,7 +340,7 @@ test("settings tolerates an empty config payload", async ({ page }) => {
 		tool_list: [],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	await expect(
 		page.getByRole("heading", { name: "Settings", exact: true }),
@@ -377,7 +375,7 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async ({
 		tool_list: [],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	await expect(
 		page.getByRole("heading", { name: "Settings", exact: true }),
@@ -520,4 +518,24 @@ test("system skills shows provider installs and installs them on one page", asyn
 	await expect
 		.poll(() => savedConfigs.at(-1) ?? "")
 		.toContain('"coding_skills":{"auto_update":false}');
+});
+
+test("system skills shows its skills when opened from another settings page", async ({
+	page,
+}) => {
+	await page.goto("/system/settings");
+	await page.getByTestId("sidebar-system-more").click();
+	await page
+		.getByTestId("sidebar-system-list")
+		.getByRole("link", { name: "Skills", exact: true })
+		.click();
+
+	const agentSkills = page.getByRole("region", {
+		name: "Available to Aviary agents",
+	});
+	await expect(agentSkills).toBeVisible();
+	await expect(agentSkills.getByText("skills/gogcli/SKILL.md")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Server", exact: true }),
+	).toBeHidden();
 });

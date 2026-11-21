@@ -1,38 +1,24 @@
 ﻿<template>
 				<section v-show="activeTab === 'agents'" class="space-y-5 pb-8">
-					<div class="flex items-center border-b border-gray-200 dark:border-gray-800">
-						<div class="scrollbar-none flex flex-1 items-end overflow-x-auto">
-							<button v-for="(a, idx) in draft.agents" :key="`tab-${idx}`" type="button"
-								class="-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm transition-colors"
-								:class="selectedAgentIdx === idx
-									? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-									: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-								@click="selectedAgentIdx = idx">
-								{{ a.name || `Agent ${Number(idx) + 1}` }}
-							</button>
-							<button type="button" aria-label="Add Agent" title="Add agent"
-								class="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2.5 text-lg leading-none text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-								@click="addAgent">+</button>
-						</div>
-					</div>
-
 					<div v-if="!draft.agents.length"
 						class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
 						No agents configured.
+						<button type="button" data-testid="empty-add-agent"
+							class="ml-2 font-medium text-blue-600 hover:underline dark:text-blue-400" @click="addAgent">+ Add Agent</button>
 					</div>
 
 					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
 						class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-						<!-- Subtab nav -->
-						<div class="border-b border-gray-200 px-5 dark:border-gray-700">
-							<nav class="flex items-center justify-between gap-4">
+						<!-- The Settings page's tabs; Files, Tasks and GitHub Projects are
+						     pages of their own in the sidebar. -->
+						<div v-if="['general', 'permissions', 'channels'].includes(selectedAgentSubtab)"
+							class="border-b border-gray-200 px-5 dark:border-gray-700">
+							<nav class="flex items-center justify-between gap-4" aria-label="Agent settings">
 								<div class="flex items-center">
 									<button v-for="subtab in ([
 										{ key: 'general', label: 'General' },
 										{ key: 'permissions', label: 'Permissions' },
 										{ key: 'channels', label: 'Channels' },
-										{ key: 'tasks', label: 'Tasks' },
-										{ key: 'projects', label: 'Projects' },
 									] as const)" :key="subtab.key" type="button" class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
 										:class="selectedAgentSubtab === subtab.key
 											? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
@@ -86,8 +72,8 @@
 							</div>
 						</div>
 
-						<!-- Files content moved into General subtab -->
-						<div v-show="selectedAgentSubtab === 'general'" class="px-5 pb-5">
+						<!-- Files page -->
+						<div v-show="selectedAgentSubtab === 'files'" class="p-5">
 							<div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
 								<div class="flex items-center justify-between gap-2">
 									<div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files

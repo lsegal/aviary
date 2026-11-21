@@ -253,7 +253,7 @@ tasks:
 
 ### agents[].projects
 
-The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and it is managed on the agent's **Projects** settings tab (`/settings/agents/<agent>/projects`). There is no top-level `projects:` section; one in `aviary.yaml` is ignored. Listing the same target under two agents is a validation error.
+The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and it is managed on the agent's **GitHub Projects** page (`/agents/<agent>/projects`). There is no top-level `projects:` section; one in `aviary.yaml` is ignored. Listing the same target under two agents is a validation error.
 
 Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
 
@@ -335,7 +335,7 @@ models:
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
-| `cli_definitions` | map | CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns). The schema is in [CLI provider definitions](/reference/cli-definitions) |
+| `cli_definitions` | map | CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. System → Providers & Auth and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns). The schema is in [CLI provider definitions](/reference/cli-definitions) |
 
 **Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`, `meta`
 

@@ -2,23 +2,11 @@
 	<AppLayout>
 		<div class="flex h-full min-h-0">
 			<div class="flex h-full min-w-0 flex-1 flex-col overflow-y-auto">
-				<div v-if="!project" class="flex flex-1 items-center justify-center p-8">
-					<div class="max-w-md text-center">
-						<h1 class="text-xl font-semibold text-gray-900 dark:text-white">Projects</h1>
-						<p v-if="!projectList.available.value" class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-							Projects isn't running on this server.
-						</p>
-						<p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-							No projects are watched yet. Add one here, or run <code class="font-mono">aviary watch owner/repo</code>.
-						</p>
-						<button type="button" :class="[ADD_BTN, 'mt-4']" @click="openAdd">+ Add project</button>
-					</div>
-				</div>
-				<template v-else>
+				<template v-if="project">
 					<header
 						class="flex flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
 						<div class="min-w-0">
-							<p class="text-xs text-gray-500"><router-link to="/projects" class="hover:underline">Projects</router-link> /</p>
+							<p class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
 							<div class="flex items-center gap-2">
 								<h1 class="truncate text-xl font-bold text-gray-900 dark:text-white">{{ project }}</h1>
 								<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
@@ -162,7 +150,7 @@
 			</div>
 			<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
-		<AddProjectDialog v-if="adding" @close="closeAdd" @added="onAdded" />
+		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
 
@@ -187,8 +175,8 @@ import { projectOwner, projectSettingsPath } from "../lib/projectSettings";
 import {
 	age,
 	type BoardFilter,
-	encodeProject,
 	type ProjectJob,
+	projectPath,
 	summarizePrompt,
 } from "../lib/projects";
 import { useSettingsStore } from "../stores/settings";
@@ -218,6 +206,19 @@ const project = computed(() =>
 const settingsStore = useSettingsStore();
 if (!settingsStore.config) void settingsStore.fetchConfig();
 const owner = computed(() => projectOwner(settingsStore.config, project.value));
+// The agent whose GitHub Projects this board sits under; a watch no agent
+// owns sits under System instead.
+const routeAgent = computed(() =>
+	typeof route.params.agent === "string" ? route.params.agent : "",
+);
+const projectsIndexPath = computed(() =>
+	routeAgent.value
+		? `/agents/${encodeURIComponent(routeAgent.value)}/projects`
+		: route.path,
+);
+const projectsIndexLabel = computed(() =>
+	routeAgent.value ? `${routeAgent.value} · GitHub Projects` : "Watches",
+);
 const settingsPath = computed(() =>
 	projectSettingsPath(settingsStore.config, project.value),
 );
@@ -278,19 +279,6 @@ function openSchedule(id: string) {
 	selectedSchedule.value = id;
 }
 
-// Without a project in the URL, open the first watched project.
-watch(
-	() => projectList.projects.value,
-	(list) => {
-		if (!project.value && list.length > 0) {
-			void router.replace({
-				path: `/projects/${encodeProject(list[0].name)}`,
-				query: route.query,
-			});
-		}
-	},
-);
-
 const ADD_BTN =
 	"rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700";
 // The add-project dialog is open while the URL carries ?add=1, so the
@@ -303,8 +291,8 @@ function closeAdd() {
 	const { add: _, ...rest } = route.query;
 	void router.replace({ query: rest });
 }
-async function onAdded(target: string) {
-	await router.push(`/projects/${encodeProject(target)}`);
+async function onAdded(target: string, agent: string) {
+	await router.push(projectPath(agent, target));
 	await projectList.refresh();
 }
 
