@@ -336,13 +336,15 @@ test("a project's board names its agent and links to the agent's projects", asyn
 	// The header's actions are icon buttons, Settings rightmost, and there is
 	// no Add project button (projects are added under their agent).
 	const header = page.locator("header").filter({ has: owner });
-	const settings = page.getByRole("link", { name: "Settings", exact: true });
+	const settings = header.getByRole("link", { name: "Settings", exact: true });
 	await expect(settings).toHaveAttribute("title", "Settings");
 	await expect(settings).toHaveText("");
-	const chatToggle = page.getByRole("button", { name: "Prompt chat" });
+	const chatToggle = header.getByRole("button", { name: "Prompt chat" });
 	await expect(chatToggle).toHaveAttribute("title", "Prompt chat");
 	await expect(chatToggle).toHaveText("");
-	await expect(header.getByRole("button", { name: /Add project/ })).toHaveCount(0);
+	await expect(header.getByRole("button", { name: /Add project/ })).toHaveCount(
+		0,
+	);
 	const actions = header.locator("a, button");
 	await expect(actions.last()).toHaveAttribute(
 		"data-testid",
