@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +88,7 @@ func codexArgs(opts Options, threadID, profile string, images []string) []string
 			"-c", prefix+"url="+tomlString(opts.MCPURL),
 			"-c", prefix+"bearer_token_env_var="+tomlString(mcpTokenEnv),
 			"-c", prefix+"default_tools_approval_mode="+tomlString("approve"),
+			"-c", prefix+"tool_timeout_sec="+strconv.Itoa(int(MCPToolTimeout.Seconds())),
 		)
 	}
 	for _, img := range images {

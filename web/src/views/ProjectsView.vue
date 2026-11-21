@@ -33,7 +33,8 @@
 								</span>
 							</div>
 							<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
-								Issues labeled <b>{{ status.readyLabel }}</b>
+								<template v-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
+								<template v-else>All open issues</template>
 								<template v-if="status.delivery"> · {{ status.delivery }}</template>
 								<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
 								<template v-if="status.interval"> · every {{ status.interval }}</template>

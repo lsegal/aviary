@@ -16,7 +16,7 @@ const STATUS = {
 	concurrency: 4,
 	delivery: "poll",
 	poll_interval: "30s",
-	ready_label: "ready",
+	issue_filter: "assignee:@me",
 	quotas: {},
 	clis: [],
 	agents: ["claude"],
@@ -531,4 +531,43 @@ test.describe("phone width", () => {
 		);
 		expect(overflowing).toEqual([]);
 	});
+});
+
+test("leaving a schedule with unsaved edits asks first", async ({ page }) => {
+	await setup(page);
+	await page.goto(
+		"/system/watches/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
+	);
+	const editor = page.getByTestId("schedule-editor");
+	const prompt = editor.getByLabel("Prompt");
+	await expect(prompt).toHaveValue(
+		"Triage issues opened since the last run and label them.",
+	);
+	const rows = page.getByTestId("schedule-row");
+	const dialog = page.getByTestId("unsaved-changes-dialog");
+
+	// Unchanged: picking another schedule does not ask.
+	await rows
+		.nth(1)
+		.getByRole("button", { name: /weekly-deps/ })
+		.click();
+	await expect(page).toHaveURL(/schedule=assistant\/weekly-deps/);
+	await expect(dialog).toHaveCount(0);
+
+	await prompt.fill("Edited prompt");
+	await rows
+		.nth(0)
+		.getByRole("button", { name: /nightly-triage/ })
+		.click();
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole("button", { name: "Stay" }).click();
+	await expect(page).toHaveURL(/schedule=assistant\/weekly-deps/);
+	await expect(prompt).toHaveValue("Edited prompt");
+
+	// Saving makes it clean, so leaving no longer asks.
+	await editor.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(editor.getByRole("button", { name: "Save" })).toBeEnabled();
+	await page.getByRole("tab", { name: "Board" }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page).not.toHaveURL(/tab=schedules/);
 });

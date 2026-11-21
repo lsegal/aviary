@@ -25,7 +25,6 @@ type watchOptions struct {
 	concurrency       int
 	interval          string
 	delivery          string
-	readyLabel        string
 	readyState        string
 	filter            []string
 	allIssues         bool
@@ -44,7 +43,7 @@ var watchCmd = &cobra.Command{
 	Short: "Watch GitHub projects and fix ready issues with a CLI provider",
 	Long: `Watch repositories, GitHub Project boards and Discussions boards, and run
 gh-fix (or gh-discuss for new Discussion threads) in a CLI provider on every
-issue labeled ready, up to a concurrency limit.
+issue matching the issue filter, up to a concurrency limit.
 
 With no TARGET the current checkout's origin repository is watched. TARGET is
 OWNER/REPO, a repository URL, a Project board URL, a Discussions URL, or the
@@ -64,10 +63,9 @@ func init() {
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
-	f.StringVar(&watchOpts.readyLabel, "ready-label", "", `label a repository issue needs (default "ready")`)
 	f.StringVar(&watchOpts.readyState, "ready-state", "", "project board status that marks an item ready (default Todo or Ready)")
 	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me")`)
-	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter; the ready label still applies")
+	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter and pick up every open issue")
 	f.StringSliceVar(&watchOpts.allowedCommenters, "allowed-commenters", nil, "GitHub logins whose comments steer jobs (default the authenticated gh user)")
 	f.BoolVar(&watchOpts.yolo, "yolo", false, "run jobs in the full approval mode: no CLI sandboxes or permission checks")
 	f.BoolVar(&watchOpts.noMerge, "no-merge", false, "leave finished pull requests ready for a human to merge")
@@ -99,7 +97,7 @@ func watchTargets(args []string) ([]string, error) {
 }
 
 // watchSettings turns the flags into the settings the watch overrides.
-func watchSettings(cmd *cobra.Command) (config.ProjectsConfig, error) {
+func watchSettings() (config.ProjectsConfig, error) {
 	settings := config.ProjectsConfig{
 		Concurrency:       watchOpts.concurrency,
 		Interval:          watchOpts.interval,
@@ -132,10 +130,6 @@ func watchSettings(cmd *cobra.Command) (config.ProjectsConfig, error) {
 	default:
 		return settings, fmt.Errorf("--delivery must be browser, poll or webhook, not %q", watchOpts.delivery)
 	}
-	if cmd.Flags().Changed("ready-label") {
-		label := watchOpts.readyLabel
-		settings.ReadyLabel = &label
-	}
 	return settings, nil
 }
 
@@ -144,7 +138,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	settings, err := watchSettings(cmd)
+	settings, err := watchSettings()
 	if err != nil {
 		return err
 	}

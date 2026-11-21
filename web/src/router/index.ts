@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { installUnsavedChanges } from "../composables/useUnsavedChanges";
 import { useAuthStore } from "../stores/auth";
 
 const SettingsView = () => import("../views/SettingsView.vue");
@@ -21,7 +22,7 @@ const router = createRouter({
 		{
 			path: "/agents/:agent?/:subtab(settings|files|tasks)?/:section(permissions|channels)?",
 			component: SettingsView,
-			meta: { requiresAuth: true },
+			meta: { requiresAuth: true, view: "settings" },
 		},
 		{
 			path: "/agents/:agent/chat/:sessionId?",
@@ -55,7 +56,7 @@ const router = createRouter({
 		{
 			path: "/system/:tab(settings|projects|providers|sessions|skills)",
 			component: SettingsView,
-			meta: { requiresAuth: true },
+			meta: { requiresAuth: true, view: "settings" },
 		},
 		{
 			path: "/system/usage",
@@ -107,5 +108,6 @@ router.beforeEach((to) => {
 		return "/login";
 	}
 });
+installUnsavedChanges(router);
 
 export default router;

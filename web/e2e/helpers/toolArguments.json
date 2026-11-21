@@ -263,7 +263,6 @@
 		"target"
 	],
 	"project_check": [
-		"ready_label",
 		"target"
 	],
 	"project_clone_clear": [],

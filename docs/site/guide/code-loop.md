@@ -20,7 +20,7 @@ A project is a watched target that belongs to one Aviary agent: a repository (`o
 
 On every poll, Aviary looks for issues that are ready for work:
 
-- A repository issue is open, carries the ready label (`ready_label`, `ready` by default) and matches the issue filter (`filter`, `assignee:@me` by default). On a project board, the item's status is the ready state (`ready_state`, `Todo` or `Ready`).
+- A repository issue is open and matches the issue filter (`filter`, `assignee:@me` by default). On a project board, the item's status is the ready state (`ready_state`, `Todo` or `Ready`).
 - Issues labeled `critical`, then `high`, go first, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.
 - An issue blocked by open dependencies waits. Blocked by exactly one issue that already has an open pull request, on a repository that allows stacked pull requests, it runs stacked on that pull request instead.

@@ -99,7 +99,7 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"concurrency":        settings.Concurrency,
 		"delivery":           settings.Delivery,
 		"poll_interval":      core.FormatInterval(settings.Interval),
-		"ready_label":        settings.ReadyLabel,
+		"issue_filter":       issueFilter(settings),
 		"allowed_commenters": commenters,
 		"quotas":             snapshot.Quotas,
 		"recent_logs":        logs,
@@ -597,4 +597,13 @@ func lastLogLines(log string, n int) string {
 // Transcript returns a job's transcript events, for callers that render them.
 func (m *Manager) Transcript(target string, number int) []transcript.Event {
 	return m.transcripts.For(fmt.Sprintf("%s#%d", target, number)).Events(0)
+}
+
+// issueFilter is the issue search that selects work, empty when every open
+// issue is picked up. Board targets also require the ready board status.
+func issueFilter(s engineSettings) string {
+	if s.AllIssues {
+		return ""
+	}
+	return s.Filter
 }

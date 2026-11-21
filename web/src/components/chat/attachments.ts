@@ -53,7 +53,8 @@ export async function readAttachment(
 		return { error: `${name} is larger than 10 MB.` };
 	}
 	nextID += 1;
-	const id = `att-${nextID}`;
+	// Drafts restore attachments after a reload, so ids must not repeat then.
+	const id = `att-${Date.now().toString(36)}-${nextID}`;
 	if (file.type.startsWith("image/")) {
 		const dataURL = (await readAs(file, "dataURL")) as string;
 		return { attachment: { id, name, kind: "image", dataURL } };

@@ -32,9 +32,6 @@ type ProjectsConfig struct {
 	// BrowserVisible shows the browser browser delivery reads with, for
 	// debugging. It needs a display.
 	BrowserVisible bool `yaml:"browser_visible,omitempty" json:"browser_visible,omitempty"`
-	// ReadyLabel is the label a repository issue needs to be picked up.
-	// Unset means DefaultProjectsReadyLabel; an empty string turns it off.
-	ReadyLabel *string `yaml:"ready_label,omitempty" json:"ready_label,omitempty"`
 	// ReadyState is the board status that marks an item ready. Empty
 	// auto-detects Todo or Ready.
 	ReadyState string `yaml:"ready_state,omitempty" json:"ready_state,omitempty"`
@@ -187,7 +184,6 @@ const (
 	// DefaultProjectsBrowserInterval is browser delivery's poll interval.
 	DefaultProjectsBrowserInterval = 20 * time.Second
 	DefaultProjectsDelivery        = "browser"
-	DefaultProjectsReadyLabel      = "ready"
 	DefaultProjectsFilter          = "assignee:@me"
 	DefaultProjectsWebhookPath     = "/webhook"
 )
@@ -218,14 +214,6 @@ func (p ProjectsConfig) EffectiveDelivery() string {
 		return mode
 	}
 	return DefaultProjectsDelivery
-}
-
-// EffectiveReadyLabel returns the ready label, empty when turned off.
-func (p ProjectsConfig) EffectiveReadyLabel() string {
-	if p.ReadyLabel == nil {
-		return DefaultProjectsReadyLabel
-	}
-	return strings.TrimSpace(*p.ReadyLabel)
 }
 
 // EffectiveFilter returns the issue search filter.
@@ -259,7 +247,7 @@ func (p AgentProjectsConfig) IsZero() bool {
 // IsZero reports whether the section holds nothing, so Save leaves it out.
 func (p ProjectsConfig) IsZero() bool {
 	return p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
-		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
+		p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 &&
 		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
@@ -277,9 +265,6 @@ func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
 	}
 	if overlay.Delivery != "" {
 		merged.Delivery = overlay.Delivery
-	}
-	if overlay.ReadyLabel != nil {
-		merged.ReadyLabel = overlay.ReadyLabel
 	}
 	if overlay.ReadyState != "" {
 		merged.ReadyState = overlay.ReadyState

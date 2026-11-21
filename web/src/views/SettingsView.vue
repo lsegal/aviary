@@ -328,6 +328,10 @@ import {
 	useProviderAuth,
 } from "../composables/useProviderAuth";
 import { useTriggerPreview } from "../composables/useTriggerPreview";
+import {
+	type KeepsEdits,
+	useUnsavedChanges,
+} from "../composables/useUnsavedChanges";
 import { APPROVAL_MODES } from "../lib/approval";
 import { projectTargets } from "../lib/projectSettings";
 import {
@@ -578,10 +582,10 @@ watch(
 	(codingSkills) => {
 		draft.value.coding_skills = codingSkills;
 		// It is saved already, so it is no unsaved change of the draft's.
-		if (!lastSavedSnapshot) return;
-		const saved = JSON.parse(lastSavedSnapshot) as AppConfig;
+		if (!lastSavedSnapshot.value) return;
+		const saved = JSON.parse(lastSavedSnapshot.value) as AppConfig;
 		saved.coding_skills = codingSkills;
-		lastSavedSnapshot = JSON.stringify(saved);
+		lastSavedSnapshot.value = JSON.stringify(saved);
 	},
 );
 
@@ -801,7 +805,7 @@ watch(
 	() =>
 		JSON.stringify((store.config?.agents ?? []).map((a) => [a.name, a.tasks])),
 	() => {
-		if (!store.config || !lastSavedSnapshot) return;
+		if (!store.config || !lastSavedSnapshot.value) return;
 		const saved = hydrateDraftConfig(store.config);
 		let changed = false;
 		for (const agent of saved.agents) {
@@ -813,13 +817,13 @@ watch(
 		}
 		if (!changed) return;
 		// They are saved already, so they are no unsaved change of the draft's.
-		const snapshot = JSON.parse(lastSavedSnapshot) as AppConfig;
+		const snapshot = JSON.parse(lastSavedSnapshot.value) as AppConfig;
 		const normalized = normalizedDraftConfig();
 		for (const agent of snapshot.agents) {
 			const next = normalized.agents.find((a) => a.name === agent.name);
 			if (next) agent.tasks = next.tasks;
 		}
-		lastSavedSnapshot = JSON.stringify(snapshot);
+		lastSavedSnapshot.value = JSON.stringify(snapshot);
 	},
 );
 
@@ -949,7 +953,8 @@ const concurrencyInput = ref("");
 const serverPortInput = ref("");
 const cdpPortInput = ref("");
 let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null;
-let lastSavedSnapshot = "";
+// The draft as last loaded or saved; reactive so the dirty flag follows saves.
+const lastSavedSnapshot = ref("");
 
 const execShellPlaceholder = computed(() => {
 	switch (hostGoos.value) {
@@ -1260,7 +1265,7 @@ const availableToolNames = computed(() =>
 );
 const hasDraftChanges = computed(() => {
 	if (loading.value) return false;
-	return normalizedDraftSnapshot() !== lastSavedSnapshot;
+	return normalizedDraftSnapshot() !== lastSavedSnapshot.value;
 });
 
 const PERMISSION_PRESET_OPTIONS: Array<{
@@ -1462,6 +1467,29 @@ interface AgentFileEditorState {
 }
 const agentFileEditorState = ref<Record<string, AgentFileEditorState>>({});
 const agentFileSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+// Every Settings page shares this view, which keeps the draft and each
+// agent's open file across them, so only leaving the view asks about unsaved
+// settings, and only leaving the view or opening another of the agent's files
+// asks about an edited file.
+const staysInSettings: KeepsEdits = (to, from) =>
+	to.meta.view === "settings" && from.meta.view === "settings";
+useUnsavedChanges(hasDraftChanges, { keeps: staysInSettings });
+function agentFileDirty(state: AgentFileEditorState): boolean {
+	return !!state.selectedFile && state.content !== state.savedContent;
+}
+useUnsavedChanges(
+	() => Object.values(agentFileEditorState.value).some(agentFileDirty),
+	{
+		keeps: (to, from) => {
+			if (!staysInSettings(to, from)) return false;
+			const file = to.query.file;
+			if (to.params.subtab !== "files" || typeof file !== "string") return true;
+			const state = agentFileEditorState.value[String(to.params.agent)];
+			return !state || !agentFileDirty(state) || state.selectedFile === file;
+		},
+	},
+);
 
 function getAgentFileState(agentName: string): AgentFileEditorState {
 	if (!agentFileEditorState.value[agentName]) {
@@ -1681,9 +1709,8 @@ async function syncAgentTemplates(agentName: string) {
  * reloads only the list. */
 async function refreshAgentFiles(agentName: string) {
 	const state = getAgentFileState(agentName);
-	const dirty = state.selectedFile && state.content !== state.savedContent;
 	const reread =
-		!dirty ||
+		!agentFileDirty(state) ||
 		window.confirm(
 			`Discard unsaved changes to ${state.selectedFile} and reload it from disk?`,
 		);
@@ -1864,7 +1891,7 @@ async function loadConfig() {
 			availableTools.value = await listTools().catch(() => []);
 		}
 		await loadInstalledSkills();
-		lastSavedSnapshot = normalizedDraftSnapshot();
+		lastSavedSnapshot.value = normalizedDraftSnapshot();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 	} finally {
@@ -2991,13 +3018,13 @@ async function saveAll() {
 async function persistDraftConfig() {
 	const normalized = normalizedDraftConfig();
 	const snapshot = JSON.stringify(normalized);
-	if (snapshot === lastSavedSnapshot) {
+	if (snapshot === lastSavedSnapshot.value) {
 		okMessage.value = "Settings already up to date.";
 		return;
 	}
 
 	await store.saveConfig(normalized);
-	lastSavedSnapshot = snapshot;
+	lastSavedSnapshot.value = snapshot;
 	draft.value = hydrateDraftConfig(normalized);
 	serverPortInput.value =
 		draft.value.server.port > 0 ? String(draft.value.server.port) : "";
@@ -3135,7 +3162,7 @@ async function addProviderEndpoint() {
 		}
 		await store.saveConfig(next);
 		draft.value = hydrateDraftConfig(next);
-		lastSavedSnapshot = normalizedDraftSnapshot();
+		lastSavedSnapshot.value = normalizedDraftSnapshot();
 		if (meta.apiAuthKey) {
 			if (providerApiKeyValue.value.trim()) {
 				await callTool("auth_set", {
@@ -3241,7 +3268,7 @@ async function deleteProviderConnection(provider: string) {
 		const meta = KNOWN_PROVIDERS.find((p) => p.id === provider);
 		await store.saveConfig(next);
 		draft.value = hydrateDraftConfig(next);
-		lastSavedSnapshot = normalizedDraftSnapshot();
+		lastSavedSnapshot.value = normalizedDraftSnapshot();
 		if (meta?.apiAuthKey && credentials.value.includes(meta.apiAuthKey)) {
 			try {
 				await callTool("auth_delete", { name: meta.apiAuthKey });
