@@ -105,9 +105,8 @@
 								</div>
 							</div>
 						</template>
-						<div v-if="currentSessionProcessing" data-testid="chat-typing" class="text-left">
-							<span
-								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-400 dark:bg-gray-800">…</span>
+						<div v-if="turnActivity" data-testid="chat-typing" class="text-left">
+							<ChatActivityIndicator :tool="turnActivity.tool" :elapsed="turnActivity.elapsed" />
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -159,6 +158,7 @@ import {
 	attachmentName,
 	type ChatAttachment,
 } from "../components/chat/attachments";
+import ChatActivityIndicator from "../components/chat/ChatActivityIndicator.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
 import {
@@ -197,6 +197,8 @@ interface Message {
 	toolData?: ToolData;
 	/** A streamed tool call that has not reported its result yet. */
 	toolPending?: boolean;
+	/** When this client saw a pending tool call start, in epoch ms. */
+	toolStartedAt?: number;
 	timestamp?: string;
 	model?: string;
 	isError?: boolean;
@@ -465,6 +467,17 @@ const liveTurn = ref<ActiveTurn | null>(null);
 watch(selectedSessionId, () => {
 	liveTurn.value = null;
 });
+// Clearing this chat from the Chats list empties it here at once.
+watch(
+	() => chatSessions.lastCleared,
+	({ key }) => {
+		if (!key || key !== draftKey.value) return;
+		loadMessagesSeq += 1;
+		input.value = "";
+		attachments.value = [];
+		messages.value = [];
+	},
+);
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.
 const activeStreams = ref(0);
@@ -597,6 +610,47 @@ const currentSessionProcessing = computed(() => {
 	if (!selectedSessionId.value) return false;
 	return sessionProcessing.value[selectedSessionId.value] === true;
 });
+// A running tool shows its elapsed time once it has taken this long.
+const SLOW_TOOL_MS = 5000;
+const activityNow = ref(Date.now());
+let activityTimer: ReturnType<typeof setInterval> | undefined;
+
+// What the in-progress turn is doing: running its oldest unfinished tool
+// call, or thinking. Undefined once reply text streams or no turn runs.
+const turnActivity = computed(() => {
+	if (!currentSessionProcessing.value) return undefined;
+	const list = shownMessages.value;
+	const last = list[list.length - 1];
+	if (last?.role === "assistant" && !last.isError) return undefined;
+	let running: Message | undefined;
+	for (let i = list.length - 1; i >= 0; i--) {
+		const msg = list[i];
+		if (msg.role === "user") break;
+		if (msg.role === "tool" && msg.toolPending) running = msg;
+	}
+	if (!running) return { tool: undefined, elapsed: undefined };
+	const ms = running.toolStartedAt
+		? activityNow.value - running.toolStartedAt
+		: 0;
+	return {
+		tool: toolName(running),
+		elapsed: ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined,
+	};
+});
+
+watch(
+	() => !!turnActivity.value?.tool,
+	(running) => {
+		clearInterval(activityTimer);
+		activityTimer = undefined;
+		if (!running) return;
+		activityNow.value = Date.now();
+		activityTimer = setInterval(() => {
+			activityNow.value = Date.now();
+		}, 1000);
+	},
+);
+
 const userMessageHistory = computed(() =>
 	messages.value
 		.filter(
@@ -686,6 +740,7 @@ onUnmounted(() => {
 	unmounted = true;
 	clearTimeout(sessionsRefreshTimer);
 	clearTimeout(wsReconnectTimer);
+	clearInterval(activityTimer);
 	document.removeEventListener("visibilitychange", onVisible);
 	window.removeEventListener("keydown", onWindowKeydown);
 	if (ws) {
@@ -1143,6 +1198,7 @@ async function runTurn(
 			messages.value.push({
 				...msg,
 				toolPending: pending,
+				toolStartedAt: pending ? Date.now() : undefined,
 				localKey: newMessageKey(),
 			});
 			assistantKey = "";

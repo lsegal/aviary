@@ -66,7 +66,7 @@
         </router-link>
 
         <!-- Jobs -->
-        <router-link to="/system/jobs"
+        <router-link :to="store.agents[0] ? agentTaskPath(store.agents[0].name) : '/agents'"
           class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
           <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Jobs</span>
           <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.jobs.length }}</span>
@@ -220,6 +220,7 @@ import AppLayout from "../components/AppLayout.vue";
 import SetupWizard from "../components/SetupWizard.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useOverviewStore } from "../stores/overview";
+import { agentTaskPath } from "../stores/settings";
 
 const store = useOverviewStore();
 const route = useRoute();

@@ -210,6 +210,16 @@ test("board shows scheduled job cards and the up next strip", async ({
 	await expect(card.getByTestId("job-scheduled")).toHaveText("Scheduled");
 	await expect(card.getByRole("heading")).toHaveText("nightly-triage");
 	await expect(card).toContainText("assistant/nightly-triage");
+	// The time sits in the header and the agent label in the footer (#756).
+	const cardBox = await card.boundingBox();
+	const headingBox = await card.getByRole("heading").boundingBox();
+	const timeBox = await card.getByTestId("job-time").boundingBox();
+	const agentBox = await card.getByTestId("job-agent").boundingBox();
+	expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(headingBox!.y);
+	expect(agentBox!.y).toBeGreaterThan(headingBox!.y + headingBox!.height);
+	for (const box of [timeBox!, agentBox!]) {
+		expect(cardBox!.x + cardBox!.width - (box.x + box.width)).toBeLessThan(20);
+	}
 	// A scheduled run has no issue: no issue link and no "no PR yet".
 	await expect(card.getByRole("link", { name: `#${FIRE}` })).toHaveCount(0);
 	await expect(card).not.toContainText("no PR yet");

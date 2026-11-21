@@ -306,12 +306,53 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 	return sessions, nil
 }
 
+// sessionHeader returns the session's header record, or nil when its file
+// starts with a message instead.
+func sessionHeader(lines []map[string]any) map[string]any {
+	if len(lines) == 0 {
+		return nil
+	}
+	if _, ok := lines[0]["created_at"]; !ok {
+		return nil
+	}
+	return lines[0]
+}
+
+// sessionAt reads the identity of the session stored at path.
+func sessionAt(agentID, sessionID, path string) (*domain.Session, []map[string]any, error) {
+	lines, err := store.ReadJSONL[map[string]any](path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading session %q: %w", sessionID, err)
+	}
+	sess := &domain.Session{ID: sessionID, AgentID: agentID, Name: strings.TrimSuffix(filepath.Base(path), ".jsonl")}
+	if header := sessionHeader(lines); header != nil {
+		if s, _ := header["name"].(string); strings.TrimSpace(s) != "" {
+			sess.Name = strings.TrimSpace(s)
+		}
+		if s, _ := header["type"].(string); s != "" {
+			sess.Type = domain.SessionType(s)
+		}
+	}
+	if sess.Type == "" {
+		sess.Type = sessionTypeFor(agentID, sess.Name)
+	}
+	return sess, lines, nil
+}
+
 // Delete removes the session file for the given session ID.
-// It returns an error if the session cannot be found or deleted.
+// It returns an error if the session cannot be found or deleted, or is a
+// permanent session such as Main Chat, which can only be cleared.
 func (m *SessionManager) Delete(agentID, sessionID string) error {
 	p := store.FindSessionPath(agentID, sessionID)
 	if p == "" {
 		return fmt.Errorf("session %q not found", sessionID)
+	}
+	sess, _, err := sessionAt(agentID, sessionID, p)
+	if err != nil {
+		return err
+	}
+	if !sess.Deletable() {
+		return fmt.Errorf("session %q cannot be deleted; clear it instead", sessionID)
 	}
 	if err := os.Remove(p); err != nil {
 		return fmt.Errorf("deleting session %q: %w", sessionID, err)
@@ -321,6 +362,43 @@ func (m *SessionManager) Delete(agentID, sessionID string) error {
 			return fmt.Errorf("deleting session %q: %w", sessionID, err)
 		}
 	}
+	return nil
+}
+
+// Clear removes every message from the session and keeps the session itself:
+// its ID, name, type, display title, and channel bindings stay, so anything
+// that points at it keeps working. The model's stored conversation and CLI
+// session are dropped too, so the next prompt starts fresh.
+func (m *SessionManager) Clear(agentID, sessionID string) error {
+	p := store.FindSessionPath(agentID, sessionID)
+	if p == "" {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	sess, lines, err := sessionAt(agentID, sessionID, p)
+	if err != nil {
+		return err
+	}
+	header := sessionHeader(lines)
+	if header == nil {
+		created := firstRecordAt(lines)
+		if created.IsZero() {
+			created = time.Now()
+		}
+		header = map[string]any{"id": sessionID, "name": sess.Name, "type": sess.Type, "created_at": created}
+	}
+	header["updated_at"] = time.Now()
+	if err := store.RewriteJSONL(p, []map[string]any{header}); err != nil {
+		return fmt.Errorf("clearing session %q: %w", sessionID, err)
+	}
+	err = store.UpdateSessionMeta(store.SessionMetaPath(agentID, sessionID), func(meta *store.SessionMeta) {
+		meta.Conversation = nil
+		meta.CLI = nil
+		meta.LastMessageAt = nil
+	})
+	if err != nil {
+		return fmt.Errorf("clearing session %q: %w", sessionID, err)
+	}
+	notifySessionMessage(agentID, sessionID, "")
 	return nil
 }
 

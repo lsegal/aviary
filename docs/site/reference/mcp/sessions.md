@@ -12,6 +12,7 @@ A **session** is an ordered log of messages between one agent and one caller. Ea
 - **`name`** — a human-readable label (defaults to `"main"` for the first session)
 - **`title`** — the display name, set by `session_rename` or generated from a new chat's first prompt; absent until then. An untitled chat is named by its next prompt
 - **`last_message_at`** — when the last user or assistant message was sent; absent for an empty session
+- **`deletable`** — whether `session_remove` may delete the session. The `"main"` session is permanent: it can only be emptied with `session_clear`
 
 The `"main"` session is created automatically on first use. Additional sessions can be created explicitly with `session_create`.
 
@@ -40,7 +41,8 @@ List all sessions for an agent. Creates the `"main"` session if it does not exis
     "created_at": "2026-03-01T09:00:00Z",
     "updated_at": "2026-03-22T14:30:00Z",
     "last_message_at": "2026-03-22T14:30:05Z",
-    "is_processing": false
+    "is_processing": false,
+    "deletable": false
   }
 ]
 ```
@@ -152,6 +154,23 @@ Permanently delete a session and all of its messages.
 **Returns:** Text confirmation.
 
 **Side effects:** Removes the session file and its sidecar files from disk. This operation is irreversible.
+
+**Errors:** Refuses to delete a permanent session such as `"main"` (`deletable: false` in `session_list`); clear it with `session_clear` instead.
+
+---
+
+## session_clear
+
+Remove every message from a session, stopping any in-progress work first. The session keeps its `id`, `name`, `title`, and channel bindings, so task delivery targets and channels that point at it keep working. The model's stored conversation is dropped, so the next prompt starts fresh.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `session_id` | string | yes | Session ID to clear |
+
+**Returns:** Text confirmation.
 
 ---
 

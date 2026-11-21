@@ -732,6 +732,94 @@ test("long wrapped output never grows a card past half the viewport (#718)", asy
 	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
 });
 
+/** Asserts el's right edge sits at the card's right padding. */
+async function expectRightAligned(card: Locator, el: Locator) {
+	const c = await card.boundingBox();
+	const e = await el.boundingBox();
+	expect(c && e).toBeTruthy();
+	if (!c || !e) return;
+	expect(e.x).toBeGreaterThanOrEqual(c.x);
+	expect(c.x + c.width - (e.x + e.width)).toBeLessThanOrEqual(20);
+}
+
+for (const [label, width] of [
+	["desktop", 1280],
+	["mobile", 390],
+] as const) {
+	test(`job cards put the time top right and the agent label bottom right on ${label} (#756)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const cards = page.getByTestId("job-card");
+		await expect(cards).toHaveCount(5);
+		for (const state of ["Starting", "Running", "Failed", "Paused", "Done"]) {
+			const card = cards.filter({
+				has: page.getByTestId("job-state").getByText(state),
+			});
+			const time = card.getByTestId("job-time");
+			const agent = card.getByTestId("job-agent");
+			const title = card.getByRole("heading");
+			await expect(time).toHaveText(/\d+(m|h)/);
+			await expect(time).toHaveAttribute("title", /^Started /);
+			await expect(agent).toHaveText(/^gh-fix · /);
+			await expect(agent).toHaveAttribute("title", /^gh-fix · /);
+			await expectRightAligned(card, time);
+			await expectRightAligned(card, agent);
+			const timeBox = await time.boundingBox();
+			const titleBox = await title.boundingBox();
+			const agentBox = await agent.boundingBox();
+			const retryBox = await card
+				.getByRole("button", { name: "Retry" })
+				.boundingBox();
+			// The time stays in the header row above the title; the label sits
+			// in the footer beside the actions.
+			expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(titleBox!.y);
+			expect(agentBox!.y).toBeGreaterThan(titleBox!.y + titleBox!.height);
+			expect(Math.abs(agentBox!.y - retryBox!.y)).toBeLessThan(
+				retryBox!.height,
+			);
+		}
+	});
+}
+
+test("a long agent label truncates inside the card with a tooltip (#756)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	const model = `claude/${"very-long-model-name-".repeat(6)}opus`;
+	const jobs = JOBS.filter((j) => j.number === 218).map((j) => ({
+		...j,
+		model,
+	}));
+	await setup(page, () => STATUS, {
+		project_job_list: () => ({ jobs, total: 1, offset: 0, limit: 50 }),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card");
+	await expect(card).toHaveCount(1);
+	const agent = card.getByTestId("job-agent");
+	await expect(agent).toHaveAttribute("title", new RegExp(`${model}$`));
+	await expect(agent).toHaveCSS("text-overflow", "ellipsis");
+	await expect(agent).toHaveCSS("white-space", "nowrap");
+	const truncated = await agent.evaluate(
+		(el) => el.scrollWidth > el.clientWidth,
+	);
+	expect(truncated).toBe(true);
+	await expectRightAligned(card, agent);
+	const cardBox = await card.boundingBox();
+	const agentBox = await agent.boundingBox();
+	expect(agentBox!.x + agentBox!.width).toBeLessThanOrEqual(
+		cardBox!.x + cardBox!.width,
+	);
+	// One line tall, and the title keeps the full header width.
+	expect(agentBox!.height).toBeLessThan(24);
+	const title = card.getByRole("heading");
+	const titleBox = await title.boundingBox();
+	expect(titleBox!.width).toBeGreaterThan(cardBox!.width - 40);
+});
+
 test("retry, stop, filters and check now call project tools", async ({
 	page,
 }) => {
@@ -2093,4 +2181,94 @@ test("prompt chat opened mid-turn shows the running turn (#764)", async ({
 		"true",
 	);
 	await expect(chat).toContainText("Reading the board");
+});
+
+test("job count stat boxes reflow without wrapping mid-value", async ({
+	page,
+}) => {
+	await setup(page, () => ({
+		...STATUS,
+		jobs: { ...STATUS.jobs, running: 10, merged_24h: 61 },
+		concurrency: 20,
+	}));
+	// 1280 keeps the sidebar beside a narrow board while the viewport is xl.
+	for (const width of [375, 768, 1024, 1280, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const stats = page.getByRole("region", { name: "Job counts" });
+		await expect(stats).toContainText("10of 20 busy");
+		await expect(stats).toContainText("Merged (24h)61");
+		const layout = await stats.evaluate((section) => {
+			const lines = (el: Element) => {
+				// Text of mixed sizes on one line overlaps vertically; a wrap
+				// starts a rect below every earlier one.
+				const range = document.createRange();
+				range.selectNodeContents(el);
+				let count = 0;
+				let bottom = Number.NEGATIVE_INFINITY;
+				for (const r of [...range.getClientRects()].sort(
+					(a, b) => a.top - b.top,
+				)) {
+					if (r.top >= bottom - 1) count++;
+					bottom = Math.max(bottom, r.bottom);
+				}
+				return count;
+			};
+			const overflows = (el: Element) => el.scrollWidth > el.clientWidth;
+			const cards = [
+				...section.querySelectorAll("[data-testid=stat-card]"),
+			].map((card) => {
+				const label = card.querySelector("[data-testid=stat-label]");
+				const value = card.querySelector("[data-testid=stat-value]");
+				if (!label || !value) throw new Error("stat card is missing parts");
+				const box = card.getBoundingClientRect();
+				return {
+					text: card.textContent,
+					top: Math.round(box.top),
+					height: Math.round(box.height),
+					labelTop: Math.round(label.getBoundingClientRect().top),
+					valueTop: Math.round(value.getBoundingClientRect().top),
+					labelLines: lines(label),
+					valueLines: lines(value),
+					overflow: overflows(card) || overflows(label) || overflows(value),
+				};
+			});
+			const clis = document.querySelector("[aria-label='CLI providers']");
+			return {
+				cards,
+				pageOverflow:
+					document.documentElement.scrollWidth > window.innerWidth ||
+					overflows(section) ||
+					(clis ? overflows(clis) : false),
+				chipOverflow: clis
+					? [...clis.children].some(
+							(chip) =>
+								chip.getBoundingClientRect().right >
+								clis.getBoundingClientRect().right + 1,
+						)
+					: false,
+			};
+		});
+		expect(layout.cards).toHaveLength(7);
+		expect(layout.pageOverflow, `page overflow at ${width}px`).toBe(false);
+		expect(layout.chipOverflow, `CLI chip overflow at ${width}px`).toBe(false);
+		for (const card of layout.cards) {
+			expect(card.labelLines, `${card.text} label at ${width}px`).toBe(1);
+			expect(card.valueLines, `${card.text} value at ${width}px`).toBe(1);
+			expect(card.overflow, `${card.text} overflow at ${width}px`).toBe(false);
+		}
+		// Cards in one row share a height and line up labels and numbers.
+		const rows = new Map<number, typeof layout.cards>();
+		for (const card of layout.cards) {
+			rows.set(card.top, [...(rows.get(card.top) ?? []), card]);
+		}
+		for (const row of rows.values()) {
+			for (const key of ["height", "labelTop", "valueTop"] as const) {
+				expect(
+					new Set(row.map((card) => card[key])).size,
+					`${key} in a row at ${width}px`,
+				).toBe(1);
+			}
+		}
+	}
 });
