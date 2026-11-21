@@ -26,6 +26,10 @@ type recentMerges struct {
 	at map[string]time.Time
 	// path is where the merges are saved; empty keeps them in memory only.
 	path string
+	// onMerge is told of each pull request merged within recentMergeWindow
+	// the first time it is recorded, with its issue's repo and number. Nil
+	// tells nothing.
+	onMerge func(repo string, number int, mergedAt time.Time)
 }
 
 // newRecentMerges restores the merges saved at path within recentMergeWindow
@@ -61,26 +65,41 @@ func mergesPathFor(statePath string) string {
 // record notes every merged pull request in state, which belongs to issue
 // repo#number. A pull request whose repository was not recorded is hosted in
 // the issue's own repository.
-func (m *recentMerges) record(repo string, state OriginatingWorkState) {
+func (m *recentMerges) record(repo string, number int, state OriginatingWorkState) {
 	if m == nil {
 		return
 	}
+	now := time.Now()
+	cutoff := now.Add(-recentMergeWindow)
+	var merged []time.Time
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	changed := false
 	for _, pullRequest := range state.PullRequests {
 		if !pullRequest.Merged || pullRequest.MergedAt.IsZero() || pullRequest.Number <= 0 {
 			continue
 		}
 		key := strings.ToLower(pullRequest.RepoOr(repo)) + "#" + strconv.Itoa(pullRequest.Number)
-		if previous, ok := m.at[key]; ok && previous.Equal(pullRequest.MergedAt) {
+		previous, seen := m.at[key]
+		if seen && previous.Equal(pullRequest.MergedAt) {
 			continue
+		}
+		// A merge older than the window may already have been reported and
+		// forgotten since, so only newly seen recent merges are reported.
+		if !seen && !pullRequest.MergedAt.Before(cutoff) {
+			merged = append(merged, pullRequest.MergedAt)
 		}
 		m.at[key] = pullRequest.MergedAt
 		changed = true
 	}
 	if changed {
-		m.save(time.Now())
+		m.save(now)
+	}
+	onMerge := m.onMerge
+	m.mu.Unlock()
+	if onMerge != nil {
+		for _, mergedAt := range merged {
+			onMerge(repo, number, mergedAt)
+		}
 	}
 }
 
@@ -133,7 +152,7 @@ type recentMergeRecorder struct {
 func (r recentMergeRecorder) OriginatingWorkState(ctx context.Context, repo string, number int) (OriginatingWorkState, error) {
 	state, err := r.WorkClosureChecker.OriginatingWorkState(ctx, repo, number)
 	if err == nil {
-		r.merges.record(repo, state)
+		r.merges.record(repo, number, state)
 	}
 	return state, err
 }

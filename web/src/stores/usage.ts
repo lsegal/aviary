@@ -16,6 +16,15 @@ export interface UsageRecord {
 	has_error?: boolean;
 	has_throttle?: boolean;
 	cost_usd?: number;
+	project?: ProjectUsage;
+}
+
+// ProjectUsage is the Projects work a usage record reports instead of token
+// use: a job run's wall time, or an issue's merged or failed outcome.
+export interface ProjectUsage {
+	issue: string;
+	outcome?: "merged" | "failed";
+	duration_ms?: number;
 }
 
 function fmtDate(daysAgo: number): string {
@@ -35,7 +44,10 @@ function sumCost(records: UsageRecord[]): number | null {
 export const useUsageStore = defineStore("usage", () => {
 	const { callTool } = useMCP();
 
+	// Token records drive every token and cost metric; project records only
+	// the Projects summary, so they never count as messages.
 	const records = ref<UsageRecord[]>([]);
+	const projectRecords = ref<UsageRecord[]>([]);
 	const loading = ref(false);
 	const error = ref<string | null>(null);
 
@@ -51,7 +63,9 @@ export const useUsageStore = defineStore("usage", () => {
 				start: startDate.value,
 				end: endDate.value,
 			});
-			records.value = (JSON.parse(raw) as UsageRecord[]) ?? [];
+			const all = (JSON.parse(raw) as UsageRecord[]) ?? [];
+			records.value = all.filter((r) => !r.project);
+			projectRecords.value = all.filter((r) => r.project);
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -112,6 +126,33 @@ export const useUsageStore = defineStore("usage", () => {
 	const cacheHitRate = computed(() => {
 		const total = totalInput.value + totalCacheRead.value;
 		return total > 0 ? (totalCacheRead.value / total) * 100 : 0;
+	});
+
+	// ── Projects ──────────────────────────────────────────────────────────────
+
+	// An issue counts as merged when any of its pull requests merged in range,
+	// and as failed when it did not and its latest outcome in range failed.
+	const projectSummary = computed(() => {
+		const issues = new Set<string>();
+		const merged = new Set<string>();
+		const latest = new Map<string, { at: string; outcome: string }>();
+		let wallMs = 0;
+		for (const r of projectRecords.value) {
+			const p = r.project;
+			if (!p) continue;
+			issues.add(p.issue);
+			wallMs += p.duration_ms ?? 0;
+			if (!p.outcome) continue;
+			if (p.outcome === "merged") merged.add(p.issue);
+			const prev = latest.get(p.issue);
+			if (!prev || r.timestamp >= prev.at)
+				latest.set(p.issue, { at: r.timestamp, outcome: p.outcome });
+		}
+		let failed = 0;
+		for (const [issue, last] of latest) {
+			if (last.outcome === "failed" && !merged.has(issue)) failed++;
+		}
+		return { issues: issues.size, merged: merged.size, failed, wallMs };
 	});
 
 	// ── Breakdowns ────────────────────────────────────────────────────────────
@@ -237,6 +278,8 @@ export const useUsageStore = defineStore("usage", () => {
 
 	return {
 		records,
+		projectRecords,
+		projectSummary,
 		loading,
 		error,
 		startDate,
