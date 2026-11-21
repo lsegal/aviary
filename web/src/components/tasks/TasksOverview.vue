@@ -114,7 +114,7 @@
 							<span v-if="r.running" class="font-medium text-blue-600 dark:text-blue-400">Running now</span>
 							<template v-else-if="r.last">
 								<span class="font-medium" :class="RUN_CLASS[r.last.status]">{{ RUN_LABEL[r.last.status] }}</span>
-								<span class="text-gray-500 dark:text-gray-400"> {{ ago(r.last.created_at) }}</span>
+								<span class="text-gray-500 dark:text-gray-400">{{ ` ${ago(r.last.created_at)}` }}</span>
 							</template>
 							<span v-else class="text-gray-400">Never run</span>
 						</p>
@@ -152,7 +152,7 @@
 								<span v-if="r.running" class="font-medium text-blue-600 dark:text-blue-400">Running now</span>
 								<template v-else-if="r.last">
 									<span class="font-medium" :class="RUN_CLASS[r.last.status]">{{ RUN_LABEL[r.last.status] }}</span>
-									<span class="text-gray-500 dark:text-gray-400"> {{ ago(r.last.created_at) }}</span>
+									<span class="text-gray-500 dark:text-gray-400">{{ ` ${ago(r.last.created_at)}` }}</span>
 								</template>
 								<span v-else class="text-gray-400">Never run</span>
 							</td>

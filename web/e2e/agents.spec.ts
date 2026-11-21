@@ -854,8 +854,7 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 
 test("task header wraps cleanly on mobile", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await openAgentPage(page, "tasks", "assistant");
-	await page.getByTestId("task-row").first().click();
+	await page.goto("/agents/assistant/tasks?task=daily-briefing");
 
 	const definedIn = page.getByText("Defined in: aviary.yaml", {
 		exact: true,
