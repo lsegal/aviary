@@ -937,6 +937,11 @@ type sessionStopArgs struct {
 	Session   string `json:"session,omitempty"`
 }
 
+type sessionTurnArgs struct {
+	Agent     string `json:"agent"`
+	SessionID string `json:"session_id"`
+}
+
 type sessionSetTargetArgs struct {
 	Agent       string `json:"agent"`
 	SessionID   string `json:"session_id"`
@@ -1191,6 +1196,25 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Name:        "session_history",
 		Description: "Read session history. Prefer order=desc and limit=20 to recover recent context in group chats or resumed sessions.",
 	}, sessionHistoryHandler)
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "session_turn",
+		Description: "Get what a session's running turn has streamed so far: whether it is processing, its tool calls with their status, and its partial text",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionTurnArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentName := strings.TrimSpace(args.Agent)
+		sid := strings.TrimSpace(args.SessionID)
+		if agentName == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		agentID, _, err := resolveAgentIdentity(agentName)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(agent.GetActiveTurn(agentID, sid))
+	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_stop",

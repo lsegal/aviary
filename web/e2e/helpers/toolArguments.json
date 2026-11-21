@@ -403,6 +403,10 @@
 		"session",
 		"session_id"
 	],
+	"session_turn": [
+		"agent",
+		"session_id"
+	],
 	"skills_list": [],
 	"slack_channels_list": [
 		"bot_token"
