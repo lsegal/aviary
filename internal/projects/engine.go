@@ -2709,6 +2709,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			issuesToLog[i] = newIssues[i].issue
 		}
 		w.logf("poll #%d discovered %d new issue(s): %s", n, len(newIssues), issueNumbers(issuesToLog))
+		unclaimed := 0
 		for _, pending := range newIssues {
 			issue := pending.issue
 			session := pending.session
@@ -2721,6 +2722,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				if !sem.tryAcquire() {
 					key := issueKey(issue)
 					deferredForCapacity = true
+					unclaimed++
 					w.logChanged("capacity-"+key, "full", "issue #%d not claimed: every agent slot is busy; leaving it for a later poll or another instance", issue.Number)
 					if pending.fresh {
 						// Unseen, the next poll finds it as new work again.
@@ -3309,7 +3311,11 @@ func (w *Engine) Run(ctx context.Context) error {
 			}(issue, session, startedRunning, startedQueued)
 		}
 		running, queued, _, _ = tasks.snapshot()
-		w.logf("poll #%d complete; dispatched %d issue(s) (tasks: %d running, %d queued)", n, len(newIssues), running, queued)
+		if unclaimed > 0 {
+			w.logf("poll #%d complete; dispatched %d issue(s), left %d unclaimed with every agent slot busy (tasks: %d running, %d queued)", n, len(newIssues)-unclaimed, unclaimed, running, queued)
+		} else {
+			w.logf("poll #%d complete; dispatched %d issue(s) (tasks: %d running, %d queued)", n, len(newIssues), running, queued)
+		}
 		return nil
 	}
 	// poll runs one poll and reports the end of a run of failures, so a poll

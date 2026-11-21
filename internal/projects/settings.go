@@ -40,6 +40,11 @@ type concurrencySemaphore struct {
 func newConcurrencySemaphore(limit int) *concurrencySemaphore {
 	s := &concurrencySemaphore{tokens: make(chan struct{}, maxConcurrencyPermits), freed: make(chan struct{}, 1)}
 	s.resize(limit)
+	// The initial slots are not freed ones.
+	select {
+	case <-s.freed:
+	default:
+	}
 	return s
 }
 
