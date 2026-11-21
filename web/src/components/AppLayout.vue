@@ -606,8 +606,9 @@ function resizeSidebarByKey(e: KeyboardEvent) {
 	sidebar.setWidth(steps[e.key]);
 }
 
-// Hover peek: resting the pointer on the collapsed rail opens the full
-// sidebar as an overlay without changing the saved collapsed state (#737).
+// Hover peek: resting the pointer on the collapsed rail's background opens
+// the full sidebar as an overlay without changing the saved collapsed state
+// (#737).
 const SIDEBAR_PEEK_DELAY = 300;
 const sidebarPeek = ref(false);
 const sidebarEl = ref<HTMLElement | null>(null);
@@ -623,9 +624,12 @@ function cancelSidebarPeekClose() {
 }
 
 // Restarts on every pointer move, so the peek waits for the pointer to rest.
-function openSidebarPeekSoon() {
+// Resting on an icon shows its tooltip instead, so the overlay never covers
+// the icon about to be clicked.
+function openSidebarPeekSoon(e: MouseEvent) {
 	if (sidebarPeek.value) return;
 	cancelSidebarPeekOpen();
+	if ((e.target as Element).closest("a, button")) return;
 	sidebarPeekOpenTimer = setTimeout(() => {
 		sidebarPeek.value = true;
 	}, SIDEBAR_PEEK_DELAY);

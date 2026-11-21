@@ -239,6 +239,7 @@ test("resting on the collapsed rail peeks the full sidebar as an overlay", async
 	await expect(page.getByTestId("sidebar-resize")).toHaveCount(0);
 	expect((await main.boundingBox())?.width).toBe(mainWidth);
 	expect(await storedLayout(page)).toEqual(stored);
+	await expect(sidebar.getByTestId("sidebar-pin")).toBeVisible();
 
 	// Leaving the overlay closes it after a short delay.
 	await page.mouse.move(800, 400);
@@ -250,6 +251,12 @@ test("resting on the collapsed rail peeks the full sidebar as an overlay", async
 	await restOnRail(page);
 	await expect(sidebar).toBeVisible();
 	await page.keyboard.press("Escape");
+	await expect(sidebar).toHaveCount(0);
+
+	// Resting on an icon shows its tooltip instead of the overlay.
+	await page.getByTestId("sidebar-rail-files").hover();
+	await expect(page.getByRole("tooltip")).toHaveText("Files");
+	await page.waitForTimeout(500);
 	await expect(sidebar).toHaveCount(0);
 
 	// The peek is never saved: a reload restores the rail.
@@ -265,6 +272,7 @@ test("navigating from the peek closes it and its toggle expands the sidebar", as
 	page,
 }) => {
 	await page.goto("/system/overview");
+	await expect(page.getByTestId("sidebar")).toBeVisible();
 	await page.keyboard.press("ControlOrMeta+b");
 	await restOnRail(page);
 	const sidebar = page.getByTestId("sidebar");
