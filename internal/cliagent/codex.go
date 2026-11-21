@@ -11,13 +11,13 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -162,7 +162,7 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 	}
 	defer removeProfile()
 
-	cmd := exec.CommandContext(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, profile, images)...) //nolint:gosec // binary is a fixed backend name
+	cmd := process.Command(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, profile, images)...)
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	text := turn.Text

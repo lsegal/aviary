@@ -112,6 +112,11 @@ type Definition struct {
 	// mode left out falls back as Approval does. Chat sessions use it to
 	// keep the agent's own directory in scope wherever it works (#534).
 	ExtraDir map[ApprovalMode][]string `json:"extraDir,omitempty"`
+	// Permissions are, per approval mode, the arguments that pass each of a
+	// chat agent's exec and filesystem rules on to the CLI's own allow and
+	// deny rules, so what the agent's permissions allow is not then refused
+	// by the CLI (#560). A mode left out falls back as Approval does.
+	Permissions map[ApprovalMode]PermissionTemplates `json:"permissions,omitempty"`
 	// Doctor names the read-only probes `aviary agents` runs to report on the
 	// agent: whether its CLI is signed in, and which models it accepts. An
 	// agent that declares none is reported from what the definition already
@@ -958,6 +963,9 @@ func (d Definition) Validate() error {
 	if err := d.validateExtraDir(); err != nil {
 		return err
 	}
+	if err := d.validatePermissions(); err != nil {
+		return err
+	}
 	if err := d.ConfigHome.validate(); err != nil {
 		return err
 	}
@@ -991,6 +999,24 @@ func hasPromptArg(fragments []Fragment) bool {
 
 // ReadsPromptFromStdin reports whether the agent can take its prompt on stdin.
 func (d Definition) ReadsPromptFromStdin() bool { return d.PromptStdin != nil }
+
+// ReadsPromptFromStdinIn reports whether a mode's template can take its prompt
+// on stdin: the agent reads stdin and the template passes the prompt as the
+// argument of its own that promptStdin replaces.
+func (d Definition) ReadsPromptFromStdinIn(mode Mode) bool {
+	if !d.ReadsPromptFromStdin() {
+		return false
+	}
+	switch mode {
+	case ModeRun:
+		return hasPromptArg(d.Args.Run)
+	case ModeResume:
+		return hasPromptArg(d.resumeFragments())
+	case ModeVision:
+		return hasPromptArg(d.Args.Vision)
+	}
+	return false
+}
 
 func validateFragments(mode string, fragments []Fragment) error {
 	for i, fragment := range fragments {

@@ -20,6 +20,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/filesystem"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -93,16 +94,22 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	}
 
 	workDir := r.workingDir()
+	mode := r.approvalMode()
+	builtinTools := r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions)
 	opts := cliagent.Options{
 		Backend:      backend,
 		Model:        cliModel,
 		SystemPrompt: in.systemPrompt,
 		WorkDir:      workDir,
-		BuiltinTools: r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions),
-		Approval:     cliApprovalArgs(backend, r.approvalMode()),
-		ExtraDir:     cliExtraDirArgs(backend, r.approvalMode(), workDir, r.agentHomeDir()),
+		BuiltinTools: builtinTools,
+		Approval:     cliApprovalArgs(backend, mode),
+		ExtraDir:     cliExtraDirArgs(backend, mode, workDir, r.agentHomeDir()),
 		Ephemeral:    !in.useHistory,
-		Env:          cliLaunchEnv(backend),
+		Env:          cliLaunchEnv(backend, workDir),
+	}
+	if builtinTools {
+		opts.Permissions = cliPermissionArgs(backend, mode, r.cfg.Permissions, workDir)
+		opts.RefusalNote = cliRefusalNote(backend, mode, r.agent.Name)
 	}
 	key := r.agent.ID + "\x00" + in.sessionID
 	if opts.Ephemeral {
@@ -393,20 +400,68 @@ func cliExtraDirArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, workDi
 	return definition.ExtraDirArgs(mode, agentDir)
 }
 
-// cliLaunchEnv points the backend's CLI at an overlay of the settings
-// directory its provider definition declares. For codex that is CODEX_HOME at
-// aviary's own overlay of the user's directory: its config.toml is aviary's,
-// empty but for the per-turn profile that carries the system prompt (#573),
-// so the user's settings are ignored while sign-in and sessions are shared,
-// and codex's trusted-project bookkeeping stays out of the user's file
-// (#528). When the overlay cannot be prepared, the CLI runs against the
-// user's directory.
-func cliLaunchEnv(backend cliagent.Backend) []string {
+// cliPermissionArgs passes the agent's exec and filesystem rules on to the
+// backend's CLI as its own allow and deny rules, through its CLI provider
+// definition, so a command or path the agent's permissions allow is not then
+// refused by the CLI's own permission check (#560). Filesystem rules resolve
+// against baseDir, as Aviary's file tools resolve them.
+func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perms *config.PermissionsConfig, baseDir string) []string {
+	definition, ok := llm.CLIProvider(string(backend))
+	if !ok || perms == nil {
+		return nil
+	}
+	var commands []clidefs.Rule
+	if perms.Exec != nil {
+		for _, raw := range perms.Exec.AllowedCommands {
+			pattern, deny := strings.CutPrefix(strings.TrimSpace(raw), "!")
+			commands = append(commands, clidefs.Rule{Pattern: strings.TrimSpace(pattern), Deny: deny})
+		}
+	}
+	var paths []clidefs.PathRule
+	if perms.Filesystem != nil {
+		expanded, err := filesystem.ExpandRules(perms.Filesystem.AllowedPaths, baseDir)
+		if err != nil {
+			slog.Warn("agent: filesystem rules not passed to the CLI", "backend", backend, "err", err)
+		}
+		for _, rule := range expanded {
+			paths = append(paths, clidefs.PathRule{Rule: clidefs.Rule{Pattern: rule.Pattern, Deny: rule.Negated}, Dir: rule.Dir})
+		}
+	}
+	return definition.PermissionArgs(mode, commands, paths)
+}
+
+// cliRefusalNote names the layer behind a refusal from the CLI's own
+// permission check, which otherwise reaches the chat only as the CLI's own
+// "haven't granted" text.
+func cliRefusalNote(backend cliagent.Backend, mode clidefs.ApprovalMode, agentName string) string {
+	return fmt.Sprintf("Refused by the %s CLI's own permission check, not by Aviary. The chat approval mode is %q, "+
+		"and no rule from agent %q's Allowed Exec Commands or Filesystem Allowed Paths, which are passed to %s at launch, allowed this call.",
+		backend, mode.Effective(), agentName, backend)
+}
+
+// cliLaunchEnv points the backend's CLI at the settings overlay its provider
+// definition declares, as every Projects launch does. For codex that is
+// CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
+// trusted-project bookkeeping out of the user's config.toml (#528). When the
+// overlay cannot be prepared, the CLI runs against the user's directory.
+// The overlay also records workDir as trusted, so Claude applies its
+// workspace's permission allow entries (#565).
+//
+// Codex chat turns get aviary's own overlay instead, under cli-homes/chat:
+// its config.toml is empty, so the user's settings are ignored as
+// --ignore-user-config would, and each turn's system prompt is read from a
+// profile written there rather than passed on the command line (#573).
+func cliLaunchEnv(backend cliagent.Backend, workDir string) []string {
 	definition, ok := llm.CLIProvider(string(backend))
 	if !ok {
 		return nil
 	}
-	env, err := definition.OwnHomeEnv(filepath.Join(store.CLIHomesDir(), "chat"))
+	homeEnv := definition.HomeEnv
+	base := store.CLIHomesDir()
+	if backend == cliagent.Codex {
+		homeEnv, base = definition.OwnHomeEnv, filepath.Join(base, "chat")
+	}
+	env, err := homeEnv(base, workDir)
 	if err != nil {
 		slog.Warn("agent: running CLI against its own settings directory", "backend", backend, "err", err)
 	}
@@ -425,6 +480,7 @@ func cliFingerprint(opts cliagent.Options, tools []ToolInfo) string {
 		string(opts.Backend), opts.Model, opts.SystemPrompt, opts.WorkDir,
 		fmt.Sprint(opts.BuiltinTools), fmt.Sprint(opts.Ephemeral), strings.Join(names, ","),
 		strings.Join(opts.Approval, "\x00"), strings.Join(opts.ExtraDir, "\x00"),
+		strings.Join(opts.Permissions, "\x00"), opts.RefusalNote,
 	} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})

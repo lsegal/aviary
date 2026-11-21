@@ -1588,6 +1588,17 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 }
 
 func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) []string {
+	definition, mode, values, ok := commandValuesForSession(r, issue, session)
+	if !ok {
+		return nil
+	}
+	return definition.Render(mode, values)
+}
+
+// commandValuesForSession resolves the definition a run dispatches to, the
+// mode it renders, and the values substituted into it, with the prompt still
+// in Values.Prompt for the caller to deliver.
+func commandValuesForSession(r CommandRunner, issue Issue, session AgentSession) (clidefs.Definition, clidefs.Mode, clidefs.Values, bool) {
 	target := issue.Target
 	if target == "" {
 		target = r.Repo
@@ -1596,7 +1607,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	spec := r.specForSession(session)
 	definition, ok := r.definition(spec.Name)
 	if !ok {
-		return nil
+		return definition, "", clidefs.Values{}, false
 	}
 	mode := clidefs.ModeRun
 	if session.Resume {
@@ -1610,7 +1621,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 	// outside any git repository, which Codex refuses without
 	// --skip-git-repo-check.
 	_, inCheckout := sessionRunDir(session)
-	return definition.Render(mode, clidefs.Values{
+	return definition, mode, clidefs.Values{
 		Prompt:     prompt,
 		Session:    session.ID,
 		Model:      spec.Model,
@@ -1627,7 +1638,7 @@ func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) [
 		RemoteControl: r.RemoteControl,
 		Settings:      remoteControlSettings,
 		SessionName:   remoteControlSessionName(target, issue),
-	})
+	}, true
 }
 
 // scheduledRunPrompt is what a scheduled run's agent is told in place of the
@@ -1767,9 +1778,12 @@ const agentCommandWaitDelay = 5 * time.Second
 
 // launchEnv is the environment an agent launch adds to aviary's own. When the
 // definition's settings overlay cannot be built, the agent still runs, against
-// the user's own settings directory, and the reason is logged.
-func launchEnv(definition clidefs.Definition) []string {
-	env, err := definition.LaunchEnv(store.CLIHomesDir())
+// the user's own settings directory, and the reason is logged. Workspaces are
+// the directories the agent runs in, which the overlay records as trusted, so
+// a CLI that gates a workspace's settings behind trust, as Claude drops the
+// permission allow entries of a fresh clone, applies them (#565).
+func launchEnv(definition clidefs.Definition, workspaces ...string) []string {
+	env, err := definition.LaunchEnv(store.CLIHomesDir(), workspaces...)
 	if err != nil {
 		slog.Warn("projects: running agent against its own settings directory", "agent", definition.Name, "err", err)
 	}
@@ -1777,13 +1791,7 @@ func launchEnv(definition clidefs.Definition) []string {
 }
 
 func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.Cmd {
-	binary, args, shimErr := agentShimArgv(binary, args)
-	cmd := exec.CommandContext(ctx, binary, args...)
-	if shimErr != nil {
-		// Start reports it, so every caller fails the call loudly instead of
-		// the agent answering a truncated prompt.
-		cmd.Err = shimErr
-	}
+	cmd := process.Command(ctx, binary, args...)
 	// Cancelling the run ends the agent's whole process tree, not just the
 	// agent, and Wait stops waiting on its output pipes soon after. A tree the
 	// shutdown checkpoint paused cannot exit by itself, so killing only the
@@ -1791,7 +1799,8 @@ func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.C
 	// every restart, hung forever.
 	cmd.Cancel = func() error { return process.Kill(cmd) }
 	cmd.WaitDelay = agentCommandWaitDelay
-	// Stdin stays the null device: Codex treats any other stdin as an optional
+	// Stdin stays the null device unless the caller hands the prompt over on
+	// it as a complete reader: Codex treats any other stdin as an optional
 	// prompt stream, and an agent must not wait on an open pipe.
 	return cmd
 }
@@ -2150,8 +2159,19 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if err != nil {
 		return false, err
 	}
-	args := commandArgsForSession(r, issue, session)
+	_, mode, values, _ := commandValuesForSession(r, issue, session)
+	// A scheduled run's prompt is user-authored and unbounded, so one too
+	// large for argv reaches the agent on stdin or through a file instead.
+	call, err := newRunPrompt(definition, mode, values, os.TempDir())
+	if err != nil {
+		return false, err
+	}
+	defer call.cleanup()
+	args := definition.Render(mode, call.Values)
 	cmd := newAgentCommand(ctx, binary, args...)
+	if call.Stdin != nil {
+		cmd.Stdin = call.Stdin
+	}
 	// The definition's env is what the agent needs beyond aviary's own
 	// environment: Claude's headless print mode, for instance, caps how long
 	// it waits for in-flight background shell tasks before terminating them
@@ -2161,10 +2181,10 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// The launch env also points a CLI that writes bookkeeping into its own
 	// settings file, as codex records trusted workspaces, at a private
 	// overlay of its settings directory, so the user's file is left alone.
-	if env := launchEnv(definition); len(env) > 0 {
+	cmd.Dir, _ = sessionRunDir(session)
+	if env := launchEnv(definition, cmd.Dir); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	cmd.Dir, _ = sessionRunDir(session)
 	// Record the run for the shutdown checkpoint, following the checkout the
 	// agent announces so the checkpoint commits the right directory.
 	active := r.Active.add(issue, session.CheckoutDirectory)

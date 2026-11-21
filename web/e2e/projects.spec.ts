@@ -870,6 +870,11 @@ test("search filters the whole job list across every field", async ({
 	const cards = page.getByTestId("job-card");
 	const pages = page.getByRole("navigation", { name: "Job pages" });
 	const search = page.getByRole("searchbox", { name: "Search jobs" });
+	// The search reads as a search box: an icon and the standard field styling.
+	await expect(
+		page.getByTestId("job-toolbar").getByTestId("search-icon"),
+	).toBeVisible();
+	await expect(search).toHaveClass(/\bfield-input\b/);
 	await expect(pages).toContainText("Page 1 of 3");
 	await expect(cards).toHaveCount(12);
 	await expect(page.getByTestId("search-count")).toHaveCount(0);

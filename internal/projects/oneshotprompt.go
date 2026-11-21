@@ -12,8 +12,9 @@ import (
 )
 
 // oneShotArgvPromptLimit is the largest prompt an out-of-band call still
-// passes as an argument to an agent that cannot read it from stdin. Anything
-// larger goes through a file, well clear of Windows' 32,767-character command
+// passes as an argument to an agent that cannot read it from stdin, and the
+// largest a job run passes as an argument at all. Anything larger goes on
+// stdin or through a file, well clear of Windows' 32,767-character command
 // line and Linux's 128 KiB single-argument limit.
 const oneShotArgvPromptLimit = 8 * 1024
 
@@ -53,12 +54,36 @@ func newOneShotPrompt(definition clidefs.Definition, values clidefs.Values, dir 
 	if len(values.Prompt) <= oneShotArgvPromptLimit {
 		return call, nil
 	}
+	return call.writePromptFile(dir)
+}
+
+// newRunPrompt decides how a dispatched or resumed job's prompt reaches the
+// agent. A gh-fix dispatch or a recovery is short and still travels as the
+// argument it always did, but a scheduled run carries its user-authored
+// prompt, which has no bound: one too large for argv goes on stdin when the
+// mode's template can take it there, and through a file in dir otherwise.
+func newRunPrompt(definition clidefs.Definition, mode clidefs.Mode, values clidefs.Values, dir string) (oneShotPrompt, error) {
+	call := oneShotPrompt{Values: values, cleanup: func() {}}
+	if len(values.Prompt) <= oneShotArgvPromptLimit {
+		return call, nil
+	}
+	if definition.ReadsPromptFromStdinIn(mode) {
+		call.Values.PromptStdin = true
+		call.Stdin = strings.NewReader(values.Prompt)
+		return call, nil
+	}
+	return call.writePromptFile(dir)
+}
+
+// writePromptFile writes the prompt to a file in dir and replaces it with a
+// pointer to that file.
+func (call oneShotPrompt) writePromptFile(dir string) (oneShotPrompt, error) {
 	file, err := os.CreateTemp(dir, "aviary-prompt-*.md")
 	if err != nil {
 		return call, fmt.Errorf("write the prompt file: %w", err)
 	}
 	path := file.Name()
-	_, writeErr := file.WriteString(values.Prompt)
+	_, writeErr := file.WriteString(call.Values.Prompt)
 	if closeErr := file.Close(); writeErr == nil {
 		writeErr = closeErr
 	}

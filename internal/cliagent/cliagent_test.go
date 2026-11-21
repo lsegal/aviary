@@ -39,6 +39,7 @@ func fakeClaude() {
 	} else if i := slices.Index(args, "--session-id"); i >= 0 {
 		session = args[i+1]
 	}
+	skip := slices.Contains(args, "--dangerously-skip-permissions")
 	system := ""
 	if i := slices.Index(args, "--system-prompt-file"); i >= 0 {
 		data, err := os.ReadFile(args[i+1])
@@ -81,7 +82,7 @@ func fakeClaude() {
 			fmt.Fprintln(os.Stderr, "boom")
 			os.Exit(3)
 		}
-		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), text)
+		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s skip=%t text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), skip, text)
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{
 			"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": reply},
@@ -107,10 +108,14 @@ func fakeCodex() {
 	if prompt == "system" {
 		prompt = fakeCodexInstructions(args)
 	}
+	developer := ""
 	images := 0
 	for _, a := range args {
 		if a == "--image" {
 			images++
+		}
+		if v, ok := strings.CutPrefix(a, "developer_instructions="); ok {
+			developer = " developer=" + v
 		}
 	}
 	out := json.NewEncoder(os.Stdout)
@@ -120,7 +125,7 @@ func fakeCodex() {
 		return
 	}
 	_ = out.Encode(map[string]any{"type": "item.completed", "item": map[string]any{
-		"id": "i0", "type": "agent_message", "text": fmt.Sprintf("thread=%s images=%d prompt=%s", thread, images, prompt),
+		"id": "i0", "type": "agent_message", "text": fmt.Sprintf("thread=%s images=%d%s prompt=%s", thread, images, developer, prompt),
 	}})
 	_ = out.Encode(map[string]any{"type": "turn.completed", "usage": map[string]any{
 		"input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 2,
@@ -561,5 +566,5 @@ func TestCodexSession_LongSystemPrompt(t *testing.T) {
 	require.NoError(t, err)
 	r, err = s.Send(context.Background(), Turn{Text: "system"}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, "thread=thread-new images=0 prompt=short rules", r.Text)
+	assert.Equal(t, "thread=thread-new images=0 developer=\"short rules\" prompt=short rules", r.Text)
 }

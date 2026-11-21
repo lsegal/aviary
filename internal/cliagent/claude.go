@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -70,6 +71,7 @@ func claudeArgs(opts Options, resumeID, systemPromptFile string) []string {
 	}
 	args = append(args, opts.Approval...)
 	args = append(args, opts.ExtraDir...)
+	args = append(args, opts.Permissions...)
 	switch {
 	case opts.Ephemeral:
 		args = append(args, "--no-session-persistence")
@@ -141,7 +143,7 @@ func (s *claudeSession) start() (proc *claudeProc, err error) {
 			cleanup()
 		}
 	}()
-	cmd := exec.Command(s.opts.binary(), claudeArgs(s.opts, s.sessionID, promptFile)...) //nolint:gosec // binary is a fixed backend name
+	cmd := process.Command(context.Background(), s.opts.binary(), claudeArgs(s.opts, s.sessionID, promptFile)...)
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	stdin, err := cmd.StdinPipe()
@@ -226,6 +228,7 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 	}
 
 	m := newClaudeMapper(onEvent)
+	m.tools.refusalNote = s.opts.RefusalNote
 	for {
 		select {
 		case <-ctx.Done():

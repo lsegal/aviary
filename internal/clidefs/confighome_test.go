@@ -1,6 +1,7 @@
 package clidefs
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,4 +159,137 @@ func TestCodexOwnHomeEnvEmptiesConfig(t *testing.T) {
 	user, err := os.ReadFile(filepath.Join(home, "config.toml"))
 	require.NoError(t, err)
 	assert.Equal(t, "model = \"gpt-5\"\n", string(user))
+}
+
+// trustHome is a ConfigHome shaped like Claude's: the settings file lives
+// beside the directory until X_HOME names one.
+func trustHome(t *testing.T) (ConfigHome, string) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("USERPROFILE", root)
+	t.Setenv("X_HOME", "")
+	return ConfigHome{
+		Env:        "X_HOME",
+		Default:    "~/.x",
+		Private:    []string{".x.json"},
+		Outside:    map[string]string{".x.json": "~/.x.json"},
+		StorageEnv: "X_STORAGE",
+		Trust:      &WorkspaceTrust{File: ".x.json", Path: []string{"projects", "{dir}", "trusted"}},
+	}, root
+}
+
+func trustedProjects(t *testing.T, overlay string) map[string]map[string]any {
+	t.Helper()
+	var settings struct {
+		Projects map[string]map[string]any `json:"projects"`
+	}
+	data, err := os.ReadFile(filepath.Join(overlay, ".x.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &settings))
+	return settings.Projects
+}
+
+// TestConfigHomeTrustsLaunchWorkspaces shows the overlay copy records each
+// launch's workspace as trusted, keeps the user's own entries, keeps the
+// workspace of an earlier launch trusted across a later refresh while it
+// still exists, and never writes to the user's file (#565).
+func TestConfigHomeTrustsLaunchWorkspaces(t *testing.T) {
+	home, root := trustHome(t)
+	user := []byte(`{"big": 12345678901234567890, "projects": {"/mine": {"trusted": false, "note": "x"}}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".x.json"), user, 0o600))
+	base, first, second := t.TempDir(), t.TempDir(), t.TempDir()
+
+	overlay, err := home.Overlay(base, first)
+	require.NoError(t, err)
+	projects := trustedProjects(t, overlay)
+	assert.Equal(t, true, projects[filepath.ToSlash(first)]["trusted"])
+	assert.Equal(t, map[string]any{"trusted": false, "note": "x"}, projects["/mine"])
+	data, err := os.ReadFile(filepath.Join(overlay, ".x.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "12345678901234567890", "numbers are copied exactly")
+
+	_, err = home.Overlay(base, second)
+	require.NoError(t, err)
+	projects = trustedProjects(t, overlay)
+	assert.Equal(t, true, projects[filepath.ToSlash(first)]["trusted"], "a run still going stays trusted")
+	assert.Equal(t, true, projects[filepath.ToSlash(second)]["trusted"])
+
+	require.NoError(t, os.Remove(first))
+	_, err = home.Overlay(base)
+	require.NoError(t, err)
+	projects = trustedProjects(t, overlay)
+	assert.NotContains(t, projects, filepath.ToSlash(first), "a removed workspace is forgotten")
+	assert.Equal(t, true, projects[filepath.ToSlash(second)]["trusted"])
+
+	got, err := os.ReadFile(filepath.Join(root, ".x.json"))
+	require.NoError(t, err)
+	assert.Equal(t, user, got, "the user's file changed")
+}
+
+// TestConfigHomeTrustsRepositoryRoot shows a workspace inside a git
+// repository has the repository root trusted too, which is what Claude keys
+// trust by.
+func TestConfigHomeTrustsRepositoryRoot(t *testing.T) {
+	home, _ := trustHome(t)
+	repo := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(repo, ".git"), 0o700))
+	sub := filepath.Join(repo, "sub")
+	require.NoError(t, os.Mkdir(sub, 0o700))
+
+	overlay, err := home.Overlay(t.TempDir(), sub)
+	require.NoError(t, err)
+	projects := trustedProjects(t, overlay)
+	assert.Equal(t, true, projects[filepath.ToSlash(sub)]["trusted"])
+	assert.Equal(t, true, projects[filepath.ToSlash(repo)]["trusted"])
+}
+
+// TestConfigHomeOutsideFollowsEnv shows a Private file is copied from its
+// outside location only while Env is unset, and from inside the directory Env
+// names otherwise; StorageEnv carries the user's own Env value.
+func TestConfigHomeOutsideFollowsEnv(t *testing.T) {
+	home, root := trustHome(t)
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".x.json"), []byte(`{"from":"outside"}`), 0o600))
+	definition := Definition{ConfigHome: &home}
+
+	env, err := definition.HomeEnv(t.TempDir())
+	require.NoError(t, err)
+	require.Len(t, env, 2)
+	assert.Equal(t, "X_STORAGE=", env[1], "an unset Env leaves stored sign-in at the CLI's default")
+	overlay := strings.TrimPrefix(env[0], "X_HOME=")
+	data, err := os.ReadFile(filepath.Join(overlay, ".x.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "outside")
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".x.json"), []byte(`{"from":"inside"}`), 0o600))
+	t.Setenv("X_HOME", dir)
+	env, err = definition.HomeEnv(t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "X_STORAGE="+dir, env[1])
+	data, err = os.ReadFile(filepath.Join(strings.TrimPrefix(env[0], "X_HOME="), ".x.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "inside")
+}
+
+func TestConfigHomeValidateTrust(t *testing.T) {
+	valid := func() *ConfigHome {
+		return &ConfigHome{Env: "X", Default: "~/.x", Private: []string{"c.json"}}
+	}
+	for _, tc := range []struct {
+		edit func(*ConfigHome)
+		want string
+	}{
+		{func(c *ConfigHome) { c.Outside = map[string]string{"d.json": "~/d.json"} }, `"configHome.outside"`},
+		{func(c *ConfigHome) { c.Outside = map[string]string{"c.json": " "} }, `"configHome.outside.c.json"`},
+		{func(c *ConfigHome) { c.StorageEnv = "A=B" }, `"configHome.storageEnv"`},
+		{func(c *ConfigHome) { c.Trust = &WorkspaceTrust{File: "d.json", Path: []string{"{dir}"}} }, `"configHome.trust.file"`},
+		{func(c *ConfigHome) { c.Trust = &WorkspaceTrust{File: "c.json", Path: []string{"projects"}} }, `"configHome.trust.path"`},
+	} {
+		home := valid()
+		tc.edit(home)
+		err := home.validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
 }

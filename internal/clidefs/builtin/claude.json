@@ -20,6 +20,14 @@
     "stop": "stop",
     "rejected": {"event": "user", "results": "message.content[]", "id": "tool_use_id", "error": "is_error"}
   },
+  "configHome": {
+    "env": "CLAUDE_CONFIG_DIR",
+    "default": "~/.claude",
+    "private": [".claude.json"],
+    "outside": {".claude.json": "~/.claude.json"},
+    "storageEnv": "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+    "trust": {"file": ".claude.json", "path": ["projects", "{dir}", "hasTrustDialogAccepted"]}
+  },
   "quota": {"reader": "claude"},
   "skills": {"target": "claude-code"},
   "promptStdin": [],
@@ -38,6 +46,22 @@
   "extraDir": {
     "read-only": ["--add-dir", "{dir}"],
     "auto": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{dirPosix}/**)"]
+  },
+  "permissions": {
+    "read-only": {
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    },
+    "auto": {
+      "allowCommand": ["--allowedTools", "Bash{commandSpec}", "--allowedTools", "PowerShell{commandSpec}"],
+      "allowPath": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{pathPosix})"],
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    },
+    "full": {
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    }
   },
   "args": {
     "run": [
