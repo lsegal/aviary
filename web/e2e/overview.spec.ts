@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import {
+	type ConfigSaveArgs,
+	mockMCP,
+	setAuthToken,
+} from "./helpers/mockMCP";
 
 const AGENTS = [
 	{
@@ -297,4 +301,28 @@ test("stat cards link to their detail views", async ({ page }) => {
 
 	await page.getByText("Agents").first().click();
 	await expect(page).toHaveURL(/\/agents/);
+});
+
+test("setup wizard names the first agent default", async ({ page }) => {
+	let saved: { agents?: { name: string }[] } | undefined;
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		auth_list: ["anthropic:default"],
+		config_get: { agents: [], models: { providers: {} } },
+		config_save: (args?: ConfigSaveArgs) => {
+			saved = JSON.parse(args?.config ?? "{}");
+			return {};
+		},
+	});
+	await page.goto("/system/overview");
+
+	await page.getByRole("button", { name: /Anthropic/ }).click();
+	const nameInput = page.getByPlaceholder("default");
+	await expect(nameInput).toHaveValue("default");
+
+	await page.getByRole("button", { name: "Create agent" }).click();
+	await expect(page.getByText("is ready to go")).toBeVisible();
+	expect(saved?.agents?.map((a) => a.name)).toEqual(["default"]);
 });
