@@ -715,13 +715,13 @@
 						<!-- Tasks subtab -->
 						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
 							<div class="flex items-center justify-between">
-								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
+								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Scheduled Tasks</h4>
 							</div>
 
 
 							<div v-if="!agent.tasks?.length"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No tasks configured for this agent. Add one with the + on Tasks in the sidebar.
+								No scheduled tasks configured for this agent. Add one with the + on Scheduled Tasks in the sidebar.
 							</div>
 
 <!-- The sidebar lists the tasks; this edits the open one. -->
@@ -786,6 +786,9 @@
 <option value="">Select a watched project…</option>
 <option v-for="target in projectTargetOptions(selectedTask)" :key="target" :value="target">{{ target }}</option>
 </select>
+<router-link v-if="selectedTask.project" data-testid="task-project-schedule-link"
+	:to="projectScheduleLink(agent.name, selectedTask)"
+	class="mt-1 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400">Open in the project's schedules</router-link>
 </div>
 <div data-testid="task-model">
 <label class="field-label">Model override (optional)</label>
@@ -872,6 +875,9 @@ Select a task to edit.
 <script lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { defineComponent, inject } from "vue";
+import { projectOwner } from "../../lib/projectSettings";
+import { projectPath } from "../../lib/projects";
+import { type AgentTask, useSettingsStore } from "../../stores/settings";
 import FancySelect from "../FancySelect.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
@@ -908,7 +914,17 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) =>
 					option.value === settings.agentPermissionsPreset(agent),
 			)?.description;
+		const store = useSettingsStore();
+		// A project scheduled task is also edited from its project's Schedules.
+		const projectScheduleLink = (agentName: string, task: AgentTask) => ({
+			path: projectPath(
+				projectOwner(store.config, task.project ?? ""),
+				task.project ?? "",
+			),
+			query: { tab: "schedules", schedule: `${agentName}/${task.name}` },
+		});
 		return Object.assign(settings, {
+			projectScheduleLink,
 			permissionPresetDescription,
 			permissionPresetOptions,
 		});

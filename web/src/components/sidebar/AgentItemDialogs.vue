@@ -14,6 +14,12 @@
 						class="field-input font-mono" :placeholder="dialog?.kind === 'file' ? 'IDENTITY.md' : 'daily-briefing'" />
 
 					<template v-if="dialog?.kind === 'task'">
+						<template v-if="dialog.project && dialog.mode === 'create'">
+							<label for="agent-task-agent" class="field-label mt-3">Agent</label>
+							<select id="agent-task-agent" v-model="form.agent" class="field-input">
+								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
+							</select>
+						</template>
 						<label for="agent-task-schedule" class="field-label mt-3">Schedule</label>
 						<input id="agent-task-schedule" v-model="form.schedule" type="text" autocomplete="off"
 							class="field-input" placeholder="*/5 * * * *" />
@@ -108,7 +114,20 @@ const router = useRouter();
 
 const busy = ref(false);
 const error = ref("");
-const form = reactive({ name: "", schedule: "", prompt: "", type: "prompt" });
+const form = reactive({
+	name: "",
+	schedule: "",
+	prompt: "",
+	type: "prompt",
+	agent: "",
+});
+
+/** The agents a project task may be created under, its default first. */
+const agentChoices = computed(() => {
+	const d = dialog.value;
+	if (!d) return [];
+	return [...new Set([d.agent, ...(d.agents ?? [])].filter(Boolean))];
+});
 
 const formOpen = computed(
 	() => !!dialog.value && dialog.value.mode !== "delete",
@@ -118,7 +137,10 @@ const deleteOpen = computed(() => dialog.value?.mode === "delete");
 const title = computed(() => {
 	const d = dialog.value;
 	if (!d) return "";
-	if (d.mode === "create") return d.kind === "task" ? "Add task" : "Add file";
+	if (d.mode === "create") {
+		if (d.kind === "file") return "Add file";
+		return d.project ? "Add project scheduled task" : "Add task";
+	}
 	return d.kind === "task" ? "Edit task" : "Edit file";
 });
 
@@ -129,9 +151,11 @@ const description = computed(() => {
 		return d.mode === "create"
 			? `A new markdown file in ${d.agent}'s directory.`
 			: `Renames ${d.name}, keeping its content.`;
-	return d.mode === "create"
-		? `A scheduled task for ${d.agent}. The Tasks page edits the rest of its settings.`
-		: `Renames ${d.name} or changes its schedule and prompt.`;
+	if (d.mode !== "create")
+		return `Renames ${d.name} or changes its schedule and prompt.`;
+	return d.project
+		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and this project's Schedules section edits the rest of its settings.`
+		: `A scheduled task for ${d.agent}. The Scheduled Tasks page edits the rest of its settings.`;
 });
 
 function agentTasks(agent: string): AgentTask[] {
@@ -149,6 +173,7 @@ watch(dialog, (d) => {
 	form.schedule = task?.schedule ?? "";
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
+	form.agent = d?.agent ?? "";
 });
 
 /** Whether the route shows this agent's task or file. */
@@ -159,6 +184,9 @@ function showing(kind: "task" | "file", agent: string, name: string): boolean {
 }
 
 async function submitTask(agent: string, mode: "create" | "edit", from = "") {
+	const project = mode === "create" ? dialog.value?.project : undefined;
+	const onCreated = dialog.value?.onCreated;
+	if (project) agent = form.agent || agent;
 	const name = form.name.trim();
 	const clash = agentTasks(agent).some(
 		(t) => t.name === name && t.name !== from,
@@ -171,7 +199,8 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 			{
 				enabled: true,
 				name,
-				type: "prompt",
+				type: project ? "project" : "prompt",
+				...(project ? { project } : {}),
 				watch: "",
 				target: "",
 				run_once: false,
@@ -179,7 +208,8 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 				...fields,
 			},
 		]);
-		await router.push(agentTaskPath(agent, name));
+		if (onCreated) onCreated(agent, name);
+		else await router.push(agentTaskPath(agent, name));
 		return;
 	}
 	const current = agentTasks(agent).find((t) => t.name === from);
