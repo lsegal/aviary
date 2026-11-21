@@ -101,6 +101,7 @@
 					<SettingsSkillsTab />
 					<SettingsSessionsTab />
 					<SettingsProvidersTab />
+					<SettingsProjectsTab />
 				</template>
 
 
@@ -358,6 +359,7 @@ import AppLayout from "../components/AppLayout.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
+import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
@@ -394,7 +396,13 @@ import {
 	useSettingsStore,
 } from "../stores/settings";
 
-type Tab = "general" | "agents" | "skills" | "sessions" | "providers";
+type Tab =
+	| "general"
+	| "agents"
+	| "projects"
+	| "skills"
+	| "sessions"
+	| "providers";
 
 interface SessionRow {
 	id: string;
@@ -480,7 +488,14 @@ function safeJsonParse<T>(raw: string, fallback: T): T {
 const route = useRoute();
 const router = useRouter();
 
-const tabs: Tab[] = ["general", "agents", "skills", "sessions", "providers"];
+const tabs: Tab[] = [
+	"general",
+	"agents",
+	"projects",
+	"skills",
+	"sessions",
+	"providers",
+];
 
 function routeToActiveTab(): Tab {
 	if (route.path.startsWith("/settings/agents")) return "agents";
@@ -2755,6 +2770,10 @@ function normalizedDraftConfig(): AppConfig {
 		chat: normalized.approval?.chat || undefined,
 	};
 	normalized.approval = approval.mode || approval.chat ? approval : undefined;
+	normalized.projects =
+		normalized.projects && Object.keys(normalized.projects).length
+			? normalized.projects
+			: undefined;
 
 	normalized.search = {
 		web: {

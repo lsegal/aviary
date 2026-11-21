@@ -52,6 +52,7 @@ const router = createRouter({
 				const allowed = new Set([
 					"general",
 					"agents",
+					"projects",
 					"skills",
 					"sessions",
 					"providers",
@@ -70,7 +71,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/settings/:tab(general|skills|sessions|providers)",
+			path: "/settings/:tab(general|projects|skills|sessions|providers)",
 			component: () => import("../views/SettingsView.vue"),
 			meta: { requiresAuth: true },
 		},

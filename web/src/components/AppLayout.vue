@@ -212,7 +212,13 @@ import { useAuthStore } from "../stores/auth";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
-type SettingsTab = "general" | "agents" | "skills" | "sessions" | "providers";
+type SettingsTab =
+	| "general"
+	| "agents"
+	| "projects"
+	| "skills"
+	| "sessions"
+	| "providers";
 type NavGroup = "settings" | "system" | "projects";
 
 interface NavChild {
@@ -276,6 +282,7 @@ const brandLinks: BrandLink[] = [
 const settingsChildren: NavChild[] = [
 	{ key: "general", label: "General", to: "/settings/general" },
 	{ key: "agents", label: "Agents & Tasks", to: "/settings/agents" },
+	{ key: "projects", label: "Projects", to: "/settings/projects" },
 	{ key: "skills", label: "Skills", to: "/settings/skills" },
 	{ key: "sessions", label: "Sessions", to: "/settings/sessions" },
 	{ key: "providers", label: "Providers & Auth", to: "/settings/providers" },

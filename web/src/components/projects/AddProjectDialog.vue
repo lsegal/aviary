@@ -127,12 +127,8 @@ const agent = ref(agentNames.value[0] ?? "");
 
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
-// The owning agent's projects settings, and the models its jobs run on.
-const settings = computed(() =>
-	settingsFromSection(
-		(store.config?.agents ?? []).find((a) => a.name === agent.value)?.projects,
-	),
-);
+// The shared projects settings, and the models the owning agent's jobs run on.
+const settings = computed(() => settingsFromSection(store.config?.projects));
 const runsOn = computed(() => {
 	if (!agent.value) return "no agent";
 	const specs = jobModels(agent.value, store.config, cliNames.value).map(
