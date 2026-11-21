@@ -6,7 +6,14 @@
 // current sources. A managed forgo older than MIN_FORGO_VERSION is updated
 // first, because earlier releases crash the backend after some hot reloads.
 import { execFileSync, spawn } from "node:child_process";
-import { accessSync, constants, existsSync, rmSync } from "node:fs";
+import {
+	accessSync,
+	constants,
+	existsSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,21 +62,20 @@ function findForgo() {
 	return findOnPath();
 }
 
-// forgoVersion returns the version `forgo version` reports, or null.
+// forgoVersion returns the version in the FORGO_VERSION file at the root of
+// the toolchain bin belongs to (bin/forgo), or null. `forgo version` is no
+// help: it reads that file from $GOROOT, which need not be bin's toolchain.
 function forgoVersion(bin) {
 	try {
-		const out = execFileSync(bin, ["version"], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return out.match(/forgo version v?(\d+(?:\.\d+)*)/)?.[1] ?? null;
+		const root = path.dirname(path.dirname(realpathSync(bin)));
+		return readFileSync(path.join(root, "FORGO_VERSION"), "utf8").trim();
 	} catch {
 		return null;
 	}
 }
 
 function versionAtLeast(version, min) {
-	const a = version.split(".").map(Number);
+	const a = version.replace(/^v/, "").split(".").map(Number);
 	const b = min.split(".").map(Number);
 	for (let i = 0; i < Math.max(a.length, b.length); i++) {
 		const d = (a[i] ?? 0) - (b[i] ?? 0);
