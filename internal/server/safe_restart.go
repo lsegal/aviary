@@ -48,6 +48,15 @@ var restartSnapshot struct {
 	status *saferestart.Status
 }
 
+// configureRestartGate applies the configured restart gate timings.
+func configureRestartGate(cfg *config.Config) {
+	var srv config.ServerConfig
+	if cfg != nil {
+		srv = cfg.Server
+	}
+	saferestart.MCPCalls.SetTimings(srv.EffectiveRestartCallGrace(), srv.EffectiveRestartCallMaxWait(), 0)
+}
+
 func publishRestartStatus(st saferestart.Status) {
 	restartSnapshot.Lock()
 	if st.Phase == saferestart.PhaseIdle {
