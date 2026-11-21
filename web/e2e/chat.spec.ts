@@ -263,3 +263,119 @@ test("stale session reloads cannot overwrite newer messages", async ({
 	await page.waitForTimeout(200);
 	await expect(page.getByText("new streamed message")).toBeVisible();
 });
+
+test("messages sent while a reply streams are added at once", async ({
+	page,
+}) => {
+	const base = [
+		{
+			id: "m1",
+			session_id: "s1",
+			role: "user",
+			content: "first prompt",
+			timestamp: "2026-03-12T12:00:00Z",
+		},
+	];
+	const sent: string[] = [];
+	let releaseFirst = () => {};
+	const firstHeld = new Promise<void>((resolve) => {
+		releaseFirst = resolve;
+	});
+	let firstDone = false;
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		agent_run: async (args?: Record<string, unknown>) => {
+			const message = String(args?.message ?? "");
+			sent.push(message);
+			if (message === "message one") {
+				await firstHeld;
+				firstDone = true;
+				return { stream: ["reply to one"], result: "" };
+			}
+			return { stream: [`reply to ${message.split(" ")[1]}`], result: "" };
+		},
+		session_messages: () => {
+			if (!firstDone) return base;
+			return [
+				...base,
+				...["one", "two", "three"].flatMap((n, i) => [
+					{
+						id: `u-${n}`,
+						session_id: "s1",
+						role: "user",
+						content: `message ${n}`,
+						timestamp: `2026-03-12T12:01:0${i * 2}Z`,
+					},
+					{
+						id: `a-${n}`,
+						session_id: "s1",
+						role: "assistant",
+						content: `reply to ${n}`,
+						timestamp: `2026-03-12T12:01:0${i * 2 + 1}Z`,
+					},
+				]),
+			];
+		},
+	});
+	await page.goto("/agents/assistant/chat");
+	await expect(page.getByText("first prompt")).toBeVisible();
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const sendButton = page.getByRole("button", { name: "Send message" });
+	await input.fill("message one");
+	await input.press("Enter");
+	await expect(page.getByText("message one")).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Stop response" }),
+	).toBeVisible();
+
+	// The first reply is still running; the composer stays usable.
+	await expect(input).toBeEnabled();
+	await input.fill("message two");
+	await expect(sendButton).toBeEnabled();
+	await input.press("Enter");
+	await input.fill("message three");
+	await sendButton.click();
+
+	await expect
+		.poll(() => sent)
+		.toEqual(["message one", "message two", "message three"]);
+	await expect(page.getByText("reply to two")).toBeVisible();
+	await expect(page.getByText("reply to three")).toBeVisible();
+	await expect(page.getByText(/queue|send now/i)).toHaveCount(0);
+	const tops = await Promise.all(
+		["message one", "message two", "message three"].map(async (t) => {
+			const box = await page.getByText(t, { exact: true }).boundingBox();
+			return box?.y ?? -1;
+		}),
+	);
+	expect(tops[0]).toBeGreaterThan(0);
+	expect(tops[1]).toBeGreaterThan(tops[0]);
+	expect(tops[2]).toBeGreaterThan(tops[1]);
+
+	releaseFirst();
+	await expect(page.getByText("reply to one")).toBeVisible();
+	for (const t of ["message one", "message two", "message three"]) {
+		await expect(page.getByText(t, { exact: true })).toHaveCount(1);
+	}
+	for (const t of ["reply to one", "reply to two", "reply to three"]) {
+		await expect(page.getByText(t, { exact: true })).toHaveCount(1);
+	}
+});
