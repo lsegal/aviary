@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -103,8 +102,7 @@ func projectManager() (*projects.Manager, error) {
 }
 
 // projectResult runs fn against the manager and returns its value as JSON.
-func projectResult[T any](tool string, fn func(*projects.Manager) (T, error)) (*sdkmcp.CallToolResult, struct{}, error) {
-	slog.Info("mcp: tool call", "component", "projects", "tool", tool)
+func projectResult[T any](fn func(*projects.Manager) (T, error)) (*sdkmcp.CallToolResult, struct{}, error) {
 	m, err := projectManager()
 	if err != nil {
 		return nil, struct{}{}, err
@@ -150,7 +148,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectStatusArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_status", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.Status(ctx, args.LogOffset), nil
 		})
 	})
@@ -160,7 +158,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "List every Projects job, running and errored jobs first, with the actions each accepts; filter by project, status and search text, paged",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_job_list", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.ListJobs(jobListTargets(args), args.Status, args.Query, args.Offset, args.Limit), nil
 		})
 	})
@@ -170,7 +168,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "One Projects job: its state, agent session, structured transcript events, raw output, and scrollback",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobGetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_job_get", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.GetJob(args.Target, args.Number, args.Lines, args.Events)
 		})
 	})
@@ -180,7 +178,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Explain why a Projects job is paused, blocked, waiting, queued, or looks stuck, what will wake it, and its last output",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_job_explain", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.ExplainJob(args.Target, args.Number)
 		})
 	})
@@ -199,7 +197,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			Description: action.description,
 			Annotations: action.annotations,
 		}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectJobArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-			return projectResult(action.name, func(m *projects.Manager) (map[string]any, error) {
+			return projectResult(func(m *projects.Manager) (map[string]any, error) {
 				if action.verb == "retry" {
 					if taskID, err := m.ScheduledRetry(args.Target, args.Number); err != nil {
 						return nil, err
@@ -217,7 +215,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Check GitHub for Projects work now instead of waiting for the next poll",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_refresh", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.Refresh(args.Target)
 		})
 	})
@@ -227,7 +225,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Watch a project: a repository, GitHub Project board, or Discussions board. Saved to the owning agent's projects in aviary.yaml unless runtime is set",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectAddArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_add", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			target := strings.TrimSpace(args.Target)
 			if target == "" {
 				return nil, errors.New("target is required")
@@ -280,7 +278,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches. Its running, waiting, queued and paused jobs stop (running ones are checkpointed first) and are listed in stopped_jobs; the repository, its issues and pull requests, and clones on disk are left alone",
 		Annotations: destructiveTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectRemoveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_remove", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			target := strings.TrimSpace(args.Target)
 			stopped := m.InFlightJobs(target)
 			runtime := m.RemoveWatch(target)
@@ -321,7 +319,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "List every clone Projects made for a job, with its repository, issue, pull request and size, and whether it is still in use",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_clone_list", func(m *projects.Manager) (any, error) {
+		return projectResult(func(m *projects.Manager) (any, error) {
 			return m.CloneList(ctx)
 		})
 	})
@@ -331,7 +329,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Remove every Projects clone no job still uses, reporting each one removed and the space reclaimed",
 		Annotations: destructiveTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_clone_clear", func(m *projects.Manager) (any, error) {
+		return projectResult(func(m *projects.Manager) (any, error) {
 			return m.CloneClear(ctx)
 		})
 	})
@@ -341,7 +339,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Run a stuck-job watchdog round now, over every stuck Projects job or the one named; it returns once the round is requested",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectUnblockArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_unblock_run", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.UnblockRun(args.Target, args.Number)
 		})
 	})
@@ -351,7 +349,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Post an update comment on an issue or pull request that mentions its author and this instance, so the job working it hears it; never edits the body",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCommentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_issue_comment", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.IssueComment(ctx, args.Repository, args.Number, args.Text)
 		})
 	})
@@ -361,7 +359,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCreateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_issue_create", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.IssueCreate(ctx, args.Repository, args.Text, args.Model)
 		})
 	})
@@ -371,7 +369,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Open GitHub's sign-in page in Aviary's browser so browser delivery reads GitHub signed in; returns once the window opens, and project_status reports the session. Fails where no window can appear, naming gh polling and profile import instead",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_signin", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.GitHubSignIn()
 		})
 	})
@@ -381,7 +379,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Read GitHub through gh polling instead of Aviary's browser: saves delivery: poll to the shared projects settings in aviary.yaml",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_use_polling", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			cfg, err := config.Load("")
 			if err != nil {
 				return nil, err
@@ -400,7 +398,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Description: "Import the GitHub sign-in from an Aviary browser profile signed in on another machine, for servers and containers where no sign-in window can appear",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectGitHubImportArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return projectResult("project_github_import", func(m *projects.Manager) (map[string]any, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.ImportBrowserProfile(strings.TrimSpace(args.Profile))
 		})
 	})
