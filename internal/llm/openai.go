@@ -133,12 +133,14 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				})
 				continue
 			}
-			if strings.TrimSpace(m.MediaURL) != "" {
-				parts := make([]any, 0, 2)
+			if mediaURLs := NonEmptyMediaURLs(m.MediaURLs); len(mediaURLs) > 0 {
+				parts := make([]any, 0, len(mediaURLs)+1)
 				if strings.TrimSpace(m.Content) != "" {
 					parts = append(parts, inputTextContent{Type: "input_text", Text: m.Content})
 				}
-				parts = append(parts, inputImageContent{Type: "input_image", ImageURL: m.MediaURL})
+				for _, mediaURL := range mediaURLs {
+					parts = append(parts, inputImageContent{Type: "input_image", ImageURL: mediaURL})
+				}
 				input = append(input, inputMessage{Role: "user", Content: parts})
 				continue
 			}
@@ -379,14 +381,16 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 				messages = append(messages, openai.ToolMessage(m.Result.Content, m.Result.ToolCallID))
 				continue
 			}
-			if strings.TrimSpace(m.MediaURL) != "" {
-				parts := make([]openai.ChatCompletionContentPartUnionParam, 0, 2)
+			if mediaURLs := NonEmptyMediaURLs(m.MediaURLs); len(mediaURLs) > 0 {
+				parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(mediaURLs)+1)
 				if strings.TrimSpace(m.Content) != "" {
 					parts = append(parts, openai.TextContentPart(m.Content))
 				}
-				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
-					URL: m.MediaURL,
-				}))
+				for _, mediaURL := range mediaURLs {
+					parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+						URL: mediaURL,
+					}))
+				}
 				messages = append(messages, openai.UserMessage(parts))
 				continue
 			}

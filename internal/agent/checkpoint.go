@@ -20,8 +20,8 @@ type RunCheckpoint struct {
 	SessionID string `json:"session_id"`
 	// Message is the original user message to re-issue.
 	Message string `json:"message"`
-	// MediaURL is an optional media attachment for the message.
-	MediaURL string `json:"media_url,omitempty"`
+	// MediaURLs are the optional media attachments for the message.
+	MediaURLs []string `json:"media_urls,omitempty"`
 	// Overrides holds any per-run model/tool overrides that were active.
 	Overrides RunOverrides `json:"overrides,omitempty"`
 	// CreatedAt is when the checkpoint was written (prompt start time).

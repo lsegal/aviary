@@ -331,8 +331,11 @@ func (s *claudeSession) Close() error {
 // claudeUserMessage encodes a turn as a stream-json user message.
 func claudeUserMessage(turn Turn) ([]byte, error) {
 	content := []map[string]any{}
-	if turn.MediaURL != "" {
-		block, err := claudeImageBlock(turn.MediaURL)
+	for _, mediaURL := range turn.MediaURLs {
+		if mediaURL == "" {
+			continue
+		}
+		block, err := claudeImageBlock(mediaURL)
 		if err != nil {
 			return nil, err
 		}

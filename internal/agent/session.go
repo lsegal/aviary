@@ -408,8 +408,10 @@ func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domai
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
-		MediaURL:  mediaURL,
 		Timestamp: time.Now(),
+	}
+	if mediaURL != "" {
+		msg.MediaURLs = []string{mediaURL}
 	}
 	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
 		return err

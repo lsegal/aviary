@@ -154,7 +154,7 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 			slog.Info("agent: checkpoint timed out, notifying session",
 				"agent", runner.agent.Name, "session", cp.SessionID, "age", age)
 			msg := fmt.Sprintf("I was interrupted %s ago and the recovery window (%s) has passed. Please resend your request if it is still needed.", age.Round(time.Second), timeout)
-			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, "", "")
+			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, nil, "")
 			deliverToSession(runner.agent.ID, cp.SessionID, msg)
 			_ = store.DeleteJSON(path)
 			continue
@@ -164,7 +164,7 @@ func (m *Manager) recoverCheckpoints(runner *AgentRunner) {
 				"agent", runner.agent.Name, "session", cp.SessionID,
 				"retry", cp.RetryCount, "limit", maxCheckpointRecoveryRetries)
 			msg := fmt.Sprintf("I was interrupted and retry recovery %d times without finishing, so I stopped retrying. Please resend your request if it is still needed.", cp.RetryCount)
-			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, "", "")
+			runner.appendSessionMessage(cp.SessionID, domain.MessageRoleAssistant, msg, nil, "")
 			deliverToSession(runner.agent.ID, cp.SessionID, msg)
 			_ = store.DeleteJSON(path)
 			continue

@@ -157,18 +157,18 @@ func Register(s *sdkmcp.Server) {
 // ── Agent tools ──────────────────────────────────────────────────────────────
 
 type agentRunArgs struct {
-	Name                string `json:"name,omitempty"`
-	Message             string `json:"message"`
-	Session             string `json:"session,omitempty"` // session name; defaults to "main"
-	SessionID           string `json:"session_id,omitempty"`
-	File                string `json:"file,omitempty"`
-	MediaURL            string `json:"media_url,omitempty"`             // optional image (data URL or remote URL)
-	IncludeToolProgress bool   `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
-	StreamEvents        bool   `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
-	Workdir             string `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
-	Bare                bool   `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
-	History             *bool  `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
-	Project             string `json:"project,omitempty"`               // the Projects board the chat was opened from; read only for the Projects agent
+	Name                string   `json:"name,omitempty"`
+	Message             string   `json:"message"`
+	Session             string   `json:"session,omitempty"` // session name; defaults to "main"
+	SessionID           string   `json:"session_id,omitempty"`
+	File                string   `json:"file,omitempty"`
+	MediaURLs           []string `json:"media_urls,omitempty"`            // optional images (data URLs or remote URLs)
+	IncludeToolProgress bool     `json:"include_tool_progress,omitempty"` // opt-in live tool progress for web UI
+	StreamEvents        bool     `json:"stream_events,omitempty"`         // send each progress message as one JSON AgentRunEvent instead
+	Workdir             string   `json:"workdir,omitempty"`               // directory the run's file tools and exec are granted, e.g. a job's clone
+	Bare                bool     `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
+	History             *bool    `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
+	Project             string   `json:"project,omitempty"`               // the Projects board the chat was opened from; read only for the Projects agent
 }
 
 type sessionRenameArgs struct {
@@ -412,7 +412,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 				go autoTitleSession(agentName, sess, args.Message)
 			}
 		}
-		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURL, agent.RunOverrides{
+		runner.PromptMediaWithOverrides(ctx, args.Message, args.MediaURLs, agent.RunOverrides{
 			Bare:    args.Bare,
 			History: &history,
 			Context: requestContext,
@@ -978,7 +978,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			Role       string                `json:"role"`
 			Sender     *domain.MessageSender `json:"sender,omitempty"`
 			Content    string                `json:"content"`
-			MediaURL   string                `json:"media_url,omitempty"`
+			MediaURLs  []string              `json:"media_urls,omitempty"`
 			Model      string                `json:"model,omitempty"`
 			ResponseID string                `json:"response_id,omitempty"`
 			Timestamp  string                `json:"timestamp"`
@@ -1008,7 +1008,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				Role:       string(msg.Role),
 				Sender:     msg.Sender,
 				Content:    msg.Content,
-				MediaURL:   msg.MediaURL,
+				MediaURLs:  msg.MediaURLs,
 				Model:      msg.Model,
 				ResponseID: responseID,
 				Timestamp:  ts,
@@ -2052,11 +2052,11 @@ func registerJobTools(s *sdkmcp.Server) {
 								ts = msg.Timestamp.Format(time.RFC3339Nano)
 							}
 							content := strings.TrimSpace(msg.Content)
-							if msg.MediaURL != "" {
+							for _, mediaURL := range msg.MediaURLs {
 								if content != "" {
 									content += " "
 								}
-								content += "[media: " + msg.MediaURL + "]"
+								content += "[media: " + mediaURL + "]"
 							}
 							// Pretty-print tool JSON payloads when possible.
 							if msg.Role == domain.MessageRoleTool && content != "" {

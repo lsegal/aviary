@@ -64,7 +64,11 @@ func (s *Server) runProjectsJobTurn(ctx context.Context, run projects.AviaryAgen
 		}
 	}
 	history := true
-	runner.PromptMediaWithOverrides(ctx, run.Prompt, run.MediaURL, agent.RunOverrides{Model: run.Model, History: &history}, func(e agent.StreamEvent) {
+	var mediaURLs []string
+	if run.MediaURL != "" {
+		mediaURLs = []string{run.MediaURL}
+	}
+	runner.PromptMediaWithOverrides(ctx, run.Prompt, mediaURLs, agent.RunOverrides{Model: run.Model, History: &history}, func(e agent.StreamEvent) {
 		if run.Event != nil {
 			run.Event(e)
 		}

@@ -54,3 +54,14 @@ func ExtractFirstImageDataURL(text string) (cleaned string, mediaURL string) {
 	without := text[:loc[0]] + text[loc[1]:]
 	return strings.TrimSpace(without), strings.TrimSpace(url)
 }
+
+// NonEmptyMediaURLs returns urls without blank entries.
+func NonEmptyMediaURLs(urls []string) []string {
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		if strings.TrimSpace(u) != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}

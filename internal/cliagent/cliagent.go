@@ -130,9 +130,9 @@ func (o Options) binary() string {
 // Turn is one user message handed to the CLI.
 type Turn struct {
 	Text string
-	// MediaURL is an optional image attached to the message, as a data URL or
-	// a remote URL.
-	MediaURL string
+	// MediaURLs are the optional images attached to the message, each a data
+	// URL or a remote URL.
+	MediaURLs []string
 }
 
 // EventType identifies a backend-neutral CLI event.
