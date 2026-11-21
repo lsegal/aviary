@@ -95,10 +95,10 @@ var skillInfo = map[string]struct {
 		RunByProjects: true,
 	},
 	"gh-create": {
-		Summary: "Files a well-formed issue from a short request. Projects never runs it, but the issues it files are what Projects picks up.",
+		Summary: "Files a well-formed issue from a short request. Code Loop never runs it, but the issues it files are what Code Loop picks up.",
 	},
 	"gh-safe-merge": {
-		Summary: "Safety-checks an unowned pull request, such as an external contribution, before anything runs, then drives CI green and merges it. Projects never runs it.",
+		Summary: "Safety-checks an unowned pull request, such as an external contribution, before anything runs, then drives CI green and merges it. Code Loop never runs it.",
 	},
 }
 

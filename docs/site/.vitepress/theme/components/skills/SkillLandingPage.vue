@@ -158,7 +158,7 @@ const ghCommand = computed(
 						</p>
 						<SkillCommand command="aviary install-skills" />
 						<div class="skill-links">
-							<a :href="withBase('/guide/projects')">Projects guide →</a>
+							<a :href="withBase('/guide/projects')">Code Loop guide →</a>
 							<a :href="withBase('/guide/scheduled-tasks')">Scheduled tasks →</a>
 							<a :href="withBase('/guide/skills/')">Keeping skills current →</a>
 						</div>

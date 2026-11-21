@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -12,7 +11,6 @@ import (
 )
 
 const anthropicStrictToolLimit = 20
-const anthropicPromptCacheEnv = "AVIARY_ANTHROPIC_ENABLE_PROMPT_CACHE"
 
 // The OAuth provider impersonates the Claude CLI. These values were captured
 // from claude-cli 2.1.312 (interactive, OAuth) by pointing ANTHROPIC_BASE_URL
@@ -162,9 +160,6 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		Messages:  messages,
 		MaxTokens: maxToks,
 	}
-	if anthropicPromptCacheEnabled() && req.CacheControl != nil && strings.EqualFold(strings.TrimSpace(req.CacheControl.Type), "ephemeral") {
-		params.CacheControl = anthropic.NewCacheControlEphemeralParam()
-	}
 	if len(req.Tools) > 0 {
 		useStrictTools := len(req.Tools) <= anthropicStrictToolLimit
 		params.Tools = make([]anthropic.ToolUnionParam, 0, len(req.Tools))
@@ -190,6 +185,9 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	} else if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: req.System}}
 	}
+	if req.CacheControl != nil && strings.EqualFold(strings.TrimSpace(req.CacheControl.Type), "ephemeral") {
+		setAnthropicCacheBreakpoints(&params)
+	}
 
 	stream := p.client.Messages.NewStreaming(ctx, params)
 
@@ -207,6 +205,14 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 		for stream.Next() {
 			event := stream.Current()
 			switch e := event.AsAny().(type) {
+			case anthropic.MessageStartEvent:
+				u := e.Message.Usage
+				usageData = &Usage{
+					InputTokens:      int(u.InputTokens),
+					OutputTokens:     int(u.OutputTokens),
+					CacheReadTokens:  int(u.CacheReadInputTokens),
+					CacheWriteTokens: int(u.CacheCreationInputTokens),
+				}
 			case anthropic.ContentBlockStartEvent:
 				if block, ok := e.ContentBlock.AsAny().(anthropic.ToolUseBlock); ok {
 					call := &pendingToolCall{ID: block.ID, Name: block.Name}
@@ -233,12 +239,20 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 					call.JSON.WriteString(delta.PartialJSON)
 				}
 			case anthropic.MessageDeltaEvent:
-				// Usage totals are reported in the MessageDeltaEvent.
-				usageData = &Usage{
-					InputTokens:      int(e.Usage.InputTokens),
-					OutputTokens:     int(e.Usage.OutputTokens),
-					CacheReadTokens:  int(e.Usage.CacheReadInputTokens),
-					CacheWriteTokens: int(e.Usage.CacheCreationInputTokens),
+				// MessageDeltaEvent carries cumulative totals; input and cache
+				// counts may be omitted, so keep message_start's values then.
+				if usageData == nil {
+					usageData = &Usage{}
+				}
+				usageData.OutputTokens = int(e.Usage.OutputTokens)
+				if e.Usage.InputTokens > 0 {
+					usageData.InputTokens = int(e.Usage.InputTokens)
+				}
+				if e.Usage.CacheReadInputTokens > 0 {
+					usageData.CacheReadTokens = int(e.Usage.CacheReadInputTokens)
+				}
+				if e.Usage.CacheCreationInputTokens > 0 {
+					usageData.CacheWriteTokens = int(e.Usage.CacheCreationInputTokens)
 				}
 			}
 		}
@@ -288,8 +302,25 @@ func newSessionID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func anthropicPromptCacheEnabled() bool {
-	return os.Getenv(anthropicPromptCacheEnv) == "1"
+// setAnthropicCacheBreakpoints marks the end of the tool definitions, the
+// system prompt, and the latest history message as prompt-cache breakpoints,
+// so a replayed conversation is billed at the cache-read rate up to its newest
+// turn. That uses three of the four breakpoints the API allows.
+func setAnthropicCacheBreakpoints(params *anthropic.MessageNewParams) {
+	if n := len(params.Tools); n > 0 && params.Tools[n-1].OfTool != nil {
+		params.Tools[n-1].OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
+	if n := len(params.System); n > 0 {
+		params.System[n-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
+	if n := len(params.Messages); n > 0 {
+		content := params.Messages[n-1].Content
+		if m := len(content); m > 0 {
+			if cc := content[m-1].GetCacheControl(); cc != nil {
+				*cc = anthropic.NewCacheControlEphemeralParam()
+			}
+		}
+	}
 }
 
 func anthropicToolSchema(schema any) anthropic.ToolInputSchemaParam {

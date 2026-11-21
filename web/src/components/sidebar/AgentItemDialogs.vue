@@ -207,7 +207,7 @@ const typeOptions = computed((): SegmentedOption<TaskKind>[] => [
 		value: "script",
 		label: "Script",
 		disabled: form.targetKind === "project",
-		disabledReason: "Project tasks run a prompt as a Projects job",
+		disabledReason: "Project tasks run a prompt as a Code Loop job",
 	},
 ]);
 const targetOptions: SegmentedOption<TargetKind>[] = [
@@ -265,7 +265,7 @@ const taskType = computed(
 const canPrecompute = computed(() => taskType.value === "prompt");
 const precomputeHelp = computed(() => {
 	if (taskType.value === "project")
-		return "Project tasks run as Projects jobs, so they are never precomputed";
+		return "Project tasks run as Code Loop jobs, so they are never precomputed";
 	if (taskType.value === "script") return "Script tasks are already scripts";
 	return "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs";
 });

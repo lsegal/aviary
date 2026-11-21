@@ -14,7 +14,7 @@ steps:
     text: Searches only the repository's own files, docs and GitHub history for the answer.
   - title: Reply once
     text: Posts one top-level answer when the evidence settles it, and otherwise leaves the thread alone.
-aviary: Projects watches Discussions boards and runs gh-discuss on each new thread, so questions get answered from the code while you sleep.
+aviary: Code Loop watches Discussions boards and runs gh-discuss on each new thread, so questions get answered from the code while you sleep.
 requirements:
   - The GitHub CLI (gh), signed in with access to the repository's Discussions.
   - A checkout of the repository, or a Repository owner/repo line in the prompt.

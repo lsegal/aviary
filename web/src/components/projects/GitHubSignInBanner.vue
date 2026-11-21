@@ -7,7 +7,7 @@
 					{{ session.signingIn ? "Waiting for you to sign in to GitHub" : "Signed out of GitHub in Aviary's browser" }}
 				</p>
 				<p v-if="session.signingIn" class="mt-1">
-					A sign-in window is open in Aviary's browser. Sign in there and Projects picks up where it left off.
+					A sign-in window is open in Aviary's browser. Sign in there and Code Loop picks up where it left off.
 				</p>
 				<p v-else class="mt-1">
 					<template v-if="session.httpStatus">GitHub answered {{ session.httpStatus }}</template>
