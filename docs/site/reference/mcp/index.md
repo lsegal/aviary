@@ -31,4 +31,4 @@ Which tools are available to an agent depends on its [permissions preset](/refer
 
 Tools in the `agent`, `auth`, `exec`, `file`, and `server` groups are blocked by the `standard` preset. Add them via `permissions.tools` or switch to `full` to use them.
 
-The Settings → Providers panel and the Tools runner in the control panel expose all tools regardless of agent permissions.
+The System → Providers & Auth panel and the Tools runner in the control panel expose all tools regardless of agent permissions.

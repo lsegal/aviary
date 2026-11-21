@@ -519,3 +519,23 @@ test("system skills shows provider installs and installs them on one page", asyn
 		.poll(() => savedConfigs.at(-1) ?? "")
 		.toContain('"coding_skills":{"auto_update":false}');
 });
+
+test("system skills shows its skills when opened from another settings page", async ({
+	page,
+}) => {
+	await page.goto("/system/settings");
+	await page.getByTestId("sidebar-system-more").click();
+	await page
+		.getByTestId("sidebar-system-list")
+		.getByRole("link", { name: "Skills", exact: true })
+		.click();
+
+	const agentSkills = page.getByRole("region", {
+		name: "Available to Aviary agents",
+	});
+	await expect(agentSkills).toBeVisible();
+	await expect(agentSkills.getByText("skills/gogcli/SKILL.md")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Server", exact: true }),
+	).toBeHidden();
+});
