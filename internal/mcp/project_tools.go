@@ -257,7 +257,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if i < 0 {
 				return nil, fmt.Errorf("agent %q is not configured", agent)
 			}
-			cfg.Agents[i].Projects.List = append(cfg.Agents[i].Projects.List, config.ProjectConfig{Target: target, Reports: args.Reports})
+			cfg.Agents[i].Projects = append(cfg.Agents[i].Projects, config.ProjectConfig{Target: target, Reports: args.Reports})
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
@@ -287,12 +287,12 @@ func registerProjectTools(s *sdkmcp.Server) {
 			}
 			saved := false
 			for i := range cfg.Agents {
-				list := cfg.Agents[i].Projects.List
+				list := cfg.Agents[i].Projects
 				before := len(list)
-				cfg.Agents[i].Projects.List = slices.DeleteFunc(list, func(p config.ProjectConfig) bool {
+				cfg.Agents[i].Projects = slices.DeleteFunc(list, func(p config.ProjectConfig) bool {
 					return strings.TrimSpace(p.Target) == target
 				})
-				saved = saved || len(cfg.Agents[i].Projects.List) != before
+				saved = saved || len(cfg.Agents[i].Projects) != before
 			}
 			if saved {
 				if err := config.Save("", cfg); err != nil {

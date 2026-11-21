@@ -21,7 +21,7 @@ export interface ProjectReportsEntry {
 	events?: string[];
 }
 
-/** One watched project in an agent's `projects.list`. */
+/** One watched project in an agent's `projects:` list. */
 export interface ProjectEntry {
 	target: string;
 	reports?: ProjectReportsEntry;
@@ -37,10 +37,8 @@ export interface ProjectReports {
 	events: string[];
 }
 
-/** An agent's `projects:` section as stored in aviary.yaml: its project list. */
-export interface AgentProjectsSection {
-	list?: ProjectEntry[];
-}
+/** An agent's `projects:` as stored in aviary.yaml: the projects it owns. */
+export type AgentProjectsSection = ProjectEntry[];
 
 /** The shared top-level `projects:` settings as stored in aviary.yaml (snake_case, sparse). */
 export interface ProjectsSection {
@@ -125,19 +123,19 @@ function sameTarget(a: string | undefined, b: string): boolean {
 	return (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Whether target is in the section's list of watched projects. */
+/** Whether target is among the watched projects. */
 export function isListed(
 	section: AgentProjectsSection | undefined,
 	target: string,
 ): boolean {
-	return (section?.list ?? []).some((p) => sameTarget(p.target, target));
+	return (section ?? []).some((p) => sameTarget(p.target, target));
 }
 
-/** The targets in the section's list, in order. */
+/** The watched targets, in order. */
 export function projectTargets(
 	section: AgentProjectsSection | undefined,
 ): string[] {
-	return (section?.list ?? [])
+	return (section ?? [])
 		.map((p) => (p.target ?? "").trim())
 		.filter(Boolean);
 }
@@ -176,28 +174,23 @@ export function projectSettingsPath(
 	return `/agents/${encodeURIComponent(owner)}/projects?project=${encodeURIComponent(target)}`;
 }
 
-/** The section with target added to its list, unless already listed. */
+/** The projects with target added, unless already listed. */
 export function withProject(
 	section: AgentProjectsSection | undefined,
 	target: string,
 ): AgentProjectsSection {
 	const t = target.trim();
-	const out: AgentProjectsSection = { ...(section ?? {}) };
+	const out = section ?? [];
 	if (!t || isListed(out, t)) return out;
-	out.list = [...(out.list ?? []), { target: t }];
-	return out;
+	return [...out, { target: t }];
 }
 
-/** The section with target removed from its list. */
+/** The projects with target removed. */
 export function withoutProject(
 	section: AgentProjectsSection | undefined,
 	target: string,
 ): AgentProjectsSection {
-	const out: AgentProjectsSection = { ...(section ?? {}) };
-	const list = (out.list ?? []).filter((p) => !sameTarget(p.target, target));
-	if (list.length) out.list = list;
-	else delete out.list;
-	return out;
+	return (section ?? []).filter((p) => !sameTarget(p.target, target));
 }
 
 /** One model a project's jobs run on, in fallback order. */
@@ -282,12 +275,12 @@ export function settingsFromSection(
 	};
 }
 
-/** Reads target's report settings from the section. */
+/** Reads target's report settings from the agent's projects. */
 export function reportsFromSection(
 	section: AgentProjectsSection | undefined,
 	target: string,
 ): ProjectReports {
-	const entry = (section?.list ?? []).find((p) => sameTarget(p.target, target));
+	const entry = (section ?? []).find((p) => sameTarget(p.target, target));
 	return reportsFromEntry(entry?.reports);
 }
 
@@ -421,21 +414,19 @@ export function withSettings(
 	return out;
 }
 
-/** Writes target's report settings into its entry in the section's list. */
+/** Writes target's report settings into its entry in the agent's projects. */
 export function withReports(
 	section: AgentProjectsSection | undefined,
 	target: string,
 	r: ProjectReports,
 ): AgentProjectsSection {
-	const out: AgentProjectsSection = { ...(section ?? {}) };
 	const reports = reportsEntry(r);
-	out.list = (out.list ?? []).map((p) => {
+	return (section ?? []).map((p) => {
 		if (!sameTarget(p.target, target)) return p;
 		// Keep the entry's other fields; only reports change here.
 		const { reports: _, ...rest } = p;
 		return reports ? { ...rest, reports } : rest;
 	});
-	return out;
 }
 
 /** Which settings still hold their defaults, for the grey "default" tags. */
@@ -491,7 +482,7 @@ function yamlValue(indent: string, key: string, value: unknown): string[] {
 }
 
 /**
- * Renders an agent's `projects:` section as it will be written under the
+ * Renders an agent's `projects:` list as it will be written under the
  * agent, or "" when empty.
  */
 export function agentProjectsYAML(

@@ -601,14 +601,14 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 func (v *validator) checkProjects(agents []AgentConfig) {
 	owners := map[string]string{}
 	for i, agent := range agents {
-		for j, project := range agent.Projects.List {
+		for j, project := range agent.Projects {
 			target := strings.TrimSpace(project.Target)
 			if target == "" {
-				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d].target", i, j), "a project needs a target")
+				v.errorf(fmt.Sprintf("agents[%d].projects[%d].target", i, j), "a project needs a target")
 				continue
 			}
 			if owner, ok := owners[target]; ok && owner != agent.Name {
-				v.errorf(fmt.Sprintf("agents[%d].projects.list[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)
+				v.errorf(fmt.Sprintf("agents[%d].projects[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)
 				continue
 			}
 			owners[target] = agent.Name

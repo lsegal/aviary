@@ -7,9 +7,9 @@ const STATUS = {
 };
 
 // Shapes follow internal/config/projects.go and internal/projects/api.go.
-// A project lives in the projects: section of the agent that owns it; the
+// A project lives in the projects: list of the agent that owns it; the
 // settings every project runs under are the one top-level projects: section.
-const CODER_PROJECTS = { list: [{ target: "lsegal/aviary" }] };
+const CODER_PROJECTS = [{ target: "lsegal/aviary" }];
 const PROJECTS = {
 	allowed_commenters: ["lsegal", "teammate"],
 	webhook: { path: "/hooks/gh" },
@@ -192,7 +192,7 @@ function savedConfig(calls: Calls) {
 	return JSON.parse(String(calls.config_save?.at(-1)?.config));
 }
 
-/** The projects: section the last config_save wrote under agent. */
+/** The projects: list the last config_save wrote under agent. */
 function savedProjects(calls: Calls, agent: string) {
 	return savedConfig(calls).agents.find(
 		(a: { name: string }) => a.name === agent,
@@ -582,9 +582,7 @@ test("projects are added to an agent in its settings", async ({ page }) => {
 	await add.click();
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "atlas")).toEqual({
-		list: [{ target: "lsegal/zvidlib" }],
-	});
+	expect(savedProjects(calls, "atlas")).toEqual([{ target: "lsegal/zvidlib" }]);
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 	// Once saved, it is deleted through project_remove instead.
 	await expect(
@@ -662,9 +660,7 @@ test("change settings first opens the agent's projects with the new one listed",
 	);
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder")).toEqual({
-		list: [{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }],
-	});
+	expect(savedProjects(calls, "coder")).toEqual([{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }]);
 	expect(calls.project_add).toBeUndefined();
 });
 
@@ -680,7 +676,7 @@ const REPORTS_CONFIG = {
 		{
 			name: "coder",
 			model: "cli/claude/opus",
-			projects: { list: [{ target: "lsegal/aviary", other: "kept" }] },
+			projects: [{ target: "lsegal/aviary", other: "kept" }],
 		},
 	],
 };
@@ -722,18 +718,18 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	await expect(page.getByTestId("reports-error")).toHaveCount(0);
 	await expect(yaml).toContainText(
 		[
-			"        - target: lsegal/aviary",
-			"          other: kept",
-			"          reports:",
-			"            agent: atlas",
-			'            targets: ["slack:main:C123", "session:projects"]',
-			"            events: [merged, failed]",
+			"      - target: lsegal/aviary",
+			"        other: kept",
+			"        reports:",
+			"          agent: atlas",
+			'          targets: ["slack:main:C123", "session:projects"]',
+			"          events: [merged, failed]",
 		].join("\n"),
 	);
 
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder").list).toEqual([
+	expect(savedProjects(calls, "coder")).toEqual([
 		{
 			target: "lsegal/aviary",
 			other: "kept",
@@ -766,14 +762,12 @@ test("saved reports load into the form and are checked like the server does", as
 				{
 					name: "coder",
 					model: "cli/claude/opus",
-					projects: {
-						list: [
-							{
-								target: "lsegal/aviary",
-								reports: { agent: "atlas", targets: ["slack:main:C123"] },
-							},
-						],
-					},
+					projects: [
+						{
+							target: "lsegal/aviary",
+							reports: { agent: "atlas", targets: ["slack:main:C123"] },
+						},
+					],
 				},
 			],
 		},

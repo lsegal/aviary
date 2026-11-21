@@ -23,7 +23,7 @@ A target is one of:
 
 Every target of every agent shares one concurrency limit, and work is drawn from them in turn.
 
-To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` section of `aviary.yaml`, and managed on the agent's **GitHub Projects** page (Agents → *agent* → GitHub Projects in the sidebar, `/agents/<agent>/projects`), where its projects are added and removed and their reports set. **Delete project** there stops watching a saved project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. Each project's board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent and links back there. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
+To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's **GitHub Projects** page (Agents → *agent* → GitHub Projects in the sidebar, `/agents/<agent>/projects`), where its projects are added and removed and their reports set. **Delete project** there stops watching a saved project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. Each project's board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent and links back there. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
 
 ```bash
 aviary project add owner/repo --agent coder
@@ -34,8 +34,7 @@ agents:
   - name: coder
     model: cli/claude/opus
     projects:
-      list:
-        - target: owner/repo
+      - target: owner/repo
 ```
 
 The settings every project runs under, such as concurrency, the ready label, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **System → Projects** (`/system/projects`). See [`projects`](/reference/config#projects) for every setting.
@@ -129,12 +128,11 @@ A project can send a short report through an Aviary agent's channels when one of
 agents:
   - name: coder
     projects:
-      list:
-        - target: owner/repo
-          reports:
-            agent: assistant
-            targets: [slack:main:C0123456789, session:projects]
-            events: [merged, failed]   # optional; all events when left out
+      - target: owner/repo
+        reports:
+          agent: assistant
+          targets: [slack:main:C0123456789, session:projects]
+          events: [merged, failed]   # optional; all events when left out
 ```
 
 Targets use the same form as a scheduled task's target ([delivery targets](/guide/channels#delivery-targets)), and the agent must have the channel configured. `project_add` takes the same `reports` object when it saves a project.
