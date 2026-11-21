@@ -51,10 +51,8 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 				return scriptExecutionResult{Output: output, Logs: logs.String()}, replyErr
 			}
 		}
-		if agent.ShouldDeliverReply(output) && job.OutputChannel != "" && deliver != nil {
-			if deliverErr := deliver(job.AgentID, job.OutputChannel, output); deliverErr != nil {
-				return scriptExecutionResult{Output: output, Logs: logs.String()}, deliverErr
-			}
+		if deliverErr := recordTaskOutput(job, output, deliver); deliverErr != nil {
+			return scriptExecutionResult{Output: output, Logs: logs.String()}, deliverErr
 		}
 	}
 	if err != nil {
@@ -87,4 +85,20 @@ func (c *scriptToolClient) Close() error {
 		return nil
 	}
 	return c.base.Close()
+}
+
+// recordTaskOutput shows a run's output in the task's own session and then
+// forwards it to the task's delivery target, if any. Prompt runs write their
+// reply to the task session as they stream, so only runs that produce output
+// outside a conversation (scripts and project tasks) use this.
+func recordTaskOutput(job *domain.Job, output string, deliver func(agentName, route, text string) error) error {
+	if job.SessionID != "" {
+		if err := agent.AppendMessageToSession(job.AgentID, job.SessionID, domain.MessageRoleAssistant, output); err != nil {
+			return fmt.Errorf("recording task output in session: %w", err)
+		}
+	}
+	if !agent.ShouldDeliverReply(output) || job.OutputChannel == "" || deliver == nil {
+		return nil
+	}
+	return deliver(job.AgentID, job.OutputChannel, output)
 }
