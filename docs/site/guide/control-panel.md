@@ -95,7 +95,7 @@ Token analytics for the last 30 days (or a custom range):
 
 - Input and output tokens per day, per agent, per model, and per provider.
 - Total cost estimates when provider pricing is available.
-- A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), and the total wall time project job runs took.
+- A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), the total wall time project job runs took, and the code those jobs changed: the lines added (+) and removed (−) by the pull requests that merged in the range. A table below breaks the same figures down per project repository. A job that opened no pull request adds no lines.
 
 ### Tools (`/system/tools`)
 

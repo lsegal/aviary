@@ -78,6 +78,10 @@ type PullRequestWorkState struct {
 	Merged     bool
 	// MergedAt is when the pull request merged, zero while it has not.
 	MergedAt time.Time
+	// Additions and Deletions are the lines the pull request's diff adds and
+	// removes, as GitHub reports them.
+	Additions int
+	Deletions int
 	// IsDraft reports whether the pull request is still a draft. A run that
 	// finishes with an open, unmerged, non-draft pull request left behind has
 	// deliberately marked its fix ready and is waiting on a human rather than
