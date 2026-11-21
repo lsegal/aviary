@@ -67,6 +67,7 @@ func claudeArgs(opts Options, resumeID string) []string {
 		args = append(args, "--allowedTools", "mcp__"+MCPServerName)
 	}
 	args = append(args, opts.Approval...)
+	args = append(args, opts.ExtraDir...)
 	switch {
 	case opts.Ephemeral:
 		args = append(args, "--no-session-persistence")

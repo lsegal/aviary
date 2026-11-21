@@ -483,6 +483,8 @@ Claude's `dontAsk` runs only pre-approved tools and refuses the rest, so reads w
 
 In a chat turn, Aviary's own MCP tools are always pre-approved for the CLI, so a mode never blocks them behind a separate prompt. The agent's [permissions](#agents-permissions) still decide which Aviary tools it gets, and Aviary checks every call. The mode governs the CLI's own tools, which a chat turn only gets with the `full` preset and `cli_builtin_tools`.
 
+A chat turn's CLI runs in the agent's `working_dir` and always also has the agent's own directory (its `MEMORY.md` and `memory/`) in scope, so the agent can keep its memory wherever it works. Each definition's `extraDir` field grants that directory per mode, with the same fallback as `approval`: Claude gets `--add-dir` and, outside `read-only`, an `Edit` allow rule for that directory; Codex gets the directory as a writable root of its workspace sandbox. The grant covers only that directory and never changes the mode, so `read-only` still refuses writes there. A `cli_definitions` entry names the directory as `{dir}`, as `{dirQuoted}` (a quoted TOML string), or as `{dirPosix}` (`C:\a` becomes `/c/a`).
+
 A `cli_definitions` entry declares its own mapping under `approval` and renders it with an argument that is exactly `{approval}` in its templates:
 
 ```yaml

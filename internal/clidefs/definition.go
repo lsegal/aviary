@@ -106,6 +106,12 @@ type Definition struct {
 	// renders as the arguments listed for the run's mode. A mode left out
 	// falls back to the closest less permissive mode declared.
 	Approval map[ApprovalMode][]string `json:"approval,omitempty"`
+	// ExtraDir are, per approval mode, the arguments that add one more
+	// directory to the CLI session's workspace scope beside its working
+	// directory, with {dir}, {dirQuoted} or {dirPosix} standing for it. A
+	// mode left out falls back as Approval does. Chat sessions use it to
+	// keep the agent's own directory in scope wherever it works (#534).
+	ExtraDir map[ApprovalMode][]string `json:"extraDir,omitempty"`
 	// Doctor names the read-only probes `aviary agents` runs to report on the
 	// agent: whether its CLI is signed in, and which models it accepts. An
 	// agent that declares none is reported from what the definition already
@@ -947,6 +953,9 @@ func (d Definition) Validate() error {
 		return fmt.Errorf(`field "defaultModel": %q is not one this agent accepts; %s`, model, d.ModelError())
 	}
 	if err := d.validateApproval(); err != nil {
+		return err
+	}
+	if err := d.validateExtraDir(); err != nil {
 		return err
 	}
 	if err := d.ConfigHome.validate(); err != nil {

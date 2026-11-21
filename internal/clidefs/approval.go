@@ -68,11 +68,17 @@ func approvalModeNames() string {
 // permissive than asked; with none of those either it contributes nothing,
 // and the CLI runs in its own default mode.
 func (d Definition) ApprovalArgs(mode ApprovalMode) []string {
+	return modeArgs(d.Approval, mode)
+}
+
+// modeArgs returns a copy of byMode's arguments for mode, or for the closest
+// less permissive mode it declares, or nil.
+func modeArgs(byMode map[ApprovalMode][]string, mode ApprovalMode) []string {
 	mode = mode.Effective()
 	fallback := false
 	for i := len(ApprovalModes) - 1; i >= 0; i-- {
 		fallback = fallback || ApprovalModes[i] == mode
-		if args, ok := d.Approval[ApprovalModes[i]]; fallback && ok {
+		if args, ok := byMode[ApprovalModes[i]]; fallback && ok {
 			return append([]string(nil), args...)
 		}
 	}
