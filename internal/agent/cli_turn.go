@@ -108,8 +108,12 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		Env:          cliLaunchEnv(backend, workDir),
 	}
 	if builtinTools {
-		opts.Permissions = cliPermissionArgs(backend, mode, r.cfg.Permissions, workDir)
-		opts.RefusalNote = cliRefusalNote(backend, mode, r.agent.Name)
+		var enforce []string
+		opts.Permissions, enforce = cliPermissionArgs(backend, mode, r.cfg.Permissions, workDir)
+		if enforce != nil {
+			opts.Approval = enforce
+		}
+		opts.RefusalNote = cliRefusalNote(backend, mode, r.agent.Name, enforce != nil)
 	}
 	key := r.agent.ID + "\x00" + in.sessionID
 	if opts.Ephemeral {
@@ -405,10 +409,16 @@ func cliExtraDirArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, workDi
 // definition, so a command or path the agent's permissions allow is not then
 // refused by the CLI's own permission check (#560). Filesystem rules resolve
 // against baseDir, as Aviary's file tools resolve them.
-func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perms *config.PermissionsConfig, baseDir string) []string {
+//
+// When the rules are narrower than every command and the whole Aviary
+// directory, enforce are the arguments that replace the mode's approval
+// arguments so the CLI refuses what the rules leave out: the full mode
+// otherwise skips the CLI's allow checks and only deny rules bind (#577).
+// enforce is nil when the approval arguments stand.
+func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perms *config.PermissionsConfig, baseDir string) (args, enforce []string) {
 	definition, ok := llm.CLIProvider(string(backend))
 	if !ok || perms == nil {
-		return nil
+		return nil, nil
 	}
 	var commands []clidefs.Rule
 	if perms.Exec != nil {
@@ -427,13 +437,50 @@ func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perm
 			paths = append(paths, clidefs.PathRule{Rule: clidefs.Rule{Pattern: rule.Pattern, Deny: rule.Negated}, Dir: rule.Dir})
 		}
 	}
-	return definition.PermissionArgs(mode, commands, paths)
+	args = definition.PermissionArgs(mode, commands, paths)
+	if !allowsEveryCommand(commands) || !allowsAviaryDir(paths) {
+		enforce = definition.EnforceArgs(mode)
+	}
+	return args, enforce
+}
+
+// allowsEveryCommand reports whether the agent's command rules allow "*".
+// Deny rules still reach the CLI as its own deny rules.
+func allowsEveryCommand(rules []clidefs.Rule) bool {
+	for _, rule := range rules {
+		if !rule.Deny && rule.Pattern == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// allowsAviaryDir reports whether the agent's path rules allow everything
+// under a directory that holds the whole Aviary directory, as "@/**" does.
+// Deny rules still reach the CLI as its own deny rules.
+func allowsAviaryDir(rules []clidefs.PathRule) bool {
+	base := config.BaseDir()
+	for _, rule := range rules {
+		if rule.Deny || filepath.Base(rule.Pattern) != "**" || filepath.Dir(rule.Pattern) != rule.Dir {
+			continue
+		}
+		if rel, err := filepath.Rel(rule.Dir, base); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // cliRefusalNote names the layer behind a refusal from the CLI's own
 // permission check, which otherwise reaches the chat only as the CLI's own
-// "haven't granted" text.
-func cliRefusalNote(backend cliagent.Backend, mode clidefs.ApprovalMode, agentName string) string {
+// "haven't granted" text. When enforced, the CLI's check is carrying the
+// agent's own rules, so the note names them as the refusing layer.
+func cliRefusalNote(backend cliagent.Backend, mode clidefs.ApprovalMode, agentName string, enforced bool) string {
+	if enforced {
+		return fmt.Sprintf("Refused by Aviary: no rule in agent %q's Allowed Exec Commands or Filesystem Allowed Paths allows this call, or a ! rule there denies it. "+
+			"The chat approval mode is %q, and because those rules are narrower than * and @/**, they are passed to %s at launch as its only allowances.",
+			agentName, mode.Effective(), backend)
+	}
 	return fmt.Sprintf("Refused by the %s CLI's own permission check, not by Aviary. The chat approval mode is %q, "+
 		"and no rule from agent %q's Allowed Exec Commands or Filesystem Allowed Paths, which are passed to %s at launch, allowed this call.",
 		backend, mode.Effective(), agentName, backend)

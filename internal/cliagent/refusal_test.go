@@ -41,7 +41,7 @@ func TestToolTranslator_NamesTheCLIRefusalLayer(t *testing.T) {
 // TestClaudeArgs_PassesPermissions checks the translated permission rules
 // reach claude's command line.
 func TestClaudeArgs_PassesPermissions(t *testing.T) {
-	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, Permissions: []string{"--allowedTools", "Bash"}}, "")
+	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, Permissions: []string{"--allowedTools", "Bash"}}, "", "")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--allowedTools Bash") {
 		t.Errorf("args = %q, want the permission rules", args)
