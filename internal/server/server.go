@@ -72,6 +72,7 @@ func New(cfg *config.Config, token string) *Server {
 		reexecCh:          make(chan struct{}, 1),
 	}
 	configureCLIProviders(cfg)
+	configureRestartGate(cfg)
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
 	authStore, _ := auth.NewFileStore(authPath)
@@ -228,6 +229,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 		slog.Warn("server: failed to update channel metadata state", "err", err)
 	}
 	configureCLIProviders(newCfg)
+	configureRestartGate(newCfg)
 	mcp.SyncLiveServer(newCfg)
 	s.agents.Reconcile(newCfg)
 	if s.sched != nil {

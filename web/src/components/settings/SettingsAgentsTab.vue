@@ -82,6 +82,7 @@
 											<span class="text-xs font-medium">Saved</span>
 										</div>
 									</transition>
+									<FilePreviewToggle :file-name="getAgentFileState(agent.name).selectedFile" />
 									<DropdownMenuRoot>
 										<DropdownMenuTrigger asChild>
 											<button type="button" data-testid="agent-file-menu" aria-label="More file actions" title="More file actions"
@@ -118,12 +119,15 @@
 								class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
 								{{ getAgentFileState(agent.name).error }}
 							</p>
-							<textarea data-testid="agent-file-editor" :value="getAgentFileState(agent.name).content"
-								@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
-								@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
-								class="min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-white px-4 py-4 font-mono text-sm leading-6 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60 sm:px-6 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
-								:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
-								:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
+							<FilePreviewSplit :file-name="getAgentFileState(agent.name).selectedFile"
+								:content="getAgentFileState(agent.name).content">
+								<textarea data-testid="agent-file-editor" :value="getAgentFileState(agent.name).content"
+									@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
+									@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
+									class="min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-white px-4 py-4 font-mono text-sm leading-6 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60 sm:px-6 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+									:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
+									:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
+							</FilePreviewSplit>
 						</div>
 
 						<section v-show="onAgentSettingsPage" id="agent-settings-permissions" data-agent-settings-section="permissions"
@@ -861,6 +865,8 @@ import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentTask, useSettingsStore } from "../../stores/settings";
 import FancySelect from "../FancySelect.vue";
+import FilePreviewSplit from "../files/FilePreviewSplit.vue";
+import FilePreviewToggle from "../files/FilePreviewToggle.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
@@ -877,6 +883,8 @@ export default defineComponent({
 		DropdownMenuRoot,
 		DropdownMenuTrigger,
 		FancySelect,
+		FilePreviewSplit,
+		FilePreviewToggle,
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,

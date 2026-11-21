@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lsegal/aviary/internal/saferestart"
 )
 
 func addTool[Args any](
@@ -18,7 +20,46 @@ func addTool[Args any](
 	if tool != nil && tool.InputSchema == nil {
 		tool.InputSchema = inferredInputSchema[Args]()
 	}
+	if tool == nil || !restartUngatedTools[tool.Name] {
+		handler = restartGated(handler)
+	}
 	sdkmcp.AddTool(s, tool, handler)
+}
+
+// AddTool registers a tool on s the way Aviary's own tools are registered:
+// with an input schema inferred from Args when tool has none, and holding the
+// restart gate for the length of each call.
+func AddTool[Args any](
+	s *sdkmcp.Server,
+	tool *sdkmcp.Tool,
+	handler func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error),
+) {
+	addTool(s, tool, handler)
+}
+
+// restartUngatedTools run agent turns rather than a single operation: they can
+// last as long as a job, which a restart checkpoints instead of waiting for,
+// and the tool calls their turns make are gated on their own.
+var restartUngatedTools = map[string]bool{
+	"agent_run":        true,
+	"agent_run_script": true,
+}
+
+// restartGated holds the restart gate for the length of each call, so an
+// automatic restart waits for the call to finish and a call does not start
+// while a restart is under way. The hold is released however the call ends,
+// including on error, panic and cancellation.
+func restartGated[Args any](
+	handler func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error),
+) func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error) {
+	return func(ctx context.Context, req *sdkmcp.CallToolRequest, args Args) (*sdkmcp.CallToolResult, struct{}, error) {
+		release, err := saferestart.MCPCalls.Acquire(ctx)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		defer release()
+		return handler(ctx, req, args)
+	}
 }
 
 func inferredInputSchema[T any]() any {

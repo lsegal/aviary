@@ -97,6 +97,20 @@ func (v *validator) checkServer(s ServerConfig) {
 			v.errorf("server.tls.key", "cannot read key file %q: %v", s.TLS.Key, err)
 		}
 	}
+	for _, f := range []struct{ field, value string }{
+		{"restart_call_grace", s.RestartCallGrace},
+		{"restart_call_max_wait", s.RestartCallMaxWait},
+	} {
+		field, value := f.field, f.value
+		if value == "" {
+			continue
+		}
+		if d, err := time.ParseDuration(value); err != nil {
+			v.errorf("server."+field, "invalid duration %q: %v", value, err)
+		} else if d <= 0 {
+			v.errorf("server."+field, "%s must be a positive duration", field)
+		}
+	}
 	if s.FailedTaskTimeout != "" {
 		d, err := time.ParseDuration(s.FailedTaskTimeout)
 		if err != nil {

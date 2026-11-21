@@ -8,6 +8,11 @@
       <div class="font-medium">{{ restart.upgrade ? `Updating to ${restart.version}…` : "Restarting…" }}</div>
       <div class="mt-0.5 text-xs opacity-80">Running jobs resume after the restart. This page reconnects on its own.</div>
     </template>
+    <template v-else-if="restart.phase === 'draining'">
+      <div class="font-medium">{{ action }} pending: waiting on {{ callCount }}.</div>
+      <div class="mt-0.5 text-xs opacity-80">It starts as soon as they finish.</div>
+      <button type="button" class="mt-1 text-xs font-semibold underline" @click="$emit('cancel')">Cancel</button>
+    </template>
     <template v-else>
       <div class="font-medium">{{ action }} waits for {{ jobCount }}.</div>
       <div class="mt-0.5 text-xs opacity-80">New jobs are held until it's done.</div>
@@ -29,5 +34,9 @@ const action = computed(() =>
 const jobCount = computed(() => {
 	const n = props.restart?.jobs.length ?? 0;
 	return n === 1 ? "1 running job" : `${n} running jobs`;
+});
+const callCount = computed(() => {
+	const n = props.restart?.mcpCalls ?? 0;
+	return n === 1 ? "1 MCP call" : `${n} MCP calls`;
 });
 </script>

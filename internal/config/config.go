@@ -69,6 +69,13 @@ type ServerConfig struct {
 	// available, checkpointing running jobs so they resume after the restart.
 	// Unset means on; see EffectiveServerAutoUpdate.
 	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
+	// RestartCallGrace is how long a pending automatic restart keeps admitting
+	// new MCP tool calls while it waits for in-flight ones. Go duration
+	// string; defaults to 1m.
+	RestartCallGrace string `yaml:"restart_call_grace,omitempty" json:"restart_call_grace,omitempty"`
+	// RestartCallMaxWait is how long a restart waits for in-flight MCP tool
+	// calls before it proceeds anyway. Go duration string; defaults to 5m.
+	RestartCallMaxWait string `yaml:"restart_call_max_wait,omitempty" json:"restart_call_max_wait,omitempty"`
 }
 
 // TLSConfig holds paths to TLS certificate and key.
@@ -458,6 +465,26 @@ func (s ServerConfig) EffectiveFailedTaskTimeout() time.Duration {
 	d, err := time.ParseDuration(s.FailedTaskTimeout)
 	if err != nil || d <= 0 {
 		return DefaultFailedTaskTimeout
+	}
+	return d
+}
+
+// EffectiveRestartCallGrace returns the parsed RestartCallGrace, or 0 (the
+// restart gate's default) when unset or invalid.
+func (s ServerConfig) EffectiveRestartCallGrace() time.Duration {
+	return positiveDuration(s.RestartCallGrace)
+}
+
+// EffectiveRestartCallMaxWait returns the parsed RestartCallMaxWait, or 0 (the
+// restart gate's default) when unset or invalid.
+func (s ServerConfig) EffectiveRestartCallMaxWait() time.Duration {
+	return positiveDuration(s.RestartCallMaxWait)
+}
+
+func positiveDuration(v string) time.Duration {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0
 	}
 	return d
 }

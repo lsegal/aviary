@@ -360,10 +360,12 @@
 	"provider_cli_list": [],
 	"server_restart": [
 		"cancel",
+		"force",
 		"when"
 	],
 	"server_status": [],
 	"server_upgrade": [
+		"force",
 		"version",
 		"when"
 	],
