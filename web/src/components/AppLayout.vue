@@ -1,6 +1,6 @@
 <template>
   <div class="flex h-dvh flex-col bg-white dark:bg-gray-950 lg:flex-row">
-    <header class="border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900 lg:hidden">
+    <header class="border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900 lg:hidden">
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
@@ -36,7 +36,7 @@
           <ConnectionIndicator :status="status" @retry="reconnect()" />
         </div>
       </div>
-      <div class="relative mt-3">
+      <div class="relative mt-2">
         <UpdateStatusBanner :restart="restart" class="mb-3" @cancel="cancelRestart()" />
         <div v-if="upgradeAvailable"
           class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
@@ -64,25 +64,7 @@
           <div class="font-medium">Dev build — no checkout found</div>
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
-        <nav v-if="soleAgent" class="flex flex-wrap gap-2" aria-label="Main">
-          <router-link v-for="child in soleAgent.children" :key="child.key" :to="child.to"
-            :class="topLevelLinkClass(isChildActive(child), true)">
-            {{ child.label }}<ProjectRunningBadge :running="child.running ?? 0" class="ml-1.5" />
-          </router-link>
-          <router-link to="/system/overview" :class="topLevelLinkClass(systemActive, true)">System</router-link>
-          <router-link :to="addAgentLink" data-testid="mobile-add-agent" :class="topLevelLinkClass(false, true)">
-            + Add Agent
-          </router-link>
-        </nav>
-        <nav v-else class="flex flex-wrap gap-2" aria-label="Main">
-          <router-link v-for="a in agentNav" :key="a.name" :to="a.to" :class="topLevelLinkClass(a.active, true)">
-            {{ a.label }}
-          </router-link>
-          <router-link :to="addAgentLink" data-testid="mobile-add-agent" :class="topLevelLinkClass(false, true)">
-            + Add Agent
-          </router-link>
-          <router-link to="/system/overview" :class="topLevelLinkClass(systemActive, true)">System</router-link>
-        </nav>
+        <MobileMainNav :items="mobileMainItems" />
       </div>
     </header>
 
@@ -150,7 +132,7 @@
           <template v-for="child in soleAgent.children" :key="child.key">
             <div class="group/row relative" :data-testid="`sidebar-row-${child.key}`">
               <router-link :to="child.to"
-                :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
+                :class="[topLevelLinkClass(isChildActive(child)), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                 <ProjectRunningBadge :running="child.running ?? 0" />
               </router-link>
@@ -175,7 +157,7 @@
         </div>
         <template v-else>
         <div class="group/row relative">
-          <router-link to="/agents" :class="[topLevelLinkClass(false, false), 'flex items-center pr-9']" data-testid="sidebar-agents">
+          <router-link to="/agents" :class="[topLevelLinkClass(false), 'flex items-center pr-9']" data-testid="sidebar-agents">
             Agents
           </router-link>
           <SidebarRowAction label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
@@ -220,7 +202,7 @@
         </template>
 
         <div class="relative">
-          <router-link to="/system/overview" :class="[topLevelLinkClass(systemActive && systemCollapsed, false), 'flex items-center pr-9']" data-testid="sidebar-system">
+          <router-link to="/system/overview" :class="[topLevelLinkClass(systemActive && systemCollapsed), 'flex items-center pr-9']" data-testid="sidebar-system">
             System
           </router-link>
           <button type="button" data-testid="sidebar-system-toggle" :aria-expanded="!systemCollapsed"
@@ -338,6 +320,7 @@ import { useChatSessionsStore } from "../stores/chatSessions";
 import { agentTaskPath, useSettingsStore } from "../stores/settings";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
 import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
@@ -673,17 +656,10 @@ function isChildActive(child: NavChild): boolean {
 	return current === path || current.startsWith(`${path}/`);
 }
 
-function topLevelLinkClass(active: boolean, mobile: boolean): string {
-	const base = mobile
-		? "rounded-xl border px-3 py-2 text-sm font-medium transition-colors"
-		: "block rounded-xl px-3 py-2 text-sm font-medium transition-colors";
-	if (active) {
-		return mobile
-			? `${base} border-gray-300 bg-white text-gray-950 shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white`
-			: `${base} bg-white text-gray-950 shadow-sm dark:bg-gray-800 dark:text-white`;
-	}
-	return mobile
-		? `${base} border-gray-200 bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white`
+function topLevelLinkClass(active: boolean): string {
+	const base = "block rounded-xl px-3 py-2 text-sm font-medium transition-colors";
+	return active
+		? `${base} bg-white text-gray-950 shadow-sm dark:bg-gray-800 dark:text-white`
 		: `${base} text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white`;
 }
 
@@ -709,6 +685,48 @@ const mobileChildren = computed<NavChild[]>(() => {
 	if (agent) return [...agent.children, ...items];
 	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
 	return [];
+});
+
+// The narrow-screen main row: a sole agent's pages, or one pill per agent,
+// plus System and + Add Agent. Items that do not fit go behind "…".
+const mobileMainItems = computed<MobileNavItem[]>(() => {
+	const system: MobileNavItem = {
+		key: "system",
+		label: "System",
+		to: "/system/overview",
+		active: systemActive.value,
+	};
+	const addAgent: MobileNavItem = {
+		key: "add-agent",
+		label: "+ Add Agent",
+		to: addAgentLink,
+		active: false,
+		testid: "mobile-add-agent",
+	};
+	const sole = soleAgent.value;
+	if (sole) {
+		return [
+			...sole.children.map((child) => ({
+				key: child.key,
+				label: child.label,
+				to: child.to,
+				active: isChildActive(child),
+				running: child.running,
+			})),
+			system,
+			addAgent,
+		];
+	}
+	return [
+		...agentNav.value.map((a) => ({
+			key: `agent:${a.name}`,
+			label: a.label,
+			to: a.to,
+			active: a.active,
+		})),
+		addAgent,
+		system,
+	];
 });
 
 function mobileSubnavClass(child: NavChild): string {

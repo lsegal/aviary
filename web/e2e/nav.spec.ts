@@ -210,3 +210,40 @@ test("unauthenticated user is redirected to login", async ({ page }) => {
 	await page.goto("/system/overview");
 	await expect(page).toHaveURL("/login");
 });
+
+test("with several agents the phone main nav stays on one row", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const names = ["assistant", "coder", "researcher", "reviewer", "writer"];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		config_get: {
+			agents: names.map((name) => ({
+				name,
+				model: "anthropic/claude-sonnet-4-5",
+			})),
+		},
+	});
+	await page.goto("/agents/writer/chat");
+
+	const nav = page.getByTestId("mobile-main-nav");
+	const writer = nav.getByRole("link", { name: "writer", exact: true });
+	await expect(writer).toBeVisible();
+	const tops = await nav.evaluate((el) =>
+		[...el.children]
+			.filter(
+				(c) => c instanceof HTMLElement && c.offsetParent && !c.ariaHidden,
+			)
+			.map((c) => Math.round(c.getBoundingClientRect().top)),
+	);
+	expect(new Set(tops).size).toBe(1);
+
+	await nav.getByTestId("mobile-nav-more").click();
+	const menu = page.getByTestId("mobile-nav-menu");
+	await expect(menu.getByRole("menuitem", { name: "writer" })).toHaveCount(0);
+	await menu.getByRole("menuitem", { name: "System" }).click();
+	await expect(page).toHaveURL("/system/overview");
+});
