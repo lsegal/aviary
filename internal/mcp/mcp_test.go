@@ -475,6 +475,44 @@ func TestSessionList_IsProcessing(t *testing.T) {
 
 }
 
+func TestSessionList_Channels(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	require.NoError(t, store.EnsureDirs())
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "assistant", Model: "stub"}}})
+	SetDeps(&Deps{Agents: mgr})
+
+	sm := agent.NewSessionManager()
+	slack, err := sm.GetOrCreateNamed("assistant", "slack-room")
+	require.NoError(t, err)
+	_, err = sm.GetOrCreateNamed("assistant", "plain")
+	require.NoError(t, err)
+	require.NoError(t, store.SetSessionChannel("assistant", slack.ID, "slack", "work", "C123"))
+
+	c, err := NewInProcessClient(context.Background(), NewServer())
+	require.NoError(t, err)
+	defer c.Close() //nolint:errcheck
+
+	res, err := c.CallTool(context.Background(), "session_list", map[string]any{"agent": "assistant"})
+	require.NoError(t, err)
+	var listed []struct {
+		Name     string   `json:"name"`
+		Channels []string `json:"channels"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(extractText(res)), &listed))
+	channels := map[string][]string{}
+	for _, s := range listed {
+		channels[s.Name] = s.Channels
+	}
+	assert.Equal(t, []string{"slack"}, channels["slack-room"])
+	assert.Contains(t, channels, "plain")
+	assert.Empty(t, channels["plain"])
+}
+
 func TestBrowserTools_WithManager(t *testing.T) {
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })

@@ -2323,6 +2323,38 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 	);
 });
 
+test("prompt chat opened mid-turn shows the running turn (#764)", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(
+		calls,
+		await setup(page, undefined, {
+			...chatFixtures(calls),
+			session_turn: (args?: Record<string, unknown>) => ({
+				agent_id: args?.agent,
+				session_id: args?.session_id,
+				processing: true,
+				items: [
+					{ tool: { id: "call_1", name: "project_status", done: true } },
+					{ text: "Reading the board" },
+					{ tool: { id: "call_2", name: "project_job_get" } },
+				],
+			}),
+		}),
+	);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	await expect(chat.getByTestId("chat-typing")).toBeVisible();
+	await expect(chat.getByTestId("chat-tool-call")).toHaveCount(2);
+	await expect(chat.getByTestId("chat-tool-call").nth(1)).toHaveAttribute(
+		"data-pending",
+		"true",
+	);
+	await expect(chat).toContainText("Reading the board");
+});
+
 test("job count stat boxes reflow without wrapping mid-value", async ({
 	page,
 }) => {
