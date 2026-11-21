@@ -155,3 +155,29 @@ func TestPolicies(t *testing.T) {
 		}
 	}
 }
+
+func TestRunsIn(t *testing.T) {
+	from := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	month := 30 * 24 * time.Hour
+	cases := []struct {
+		name string
+		f    Fields
+		want int
+	}{
+		{"interval", Fields{Every: "30m", Timezone: "UTC"}, 1440},
+		{"daily twice", Fields{At: "09:00,17:00", Timezone: "UTC"}, 60},
+		{"weekly", Fields{Days: "mon,wed", At: "09:00", Timezone: "UTC"}, 9},
+		{"cron hourly", Fields{Schedule: "0 * * * *", Timezone: "UTC"}, 720},
+		{"cron every second", Fields{Schedule: "* * * * * *", Timezone: "UTC"}, 2592000},
+		{"future start", Fields{At: "09:00", StartAt: "2027-01-01T00:00:00Z", Timezone: "UTC"}, 30},
+		{"once", Fields{Trigger: "once", StartAt: "2027-01-01T00:00:00Z", Timezone: "UTC"}, 0},
+		{"run once", Fields{Every: "1h", RunOnce: true, Timezone: "UTC"}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mustParse(t, tc.f).RunsIn(from, month); got != tc.want {
+				t.Errorf("RunsIn = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
