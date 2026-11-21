@@ -162,4 +162,6 @@ aviary project job stop 42
 aviary project clone clear
 ```
 
+Jobs reuse clones. A job's clone stays on disk after the job ends, and the next job on the same repository is handed a free one instead of cloning and installing dependencies again. Before the hand-off the clone is fetched and reset to the latest default branch: its other branches, local git config, stashes, hooks, and untracked and ignored files are removed, except `node_modules` and `.venv` dependency directories. A clone is free when no running, queued, waiting or paused job holds it, the same decision `project_clone_list` reports; jobs on the same repository that run at once each get their own clone. The job detail view shows the job's clone path with a copy button, or says when the job has no clone yet or its clone was removed or handed to another job. `aviary project clone clear` removes the clones no job holds.
+
 Projects state, including handled issues, sessions and job transcripts, lives in the `projects/` directory of Aviary's data directory.

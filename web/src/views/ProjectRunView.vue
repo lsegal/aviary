@@ -50,6 +50,24 @@
 				</li>
 			</ol>
 
+			<div v-if="job && !job.scheduled" data-testid="job-clone"
+				class="flex min-w-0 items-center gap-2 border-b border-gray-200 px-4 py-2 text-sm dark:border-gray-800 sm:px-6">
+				<span class="shrink-0 font-medium text-gray-700 dark:text-gray-300">Clone</span>
+				<template v-if="job.cloneState === 'present'">
+					<code data-testid="job-clone-path" class="min-w-0 select-all truncate font-mono text-xs text-gray-600 dark:text-gray-400"
+						:title="job.cloneDir">{{ job.cloneDir }}</code>
+					<button type="button" :aria-label="copied ? 'Copied clone path' : 'Copy clone path'" title="Copy the clone path"
+						class="flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						@click="copyClonePath">
+						<ClipboardDocumentIcon aria-hidden="true" class="h-3.5 w-3.5" />{{ copied ? "Copied" : "Copy" }}
+					</button>
+				</template>
+				<span v-else class="min-w-0 truncate text-gray-500">
+					{{ cloneMessage }}
+					<code v-if="job.cloneDir" class="select-all font-mono text-xs">{{ job.cloneDir }}</code>
+				</span>
+			</div>
+
 			<p v-if="error" class="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 				{{ error }}
 			</p>
@@ -87,7 +105,6 @@
 				<section class="flex h-80 shrink-0 flex-col bg-slate-950 text-slate-200 lg:h-auto lg:w-[40%]" aria-label="Output">
 					<div class="flex items-center gap-2 border-b border-slate-800 px-4 py-2 text-xs">
 						<b class="text-sm text-white">Output</b>
-						<span v-if="job?.cloneDir" class="truncate font-mono text-slate-400">{{ job.cloneDir }}</span>
 						<label class="ml-auto flex shrink-0 items-center gap-1 text-slate-400">
 							<input v-model="follow" type="checkbox" class="h-3 w-3" /> following
 						</label>
@@ -102,6 +119,7 @@
 
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -136,6 +154,37 @@ const { detail, error, allowedCommenters, retry, stop } = useProjectJob(
 	number,
 );
 const job = computed(() => detail.value?.job ?? null);
+
+// The Clone row: the path with a copy button, or why there is none.
+const cloneMessage = computed(() => {
+	const current = job.value;
+	if (!current) return "";
+	switch (current.cloneState) {
+		case "reused":
+			return current.cloneReusedBy
+				? `This job's clone was handed to #${current.cloneReusedBy}:`
+				: "This job's clone was handed to a later job:";
+		case "removed":
+			return "This job's clone was removed:";
+		default:
+			return "No clone yet.";
+	}
+});
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+async function copyClonePath() {
+	if (!job.value?.cloneDir) return;
+	try {
+		await navigator.clipboard.writeText(job.value.cloneDir);
+	} catch {
+		return;
+	}
+	copied.value = true;
+	clearTimeout(copiedTimer);
+	copiedTimer = setTimeout(() => {
+		copied.value = false;
+	}, 2000);
+}
 const lifecycle = computed(() =>
 	detail.value ? lifecycleStep(detail.value) : { step: 0, done: false },
 );
