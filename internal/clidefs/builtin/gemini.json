@@ -28,7 +28,19 @@
           "trust": true,
           "timeout": "{mcpTimeoutMs}"
         }
-      }
+      },
+      "policyPaths": ["{mcpAllowFile}", "~/.gemini/policies"]
+    },
+    "allowFile": {
+      "extension": ".toml",
+      "lines": [
+        "[[rule]]",
+        "toolName = \"*\"",
+        "mcpName = \"{mcpName}\"",
+        "decision = \"allow\"",
+        "priority = 100",
+        "modes = [\"plan\"]"
+      ]
     },
     "toolPrefix": "mcp_{mcpName}_"
   },

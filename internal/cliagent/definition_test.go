@@ -153,8 +153,9 @@ func TestNewSession_RejectsDefinitionWithoutResume(t *testing.T) {
 // fakeWired stands in for a definition-driven CLI whose definition declares
 // how to take Aviary's MCP server and a system prompt. It calls one tool from
 // the registered server and one of its own, then answers with what it was
-// handed: its argv, the settings file FAKE_SETTINGS names, the system prompt
-// file --sys names, and the token from the variable --token-env names.
+// handed: its argv, the settings file FAKE_SETTINGS names and the allow file
+// its policyPaths names, the system prompt file --sys names, and the token
+// from the variable --token-env names.
 func fakeWired() {
 	args := os.Args[1:]
 	value := func(flag string) string {
@@ -170,15 +171,21 @@ func fakeWired() {
 		data, _ := os.ReadFile(path)
 		return string(data)
 	}
-	var settings any
+	var settings map[string]any
 	_ = json.Unmarshal([]byte(read(os.Getenv("FAKE_SETTINGS"))), &settings)
+	allowPath := ""
+	if paths, ok := settings["policyPaths"].([]any); ok && len(paths) == 1 {
+		allowPath, _ = paths[0].(string)
+	}
 	reply, _ := json.Marshal(map[string]any{
-		"argv":     args,
-		"settings": settings,
-		"system":   read(value("--sys")),
-		"url":      value("--mcp-url"),
-		"token":    os.Getenv(value("--token-env")),
-		"prompt":   value("-p"),
+		"argv":      args,
+		"settings":  settings,
+		"allowPath": allowPath,
+		"allow":     read(allowPath),
+		"system":    read(value("--sys")),
+		"url":       value("--mcp-url"),
+		"token":     os.Getenv(value("--token-env")),
+		"prompt":    value("-p"),
 	})
 	out := json.NewEncoder(os.Stdout)
 	_ = out.Encode(map[string]any{"type": "tool_use", "tool_name": "mcp_aviary_echo", "tool_id": "t1", "parameters": map[string]any{"text": "hi"}})
@@ -207,7 +214,8 @@ func useWiredDefinition(t *testing.T) Options {
 				"httpUrl": "{mcpUrl}",
 				"headers": map[string]any{"Authorization": "Bearer ${{mcpTokenEnv}}"},
 				"timeout": "{mcpTimeoutMs}",
-			}}},
+			}}, "policyPaths": []any{"{mcpAllowFile}"}},
+			AllowFile:  &clidefs.MCPAllowFile{Extension: ".toml", Lines: []string{"[[rule]]", `mcpName = "{mcpName}"`}},
 			ToolPrefix: "mcp_{mcpName}_",
 		},
 		SystemPrompt: &clidefs.SystemPrompt{Args: []string{"--sys", "{systemPromptFile}"}},
@@ -231,12 +239,14 @@ func useWiredDefinition(t *testing.T) Options {
 }
 
 type wiredReply struct {
-	Argv     []string       `json:"argv"`
-	Settings map[string]any `json:"settings"`
-	System   string         `json:"system"`
-	URL      string         `json:"url"`
-	Token    string         `json:"token"`
-	Prompt   string         `json:"prompt"`
+	Argv      []string       `json:"argv"`
+	Settings  map[string]any `json:"settings"`
+	AllowPath string         `json:"allowPath"`
+	Allow     string         `json:"allow"`
+	System    string         `json:"system"`
+	URL       string         `json:"url"`
+	Token     string         `json:"token"`
+	Prompt    string         `json:"prompt"`
 }
 
 func TestDefinitionSession_PassesMCPAndSystemPrompt(t *testing.T) {
@@ -264,7 +274,10 @@ func TestDefinitionSession_PassesMCPAndSystemPrompt(t *testing.T) {
 			"httpUrl": opts.MCPURL,
 			"headers": map[string]any{"Authorization": "Bearer ${AVIARY_MCP_TOKEN}"},
 			"timeout": float64(MCPToolTimeout.Milliseconds()),
-		}}}, reply.Settings)
+		}}, "policyPaths": []any{reply.AllowPath}}, reply.Settings)
+		assert.True(t, strings.HasSuffix(reply.AllowPath, ".toml"), "the allow file's path ends in its extension: %q", reply.AllowPath)
+		assert.Equal(t, "[[rule]]\nmcpName = \"aviary\"\n", reply.Allow, "the allow file is written from its lines")
+		assert.NoFileExists(t, reply.AllowPath, "the allow file is removed after the turn")
 
 		var tools []string
 		for _, event := range events {
