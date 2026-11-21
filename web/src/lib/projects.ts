@@ -30,12 +30,26 @@ export const BOARD_STATES: BoardState[] = [
 ];
 
 /**
- * The board states a comma-separated list such as the board's ?state= query
+ * The board's filter chips: its scheduled items, then the five job states. A
+ * scheduled item is an upcoming run, not a job; once it runs, its job shows
+ * under its job state.
+ */
+export type BoardFilter = "scheduled" | BoardState;
+
+export const BOARD_FILTERS: BoardFilter[] = ["scheduled", ...BOARD_STATES];
+
+/**
+ * The board filters a comma-separated list such as the board's ?state= query
  * names, in board order; unknown names are dropped and none means no filter.
  */
-export function parseBoardStates(v: unknown): BoardState[] {
+export function parseBoardStates(v: unknown): BoardFilter[] {
 	const names = typeof v === "string" ? v.split(",") : [];
-	return BOARD_STATES.filter((s) => names.includes(s));
+	return BOARD_FILTERS.filter((s) => names.includes(s));
+}
+
+/** The job states among the board filters. */
+export function jobStates(filters: BoardFilter[]): BoardState[] {
+	return filters.filter((s): s is BoardState => s !== "scheduled");
 }
 
 /** The state of a job's pull request, empty while it has none. */
@@ -556,7 +570,8 @@ export function sortJobs(jobs: ProjectJob[]): ProjectJob[] {
 	);
 }
 
-const STATE_LABELS: Record<BoardState, string> = {
+const STATE_LABELS: Record<BoardFilter, string> = {
+	scheduled: "Scheduled",
 	starting: "Starting",
 	paused: "Paused",
 	running: "Running",
@@ -564,7 +579,7 @@ const STATE_LABELS: Record<BoardState, string> = {
 	failed: "Failed",
 };
 
-export function stateLabel(state: BoardState): string {
+export function stateLabel(state: BoardFilter): string {
 	return STATE_LABELS[state];
 }
 
