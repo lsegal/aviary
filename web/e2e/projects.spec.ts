@@ -350,6 +350,43 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
+test('the GitHub Projects count bubble is green and the Add project "+" sits beside it on hover', async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/overview");
+	const badge = page
+		.getByTestId("sidebar-sole-agent")
+		.getByTestId("agent-running-badge");
+	await expect(badge).toHaveText("2");
+	const [bg, green] = await badge.evaluate((el) => {
+		const ref = document.createElement("div");
+		ref.style.backgroundColor = "var(--color-green-600)";
+		document.body.append(ref);
+		const want = getComputedStyle(ref).backgroundColor;
+		ref.remove();
+		return [getComputedStyle(el).backgroundColor, want];
+	});
+	expect(bg).toBe(green);
+
+	const plus = page.getByTestId("sidebar-add-project");
+	await expect(plus).toHaveAttribute("aria-label", "Add project");
+	const opacity = () =>
+		plus.evaluate((el) => Number(getComputedStyle(el).opacity));
+	await expect.poll(opacity).toBe(0);
+	await page
+		.getByTestId("sidebar-nav")
+		.getByRole("link", { name: /^GitHub Projects/ })
+		.hover();
+	await expect.poll(opacity).toBe(1);
+
+	const badgeBox = await badge.boundingBox();
+	const plusBox = await plus.boundingBox();
+	expect(badgeBox && plusBox).toBeTruthy();
+	if (!badgeBox || !plusBox) return;
+	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
+});
+
 test("a board watching a project URL links its header to that URL", async ({
 	page,
 }) => {

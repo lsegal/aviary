@@ -28,14 +28,20 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	await page.goto("/system/overview");
 
 	const nav = page.getByTestId("sidebar-nav");
-	await expect(nav.locator(":scope > a")).toHaveText(["Agents", "System"]);
+	await expect(
+		nav.locator("[data-testid=sidebar-agents], [data-testid=sidebar-system]"),
+	).toHaveText(["Agents", "System"]);
 
 	const agents = page.getByTestId("sidebar-agent-list");
 	await expect(agents.locator("a[data-agent]")).toHaveText([
 		"assistant",
 		"coder",
 	]);
-	await expect(page.getByTestId("sidebar-add-agent")).toHaveText("+ Add Agent");
+	// Add agent is the "+" on the Agents row (#638).
+	const addAgent = page.getByTestId("sidebar-add-agent");
+	await expect(addAgent).toHaveAttribute("aria-label", "Add agent");
+	await expect(addAgent).toHaveAttribute("title", "Add agent");
+	await expect(addAgent).toHaveText("");
 
 	const system = page.getByTestId("sidebar-system-list");
 	await expect(system.getByRole("link")).toHaveText([
@@ -79,13 +85,9 @@ test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Settings", a
 
 	// With one agent its pages are the sidebar's top level (#538).
 	const agent = page.getByTestId("sidebar-sole-agent");
-	await expect(agent.getByRole("link")).toHaveText([
-		"Chats",
-		"GitHub Projects",
-		"Tasks",
-		"Files",
-		"Settings",
-	]);
+	await expect(
+		agent.getByRole("link").and(page.locator(":not([title])")),
+	).toHaveText(["Chats", "GitHub Projects", "Tasks", "Files", "Settings"]);
 	// The agent comes from the sidebar: the chat has no agent switch.
 	await expect(page.getByRole("button", { name: "assistant" })).toHaveCount(0);
 
@@ -103,7 +105,7 @@ test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Settings", a
 	}
 });
 
-test("+ Add Agent opens a new agent's settings", async ({ page }) => {
+test('the Add agent "+" opens a new agent\'s settings', async ({ page }) => {
 	await mockMCP(page, {
 		agent_list: [],
 		job_list: [],
