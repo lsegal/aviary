@@ -158,9 +158,14 @@ func TestEngineWebUIPausesActiveWork(t *testing.T) {
 }
 
 // Pausing a queued job dispatches and cancels nothing: it only leaves the
-// queue, and later polls pass it over while other work runs.
+// queue, and later polls pass it over while other work runs. Only work this
+// instance already owns waits in the queue for a slot (issue #652), so #8 is
+// restored as active work from an earlier run.
 func TestEngineWebUIPausesQueuedWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(statePath, []byte(`{"o/r#8": {"status": "active", "sessionId": "session-8", "agent": "codex"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	src := &fakeSource{batches: [][]Issue{{{Number: 7, Title: "7"}, {Number: 8, Title: "8"}}}}
 	runner := &pausableRunner{sessions: make(chan Issue, 4), exit: make(chan struct{})}
 	close(runner.exit)
@@ -378,9 +383,9 @@ func TestEngineWebUIStopClearsAnUnlistedManualPause(t *testing.T) {
 	default:
 	}
 
-	src.mu.Lock()
+	src.fakeSource.mu.Lock()
 	src.batches = [][]Issue{{{Number: 7, Repository: "o/r"}}}
-	src.mu.Unlock()
+	src.fakeSource.mu.Unlock()
 	w.nudgePoll()
 	select {
 	case session := <-runner.sessions:
