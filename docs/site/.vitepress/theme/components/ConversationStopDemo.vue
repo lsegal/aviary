@@ -44,25 +44,25 @@
 .demo-shell {
 	position: relative;
 	overflow: hidden;
-	border: 1px solid rgba(99, 62, 46, 0.18);
+	border: 1px solid rgba(29, 26, 25, 0.18);
 	border-radius: 26px;
 	padding: 1rem 1rem 2rem;
 	background:
 		radial-gradient(circle at top right, rgba(214, 87, 31, 0.12), transparent 28%),
-		linear-gradient(180deg, rgba(255, 251, 245, 0.92), rgba(245, 233, 221, 0.98));
+		linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(246, 245, 245, 0.98));
 	box-shadow:
-		0 16px 30px -16px rgba(93, 53, 31, 0.28),
+		0 16px 30px -16px rgba(24, 20, 19, 0.28),
 		inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 .dark .demo-shell {
-	border-color: rgba(255, 223, 196, 0.14);
+	border-color: rgba(255, 255, 255, 0.14);
 	background:
 		radial-gradient(circle at top right, rgba(214, 87, 31, 0.18), transparent 32%),
-		linear-gradient(180deg, rgba(37, 25, 21, 0.96), rgba(22, 15, 13, 0.98));
+		linear-gradient(180deg, rgba(30, 30, 34, 0.96), rgba(19, 19, 21, 0.98));
 	box-shadow:
 		0 18px 36px -18px rgba(0, 0, 0, 0.6),
-		inset 0 1px 0 rgba(255, 244, 232, 0.07);
+		inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 .demo-header {
@@ -121,7 +121,7 @@
 	font-size: 0.95rem;
 	line-height: 1.45;
 	box-shadow:
-		0 10px 18px -14px rgba(93, 53, 31, 0.28),
+		0 10px 18px -14px rgba(24, 20, 19, 0.28),
 		inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
@@ -129,20 +129,20 @@
 	justify-self: end;
 	border-bottom-right-radius: 0.38rem;
 	background: linear-gradient(180deg, rgba(218, 90, 41, 0.96), rgba(174, 51, 24, 0.98));
-	color: #fff8f1;
+	color: #ffffff;
 }
 
 .bubble-assistant {
 	justify-self: start;
-	border: 1px solid rgba(99, 62, 46, 0.13);
+	border: 1px solid rgba(29, 26, 25, 0.13);
 	border-bottom-left-radius: 0.38rem;
 	background: rgba(255, 255, 255, 0.9);
 	color: var(--vp-c-text-1);
 }
 
 .dark .bubble-assistant {
-	border-color: rgba(255, 223, 196, 0.1);
-	background: rgba(255, 244, 232, 0.08);
+	border-color: rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.08);
 }
 
 .typing-bubble {
@@ -150,18 +150,18 @@
 	display: inline-flex;
 	align-items: center;
 	padding: 0.5rem 0.78rem;
-	border: 1px solid rgba(99, 62, 46, 0.08);
+	border: 1px solid rgba(29, 26, 25, 0.08);
 	border-radius: 999px;
-	background: rgba(234, 230, 224, 0.9);
+	background: rgba(238, 237, 236, 0.9);
 	box-shadow:
-		0 10px 18px -14px rgba(93, 53, 31, 0.22),
+		0 10px 18px -14px rgba(24, 20, 19, 0.22),
 		inset 0 1px 0 rgba(255, 255, 255, 0.42);
 	will-change: transform, opacity;
 }
 
 .dark .typing-bubble {
-	border-color: rgba(255, 223, 196, 0.08);
-	background: rgba(255, 244, 232, 0.12);
+	border-color: rgba(255, 255, 255, 0.08);
+	background: rgba(255, 255, 255, 0.12);
 }
 
 .typing-row {
