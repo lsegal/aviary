@@ -735,10 +735,6 @@
 							</div>
 
 
-							<div v-if="!agent.tasks?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No scheduled tasks configured for this agent. Add one with the + on Scheduled Tasks in the sidebar.
-							</div>
 
 <!-- The sidebar lists the tasks; this edits the open one. -->
 <div>
