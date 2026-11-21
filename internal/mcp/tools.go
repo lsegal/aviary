@@ -3082,6 +3082,12 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {
 			return nil, struct{}{}, err
 		}
+		// Apply saved tasks now rather than on the config watcher's debounced
+		// reload, so a task_list right after the save already lists their
+		// triggers and next fires.
+		if err := reloadTaskConfig(); err != nil {
+			return nil, struct{}{}, err
+		}
 		return text("config saved")
 	})
 

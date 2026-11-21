@@ -141,6 +141,11 @@ import {
 } from "../components/chat/attachments";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
+import {
+	chatDraftKey,
+	getChatDraft,
+	setChatDraft,
+} from "../components/chat/drafts";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import { renderMarkdown } from "../lib/markdown";
@@ -377,6 +382,26 @@ const sessionsLoading = computed(
 );
 const input = ref("");
 const attachments = ref<ChatAttachment[]>([]);
+// Each chat keeps its own unsent draft, so leaving a chat and coming back
+// finds it as it was. Composers keep drafts rather than asking before leaving.
+const draftKey = computed(() =>
+	selectedAgent.value && selectedSessionId.value
+		? chatDraftKey(selectedAgent.value, selectedSessionId.value)
+		: "",
+);
+watch(
+	draftKey,
+	(key) => {
+		const draft = getChatDraft(key);
+		input.value = draft.text;
+		attachments.value = draft.attachments;
+	},
+	// Swap drafts before anything else sees the new chat with the old text.
+	{ flush: "sync" },
+);
+watch([input, attachments], ([text, atts]) => {
+	if (draftKey.value) setChatDraft(draftKey.value, { text, attachments: atts });
+});
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.

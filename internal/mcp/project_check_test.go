@@ -63,14 +63,10 @@ func checkByName(res *ProjectCheckResult) map[string]ProjectCheck {
 	return out
 }
 
-const labelSearch = `api -X GET search/issues -f q=repo:lsegal/zvidlib is:issue is:open label:"ready" -f per_page=1 --jq .total_count`
-
 func TestProjectCheckAllReady(t *testing.T) {
 	home := stubProjectCheck(t, []string{"gh", "claude", "codex"}, map[string]string{
-		"auth status":                           "",
-		"api repos/lsegal/zvidlib":              `{"full_name":"lsegal/zvidlib","permissions":{"push":false}}`,
-		"api repos/lsegal/zvidlib/labels/ready": `{"name":"ready"}`,
-		labelSearch:                             "4\n",
+		"auth status":              "",
+		"api repos/lsegal/zvidlib": `{"full_name":"lsegal/zvidlib","permissions":{"push":false}}`,
 	})
 	installSkill(t, home, ".claude/skills", "1.6.0")
 	installSkill(t, home, ".agents/skills", "1.6.0")
@@ -85,7 +81,8 @@ func TestProjectCheckAllReady(t *testing.T) {
 	assert.Equal(t, projectCheckOK, checks["github"].Status)
 	assert.Equal(t, "Found claude and codex", checks["clis"].Message)
 	assert.Equal(t, "gh-fix 1.6.0 installed for all 2", checks["skills"].Message)
-	assert.Equal(t, `"ready" exists, with 4 open issues`, checks["ready_label"].Message)
+	_, hasLabel := checks["ready_label"]
+	assert.False(t, hasLabel, "pickup needs no label, so none is checked")
 	assert.Equal(t, projectCheckWarn, checks["fork"].Status)
 	assert.Len(t, res.CLIs, 2)
 	assert.Equal(t, "1.6.0", res.CLIs[1].Skills["gh-fix"])
@@ -118,13 +115,11 @@ func TestProjectCheckReportsEachFailure(t *testing.T) {
 		"auth status":              "",
 		"api repos/lsegal/zvidlib": `{"permissions":{"push":true}}`,
 	})
-	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/zvidlib", ReadyLabel: "ready"})
+	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/zvidlib"})
 	require.NoError(t, err)
 	assert.False(t, res.OK)
 	assert.False(t, res.Fork)
 	checks := checkByName(res)
-	assert.Equal(t, projectCheckFail, checks["ready_label"].Status)
-	assert.Contains(t, checks["ready_label"].Message, `"ready"`)
 	assert.Equal(t, projectCheckFail, checks["skills"].Status)
 	assert.Equal(t, "gh-fix is not installed for codex", checks["skills"].Message)
 	_, hasFork := checks["fork"]
@@ -140,8 +135,6 @@ func TestProjectCheckSignedOutAndNoCLIs(t *testing.T) {
 	assert.Equal(t, "gh is not signed in; run gh auth login", checks["github"].Message)
 	assert.Equal(t, projectCheckFail, checks["clis"].Status)
 	assert.Equal(t, projectCheckFail, checks["skills"].Status)
-	_, hasLabel := checks["ready_label"]
-	assert.False(t, hasLabel, "label is not checked without GitHub access")
 
 	stubProjectCheck(t, nil, nil)
 	res, err = runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/zvidlib"})
@@ -162,17 +155,6 @@ func TestProjectCheckUnreadableAndArchivedRepo(t *testing.T) {
 	res, err = runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/old"})
 	require.NoError(t, err)
 	assert.Contains(t, checkByName(res)["github"].Message, "archived")
-}
-
-func TestProjectCheckBoardSkipsLabel(t *testing.T) {
-	stubProjectCheck(t, []string{"gh"}, map[string]string{"auth status": ""})
-	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "users/lsegal/projects/4"})
-	require.NoError(t, err)
-	assert.Equal(t, "board", res.Kind)
-	checks := checkByName(res)
-	assert.Equal(t, "gh is signed in", checks["github"].Message)
-	_, hasLabel := checks["ready_label"]
-	assert.False(t, hasLabel)
 }
 
 func TestParseProjectTarget(t *testing.T) {

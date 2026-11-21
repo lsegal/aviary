@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { installUnsavedChanges } from "../composables/useUnsavedChanges";
 import { useAuthStore } from "../stores/auth";
 
 const SettingsView = () => import("../views/SettingsView.vue");
 const ProjectsView = () => import("../views/ProjectsView.vue");
-const ProjectRunView = () => import("../views/ProjectRunView.vue");
+const ProjectJobDetail = () =>
+	import("../components/projects/ProjectJobDetail.vue");
 
 const router = createRouter({
 	history: createWebHistory(),
@@ -21,7 +23,7 @@ const router = createRouter({
 		{
 			path: "/agents/:agent?/:subtab(settings|files|tasks)?/:section(permissions|channels)?",
 			component: SettingsView,
-			meta: { requiresAuth: true },
+			meta: { requiresAuth: true, view: "settings" },
 		},
 		{
 			path: "/agents/:agent/chat/:sessionId?",
@@ -35,15 +37,13 @@ const router = createRouter({
 			component: ProjectsView,
 			meta: { requiresAuth: true },
 		},
+		// A job's details open inside its project page, so the project header
+		// and its Chat and Logs panels stay mounted.
 		{
 			path: "/agents/:agent/projects/:project",
 			component: ProjectsView,
 			meta: { requiresAuth: true },
-		},
-		{
-			path: "/agents/:agent/projects/:project/jobs/:number(\\d+)",
-			component: ProjectRunView,
-			meta: { requiresAuth: true },
+			children: [{ path: "jobs/:number(\\d+)", component: ProjectJobDetail }],
 		},
 		// The instance's own pages.
 		{ path: "/system", redirect: "/system/overview" },
@@ -55,7 +55,7 @@ const router = createRouter({
 		{
 			path: "/system/:tab(settings|projects|providers|sessions|skills)",
 			component: SettingsView,
-			meta: { requiresAuth: true },
+			meta: { requiresAuth: true, view: "settings" },
 		},
 		{
 			path: "/system/usage",
@@ -92,11 +92,7 @@ const router = createRouter({
 			path: "/system/watches/:project",
 			component: ProjectsView,
 			meta: { requiresAuth: true },
-		},
-		{
-			path: "/system/watches/:project/jobs/:number(\\d+)",
-			component: ProjectRunView,
-			meta: { requiresAuth: true },
+			children: [{ path: "jobs/:number(\\d+)", component: ProjectJobDetail }],
 		},
 	],
 });
@@ -107,5 +103,6 @@ router.beforeEach((to) => {
 		return "/login";
 	}
 });
+installUnsavedChanges(router);
 
 export default router;

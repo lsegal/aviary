@@ -1,7 +1,7 @@
 <template>
 	<article data-testid="job-card"
-		class="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-		<div class="space-y-1.5 p-4">
+		class="flex max-h-[50vh] min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+		<div class="shrink-0 space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<JobStatusPill :state="job.state" />
 				<router-link v-if="showProject" :to="projectBoardPath" data-testid="job-project"
@@ -49,8 +49,8 @@
 			</div>
 		</div>
 		<pre data-testid="job-output"
-			class="h-40 flex-1 overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
-		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
+			class="min-h-0 flex-[1_1_7rem] overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
+		<div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
 			<router-link :to="runPath" aria-label="Details" title="Open this job's run view"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				<ArrowsPointingOutIcon aria-hidden="true" class="h-4 w-4" />

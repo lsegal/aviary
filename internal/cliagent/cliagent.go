@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Backend identifies a supported agent CLI.
@@ -31,6 +32,12 @@ const ModelPrefix = "cli/"
 // CLI's MCP configuration. Tool calls against it are reported by Aviary's MCP
 // boundary rather than mapped from the CLI's event stream.
 const MCPServerName = "aviary"
+
+// MCPToolTimeout is how long a CLI waits on one call to Aviary's MCP server.
+// The CLIs give up on a tool call after 60 seconds by default, while tools
+// such as project_issue_create run a whole gh-create (issue #710), so it
+// covers the longest tool rather than the CLI's default.
+const MCPToolTimeout = 30 * time.Minute
 
 // IsCLIModel reports whether model selects a CLI backend, either as
 // "cli/<backend>/<model>" or as "<backend>/<model>".

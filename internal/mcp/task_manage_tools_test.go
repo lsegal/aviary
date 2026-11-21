@@ -187,3 +187,30 @@ func TestTaskSchedule_ProjectTask(t *testing.T) {
 	})), "need a schedule trigger")
 	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_update", map[string]any{"name": "triage", "project": ""})), "require a project")
 }
+
+// A task saved through config_save, as the web UI's Add task dialog does,
+// lists with its trigger summary and next fire right away, without waiting
+// for the config watcher's reload.
+func TestConfigSaveRegistersTaskTriggersImmediately(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+
+	incoming := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku", Tasks: []config.TaskConfig{{
+		Name:     "hourly-ci-watch",
+		Schedule: "0 * * * *",
+		Timezone: "America/Los_Angeles",
+		Prompt:   "Rerun flaky CI jobs on open PRs.",
+		FromFile: true,
+	}}}}}
+	b, err := json.Marshal(incoming)
+	require.NoError(t, err)
+	out, err := d.CallTool(context.Background(), "config_save", map[string]any{"config": string(b)})
+	require.NoError(t, err)
+	assert.Contains(t, out, "config saved")
+
+	tasks := s.ListTasks()
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "bot/hourly-ci-watch", tasks[0].ID)
+	assert.Equal(t, "cron 0 * * * * (America/Los_Angeles)", tasks[0].Description)
+	require.NotNil(t, tasks[0].NextRun)
+	assert.True(t, tasks[0].NextRun.After(time.Now()))
+}

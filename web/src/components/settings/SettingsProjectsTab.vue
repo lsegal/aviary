@@ -33,14 +33,10 @@
 			Settings <span :class="CARD_NOTE">One set for every project of every agent. Grey tags mark defaults that aren't saved</span>
 		</h3>
 		<div class="space-y-4 p-4">
-			<div class="grid gap-4 sm:grid-cols-3">
+			<div class="grid gap-4 sm:grid-cols-2">
 				<label class="block">
 					<span :class="LABEL">Jobs at once, across every project <DefaultTag :on="isDefault('concurrency')" /></span>
 					<input v-model.number="form.concurrency" type="number" min="1" :class="INPUT" data-field="concurrency" />
-				</label>
-				<label class="block">
-					<span :class="LABEL">Ready label <DefaultTag :on="isDefault('readyLabel')" /></span>
-					<input v-model="form.readyLabel" type="text" placeholder="Off (board status only)" :class="INPUT" data-field="ready_label" />
 				</label>
 				<label class="block">
 					<span :class="LABEL">How to read GitHub <DefaultTag :on="isDefault('delivery')" /></span>
