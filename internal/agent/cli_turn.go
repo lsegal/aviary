@@ -377,6 +377,43 @@ func (r *AgentRunner) stopCLIProcs() {
 	}
 }
 
+// CompleteCLIText asks a CLI-backed model for a single reply to prompt under
+// system, with no tools and no saved CLI session, the way a model API
+// completion is asked. It is for short side queries such as naming a chat.
+func CompleteCLIText(ctx context.Context, model, system, prompt string) (string, error) {
+	backend, cliModel, err := cliagent.ParseModel(model)
+	if err != nil {
+		return "", err
+	}
+	workDir := os.TempDir()
+	sess, err := newCLISession(cliagent.Options{
+		Backend:      backend,
+		Model:        cliModel,
+		SystemPrompt: system,
+		WorkDir:      workDir,
+		Approval:     cliApprovalArgs(backend, clidefs.ApprovalReadOnly),
+		Ephemeral:    true,
+		Env:          cliLaunchEnv(backend, workDir),
+	})
+	if err != nil {
+		return "", err
+	}
+	defer sess.Close() //nolint:errcheck
+	var streamed strings.Builder
+	res, err := sess.Send(ctx, cliagent.Turn{Text: prompt}, func(ev cliagent.Event) {
+		if ev.Type == cliagent.EventText {
+			streamed.WriteString(ev.Text)
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	if answer := strings.TrimSpace(res.Text); answer != "" {
+		return answer, nil
+	}
+	return strings.TrimSpace(streamed.String()), nil
+}
+
 // cliApprovalArgs translates the chat approval mode into the backend's native
 // permission flags through its CLI provider definition, the same translation
 // every other CLI launch uses.
