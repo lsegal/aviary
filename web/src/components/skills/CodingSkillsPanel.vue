@@ -158,7 +158,14 @@
 
       <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h3 class="text-base font-semibold text-gray-900 dark:text-white">Use them without Aviary</h3>
-        <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">Install once:</p>
+        <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">Install all four globally:</p>
+        <pre data-testid="coding-skills-install-command" class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs text-gray-800 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">aviary install-skills</pre>
+        <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+          Installs gh-create, gh-discuss, gh-fix and gh-safe-merge with <code class="font-mono">npx skills</code> into
+          <code class="font-mono">~/.agents/skills</code> and every CLI provider on the PATH, refreshing any already installed.
+          Aviary runs it automatically on first launch.
+        </p>
+        <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">Or install one skill for one CLI:</p>
         <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs text-gray-800 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">{{ installCommand }}</pre>
         <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">Then, in the CLI:</p>
         <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-xs text-gray-800 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">/gh-fix owner/repo#123</pre>

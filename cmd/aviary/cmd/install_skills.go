@@ -27,7 +27,7 @@ it again is safe. Aviary runs the same install on its first launch.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		result, err := installSkillsManager().InstallGlobal(cmd.Context())
 		for _, skill := range result.Installed {
-			fmt.Fprintf(cmd.OutOrStdout(), "installed %s\n", skill)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "installed %s\n", skill)
 		}
 		return err
 	},
