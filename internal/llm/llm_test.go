@@ -691,7 +691,7 @@ func TestAnthropicProvider_Stream_NoPromptCacheWithoutCacheControl(t *testing.T)
 }
 
 func TestAnthropicProvider_Stream_ReportsCacheUsage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		// message_delta omits the input and cache counts, as older API
