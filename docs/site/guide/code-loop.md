@@ -54,8 +54,8 @@ A comment that mentions `@/aviary:<ID>` addresses one instance directly; see [St
 `gh-fix` never touches your own checkout. It validates the issue and reads the whole thread, then:
 
 1. Creates a branch named `fix/issue-<N>-<slug>`, from the default branch, or from the blocker's branch when the job is stacked.
-2. Opens a **draft pull request** linked to the issue with `Closes #<N>`, before writing any code. Its body carries a `## Plan` checklist, and the board shows the share of checked items as the job's progress.
-3. Clones the repository into the clone directory Aviary named, and reports the path back with an `AVIARY_CHECKOUT_DIRECTORY=` line so the board can show it.
+2. Opens a **draft pull request** linked to the issue with `Closes #<N>`, before writing any code. Its body carries a `## Plan` checklist of the steps ahead.
+3. Clones the repository into the clone directory Aviary named, and reports the path back to Aviary with an `AVIARY_CHECKOUT_DIRECTORY=` line.
 
 A job that is interrupted and dispatched again finds the open pull request for the issue, clones its branch, and carries on rather than starting over.
 
@@ -107,7 +107,7 @@ A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that ins
 
 - A run that exits while its issue is still open is resumed in the same session, or restarted with a recovery prompt when the session is gone.
 - Resumes back off from 30 seconds to 15 minutes. Four in a row that change nothing on GitHub pause the job until you retry it.
-- The stuck-job watchdog runs every `unblock_interval` (15 minutes) and makes one agent call (`unblock_agent`, `unblock_model`) that unblocks paused and silent jobs. **Unblock** on the board, or `project_unblock_run`, runs a round now.
+- The stuck-job watchdog runs every `unblock_interval` (15 minutes) and makes one agent call (`unblock_agent`, `unblock_model`) that unblocks paused and silent jobs. The prompt chat, or the `project_unblock_run` tool, runs a round now.
 - On shutdown, restart or upgrade, every job's work is committed and pushed first, and the jobs resume afterwards.
 
 See [Keeping jobs moving](./projects#keeping-jobs-moving).
