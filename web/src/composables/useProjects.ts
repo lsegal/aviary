@@ -179,11 +179,14 @@ export function useProjectBoard(
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
-	watch([() => targets.value.join(" "), () => states.value.join(","), kanban], () => {
-		page.value = 0;
-		loading.value = true;
-		void refresh();
-	});
+	watch(
+		[() => targets.value.join(" "), () => states.value.join(","), kanban],
+		() => {
+			page.value = 0;
+			loading.value = true;
+			void refresh();
+		},
+	);
 	// A new search starts on the first page of its matches; when the page is
 	// already first, the page watcher stays quiet, so load here.
 	watch(search, () => {

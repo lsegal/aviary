@@ -255,6 +255,12 @@ const EVENTS_218 = [
 ];
 
 // project_job_list's project filter: the board passes targets, one or more.
+// The board's toggle chip for one job state.
+const stateChip = (page: Page, label: string) =>
+	page
+		.getByRole("group", { name: "Job filter" })
+		.getByRole("button", { name: new RegExp(`^${label}`) });
+
 const inTargets = (args: Record<string, unknown> | undefined, target: string) =>
 	!Array.isArray(args?.targets) || args.targets.includes(target);
 
@@ -318,7 +324,7 @@ async function setup(
 				(j) =>
 					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
-					(!args?.state || j.state === args.state),
+					(!args?.states || (args.states as string[]).includes(j.state)),
 			);
 			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
 		},
@@ -606,15 +612,16 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect
 		.poll(() => calls.project_status.at(-1)?.targets)
 		.toEqual(["lsegal/aviary"]);
-	// Each board state's card counts the jobs its filter tab shows.
+	// Each board state's card counts the jobs its filter chip shows.
 	for (const label of ["Starting", "Paused", "Running", "Done", "Failed"]) {
 		const card = stats.locator("div").filter({ hasText: label });
 		await expect(card).toHaveText(new RegExp(`^${label}\\d+$`));
 		const count = Number((await card.textContent())?.replace(/\D/g, ""));
-		await page.getByRole("tab", { name: label }).click();
+		const chip = stateChip(page, label);
+		await chip.click();
 		await expect(page.getByTestId("job-card")).toHaveCount(count);
+		await chip.click();
 	}
-	await page.getByRole("tab", { name: "All" }).click();
 	const clis = page.getByRole("region", { name: "CLI providers" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
@@ -677,11 +684,15 @@ test("retry, stop, filters and check now call project tools", async ({
 	const done = page.getByTestId("job-card").filter({ hasText: "#200" });
 	await expect(done.getByRole("button", { name: "Stop" })).toHaveCount(0);
 
-	await page.getByRole("tab", { name: "Paused" }).click();
+	await stateChip(page, "Paused").click();
 	await expect(page.getByTestId("job-card")).toHaveCount(1);
 	await expect(page.getByTestId("job-card")).toContainText("#214");
 	await expect
-		.poll(() => calls.project_job_list.some((c) => c.state === "paused"))
+		.poll(() =>
+			calls.project_job_list.some(
+				(c) => JSON.stringify(c.states) === '["paused"]',
+			),
+		)
 		.toBe(true);
 
 	const checkNow = page.getByRole("button", { name: "Check now" });
@@ -715,7 +726,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 				(j) =>
 					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
-					(!args?.state || j.state === args.state) &&
+					(!args?.states || (args.states as string[]).includes(j.state)) &&
 					(!query || j.title.toLowerCase().includes(query.toLowerCase())),
 			);
 			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
@@ -751,7 +762,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	);
 
 	// Filters and search narrow the whole board, as on one project's.
-	await page.getByRole("tab", { name: "Running" }).click();
+	await stateChip(page, "Running").click();
 	await expect(cards).toHaveCount(2);
 	await page.getByLabel("Search jobs").fill("B-frames");
 	await expect(cards).toHaveCount(1);
@@ -1485,7 +1496,7 @@ test("search filters the whole job list across every field", async ({
 				(j) =>
 					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
-					(!args?.state || j.state === args.state),
+					(!args?.states || (args.states as string[]).includes(j.state)),
 			);
 			const found = query ? scoped.filter((j) => matches(j, query)) : scoped;
 			const offset = Number(args?.offset ?? 0);
@@ -1555,13 +1566,13 @@ test("search filters the whole job list across every field", async ({
 	}
 
 	// The search narrows within the active status filter.
-	await page.getByRole("tab", { name: "Failed" }).click();
+	await stateChip(page, "Failed").click();
 	await expect(cards).toHaveCount(1);
 	await expect(cards).toContainText("#306");
 	await expect(page.getByTestId("search-count")).toHaveText(
 		"1 of 1 job matches",
 	);
-	await page.getByRole("tab", { name: /^All/ }).click();
+	await stateChip(page, "Failed").click();
 
 	await search.fill("kaboom");
 	await expect(cards).toHaveCount(1);
@@ -1599,16 +1610,14 @@ test("the view tabs, five state filters and kanban toggle sit beside the search"
 		toolbar.getByRole("tablist", { name: "Project views" }),
 	).toBeVisible();
 	await expect(
-		toolbar.getByRole("tablist", { name: "Job filter" }).getByRole("tab"),
-	).toHaveText([/^All/, "Starting", "Paused", "Running", "Done", "Failed"]);
+		toolbar.getByRole("group", { name: "Job filter" }).getByRole("button"),
+	).toHaveText([/^Starting/, /^Paused/, /^Running/, /^Done/, /^Failed/]);
 	await expect(toolbar.getByTestId("kanban-toggle")).toBeVisible();
 	// The header no longer carries its own copy of the tabs.
 	await expect(
 		page.getByRole("tablist", { name: "Project views" }),
 	).toHaveCount(1);
-	await expect(page.getByRole("tablist", { name: "Job filter" })).toHaveCount(
-		1,
-	);
+	await expect(page.getByRole("group", { name: "Job filter" })).toHaveCount(1);
 
 	// Each state filter shows exactly that state's jobs.
 	for (const [tab, numbers] of [
@@ -1618,11 +1627,131 @@ test("the view tabs, five state filters and kanban toggle sit beside the search"
 		["Done", ["#200"]],
 		["Failed", ["#209"]],
 	] as const) {
-		await toolbar.getByRole("tab", { name: tab }).click();
+		await stateChip(page, tab).click();
 		const cards = page.getByTestId("job-card");
 		await expect(cards).toHaveCount(numbers.length);
 		for (const n of numbers) await expect(cards).toContainText(n);
+		await stateChip(page, tab).click();
 	}
+});
+
+test("the state chips multi-select and each board remembers its own", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(5);
+	const total = page.getByTestId("job-total");
+	await expect(total).toHaveText("5 jobs");
+	const pressed = async (on: string[]) => {
+		for (const label of ["Starting", "Paused", "Running", "Done", "Failed"])
+			await expect(stateChip(page, label)).toHaveAttribute(
+				"aria-pressed",
+				on.includes(label) ? "true" : "false",
+			);
+	};
+	await pressed([]);
+	await expect(page.getByRole("button", { name: "Clear" })).toHaveCount(0);
+
+	// Running and Failed together show only their jobs, in list and kanban.
+	await stateChip(page, "Running").click();
+	await stateChip(page, "Failed").click();
+	await pressed(["Running", "Failed"]);
+	await expect(stateChip(page, "Running")).toHaveClass(/bg-blue-600/);
+	await expect(stateChip(page, "Done")).not.toHaveClass(/bg-green-600/);
+	await expect(cards).toHaveCount(2);
+	await expect(cards.filter({ hasText: "#218" })).toHaveCount(1);
+	await expect(cards.filter({ hasText: "#209" })).toHaveCount(1);
+	await expect(total).toHaveText("2 of 5 jobs");
+	await expect(page).toHaveURL(/[?&]state=running(,|%2C)failed$/);
+	await page.getByTestId("kanban-toggle").click();
+	const columns = page.getByTestId("kanban-column");
+	await expect(columns).toHaveCount(2);
+	await expect(columns.nth(0)).toHaveAttribute("data-state", "running");
+	await expect(columns.nth(1)).toHaveAttribute("data-state", "failed");
+	await expect(page.getByTestId("kanban-card")).toHaveCount(2);
+	await page.getByTestId("kanban-toggle").click();
+
+	// Opening a job's details and going back to the board keeps them.
+	await cards
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await expect(page).toHaveURL(/\/jobs\/218$/);
+	await page.getByRole("link", { name: "lsegal/aviary", exact: true }).click();
+	await expect(page).toHaveURL(/[?&]state=running(,|%2C)failed$/);
+	await pressed(["Running", "Failed"]);
+	await expect(cards).toHaveCount(2);
+
+	// Another project keeps its own selection, and coming back restores this one.
+	await page.goto("/agents/coder/projects/lsegal%2Fzvidlib");
+	await pressed([]);
+	await stateChip(page, "Done").click();
+	await pressed(["Done"]);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await pressed(["Running", "Failed"]);
+	await expect(cards).toHaveCount(2);
+
+	// A reload keeps them.
+	await page.reload();
+	await pressed(["Running", "Failed"]);
+	await expect(cards).toHaveCount(2);
+
+	// Deselecting every chip shows every job again, and stays that way.
+	await page.getByRole("button", { name: "Clear" }).click();
+	await pressed([]);
+	await expect(cards).toHaveCount(5);
+	await expect(total).toHaveText("5 jobs");
+	await expect(page).not.toHaveURL(/state=/);
+	await page.reload();
+	await pressed([]);
+	await expect(cards).toHaveCount(5);
+	await stateChip(page, "Done").click();
+	await stateChip(page, "Done").click();
+	await pressed([]);
+	await expect(cards).toHaveCount(5);
+	await page.goto("/agents/coder/projects/lsegal%2Fzvidlib");
+	await pressed(["Done"]);
+});
+
+test("a URL's state query preselects its chips over the remembered ones", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await stateChip(page, "Done").click();
+	await expect(page.getByTestId("job-card")).toHaveCount(1);
+
+	await page.goto(
+		"/agents/coder/projects/lsegal%2Faviary?state=running,failed",
+	);
+	for (const [label, on] of [
+		["Starting", "false"],
+		["Paused", "false"],
+		["Running", "true"],
+		["Done", "false"],
+		["Failed", "true"],
+	])
+		await expect(stateChip(page, label)).toHaveAttribute("aria-pressed", on);
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(2);
+
+	// The Board/Schedules toggle keeps the selection.
+	await page.getByRole("tab", { name: /^Schedules/ }).click();
+	await expect(page).toHaveURL(/tab=schedules/);
+	await expect(page).toHaveURL(/state=running(,|%2C)failed/);
+	await page.getByRole("tab", { name: /^Board/ }).click();
+	await expect(stateChip(page, "Running")).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	await expect(cards).toHaveCount(2);
+
+	// The URL's selection is now the remembered one.
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page).toHaveURL(/[?&]state=running(,|%2C)failed$/);
+	await expect(cards).toHaveCount(2);
 });
 
 test("a job card's PR icon is colored by its pull request state", async ({
@@ -1686,7 +1815,7 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 	await expect.poll(() => calls.project_job_list.at(-1)?.limit).toBe(1000);
 
 	// A state filter narrows the board to that state's column.
-	await page.getByRole("tab", { name: "Paused" }).click();
+	await stateChip(page, "Paused").click();
 	await expect(columns).toHaveCount(1);
 	await expect(columns).toHaveAttribute("data-state", "paused");
 

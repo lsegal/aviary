@@ -319,7 +319,8 @@ const settingsPath = computed(() =>
 // a job and reloading keep them. A URL's states win over remembered ones.
 const states = computed(() => parseBoardStates(route.query.state));
 const statesKey = computed(
-	() => `aviary.projects.states.${project.value || `agent:${routeAgent.value}`}`,
+	() =>
+		`aviary.projects.states.${project.value || `agent:${routeAgent.value}`}`,
 );
 function setStates(next: BoardState[]) {
 	const state = parseBoardStates(next.join(",")).join(",");
