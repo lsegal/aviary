@@ -403,7 +403,9 @@ const {
 } = useProjectSchedules(project);
 // New project scheduled tasks run under the project's owning agent; a watch no
 // agent owns falls back to the first agent.
-const scheduleAgent = computed(() => owner.value || scheduleAgents.value[0] || "");
+const scheduleAgent = computed(
+	() => owner.value || scheduleAgents.value[0] || "",
+);
 
 // The project's scheduled tasks are their own kind of box on the board: in
 // the list, with no states selected, and in the kanban's Scheduled column.
