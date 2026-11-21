@@ -326,7 +326,8 @@
 		"target"
 	],
 	"project_status": [
-		"log_offset"
+		"log_offset",
+		"targets"
 	],
 	"project_unblock_run": [
 		"number",
