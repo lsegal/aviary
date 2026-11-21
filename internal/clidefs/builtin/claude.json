@@ -20,6 +20,14 @@
     "stop": "stop",
     "rejected": {"event": "user", "results": "message.content[]", "id": "tool_use_id", "error": "is_error"}
   },
+  "configHome": {
+    "env": "CLAUDE_CONFIG_DIR",
+    "default": "~/.claude",
+    "private": [".claude.json"],
+    "outside": {".claude.json": "~/.claude.json"},
+    "storageEnv": "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+    "trust": {"file": ".claude.json", "path": ["projects", "{dir}", "hasTrustDialogAccepted"]}
+  },
   "quota": {"reader": "claude"},
   "skills": {"target": "claude-code"},
   "promptStdin": [],

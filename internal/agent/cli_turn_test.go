@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -408,14 +409,39 @@ func TestCLILaunchEnvOverlaysCodexHome(t *testing.T) {
 	store.SetDataDir(t.TempDir())
 	t.Cleanup(func() { store.SetDataDir("") })
 
-	env := cliLaunchEnv(cliagent.Codex)
+	env := cliLaunchEnv(cliagent.Codex, t.TempDir())
 	require.Len(t, env, 1)
 	overlay, ok := strings.CutPrefix(env[0], "CODEX_HOME=")
 	require.True(t, ok, env[0])
 	assert.Equal(t, store.CLIHomesDir(), filepath.Dir(overlay))
 	assert.FileExists(t, filepath.Join(overlay, "config.toml"))
 
-	assert.Empty(t, cliLaunchEnv(cliagent.Claude), "claude declares no settings overlay")
+}
+
+// TestCLILaunchEnvTrustsClaudeWorkDir shows chat turns launch claude with
+// CLAUDE_CONFIG_DIR at aviary's overlay, whose .claude.json copy trusts the
+// turn's working directory, so Claude applies its permission allow entries
+// while the user's own .claude.json is left alone (#565).
+func TestCLILaunchEnvTrustsClaudeWorkDir(t *testing.T) {
+	home, workDir := t.TempDir(), t.TempDir()
+	user := []byte(`{"projects":{}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".claude.json"), user, 0o600))
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	env := cliLaunchEnv(cliagent.Claude, workDir)
+	require.Len(t, env, 2)
+	overlay, ok := strings.CutPrefix(env[0], "CLAUDE_CONFIG_DIR=")
+	require.True(t, ok, env[0])
+	assert.Equal(t, store.CLIHomesDir(), filepath.Dir(overlay))
+	assert.Equal(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+home, env[1])
+	data, err := os.ReadFile(filepath.Join(overlay, ".claude.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), strconv.Quote(filepath.ToSlash(workDir)))
+	got, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	require.NoError(t, err)
+	assert.Equal(t, user, got)
 }
 
 // TestCLITurn_PassesAgentPermissionsToTheCLI checks the agent's exec and
