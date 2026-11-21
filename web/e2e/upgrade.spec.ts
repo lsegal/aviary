@@ -269,7 +269,7 @@ test("dev checkout with local changes blocks the update and says why", async ({
 	);
 });
 
-test("auto update says it waits for running jobs", async ({ page }) => {
+test("auto update applies with jobs running", async ({ page }) => {
 	await mockMCP(page, {
 		agent_list: [],
 		job_list: [],
@@ -282,8 +282,7 @@ test("auto update says it waits for running jobs", async ({ page }) => {
 				held: false,
 				autoUpdate: {
 					version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-					state: "waiting-jobs",
-					jobs: 2,
+					state: "applying",
 				},
 			},
 		},
@@ -291,8 +290,11 @@ test("auto update says it waits for running jobs", async ({ page }) => {
 	await page.goto("/system/overview");
 
 	await expect(page.getByTestId("auto-update-status").first()).toContainText(
-		"Auto update is waiting for 2 running jobs to finish.",
+		"Auto update is pulling the checkout…",
 	);
+	await expect(
+		page.getByTestId("auto-update-status").first(),
+	).not.toContainText("running job");
 	await expect(page.getByTestId("auto-update-error")).toHaveCount(0);
 });
 

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
@@ -420,6 +420,45 @@ test('the GitHub Projects count bubble is green and the Add project "+" sits bes
 	const plusBox = await plus.boundingBox();
 	expect(badgeBox && plusBox).toBeTruthy();
 	if (!badgeBox || !plusBox) return;
+	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
+});
+
+test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.mouse.move(800, 600);
+	// Gap between a badge's right edge and its row's right edge.
+	const gap = async (row: Locator, badge: Locator) => {
+		const r = await row.boundingBox();
+		const b = await badge.boundingBox();
+		if (!r || !b) throw new Error("missing box");
+		return r.x + r.width - (b.x + b.width);
+	};
+	const header = page
+		.getByTestId("sidebar-nav")
+		.getByRole("link", { name: /^GitHub Projects/ });
+	const headerBadge = header.getByTestId("agent-running-badge");
+	const project = page
+		.getByTestId("sidebar-agent-projects")
+		.getByRole("link", { name: /lsegal\/aviary/ });
+	const projectBadge = project.getByTestId("project-running-badge");
+	// With nothing hovered both badges hug the right edge, inside the row's
+	// own padding.
+	await expect.poll(() => gap(header, headerBadge)).toBeLessThanOrEqual(12);
+	await expect.poll(() => gap(project, projectBadge)).toBeLessThanOrEqual(12);
+
+	// Hovering shows the "+", and the badge moves left of it.
+	const plus = page.getByTestId("sidebar-add-project");
+	await header.hover();
+	await expect
+		.poll(() => plus.evaluate((el) => Number(getComputedStyle(el).opacity)))
+		.toBe(1);
+	await expect.poll(() => gap(header, headerBadge)).toBeGreaterThan(24);
+	const badgeBox = await headerBadge.boundingBox();
+	const plusBox = await plus.boundingBox();
+	if (!badgeBox || !plusBox) throw new Error("missing box");
 	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
 });
 
@@ -1540,7 +1579,7 @@ test("a job card's PR icon is colored by its pull request state", async ({
 	}
 });
 
-test("the kanban view lays jobs out in five columns of compact cards", async ({
+test("the kanban view lays jobs out in state columns of compact cards", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -1551,8 +1590,10 @@ test("the kanban view lays jobs out in five columns of compact cards", async ({
 	await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
 	const columns = page.getByTestId("kanban-column");
-	await expect(columns).toHaveCount(5);
+	// A project board leads with its Scheduled column, empty here.
+	await expect(columns).toHaveCount(6);
 	await expect(columns.locator("h3")).toHaveText([
+		/Scheduled\s*0/,
 		/Starting\s*1/,
 		/Paused\s*1/,
 		/Running\s*1/,

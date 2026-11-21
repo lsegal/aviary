@@ -230,6 +230,118 @@ test("board shows scheduled job cards and the up next strip", async ({
 	await expect(page.getByTestId("schedule-editor")).toBeVisible();
 });
 
+test("board lists scheduled tasks as their own boxes with run details", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const boxes = page.getByTestId("scheduled-card");
+	// Only this project's scheduled tasks, sorted by name.
+	await expect(boxes).toHaveCount(2);
+	const nightly = boxes.nth(0);
+	await expect(nightly.getByRole("heading")).toHaveText("nightly-triage");
+	await expect(nightly.getByTestId("scheduled-trigger")).toHaveText(
+		"daily at 02:00 (America/Toronto)",
+	);
+	await expect(nightly.getByTestId("scheduled-next")).toContainText(
+		/in 4[12]m/,
+	);
+	await expect(nightly.getByTestId("scheduled-last")).toContainText(
+		"Labeled 4 issues",
+	);
+	await expect(boxes.nth(1).getByTestId("scheduled-next")).toHaveText("paused");
+	await expect(boxes.nth(1).getByTestId("scheduled-last")).toHaveText("never");
+
+	// The search narrows scheduled boxes with the jobs; a state filter hides them.
+	await page.getByLabel("Search jobs").fill("dependencies");
+	await expect(boxes).toHaveCount(1);
+	await expect(boxes.first()).toContainText("weekly-deps");
+	await page.getByLabel("Search jobs").fill("");
+	await page.getByRole("tab", { name: "Running" }).click();
+	await expect(boxes).toHaveCount(0);
+});
+
+test("kanban shows a Scheduled column of compact scheduled boxes", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await page.getByTestId("kanban-toggle").click();
+
+	const columns = page.getByTestId("kanban-column");
+	await expect(columns.first()).toHaveAttribute("data-state", "scheduled");
+	const cards = columns.first().getByTestId("kanban-scheduled-card");
+	await expect(cards).toHaveCount(2);
+	await expect(cards.first().getByTestId("kanban-scheduled-next")).toHaveText(
+		/^Next in 4[12]m$/,
+	);
+	await expect(
+		cards.first().getByTestId("kanban-scheduled-prompt"),
+	).toContainText("Triage issues opened since the last run");
+	await expect(cards.nth(1).getByTestId("kanban-scheduled-next")).toHaveText(
+		"Paused",
+	);
+	// The compact card has no output.
+	await expect(cards.first().locator("pre")).toHaveCount(0);
+
+	// A state filter narrows the board to that state's column.
+	await page.getByRole("tab", { name: "Running" }).click();
+	await expect(columns).toHaveCount(1);
+	await expect(columns.first()).toHaveAttribute("data-state", "running");
+});
+
+test("a scheduled box opens its timings, last runs and predicted runs", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await page
+		.getByTestId("scheduled-card")
+		.first()
+		.getByRole("link", { name: "nightly-triage" })
+		.click();
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
+
+	const detail = page.getByTestId("schedule-detail");
+	await expect(detail.getByTestId("schedule-timings")).toContainText(
+		"daily at 02:00 (America/Toronto)",
+	);
+	await expect(detail.getByTestId("schedule-timings")).toContainText(
+		"America/Toronto",
+	);
+	// Predictions come from the scheduler for the saved task.
+	await expect(
+		detail.getByTestId("schedule-predicted").locator("li"),
+	).toHaveCount(3);
+	expect(calls.task_preview?.[0]).toEqual({
+		name: "assistant/nightly-triage",
+		count: 5,
+	});
+	const runs = detail.getByTestId("schedule-last-runs").locator("li");
+	await expect(runs).toHaveCount(2);
+	await expect(runs.first()).toContainText("running");
+	await expect(detail.getByTestId("schedule-prompt")).toHaveText(
+		"Triage issues opened since the last run and label them.",
+	);
+	await expect(detail.getByTestId("schedule-settings")).toContainText(
+		"cli/claude/opus",
+	);
+	await expect(page.getByTestId("job-card")).toHaveCount(0);
+
+	await detail.getByRole("button", { name: "Run now" }).click();
+	await expect
+		.poll(() => calls.task_run?.[0])
+		.toEqual({ name: "assistant/nightly-triage" });
+
+	await detail.getByRole("link", { name: "Edit" }).click();
+	await expect(page.getByTestId("schedule-editor")).toBeVisible();
+
+	await page.goBack();
+	await detail.getByRole("link", { name: "Back to board" }).click();
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+});
+
 test("up next strip is hidden when no schedule is enabled", async ({
 	page,
 }) => {

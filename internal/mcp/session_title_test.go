@@ -72,16 +72,34 @@ func TestAgentRun_TitlesNewChatFromFirstPrompt(t *testing.T) {
 	assert.Equal(t, "Weekend trip plans", agent.SessionTitle("assistant", sess.ID))
 }
 
-func TestAgentRun_FallsBackToPromptWhenTitleFails(t *testing.T) {
+func TestAgentRun_LeavesChatUnnamedUntilTheModelAnswers(t *testing.T) {
+	var attempt atomic.Int32
 	c := setupTitleTest(t, func(context.Context, string, string) (string, error) {
-		return "", errors.New("no provider")
+		switch attempt.Add(1) {
+		case 1:
+			return "", errors.New("no provider")
+		case 2:
+			return "  \n", nil
+		}
+		return "Sky color physics", nil
 	})
 	sess, err := agent.NewSessionManager().Create("assistant")
 	require.NoError(t, err)
 
-	runPrompt(t, c, map[string]any{"name": "assistant", "message": "  why is   the sky blue?\nmore detail", "session_id": sess.ID})
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "why is the sky blue?", "session_id": sess.ID})
+	require.Eventually(t, func() bool { return attempt.Load() >= 1 }, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	assert.Empty(t, agent.SessionTitle("assistant", sess.ID))
+
+	// An empty reply leaves it unnamed too.
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "why is the sky blue?", "session_id": sess.ID})
+	require.Eventually(t, func() bool { return attempt.Load() >= 2 }, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	assert.Empty(t, agent.SessionTitle("assistant", sess.ID))
+
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "and at sunset?", "session_id": sess.ID})
 	require.Eventually(t, func() bool {
-		return agent.SessionTitle("assistant", sess.ID) == "why is the sky blue?"
+		return agent.SessionTitle("assistant", sess.ID) == "Sky color physics"
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
@@ -103,7 +121,7 @@ func TestAgentRun_TitlesUntitledChatOnLaterPrompt(t *testing.T) {
 
 func TestAgentRun_ImageOnlyFirstPromptLeavesChatForNextPrompt(t *testing.T) {
 	c := setupTitleTest(t, func(context.Context, string, string) (string, error) {
-		return "", errors.New("no provider")
+		return "Testing", nil
 	})
 	sess, err := agent.NewSessionManager().Create("assistant")
 	require.NoError(t, err)
@@ -114,7 +132,7 @@ func TestAgentRun_ImageOnlyFirstPromptLeavesChatForNextPrompt(t *testing.T) {
 
 	runPrompt(t, c, map[string]any{"name": "assistant", "message": "test", "session_id": sess.ID})
 	require.Eventually(t, func() bool {
-		return agent.SessionTitle("assistant", sess.ID) == "test"
+		return agent.SessionTitle("assistant", sess.ID) == "Testing"
 	}, 5*time.Second, 10*time.Millisecond)
 }
 

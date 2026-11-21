@@ -157,10 +157,15 @@
 							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
 							:preview="previewSchedule" :refresh="refreshSchedules" />
 
+						<ScheduleDetail v-else-if="detailSchedule" :schedule="detailSchedule" :now="now" :back="{ query: {} }"
+							:edit="{ query: { tab: 'schedules', schedule: detailSchedule.id } }" :predict="predictSchedule"
+							:run-now="runScheduleNow" />
+
 						<template v-else>
-						<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
-						<KanbanBoard v-else-if="kanban" :jobs="jobs" :filter="filter" :now="now" />
-						<div v-else-if="!jobs.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
+						<div v-if="loading && !jobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
+						<KanbanBoard v-else-if="kanban" :jobs="jobs" :filter="filter" :now="now" :schedules="boardSchedules"
+							:schedule-to="aggregate ? undefined : scheduleTo" />
+						<div v-else-if="!jobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="search = ''">Clear search</button>
@@ -169,8 +174,9 @@
 							{{ routeAgent }} owns no projects yet.
 							<button type="button" class="text-blue-600 hover:underline dark:text-blue-400" @click="openAdd">Add one</button>.
 						</div>
-						<div v-else-if="!jobs.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
+						<div v-else-if="!jobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
+							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)" />
 							<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
@@ -213,6 +219,8 @@ import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
+import ScheduleDetail from "../components/projects/ScheduleDetail.vue";
+import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import {
@@ -234,7 +242,9 @@ import {
 	type BoardFilter,
 	type BoardState,
 	type ProjectJob,
+	type ProjectSchedule,
 	projectPath,
+	scheduleMatches,
 	stateLabel,
 	summarizePrompt,
 	targetURL,
@@ -338,8 +348,28 @@ const {
 	remove: removeSchedule,
 	runNow: runScheduleNow,
 	preview: previewSchedule,
+	predict: predictSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project);
+
+// The project's scheduled tasks are their own kind of box on the board: in
+// the list, under All, and in the kanban's Scheduled column. A state filter
+// shows jobs only.
+const boardSchedules = computed(() =>
+	filter.value === "all"
+		? schedules.value.filter((s) => scheduleMatches(s, search.value))
+		: [],
+);
+// A scheduled box opens its detail view on the board, at ?scheduled=<id>.
+function scheduleTo(s: ProjectSchedule) {
+	return { query: { scheduled: s.id } };
+}
+const detailSchedule = computed(() => {
+	const id = route.query.scheduled;
+	return view.value === "board" && typeof id === "string"
+		? (schedules.value.find((s) => s.id === id) ?? null)
+		: null;
+});
 
 // The view and the schedule being edited live in the URL, so a reload or a
 // shared link opens the same place.

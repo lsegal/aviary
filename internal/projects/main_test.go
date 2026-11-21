@@ -544,7 +544,7 @@ func TestUserProjectListUsesURLOwnerType(t *testing.T) {
 	var calls [][]string
 	gh := GHCLI{runCommand: func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string(nil), args...))
-		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"title":"bug","body":"details","state":"OPEN","createdAt":"2026-07-20T17:38:43Z","repository":{"nameWithOwner":"lsegal/aviary"},"labels":{"nodes":[{"name":"agent-started"}]}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
+		return []byte(`{"data":{"user":{"projectV2":{"items":{"nodes":[{"id":"PVTI_item","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":171,"title":"bug","body":"details","state":"OPEN","createdAt":"2026-07-20T17:38:43Z","repository":{"nameWithOwner":"lsegal/aviary"},"labels":{"nodes":[{"name":"bug"}]}}}],"pageInfo":{"hasNextPage":false,"endCursor":"cursor"}}}}}}`), nil
 	}}
 	issues, err := gh.ListIssues(context.Background(), "https://github.com/users/lsegal/projects/3")
 	if err != nil {

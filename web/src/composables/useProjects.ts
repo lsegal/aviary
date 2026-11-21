@@ -404,6 +404,18 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		return Array.isArray(next) ? next.map(String) : [];
 	}
 
+	/**
+	 * The next count fires of a saved schedule, as the scheduler itself
+	 * predicts them (it knows whether a run-once task already fired).
+	 */
+	async function predict(s: ProjectSchedule, count = 5): Promise<string[]> {
+		const result = parseToolJSON(
+			await callTool("task_preview", { name: s.id, count }),
+		);
+		const next = (result as { next?: unknown }).next;
+		return Array.isArray(next) ? next.map(String) : [];
+	}
+
 	return {
 		schedules,
 		upcoming,
@@ -416,5 +428,6 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		remove,
 		runNow,
 		preview,
+		predict,
 	};
 }
