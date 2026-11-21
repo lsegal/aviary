@@ -47,7 +47,8 @@
 							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
 								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
 									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
-									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
+									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending"
+									:elapsed="toolElapsed(item.msg)" />
 							</div>
 							<!-- Regular user / assistant messages -->
 							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end text-right' : 'text-left'">
@@ -105,7 +106,7 @@
 							</div>
 						</template>
 						<div v-if="turnActivity" class="text-left">
-							<ChatActivityIndicator :tool="turnActivity.tool" :elapsed="turnActivity.elapsed" />
+							<ChatActivityIndicator :tool="turnActivity.tool" />
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -567,28 +568,29 @@ const turnActivity = computed(() => {
 		if (msg.role === "user") break;
 		if (msg.role === "tool" && msg.toolPending) running = msg;
 	}
-	if (!running) return { tool: undefined, elapsed: undefined };
-	const ms = running.toolStartedAt
-		? activityNow.value - running.toolStartedAt
-		: 0;
-	return {
-		tool: toolName(running),
-		elapsed: ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined,
-	};
+	return { tool: running ? toolName(running) : undefined };
 });
 
-watch(
-	() => !!turnActivity.value?.tool,
-	(running) => {
-		clearInterval(activityTimer);
-		activityTimer = undefined;
-		if (!running) return;
-		activityNow.value = Date.now();
-		activityTimer = setInterval(() => {
-			activityNow.value = Date.now();
-		}, 1000);
-	},
+// Seconds a running tool call has taken, once it is slow.
+function toolElapsed(msg: Message): number | undefined {
+	if (!msg.toolPending || !msg.toolStartedAt) return undefined;
+	const ms = activityNow.value - msg.toolStartedAt;
+	return ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined;
+}
+
+const hasRunningTool = computed(() =>
+	messages.value.some((msg) => msg.role === "tool" && msg.toolPending),
 );
+
+watch(hasRunningTool, (running) => {
+	clearInterval(activityTimer);
+	activityTimer = undefined;
+	if (!running) return;
+	activityNow.value = Date.now();
+	activityTimer = setInterval(() => {
+		activityNow.value = Date.now();
+	}, 1000);
+});
 
 const userMessageHistory = computed(() =>
 	messages.value

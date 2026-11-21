@@ -948,7 +948,7 @@ function holdReload() {
 	};
 }
 
-test("the waiting indicator animates while the agent thinks", async ({
+test("the waiting indicator is three staggered dots while the agent thinks", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -966,14 +966,31 @@ test("the waiting indicator animates while the agent thinks", async ({
 
 	const indicator = page.getByTestId("chat-activity");
 	await expect(indicator).toHaveAttribute("aria-live", "polite");
-	await expect(indicator).toHaveText("Thinking…");
-	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
-		"animation-name",
-		/chat-activity-bounce/,
+	// Only the dots show; the status text is for screen readers.
+	await expect(indicator).toHaveAccessibleName("Agent is thinking");
+	await expect(indicator.locator(".sr-only")).toHaveText("Agent is thinking");
+	await expect(indicator).not.toContainText("Thinking…");
+	const dots = page.getByTestId("chat-activity-dot");
+	await expect(dots).toHaveCount(3);
+	const animations = await dots.evaluateAll((els) =>
+		els.map((el) => {
+			const style = getComputedStyle(el);
+			return {
+				name: style.animationName,
+				delay: style.animationDelay,
+				iterations: style.animationIterationCount,
+			};
+		}),
 	);
+	for (const animation of animations) {
+		expect(animation.name).toMatch(/chat-activity-wave/);
+		expect(animation.iterations).toBe("infinite");
+	}
+	// Staggered, not blinking in unison.
+	expect(animations.map((a) => a.delay)).toEqual(["0s", "0.16s", "0.32s"]);
 });
 
-test("the waiting indicator fades instead of bouncing with reduced motion", async ({
+test("the waiting indicator dots are static with reduced motion", async ({
 	page,
 }) => {
 	await page.emulateMedia({ reducedMotion: "reduce" });
@@ -990,11 +1007,12 @@ test("the waiting indicator fades instead of bouncing with reduced motion", asyn
 	});
 	await sendChat(page);
 
-	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
-	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
-		"animation-name",
-		/chat-activity-fade/,
-	);
+	await expect(page.getByTestId("chat-activity-dot")).toHaveCount(3);
+	await expect(
+		page
+			.getByTestId("chat-activity-dot")
+			.evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName)),
+	).resolves.toEqual(["none", "none", "none"]);
 });
 
 test("a running tool spins and shows its elapsed time once slow", async ({
@@ -1006,13 +1024,19 @@ test("a running tool spins and shows its elapsed time once slow", async ({
 
 	const block = jobListBlocks(page);
 	await expect(block.getByTestId("tool-call-spinner")).toBeVisible();
+	// The waiting bubble stays dots-only; the tool's label lives on its chip.
 	const indicator = page.getByTestId("chat-activity");
-	await expect(indicator).toHaveText("Running project_job_list…");
+	await expect(indicator).toHaveAccessibleName(
+		"Agent is running project_job_list",
+	);
+	await expect(indicator).not.toContainText("Running");
+	const elapsed = block.getByTestId("tool-call-elapsed");
+	await expect(elapsed).toHaveCount(0);
 
 	await page.clock.fastForward(6000);
-	await expect(indicator).toHaveText(/Running project_job_list · [67]s/);
+	await expect(elapsed).toHaveText(/· [67]s/);
 	await page.clock.fastForward(4000);
-	await expect(indicator).toHaveText(/Running project_job_list · 1[01]s/);
+	await expect(elapsed).toHaveText(/· 1[01]s/);
 });
 
 test("finished tool chips show a check or a warning with the error", async ({
@@ -1040,7 +1064,9 @@ test("finished tool chips show a check or a warning with the error", async ({
 	);
 	await expect(page.getByTestId("tool-call-spinner")).toHaveCount(0);
 	// Between tools and before any reply, the turn is thinking again.
-	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+	await expect(page.getByTestId("chat-activity")).toHaveAccessibleName(
+		"Agent is thinking",
+	);
 });
 
 test("the waiting indicator goes away once reply text streams", async ({
