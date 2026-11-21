@@ -42,7 +42,7 @@
 								<label for="agent-task-precompute" class="text-sm text-gray-700 dark:text-gray-300"
 									:class="dialog.project ? 'cursor-not-allowed' : 'cursor-pointer'">Try to precompute task</label>
 								<p id="agent-task-precompute-help" class="text-xs text-gray-500 dark:text-gray-400">{{ dialog.project
-									? "Project tasks run as Projects jobs, so they are never precomputed"
+									? "Project tasks run as Code Loop jobs, so they are never precomputed"
 									: "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs" }}</p>
 							</div>
 						</div>

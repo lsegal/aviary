@@ -470,7 +470,7 @@
     "projects": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The one set of Projects settings, shared by every project of every agent. The projects themselves are listed under the agents that own them.",
+      "description": "The one set of Code Loop settings, shared by every project of every agent. The projects themselves are listed under the agents that own them.",
       "properties": {
         "concurrency": {
           "type": "integer",
@@ -530,7 +530,7 @@
           "enum": ["read-only", "auto", "full"],
           "x-label": "Approval mode",
           "x-order": 13,
-          "description": "Projects' approval-mode override for the CLI runs it launches. Empty follows approval.mode."
+          "description": "Code Loop's approval-mode override for the CLI runs it launches. Empty follows approval.mode."
         },
         "yolo": {
           "type": "boolean",

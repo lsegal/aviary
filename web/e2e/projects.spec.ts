@@ -376,12 +376,12 @@ async function setup(
 	return calls;
 }
 
-test("an agent's GitHub Projects in the sidebar list its projects with live counts", async ({
+test("an agent's Code Loop in the sidebar list its projects with live counts", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/system/overview");
-	// coder is the only agent, so its pages, GitHub Projects among them, are
+	// coder is the only agent, so its pages, Code Loop among them, are
 	// the sidebar's top level (#538).
 	const row = page.getByTestId("sidebar-row-projects");
 	await expect(row.getByTestId("project-running-badge")).toHaveText("2");
@@ -411,7 +411,7 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
-test('the GitHub Projects running badge is gray and the Add project "+" sits beside it on hover', async ({
+test('the Code Loop running badge is gray and the Add project "+" sits beside it on hover', async ({
 	page,
 }) => {
 	await setup(page);
@@ -430,7 +430,7 @@ test('the GitHub Projects running badge is gray and the Add project "+" sits bes
 	await expect.poll(opacity).toBe(0);
 	await page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ })
+		.getByRole("link", { name: /^Code Loop/ })
 		.hover();
 	await expect.poll(opacity).toBe(1);
 
@@ -441,7 +441,7 @@ test('the GitHub Projects running badge is gray and the Add project "+" sits bes
 	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
 });
 
-test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', async ({
+test('Code Loop badges sit at the row\'s right edge until the "+" shows', async ({
 	page,
 }) => {
 	await setup(page);
@@ -456,7 +456,7 @@ test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', 
 	};
 	const header = page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ });
+		.getByRole("link", { name: /^Code Loop/ });
 	const headerBadge = header.getByTestId("project-running-badge");
 	const project = page
 		.getByTestId("sidebar-agent-projects")
@@ -539,7 +539,7 @@ async function setupOneProject(page: Page, running: () => number) {
 	});
 }
 
-test("the GitHub Projects row counts running jobs, not watched projects", async ({
+test("the Code Loop row counts running jobs, not watched projects", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -548,8 +548,8 @@ test("the GitHub Projects row counts running jobs, not watched projects", async 
 	await page.goto("/system/overview");
 	const row = page
 		.getByTestId("sidebar-row-projects")
-		.getByRole("link", { name: /^GitHub Projects/ });
-	await expect(row).toHaveText("GitHub Projects");
+		.getByRole("link", { name: /^Code Loop/ });
+	await expect(row).toHaveText("Code Loop");
 	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
 
 	running = 1;
@@ -559,12 +559,12 @@ test("the GitHub Projects row counts running jobs, not watched projects", async 
 	running = 0;
 	await page.clock.runFor(10_000);
 	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
-	await expect(row).toHaveText("GitHub Projects");
+	await expect(row).toHaveText("Code Loop");
 });
 
-// The collapsed sidebar rail keeps the running count on its GitHub Projects
+// The collapsed sidebar rail keeps the running count on its Code Loop
 // icon (#724).
-test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
+test("the collapsed rail's Code Loop icon counts running jobs", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -576,7 +576,7 @@ test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
 	await expect(icon.getByTestId("sidebar-rail-badge")).toHaveText("2");
 	await icon.hover();
 	await expect(page.getByRole("tooltip")).toHaveText(
-		"GitHub Projects · 2 running jobs",
+		"Code Loop · 2 running jobs",
 	);
 
 	running = 0;
@@ -587,7 +587,7 @@ test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the GitHub Projects tab counts running jobs, not watched projects", async ({
+	test("the Code Loop tab counts running jobs, not watched projects", async ({
 		page,
 	}) => {
 		await page.clock.install();
@@ -596,8 +596,8 @@ test.describe("on a phone", () => {
 		await page.goto("/system/overview");
 		const tab = page
 			.getByRole("navigation", { name: "Main" })
-			.getByRole("link", { name: /^GitHub Projects/ });
-		await expect(tab).toHaveText("GitHub Projects");
+			.getByRole("link", { name: /^Code Loop/ });
+		await expect(tab).toHaveText("Code Loop");
 		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
 
 		running = 1;
@@ -607,7 +607,7 @@ test.describe("on a phone", () => {
 		running = 0;
 		await page.clock.runFor(10_000);
 		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
-		await expect(tab).toHaveText("GitHub Projects");
+		await expect(tab).toHaveText("Code Loop");
 	});
 });
 
@@ -1101,7 +1101,7 @@ const ZVID_JOB = job({
 	target: "lsegal/zvidlib",
 });
 
-test("an agent's GitHub Projects is one board of all its projects, with no settings", async ({
+test("an agent's Code Loop is one board of all its projects, with no settings", async ({
 	page,
 }) => {
 	const calls = await setup(page, undefined, {
@@ -1122,7 +1122,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	await page.goto("/agents/coder/projects");
 
 	await expect(
-		page.getByRole("heading", { name: "GitHub Projects" }),
+		page.getByRole("heading", { name: "Code Loop" }),
 	).toBeVisible();
 	await expect(page.getByTestId("board-projects")).toHaveText("2 projects");
 	// Every project's jobs share the board, each naming its project.
@@ -1140,7 +1140,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	);
 
 	// No settings live on the route: no form fields, and Settings opens the
-	// agent's projects in Projects settings.
+	// agent's projects in Code Loop settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
@@ -1161,7 +1161,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
-test("the GitHub Projects board's header starts with a blue + that adds a project (#739)", async ({
+test("the Code Loop board's header starts with a blue + that adds a project (#739)", async ({
 	page,
 }) => {
 	await setup(page);

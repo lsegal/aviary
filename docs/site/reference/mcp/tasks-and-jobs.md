@@ -132,7 +132,7 @@ Return the next fires of a saved task, or of an unsaved trigger.
 
 ## task_upcoming
 
-Return the next fires across enabled tasks, soonest first. The Projects board's "Up next" strip calls it with `project`.
+Return the next fires across enabled tasks, soonest first. The Code Loop board's "Up next" strip calls it with `project`.
 
 **Arguments:** `project` (only that project's scheduled prompts), `limit` (default 5), `per_task` (default 3).
 
