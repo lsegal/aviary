@@ -157,7 +157,10 @@ func TestCheck_GitModeReportsUpstreamState(t *testing.T) {
 	if check.Git == nil || !check.UpgradeAvailable || !check.UpgradeSupported {
 		t.Fatalf("check = %+v, want an available git update", check)
 	}
-	if want := gitT(t, other, "rev-parse", "--short", "HEAD"); check.LatestVersion != want {
+	if want := gitT(t, checkout, "rev-parse", "HEAD"); check.CurrentVersion != want {
+		t.Fatalf("CurrentVersion = %q, want checkout HEAD %q", check.CurrentVersion, want)
+	}
+	if want := gitT(t, other, "rev-parse", "HEAD"); check.LatestVersion != want {
 		t.Fatalf("LatestVersion = %q, want upstream %q", check.LatestVersion, want)
 	}
 
@@ -171,5 +174,42 @@ func TestCheck_GitModeReportsUpstreamState(t *testing.T) {
 	}
 	if !check.UpgradeAvailable || check.UpgradeSupported || !strings.Contains(check.Message, "uncommitted changes") {
 		t.Fatalf("dirty check = %+v, want the update blocked with the git state as the reason", check)
+	}
+}
+
+func TestCurrentVersion_DevCheckoutReportsHEAD(t *testing.T) {
+	checkout, other := setupCheckout(t)
+	withGitMode(t, "dev", checkout, false)
+	if got, want := CurrentVersion(), gitT(t, checkout, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("CurrentVersion() = %q, want HEAD %q", got, want)
+	}
+	if _, err := GitPull(context.Background(), checkout); err != nil {
+		t.Fatalf("GitPull: %v", err)
+	}
+	if got, want := CurrentVersion(), gitT(t, other, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("after pull: CurrentVersion() = %q, want new HEAD %q", got, want)
+	}
+}
+
+func TestCurrentVersion_DevFallbacks(t *testing.T) {
+	withGitMode(t, "dev", "", false)
+	origRevision := buildRevision
+	t.Cleanup(func() { buildRevision = origRevision })
+
+	buildRevision = func() string { return "0123456789abcdef0123456789abcdef01234567" }
+	if got := CurrentVersion(); got != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("outside a checkout: CurrentVersion() = %q, want the embedded revision", got)
+	}
+	buildRevision = func() string { return "" }
+	if got := CurrentVersion(); got != "dev" {
+		t.Fatalf("no revision: CurrentVersion() = %q, want dev", got)
+	}
+}
+
+func TestCurrentVersion_ReleaseBuildUnchanged(t *testing.T) {
+	checkout, _ := setupCheckout(t)
+	withGitMode(t, "1.2.3", checkout, false)
+	if got := CurrentVersion(); got != "1.2.3" {
+		t.Fatalf("release: CurrentVersion() = %q, want 1.2.3", got)
 	}
 }

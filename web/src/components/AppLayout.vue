@@ -51,8 +51,8 @@
           class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-3">
             <span>New version available:
-              <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
-              <template v-else>{{ latestVersion }}</template>
+              <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ shortVersion(latestVersion) }}</a>
+              <template v-else>{{ shortVersion(latestVersion) }}</template>
             </span>
             <button type="button"
               class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 transition hover:bg-yellow-400 disabled:opacity-60"
@@ -240,8 +240,8 @@
             </button>
           </div>
           <div class="mt-1 text-xs">
-            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
-            <template v-else>{{ latestVersion }}</template>
+            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ shortVersion(latestVersion) }}</a>
+            <template v-else>{{ shortVersion(latestVersion) }}</template>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
         </div>
@@ -304,6 +304,7 @@ import { useRoute } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
 import { projectOwner } from "../lib/projectSettings";
+import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
@@ -581,12 +582,12 @@ const versionDotClass = computed(() =>
 );
 
 const displayVersion = computed(() =>
-	version.value ? version.value : status.value === "disconnected" ? "—" : "…",
+	version.value ? shortVersion(version.value) : status.value === "disconnected" ? "—" : "…",
 );
 
 const versionLabel = computed(() => {
 	if (upgradeAvailable.value && latestVersion.value) {
-		return `Version ${displayVersion.value} -> ${latestVersion.value}`;
+		return `Version ${displayVersion.value} -> ${shortVersion(latestVersion.value)}`;
 	}
 	return `Version ${displayVersion.value}`;
 });
