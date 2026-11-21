@@ -36,15 +36,7 @@
 					</ul>
 				</section>
 
-				<label for="add-project-agent" class="mt-4 block text-xs font-medium text-gray-700 dark:text-gray-300">
-					Agent that owns it
-				</label>
-				<select id="add-project-agent" v-model="agent" data-field="agent"
-					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-white">
-					<option v-if="!agentNames.length" value="" disabled>No agents configured</option>
-					<option v-for="a in agentNames" :key="a" :value="a">{{ a }}</option>
-				</select>
-				<p v-if="owner" data-testid="add-project-owned" class="mt-2 text-sm text-amber-700 dark:text-amber-400">
+				<p v-if="owner" data-testid="add-project-owned" class="mt-4 text-sm text-amber-700 dark:text-amber-400">
 					{{ normalized }} already belongs to agent {{ owner }}.
 				</p>
 
@@ -71,8 +63,8 @@
 			</form>
 			<footer class="border-t border-gray-200 bg-gray-50 px-5 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 sm:px-6">
 				Same from a terminal:
-				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary project add {{ normalized || "owner/repo" }} --agent {{ agent || "AGENT" }}</code>
-				<p class="mt-1">The project is saved to {{ agent || "the agent" }}'s projects in aviary.yaml and managed in its settings.</p>
+				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary project add {{ normalized || "owner/repo" }} --agent {{ agent }}</code>
+				<p class="mt-1">The project is saved to {{ agent }}'s projects in aviary.yaml and managed in its settings.</p>
 			</footer>
 		</div>
 	</div>
@@ -95,8 +87,9 @@ import {
 } from "../../lib/projectSettings";
 import { useSettingsStore } from "../../stores/settings";
 
-// agent preselects the owning agent, as when adding from its GitHub Projects.
-const props = defineProps<{ initial?: string; agent?: string }>();
+// agent owns the new project: the agent whose GitHub Projects board the dialog
+// is opened from.
+const props = defineProps<{ initial?: string; agent: string }>();
 const emit = defineEmits<{
 	close: [];
 	added: [target: string, agent: string];
@@ -121,21 +114,15 @@ const startError = ref("");
 onMounted(async () => {
 	input.value?.focus();
 	if (!store.config) await store.fetchConfig();
-	if (!agent.value || !agentNames.value.includes(agent.value))
-		agent.value = agentNames.value[0] ?? "";
 });
 
-const agentNames = computed(() =>
-	(store.config?.agents ?? []).map((a) => a.name).filter(Boolean),
-);
-const agent = ref(props.agent || agentNames.value[0] || "");
+const agent = computed(() => props.agent);
 
 // The checks normalize the target (URLs become owner/repo).
 const normalized = computed(() => result.value?.target || target.value.trim());
 // The shared projects settings, and the models the owning agent's jobs run on.
 const settings = computed(() => settingsFromSection(store.config?.projects));
 const runsOn = computed(() => {
-	if (!agent.value) return "no agent";
 	const specs = jobModels(agent.value, store.config, cliNames.value).map(
 		(m) => m.spec,
 	);
@@ -148,7 +135,6 @@ const owner = computed(() => projectOwner(store.config, normalized.value));
 const canStart = computed(
 	() =>
 		!!target.value.trim() &&
-		!!agent.value &&
 		!owner.value &&
 		!checking.value &&
 		!error.value &&
