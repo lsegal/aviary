@@ -777,7 +777,7 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page).toHaveURL(
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
-	await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
 		"#218 Cap scheduler retry backoff at 10 minutes",
 	);
 
@@ -1224,6 +1224,116 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
 	await expect(sent).toBeVisible();
 	expect(await sent.innerText()).toBe("line one\nline two");
+});
+
+test("job details open under the project header, keeping the chat and logs panels", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	await page.getByTestId("logs-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
+	await expect(chat).toContainText("Here is the failing run.");
+	await input.fill("what about #218?");
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+
+	await page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await expect(page).toHaveURL(
+		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
+	);
+	await expect(page.getByTestId("job-detail")).toContainText(
+		"#218 Cap scheduler retry backoff at 10 minutes",
+	);
+	// The project header and its buttons stay.
+	await expect(
+		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("delivery-status")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+	await expect(page.getByTestId("project-settings-link")).toBeVisible();
+	// The open panels keep their content and the unsent draft.
+	await expect(chat).toContainText("Here is the failing run.");
+	await expect(input).toHaveValue("what about #218?");
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+
+	// Switching jobs and closing details keeps them too.
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await page.getByTestId("job-detail-close").click();
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+	await expect(chat).toBeVisible();
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+	expect(calls.agent_run ?? []).toHaveLength(0);
+});
+
+test("closing job details returns to the board with its filters and search", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const search = page.getByRole("searchbox", { name: "Search jobs" });
+	await search.fill("scheduler");
+	await page
+		.getByRole("tablist", { name: "Job filter" })
+		.getByRole("tab", { name: /Running/ })
+		.click();
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await expect(card).toBeVisible();
+
+	await card.getByRole("link", { name: "Details" }).click();
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await expect(search).toHaveCount(0);
+	await page.getByTestId("job-detail-close").click();
+	await expect(search).toHaveValue("scheduler");
+	await expect(
+		page
+			.getByRole("tablist", { name: "Job filter" })
+			.getByRole("tab", { name: /Running/ }),
+	).toHaveAttribute("aria-selected", "true");
+
+	// Browser back and forward move between the board and the details
+	// without reloading the page.
+	await page.evaluate(() => {
+		(window as unknown as { marker: boolean }).marker = true;
+	});
+	await page.goBack();
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await page.goForward();
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+	await expect(search).toHaveValue("scheduler");
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { marker?: boolean }).marker,
+		),
+	).toBe(true);
+});
+
+test("loading a job details URL shows the project header with that job open", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	await expect(
+		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
+	await expect(page.getByTestId("logs-toggle")).toBeVisible();
+	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+		"#218 Cap scheduler retry backoff at 10 minutes",
+	);
+	await expect(page.getByTestId("job-card")).toHaveCount(0);
 });
 
 test("logs panel wraps long lines and indents multi-line entries", async ({

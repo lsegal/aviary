@@ -1,0 +1,2 @@
+import base from "/private/var/folders/_3/6nm7yxhj0v3716vn7dyl134h0000gn/T/aviary-gh-fix-545/playwright.config.ts";
+export default { ...base, testDir: "/private/var/folders/_3/6nm7yxhj0v3716vn7dyl134h0000gn/T/aviary-gh-fix-545/web/e2e", outputDir: "/tmp/pw709-results", use: { ...base.use, baseURL: "http://localhost:5191" }, webServer: { command: "pnpm exec vite --port 5191 --strictPort", cwd: "/private/var/folders/_3/6nm7yxhj0v3716vn7dyl134h0000gn/T/aviary-gh-fix-545", url: "http://localhost:5191", reuseExistingServer: false, timeout: 60000 } };
