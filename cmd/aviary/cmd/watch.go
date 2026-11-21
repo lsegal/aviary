@@ -97,7 +97,7 @@ func watchTargets(args []string) ([]string, error) {
 }
 
 // watchSettings turns the flags into the settings the watch overrides.
-func watchSettings(cmd *cobra.Command) (config.ProjectsConfig, error) {
+func watchSettings() (config.ProjectsConfig, error) {
 	settings := config.ProjectsConfig{
 		Concurrency:       watchOpts.concurrency,
 		Interval:          watchOpts.interval,
@@ -138,7 +138,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	settings, err := watchSettings(cmd)
+	settings, err := watchSettings()
 	if err != nil {
 		return err
 	}

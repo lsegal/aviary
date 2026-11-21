@@ -175,12 +175,12 @@ func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {
 		t.Fatal("a live setting changed the restart key")
 	}
 	for name, change := range map[string]func(*engineSettings){
-		"targets":     func(s *engineSettings) { s.Targets = []string{"o/r", "o/s"} },
-		"agents":      func(s *engineSettings) { s.Agents = []string{"claude"} },
-		"interval":    func(s *engineSettings) { s.Interval = time.Hour },
-		"delivery":    func(s *engineSettings) { s.Delivery = "webhook" },
-		"filter":      func(s *engineSettings) { s.Filter = "label:x" },
-		"yolo":        func(s *engineSettings) { s.Approval = clidefs.ApprovalFull },
+		"targets":  func(s *engineSettings) { s.Targets = []string{"o/r", "o/s"} },
+		"agents":   func(s *engineSettings) { s.Agents = []string{"claude"} },
+		"interval": func(s *engineSettings) { s.Interval = time.Hour },
+		"delivery": func(s *engineSettings) { s.Delivery = "webhook" },
+		"filter":   func(s *engineSettings) { s.Filter = "label:x" },
+		"yolo":     func(s *engineSettings) { s.Approval = clidefs.ApprovalFull },
 	} {
 		changed := base
 		change(&changed)

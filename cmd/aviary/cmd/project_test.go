@@ -80,7 +80,7 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 	if err := watchCmd.Flags().Parse([]string{"--concurrency", "2", "--interval", "1m", "--delivery", "Webhook", "--no-merge", "--filter", "label:bug"}); err != nil {
 		t.Fatal(err)
 	}
-	settings, err := watchSettings(watchCmd)
+	settings, err := watchSettings()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,21 +91,21 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 		t.Fatalf("filter = %v", settings.Filter)
 	}
 	watchOpts.delivery = "carrier pigeon"
-	if _, err := watchSettings(watchCmd); err == nil {
+	if _, err := watchSettings(); err == nil {
 		t.Fatal("an unknown delivery mode was accepted")
 	}
 	watchOpts.delivery, watchOpts.interval = "", "soon"
-	if _, err := watchSettings(watchCmd); err == nil {
+	if _, err := watchSettings(); err == nil {
 		t.Fatal("an invalid interval was accepted")
 	}
 	watchOpts.interval = ""
 	watchOpts.delivery, watchOpts.browserVisible, watchOpts.browserVision = "Browser", true, true
-	settings, err = watchSettings(watchCmd)
+	settings, err = watchSettings()
 	if err != nil || settings.Delivery != "browser" || !settings.BrowserVisible || !settings.BrowserVision {
 		t.Fatalf("browser delivery settings = %+v, %v", settings, err)
 	}
 	watchOpts.delivery = "poll"
-	if _, err := watchSettings(watchCmd); err == nil {
+	if _, err := watchSettings(); err == nil {
 		t.Fatal("browser-only switches were accepted for gh polling")
 	}
 }
