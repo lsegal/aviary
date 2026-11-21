@@ -200,64 +200,11 @@ type agentTemplateSyncArgs struct {
 }
 
 func loadSessionByID(agentName, sessionID string) (*domain.Session, error) {
-	agentID, resolvedAgentName, err := resolveAgentIdentity(agentName)
+	agentID, _, err := resolveAgentIdentity(agentName)
 	if err != nil {
 		return nil, err
 	}
-	sessionID = strings.TrimSpace(sessionID)
-	path := store.FindSessionPath(agentID, sessionID)
-	if path == "" {
-		return nil, fmt.Errorf("session %q not found for agent %q", sessionID, resolvedAgentName)
-	}
-	lines, err := store.ReadJSONL[map[string]any](path)
-	if err != nil {
-		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
-	}
-	var created, updated time.Time
-	storedID := sessionID
-	storedName := sessionID
-	for _, m := range lines {
-		if v, ok := m["id"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				storedID = strings.TrimSpace(s)
-			}
-		}
-		if v, ok := m["name"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				storedName = strings.TrimSpace(s)
-			}
-		}
-		if v, ok := m["created_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					created = t
-				}
-			}
-		}
-		if v, ok := m["updated_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					updated = t
-				}
-			}
-		}
-		if !created.IsZero() {
-			break
-		}
-	}
-	if created.IsZero() {
-		return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
-	}
-	if updated.IsZero() {
-		updated = created
-	}
-	return &domain.Session{
-		ID:        storedID,
-		AgentID:   agentID,
-		Name:      storedName,
-		CreatedAt: created,
-		UpdatedAt: updated,
-	}, nil
+	return agent.NewSessionManager().Load(agentID, strings.TrimSpace(sessionID))
 }
 
 func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err error) {
@@ -343,10 +290,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, err
 			}
 			sess = loaded
-			agentID = strings.TrimSpace(sess.AgentID)
-			if agentID == "" {
-				return nil, struct{}{}, fmt.Errorf("session %q is missing agent metadata", args.SessionID)
-			}
+			agentID = sess.AgentID
 			agentName = agentID
 		} else {
 			if agentName == "" {
