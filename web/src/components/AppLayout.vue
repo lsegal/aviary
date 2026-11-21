@@ -196,8 +196,8 @@
             </button>
           </div>
           <div class="mt-1 text-xs">
-            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ latestVersion }}</a>
-            <template v-else>{{ latestVersion }}</template>
+            <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer" class="underline">{{ shortVersion(latestVersion) }}</a>
+            <template v-else>{{ shortVersion(latestVersion) }}</template>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
         </div>

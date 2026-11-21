@@ -135,8 +135,8 @@ test("upgrade dialog says nothing will stop when no jobs run", async ({
 
 function gitCheck(dirty: boolean) {
 	return {
-		currentVersion: "dev",
-		latestVersion: "abc1234",
+		currentVersion: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		latestVersion: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		upgradeAvailable: true,
 		upgradeSupported: !dirty,
 		message: dirty
@@ -189,7 +189,9 @@ test("dev checkout pulls from git without restarting", async ({ page }) => {
 
 	await dialog.getByRole("button", { name: "Pull" }).click();
 	await expect(dialog).toBeHidden();
-	expect(upgrades).toEqual([{ version: "abc1234", when: "now" }]);
+	expect(upgrades).toEqual([
+		{ version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", when: "now" },
+	]);
 	await expect(page.getByTestId("update-notice").first()).toContainText(
 		"Hot reload is rebuilding Aviary",
 	);
@@ -212,5 +214,32 @@ test("dev checkout with local changes blocks the update and says why", async ({
 	).toBeDisabled();
 	await expect(page.getByTestId("version-message").first()).toContainText(
 		"uncommitted changes",
+	);
+});
+
+test("dev build shows its commit SHA as the version", async ({ page }) => {
+	await page.routeWebSocket(/\/api\/ws/, (ws) => {
+		ws.send(
+			JSON.stringify({
+				type: "health",
+				ok: true,
+				version: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				goos: "darwin",
+			}),
+		);
+	});
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: gitCheck(false),
+	});
+	await page.goto("/system/overview");
+
+	await expect(page.getByText("Version 1111111 -> abc1234").last()).toBeVisible();
+	await expect(page.getByText("abc1234bbbb")).toHaveCount(0);
+	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+	await expect(page.getByRole("dialog")).toContainText(
+		"Update this checkout to origin/main (abc1234)",
 	);
 });
