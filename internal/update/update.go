@@ -46,7 +46,13 @@ type CheckResult struct {
 	// Git is set in git mode, when a dev build runs from a source checkout:
 	// updates are pulled from the checkout's upstream instead of a release.
 	Git *GitState `json:"git,omitempty"`
+	// NoCheckout is set for a dev build that would update in git mode but
+	// cannot locate its source checkout, so it has no way to check for updates.
+	NoCheckout bool `json:"noCheckout,omitempty"`
 }
+
+// noCheckoutMessage explains the NoCheckout state.
+const noCheckoutMessage = "Dev build: no source checkout found, so updates cannot be checked. Run Aviary with " + CheckoutEnv + " set to the checkout root (pnpm dev sets it)."
 
 // InstallOptions controls how a release is downloaded and installed.
 type InstallOptions struct {
@@ -144,8 +150,11 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	if dir := GitCheckout(); dir != "" {
-		return cachedGitCheck(ctx, dir)
+	if gitModeEligible() {
+		if dir := checkoutDir(); dir != "" {
+			return cachedGitCheck(ctx, dir)
+		}
+		return CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), NoCheckout: true, Message: noCheckoutMessage}, nil
 	}
 	if EmulationActive() {
 		emulateMu.RLock()

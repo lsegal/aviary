@@ -15,6 +15,16 @@ import (
 // forgo's hot reload, so a pulled checkout is rebuilt and relaunched on its own.
 const HotReloadEnv = "AVIARY_HOT_RELOAD"
 
+// CheckoutEnv is set by scripts/dev-go.mjs to the root of the source checkout
+// the backend was built from. It is authoritative for git mode: the process's
+// working directory is only a fallback, since a daemonized or restarted
+// backend need not run inside the checkout.
+const CheckoutEnv = "AVIARY_CHECKOUT"
+
+// aviaryModule is the module path a directory's go.mod must declare to be
+// treated as an Aviary checkout.
+const aviaryModule = "github.com/lsegal/aviary"
+
 // GitState describes a dev checkout's position relative to its upstream.
 type GitState struct {
 	Dir      string `json:"dir"`
@@ -42,28 +52,58 @@ var (
 		return err == nil
 	}
 	checkoutDir = func() string {
+		if dir := os.Getenv(CheckoutEnv); dir != "" {
+			return verifyCheckout(dir)
+		}
 		wd, err := os.Getwd()
 		if err != nil {
 			return ""
 		}
-		out, err := runGit(context.Background(), wd, "rev-parse", "--show-toplevel")
-		if err != nil {
-			return ""
-		}
-		dir := filepath.Clean(out)
-		mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if err != nil || !strings.HasPrefix(string(mod), "module github.com/lsegal/aviary\n") {
-			return ""
-		}
-		return dir
+		return verifyCheckout(wd)
 	}
 )
+
+// verifyCheckout returns the top level of the git checkout containing dir
+// when it is an Aviary checkout, or "" otherwise.
+func verifyCheckout(dir string) string {
+	out, err := runGit(context.Background(), dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	top := filepath.Clean(out)
+	mod, err := os.ReadFile(filepath.Join(top, "go.mod"))
+	if err != nil || modulePath(mod) != aviaryModule {
+		return ""
+	}
+	return top
+}
+
+// modulePath returns the module path declared by a go.mod file, tolerating
+// CRLF line endings, surrounding whitespace, comments, and quoting.
+func modulePath(mod []byte) string {
+	for _, line := range strings.Split(string(mod), "\n") {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "module" {
+			return strings.Trim(fields[1], "\"`")
+		}
+	}
+	return ""
+}
+
+// gitModeEligible reports whether this build would update from a source
+// checkout: a dev build outside Docker with version emulation off.
+func gitModeEligible() bool {
+	return IsDevBuild() && !EmulationActive() && !inDocker()
+}
 
 // GitCheckout returns the source checkout the updater works on in git mode: a
 // dev build running from an Aviary git checkout outside Docker, with version
 // emulation off. It returns "" when the release updater is in force.
 func GitCheckout() string {
-	if !IsDevBuild() || EmulationActive() || inDocker() {
+	if !gitModeEligible() {
 		return ""
 	}
 	return checkoutDir()
