@@ -120,6 +120,7 @@ async function setup(
 		config?: unknown;
 		jobs?: { number: number; status: string }[];
 		clonesError?: string;
+		clones?: typeof CLONES;
 		sessions?: object[];
 	} = {},
 ) {
@@ -170,7 +171,7 @@ async function setup(
 		provider_cli_list: async () => CLIS,
 		project_clone_list: () => {
 			if (opts.clonesError) throw new Error(opts.clonesError);
-			return CLONES;
+			return opts.clones ?? CLONES;
 		},
 		project_clone_clear: (args?: Args) => {
 			record("project_clone_clear", args);
@@ -657,6 +658,48 @@ test("clones show what's in use and unused ones can be cleared", async ({
 		"Removed 1 clone, reclaimed 150 MB, kept 2.",
 	);
 	expect(calls.project_clone_clear).toEqual([{}]);
+});
+
+test("a long clone list scrolls inside the Clones card instead of growing it", async ({
+	page,
+}) => {
+	const clones = Array.from({ length: 40 }, (_, i) => ({
+		path: `/tmp/aviary-${300 + i}`,
+		repository: "lsegal/aviary",
+		issue: 300 + i,
+		inUse: false,
+		reason: "job finished",
+		size: 1048576,
+	}));
+	await setup(page, {
+		clones: { ...CLONES, clones, totalSize: 40 * 1048576, unmeasured: 0 },
+	});
+	await page.goto("/system/projects");
+	const list = page.getByTestId("clone-list");
+	await expect(page.getByTestId("clone-row")).toHaveCount(40);
+	const box = await list.evaluate((el) => ({
+		client: el.clientHeight,
+		scroll: el.scrollHeight,
+		overflow: getComputedStyle(el).overflowY,
+	}));
+	expect(box.overflow).toBe("auto");
+	expect(box.client).toBeLessThanOrEqual(384);
+	expect(box.scroll).toBeGreaterThan(box.client);
+	await expect(page.getByTestId("clone-total")).toHaveText(
+		"40 clones, 40 MB total",
+	);
+});
+
+test("a short clone list does not scroll", async ({ page }) => {
+	await setup(page);
+	await page.goto("/system/projects");
+	const list = page.getByTestId("clone-list");
+	await expect(page.getByTestId("clone-row")).toHaveCount(3);
+	const box = await list.evaluate((el) => ({
+		client: el.clientHeight,
+		scroll: el.scrollHeight,
+	}));
+	expect(box.scroll).toBe(box.client);
 });
 
 test("System → Projects shows this instance's ID", async ({ page }) => {
