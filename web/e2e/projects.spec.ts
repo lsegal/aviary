@@ -407,6 +407,31 @@ test("retry, stop, filters and check now call project tools", async ({
 		.toEqual({ target: "lsegal/aviary" });
 });
 
+test("job actions are icon buttons with tooltips", async ({ page }) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const actions = [
+		card.getByRole("link", { name: "Details" }),
+		card.getByRole("button", { name: "Retry" }),
+		card.getByRole("button", { name: "Summarize" }),
+		card.getByRole("button", { name: "Stop" }),
+	];
+	for (const action of actions) {
+		await expect(action.locator("svg")).toHaveCount(1);
+		await expect(action).toHaveText("");
+		await expect(action).toHaveAttribute("title", /\S/);
+	}
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	for (const name of ["Retry", "Stop"]) {
+		const action = page.getByRole("button", { name });
+		await expect(action.locator("svg")).toHaveCount(1);
+		await expect(action).toHaveText("");
+		await expect(action).toHaveAttribute("title", /\S/);
+	}
+});
+
 test("run view renders the typed event timeline read-only", async ({
 	page,
 }) => {
