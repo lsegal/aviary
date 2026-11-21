@@ -4,7 +4,7 @@
 		<DialogPortal>
 			<DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<DialogContent :data-testid="`${dialog?.kind}-dialog`"
-				class="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+				class="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 				<form @submit.prevent="submit">
 					<DialogTitle class="text-base font-bold text-gray-900 dark:text-white">{{ title }}</DialogTitle>
 					<DialogDescription class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ description }}</DialogDescription>
@@ -20,9 +20,9 @@
 								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
 							</select>
 						</template>
-						<label for="agent-task-schedule" class="field-label mt-3">Schedule</label>
-						<input id="agent-task-schedule" v-model="form.schedule" type="text" autocomplete="off"
-							class="field-input" placeholder="*/5 * * * *" />
+						<div class="mt-3">
+							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="!taskProject" />
+						</div>
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
@@ -98,6 +98,12 @@ import {
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
+import { useTriggerPreview } from "../../composables/useTriggerPreview";
+import {
+	applyTaskTrigger,
+	type TriggerFields,
+	taskTriggerFields,
+} from "../../lib/trigger";
 import { agentFilePath, useAgentFilesStore } from "../../stores/agentFiles";
 import {
 	type AgentTask,
@@ -105,21 +111,34 @@ import {
 	agentTaskType,
 	useSettingsStore,
 } from "../../stores/settings";
+import TriggerEditor from "../TriggerEditor.vue";
 
 const { dialog, close } = useAgentItemDialogs();
 const settings = useSettingsStore();
 const files = useAgentFilesStore();
 const route = useRoute();
 const router = useRouter();
+const previewTrigger = useTriggerPreview();
 
 const busy = ref(false);
 const error = ref("");
 const form = reactive({
 	name: "",
-	schedule: "",
+	trigger: taskTriggerFields({ name: "" }),
 	prompt: "",
 	type: "prompt",
 	agent: "",
+});
+// Remounts the trigger editor for each dialog, so its preview starts afresh.
+const editorKey = ref(0);
+
+/** The project of the task being added or edited, if it is a project task. */
+const taskProject = computed(() => {
+	const d = dialog.value;
+	if (d?.kind !== "task") return "";
+	if (d.mode === "create") return d.project ?? "";
+	const task = agentTasks(d.agent).find((t) => t.name === d.name);
+	return task?.type === "project" ? (task.project ?? "") : "";
 });
 
 /** The agents a project task may be created under, its default first. */
@@ -152,7 +171,7 @@ const description = computed(() => {
 			? `A new markdown file in ${d.agent}'s directory.`
 			: `Renames ${d.name}, keeping its content.`;
 	if (d.mode !== "create")
-		return `Renames ${d.name} or changes its schedule and prompt.`;
+		return `Renames ${d.name} or changes its trigger and prompt.`;
 	return d.project
 		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and this project's Schedules section edits the rest of its settings.`
 		: `A scheduled task for ${d.agent}. The Scheduled Tasks page edits the rest of its settings.`;
@@ -170,11 +189,28 @@ watch(dialog, (d) => {
 			? agentTasks(d.agent).find((t) => t.name === d.name)
 			: undefined;
 	form.name = d?.mode === "edit" ? (d.name ?? "") : "";
-	form.schedule = task?.schedule ?? "";
+	form.trigger = task ? taskTriggerFields(task) : newTaskTrigger(!!d?.project);
+	editorKey.value++;
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
 	form.agent = d?.agent ?? "";
 });
+
+/**
+ * A new task's trigger: daily at 09:00 for a project task, which needs a
+ * time trigger, and none for an agent task until one is picked.
+ */
+function newTaskTrigger(project: boolean): TriggerFields {
+	const fields = taskTriggerFields({ name: "" });
+	return project ? { ...fields, trigger: "daily" } : fields;
+}
+
+/** The task with the dialog's trigger fields written onto it. */
+function withTrigger(task: AgentTask, trigger: TriggerFields): AgentTask {
+	const next = { ...task };
+	applyTaskTrigger(next, trigger);
+	return next;
+}
 
 /** Whether the route shows this agent's task or file. */
 function showing(kind: "task" | "file", agent: string, name: string): boolean {
@@ -192,10 +228,9 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 		(t) => t.name === name && t.name !== from,
 	);
 	if (clash) throw new Error(`A task named ${name} already exists.`);
-	const fields = { schedule: form.schedule.trim(), prompt: form.prompt };
+	const trigger = { ...form.trigger };
 	if (mode === "create") {
-		await settings.saveAgentTasks(agent, (tasks) => [
-			...tasks,
+		const task = withTrigger(
 			{
 				enabled: true,
 				name,
@@ -205,21 +240,21 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 				target: "",
 				run_once: false,
 				from_file: true,
-				...fields,
+				prompt: form.prompt,
 			},
-		]);
+			trigger,
+		);
+		await settings.saveAgentTasks(agent, (tasks) => [...tasks, task]);
 		if (onCreated) onCreated(agent, name);
 		else await router.push(agentTaskPath(agent, name));
 		return;
 	}
 	const current = agentTasks(agent).find((t) => t.name === from);
 	if (!current) throw new Error(`Task ${from} no longer exists.`);
-	if (
-		current.schedule !== fields.schedule ||
-		current.prompt !== fields.prompt
-	) {
+	const updated = withTrigger({ ...current, prompt: form.prompt }, trigger);
+	if (JSON.stringify(updated) !== JSON.stringify(current)) {
 		await settings.saveAgentTasks(agent, (tasks) =>
-			tasks.map((t) => (t.name === from ? { ...t, ...fields } : t)),
+			tasks.map((t) => (t.name === from ? withTrigger({ ...t, prompt: form.prompt }, trigger) : t)),
 		);
 	}
 	if (name !== from) {

@@ -28,7 +28,7 @@
 					<button type="button" class="min-w-0 flex-1 text-left" @click="selected = s.id">
 						<p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ s.name }}</p>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">
-							{{ s.description || s.trigger }}<template v-if="s.enabled && s.nextRun"> · next {{ until(s.nextRun, now) }}</template>
+							{{ triggerSummary(s) }}<template v-if="s.enabled && s.nextRun"> · next {{ until(s.nextRun, now) }}</template>
 							<template v-else-if="!s.enabled"> · paused</template>
 						</p>
 						<p v-if="lastScheduleRun(s)" data-testid="schedule-last-result"
@@ -59,6 +59,7 @@ import {
 	lastScheduleRun,
 	type ProjectSchedule,
 	scheduleRunDot,
+	triggerSummary,
 	until,
 } from "../../lib/projects";
 import type { TriggerFields } from "../../lib/trigger";
