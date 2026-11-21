@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
 )
 
 const shimHelperEnv = "AVIARY_SHIM_HELPER"

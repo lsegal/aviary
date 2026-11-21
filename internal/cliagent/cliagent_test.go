@@ -38,6 +38,11 @@ func fakeClaude() {
 	} else if i := slices.Index(args, "--session-id"); i >= 0 {
 		session = args[i+1]
 	}
+	systemPrompt := ""
+	if i := slices.Index(args, "--system-prompt"); i >= 0 {
+		systemPrompt = args[i+1]
+	}
+	skip := slices.Contains(args, "--dangerously-skip-permissions")
 	out := json.NewEncoder(os.Stdout)
 	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": session})
 	sc := bufio.NewScanner(os.Stdin)
@@ -68,7 +73,7 @@ func fakeClaude() {
 			fmt.Fprintln(os.Stderr, "boom")
 			os.Exit(3)
 		}
-		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), text)
+		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s skip=%t system=%q text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), skip, systemPrompt, text)
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{
 			"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": reply},
