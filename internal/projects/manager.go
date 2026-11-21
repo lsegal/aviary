@@ -279,7 +279,6 @@ type engineSettings struct {
 	Definitions       map[string]any       `json:"definitions"`
 	Interval          time.Duration        `json:"interval"`
 	Delivery          string               `json:"delivery"`
-	ReadyLabel        string               `json:"ready_label"`
 	ReadyState        string               `json:"ready_state"`
 	Filter            string               `json:"filter"`
 	AllIssues         bool                 `json:"all_issues"`
@@ -330,7 +329,6 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Definitions:       llm.CLIProviderDefinitions(),
 		Interval:          cfg.EffectiveInterval(),
 		Delivery:          cfg.EffectiveDelivery(),
-		ReadyLabel:        cfg.EffectiveReadyLabel(),
 		ReadyState:        strings.TrimSpace(cfg.ReadyState),
 		Filter:            cfg.EffectiveFilter(),
 		AllIssues:         cfg.AllIssues,
@@ -563,7 +561,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		}
 		return nil, err
 	}
-	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, ReadyLabel: s.ReadyLabel, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
+	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
 	allowed := s.AllowedCommenters
 	if len(allowed) == 0 {
 		login, err := gh.resolveSelfLogin(ctx)

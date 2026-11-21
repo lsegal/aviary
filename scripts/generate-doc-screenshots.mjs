@@ -901,7 +901,7 @@ const projectsFixtures = {
 		concurrency: 4,
 		delivery: "poll",
 		poll_interval: "30s",
-		ready_label: "ready",
+		issue_filter: "assignee:@me",
 		allowed_commenters: ["lsegal"],
 		quotas: { claude: "62% of 5h quota left", codex: "quota ok" },
 		agents: ["claude", "codex"],

@@ -47,7 +47,6 @@ export interface ProjectsSection {
 	delivery?: string;
 	browser_vision?: boolean;
 	browser_visible?: boolean;
-	ready_label?: string;
 	ready_state?: string;
 	filter?: string[];
 	all_issues?: boolean;
@@ -66,7 +65,6 @@ export interface ProjectsSection {
 /** The shared projects settings, with defaults filled in. */
 export interface ProjectSettings {
 	concurrency: number;
-	readyLabel: string;
 	readyState: string;
 	delivery: Delivery;
 	/** Browser delivery's capped screenshot fallback. */
@@ -86,7 +84,6 @@ export interface ProjectSettings {
 }
 
 export const DEFAULT_CONCURRENCY = 3;
-export const DEFAULT_READY_LABEL = "ready";
 export const DEFAULT_DELIVERY: Delivery = "browser";
 export const DEFAULT_INTERVAL = "30s";
 export const DEFAULT_BROWSER_INTERVAL = "20s";
@@ -259,11 +256,6 @@ export function settingsFromSection(
 			typeof s.concurrency === "number" && s.concurrency > 0
 				? s.concurrency
 				: DEFAULT_CONCURRENCY,
-		// An explicit empty ready label turns label matching off.
-		readyLabel:
-			typeof s.ready_label === "string"
-				? s.ready_label.trim()
-				: DEFAULT_READY_LABEL,
 		readyState: (s.ready_state ?? "").trim(),
 		delivery: parseDelivery(s.delivery),
 		browserVision: s.browser_vision === true,
@@ -390,8 +382,6 @@ export function withSettings(
 		Math.floor(s.concurrency),
 		!(s.concurrency > 0) || s.concurrency === DEFAULT_CONCURRENCY,
 	);
-	const label = s.readyLabel.trim();
-	set("ready_label", label, label === DEFAULT_READY_LABEL);
 	set("ready_state", s.readyState.trim(), !s.readyState.trim());
 	set("delivery", s.delivery, s.delivery === DEFAULT_DELIVERY);
 	// The browser-only switches mean nothing for the API-backed modes.
@@ -537,7 +527,6 @@ const CHECK_LABELS: Record<string, string> = {
 	github: "GitHub",
 	clis: "CLI providers",
 	skills: "Skills",
-	ready_label: "Ready label",
 	fork: "Fork",
 };
 

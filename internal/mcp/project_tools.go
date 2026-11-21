@@ -358,7 +358,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_issue_create",
-		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL",
+		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL. Calling it again with the same repository and text while that issue is still filing, or after it filed, waits for or returns the same issue instead of filing a duplicate",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCreateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {

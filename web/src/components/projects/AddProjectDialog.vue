@@ -6,7 +6,7 @@
 			<form class="px-5 pt-5 sm:px-6" @submit.prevent="start">
 				<h2 id="add-project-title" class="text-lg font-semibold text-gray-900 dark:text-white">Watch a repository</h2>
 				<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-					Issues that get the ready label are claimed, fixed on their own branch, and opened as pull requests.
+					Open issues matching the issue filter (assigned to you by default) are claimed, fixed on their own branch, and opened as pull requests.
 				</p>
 
 				<label for="add-project-target" class="mt-5 block text-xs font-medium text-gray-700 dark:text-gray-300">
