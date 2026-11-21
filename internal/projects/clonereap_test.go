@@ -15,24 +15,24 @@ import (
 
 // symlinkedRoot returns a temp directory and a symlink to it, as macOS's
 // /var is a symlink to /private/var.
-func symlinkedRoot(t *testing.T) (real, link string) {
+func symlinkedRoot(t *testing.T) (target, link string) {
 	t.Helper()
 	base := t.TempDir()
-	real = filepath.Join(base, "private", "T")
-	if err := os.MkdirAll(real, 0o755); err != nil {
+	target = filepath.Join(base, "private", "T")
+	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link = filepath.Join(base, "T")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	return resolvePath(real), link
+	return resolvePath(target), link
 }
 
 func TestCloneUnderSymlinkedPathIsInsideTempDirAndListedOnce(t *testing.T) {
-	real, link := symlinkedRoot(t)
+	target, link := symlinkedRoot(t)
 	statePath := filepath.Join(t.TempDir(), ".aviary.json")
-	clone := makeClone(t, real, "r-gh-fix-430", "o/r")
+	clone := makeClone(t, target, "r-gh-fix-430", "o/r")
 	viaLink := filepath.Join(link, "r-gh-fix-430")
 	if err := saveScopedWorkState(statePath, map[string]workState{"o/r#743": {Status: "active", CheckoutDirectory: viaLink}}, []string{"o/r"}); err != nil {
 		t.Fatal(err)
@@ -54,14 +54,14 @@ func TestCloneUnderSymlinkedPathIsInsideTempDirAndListedOnce(t *testing.T) {
 	if entry := snapshot.Clones[0]; entry.Path != clone || entry.Kept || !entry.InUse || strings.Contains(entry.Reason, "outside") {
 		t.Fatalf("clone = %+v, want %s in use inside the temp directory", entry, clone)
 	}
-	if !underRoots(viaLink, []string{real}) || !underRoots(clone, []string{link}) {
+	if !underRoots(viaLink, []string{target}) || !underRoots(clone, []string{link}) {
 		t.Fatal("a clone reached through either path must be inside the temp directory reached through the other")
 	}
 }
 
 func TestCloneRegistryDeduplicatesSymlinkedRecordsOnLoad(t *testing.T) {
-	real, link := symlinkedRoot(t)
-	clone := makeClone(t, real, "r-gh-fix-421", "o/r")
+	target, link := symlinkedRoot(t)
+	clone := makeClone(t, target, "r-gh-fix-421", "o/r")
 	path := filepath.Join(t.TempDir(), ".aviary.clones.json")
 	old := time.Now().Add(-48 * time.Hour)
 	saved := []cloneRecord{
@@ -87,8 +87,8 @@ func TestCloneRegistryDeduplicatesSymlinkedRecordsOnLoad(t *testing.T) {
 }
 
 func TestReusedCloneDropsTheEarlierJobsRecord(t *testing.T) {
-	real, link := symlinkedRoot(t)
-	clone := makeClone(t, real, "r-gh-fix-422", "o/r")
+	target, link := symlinkedRoot(t)
+	clone := makeClone(t, target, "r-gh-fix-422", "o/r")
 	reg := &cloneRegistry{records: map[string]cloneRecord{}}
 	_ = reg.record(cloneRecord{Path: clone, Repository: "o/r", Issue: 740, PullRequest: 742, Job: "o/r#740"})
 	_ = reg.record(cloneRecord{Path: filepath.Join(link, "r-gh-fix-422"), Repository: "o/r", Issue: 745, Job: "o/r#745"})
