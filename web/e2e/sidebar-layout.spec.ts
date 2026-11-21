@@ -126,8 +126,9 @@ test("with several agents the rail lists each agent and the active one's pages",
 		"href",
 		"/agents/coder/chat",
 	);
+	// Agents opens /agents, which moves on to the first agent's chat.
 	await rail.getByTestId("sidebar-rail-agents").click();
-	await expect(page).toHaveURL("/agents");
+	await expect(page).toHaveURL(/\/agents(\/assistant\/chat)?$/);
 });
 
 test("dragging the edge resizes the sidebar within limits and snaps to the rail", async ({
