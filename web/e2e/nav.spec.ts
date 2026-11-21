@@ -69,7 +69,7 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	]);
 });
 
-test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Agent Settings", async ({
+test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Agent Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -90,7 +90,7 @@ test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Agent Settin
 	).toHaveText([
 		"Chats",
 		"GitHub Projects",
-		"Tasks",
+		"Scheduled Tasks",
 		"Files",
 		"Agent Settings",
 	]);

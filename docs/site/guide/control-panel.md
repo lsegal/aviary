@@ -10,7 +10,7 @@ Log in with the bearer token from `~/.config/aviary/token`.
 
 The sidebar has two top-level sections:
 
-- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
+- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
 - **System** — the instance's own pages: **Overview**, **Settings**, **Providers & Auth**, **Usage** and **Jobs**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
 
 ---
