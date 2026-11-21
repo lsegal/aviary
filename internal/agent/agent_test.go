@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -227,6 +228,83 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	assert.Contains(t, msgs[len(msgs)-2].Content, `"name":"web_search"`)
 	assert.Equal(t, domain.MessageRoleAssistant, msgs[len(msgs)-1].Role)
 	assert.Equal(t, "final answer", msgs[len(msgs)-1].Content)
+}
+
+// A tool call, its result, and its stored record share one ID, and two calls
+// to the same tool get different IDs, so the chat shows one entry per call
+// live and after a reload (#740).
+func TestAgentRunner_ToolCallIDsMatchFromStreamToHistory(t *testing.T) {
+	setTestDataDir(t)
+
+	toolClient := &recordingToolClient{
+		tools:   []ToolInfo{{Name: "project_job_list", Description: "List jobs"}},
+		results: map[string]string{"project_job_list": "[]"},
+	}
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return toolClient, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+
+	provider := &sequenceProvider{responses: [][]llm.Event{
+		{
+			{Type: llm.EventTypeToolCall, ToolCall: &llm.ToolCall{ID: "0", Name: "project_job_list", Arguments: map[string]any{"query": "filter"}}},
+			{Type: llm.EventTypeToolCall, ToolCall: &llm.ToolCall{ID: "0", Name: "project_job_list", Arguments: map[string]any{"query": "indicator"}}},
+			{Type: llm.EventTypeDone},
+		},
+		{{Type: llm.EventTypeText, Text: "done"}, {Type: llm.EventTypeDone}},
+	}}
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_tool_ids", Name: "tool-ids", Model: "test/model"},
+		&config.AgentConfig{Name: "tool-ids", Model: "test/model"},
+		provider,
+		nil,
+	)
+	sess, err := NewSessionManager().GetOrCreateNamed("agent_tool_ids", "main")
+	require.NoError(t, err)
+
+	var toolEvents []ToolEvent
+	done := make(chan struct{}, 1)
+	runner.Prompt(WithSessionID(context.Background(), sess.ID), "list", func(e StreamEvent) {
+		switch e.Type {
+		case StreamEventTool:
+			toolEvents = append(toolEvents, *e.Tool)
+		case StreamEventDone, StreamEventError, StreamEventStop:
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "timeout")
+	}
+	runner.Wait()
+
+	require.Len(t, toolEvents, 4)
+	for _, e := range toolEvents {
+		assert.NotEmpty(t, e.ID)
+	}
+	assert.Equal(t, toolEvents[0].ID, toolEvents[1].ID, "a call and its result share an ID")
+	assert.Equal(t, toolEvents[2].ID, toolEvents[3].ID, "a call and its result share an ID")
+	assert.NotEqual(t, toolEvents[0].ID, toolEvents[2].ID, "two calls to one tool are distinct")
+
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_tool_ids", sess.ID))
+	require.NoError(t, err)
+	var stored []toolEventRecord
+	for _, l := range lines {
+		if l.Role == domain.MessageRoleTool {
+			var rec toolEventRecord
+			require.NoError(t, json.Unmarshal([]byte(l.Content), &rec))
+			stored = append(stored, rec)
+		}
+	}
+	require.Len(t, stored, 2)
+	assert.Equal(t, toolEvents[1].ID, stored[0].ID)
+	assert.Equal(t, "filter", stored[0].Args["query"])
+	assert.Equal(t, toolEvents[3].ID, stored[1].ID)
+	assert.Equal(t, "indicator", stored[1].Args["query"])
 }
 
 func TestAgentRunner_NormalizesSessionHistoryCurrentSessionID(t *testing.T) {

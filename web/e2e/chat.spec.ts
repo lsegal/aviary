@@ -718,12 +718,13 @@ test("reloading after a turn shows the same tool blocks as the live view", async
 	await sendChat(page);
 
 	const blocks = jobListBlocks(page);
-	await expect(page.getByText("Here's the board.")).toBeVisible();
+	const reply = page.getByText("Here's the board.");
 	await expect.poll(() => loads).toBeGreaterThan(1);
+	await expect(reply).toHaveCount(1);
 	await expect(blocks).toHaveCount(2);
 
 	await page.reload();
-	await expect(page.getByText("Here's the board.")).toBeVisible();
+	await expect(reply).toHaveCount(1);
 	await expect(blocks).toHaveCount(2);
 	await blocks.nth(0).locator("summary").click();
 	await expect(blocks.nth(0)).toContainText('"filter"');
