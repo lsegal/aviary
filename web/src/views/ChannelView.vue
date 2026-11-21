@@ -93,7 +93,8 @@ const channels = computed(
 const channel = computed(() =>
 	channelParam.value
 		? channels.value.find(
-				(c) => channelName(c).toLowerCase() === channelParam.value.toLowerCase(),
+				(c) =>
+					channelName(c).toLowerCase() === channelParam.value.toLowerCase(),
 			)
 		: undefined,
 );

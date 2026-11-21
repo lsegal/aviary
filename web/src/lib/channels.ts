@@ -1,7 +1,9 @@
 import type { AgentChannel } from "../stores/settings";
 
 /** The channel's display name: its name, else its ID, else its type. */
-export function channelName(ch: Pick<AgentChannel, "name" | "id" | "type">): string {
+export function channelName(
+	ch: Pick<AgentChannel, "name" | "id" | "type">,
+): string {
 	return ch.name?.trim() || ch.id?.trim() || ch.type;
 }
 

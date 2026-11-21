@@ -42,8 +42,7 @@ const { open } = useChannelDialogs();
 
 const channels = computed(
 	() =>
-		settings.config?.agents.find((a) => a.name === props.agent)?.channels ??
-		[],
+		settings.config?.agents.find((a) => a.name === props.agent)?.channels ?? [],
 );
 
 // The channel whose conversation or settings are showing.

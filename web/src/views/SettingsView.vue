@@ -341,6 +341,7 @@ import {
 	useUnsavedChanges,
 } from "../composables/useUnsavedChanges";
 import { APPROVAL_MODES } from "../lib/approval";
+import { channelName, channelTarget, channelTargetName } from "../lib/channels";
 import { projectTargets } from "../lib/projectSettings";
 import {
 	clampToolNamesForPreset,
@@ -429,7 +430,6 @@ interface SkillSettingsSchema {
 interface TaskChannelOption {
 	value: string;
 	label: string;
-	type: string;
 }
 
 interface SlackWorkspaceChannelOption {
@@ -604,8 +604,9 @@ watch(
 	},
 );
 
-// An agent's pages: its Agent Settings page's General, Permissions and
-// Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
+// An agent's pages: its Agent Settings page's General and Permissions
+// sections, one channel's settings (opened from the Channels sidebar
+// section), then Files and Tasks. GitHub Projects is the agent's board, with its
 // settings in System → Projects.
 const agentSubtabs = [
 	"general",
@@ -631,15 +632,22 @@ function agentIdxFromParam(param: string): number {
 	return idx >= 0 ? idx : 0;
 }
 
-const settingsSections: readonly AgentSubtab[] = [
-	"general",
-	"permissions",
-	"channels",
-];
+const settingsSections: readonly AgentSubtab[] = ["general", "permissions"];
 
 /** The URL tail of a subtab: settings, settings/permissions, files, … */
 function subtabPath(subtab: AgentSubtab): string {
 	if (subtab === "general") return "settings";
+	if (subtab === "channels") {
+		// The route's channel wins until the selection catches up with it.
+		const ch = selectedChannel.value;
+		const name =
+			typeof route.params.channel === "string"
+				? route.params.channel
+				: ch
+					? channelName(ch)
+					: "";
+		return name ? `channels/${encodeURIComponent(name)}/settings` : "channels";
+	}
 	return settingsSections.includes(subtab) ? `settings/${subtab}` : subtab;
 }
 
@@ -648,6 +656,7 @@ function subtabPath(subtab: AgentSubtab): string {
  * names its section in the path or in a ?tab= or ?section= query.
  */
 function routeSubtab(): AgentSubtab | null {
+	if (typeof route.params.channel === "string") return "channels";
 	const subtab = route.params.subtab as string | undefined;
 	if (!subtab) return null;
 	if (subtab !== "settings") return subtab as AgentSubtab;
@@ -734,6 +743,24 @@ const selectedChannel = computed((): AgentChannel | null => {
 	if (idx < 0 || idx >= agent.channels.length) return agent.channels[0] ?? null;
 	return agent.channels[idx] ?? null;
 });
+
+// A channel's settings page names its channel in the path.
+watch(
+	() => [
+		route.params.channel,
+		selectedAgentIdx.value,
+		draft.value.agents[selectedAgentIdx.value]?.channels?.length,
+	],
+	() => {
+		const name = route.params.channel;
+		if (typeof name !== "string") return;
+		const idx = (
+			draft.value.agents[selectedAgentIdx.value]?.channels ?? []
+		).findIndex((c) => channelName(c).toLowerCase() === name.toLowerCase());
+		if (idx >= 0) selectedChannelIdx.value = idx;
+	},
+	{ immediate: true, flush: "post" },
+);
 
 // Agent tab click → push new route (also resets subtab) and reset selectedTaskIdx for the new agent.
 watch(selectedAgentIdx, (idx) => {
@@ -870,6 +897,7 @@ watch(
 );
 watch(
 	() => [
+		route.params.channel,
 		route.params.subtab,
 		route.params.section,
 		route.query.tab,
@@ -904,7 +932,7 @@ watch(
 function resolveAgentsIndex() {
 	if (loading.value || activeTab.value !== "agents") return;
 	// /agents/NAME alone opens that agent's chat.
-	if (route.params.agent && !route.params.subtab) {
+	if (route.params.agent && !route.params.subtab && !route.params.channel) {
 		void router.replace(`/agents/${route.params.agent}/chat`);
 		return;
 	}
@@ -921,7 +949,7 @@ watch(() => route.fullPath, resolveAgentsIndex);
 const agentSubtabLabels: Record<AgentSubtab, string> = {
 	general: "Agent Settings",
 	permissions: "Agent Settings",
-	channels: "Agent Settings",
+	channels: "Channel Settings",
 	files: "Files",
 	tasks: "Tasks",
 };
@@ -939,6 +967,8 @@ const pageTitle = computed(() => {
 	const agent = draft.value.agents[selectedAgentIdx.value];
 	if (!agent || route.path === "/agents") return "Agents";
 	const name = agent.name || "New agent";
+	if (selectedAgentSubtab.value === "channels" && selectedChannel.value)
+		return `${name} · ${channelName(selectedChannel.value)} · Settings`;
 	return `${name} · ${agentSubtabLabels[selectedAgentSubtab.value]}`;
 });
 
@@ -2158,11 +2188,6 @@ async function moveTaskToFile(
 	}
 }
 
-function configuredChannelLabel(ch: AgentChannel, index: number): string {
-	if (ch.id) return `${ch.type} via ${ch.id}`;
-	return `${ch.type} via #${index + 1}`;
-}
-
 function channelPrimaryLabel(ch: AgentChannel): string {
 	switch (ch.type) {
 		case "slack":
@@ -2207,69 +2232,8 @@ function selectedTaskTarget(task: AgentTask): string {
 }
 
 function setSelectedTaskTarget(task: AgentTask, value: string) {
-	const parsed = parseTaskChannelValue(task.target);
-	const trimmed = value.trim();
-	if (!parsed.selection) {
-		task.target = "";
-		return;
-	}
-	if (parsed.type === "session") {
-		task.target = `session:${trimmed}`;
-		return;
-	}
-	task.target = `${parsed.selection}:${trimmed}`;
-}
-
-function selectedConfiguredChannel(
-	agent: AgentEntry,
-	task: AgentTask,
-): AgentChannel | null {
-	const selection = taskChannelSelection(task);
-	if (!selection || selection === "session") return null;
-	const [type, configuredID] = selection.split(":", 2);
-	return (
-		(agent.channels ?? []).find(
-			(ch) => (ch.type ?? "") === type && (ch.id ?? "") === configuredID,
-		) ?? null
-	);
-}
-
-function selectedConfiguredChannelIndex(
-	agent: AgentEntry,
-	task: AgentTask,
-): number {
-	const selection = taskChannelSelection(task);
-	if (!selection || selection === "session") return -1;
-	const [type, configuredID] = selection.split(":", 2);
-	return (agent.channels ?? []).findIndex(
-		(ch) => (ch.type ?? "") === type && (ch.id ?? "") === configuredID,
-	);
-}
-
-function taskDeliveryTargetLabel(agent: AgentEntry, task: AgentTask): string {
-	const parsed = parseTaskChannelValue(task.target);
-	if (parsed.type === "session") return "Session";
-	const channel = selectedConfiguredChannel(agent, task);
-	switch (channel?.type) {
-		case "slack":
-			return "Slack channel ID";
-		case "discord":
-			return "Discord channel ID";
-		case "signal":
-			return "Signal recipient or group ID";
-		default:
-			return "Delivery ID";
-	}
-}
-
-function slackChannelsForTask(
-	agentIndex: number,
-	agent: AgentEntry,
-	task: AgentTask,
-): SlackWorkspaceChannelOption[] {
-	const channelIndex = selectedConfiguredChannelIndex(agent, task);
-	if (channelIndex < 0) return [];
-	return slackVisibleChannels(agentIndex, channelIndex);
+	if (parseTaskChannelValue(task.target).selection !== "session") return;
+	task.target = `session:${value.trim()}`;
 }
 
 function slackVisibleChannels(
@@ -2281,50 +2245,33 @@ function slackVisibleChannels(
 	).filter((channel) => !channel.is_archived);
 }
 
-function slackTargetPlaceholder(agent: AgentEntry, task: AgentTask): string {
-	const channel = selectedConfiguredChannel(agent, task);
-	if (channel?.type === "slack") return "C1234567890";
-	if (channel?.type === "discord") return "123456789012345678";
-	if (channel?.type === "signal") return "+15551234567 or group ID";
-	return "Target ID";
-}
-
+/**
+ * Where a task's output can go besides nowhere: a session, or one of the
+ * agent's channels by name, which delivers into that channel's session.
+ */
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
 	return [
-		{ value: "session", label: "session", type: "session" },
+		{ value: "session", label: "Session" },
 		...(agent.channels ?? [])
 			.filter((ch) => !!ch.type && !!ch.id)
-			.map((ch, index) => ({
-				value: `${ch.type}:${ch.id}`,
-				label: configuredChannelLabel(ch, index),
-				type: ch.type,
+			.map((ch) => ({
+				value: channelTarget(channelName(ch)),
+				label: `Channel: ${channelName(ch)}`,
 			})),
 	];
 }
 
+/** A task target's picker selection, and the session it names if any. */
 function parseTaskChannelValue(target?: string): {
 	selection: string;
 	target: string;
-	type: string;
 } {
 	const raw = (target ?? "").trim();
-	if (!raw) return { selection: "", target: "", type: "" };
-	if (raw.startsWith("session:")) {
-		return {
-			selection: "session",
-			target: raw.slice("session:".length),
-			type: "session",
-		};
-	}
-	const parts = raw.split(":", 3);
-	if (parts.length === 3) {
-		return {
-			selection: `${parts[0]}:${parts[1]}`,
-			target: parts[2] ?? "",
-			type: parts[0] ?? "",
-		};
-	}
-	return { selection: "", target: "", type: "" };
+	if (raw.startsWith("session:"))
+		return { selection: "session", target: raw.slice("session:".length) };
+	const name = channelTargetName(raw);
+	if (name) return { selection: channelTarget(name), target: "" };
+	return { selection: "", target: "" };
 }
 
 function taskChannelSelection(task: AgentTask): string {
@@ -2435,51 +2382,8 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 function setTaskChannelSelection(task: AgentTask, event: Event) {
 	const selection = (event.target as HTMLSelectElement).value;
 	const parsed = parseTaskChannelValue(task.target);
-	if (!selection) {
-		task.target = "";
-		return;
-	}
-	if (selection === "session") {
-		task.target = `session:${parsed.type === "session" ? parsed.target : ""}`;
-		return;
-	}
-	task.target = `${selection}:${parsed.type === "session" ? "" : parsed.target}`;
-}
-
-function addChannel(agentIndex: number) {
-	const ch: AgentChannel = {
-		enabled: true,
-		type: "signal",
-		show_typing: true,
-		reply_to_replies: true,
-		react_to_emoji: true,
-		send_read_receipts: true,
-	};
-	if (!Array.isArray(draft.value.agents[agentIndex].channels)) {
-		draft.value.agents[agentIndex].channels = [];
-	}
-	draft.value.agents[agentIndex].channels.push(ch);
-	if (agentIndex === selectedAgentIdx.value) {
-		selectedChannelIdx.value =
-			draft.value.agents[agentIndex].channels.length - 1;
-	}
-}
-
-function removeChannel(agentIndex: number, chIndex: number) {
-	draft.value.agents[agentIndex].channels.splice(chIndex, 1);
-	if (agentIndex !== selectedAgentIdx.value) return;
-	const channels = draft.value.agents[agentIndex].channels ?? [];
-	if (!channels.length) {
-		selectedChannelIdx.value = null;
-		return;
-	}
-	if ((selectedChannelIdx.value ?? 0) > chIndex) {
-		selectedChannelIdx.value = (selectedChannelIdx.value ?? 0) - 1;
-		return;
-	}
-	if ((selectedChannelIdx.value ?? 0) >= channels.length) {
-		selectedChannelIdx.value = channels.length - 1;
-	}
+	if (selection === "session") task.target = `session:${parsed.target}`;
+	else task.target = selection;
 }
 
 async function browseSlackChannels(
@@ -3483,7 +3387,6 @@ const settingsContext = proxyRefs({
 	approvalModes: APPROVAL_MODES,
 	addAgent,
 	addAllowFrom,
-	addChannel,
 	addProviderApiKey,
 	addProviderEndpoint,
 	addProviderOAuth,
@@ -3520,7 +3423,6 @@ const settingsContext = proxyRefs({
 	completeOpenAI,
 	completeCopilot,
 	concurrencyInput,
-	configuredChannelLabel,
 	configuredProviders,
 	chatDisplayName,
 	configuredTaskChannelOptions,
@@ -3584,7 +3486,6 @@ const settingsContext = proxyRefs({
 	refreshCredentials,
 	removeAgent,
 	removeAllowFrom,
-	removeChannel,
 	removeTarget,
 	removeKind,
 	removeTargetOpen,
@@ -3600,8 +3501,6 @@ const settingsContext = proxyRefs({
 	onAgentSettingsPage,
 	selectedChannel,
 	selectedChannelIdx,
-	selectedConfiguredChannel,
-	selectedConfiguredChannelIndex,
 	selectedTask,
 	selectedTaskIdx,
 	selectedTaskTarget,
@@ -3632,8 +3531,6 @@ const settingsContext = proxyRefs({
 	skillSettingPlaceholder,
 	skillsLoading,
 	skillStringSetting,
-	slackChannelsForTask,
-	slackTargetPlaceholder,
 	slackVisibleChannels,
 	slackWorkspaceState,
 	startAnthropic,
@@ -3642,7 +3539,6 @@ const settingsContext = proxyRefs({
 	syncAgentTemplates,
 	taskChannelSelection,
 	taskDefinedIn,
-	taskDeliveryTargetLabel,
 	toggleCategory,
 	toggleEntryCategory,
 	toggleEntryTool,

@@ -294,9 +294,13 @@ function reportsFromEntry(r: ProjectReportsEntry | undefined): ProjectReports {
 	};
 }
 
-// Target rows still missing their delivery ID are left out of what's saved.
+// Target rows not filled in yet (a session row with no session) are left out
+// of what's saved.
 function filledTargets(targets: string[]): string[] {
-	return clean(targets).filter((t) => splitReportTarget(t).id);
+	return clean(targets).filter((t) => {
+		const { channel, id } = splitReportTarget(t);
+		return channel.startsWith("channel:") || !!id;
+	});
 }
 
 /** The `reports` entry to save, or undefined while reports are off. */
@@ -334,7 +338,11 @@ export function reportsError(r: ProjectReports, agents: string[]): string {
 	return "";
 }
 
-/** A report target split into its channel (`session` or TYPE:ID) and delivery id. */
+/**
+ * A report target split into its choice and the session it names: a channel
+ * by name ("channel:<name>", complete as is) or `session` with a session.
+ * Anything else is unrecognized and kept as id with no channel.
+ */
 export function splitReportTarget(target: string): {
 	channel: string;
 	id: string;
@@ -342,18 +350,17 @@ export function splitReportTarget(target: string): {
 	const raw = target.trim();
 	if (raw.startsWith("session:"))
 		return { channel: "session", id: raw.slice("session:".length) };
-	const parts = raw.split(":");
-	if (parts.length >= 3)
-		return { channel: `${parts[0]}:${parts[1]}`, id: parts.slice(2).join(":") };
+	if (raw.startsWith("channel:")) return { channel: raw, id: "" };
 	return { channel: "", id: raw };
 }
 
-/** Joins a channel and delivery id back into a report target. */
+/** Joins a target choice and session back into a report target. */
 export function joinReportTarget(channel: string, id: string): string {
 	const c = channel.trim();
 	const v = id.trim();
-	if (!c) return v;
-	return v ? `${c}:${v}` : "";
+	if (c.startsWith("channel:")) return c;
+	if (c === "session") return v ? `session:${v}` : "";
+	return v;
 }
 
 function sameList(a: string[], b: string[]): boolean {
