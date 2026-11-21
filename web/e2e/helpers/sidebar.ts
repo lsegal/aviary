@@ -31,8 +31,11 @@ export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 	if (!name) {
 		if (page.url() === "about:blank") await page.goto("/system/overview");
 		name =
-			(await agentNav(page)
-				.locator("[data-agent]")
+			(await page
+				.getByTestId("sidebar-nav")
+				.locator(
+					"[data-testid=sidebar-agent-list] a[data-agent], [data-testid=sidebar-sole-agent]",
+				)
 				.first()
 				.getAttribute("data-agent")) ?? "";
 	}

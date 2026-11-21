@@ -75,7 +75,8 @@ test("an agent's pages are Chat, GitHub Projects, Tasks, Files and Settings", as
 	});
 	await page.goto("/agents/assistant/chat");
 
-	const agent = page.getByTestId("sidebar-agent-assistant");
+	// With one agent its pages are the sidebar's top level (#538).
+	const agent = page.getByTestId("sidebar-sole-agent");
 	await expect(agent.getByRole("link")).toHaveText([
 		"Chat",
 		"GitHub Projects",
