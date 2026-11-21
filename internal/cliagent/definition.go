@@ -145,7 +145,7 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	for sc.Scan() {
 		line := sc.Bytes()
 		capture.line(line)
-		output.Write(line)          //nolint:errcheck
+		output.Write(line)         //nolint:errcheck
 		output.Write([]byte{'\n'}) //nolint:errcheck
 		m.handle(line)
 	}

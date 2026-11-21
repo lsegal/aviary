@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/clidefs"
-	"github.com/lsegal/aviary/internal/llm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
 // fakeGeneric stands in for a CLI driven only through its definition. It
