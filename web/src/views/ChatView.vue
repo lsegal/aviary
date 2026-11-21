@@ -1,8 +1,9 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
-			<!-- Chat picker: the sidebar's Chats list covers wide screens. -->
-			<div v-if="selectedAgent" data-testid="chat-picker"
+			<!-- Chat picker: the sidebar's Chats list covers wide screens. A pinned
+				session is the only chat, so it has none. -->
+			<div v-if="selectedAgent && !props.session" data-testid="chat-picker"
 				class="items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 select-none dark:border-gray-800 dark:bg-gray-900/50"
 				:class="props.agent ? 'flex' : 'flex lg:hidden'">
 				<DropdownMenuRoot>
@@ -218,6 +219,9 @@ const props = defineProps<{
 	/** The Projects board the embedded chat was opened from, sent with each
 	 * prompt so the agent answers about that project. */
 	project?: string;
+	/** Pins the embedded chat to this one session, with no chat picker, as
+	 * the Projects prompt chat does with its hidden session. */
+	session?: string;
 }>();
 
 const agentsStore = useAgentsStore();
@@ -494,7 +498,8 @@ async function mountChat() {
 	await agentsStore.fetchAgents();
 	if (props.agent) {
 		selectedAgent.value = props.agent;
-		await loadSessions();
+		if (props.session) selectedSessionId.value = props.session;
+		else await loadSessions();
 		await loadSessionMessages();
 	} else {
 		await mountRouteChat();
@@ -1015,9 +1020,11 @@ async function send() {
 					scrollBottom();
 				}
 			},
-			selectedSessionId.value,
+			// A pinned session is opened by name, which creates it on first use.
+			props.session ? "" : selectedSessionId.value,
 			mediaURL || undefined,
 			props.project,
+			props.session,
 		);
 		flushPendingChunks();
 	} catch (e) {

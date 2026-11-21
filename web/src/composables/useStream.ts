@@ -15,6 +15,7 @@ export function useStream() {
 		sessionID = "",
 		mediaURL?: string,
 		project?: string,
+		session = "main",
 	): Promise<void> {
 		streaming.value = true;
 		error.value = null;
@@ -25,7 +26,7 @@ export function useStream() {
 				name: agentName,
 				message,
 				session_id: sessionID || undefined,
-				session: "main",
+				session,
 				include_tool_progress: true,
 			};
 			if (mediaURL) toolArgs.media_url = mediaURL;

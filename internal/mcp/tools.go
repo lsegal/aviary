@@ -1047,7 +1047,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_list",
-		Description: "List all sessions for an agent",
+		Description: "List an agent's chats, leaving out hidden sessions such as the Projects prompt chat",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "chat_session", "tool", "session_list", "agent", args.Agent)
 		if args.Agent == "" {
@@ -1120,7 +1120,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
-			if sess == nil {
+			if sess == nil || sess.Type == domain.SessionTypeHidden {
 				continue
 			}
 			dto := sessionDTO{

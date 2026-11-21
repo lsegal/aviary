@@ -6,6 +6,10 @@ import "slices"
 // prompt chat. An agent of the same name in aviary.yaml replaces it.
 const ProjectsAgentName = "projects"
 
+// ProjectsChatSession is the Projects agent's one prompt chat session, shared
+// by every board and hidden from the Chats list.
+const ProjectsChatSession = "projects-chat"
+
 // ProjectsAgentTools are the only tools the Projects agent may call. It reads
 // live state, retries, pauses, resumes or stops jobs, runs unblock rounds,
 // files issues, and updates an issue or pull request with

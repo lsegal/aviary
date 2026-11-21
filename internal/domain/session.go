@@ -14,6 +14,9 @@ const (
 	SessionTypeChannel SessionType = "channel"
 	SessionTypeTask    SessionType = "task"
 	SessionTypeUser    SessionType = "user"
+	// SessionTypeHidden is a persisted session kept out of the Chats list,
+	// such as the Projects prompt chat.
+	SessionTypeHidden SessionType = "hidden"
 )
 
 // Session represents a conversation with an agent.
@@ -22,7 +25,7 @@ type Session struct {
 	AgentID string      `json:"agent_id,omitempty"`
 	Name    string      `json:"name,omitempty"`    // human-readable name; "main" for the default session
 	TaskID  string      `json:"task_id,omitempty"` // set for task sessions
-	Type    SessionType `json:"type,omitempty"`    // main, channel, task, or user (default)
+	Type    SessionType `json:"type,omitempty"`    // main, channel, task, hidden, or user (default)
 	// Title is the display name generated from the first prompt or set by a
 	// rename; empty until then. Name stays the session's lookup key.
 	Title string `json:"title,omitempty"`
