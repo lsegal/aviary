@@ -6,6 +6,7 @@
 			"*.ts",
 			"*.js",
 			"!web/dist",
+			"!web/e2e/helpers/toolArguments.json",
 			"!docs/**/dist",
 			"!docs/**/dist",
 			"!docs/**/.vitepress/cache",
