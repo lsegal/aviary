@@ -61,6 +61,21 @@ Delete a file from the current agent's data directory. Protected built-in files 
 
 ---
 
+## agent_file_rename
+
+Rename or move a file within the current agent's data directory. Fails when the destination already exists. Protected built-in files (`AGENTS.md`, `SYSTEM.md`, `MEMORY.md`, `RULES.md`) cannot be renamed, and no file can be renamed to one of their names.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `file` | string | yes | Current path relative to the agent's data directory |
+| `to` | string | yes | New path relative to the agent's data directory |
+
+**Returns:** Text confirmation.
+
+---
+
 ## file_read
 
 Read a file within the current agent's filesystem allowlist. A file up to 256 KB is returned whole, as UTF-8 text or base64 for binary files. Pass `offset` and `limit` to read a range of lines; ranged reads, and whole reads of larger files, return numbered lines and a note saying how to read the rest.

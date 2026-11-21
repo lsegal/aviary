@@ -30,11 +30,11 @@ const { open } = useAgentItemDialogs();
 
 const files = computed(() => store.files(props.agent));
 
-// The Files page opens on its ?file, or on the first file.
+// The Files page names its open file in its ?file.
 const activeName = computed(() => {
 	if (route.path !== agentFilePath(props.agent).path) return "";
 	const q = route.query.file;
-	return typeof q === "string" && q ? q : (files.value[0] ?? "");
+	return typeof q === "string" ? q : "";
 });
 
 const editable = editDeleteActions("Edit");

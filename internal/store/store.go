@@ -156,6 +156,44 @@ func DeleteAgentFile(agentID, file string) error {
 	return os.Remove(filepath.Join(AgentDir(agentID), clean))
 }
 
+// RenameAgentFile moves a file within an agent directory, refusing to replace
+// an existing file. Root-level protected files cannot be renamed, nor can a
+// file be renamed to one of their names.
+func RenameAgentFile(agentID, from, to string) error {
+	src, err := normalizeAgentFile(from)
+	if err != nil {
+		return err
+	}
+	dst, err := normalizeAgentFile(to)
+	if err != nil {
+		return err
+	}
+	for _, f := range []string{src, dst} {
+		if filepath.Base(f) == f && isProtectedAgentRootFile(f) {
+			return fmt.Errorf("%s is protected and cannot be renamed", f)
+		}
+	}
+	if src == dst {
+		return nil
+	}
+	root := AgentDir(agentID)
+	srcPath := filepath.Join(root, src)
+	dstPath := filepath.Join(root, dst)
+	srcInfo, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	// A case-only rename on a case-insensitive filesystem finds the source
+	// itself at the destination; anything else there is a conflict.
+	if dstInfo, err := os.Stat(dstPath); err == nil && !os.SameFile(srcInfo, dstInfo) {
+		return fmt.Errorf("%s already exists", dst)
+	}
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o700); err != nil {
+		return err
+	}
+	return os.Rename(srcPath, dstPath)
+}
+
 // ListAgentFiles returns all files under an agent directory, recursively
 // including subdirectories. Returned paths are slash-delimited and relative to
 // the agent dir.

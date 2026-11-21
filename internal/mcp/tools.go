@@ -822,6 +822,12 @@ type agentFileReadArgs struct {
 	File  string `json:"file"`
 }
 
+type agentFileRenameArgs struct {
+	Agent string `json:"agent,omitempty"`
+	File  string `json:"file"`
+	To    string `json:"to"`
+}
+
 type agentFileWriteArgs struct {
 	Agent   string `json:"agent,omitempty"`
 	File    string `json:"file"`
@@ -897,6 +903,20 @@ func registerAgentContextTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, fmt.Errorf("deleting agent file: %w", err)
 		}
 		return text(fmt.Sprintf("%s deleted", strings.TrimSpace(args.File)))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "agent_file_rename",
+		Description: "Rename or move a file within the current agent's data directory. Fails when the destination already exists. Protected built-in files such as AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md cannot be renamed.",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args agentFileRenameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentID, ok := resolveAgentID(ctx, args.Agent)
+		if !ok {
+			return nil, struct{}{}, fmt.Errorf("agent_file_rename requires an agent session context")
+		}
+		if err := store.RenameAgentFile(agentID, args.File, args.To); err != nil {
+			return nil, struct{}{}, fmt.Errorf("renaming agent file: %w", err)
+		}
+		return text(fmt.Sprintf("%s renamed to %s", strings.TrimSpace(args.File), strings.TrimSpace(args.To)))
 	})
 }
 

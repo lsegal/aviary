@@ -204,4 +204,4 @@ Write (create or replace) the `RULES.md` file for an agent.
 
 ---
 
-> **Agent file management** (`agent_file_list`, `agent_file_read`, `agent_file_write`, `agent_file_delete`) has moved to [Files and Notes Tools](./files-and-notes).
+> **Agent file management** (`agent_file_list`, `agent_file_read`, `agent_file_write`, `agent_file_delete`, `agent_file_rename`) has moved to [Files and Notes Tools](./files-and-notes).

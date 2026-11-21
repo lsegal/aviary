@@ -351,7 +351,11 @@ import {
 	type TriggerFields,
 	taskTriggerFields,
 } from "../lib/trigger";
-import { isProtectedAgentFile, useAgentFilesStore } from "../stores/agentFiles";
+import {
+	agentFilePath,
+	isProtectedAgentFile,
+	useAgentFilesStore,
+} from "../stores/agentFiles";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName } from "../stores/chatSessions";
 import {
@@ -1539,7 +1543,11 @@ function routeAgentFile(): string {
 		: "";
 }
 
-/** Opens the routed file, else keeps the open one, else opens the first. */
+/**
+ * Opens the routed file, else keeps the open one, else opens the first on the
+ * first load. Once loaded, a file that goes away (renamed or deleted) leaves
+ * the editor empty rather than jumping to another file.
+ */
 async function openAgentFile(agentName: string, reread = false) {
 	const state = getAgentFileState(agentName);
 	const wanted = routeAgentFile();
@@ -1549,8 +1557,12 @@ async function openAgentFile(agentName: string, reread = false) {
 	if (file) {
 		if (reread || file !== state.selectedFile || !state.loaded)
 			await readAgentFile(agentName, file);
-	} else if (state.files.length > 0) {
+	} else if (!state.loaded && state.files.length > 0) {
 		await readAgentFile(agentName, state.files[0]);
+		// Name the default file in the URL so the sidebar marks it open.
+		const path = agentFilePath(agentName, state.files[0]);
+		if (route.path === path.path && !route.query.file)
+			void router.replace(path);
 	} else {
 		state.selectedFile = "";
 		state.content = "";

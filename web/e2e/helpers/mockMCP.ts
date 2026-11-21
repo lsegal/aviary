@@ -6,6 +6,7 @@ export interface AgentFileArgs {
 	agent?: string;
 	file?: string;
 	content?: string;
+	to?: string;
 }
 
 export interface ConfigSaveArgs {
@@ -40,6 +41,7 @@ export interface ToolFixtures {
 	agent_file_read?: ToolHandler<AgentFileArgs> | string;
 	agent_file_write?: ToolHandler<AgentFileArgs> | string;
 	agent_file_delete?: ToolHandler<AgentFileArgs> | string;
+	agent_file_rename?: ToolHandler<AgentFileArgs> | string;
 
 	config_save?: ToolHandler<ConfigSaveArgs> | object;
 

@@ -1044,7 +1044,8 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	});
 
 	await openAgentPage(page, "files");
-	await page.getByRole("button", { name: "Refresh" }).first().click();
+	await page.getByTestId("agent-file-menu").click();
+	await page.getByRole("menuitem", { name: "Refresh" }).click();
 
 	await expect(
 		page.getByTestId("sidebar-files").getByTestId("file-row"),
