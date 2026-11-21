@@ -24,7 +24,7 @@ On every poll, Aviary looks for issues that are ready for work:
 - Issues labeled `critical`, then `high`, go first, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.
 - An issue blocked by open dependencies waits. Blocked by exactly one issue that already has an open pull request, on a repository that allows stacked pull requests, it runs stacked on that pull request instead.
-- `concurrency` caps how many jobs run at once across every project.
+- `concurrency` caps how many jobs run at once in total, across every project of every agent. It and the other settings named on this page live in the one shared [`projects:` section](/reference/config#projects), edited on System → Projects.
 
 The job is dispatched to the first provider in the agent's model and fallbacks whose quota is not used up. Its prompt is the skill call itself, for example:
 
@@ -32,7 +32,7 @@ The job is dispatched to the first provider in the agent's model and fallbacks w
 /gh-fix owner/repo#123 identity:/aviary:<ID>
 ```
 
-The project's settings add to it: `and do not merge` when `no_merge` is on, `and no changelog` when `no_changelog` is on, and `and use fork <owner>/<repo>` when your `gh` account cannot write to the repository. The prompt also names the clone directory the job must use (from `temp_dirs`) and the allowed commenters.
+The shared [projects settings](/reference/config#projects) add to it: `and do not merge` when `no_merge` is on, `and no changelog` when `no_changelog` is on, and `and use fork <owner>/<repo>` when your `gh` account cannot write to the repository. The prompt also names the clone directory the job must use (from `temp_dirs`) and the allowed commenters.
 
 - **Observe:** the issue appears as a job on the board; a board item moves to `In Progress`. `aviary project job list --status active` lists running jobs.
 
@@ -85,7 +85,7 @@ When every required check passes on the head that was tested, `gh-fix` merges wi
 
 ### Endings that are not a merge
 
-- **Merge holds.** A merge-hold label on the issue (`do-not-merge`, `donotmerge`, `no-merge`, `hold` or `needs-review`, in any spelling), wording in the issue or its comments asking that the fix not be merged, or the project's `no_merge` setting stops the job short of the merge. Everything else still happens: the pull request is finished, marked ready and green, and `gh-fix` posts one comment saying it is ready and naming what held it. Follow-ups are listed in that comment rather than filed.
+- **Merge holds.** A merge-hold label on the issue (`do-not-merge`, `donotmerge`, `no-merge`, `hold` or `needs-review`, in any spelling), wording in the issue or its comments asking that the fix not be merged, or the shared `no_merge` setting stops the job short of the merge. Everything else still happens: the pull request is finished, marked ready and green, and `gh-fix` posts one comment saying it is ready and naming what held it. Follow-ups are listed in that comment rather than filed.
 - **Fork.** When your `gh` account cannot write to the repository, the branch is pushed to your fork and the pull request opened from it. The job ends with the pull request ready and green and leaves the merge to the maintainers.
 - **Stacked.** A stacked pull request cannot merge while its blocker is open. It ends ready and green, paused on the blocker, and gives up its slot; Aviary dispatches it again when the blocker's pull request merges.
 - **Blocked on an answer.** When the work needs a decision only a person can make, `gh-fix` asks on the issue, labels it `answer-needed`, and stops. An answer in a comment removes the label on the next run.
