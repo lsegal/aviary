@@ -81,6 +81,44 @@ const showcaseItems: ShowcaseItem[] = [
 	},
 ];
 
+const projectsItems: ShowcaseItem[] = [
+	{
+		title: "The Projects board",
+		description:
+			"Every watched repository gets a board of its jobs: what is running, what is up next, and what merged.",
+		bullets: [
+			"Issues are picked up by label and filter, highest priority first.",
+			"Each job is claimed, so two instances never work the same issue.",
+			"Retry, pause, resume, or stop a job from its card.",
+		],
+		lightSrc: "/screenshots/projects-board-light.png",
+		darkSrc: "/screenshots/projects-board-dark.png",
+		alt: "GitHub Projects board with running, paused, and merged jobs",
+	},
+	{
+		title: "A job's run view",
+		description:
+			"Follow one issue from claim to merge: plan, tool calls, diffs, test runs, and CI repairs as they happen.",
+		bullets: [
+			"Live transcript from the provider doing the work.",
+			"Steer the job with a comment; it reaches the running agent.",
+			"Token usage and cost per job.",
+		],
+		lightSrc: "/screenshots/projects-run-light.png",
+		darkSrc: "/screenshots/projects-run-dark.png",
+		alt: "A Projects job's run view with plan, file changes, and test output",
+	},
+];
+
+const projectsSteps = [
+	{ title: "Watch", description: "Repositories, Project boards, Discussions." },
+	{ title: "Claim", description: "Issues by label and filter, one owner each." },
+	{ title: "Draft PR", description: "Clone, branch, and open a draft." },
+	{ title: "Implement", description: "On your configured CLI providers." },
+	{ title: "Repair CI", description: "Read failing logs, push fixes." },
+	{ title: "Merge", description: "Squash, close the issue, file follow-ups." },
+];
+
 const docsLinks = [
 	{
 		number: "01",
@@ -98,41 +136,48 @@ const docsLinks = [
 	},
 	{
 		number: "03",
+		title: "GitHub Projects",
+		description:
+			"Watch repositories and let agents work issues end to end, from draft PR to merge.",
+		href: "/guide/projects",
+	},
+	{
+		number: "04",
 		title: "Channels",
 		description:
 			"Connect Slack, Discord, or Signal and set sender rules, mentions, and delivery targets.",
 		href: "/guide/channels",
 	},
 	{
-		number: "04",
+		number: "05",
 		title: "Security and permissions",
 		description:
 			"Lock down agent access and choose sensible host isolation for safer deployments.",
 		href: "/guide/security-permissions",
 	},
 	{
-		number: "05",
+		number: "06",
 		title: "Scheduled tasks",
 		description:
 			"Timers, file triggers, and how Aviary compiles tasks into free scripts.",
 		href: "/guide/scheduled-tasks",
 	},
 	{
-		number: "06",
+		number: "07",
 		title: "Day-to-day ops",
 		description:
 			"Manage chats, check jobs, read logs, and handle the everyday while Aviary is running.",
 		href: "/guide/operations",
 	},
 	{
-		number: "07",
+		number: "08",
 		title: "MCP tool reference",
 		description:
 			"Exact tool names, inputs, and behavior for building automations.",
 		href: "/reference/mcp/",
 	},
 	{
-		number: "08",
+		number: "09",
 		title: "CLI reference",
 		description: "Every command and flag the dashboard exposes, at the prompt.",
 		href: "/reference/cli",
@@ -167,6 +212,10 @@ const tokenSavingsPerRun = promptTokensPerRun - compiledTokensPerRun;
 
 const activeShowcase = computed(
 	() => showcaseItems[showcaseIndex.value] ?? showcaseItems[0],
+);
+const projectsIndex = ref(0);
+const activeProjectsItem = computed(
+	() => projectsItems[projectsIndex.value] ?? projectsItems[0],
 );
 const wholeNumberFormatter = new Intl.NumberFormat("en-US");
 
@@ -434,6 +483,111 @@ onBeforeUnmount(() => {
 							</div>
 						</div>
 					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="landing-band" id="projects">
+			<div class="landing-wrap">
+				<div class="landing-eyebrow reveal">GitHub Projects</div>
+				<h2 class="landing-section-title reveal">
+					Label an issue.<br />
+					Get a <em>merged</em> pull request.
+				</h2>
+				<p class="landing-section-sub reveal">
+					Aviary watches your repositories and works their issues end to end
+					with the CLI providers you already use, from the first clone to the
+					green merge.
+				</p>
+
+				<ol class="landing-projects-steps reveal">
+					<li v-for="(step, index) in projectsSteps" :key="step.title">
+						<span class="num">{{ String(index + 1).padStart(2, "0") }}</span>
+						<span class="tit">{{ step.title }}</span>
+						<span class="sub">{{ step.description }}</span>
+					</li>
+				</ol>
+
+				<div class="landing-showcase reveal">
+					<div class="landing-showcase-head">
+						<div class="landing-showcase-tabs" role="tablist">
+							<button v-for="(item, index) in projectsItems" :key="item.title" type="button"
+								class="landing-showcase-tab" :class="{ active: projectsIndex === index }" role="tab"
+								:aria-selected="projectsIndex === index" @click="projectsIndex = index">
+								<span class="num">{{ String(index + 1).padStart(2, "0") }}</span>
+								<span>
+									<span class="tit">{{ item.title }}</span>
+									<span class="sub">{{ item.description }}</span>
+								</span>
+							</button>
+						</div>
+						<div class="landing-showcase-panel">
+							<div class="landing-showcase-image">
+								<img :src="resolveShowcaseSrc(activeProjectsItem)" :alt="activeProjectsItem.alt" />
+							</div>
+							<div class="landing-showcase-copy">
+								<h3>{{ activeProjectsItem.title }}</h3>
+								<p>{{ activeProjectsItem.description }}</p>
+								<ul class="bullets">
+									<li v-for="bullet in activeProjectsItem.bullets" :key="bullet">
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+											stroke-linecap="round" aria-hidden="true">
+											<path d="M20 7L9 18l-5-5" />
+										</svg>
+										{{ bullet }}
+									</li>
+								</ul>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="landing-bento landing-projects-extras">
+					<div class="card c-wide-3 reveal">
+						<h3>Steer while it works</h3>
+						<p>
+							Comments from allowed commenters on the issue or pull request are
+							relayed into the running job. Everyone else is just information.
+						</p>
+					</div>
+					<div class="card c-wide-3 reveal">
+						<h3>Prompt chat</h3>
+						<p>
+							Ask a board about its jobs, retry or stop them, or file a new
+							issue from a side panel, without leaving Aviary.
+						</p>
+					</div>
+					<div class="card c-wide-3 reveal">
+						<h3>Scheduled project tasks</h3>
+						<p>
+							A nightly triage or a weekly dependency update runs on a timer
+							and shows on the board as a scheduled job.
+						</p>
+					</div>
+					<div class="card c-wide-3 reveal">
+						<h3>Per-project reports</h3>
+						<p>
+							When a job merges, fails, or starts waiting, a short report goes
+							to the Slack, Discord, or Signal channel you pick.
+						</p>
+					</div>
+				</div>
+
+				<div class="landing-projects-links reveal">
+					<a class="landing-btn landing-btn-primary" :href="withBase('/guide/projects')">
+						Read the Projects guide
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+							aria-hidden="true">
+							<path d="M5 12h14M13 5l7 7-7 7" />
+						</svg>
+					</a>
+					<a class="landing-btn landing-btn-ghost" :href="withBase('/guide/code-loop')">
+						Follow one issue through the code loop
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+							aria-hidden="true">
+							<path d="M5 12h14M13 5l7 7-7 7" />
+						</svg>
+					</a>
 				</div>
 			</div>
 		</section>
@@ -1927,6 +2081,55 @@ onBeforeUnmount(() => {
 	animation: blink 1s step-end infinite;
 }
 
+.landing-projects-steps {
+	display: grid;
+	grid-template-columns: repeat(6, 1fr);
+	gap: 12px;
+	margin: 0 0 24px;
+	padding: 0;
+	list-style: none;
+}
+
+.landing-projects-steps li {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 14px 16px;
+	border: 1px solid var(--rule);
+	border-radius: 14px;
+	background: var(--paper);
+}
+
+.landing-projects-steps .num {
+	color: var(--brand);
+	font-family: var(--mono);
+	font-size: 11px;
+}
+
+.landing-projects-steps .tit {
+	color: var(--ink);
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.landing-projects-steps .sub {
+	color: var(--ink-3);
+	font-size: 12.5px;
+	line-height: 1.45;
+}
+
+.landing-projects-extras {
+	grid-auto-rows: auto;
+	margin-top: 16px;
+}
+
+.landing-projects-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-top: 28px;
+}
+
 .landing-config-row {
 	display: grid;
 	grid-template-columns: 1fr 1.05fr;
@@ -2019,7 +2222,7 @@ onBeforeUnmount(() => {
 
 .landing-docs-grid {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(3, 1fr);
 	gap: 12px;
 }
 
@@ -2390,6 +2593,10 @@ onBeforeUnmount(() => {
 	.landing-docs-grid {
 		grid-template-columns: repeat(2, 1fr);
 	}
+
+	.landing-projects-steps {
+		grid-template-columns: repeat(3, 1fr);
+	}
 }
 
 @media (max-width: 900px) {
@@ -2436,6 +2643,10 @@ onBeforeUnmount(() => {
 	.landing-bento,
 	.landing-docs-grid {
 		grid-template-columns: 1fr;
+	}
+
+	.landing-projects-steps {
+		grid-template-columns: repeat(2, 1fr);
 	}
 
 	.c-wide-2,
