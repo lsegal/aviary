@@ -14,10 +14,11 @@ import {
 	projectSchedules,
 	sortJobs,
 	summarizeProjects,
-	triggerArgs,
 	type UpcomingRun,
 } from "../lib/projects";
+import { triggerArgs } from "../lib/trigger";
 import { useMCP } from "./useMCP";
+import { useTriggerPreview } from "./useTriggerPreview";
 
 /** How often the board and run view re-read the engine, in milliseconds. */
 export const PROJECTS_POLL_MS = 2_000;
@@ -391,18 +392,7 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		await refresh();
 	}
 
-	/** The next 3 fires of the schedule as edited, saved or not. */
-	async function preview(s: ProjectSchedule): Promise<string[]> {
-		const args = triggerArgs(s);
-		const result = parseToolJSON(
-			await callTool(
-				"task_preview",
-				Object.fromEntries(Object.entries(args).filter(([, v]) => v)),
-			),
-		);
-		const next = (result as { next?: unknown }).next;
-		return Array.isArray(next) ? next.map(String) : [];
-	}
+	const preview = useTriggerPreview();
 
 	/**
 	 * The next count fires of a saved schedule, as the scheduler itself

@@ -307,6 +307,7 @@ import {
 	onUnmounted,
 	provide,
 	proxyRefs,
+	reactive,
 	ref,
 	watch,
 } from "vue";
@@ -326,6 +327,7 @@ import {
 	KNOWN_PROVIDERS,
 	useProviderAuth,
 } from "../composables/useProviderAuth";
+import { useTriggerPreview } from "../composables/useTriggerPreview";
 import { APPROVAL_MODES } from "../lib/approval";
 import { projectTargets } from "../lib/projectSettings";
 import {
@@ -340,6 +342,11 @@ import {
 	toolCategory,
 	toolCategoryLabel,
 } from "../lib/toolPermissions";
+import {
+	applyTaskTrigger,
+	type TriggerFields,
+	taskTriggerFields,
+} from "../lib/trigger";
 import { isProtectedAgentFile, useAgentFilesStore } from "../stores/agentFiles";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName } from "../stores/chatSessions";
@@ -676,6 +683,26 @@ const selectedTask = computed((): AgentTask | null => {
 	if (idx < 0 || idx >= agent.tasks.length) return agent.tasks[0] ?? null;
 	return agent.tasks[idx] ?? null;
 });
+
+// The trigger editor's fields per task, so switching trigger tabs keeps the
+// other tabs' inputs while only the selected trigger is written to the task.
+const taskTriggerDrafts = reactive(new WeakMap<AgentTask, TriggerFields>());
+
+function taskTrigger(task: AgentTask): TriggerFields {
+	let fields = taskTriggerDrafts.get(task);
+	if (!fields) {
+		fields = taskTriggerFields(task);
+		taskTriggerDrafts.set(task, fields);
+	}
+	return fields;
+}
+
+function setTaskTrigger(task: AgentTask, fields: TriggerFields) {
+	taskTriggerDrafts.set(task, fields);
+	applyTaskTrigger(task, fields);
+}
+
+const previewTrigger = useTriggerPreview();
 
 const selectedChannelIdx = ref<number | null>(
 	draft.value.agents[selectedAgentIdx.value]?.channels?.length ? 0 : null,
@@ -3406,6 +3433,9 @@ const settingsContext = proxyRefs({
 	configuredTaskChannelOptions,
 	convertTaskToScript,
 	createSession,
+	previewTrigger,
+	setTaskTrigger,
+	taskTrigger,
 	deleteProviderCredential,
 	deleteProviderConnection,
 	deleteSecret,

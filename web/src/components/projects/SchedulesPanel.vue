@@ -61,6 +61,7 @@ import {
 	scheduleRunDot,
 	until,
 } from "../../lib/projects";
+import type { TriggerFields } from "../../lib/trigger";
 import ScheduleEditor from "./ScheduleEditor.vue";
 
 const props = defineProps<{
@@ -74,7 +75,7 @@ const props = defineProps<{
 	setEnabled: (s: ProjectSchedule, enabled: boolean) => Promise<void>;
 	remove: (s: ProjectSchedule) => Promise<void>;
 	runNow: (s: ProjectSchedule) => Promise<void>;
-	preview: (s: ProjectSchedule) => Promise<string[]>;
+	preview: (s: TriggerFields) => Promise<string[]>;
 	refresh: () => Promise<void>;
 }>();
 

@@ -756,7 +756,7 @@
 									</div>
 								</div>
 
-								<div class="grid gap-3 lg:grid-cols-3">
+								<div class="grid gap-3 lg:grid-cols-2">
 <div>
 <label class="field-label">Task name</label>
 <input v-model="selectedTask.name" type="text" class="field-input font-mono" placeholder="daily-briefing"
@@ -770,10 +770,11 @@
 <option value="project">Project</option>
 </select>
 </div>
-<div>
-<label class="field-label">Schedule</label>
-<input v-model="selectedTask.schedule" type="text" class="field-input" placeholder="*/5 * * * *" />
 </div>
+
+<div class="mt-3">
+<TriggerEditor :key="`${selectedAgentIdx}:${selectedTaskIdx}`" :model-value="taskTrigger(selectedTask)" :preview="previewTrigger" optional
+	@update:model-value="setTaskTrigger(selectedTask, $event)" />
 </div>
 
 <div v-if="selectedTask.type === 'project'" class="grid gap-3 lg:grid-cols-2 mt-3">
@@ -880,6 +881,7 @@ import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
+import TriggerEditor from "../TriggerEditor.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -892,6 +894,7 @@ export default defineComponent({
 		SessionSelect,
 		SwitchRoot,
 		SwitchThumb,
+		TriggerEditor,
 	},
 	setup() {
 		const settings = inject(settingsViewContextKey);
