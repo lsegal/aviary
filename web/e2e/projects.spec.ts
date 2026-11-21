@@ -703,6 +703,46 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page.getByRole("button", { name: /send/i })).toHaveCount(0);
 });
 
+test("the run view stepper follows the PR out of draft, like the board icon", async ({
+	page,
+}) => {
+	// #218's events never mention review or CI, so only its PR state can move
+	// the stepper past Implementing.
+	const job218 = JOBS.find((j) => j.number === 218) as Record<string, unknown>;
+	try {
+		await setup(page);
+		const steps = page.getByTestId("lifecycle");
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		await expect(steps.locator('[aria-current="step"]')).toContainText(
+			"Implementing",
+		);
+
+		job218.pull_request_state = "open";
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await expect(
+			page
+				.getByTestId("job-card")
+				.filter({ hasText: "#218" })
+				.getByTestId("pr-state-icon"),
+		).toHaveAttribute("aria-label", "Open pull request");
+
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		await expect(steps.locator('[aria-current="step"]')).toContainText("CI");
+		await expect(steps.locator("li").nth(3)).toContainText("✓");
+		await expect(steps.locator("li").nth(5)).not.toContainText("✓");
+	} finally {
+		job218.pull_request_state = "draft";
+	}
+});
+
+test("the run view stepper shows a merged PR as done", async ({ page }) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/200");
+	const steps = page.getByTestId("lifecycle");
+	await expect(steps.locator('[aria-current="step"]')).toHaveCount(0);
+	await expect(steps.locator("li").nth(5)).toContainText("✓");
+});
+
 const SIGNED_OUT = {
 	signed_out: true,
 	signing_in: false,
@@ -1024,6 +1064,36 @@ test("logs panel docks below the board, streams lines, and resizes", async ({
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
 	await expect(page.getByTestId("project-logs")).toHaveCount(0);
+});
+
+test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+
+	await input.fill("line one");
+	const before = (await input.boundingBox())?.height ?? 0;
+	await input.press("Shift+Enter");
+	await input.pressSequentially("line two");
+	await expect(input).toHaveValue("line one\nline two");
+	await expect
+		.poll(async () => (await input.boundingBox())?.height ?? 0)
+		.toBeGreaterThan(before);
+	expect(calls.agent_run ?? []).toHaveLength(0);
+
+	await input.press("Enter");
+	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
+	expect(calls.agent_run[0].message).toBe("line one\nline two");
+	await expect(input).toHaveValue("");
+	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	await expect(sent).toBeVisible();
+	expect(await sent.innerText()).toBe("line one\nline two");
 });
 
 test("logs panel wraps long lines and indents multi-line entries", async ({

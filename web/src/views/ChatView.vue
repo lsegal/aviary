@@ -825,20 +825,15 @@ function onChatInputKeydown(e: KeyboardEvent) {
 	if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
 	if (e.altKey || e.ctrlKey || e.metaKey) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
-	// In a multi-line message the arrows move between lines; history only
-	// takes over from the first line (up) or the last line (down).
-	const el = e.target as HTMLTextAreaElement;
-	const caret = el.selectionStart ?? 0;
-	if (e.key === "ArrowUp" && el.value.lastIndexOf("\n", caret - 1) !== -1)
-		return;
-	if (
-		e.key === "ArrowDown" &&
-		el.value.indexOf("\n", el.selectionEnd ?? caret) !== -1
-	)
-		return;
-
 	const history = userMessageHistory.value;
 	if (history.length === 0) return;
+	// In a multi-line draft the arrows move the caret between lines first.
+	const el = e.target as HTMLTextAreaElement;
+	if (el.selectionStart !== el.selectionEnd) return;
+	const before = el.value.slice(0, el.selectionStart);
+	const after = el.value.slice(el.selectionEnd);
+	if (e.key === "ArrowUp" && before.includes("\n")) return;
+	if (e.key === "ArrowDown" && after.includes("\n")) return;
 
 	if (e.key === "ArrowUp") {
 		e.preventDefault();

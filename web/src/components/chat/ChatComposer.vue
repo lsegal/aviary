@@ -33,10 +33,11 @@
 			</button>
 			<input ref="fileInput" type="file" multiple class="hidden" data-testid="chat-file-input"
 				@change="onFilesPicked" />
-			<textarea ref="textarea" :value="modelValue" rows="1" :disabled="disabled" :placeholder="placeholder"
+			<ChatComposerInput ref="inputRef" :model-value="modelValue" :disabled="disabled" :placeholder="placeholder"
 				aria-label="Message"
-				class="max-h-48 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-sm leading-5 text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500"
-				@input="onInput" @keydown="onKeydown" @paste="onPaste" />
+				class="max-h-48 min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-5 text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500"
+				@update:model-value="emit('update:modelValue', $event)" @send="submit"
+				@keydown="emit('keydown', $event)" @paste="onPaste" />
 			<button v-if="showStop" type="button" aria-label="Stop response" title="Stop"
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 				:disabled="disabled" @click="emit('stop')">
@@ -57,8 +58,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { type ChatAttachment, readAttachment } from "./attachments";
+import ChatComposerInput from "./ChatComposerInput.vue";
 
 const props = withDefaults(
 	defineProps<{
@@ -80,7 +82,8 @@ const emit = defineEmits<{
 	keydown: [event: KeyboardEvent];
 }>();
 
-const textarea = ref<HTMLTextAreaElement | null>(null);
+const inputRef = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
+const textarea = computed(() => inputRef.value?.textarea ?? null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const notice = ref("");
 const dragging = ref(false);
@@ -92,31 +95,6 @@ const hasContent = computed(
 // while the agent is still replying.
 const showStop = computed(() => props.running && !hasContent.value);
 const canSend = computed(() => hasContent.value && !props.disabled);
-
-function resize() {
-	const el = textarea.value;
-	if (!el) return;
-	el.style.height = "auto";
-	el.style.height = `${el.scrollHeight}px`;
-}
-
-watch(
-	() => props.modelValue,
-	() => void nextTick(resize),
-);
-
-function onInput(e: Event) {
-	emit("update:modelValue", (e.target as HTMLTextAreaElement).value);
-}
-
-function onKeydown(e: KeyboardEvent) {
-	emit("keydown", e);
-	if (e.defaultPrevented) return;
-	if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-		e.preventDefault();
-		submit();
-	}
-}
 
 function submit() {
 	if (!canSend.value) return;

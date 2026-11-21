@@ -108,6 +108,93 @@ test("up arrow recalls previous chat messages", async ({ page }) => {
 	await expect(input).toHaveValue("draft message");
 });
 
+test("Shift+Enter inserts a newline and Enter sends it with its line breaks", async ({
+	page,
+}) => {
+	const runs: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: () => [
+			{
+				id: "m1",
+				session_id: "s1",
+				role: "user",
+				content: "first prompt",
+				timestamp: "2026-03-12T12:00:00Z",
+			},
+			...runs.map((run, i) => ({
+				id: `r${i}`,
+				session_id: "s1",
+				role: "user",
+				content: run.message,
+				timestamp: "2026-03-12T12:00:01Z",
+			})),
+		],
+		agent_run: (args?: Record<string, unknown>) => {
+			runs.push(args ?? {});
+			return { stream: ["got it"], result: "" };
+		},
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill("line oneline two");
+	const before = (await input.boundingBox())?.height ?? 0;
+
+	// The newline goes in at the caret, not at the end.
+	await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(8, 8));
+	await input.press("Shift+Enter");
+	await expect(input).toHaveValue("line one\nline two");
+	await expect
+		.poll(async () => (await input.boundingBox())?.height ?? 0)
+		.toBeGreaterThan(before);
+
+	// With the caret below the first line, ArrowUp moves it instead of
+	// recalling history.
+	await input.press("ArrowUp");
+	await expect(input).toHaveValue("line one\nline two");
+
+	// Enter during an IME composition only confirms the composition.
+	await input.evaluate((el) =>
+		el.dispatchEvent(
+			new KeyboardEvent("keydown", {
+				key: "Enter",
+				isComposing: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		),
+	);
+	await expect(input).toHaveValue("line one\nline two");
+
+	await input.press("Enter");
+	await expect.poll(() => runs.length).toBe(1);
+	expect(runs[0].message).toBe("line one\nline two");
+	await expect(input).toHaveValue("");
+
+	const sent = page.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	await expect(sent).toBeVisible();
+	expect(await sent.innerText()).toBe("line one\nline two");
+});
+
 test("streaming response updates without dropping existing messages", async ({
 	page,
 }) => {
