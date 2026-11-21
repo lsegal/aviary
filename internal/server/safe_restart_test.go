@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -94,6 +93,8 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	executablePath = func() (string, error) { return "/opt/aviary/bin/aviary", nil }
 	idlePoll = 10 * time.Millisecond
 	p := &fakeParticipant{log: &log}
+	origGate := saferestart.MCPCalls
+	saferestart.MCPCalls = saferestart.NewGate()
 	saferestart.Register("test", p)
 	saferestart.RegisterSkillsUpdater("test", func(_ context.Context, version string) error {
 		log = append(log, "skills "+version)
@@ -103,13 +104,17 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 		buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll = origVersion, origCheck, origInstall, origExe, origPoll
 		gitCheckout, gitPull = origCheckout, origPull
 		planDevReload, hotReloadDir, hotReloadGen, waitHotReload, hotReloadWait, refreshAfterHotReload = origPlan, origHotDir, origHotGen, origWait, origHotWait, origRefresh
+		saferestart.MCPCalls = origGate
 		saferestart.Unregister("test")
 		saferestart.UnregisterSkillsUpdater("test")
 		saferestart.Hold(false)
 		store.SetDataDir("")
 	})
 	srv := New(&config.Config{}, "tok")
-	srv.runCtx = context.Background()
+	// Stop a restart the test left waiting before the next test's setup.
+	ctx, stop := context.WithCancel(context.Background())
+	srv.runCtx = ctx
+	t.Cleanup(stop)
 	return srv, p, &log
 }
 
@@ -491,32 +496,6 @@ func TestAutoUpdateOnDefaultsOn(t *testing.T) {
 	if srv.autoUpdateOn() {
 		t.Fatal("auto_update: false should not update automatically")
 	}
-}
-
-// syncBuffer collects log output written from several goroutines.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf strings.Builder
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-func captureLogs(t *testing.T) *syncBuffer {
-	t.Helper()
-	buf := &syncBuffer{}
-	slog.SetDefault(slog.New(slog.NewTextHandler(buf, nil)))
-	t.Cleanup(resetSlogForTest)
-	return buf
 }
 
 // setupHotReload runs the dev update under a fake forgo control directory

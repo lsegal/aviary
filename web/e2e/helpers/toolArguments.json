@@ -148,9 +148,28 @@
 		"tab_id",
 		"timeout_ms"
 	],
+	"channel_create": [
+		"agent",
+		"name",
+		"type"
+	],
+	"channel_remove": [
+		"agent",
+		"channel",
+		"sessions"
+	],
+	"channel_rename": [
+		"agent",
+		"channel",
+		"new_name"
+	],
 	"channel_send_file": [
 		"caption",
 		"file_path"
+	],
+	"channel_sessions": [
+		"agent",
+		"channel"
 	],
 	"coding_skills_install": [
 		"cli",
@@ -341,10 +360,12 @@
 	"provider_cli_list": [],
 	"server_restart": [
 		"cancel",
+		"force",
 		"when"
 	],
 	"server_status": [],
 	"server_upgrade": [
+		"force",
 		"version",
 		"when"
 	],
@@ -391,13 +412,6 @@
 		"content",
 		"session_id"
 	],
-	"session_set_target": [
-		"agent",
-		"channel_id",
-		"channel_type",
-		"session_id",
-		"target"
-	],
 	"session_stop": [
 		"agent",
 		"session",
@@ -410,6 +424,15 @@
 	"skills_list": [],
 	"slack_channels_list": [
 		"bot_token"
+	],
+	"task_analyze": [
+		"agent",
+		"content",
+		"editor",
+		"model",
+		"precompile",
+		"target",
+		"type"
 	],
 	"task_compile_get": [
 		"id"

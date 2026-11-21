@@ -3,7 +3,8 @@
 // A dev update only pulls the checkout and lets forgo hot-reload the backend in
 // place. A backend that asks to restart (a safe restart, or a pull forgo cannot
 // hot-reload, such as a go.mod change) is run again, which rebuilds it from the
-// current sources.
+// current sources. A managed forgo older than MIN_FORGO_VERSION is updated
+// first, because earlier releases crash the backend after some hot reloads.
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, existsSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -18,6 +19,10 @@ const installDir =
 
 // forgo only publishes release binaries for these platforms.
 const SUPPORTED = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
+
+// The oldest forgo whose hot reload Aviary's dev updates rely on: 0.7.3 fixed
+// a crash after reloading code that uses a type (lsegal/forgo#50).
+const MIN_FORGO_VERSION = "0.7.3";
 
 function isExecutable(file) {
 	try {
@@ -50,11 +55,34 @@ function findForgo() {
 	return findOnPath();
 }
 
+// forgoVersion returns the version `forgo version` reports, or null.
+function forgoVersion(bin) {
+	try {
+		const out = execFileSync(bin, ["version"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		return out.match(/forgo version v?(\d+(?:\.\d+)*)/)?.[1] ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function versionAtLeast(version, min) {
+	const a = version.split(".").map(Number);
+	const b = min.split(".").map(Number);
+	for (let i = 0; i < Math.max(a.length, b.length); i++) {
+		const d = (a[i] ?? 0) - (b[i] ?? 0);
+		if (d !== 0) return d > 0;
+	}
+	return true;
+}
+
 function installForgo() {
 	const url = isWindows
 		? "https://github.com/lsegal/forgo/releases/latest/download/install.ps1"
 		: "https://github.com/lsegal/forgo/releases/latest/download/install.sh";
-	console.log(`forgo not found, installing from ${url}`);
+	console.log(`installing forgo from ${url}`);
 	const [cmd, args] = isWindows
 		? ["powershell", ["-NoProfile", "-Command", `irm ${url} | iex`]]
 		: ["sh", ["-c", `curl -fsSL ${url} | sh`]];
@@ -73,8 +101,24 @@ function resolveRunner() {
 
 	let forgo = findForgo();
 	if (!forgo) {
+		console.log("forgo not found");
 		installForgo();
 		forgo = findForgo();
+	}
+	const version = forgo && forgoVersion(forgo);
+	if (version && !versionAtLeast(version, MIN_FORGO_VERSION)) {
+		const managed = forgo === path.join(installDir, "bin", `forgo${exeExt}`);
+		if (managed && !process.env.FORGO_BIN) {
+			console.log(
+				`forgo ${version} is older than ${MIN_FORGO_VERSION}, updating it`,
+			);
+			installForgo();
+		} else {
+			console.warn(
+				`warning: ${forgo} is forgo ${version}; hot reload needs forgo ` +
+					`${MIN_FORGO_VERSION} or newer and may crash the backend.`,
+			);
+		}
 	}
 	if (!forgo) {
 		console.error(

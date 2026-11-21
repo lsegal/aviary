@@ -905,7 +905,9 @@ test("a failed turn's error attaches to its message and its icon Retry re-runs i
 	await input.press("Enter");
 
 	// The error hangs off the sent message's bubble, not as its own entry.
-	const sent = page.locator(".text-right").filter({ hasText: "summarize" });
+	const sent = page
+		.getByTestId("chat-user-message")
+		.filter({ hasText: "summarize" });
 	const error = sent.getByTestId("chat-message-error");
 	await expect(error).toContainText("Error: MCP error: 502 Bad Gateway");
 	await expect(error).toContainText("claude/opus");
@@ -968,7 +970,7 @@ function holdReload() {
 	};
 }
 
-test("the waiting indicator animates while the agent thinks", async ({
+test("the waiting indicator is three staggered dots while the agent thinks", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -986,14 +988,30 @@ test("the waiting indicator animates while the agent thinks", async ({
 
 	const indicator = page.getByTestId("chat-activity");
 	await expect(indicator).toHaveAttribute("aria-live", "polite");
-	await expect(indicator).toHaveText("Thinking…");
-	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
-		"animation-name",
-		/chat-activity-bounce/,
+	// Only the dots show; the status text is for screen readers.
+	await expect(indicator).toHaveText("Agent is thinking");
+	await expect(indicator.locator(".sr-only")).toHaveText("Agent is thinking");
+	const dots = page.getByTestId("chat-activity-dot");
+	await expect(dots).toHaveCount(3);
+	const animations = await dots.evaluateAll((els) =>
+		els.map((el) => {
+			const style = getComputedStyle(el);
+			return {
+				name: style.animationName,
+				delay: style.animationDelay,
+				iterations: style.animationIterationCount,
+			};
+		}),
 	);
+	for (const animation of animations) {
+		expect(animation.name).toMatch(/chat-activity-wave/);
+		expect(animation.iterations).toBe("infinite");
+	}
+	// Staggered, not blinking in unison.
+	expect(animations.map((a) => a.delay)).toEqual(["0s", "0.16s", "0.32s"]);
 });
 
-test("the waiting indicator fades instead of bouncing with reduced motion", async ({
+test("the waiting indicator dots are static with reduced motion", async ({
 	page,
 }) => {
 	await page.emulateMedia({ reducedMotion: "reduce" });
@@ -1010,14 +1028,17 @@ test("the waiting indicator fades instead of bouncing with reduced motion", asyn
 	});
 	await sendChat(page);
 
-	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
-	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
-		"animation-name",
-		/chat-activity-fade/,
-	);
+	await expect(page.getByTestId("chat-activity-dot")).toHaveCount(3);
+	await expect(
+		page
+			.getByTestId("chat-activity-dot")
+			.evaluateAll((els) =>
+				els.map((el) => getComputedStyle(el).animationName),
+			),
+	).resolves.toEqual(["none", "none", "none"]);
 });
 
-test("a running tool spins and shows its elapsed time once slow", async ({
+test("a running tool spins and counts up its elapsed time on its chip", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -1026,13 +1047,15 @@ test("a running tool spins and shows its elapsed time once slow", async ({
 
 	const block = jobListBlocks(page);
 	await expect(block.getByTestId("tool-call-spinner")).toBeVisible();
-	const indicator = page.getByTestId("chat-activity");
-	await expect(indicator).toHaveText("Running project_job_list…");
+	// The tool's chip is its status; no typing bubble repeats it below.
+	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
+	const elapsed = block.getByTestId("tool-call-elapsed");
+	await expect(elapsed).toHaveCount(0);
 
 	await page.clock.fastForward(6000);
-	await expect(indicator).toHaveText(/Running project_job_list · [67]s/);
+	await expect(elapsed).toHaveText(/· [67]s/);
 	await page.clock.fastForward(4000);
-	await expect(indicator).toHaveText(/Running project_job_list · 1[01]s/);
+	await expect(elapsed).toHaveText(/· 1[01]s/);
 });
 
 test("finished tool chips show a check or a warning with the error", async ({
@@ -1060,7 +1083,9 @@ test("finished tool chips show a check or a warning with the error", async ({
 	);
 	await expect(page.getByTestId("tool-call-spinner")).toHaveCount(0);
 	// Between tools and before any reply, the turn is thinking again.
-	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+	await expect(
+		page.getByTestId("chat-activity").locator(".sr-only"),
+	).toHaveText("Agent is thinking");
 });
 
 test("the waiting indicator goes away once reply text streams", async ({
@@ -1079,4 +1104,66 @@ test("the waiting indicator goes away once reply text streams", async ({
 
 	await expect(page.getByText("Here is the answer")).toBeVisible();
 	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
+});
+
+test("user bubbles stay docked right with their text left-aligned", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: [
+			{
+				id: "m1",
+				session_id: "s1",
+				role: "user",
+				content: "a much longer first line of text\nshort",
+				timestamp: "2026-03-12T12:00:00Z",
+			},
+		],
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const text = page
+		.getByTestId("chat-user-message")
+		.locator(".whitespace-pre-wrap", { hasText: "short" });
+	await expect(text).toBeVisible();
+	expect(["left", "start"]).toContain(
+		await text.evaluate((el) => getComputedStyle(el).textAlign),
+	);
+
+	// Each line starts at the bubble's left padding edge.
+	const bubble = text.locator("xpath=..");
+	const [bubbleBox, textBox] = await Promise.all([
+		bubble.boundingBox(),
+		text.boundingBox(),
+	]);
+	const padding = await bubble.evaluate((el) =>
+		Number.parseFloat(getComputedStyle(el).paddingLeft),
+	);
+	expect(textBox?.x).toBeCloseTo((bubbleBox?.x ?? 0) + padding, 0);
+
+	// The bubble itself still sits on the right side of the chat.
+	const row = bubble.locator("xpath=..");
+	const rowBox = await row.boundingBox();
+	expect((bubbleBox?.x ?? 0) + (bubbleBox?.width ?? 0)).toBeCloseTo(
+		(rowBox?.x ?? 0) + (rowBox?.width ?? 0),
+		0,
+	);
 });

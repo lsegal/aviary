@@ -2050,22 +2050,39 @@ func TestDeliverTaskOutput_InvalidRoute(t *testing.T) {
 
 }
 
-func TestDeliverTaskOutput_InvalidRouteIndex(t *testing.T) {
+func TestDeliverTaskOutput_LegacyChannelRoute(t *testing.T) {
 	setupServerDataDir(t)
 	resetSlogForTest()
 	srv := New(&config.Config{}, "tok")
-	err := srv.deliverTaskOutput("bot", "slack:notanumber:C123", "text")
-	assert.Error(t, err)
-
+	err := srv.deliverTaskOutput("bot", "slack:alerts:C123", "text")
+	assert.ErrorContains(t, err, "channel:<channel name>")
 }
 
-func TestDeliverTaskOutput_EmptyTargetID(t *testing.T) {
+func TestDeliverTaskOutput_UnknownChannel(t *testing.T) {
 	setupServerDataDir(t)
 	resetSlogForTest()
-	srv := New(&config.Config{}, "tok")
-	err := srv.deliverTaskOutput("bot", "slack:alerts:   ", "text")
-	assert.Error(t, err)
+	srv := New(&config.Config{Agents: []config.AgentConfig{{Name: "bot"}}}, "tok")
+	err := srv.deliverTaskOutput("bot", "channel:Nope", "text")
+	assert.ErrorContains(t, err, `agent "bot" has no channel named "Nope"`)
+}
 
+func TestDeliverTaskOutput_ChannelTargetLandsInChannelSession(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	cc := config.ChannelConfig{Type: "slack", ID: "ws", Name: "Team Slack", DeliverTo: "C123"}
+	srv := New(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Channels: []config.ChannelConfig{cc}}}}, "tok")
+
+	require.NoError(t, srv.deliverTaskOutput("bot", "channel:team slack", "daily report"))
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", cc.SessionName())
+	require.NoError(t, err)
+	data, err := os.ReadFile(store.SessionPath("bot", sess.ID))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "daily report")
+
+	// The session sends on to the channel's conversation.
+	sidecar, err := store.ReadSessionChannels("bot", sess.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []store.SessionChannel{{Type: "slack", ConfiguredID: "ws", ID: "C123"}}, sidecar.Channels)
 }
 
 func TestDeliverTaskOutput_SessionTarget(t *testing.T) {

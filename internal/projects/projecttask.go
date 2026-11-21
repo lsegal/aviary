@@ -18,7 +18,7 @@ import (
 // RunProjectTask runs one fire of a core "project" task as a job on the board
 // of run.Project, which must be a watched project, and waits for its agent to
 // exit. It is the scheduler.ProjectRunner core's scheduler hands project
-// tasks to: the schedule itself lives in core, and Projects only runs the job.
+// tasks to: the schedule itself lives in core, and Code Loop only runs the job.
 func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) (string, error) {
 	run.Project = strings.TrimSpace(run.Project)
 	m.mu.Lock()

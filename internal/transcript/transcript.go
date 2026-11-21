@@ -1,4 +1,4 @@
-// Package transcript defines the normalized per-job event schema Projects
+// Package transcript defines the normalized per-job event schema Code Loop
 // records for every CLI run, and the mappers that turn each CLI's
 // machine-readable event stream into it.
 package transcript
@@ -18,7 +18,7 @@ import (
 type Kind string
 
 // The event kinds of a job transcript. The first eight come from the
-// CLI's own stream; comment_relay and system are recorded by Projects itself.
+// CLI's own stream; comment_relay and system are recorded by Code Loop itself.
 const (
 	KindMessage      Kind = "message"
 	KindReasoning    Kind = "reasoning"
@@ -108,7 +108,7 @@ const (
 // NewMapper returns the mapper for an agent definition's output format, or for
 // the transcript format a generic JSONL definition names, or nil when the
 // format has no structured mapping yet. Such a run still records its raw
-// output and Projects' own system events.
+// output and Code Loop's own system events.
 func NewMapper(format string) Mapper {
 	switch format {
 	case FormatClaudeStreamJSON, "claude-stream-json":
@@ -218,7 +218,7 @@ func (l *Log) Add(events ...Event) {
 	}
 }
 
-// System records one of Projects' own events, such as a claim or a restart.
+// System records one of Code Loop's own events, such as a claim or a restart.
 func (l *Log) System(text string) {
 	l.Add(Event{Kind: KindSystem, Text: text})
 }

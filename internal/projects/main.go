@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1019,12 +1020,12 @@ func (g GHCLI) HydrateIssue(ctx context.Context, repo string, issue *Issue) erro
 var dependencyPattern = regexp.MustCompile(`(?i)\bdepends\s+on\s+#(\d+)`)
 
 func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) error {
-	dependencies := make(map[int]IssueDependency)
+	dependencies := make(map[string]IssueDependency)
 	public := repo != "" && g.isPublicRepo(ctx, repo)
 	for _, match := range dependencyPattern.FindAllStringSubmatch(issue.Body, -1) {
 		number := 0
 		if _, err := fmt.Sscanf(match[1], "%d", &number); err == nil && number > 0 {
-			dependency := IssueDependency{Number: number}
+			dependency := IssueDependency{Number: number, Repository: repo}
 			if repo != "" {
 				output, viewErr := g.dependencyIssueView(ctx, public, repo, number)
 				if viewErr != nil {
@@ -1038,7 +1039,7 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 				}
 				dependency.State = state.State
 			}
-			dependencies[number] = dependency
+			dependencies[dependencyKey(dependency)] = dependency
 		}
 	}
 	if repo != "" {
@@ -1046,12 +1047,20 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 		if err != nil {
 			return fmt.Errorf("list dependencies for issue #%d: %w: %s", issue.Number, err, strings.TrimSpace(string(output)))
 		}
-		var related []IssueDependency
+		var related []struct {
+			Number        int    `json:"number"`
+			State         string `json:"state"`
+			RepositoryURL string `json:"repository_url"`
+		}
 		if err := json.Unmarshal(output, &related); err != nil {
 			return fmt.Errorf("decode dependencies for issue #%d: %w", issue.Number, err)
 		}
-		for _, dependency := range related {
-			dependencies[dependency.Number] = dependency
+		for _, blocker := range related {
+			dependency := IssueDependency{Number: blocker.Number, State: blocker.State, Repository: repositoryFromAPIURL(blocker.RepositoryURL)}
+			if dependency.Repository == "" {
+				dependency.Repository = repo
+			}
+			dependencies[dependencyKey(dependency)] = dependency
 		}
 		subIssues, err := g.apiGETPaginated(ctx, public, "repos/"+repo+"/issues/"+fmt.Sprint(issue.Number)+"/sub_issues", "--header", "X-GitHub-Api-Version: 2022-11-28")
 		if err != nil {
@@ -1075,8 +1084,30 @@ func (g GHCLI) loadDependencies(ctx context.Context, repo string, issue *Issue) 
 	for _, dependency := range dependencies {
 		issue.DependsOn = append(issue.DependsOn, dependency)
 	}
-	slices.SortFunc(issue.DependsOn, func(a, b IssueDependency) int { return a.Number - b.Number })
+	slices.SortFunc(issue.DependsOn, func(a, b IssueDependency) int {
+		return cmp.Or(strings.Compare(a.Repository, b.Repository), a.Number-b.Number)
+	})
 	return nil
+}
+
+// dependencyKey identifies a dependency across repositories, so a blocker
+// #50 in another repository never collapses into this repository's #50.
+func dependencyKey(dependency IssueDependency) string {
+	return strings.ToLower(dependency.Repository) + "#" + strconv.Itoa(dependency.Number)
+}
+
+// repositoryFromAPIURL reads OWNER/REPO from a REST repository_url such as
+// https://api.github.com/repos/OWNER/REPO.
+func repositoryFromAPIURL(raw string) string {
+	_, path, ok := strings.Cut(raw, "/repos/")
+	if !ok {
+		return ""
+	}
+	owner, name, ok := strings.Cut(strings.Trim(path, "/"), "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return owner + "/" + name
 }
 
 // PostComment posts a comment on an issue or pull request.
@@ -1286,7 +1317,7 @@ type CommandRunner struct {
 	Agent, Repo string
 	Identity    Identity
 	Output      io.Writer
-	// Approval is the Projects surface's effective approval mode, which
+	// Approval is the Code Loop surface's effective approval mode, which
 	// every CLI launch renders through its definition.
 	Approval clidefs.ApprovalMode
 	NoMerge  bool
@@ -1339,10 +1370,10 @@ type CommandRunner struct {
 }
 
 // UsageRecorder receives the token use of one agent run, or one record of
-// Projects work.
+// Code Loop work.
 type UsageRecorder func(domain.UsageRecord)
 
-// recordProjectUsage reports Projects work on issue repo#number to core usage
+// recordProjectUsage reports Code Loop work on issue repo#number to core usage
 // tracking, so System → Usage can count the issues worked on, merged, and
 // failed, and the wall time spent on them.
 func (w *Engine) recordProjectUsage(at time.Time, repo string, number int, project domain.ProjectUsage) {
@@ -1358,11 +1389,11 @@ func (w *Engine) recordProjectUsage(at time.Time, repo string, number int, proje
 	})
 }
 
-// UsageAgentID is the agent ID Projects job usage is recorded under.
+// UsageAgentID is the agent ID Code Loop job usage is recorded under.
 const UsageAgentID = "projects"
 
 // recordUsage reports a run's token use, as its transcript mapper read it
-// from the agent's stream, so Projects jobs appear in core's Usage view. A
+// from the agent's stream, so Code Loop jobs appear in core's Usage view. A
 // run that reported nothing and did not fail records nothing, as core's own
 // prompts do.
 func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transcript.Recorder, runErr error) {
@@ -1515,7 +1546,7 @@ func (r CommandRunner) resolveRunDir(session AgentSession) (AgentSession, error)
 }
 
 // allowedCommentersPrompt tells the agent whose comments are instructions.
-// Projects relays only allowed commenters' comments, but the agent reads the
+// Code Loop relays only allowed commenters' comments, but the agent reads the
 // whole thread on GitHub, so without this a comment from anyone else could
 // still steer the work.
 func allowedCommentersPrompt(logins []string) string {

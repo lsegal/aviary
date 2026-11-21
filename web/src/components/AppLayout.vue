@@ -31,6 +31,8 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
+          <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            @restart="triggerRestart()" />
           <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
@@ -77,18 +79,6 @@
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
-        <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
-          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            :disabled="upgrading || restartPending" @click="triggerRestart()">
-            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
-          <button type="button" aria-label="Log out" title="Log out"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-            @click="auth.logout(); $router.push('/login')">
-            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
-        </div>
       </nav>
     </div>
 
@@ -157,6 +147,7 @@
                 @click="openAdd(child.key, soleAgent.name)" />
             </div>
             <ChatSessionList v-if="child.key === 'chat'" :agent="soleAgent.name" />
+            <AgentChannelList v-if="child.key === 'channels'" :agent="soleAgent.name" />
             <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
             <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
@@ -196,6 +187,7 @@
                     @click="openAdd(child.key, a.name)" />
                 </div>
                 <ChatSessionList v-if="child.key === 'chat'" :agent="a.name" />
+                <AgentChannelList v-if="child.key === 'channels'" :agent="a.name" />
                 <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
                 <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
@@ -212,7 +204,7 @@
         </template>
 
         <div class="relative">
-          <router-link to="/system/overview" :class="[topLevelLinkClass(systemActive && systemCollapsed), 'flex items-center pr-9']" data-testid="sidebar-system">
+          <router-link to="/system/overview" :class="[topLevelLinkClass(systemHeaderActive), 'flex items-center pr-9']" data-testid="sidebar-system">
             System
           </router-link>
           <button type="button" data-testid="sidebar-system-toggle" :aria-expanded="!systemCollapsed"
@@ -224,22 +216,11 @@
           </button>
         </div>
         <div v-if="!systemCollapsed" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
-          <router-link v-for="child in systemPrimary" :key="child.key" :to="child.to" :class="childLinkClass(isChildActive(child), false)">
-            {{ child.label }}
+          <router-link v-for="child in systemChildren" :key="child.key" :to="child.to"
+            :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
+            <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+            <ProjectRunningBadge :running="child.running ?? 0" />
           </router-link>
-          <button type="button" data-testid="sidebar-system-more" :aria-expanded="systemMoreOpen"
-            class="mt-1 flex w-full items-center gap-1 rounded-lg px-3 py-2 text-left text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            @click="systemMoreToggled = !systemMoreOpen">
-            <span aria-hidden="true" class="inline-block w-3 transition-transform" :class="systemMoreOpen ? 'rotate-90' : ''">›</span>
-            {{ systemMoreOpen ? "Less" : "More" }}
-          </button>
-          <template v-if="systemMoreOpen">
-            <router-link v-for="child in systemMore" :key="child.key" :to="child.to"
-              :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-              <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <ProjectRunningBadge :running="child.running ?? 0" />
-            </router-link>
-          </template>
         </div>
       </div>
       <div class="mt-auto flex flex-col gap-2">
@@ -276,16 +257,8 @@
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
-            <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-              :disabled="upgrading || restartPending" @click="triggerRestart()">
-              <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
-            </button>
-            <button type="button" aria-label="Log out" title="Log out"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              @click="auth.logout(); $router.push('/login')">
-              <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-            </button>
+            <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+              @restart="triggerRestart()" />
           </div>
         </div>
       </div>
@@ -343,13 +316,8 @@
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <ConnectionIndicator :status="status" @retry="reconnect()" />
-        <SidebarRailItem label="Restart" data-testid="restart-button" :disabled="upgrading || restartPending"
-          @click="triggerRestart()">
-          <ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="restartPending ? 'animate-spin' : ''" />
-        </SidebarRailItem>
-        <SidebarRailItem label="Log out" tone="danger" @click="auth.logout(); $router.push('/login')">
-          <ArrowRightOnRectangleIcon aria-hidden="true" class="h-5 w-5" />
-        </SidebarRailItem>
+        <SidebarGearMenu rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+          @restart="triggerRestart()" />
       </div>
     </nav>
 
@@ -358,6 +326,7 @@
     </main>
 
     <AgentItemDialogs />
+    <ChannelDialogs />
 
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
       :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
@@ -368,15 +337,12 @@
 <script lang="ts">
 import { ref } from "vue";
 
-// Shared by every page's layout, so the System expander and the System
-// section's collapse stay as toggled.
-const systemMoreState = ref<boolean | null>(null);
-const systemCollapsedState = ref(false);
+// Shared by every page's layout, so the System section's collapse stays as
+// toggled. It starts collapsed; the overview lists every System page.
+const systemCollapsedState = ref(true);
 </script>
 
 <script setup lang="ts">
-import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
-import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
@@ -387,6 +353,7 @@ import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
 import Squares2X2Icon from "@heroicons/vue/24/outline/Squares2X2Icon";
+import HashtagIcon from "@heroicons/vue/24/outline/HashtagIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
 import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
 import {
@@ -400,6 +367,8 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+import { useChannelDialogs } from "../composables/useChannelDialogs";
+import { channelName, channelPath } from "../lib/channels";
 import { useServerStatus } from "../composables/useServerStatus";
 import {
 	SIDEBAR_KEY_STEP,
@@ -410,6 +379,7 @@ import {
 } from "../composables/useSidebarLayout";
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
+import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
@@ -422,8 +392,11 @@ import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
+import AgentChannelList from "./sidebar/AgentChannelList.vue";
+import ChannelDialogs from "./sidebar/ChannelDialogs.vue";
 import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
+import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
@@ -432,7 +405,7 @@ interface NavChild {
 	key: string;
 	label: string;
 	to: string;
-	/** Running jobs (a project's, or all of GitHub Projects'), shown as a
+	/** Running jobs (a project's, or all of Code Loop'), shown as a
 	 * gray badge when any. */
 	running?: number;
 	/** Overrides the path match, for items picked by a query. */
@@ -518,11 +491,12 @@ const brandLinks: BrandLink[] = [
 	},
 ];
 
-// An agent's pages, in sidebar order. Settings holds its General,
-// Permissions and Channels tabs.
+// An agent's pages, in sidebar order. Settings holds its General and
+// Permissions sections; each channel's settings open from its own entry.
 const AGENT_PAGES = [
 	{ key: "chat", label: "Chats" },
-	{ key: "projects", label: "GitHub Projects" },
+	{ key: "projects", label: "Code Loop" },
+	{ key: "channels", label: "Channels" },
 	{ key: "tasks", label: "Scheduled Tasks" },
 	{ key: "files", label: "Files" },
 	{ key: "settings", label: "Agent Settings" },
@@ -532,6 +506,7 @@ const AGENT_PAGES = [
 const pageIcons: Record<string, Component> = {
 	chat: markRaw(ChatBubbleLeftRightIcon),
 	projects: markRaw(Squares2X2Icon),
+	channels: markRaw(HashtagIcon),
 	tasks: markRaw(ClockIcon),
 	files: markRaw(DocumentTextIcon),
 	settings: markRaw(Cog6ToothIcon),
@@ -621,7 +596,11 @@ function cancelSidebarPeekClose() {
 function openSidebarPeekSoon(e: MouseEvent) {
 	if (sidebarPeek.value) return;
 	cancelSidebarPeekOpen();
-	if ((e.target as Element).closest("a, button")) return;
+	// mouseenter targets the rail itself, also when a page change remounts it
+	// under a pointer resting on one of its icons; ask what is under the
+	// pointer instead.
+	const under = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
+	if ((under as Element | null)?.closest?.("a, button")) return;
 	sidebarPeekOpenTimer = setTimeout(() => {
 		sidebarPeek.value = true;
 	}, SIDEBAR_PEEK_DELAY);
@@ -675,23 +654,6 @@ onBeforeUnmount(() => {
 	closeSidebarPeek();
 });
 
-// System's first pages are always shown; the rest sit behind the expander in
-// their previous relative order.
-const systemPrimary: NavChild[] = [
-	{ key: "overview", label: "Overview", to: "/system/overview" },
-	{ key: "settings", label: "Settings", to: "/system/settings" },
-	{ key: "providers", label: "Providers & Auth", to: "/system/providers" },
-	{ key: "usage", label: "Usage", to: "/system/usage" },
-];
-const systemRest: NavChild[] = [
-	{ key: "tools", label: "Tools", to: "/system/tools" },
-	{ key: "skills", label: "Skills", to: "/system/skills" },
-	{ key: "sessions", label: "Sessions", to: "/system/sessions" },
-	{ key: "models", label: "Models", to: "/system/models" },
-	{ key: "logs", label: "Logs", to: "/system/logs" },
-	{ key: "daemons", label: "Daemons", to: "/system/daemons" },
-];
-
 const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
@@ -730,6 +692,7 @@ const agentPageTail = computed(() => {
 	const tail = match?.[1] ?? "chat";
 	if (tail.startsWith("chat")) return "chat";
 	if (tail.startsWith("projects")) return "projects";
+	if (tail.startsWith("channels")) return "channels";
 	return tail;
 });
 
@@ -773,7 +736,7 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		: undefined,
 );
 
-// The agent's projects list opens on its GitHub Projects pages and boards.
+// The agent's projects list opens on its Code Loop pages and boards.
 const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );
@@ -781,24 +744,42 @@ const projectsOpen = computed(() =>
 // An agent's Scheduled Tasks and Files list their items on their own pages.
 const tasksOpen = computed(() => /^\/agents\/[^/]+\/tasks\/?$/.test(route.path));
 const filesOpen = computed(() => /^\/agents\/[^/]+\/files\/?$/.test(route.path));
+// An agent's Channels pages: its channels' views and settings.
+const channelsOpen = computed(() =>
+	/^\/agents\/[^/]+\/channels(\/|$)/.test(route.path),
+);
 
 const { open: openItemDialog } = useAgentItemDialogs();
 const agentFiles = useAgentFilesStore();
 
 /** The "+" of an agent's page row, or "" when the page has none. */
 function rowAddLabel(page: string): string {
+	if (page === "channels") return "Add channel";
 	if (page === "tasks") return "Add task";
 	if (page === "files") return "Add file";
 	return "";
 }
 
+const { open: openChannelDialog } = useChannelDialogs();
+
 function openAdd(page: string, agent: string) {
-	if (page === "tasks" || page === "files")
+	if (page === "channels") openChannelDialog({ mode: "create", agent });
+	else if (page === "tasks" || page === "files")
 		openItemDialog({ kind: page === "tasks" ? "task" : "file", agent, mode: "create" });
 }
 
-/** The active agent's tasks or files, for the narrow-screen second row. */
+/** The active agent's channels, tasks or files, for the narrow-screen second row. */
 function agentItems(agent: string): NavChild[] {
+	if (channelsOpen.value) {
+		const channels =
+			settingsStore.config?.agents.find((a) => a.name === agent)?.channels ??
+			[];
+		return channels.map((c) => ({
+			key: `channel:${channelName(c)}`,
+			label: channelName(c),
+			to: channelPath(agent, channelName(c)),
+		}));
+	}
 	if (tasksOpen.value) {
 		const tasks =
 			settingsStore.config?.agents.find((a) => a.name === agent)?.tasks ?? [];
@@ -827,12 +808,13 @@ function agentItems(agent: string): NavChild[] {
 const mobileAdd = computed(() => {
 	const agent = agentNav.value.find((a) => a.active);
 	if (!agent) return null;
+	if (channelsOpen.value) return { page: "channels", agent: agent.name };
 	if (tasksOpen.value) return { page: "tasks", agent: agent.name };
 	if (filesOpen.value) return { page: "files", agent: agent.name };
 	return null;
 });
 
-// Add project opens the add dialog on the agent's GitHub Projects board.
+// Add project opens the add dialog on the agent's Code Loop board.
 function addProjectLink(agent: string) {
 	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }
@@ -873,20 +855,24 @@ const watchChildren = computed<NavChild[]>(() =>
 		.map((p) => ({ ...projectChild("", p), label: `Watch: ${p.name}` })),
 );
 
-const systemMore = computed(() => [...systemRest, ...watchChildren.value]);
+// The System item is the overview, so its pages list without one.
+const systemChildren = computed<NavChild[]>(() => [
+	...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
+	...watchChildren.value,
+]);
 
-const systemActive = computed(() => route.path.startsWith("/system/"));
+// Settings' tabs live under /system but open from the gear menu instead.
+const systemActive = computed(
+	() => route.path.startsWith("/system/") && !isSettingsPath(route.path),
+);
 
-// The expander opens itself while one of its pages is showing; a click
-// overrides that until the next page load.
-const systemMoreToggled = systemMoreState;
 // Collapsed, only the System header shows; it then stands in for whichever
 // System page is current.
 const systemCollapsed = systemCollapsedState;
-const systemMoreOpen = computed(
+const systemHeaderActive = computed(
 	() =>
-		systemMoreToggled.value ??
-		systemMore.value.some((child) => isChildActive(child)),
+		route.path === "/system/overview" ||
+		(systemActive.value && systemCollapsed.value),
 );
 
 function isChildActive(child: NavChild): boolean {
@@ -923,12 +909,12 @@ const mobileChildren = computed<NavChild[]>(() => {
 		: [];
 	if (agent && soleAgent.value) return items;
 	if (agent) return [...agent.children, ...items];
-	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
+	if (systemActive.value) return systemChildren.value;
 	return [];
 });
 
 // The narrow-screen main row: a sole agent's pages, or one pill per agent,
-// plus System. Agents are added from System → Settings. Items that do not fit go behind "…".
+// plus System. Agents are added from Settings. Items that do not fit go behind "…".
 const mobileMainItems = computed<MobileNavItem[]>(() => {
 	const system: MobileNavItem = {
 		key: "system",

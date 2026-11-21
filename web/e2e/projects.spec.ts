@@ -376,17 +376,17 @@ async function setup(
 	return calls;
 }
 
-test("an agent's GitHub Projects in the sidebar list its projects with live counts", async ({
+test("an agent's Code Loop in the sidebar list its projects with live counts", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/system/overview");
-	// coder is the only agent, so its pages, GitHub Projects among them, are
+	// coder is the only agent, so its pages, Code Loop among them, are
 	// the sidebar's top level (#538).
 	const row = page.getByTestId("sidebar-row-projects");
 	await expect(row.getByTestId("project-running-badge")).toHaveText("2");
 	await expect(
-		page.getByTestId("sidebar-nav").getByRole("link", { name: /^GitHub/ }),
+		page.getByTestId("sidebar-nav").getByRole("link", { name: /^Code Loop/ }),
 	).toHaveAttribute("href", "/agents/coder/projects");
 
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
@@ -411,7 +411,7 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
-test('the GitHub Projects running badge is gray and the Add project "+" sits beside it on hover', async ({
+test('the Code Loop running badge is gray and the Add project "+" sits beside it on hover', async ({
 	page,
 }) => {
 	await setup(page);
@@ -430,7 +430,7 @@ test('the GitHub Projects running badge is gray and the Add project "+" sits bes
 	await expect.poll(opacity).toBe(0);
 	await page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ })
+		.getByRole("link", { name: /^Code Loop/ })
 		.hover();
 	await expect.poll(opacity).toBe(1);
 
@@ -441,7 +441,7 @@ test('the GitHub Projects running badge is gray and the Add project "+" sits bes
 	expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(plusBox.x);
 });
 
-test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', async ({
+test('Code Loop badges sit at the row\'s right edge until the "+" shows', async ({
 	page,
 }) => {
 	await setup(page);
@@ -456,7 +456,7 @@ test('GitHub Projects badges sit at the row\'s right edge until the "+" shows', 
 	};
 	const header = page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ });
+		.getByRole("link", { name: /^Code Loop/ });
 	const headerBadge = header.getByTestId("project-running-badge");
 	const project = page
 		.getByTestId("sidebar-agent-projects")
@@ -539,7 +539,7 @@ async function setupOneProject(page: Page, running: () => number) {
 	});
 }
 
-test("the GitHub Projects row counts running jobs, not watched projects", async ({
+test("the Code Loop row counts running jobs, not watched projects", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -548,8 +548,8 @@ test("the GitHub Projects row counts running jobs, not watched projects", async 
 	await page.goto("/system/overview");
 	const row = page
 		.getByTestId("sidebar-row-projects")
-		.getByRole("link", { name: /^GitHub Projects/ });
-	await expect(row).toHaveText("GitHub Projects");
+		.getByRole("link", { name: /^Code Loop/ });
+	await expect(row).toHaveText("Code Loop");
 	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
 
 	running = 1;
@@ -559,12 +559,12 @@ test("the GitHub Projects row counts running jobs, not watched projects", async 
 	running = 0;
 	await page.clock.runFor(10_000);
 	await expect(row.getByTestId("project-running-badge")).toHaveCount(0);
-	await expect(row).toHaveText("GitHub Projects");
+	await expect(row).toHaveText("Code Loop");
 });
 
-// The collapsed sidebar rail keeps the running count on its GitHub Projects
+// The collapsed sidebar rail keeps the running count on its Code Loop
 // icon (#724).
-test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
+test("the collapsed rail's Code Loop icon counts running jobs", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -576,7 +576,7 @@ test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
 	await expect(icon.getByTestId("sidebar-rail-badge")).toHaveText("2");
 	await icon.hover();
 	await expect(page.getByRole("tooltip")).toHaveText(
-		"GitHub Projects · 2 running jobs",
+		"Code Loop · 2 running jobs",
 	);
 
 	running = 0;
@@ -587,7 +587,7 @@ test("the collapsed rail's GitHub Projects icon counts running jobs", async ({
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the GitHub Projects tab counts running jobs, not watched projects", async ({
+	test("the Code Loop tab counts running jobs, not watched projects", async ({
 		page,
 	}) => {
 		await page.clock.install();
@@ -596,8 +596,8 @@ test.describe("on a phone", () => {
 		await page.goto("/system/overview");
 		const tab = page
 			.getByRole("navigation", { name: "Main" })
-			.getByRole("link", { name: /^GitHub Projects/ });
-		await expect(tab).toHaveText("GitHub Projects");
+			.getByRole("link", { name: /^Code Loop/ });
+		await expect(tab).toHaveText("Code Loop");
 		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
 
 		running = 1;
@@ -607,7 +607,7 @@ test.describe("on a phone", () => {
 		running = 0;
 		await page.clock.runFor(10_000);
 		await expect(tab.getByTestId("project-running-badge")).toHaveCount(0);
-		await expect(tab).toHaveText("GitHub Projects");
+		await expect(tab).toHaveText("Code Loop");
 	});
 });
 
@@ -1101,7 +1101,7 @@ const ZVID_JOB = job({
 	target: "lsegal/zvidlib",
 });
 
-test("an agent's GitHub Projects is one board of all its projects, with no settings", async ({
+test("an agent's Code Loop is one board of all its projects, with no settings", async ({
 	page,
 }) => {
 	const calls = await setup(page, undefined, {
@@ -1121,9 +1121,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	});
 	await page.goto("/agents/coder/projects");
 
-	await expect(
-		page.getByRole("heading", { name: "GitHub Projects" }),
-	).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Code Loop" })).toBeVisible();
 	await expect(page.getByTestId("board-projects")).toHaveText("2 projects");
 	// Every project's jobs share the board, each naming its project.
 	const cards = page.getByTestId("job-card");
@@ -1140,7 +1138,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	);
 
 	// No settings live on the route: no form fields, and Settings opens the
-	// agent's projects in Projects settings.
+	// agent's projects in Code Loop settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
@@ -1161,7 +1159,7 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
-test("the GitHub Projects board's header starts with a blue + that adds a project (#739)", async ({
+test("the Code Loop board's header starts with a blue + that adds a project (#739)", async ({
 	page,
 }) => {
 	await setup(page);
@@ -1219,6 +1217,114 @@ test("job actions are icon buttons with tooltips", async ({ page }) => {
 	}
 });
 
+test("job detail links #NNN and PR #YYY in the title, with icon-only actions (#835)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const title = page.getByTestId("job-detail-title");
+	await expect(title.getByRole("link", { name: "#218" })).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/issues/218",
+	);
+	await expect(title.getByRole("link", { name: "PR #233" })).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/pull/233",
+	);
+	// The header row has no Issue/PR button links left, only icon buttons.
+	const actions = page.getByTestId("job-detail-actions");
+	await expect(actions.getByRole("link", { name: /#\d+/ })).toHaveCount(0);
+	const toggle = page.getByTestId("raw-output-toggle");
+	for (const width of [390, 820, 1600]) {
+		await page.setViewportSize({ width, height: 900 });
+		await expect(toggle).toHaveText("");
+		await expect(toggle.locator("svg")).toHaveCount(1);
+		await expect(toggle).toHaveAttribute("aria-label", "Raw output");
+		await expect(toggle).toHaveAttribute("title", /\S/);
+	}
+	// Closing the details is a plain dismiss icon, not a bordered action.
+	expect(
+		await page
+			.getByTestId("job-detail-close")
+			.evaluate((el) => getComputedStyle(el).borderTopWidth),
+	).toBe("0px");
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+	await expect(title).toHaveText(
+		"#221 Export a session as Markdown from the chat menu",
+	);
+	await expect(title.getByRole("link")).toHaveCount(1);
+});
+
+for (const width of [390, 1600]) {
+	test(`job detail's rich transcript wraps instead of scrolling sideways at ${width}px (#835)`, async ({
+		page,
+	}) => {
+		const long = `${"x".repeat(400)} ${"/very/long/path".repeat(30)}`;
+		EVENTS[221] = [
+			{
+				kind: "message",
+				time: at(5),
+				text: `Long \`${long}\`\n\n\`\`\`\n${long}\n\`\`\``,
+			},
+			{
+				kind: "tool_call",
+				time: at(4),
+				call_id: "t1",
+				name: "Read",
+				input: { file_path: long },
+			},
+			{ kind: "tool_result", time: at(4), call_id: "t1", output: long },
+			{
+				kind: "file_change",
+				time: at(3),
+				path: "a.go",
+				diff: `@@ -1 +1 @@\n-${long}\n+${long}`,
+			},
+			{
+				kind: "command",
+				time: at(2),
+				call_id: "b1",
+				command: `echo ${long}`,
+				status: "running",
+			},
+			{
+				kind: "command",
+				time: at(2),
+				call_id: "b1",
+				output: long,
+				exit_code: 0,
+			},
+		];
+		try {
+			await page.setViewportSize({ width, height: 900 });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const timeline = page.getByRole("list", { name: "Activity" });
+			await expect(timeline.locator('[data-event="command"]')).toHaveCount(1);
+			for (const summary of await timeline.locator("summary").all()) {
+				await summary.click();
+			}
+			await expect(timeline.locator("details[open]")).toHaveCount(3);
+			// Nothing scrolls sideways: not the pane, the list, or any scroller in it.
+			const overflowing = await timeline.evaluate((list) =>
+				[list.parentElement as Element, list, ...list.querySelectorAll("*")]
+					.filter(
+						(el) =>
+							(el === list ||
+								el === list.parentElement ||
+								/auto|scroll/.test(getComputedStyle(el).overflowX)) &&
+							el.scrollWidth - el.clientWidth > 1,
+					)
+					.map((el) => el.outerHTML.slice(0, 100)),
+			);
+			expect(overflowing).toEqual([]);
+		} finally {
+			delete EVENTS[221];
+		}
+	});
+}
+
 test("job detail shows the job's clone path, copyable, or why it has none", async ({
 	page,
 	context,
@@ -1269,7 +1375,7 @@ test("run view renders the typed event timeline read-only", async ({
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 
 	const steps = page.getByTestId("lifecycle");
@@ -1524,6 +1630,51 @@ for (const { name, width, height, compact } of [
 	});
 }
 
+for (const { name, width, height } of [
+	{ name: "mobile", width: 390, height: 844 },
+	{ name: "wide desktop", width: 1600, height: 900 },
+]) {
+	test(`the job detail page never scrolls past its content at ${name} width (#854)`, async ({
+		page,
+	}) => {
+		// Each tool call carries a visually hidden, absolutely positioned
+		// status label, which must stay inside the transcript's scroller.
+		EVENTS[221] = Array.from({ length: 80 }, (_, i) => [
+			{
+				kind: "tool_call",
+				time: at(3),
+				call_id: `t${i}`,
+				name: "Read",
+				input: { file_path: `file${i}.go` },
+			},
+			{ kind: "tool_result", time: at(3), call_id: `t${i}`, output: "ok" },
+		]).flat();
+		try {
+			await page.setViewportSize({ width, height });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const calls = page
+				.getByRole("list", { name: "Activity" })
+				.locator('[data-event="tool_call"]');
+			await expect(calls).toHaveCount(80);
+			const overscroll = await page.evaluate(() => {
+				const doc = document.scrollingElement ?? document.documentElement;
+				return doc.scrollHeight - doc.clientHeight;
+			});
+			expect(overscroll).toBeLessThanOrEqual(0);
+
+			// The transcript itself still scrolls to its last entry and footer.
+			await calls.last().scrollIntoViewIfNeeded();
+			await expect(calls.last()).toBeInViewport();
+			const footer = page.getByText("Jobs only take instructions");
+			await footer.scrollIntoViewIfNeeded();
+			await expect(footer).toBeInViewport();
+		} finally {
+			delete EVENTS[221];
+		}
+	});
+}
+
 const SIGNED_OUT = {
 	signed_out: true,
 	signing_in: false,
@@ -1638,7 +1789,7 @@ test.describe("GitHub sign-in banner", () => {
 const PNG =
 	"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-/** Fixtures for the built-in Projects agent behind the prompt chat. */
+/** Fixtures for the built-in Code Loop agent behind the prompt chat. */
 function chatFixtures(calls: Calls): ToolFixtures {
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
@@ -1723,7 +1874,7 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await expect(chat).toContainText(
 		"Ask the projects agent about lsegal/aviary",
 	);
-	// It talks to the built-in Projects agent's one hidden session, never to
+	// It talks to the built-in Code Loop agent's one hidden session, never to
 	// a job, and offers no other chats (#624).
 	await expect
 		.poll(() => calls.session_messages?.at(-1))
@@ -1906,7 +2057,7 @@ test("job details open under the project header, keeping the chat and logs panel
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
 	await expect(page.getByTestId("job-detail")).toContainText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		/#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes/,
 	);
 	// The project header and its buttons stay.
 	await expect(
@@ -1984,7 +2135,7 @@ test("loading a job details URL shows the project header with that job open", as
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();
 	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
-		"#218 Cap scheduler retry backoff at 10 minutes",
+		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 });
@@ -2560,12 +2711,13 @@ test("prompt chat opened mid-turn shows the running turn (#764)", async ({
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");
-	await expect(chat.getByTestId("chat-typing")).toBeVisible();
 	await expect(chat.getByTestId("chat-tool-call")).toHaveCount(2);
 	await expect(chat.getByTestId("chat-tool-call").nth(1)).toHaveAttribute(
 		"data-pending",
 		"true",
 	);
+	// A running call shows on its chip, not in a typing bubble below it.
+	await expect(chat.getByTestId("chat-typing")).toHaveCount(0);
 	await expect(chat).toContainText("Reading the board");
 });
 
@@ -2658,3 +2810,278 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 		}
 	}
 });
+
+for (const { name, width } of [
+	{ name: "desktop", width: 1440 },
+	{ name: "narrow desktop", width: 1024 },
+	{ name: "mobile", width: 390 },
+]) {
+	test(`job detail header keeps its actions on one row at ${name} width (#797)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const title =
+			"Job detail view: rich single-row transcript, collapsible raw Output, prominent Clone, and a stepper that never scrolls sideways";
+		await setup(page, () => STATUS, {
+			project_job_get: (args?: Record<string, unknown>) => {
+				const found = JOBS.find(
+					(j) => j.target === args?.target && j.number === args?.number,
+				);
+				if (!found) throw new Error("no such job");
+				return {
+					...found,
+					title,
+					...CLONES[found.number],
+					scrollback: "",
+					events: [],
+					raw_output: "",
+				};
+			},
+		});
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		const header = page.getByTestId("job-detail-header");
+		const actions = page.getByTestId("job-detail-actions");
+		await expect(page.getByTestId("job-detail-title")).toContainText(title);
+		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
+
+		const buttons = actions.locator(":scope > a, :scope > button");
+		// Raw output, Retry, Stop and close; the Issue/PR links live in the title (#835).
+		await expect(buttons).toHaveCount(4);
+		const boxes = await buttons.evaluateAll((els) =>
+			els.map((el) => {
+				const r = el.getBoundingClientRect();
+				return {
+					top: (el as HTMLElement).offsetTop,
+					height: r.height,
+					right: r.right,
+				};
+			}),
+		);
+		// Every action, the close button included, sits on one row at one height.
+		expect(new Set(boxes.map((b) => b.top)).size).toBe(1);
+		expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
+		await expect(page.getByTestId("job-detail-close")).toHaveAttribute(
+			"aria-label",
+			"Close details",
+		);
+		const close = boxes[boxes.length - 1];
+
+		const layout = await header.evaluate((el) => {
+			const style = getComputedStyle(el);
+			const r = el.getBoundingClientRect();
+			const t = el
+				.querySelector("[data-testid=job-detail-title]")
+				?.getBoundingClientRect();
+			const a = el
+				.querySelector("[data-testid=job-detail-actions]")
+				?.getBoundingClientRect();
+			return {
+				contentRight: r.right - Number.parseFloat(style.paddingRight),
+				overflow: el.scrollWidth - el.clientWidth,
+				titleHeight: t?.height ?? 0,
+				titleRight: t?.right ?? 0,
+				titleBottom: t?.bottom ?? 0,
+				actionsLeft: a?.left ?? 0,
+				actionsTop: a?.top ?? 0,
+			};
+		});
+		expect(layout.overflow).toBeLessThanOrEqual(0);
+		// The close button ends the row at the header's content edge.
+		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
+		// The long title wraps instead of squeezing or overlapping the actions.
+		expect(layout.titleHeight).toBeGreaterThan(40);
+		if (width >= 1024) {
+			expect(layout.titleRight).toBeLessThanOrEqual(layout.actionsLeft);
+		} else {
+			expect(layout.titleBottom).toBeLessThanOrEqual(layout.actionsTop);
+		}
+	});
+}
+
+test("job detail's title PR link shows the PR state (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const pr = page.getByTestId("job-detail-pr-link");
+	await expect(pr).toHaveAttribute("target", "_blank");
+	await expect(pr).toHaveAttribute("data-pr-state", "draft");
+	await expect(pr.getByTestId("pr-state-icon")).toHaveAttribute(
+		"aria-label",
+		"Draft pull request",
+	);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/200");
+	await expect(pr).toHaveAttribute("data-pr-state", "merged");
+	await expect(page.getByTestId("job-detail-issue-link")).toHaveAttribute(
+		"target",
+		"_blank",
+	);
+});
+
+test("job detail's Raw output is an icon button that toggles its panel (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const actions = page.getByTestId("job-detail-actions");
+	const toggle = actions.getByRole("button", {
+		name: "Raw output",
+		exact: true,
+	});
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+	await expect(toggle).toHaveText("");
+	await expect(toggle).toHaveAttribute("title", /raw CLI output/);
+	const size = async (name: string) => {
+		const box = await actions
+			.getByRole("button", { name, exact: true })
+			.boundingBox();
+		return box && { width: box.width, height: box.height };
+	};
+	expect(await size("Raw output")).toEqual(await size("Retry"));
+
+	await toggle.click();
+	await expect(page.getByTestId("raw-output")).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+	await toggle.click();
+	await expect(page.getByTestId("raw-output")).toHaveCount(0);
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("job detail's close button is a borderless ghost, and it and Escape close the pane (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const close = page.getByRole("link", { name: "Close details" });
+	await expect(close).toHaveAttribute("title", "Close details");
+	const border = (el: Element) =>
+		Number.parseFloat(getComputedStyle(el).borderLeftWidth);
+	expect(await close.evaluate(border)).toBe(0);
+	expect(
+		await page.getByRole("button", { name: "Retry" }).evaluate(border),
+	).toBeGreaterThan(0);
+	await close.click();
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+});
+
+// Long unbroken tokens: a clone path, a URL and minified JSON.
+const LONG_PATH =
+	"/var/folders/_3/6nm7yxhj0v3716vn7dyl134h0000gn/T/aviary-gh-fix-761-b/internal/projects/core/very_long_directory_name_without_breaks/file_with_a_really_long_name.go";
+const LONG_URL =
+	"https://github.com/lsegal/aviary/actions/runs/43097434009/job/123456789012?pr=834&check_suite_focus=true&very_long_query_parameter=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const LONG_JSON = JSON.stringify({
+	type: "assistant",
+	message: { content: [{ type: "text", text: "x".repeat(160) }] },
+});
+const LONG_EVENTS = [
+	{ kind: "system", time: at(9), text: `Cloned into ${LONG_PATH}` },
+	{
+		kind: "message",
+		time: at(8),
+		text: `See ${LONG_URL} and \`${LONG_PATH}\`.\n\n\`\`\`json\n${LONG_JSON}\n\`\`\``,
+	},
+	{ kind: "reasoning", time: at(8), text: LONG_JSON },
+	{
+		kind: "plan",
+		time: at(7),
+		items: [{ text: `Edit ${LONG_PATH}`, status: "in_progress" }],
+	},
+	{
+		kind: "tool_call",
+		time: at(7),
+		call_id: "w1",
+		name: "Read",
+		input: { file_path: LONG_PATH },
+	},
+	{ kind: "tool_result", time: at(7), call_id: "w1", output: LONG_JSON },
+	{
+		kind: "file_change",
+		time: at(6),
+		path: LONG_PATH,
+		diff: `@@ -1,1 +1,1 @@\n-${LONG_JSON}\n+${LONG_URL}`,
+	},
+	{
+		kind: "command",
+		time: at(5),
+		call_id: "w2",
+		command: `cat ${LONG_PATH} | curl -d @- ${LONG_URL}`,
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(5),
+		call_id: "w2",
+		output: `${LONG_JSON}\n${LONG_URL}`,
+		exit_code: 0,
+		status: "done",
+	},
+	{
+		kind: "comment_relay",
+		time: at(4),
+		author: "lsegal",
+		text: `Look at ${LONG_URL}`,
+		url: "https://github.com/lsegal/aviary/issues/221#issuecomment-1",
+	},
+];
+
+// Elements wider than their box, other than one-line rows that truncate
+// with an ellipsis on purpose.
+const sidewaysOverflow = (root: Element) =>
+	[root, ...root.querySelectorAll("*")]
+		.filter(
+			(el): el is HTMLElement =>
+				el instanceof HTMLElement &&
+				getComputedStyle(el).textOverflow !== "ellipsis" &&
+				!el.classList.contains("sr-only") &&
+				el.scrollWidth > el.clientWidth + 1,
+		)
+		.map((el) => `${el.tagName}.${el.className}`);
+
+for (const { name, width, height } of [
+	{ name: "mobile", width: 390, height: 844 },
+	{ name: "narrow desktop", width: 820, height: 800 },
+]) {
+	test(`the rich transcript never scrolls sideways at ${name} width (#834)`, async ({
+		page,
+	}) => {
+		EVENTS[221] = LONG_EVENTS;
+		const clone = CLONES[221];
+		CLONES[221] = { checkout_directory: LONG_PATH, checkout_state: "present" };
+		try {
+			await page.setViewportSize({ width, height });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const transcript = page.getByTestId("job-transcript");
+			await expect(transcript.locator('[data-event="command"]')).toHaveCount(1);
+			// Expanded content wraps too.
+			await transcript.evaluate((el) => {
+				for (const d of el.querySelectorAll("details")) d.open = true;
+			});
+			expect(await transcript.evaluate(sidewaysOverflow)).toEqual([]);
+			expect(
+				await page.getByTestId("job-meta").evaluate(sidewaysOverflow),
+			).toEqual([]);
+			await expect(page.getByTestId("job-clone-path")).toHaveText(LONG_PATH);
+
+			// The board card's transcript shares the rule.
+			await page.goto("/agents/coder/projects/lsegal%2Faviary");
+			const rich = page
+				.getByTestId("job-card")
+				.filter({ hasText: "#221" })
+				.getByTestId("job-output-rich");
+			await expect(rich.locator('[data-row="message"]')).toBeVisible();
+			expect(await rich.evaluate(sidewaysOverflow)).toEqual([]);
+		} finally {
+			delete EVENTS[221];
+			CLONES[221] = clone;
+		}
+	});
+}

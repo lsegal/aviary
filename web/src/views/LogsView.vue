@@ -14,13 +14,8 @@
           <div class="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" />
 
           <!-- Level filter -->
-          <select v-model="logs.filterLevel.value"
-            class="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 focus:outline-none">
-            <option value="debug">DEBUG+</option>
-            <option value="info">INFO+</option>
-            <option value="warn">WARN+</option>
-            <option value="error">ERROR</option>
-          </select>
+          <AppSelect v-model="logs.filterLevel.value" size="sm" class="w-auto" aria-label="Log level"
+            :options="LEVEL_OPTIONS" />
 
           <!-- Component chips -->
           <div class="flex flex-wrap gap-1">
@@ -119,7 +114,15 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import { useLogs } from "../composables/useLogs";
+import { AppSelect, type SelectOption } from "../components/ui/select";
+import { type LogLevel, useLogs } from "../composables/useLogs";
+
+const LEVEL_OPTIONS: SelectOption<LogLevel>[] = [
+	{ value: "debug", label: "DEBUG+" },
+	{ value: "info", label: "INFO+" },
+	{ value: "warn", label: "WARN+" },
+	{ value: "error", label: "ERROR" },
+];
 
 const logs = useLogs();
 const scrollEl = ref<HTMLElement | null>(null);

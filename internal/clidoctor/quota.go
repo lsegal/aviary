@@ -498,7 +498,7 @@ func formatNamedQuotas(quotas map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// ReadQuota reads one agent's quota through the same readers the Projects
+// ReadQuota reads one agent's quota through the same readers the Code Loop
 // watch status bar uses, so no surface grows a second opinion about quota.
 func ReadQuota(ctx context.Context, registry *clidefs.Registry, name, binary string) (string, error) {
 	readers := QuotaReaders(registry, []string{name}, func(string) string { return binary })

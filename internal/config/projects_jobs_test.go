@@ -39,10 +39,10 @@ func TestProjectJobSpecsTakeCLIProviderModelsInBothForms(t *testing.T) {
 	assert.Equal(t, []string{"claude/opus", "gemini/gemini-3.5-flash", "aviary/coder"}, ProjectJobSpecs(cfg, "coder"))
 }
 
-func TestCLIModelsBeyondClaudeAndCodexOnlyWarn(t *testing.T) {
+func TestCLIModelsWithoutSessionsOnlyWarn(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{
-			{Name: "gem", Model: "cli/gemini/gemini-3.5-flash"},
+			{Name: "cline", Model: "cli/cline/m"},
 			{Name: "custom", Model: "cli/mytool/m1"},
 			{Name: "bogus", Model: "cli/nosuchcli/x"},
 		},
@@ -60,4 +60,27 @@ func TestCLIModelsBeyondClaudeAndCodexOnlyWarn(t *testing.T) {
 	assert.Equal(t, string(LevelWarning), level("agents[0].model"), issues)
 	assert.Equal(t, string(LevelWarning), level("agents[1].model"), issues)
 	assert.Equal(t, string(LevelError), level("agents[2].model"), issues)
+}
+
+// A CLI whose definition resumes its sessions answers agent prompts, built in
+// or from models.cli_definitions, so only its installation is checked (#826).
+func TestResumableCLIModelsAnswerPrompts(t *testing.T) {
+	fakeCLIOnPath(t, "gemini")
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "gem", Model: "gemini/gemini-3.5-flash"},
+			{Name: "custom", Model: "cli/mytool/m1"},
+		},
+		Models: ModelsConfig{CLIDefinitions: map[string]any{"mytool": map[string]any{
+			"binary":  "gemini",
+			"session": map[string]any{"assign": "aviary"},
+			"output":  map[string]any{"format": "gemini-json"},
+			"args": map[string]any{
+				"run":    []any{map[string]any{"args": []any{"--session-id", "{session}", "-p", "{prompt}"}}},
+				"resume": []any{map[string]any{"args": []any{"--resume", "{session}", "-p", "{prompt}"}}},
+			},
+		}}},
+	}
+	assert.Empty(t, Validate(cfg, nil))
+	assert.ElementsMatch(t, []string{"gemini", "mytool"}, []string{string(CLIBackends(cfg)[0]), string(CLIBackends(cfg)[1])})
 }

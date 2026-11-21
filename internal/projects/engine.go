@@ -1,4 +1,4 @@
-// Package projects is the Projects engine: it watches GitHub repositories,
+// Package projects is the Code Loop engine: it watches GitHub repositories,
 // project boards and Discussions boards for ready issues and runs CLI
 // jobs on them through the gh-fix and gh-discuss skills.
 package projects
@@ -230,7 +230,7 @@ type TargetAgentIdentifier interface {
 // UIReporter receives the engine's published state and log lines.
 type UIReporter = core.UIReporter
 
-// Engine is the Projects engine: it watches targets for ready issues, claims
+// Engine is the Code Loop engine: it watches targets for ready issues, claims
 // them, and runs coding-agent jobs on them up to a concurrency limit.
 type Engine struct {
 	Repo        string
@@ -261,11 +261,11 @@ type Engine struct {
 	// never polled.
 	Discussions DiscussionSource
 	Runner      AgentRunner
-	// RecordUsage receives the Projects usage the engine observes: each job
+	// RecordUsage receives the Code Loop usage the engine observes: each job
 	// run's wall time and each issue's merged or failed outcome. Nil records
 	// nothing.
 	RecordUsage UsageRecorder
-	// RouteMention hands a prompt to the built-in Projects agent. A direct
+	// RouteMention hands a prompt to the built-in Code Loop agent. A direct
 	// mention on a finished or paused job goes to it instead of restarting
 	// the job; nil restarts the job as before.
 	RouteMention func(ctx context.Context, prompt string) error
@@ -1580,10 +1580,12 @@ func (w *Engine) pausedWake(ctx context.Context, checker WorkClosureChecker, pau
 			w.logChanged("paused-check-"+issueKey(issue), err.Error(), "issue #%d paused-work check failed: %v", issue.Number, err)
 		}
 		if blocked, _ := issueBlocked(issue); blocked && paused.Kind == core.PausedStacked {
-			check.Blockers = make(map[int]OriginatingWorkState)
-			for _, number := range core.OpenDependencies(issue) {
-				if blocker, err := checker.OriginatingWorkState(ctx, repo, number); err == nil {
-					check.Blockers[number] = blocker
+			check.Blockers = make(map[string]OriginatingWorkState)
+			for _, dependency := range core.OpenDependencies(issue) {
+				// A blocker is read from its own repository, which can differ
+				// from the issue's.
+				if blocker, err := checker.OriginatingWorkState(ctx, dependency.Repository, dependency.Number); err == nil {
+					check.Blockers[dependency.Key()] = blocker
 				}
 			}
 		}
@@ -2535,7 +2537,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				mentioned := directMentions[mentionKey]
 				switch {
 				case wake == core.PausedStay && mentioned && !mentions.rechecks[mentionKey] && w.routeMention(ctx, mentions, issue, "paused", directMentions):
-					// The Projects agent decides whether the comment needs
+					// The Code Loop agent decides whether the comment needs
 					// work; the job stays paused until it resumes it.
 					pauseJob(issue, key, wakeReason, pausedOwn)
 					continue
@@ -2564,7 +2566,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					state := work[key]
 					state.Status = "paused"
-					state.Paused = &core.PausedWork{Kind: core.PausedBlocked, WaitingOn: core.OpenDependencies(issue)}
+					state.Paused = &core.PausedWork{Kind: core.PausedBlocked, WaitingOn: core.DependencyReferences(issueRepository(issue.Target, issue), core.OpenDependencies(issue))}
 					work[key] = state
 					workMu.Unlock()
 					w.logChanged("paused-"+key, reason, "issue #%d not picked up: %s; paused until it closes", issue.Number, reason)
@@ -3297,7 +3299,7 @@ func (w *Engine) Run(ctx context.Context) error {
 							if closed && held != nil {
 								if held.Kind == core.PausedStacked {
 									if dependency, ok := stackableDependency(i); ok {
-										held.WaitingOn = []int{dependency.Number}
+										held.WaitingOn = []string{dependency.Reference(issueRepository(i.Target, i))}
 									} else {
 										held.Kind = core.PausedPullRequest
 									}
@@ -5072,7 +5074,9 @@ func (w *Engine) stackableOnDependency(ctx context.Context, checker WorkClosureC
 	if !ok {
 		return 0, false
 	}
-	repo := issue.Repository
+	// StackableDependency only returns a blocker in the issue's own
+	// repository, so it is read from there.
+	repo := dependency.Repository
 	if !w.stacksEnabled(ctx, repo) {
 		return 0, false
 	}

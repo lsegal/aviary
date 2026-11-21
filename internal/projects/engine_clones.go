@@ -33,6 +33,9 @@ type cloneState struct {
 	// two sweeps from overlapping.
 	reapInterval time.Duration
 	reaping      atomic.Bool
+	// released, when set, is called with each job key once releaseJobClone
+	// has finished, so tests wait for it instead of sleeping (issue #806).
+	released func(key string)
 }
 
 // cloneReapInterval is how often unused clones are removed in the
@@ -275,6 +278,9 @@ func (w *Engine) reapClones() {
 // unless another job or agent still uses that directory. checkout is the
 // job's last recorded checkout, which may be empty.
 func (w *Engine) releaseJobClone(key, checkout string) {
+	if released := w.clones.released; released != nil {
+		defer released(key)
+	}
 	reg, err := w.cloneRegistry()
 	if err != nil {
 		return

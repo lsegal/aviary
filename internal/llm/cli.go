@@ -14,7 +14,7 @@ import (
 // aviary and any in models.cli_definitions) sit in the provider layer beside
 // the API and OAuth providers above. Their definitions say how to invoke the
 // CLI; their installed, version, sign-in, quota and model state is read by
-// clidoctor. Everything that runs a CLI, Projects included, resolves it here.
+// clidoctor. Everything that runs a CLI, Code Loop included, resolves it here.
 
 // cliProviders is the CLI provider set in force.
 var cliProviders struct {

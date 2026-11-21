@@ -5,7 +5,7 @@ export type AgentPage =
 	| "chat"
 	| "settings"
 	| "settings/permissions"
-	| "settings/channels"
+	| "channels"
 	| "files"
 	| "tasks"
 	| "projects";
@@ -42,7 +42,41 @@ export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 	await page.goto(`/agents/${encodeURIComponent(name)}/${tail}`);
 }
 
+/** Opens a channel's settings form, by default the assistant agent's. */
+export async function openChannelSettings(
+	page: Page,
+	channel: string,
+	agent = "assistant",
+) {
+	await page.goto(
+		`/agents/${encodeURIComponent(agent)}/channels/${encodeURIComponent(channel)}/settings`,
+	);
+}
+
 /** The active agent's page link in the sidebar, such as Tasks or Files. */
 export function agentPageLink(page: Page, label: string) {
 	return agentNav(page).getByRole("link", { name: label, exact: true });
+}
+
+/** The System section's page list, expanding the section when collapsed. */
+export async function systemList(page: Page) {
+	const toggle = page.getByTestId("sidebar-system-toggle");
+	if ((await toggle.getAttribute("aria-expanded")) === "false")
+		await toggle.click();
+	return page.getByTestId("sidebar-system-list");
+}
+
+/** Opens one item of the sidebar footer's gear menu (#822). */
+export async function openGearMenuItem(
+	page: Page,
+	item: "Settings" | "Restart" | "Logout",
+) {
+	await page
+		.getByTestId("sidebar-footer")
+		.getByTestId("gear-menu-button")
+		.click();
+	await page
+		.getByTestId("gear-menu")
+		.getByRole("menuitem", { name: item, exact: true })
+		.click();
 }

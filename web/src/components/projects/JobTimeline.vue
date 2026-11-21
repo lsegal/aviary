@@ -1,9 +1,10 @@
 <template>
-	<ol class="space-y-3" aria-label="Activity">
+	<!-- Rich content wraps to the pane; nothing in it scrolls sideways (#835). -->
+	<ol class="space-y-3 [overflow-wrap:anywhere]" aria-label="Activity">
 		<li v-if="!events.length" class="py-8 text-center text-sm text-gray-400">No activity yet.</li>
 		<li v-for="(e, i) in events" :key="i" :data-event="e.kind">
 			<div v-if="e.kind === 'message'"
-				class="prose max-w-2xl rounded-xl bg-gray-100 px-4 py-2 text-gray-900 dark:prose-invert dark:bg-gray-800 dark:text-gray-100"
+				class="prose max-w-2xl rounded-xl bg-gray-100 px-4 py-2 prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed text-gray-900 dark:prose-invert dark:bg-gray-800 dark:text-gray-100"
 				v-html="renderMarkdown(e.text)" />
 
 			<details v-else-if="e.kind === 'reasoning'" class="max-w-2xl text-sm text-gray-500 dark:text-gray-400">
@@ -25,7 +26,7 @@
 					<span class="text-green-600">+{{ diffStat(e.diff).added }}</span>
 					<span class="text-red-600">-{{ diffStat(e.diff).removed }}</span>
 				</summary>
-				<pre class="mt-1.5 max-h-80 overflow-auto rounded-lg border border-gray-200 font-mono text-xs dark:border-gray-800"><span
+				<pre class="mt-1.5 max-h-80 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg border border-gray-200 font-mono text-xs dark:border-gray-800"><span
 					v-for="(l, j) in diffLines(e.diff)" :key="j" class="block px-3" :class="DIFF_CLASS[l.kind]">{{ l.text || " " }}</span></pre>
 			</details>
 
@@ -51,7 +52,7 @@
 					· sent to the job
 					<a v-if="e.url" :href="e.url" target="_blank" rel="noreferrer" class="text-blue-600 hover:underline">view</a>
 				</p>
-				<div class="prose prose-sm mt-1 max-w-none dark:prose-invert" v-html="renderMarkdown(e.body)" />
+				<div class="prose prose-sm mt-1 max-w-none prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed dark:prose-invert" v-html="renderMarkdown(e.body)" />
 			</div>
 
 			<p v-else-if="e.kind === 'system'" class="text-center text-xs text-gray-500 dark:text-gray-400">

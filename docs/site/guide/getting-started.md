@@ -126,7 +126,7 @@ Select a provider, then choose between API key entry or OAuth login. The wizard 
 
 **Option 2 — Control panel**
 
-1. In the control panel, go to **System → Providers & Auth**.
+1. In the control panel, open the gear menu at the bottom left of the sidebar, choose **Settings**, then the **Providers & Authentication** tab.
 2. Click **Log in with Anthropic** (or the provider of your choice).
 3. Complete the sign-in flow in the browser tab that opens.
 4. Return to the control panel — the provider should show as connected.
@@ -160,7 +160,7 @@ Choose **Add agent**, enter a name and model, and save. The wizard writes the ag
 
 **Option 2 — Control panel**
 
-If no agents are configured, the control panel shows a setup wizard on the Overview page. Click **Create Agent**, fill in a name and model, and save.
+If no agents are configured, the control panel opens the setup wizard first, whichever page you land on. Pick a provider, click **Create agent**, fill in a name and model, and save.
 
 **Option 3 — Edit `aviary.yaml` directly**
 

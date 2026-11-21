@@ -15,7 +15,7 @@ This skill works on its own, with no Aviary at all. Aviary just runs it for you.
 1. **Check the repository and its visibility.**
 2. **Research, if it helps.** This step is optional.
 3. **Write, label, assign and attach.**
-4. **File it, then check how it renders.**
+4. **File it and check how it renders.**
 
 ## Expanded, but Never Rewritten Away
 

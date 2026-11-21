@@ -72,11 +72,11 @@ agents:
     model: codex/gpt-6-sol        # codex exec --model gpt-6-sol
 ```
 
-The same models written with a `cli/` prefix, such as `cli/claude/opus`, are accepted too. Only Claude Code and Codex can answer agent prompts; a model on another provider reached through a CLI, such as `gemini/<model>`, is valid for Projects jobs but warns when an agent uses it.
+The same models written with a `cli/` prefix, such as `cli/claude/opus`, are accepted too. Any other CLI provider whose [definition](/reference/cli-definitions) resumes its own sessions (`session.assign` is `aviary` or `capture`), such as `gemini/<model>`, `muse/<model>` or one of your own `cli_definitions`, can answer agent prompts as well. Its turns render the definition's `args.run` the first time and `args.resume` with the stored session ID after that, so each later turn sends only the new message. When the definition declares [`mcp`](/reference/cli-definitions#mcp-and-systemprompt), the CLI is also offered Aviary's tools through a scoped MCP endpoint, as `claude` and `codex` are; otherwise it runs on its own tools only (read-only unless `cli_builtin_tools` is on). When it declares [`systemPrompt`](/reference/cli-definitions#mcp-and-systemprompt), the agent's system prompt reaches the CLI as its system prompt; otherwise it opens the session's first turn. The built-in `gemini` definition declares both. A model on a CLI with no resumable session, such as `cline/<model>`, is valid for Code Loop jobs but warns when an agent uses it.
 
 The CLI runs the agent loop. Aviary passes it the agent's system prompt and rules, and serves the agent's tools to it over MCP on a loopback-only endpoint with a token scoped to that session. The CLI's text, tool calls, and usage come back as ordinary chat events, so the chat UI, channels, session history and Usage work the same way.
 
-- **Sessions:** Claude Code keeps one process per active session, fed through stream-json input, and closes it after 15 idle minutes. Codex runs `codex exec` per turn and resumes its thread with `codex exec resume`. Either way the CLI session is resumed on later turns, including after a restart.
+- **Sessions:** Claude Code keeps one process per active session, fed through stream-json input, and closes it after 15 idle minutes. Codex runs `codex exec` per turn and resumes its thread with `codex exec resume`. Other CLIs run once per turn from their definition's run and resume templates. Every way the CLI session is resumed on later turns, including after a restart.
 - **Images** attached to a message reach the CLI.
 - **Permissions** are enforced by Aviary. The MCP token only exposes the tools the agent is allowed, and calls to anything else are refused. The CLI's own shell, file-edit and web tools are off unless the agent uses the `full` preset and sets `permissions.cli_builtin_tools: true`.
 - **Fallbacks** do not apply to CLI turns.
@@ -197,10 +197,10 @@ agents:
       - name: daily-summary
         schedule: "0 9 * * 1-5"   # weekdays at 9 AM
         prompt: "Summarize open issues and post to Slack."
-        target: slack:workspace-bot:#team-updates
+        target: channel:Team Slack
 ```
 
-Task targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`. See the [Channels guide](/guide/channels#delivery-targets) for channel-specific routing examples.
+A task target picks one of the agent's channels by name (`channel:<name>`), which delivers into that channel's session, or a session (`session:<name>`). See the [Channels guide](/guide/channels#delivery-targets).
 
 ## Skills
 

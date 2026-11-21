@@ -12,7 +12,7 @@ import (
 )
 
 // ReportDelivery sends one report as agent through target, a scheduled-task
-// style route such as "slack:main:C123" or "session:projects".
+// route such as "channel:Team Slack" or "session:projects".
 type ReportDelivery func(agent, target, text string) error
 
 // reporter turns job status changes in the engine's snapshots into reports

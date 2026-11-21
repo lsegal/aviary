@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -121,5 +122,38 @@ func TestEngineIssueHandledSnapshot(t *testing.T) {
 		if got := w.issueHandled(issue(number)); got != want {
 			t.Fatalf("issueHandled(#%d) = %v, want %v", number, got, want)
 		}
+	}
+}
+
+func TestGHCLIHydrateIssueCarriesDependencyRepository(t *testing.T) {
+	gh := GHCLI{
+		publicRepoCache: &sync.Map{},
+		publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
+			return []byte(`{"private":true}`), nil, http.StatusOK, nil
+		},
+		runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+			switch {
+			case len(args) >= 2 && args[0] == "api" && args[1] == "repos/owner/repo/issues/9":
+				return []byte(`{"title":"t","body":"Depends on #50","state":"OPEN"}`), nil
+			case len(args) >= 2 && args[0] == "api" && args[1] == "repos/owner/repo/issues/50":
+				return []byte(`{"state":"OPEN"}`), nil
+			case len(args) >= 2 && args[0] == "api" && strings.Contains(args[1], "dependencies/blocked_by"):
+				return []byte(`[{"number":50,"state":"open","repository_url":"https://api.github.com/repos/other/lib"}]`), nil
+			case len(args) >= 2 && args[0] == "api" && strings.Contains(args[1], "sub_issues"):
+				return []byte(`[]`), nil
+			}
+			return nil, fmt.Errorf("unexpected gh call: %#v", args)
+		},
+	}
+	issue := &Issue{Number: 9, Repository: "owner/repo"}
+	if err := gh.HydrateIssue(context.Background(), "owner/repo", issue); err != nil {
+		t.Fatalf("HydrateIssue() error = %v", err)
+	}
+	want := []IssueDependency{{Number: 50, State: "open", Repository: "other/lib"}, {Number: 50, State: "OPEN", Repository: "owner/repo"}}
+	if !reflect.DeepEqual(issue.DependsOn, want) {
+		t.Fatalf("DependsOn = %#v, want %#v", issue.DependsOn, want)
+	}
+	if _, reason := issueBlocked(*issue); reason != "depends on other/lib#50 (open), depends on #50 (open)" {
+		t.Fatalf("reason = %q", reason)
 	}
 }

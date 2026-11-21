@@ -11,7 +11,7 @@ import (
 
 // resolveAgentArg returns the agent an agent-scoped command acts on: the
 // explicitly named agent, or, when none was named, the only configured agent.
-// The built-in Projects agent does not count. With several agents an omitted
+// The built-in Code Loop agent does not count. With several agents an omitted
 // name is an error listing them; the CLI never guesses.
 func resolveAgentArg(ctx context.Context, name string) (string, error) {
 	if name != "" {

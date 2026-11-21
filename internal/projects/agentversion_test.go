@@ -122,7 +122,7 @@ func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
 	}
 }
 
-// TestDispatchRefusesProjectsGatedAgent proves an agent gated out of Projects
+// TestDispatchRefusesProjectsGatedAgent proves an agent gated out of Code Loop
 // never runs a job: the dispatch fails with the definition's reason instead
 // of producing a job with no structured transcript.
 func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
@@ -140,7 +140,7 @@ func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
 	if err == nil {
 		t.Fatal("dispatch succeeded, want agy to be refused")
 	}
-	for _, want := range []string{"agy", "unavailable for Projects", "machine-readable output"} {
+	for _, want := range []string{"agy", "unavailable for Code Loop", "machine-readable output"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %v, want it to mention %q", err, want)
 		}

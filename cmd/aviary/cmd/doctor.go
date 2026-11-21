@@ -154,8 +154,8 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	// The CLI registry drives both the CLI backends probe and the
-	// Projects agents gates, so the doctor reports from the same definitions
-	// System → Providers & Auth and the Projects doctor read.
+	// Code Loop agents gates, so the doctor reports from the same definitions
+	// System → Providers & Auth and the Code Loop doctor read.
 	registry, registryErr := clidefs.FromConfig(cfg.Models.CLIDefinitions)
 
 	// ── CLI backends ─────────────────────────────────────────────────────────
@@ -177,11 +177,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// ── Projects agents ──────────────────────────────────────────────────────
-	// Agents gated out of Projects dispatch are listed with the reason, so a
+	// ── Code Loop agents ──────────────────────────────────────────────────────
+	// Agents gated out of Code Loop dispatch are listed with the reason, so a
 	// job that fails to start on one is explained before it is dispatched.
 	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
+	_, _ = fmt.Fprintln(os.Stdout, "Code Loop agents")
 	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
 	if registryErr != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", registryErr)
@@ -235,7 +235,7 @@ func describeCLIBackend(report clidoctor.Report) (bool, string) {
 	return report.Auth == clidoctor.SignedIn && report.VersionNote == "", line
 }
 
-// writeProjectsAgentGates lists every agent the registry gates out of Projects
+// writeProjectsAgentGates lists every agent the registry gates out of Code Loop
 // dispatch, with the reason its definition gives.
 func writeProjectsAgentGates(out io.Writer, registry *clidefs.Registry) {
 	gated := 0
@@ -245,9 +245,9 @@ func writeProjectsAgentGates(out io.Writer, registry *clidefs.Registry) {
 			continue
 		}
 		gated++
-		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Projects: %s\n", name, definition.ProjectsUnavailable)
+		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Code Loop: %s\n", name, definition.ProjectsUnavailable)
 	}
 	if gated == 0 {
-		_, _ = fmt.Fprintln(out, "  (every agent can run Projects jobs)")
+		_, _ = fmt.Fprintln(out, "  (every agent can run Code Loop jobs)")
 	}
 }

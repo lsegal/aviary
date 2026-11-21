@@ -15,8 +15,8 @@ var openURL = auth.OpenBrowser
 
 var uiCmd = &cobra.Command{
 	Use:   "ui [project]",
-	Short: "Open the Projects dashboard in your browser",
-	Long: `Open the Projects board in the web UI of the Aviary server.
+	Short: "Open the Code Loop dashboard in your browser",
+	Long: `Open the Code Loop board in the web UI of the Aviary server.
 
 With a project argument (for example owner/repo), open that project's board.`,
 	Args: cobra.MaximumNArgs(1),
@@ -34,7 +34,7 @@ With a project argument (for example owner/repo), open that project's board.`,
 	},
 }
 
-// projectsURL is the web UI address of the Projects board, or of one
+// projectsURL is the web UI address of the Code Loop board, or of one
 // project's board when project is set.
 func projectsURL(server, project string) string {
 	u := strings.TrimRight(server, "/") + "/projects"

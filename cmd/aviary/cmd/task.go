@@ -139,7 +139,7 @@ Choose the trigger with --schedule (cron), or --every, --at, --days and
   aviary task add assistant standup "Summarize yesterday" --days mon-fri --at 09:00
   aviary task add assistant digest "Send the digest" --every 2h --overlap skip
 
---project runs the prompt as a scheduled Projects job on that watched
+--project runs the prompt as a scheduled Code Loop job on that watched
 project's board, in an isolated clone, on the project's agent; --model overrides
 that agent's model for the task's runs (default: the agent's own model):
 
@@ -329,7 +329,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskListJSON, "json", false, "print the raw task list as JSON")
 
 	addTaskTriggerFlags(taskAddCmd)
-	taskAddCmd.Flags().String("target", "", "output delivery: silent, session:<name>, or <channel>:<id>:<target>")
+	taskAddCmd.Flags().String("target", "", "output delivery: silent, session:<name>, or channel:<channel name>")
 	taskAddCmd.Flags().String("type", "", "task type: prompt (default), script or project")
 	taskAddCmd.Flags().String("project", "", "watched project (owner/repo) to run the prompt on as a board job; implies --type project")
 	taskAddCmd.Flags().String("model", "", "model override for a project task: the project's agent runs it with this model, such as claude/opus (default: the agent's model)")

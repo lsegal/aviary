@@ -156,7 +156,9 @@ test("files attached through + are appended, removable and all sent", async ({
 	);
 	await expect(chips).toHaveCount(0);
 
-	const sent = page.locator(".text-right").filter({ hasText: "look at these" });
+	const sent = page
+		.getByTestId("chat-user-message")
+		.filter({ hasText: "look at these" });
 	await expect(sent.locator("img")).toHaveCount(1);
 	await expect(sent.getByRole("link", { name: "notes.md" })).toBeVisible();
 });

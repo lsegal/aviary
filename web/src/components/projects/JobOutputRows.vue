@@ -1,8 +1,8 @@
 <template>
-	<ol class="space-y-1.5 text-xs" aria-label="Job output" data-testid="job-rich-output">
+	<ol class="min-w-0 space-y-1.5 text-xs" aria-label="Job output" data-testid="job-rich-output">
 		<template v-for="row in rows" :key="row.key">
 			<li v-if="row.kind === 'message'" data-row="message"
-				class="prose prose-sm max-w-none break-words text-gray-800 dark:prose-invert dark:text-gray-100 [&_p]:my-1"
+				class="prose prose-sm min-w-0 max-w-none text-gray-800 [overflow-wrap:anywhere] prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed dark:prose-invert dark:text-gray-100 [&_p]:my-1"
 				v-html="renderMarkdown(row.text)" />
 			<li v-else-if="row.kind === 'note'" data-row="note" class="truncate text-gray-500 dark:text-gray-400"
 				:title="row.text">{{ row.text }}</li>

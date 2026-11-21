@@ -40,7 +40,7 @@ type WorkerPool struct {
 	// onAttemptDone, when set, receives each job as persisted after one
 	// execution attempt finishes, with the attempt's duration.
 	onAttemptDone func(job domain.Job, duration time.Duration)
-	// projectRunner runs a "project" task's prompt as a Projects board job.
+	// projectRunner runs a "project" task's prompt as a Code Loop board job.
 	projectRunner ProjectRunner
 }
 
@@ -397,12 +397,12 @@ func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, p
 	return "prompt", prompt, script
 }
 
-// executeProjectJob hands a project task to the Projects engine, which runs
+// executeProjectJob hands a project task to the Code Loop engine, which runs
 // its prompt in an isolated clone as a board job, and records the run's
 // summary as the job's output, in the task session, and at its target.
 func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig) error {
 	if p.projectRunner == nil {
-		return errors.New("project tasks need the Projects engine, which is not running")
+		return errors.New("project tasks need the Code Loop engine, which is not running")
 	}
 	run := ProjectRun{TaskID: job.TaskID, Name: jobSessionName(job), Prompt: job.Prompt, Fire: time.Now()}
 	if cfg != nil {

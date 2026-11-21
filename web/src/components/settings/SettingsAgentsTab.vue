@@ -11,7 +11,7 @@
 					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
 						:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-5'">
 						<!-- Agent Settings is one page of stacked sections; Files, Tasks and
-						     GitHub Projects are pages of their own in the sidebar. -->
+						     Code Loop are pages of their own in the sidebar. -->
 						<section v-show="onAgentSettingsPage" id="agent-settings-general" data-agent-settings-section="general"
 							aria-labelledby="agent-settings-general-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<h3 id="agent-settings-general-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">General</h3>
@@ -82,6 +82,7 @@
 											<span class="text-xs font-medium">Saved</span>
 										</div>
 									</transition>
+									<FilePreviewToggle :file-name="getAgentFileState(agent.name).selectedFile" />
 									<DropdownMenuRoot>
 										<DropdownMenuTrigger asChild>
 											<button type="button" data-testid="agent-file-menu" aria-label="More file actions" title="More file actions"
@@ -118,12 +119,15 @@
 								class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
 								{{ getAgentFileState(agent.name).error }}
 							</p>
-							<textarea data-testid="agent-file-editor" :value="getAgentFileState(agent.name).content"
-								@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
-								@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
-								class="min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-white px-4 py-4 font-mono text-sm leading-6 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60 sm:px-6 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
-								:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
-								:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
+							<FilePreviewSplit :file-name="getAgentFileState(agent.name).selectedFile"
+								:content="getAgentFileState(agent.name).content">
+								<textarea data-testid="agent-file-editor" :value="getAgentFileState(agent.name).content"
+									@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
+									@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
+									class="min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-white px-4 py-4 font-mono text-sm leading-6 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60 sm:px-6 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+									:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
+									:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
+							</FilePreviewSplit>
 						</div>
 
 						<section v-show="onAgentSettingsPage" id="agent-settings-permissions" data-agent-settings-section="permissions"
@@ -133,7 +137,7 @@
 							<div class="grid gap-3 lg:max-w-xl">
 								<div>
 									<label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
-									<FancySelect :id="`tool-preset-${agent.name || i}`" :model-value="agentPermissionsPreset(agent)"
+									<AppSelect :id="`tool-preset-${agent.name || i}`" :model-value="agentPermissionsPreset(agent)"
 										:options="permissionPresetOptions()"
 										@update:model-value="updateAgentPermissionsPreset(agent, $event)" />
 									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -256,54 +260,23 @@
 						</div>
 						</section>
 
-						<section v-show="onAgentSettingsPage" id="agent-settings-channels" data-agent-settings-section="channels"
+						<section v-if="selectedAgentSubtab === 'channels'" id="agent-settings-channels" data-agent-settings-section="channels"
+							data-testid="channel-settings"
 							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
-								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h3>
-								<button type="button"
-									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-									@click="addChannel(i)">+ Add Channel</button>
+								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channel</h3>
+								<router-link v-if="selectedChannel" :to="channelPath(agent.name, channelName(selectedChannel))"
+									data-testid="channel-open-conversation"
+									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Open conversation</router-link>
 							</div>
 							<div class="space-y-4 p-5">
-
-							<div v-if="!agent.channels?.length"
-								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No channels configured for this agent.
-							</div>
-
-							<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-								<div class="min-w-0">
-									<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-										<div v-if="agent.channels?.length" class="space-y-1">
-											<div v-for="(ch, k) in agent.channels" :key="`ch-button-${i}-${k}`" class="flex items-center gap-1">
-												<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium"
-													:class="channelListButtonClass(ch, selectedChannelIdx === k)"
-													@click="selectedChannelIdx = k">
-													<div class="flex items-center gap-2">
-														<span :class="channelTypeIconClass(ch, selectedChannelIdx === k)">
-															<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
-															<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
-														</span>
-														<span class="truncate">{{ ch.id || `${ch.type} channel ${Number(k) + 1}` }}</span>
-													</div>
-												</button>
-												<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete channel" @click="removeChannel(i, k)">
-													<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-														<path d="M3 6h18" />
-														<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-														<path d="M10 11v6" />
-														<path d="M14 11v6" />
-														<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-													</svg>
-												</button>
-											</div>
-										</div>
-										<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No channels configured for this agent.</p>
-									</div>
-								</div>
-
-								<div>
-							<div v-for="(ch, k) in agent.channels" v-show="selectedChannelIdx === k" :key="`ch-${i}-${k}`"
+							<p v-if="channelNotFound || !selectedChannel"
+								class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+								No channel named {{ $route.params.channel }}.
+							</p>
+							<template v-else>
+							<template v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`">
+							<div v-if="selectedChannelIdx === k"
 								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
@@ -311,7 +284,7 @@
 											<MessagingLogo :name="ch.type" :disabled="!isChannelEnabled(ch)" class="h-3.5 w-3.5" />
 											<span class="sr-only">{{ channelTypeLabel(ch) }}</span>
 										</span>
-										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channel {{ Number(k) + 1 }}</h5>
+										<h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ channelName(ch) }}</h5>
 									</div>
 									<div class="flex items-center gap-2">
 										<SwitchRoot
@@ -326,20 +299,6 @@
 												:class="isChannelEnabled(ch) ? 'translate-x-[110%]' : 'translate-x-[10%]'"
 											/>
 										</SwitchRoot>
-										<button
-											type="button"
-											class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
-											aria-label="Remove channel"
-											title="Remove channel"
-											@click="removeChannel(i, k)">
-											<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-												<path d="M3 6h18" />
-												<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-												<path d="M10 11v6" />
-												<path d="M14 11v6" />
-												<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-											</svg>
-										</button>
 									</div>
 								</div>
 								<p v-if="!isChannelEnabled(ch)" class="text-xs text-gray-500 dark:text-gray-400">
@@ -348,11 +307,7 @@
 								<div class="grid gap-3 lg:grid-cols-[160px_1fr]">
 									<div>
 										<label class="field-label">Type</label>
-										<select v-model="ch.type" class="field-input">
-											<option value="slack">slack</option>
-											<option value="discord">discord</option>
-											<option value="signal">signal</option>
-										</select>
+										<AppSelect v-model="ch.type" :options="CHANNEL_TYPE_OPTIONS" aria-label="Type" />
 									</div>
 									<div>
 										<label class="field-label">{{ channelPrimaryLabel(ch) }}</label>
@@ -365,6 +320,23 @@
 										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 											{{ channelPrimaryHelp(ch) }}
 										</p>
+									</div>
+								</div>
+
+								<div class="grid gap-3 lg:grid-cols-2">
+									<div>
+										<label class="field-label" for="channel-deliver-to">Deliver to</label>
+										<input id="channel-deliver-to" v-model="ch.deliver_to" data-testid="channel-deliver-to" type="text"
+											class="field-input" :placeholder="channelDeliverToPlaceholder(ch)" />
+										<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+											Scheduled tasks, project reports and other deliveries pick this channel by name. They land in its
+											conversation here and are sent to this {{ ch.type === 'signal' ? 'number or group' : 'channel' }}.
+										</p>
+									</div>
+									<div>
+										<span class="field-label">Agent</span>
+										<p class="py-2 text-sm text-gray-700 dark:text-gray-300" data-testid="channel-owner">{{ agent.name }}</p>
+										<p class="text-xs text-gray-400 dark:text-gray-500">The channel's messages run as this agent.</p>
 									</div>
 								</div>
 
@@ -705,12 +677,9 @@
 									<span class="text-xs text-gray-500 dark:text-gray-500">messages (0 = default 50, -1 = disabled)</span>
 								</div>
 							</div>
-								<div v-if="agent.channels?.length && selectedChannelIdx === null" class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-									Select a channel to edit.
-								</div>
-								</div>
+							</template>
+							</template>
 							</div>
-						</div>
 						</section>
 
 						<section v-show="onAgentSettingsPage" data-testid="agent-danger-zone" aria-labelledby="agent-danger-zone-heading"
@@ -779,11 +748,7 @@
 </div>
 <div>
 <label class="field-label">Task type</label>
-<select v-model="selectedTask.type" class="field-input">
-<option value="prompt">Prompt</option>
-<option value="script">Script</option>
-<option value="project">Project</option>
-</select>
+<AppSelect v-model="selectedTask.type" :options="TASK_TYPE_OPTIONS" aria-label="Task type" />
 </div>
 </div>
 
@@ -795,10 +760,8 @@
 <div v-if="selectedTask.type === 'project'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
 <label class="field-label">Project</label>
-<select v-model="selectedTask.project" class="field-input" aria-label="Project">
-<option value="">Select a watched project…</option>
-<option v-for="target in projectTargetOptions(selectedTask)" :key="target" :value="target">{{ target }}</option>
-</select>
+<AppCombobox v-model="selectedTask.project" aria-label="Project" placeholder="Select a watched project…"
+	empty-text="No matching projects" :options="projectTargetOptions(selectedTask).map((t: string) => ({ value: t, label: t }))" />
 <router-link v-if="selectedTask.project" data-testid="task-project-schedule-link"
 	:to="projectScheduleLink(agent.name, selectedTask)"
 	class="mt-1 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400">Open in the project's schedules</router-link>
@@ -818,42 +781,20 @@ placeholder="Default project agent model"
 </div>
 <div>
 <label class="field-label">Send Via</label>
-<select :value="taskChannelSelection(selectedTask)" class="field-input" @change="setTaskChannelSelection(selectedTask, $event)">
-<option value="">silent</option>
-<option v-for="option in configuredTaskChannelOptions(agent)" :key="option.value" :value="option.value">{{ option.label }}</option>
-</select>
+<AppSelect :model-value="taskChannelSelection(selectedTask)" aria-label="Send Via" data-testid="task-send-via"
+	:options="[{ value: '', label: 'silent' }, ...configuredTaskChannelOptions(agent)]"
+	@update:model-value="setTaskChannelSelection(selectedTask, $event)" />
 </div>
 </div>
 
-<div v-if="taskChannelSelection(selectedTask)" class="grid gap-3 lg:grid-cols-2 mt-3">
+<div v-if="taskChannelSelection(selectedTask) === 'session'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
-<label class="field-label">{{ taskDeliveryTargetLabel(agent, selectedTask) }}</label>
+<label class="field-label">Session</label>
 <SessionSelect
-	v-if="taskChannelSelection(selectedTask) === 'session'"
 	:agent="agent.name"
 	:model-value="selectedTaskTarget(selectedTask)"
-	select-class="field-input"
 	aria-label="Session"
 	@update:model-value="setSelectedTaskTarget(selectedTask, $event)"
-/>
-<select
-	v-else-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
-	:value="selectedTaskTarget(selectedTask)"
-	class="field-input"
-	@change="setSelectedTaskTarget(selectedTask, ($event.target as HTMLSelectElement).value)"
->
-<option value="">Select a Slack channel…</option>
-<option v-for="channel in slackChannelsForTask(i, agent, selectedTask)" :key="channel.id" :value="channel.id">
-	#{{ channel.name }} · {{ channel.id }}
-</option>
-</select>
-<input
-	v-else
-	:value="selectedTaskTarget(selectedTask)"
-	type="text"
-	class="field-input"
-	:placeholder="slackTargetPlaceholder(agent, selectedTask)"
-	@input="setSelectedTaskTarget(selectedTask, ($event.target as HTMLInputElement).value)"
 />
 </div>
 </div>
@@ -861,6 +802,8 @@ placeholder="Default project agent model"
 <div class="mt-4">
 <label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
 <textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
+<TaskCostFeedback :agent="agent.name" :prompt="selectedTask.prompt ?? ''" :type="selectedTask.type || 'prompt'"
+	:target="selectedTask.target ?? ''" :trigger="taskTrigger(selectedTask)" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
 <button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
@@ -907,16 +850,20 @@ import {
 } from "radix-vue";
 import { type Component, defineComponent, inject } from "vue";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
+import { channelName, channelPath } from "../../lib/channels";
 import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentTask, useSettingsStore } from "../../stores/settings";
-import FancySelect from "../FancySelect.vue";
+import FilePreviewSplit from "../files/FilePreviewSplit.vue";
+import FilePreviewToggle from "../files/FilePreviewToggle.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
+import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import TasksOverview from "../tasks/TasksOverview.vue";
+import { AppCombobox, AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -926,7 +873,10 @@ export default defineComponent({
 		DropdownMenuItem,
 		DropdownMenuRoot,
 		DropdownMenuTrigger,
-		FancySelect,
+		AppCombobox,
+		AppSelect,
+		FilePreviewSplit,
+		FilePreviewToggle,
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
@@ -934,6 +884,7 @@ export default defineComponent({
 		SwitchRoot,
 		SwitchThumb,
 		TasksOverview,
+		TaskCostFeedback,
 		TriggerEditor,
 	},
 	setup() {
@@ -946,7 +897,7 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) => ({
 					value: option.value,
 					label: option.label,
-					caption: option.description,
+					description: option.description,
 				}),
 			);
 		const permissionPresetDescription = (agent: unknown) =>
@@ -954,6 +905,15 @@ export default defineComponent({
 				(option: { value: string; label: string; description: string }) =>
 					option.value === settings.agentPermissionsPreset(agent),
 			)?.description;
+		const CHANNEL_TYPE_OPTIONS = ["slack", "discord", "signal"].map((t) => ({
+			value: t,
+			label: t,
+		}));
+		const TASK_TYPE_OPTIONS = [
+			{ value: "prompt", label: "Prompt" },
+			{ value: "script", label: "Script" },
+			{ value: "project", label: "Project" },
+		];
 		const agentFileHint =
 			"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 		const store = useSettingsStore();
@@ -1030,8 +990,19 @@ export default defineComponent({
 		// The sidebar's delete dialog confirms and removes the task.
 		const removeTask = (agent: string, name: string) =>
 			openItemDialog({ kind: "task", agent, mode: "delete", name });
+		const channelDeliverToPlaceholder = (ch: { type: string }) => {
+			if (ch.type === "slack") return "C1234567890";
+			if (ch.type === "discord") return "123456789012345678";
+			if (ch.type === "signal") return "+15551234567 or group ID";
+			return "Conversation ID";
+		};
 		return Object.assign(settings, {
+			channelDeliverToPlaceholder,
+			channelName,
+			channelPath,
 			agentFileHint,
+			CHANNEL_TYPE_OPTIONS,
+			TASK_TYPE_OPTIONS,
 			agentFileMenuActions,
 			runAgentFileMenuAction,
 			projectScheduleLink,

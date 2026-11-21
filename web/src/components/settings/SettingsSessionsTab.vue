@@ -6,11 +6,8 @@
 						<div class="grid gap-3 lg:grid-cols-[280px_auto_auto]">
 							<div>
 								<label class="field-label">Agent</label>
-								<select v-model="sessionAgent" class="field-input">
-									<option value="">Select agent</option>
-									<option v-for="agent in draft.agents" :key="`sess-${agent.name}`" :value="agent.name">{{ agent.name }}
-									</option>
-								</select>
+								<AppSelect v-model="sessionAgent" aria-label="Agent" placeholder="Select agent"
+									:options="draft.agents.map((a: { name: string }) => ({ value: a.name, label: a.name }))" />
 							</div>
 							<div class="flex items-end">
 								<button type="button"
@@ -60,10 +57,12 @@
 
 <script lang="ts">
 import { defineComponent, inject } from "vue";
+import { AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
 	name: "SettingsSessionsTab",
+	components: { AppSelect },
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

@@ -74,29 +74,22 @@
 				<template v-if="reports.enabled">
 					<label class="block max-w-xs">
 						<span :class="LABEL">Aviary agent</span>
-						<select :value="reports.agent" :class="INPUT" data-field="reports_agent"
-							@change="updateReports({ agent: ($event.target as HTMLSelectElement).value })">
-							<option value="">Choose an agent…</option>
-							<option v-for="a in reportAgentOptions" :key="a" :value="a">{{ a }}</option>
-						</select>
+						<AppSelect :model-value="reports.agent" data-field="reports_agent" class="mt-1"
+							placeholder="Choose an agent…" :options="reportAgentOptions.map((a) => ({ value: a, label: a }))"
+							@update:model-value="updateReports({ agent: $event })" />
 					</label>
 					<div>
 						<span :class="LABEL">Targets</span>
 						<ul class="space-y-2">
 							<li v-for="(t, i) in reportTargets" :key="i" data-testid="report-target" class="flex flex-wrap items-center gap-2">
-								<select :value="t.channel" :class="TARGET_CHANNEL" :aria-label="`Target ${i + 1} channel`"
-									@change="setReportTarget(i, ($event.target as HTMLSelectElement).value, t.id)">
-									<option value="">Channel…</option>
-									<option v-for="c in reportChannels(t.channel)" :key="c.value" :value="c.value">{{ c.label }}</option>
-								</select>
+								<AppSelect :model-value="t.channel" class="w-44 shrink-0" :aria-label="`Target ${i + 1} channel`"
+									placeholder="Send to…" :options="reportChannels(t.channel)"
+									@update:model-value="setReportTarget(i, $event, t.id)" />
 								<div v-if="t.channel === 'session'" class="min-w-0 flex-1">
-									<SessionSelect :agent="reports.agent" :model-value="t.id" :select-class="INPUT"
+									<SessionSelect :agent="reports.agent" :model-value="t.id"
 										:aria-label="`Target ${i + 1} session`"
 										@update:model-value="setReportTarget(i, t.channel, $event)" />
 								</div>
-								<input v-else :value="t.id" type="text" :class="[INPUT, 'min-w-0 flex-1 font-mono']" :aria-label="`Target ${i + 1} delivery ID`"
-									placeholder="Channel, chat or user ID"
-									@input="setReportTarget(i, t.channel, ($event.target as HTMLInputElement).value)" />
 								<button type="button" :class="ICON_BTN" :aria-label="`Remove target ${i + 1}`" @click="removeReportTarget(i)">✕</button>
 							</li>
 						</ul>
@@ -134,6 +127,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useProjectCheck } from "../../composables/useProjectSettings";
 import { useProviderStatus } from "../../composables/useProviderAuth";
+import { channelName, channelTarget } from "../../lib/channels";
 import {
 	type AgentProjectsSection,
 	agentProjectsYAML,
@@ -156,6 +150,7 @@ import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectDialog from "../projects/DeleteProjectDialog.vue";
 import SessionSelect from "../SessionSelect.vue";
+import { AppSelect } from "../ui/select";
 
 const props = defineProps<{
 	/** The agent whose projects are edited; its projects field is updated in place. */
@@ -173,8 +168,6 @@ const LABEL =
 	"mb-1 flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300";
 const INPUT =
 	"w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white";
-// INPUT without w-full, so the channel sits beside its delivery ID.
-const TARGET_CHANNEL = `${INPUT.replace("w-full ", "")} w-44 shrink-0`;
 const ICON_BTN =
 	"rounded-md px-1.5 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800";
 
@@ -342,16 +335,16 @@ watch(
 	{ deep: true },
 );
 
-/** The reporting agent's channels as target choices, plus session. */
+/** The reporting agent's channels by name as target choices, plus session. */
 function reportChannels(current: string) {
 	const agent = props.config.agents.find((a) => a.name === reports.value.agent);
 	const options = [
-		{ value: "session", label: "session" },
+		{ value: "session", label: "Session" },
 		...(agent?.channels ?? [])
 			.filter((ch) => ch.type && ch.id)
 			.map((ch) => ({
-				value: `${ch.type}:${ch.id}`,
-				label: `${ch.type}: ${ch.id}`,
+				value: channelTarget(channelName(ch)),
+				label: `Channel: ${channelName(ch)}`,
 			})),
 	];
 	if (current && !options.some((o) => o.value === current))
@@ -369,8 +362,8 @@ function setReports(on: boolean) {
 	});
 }
 
-// Targets are edited as channel + delivery ID rows; a row with no ID is kept
-// as its bare channel prefix so it stays on screen while being filled in.
+// A target is a channel by name, or a session row; a session row with no
+// session yet is kept as "session:" so it stays on screen while being filled in.
 function setReportTarget(i: number, channel: string, id: string) {
 	const list = [...reports.value.targets];
 	list[i] = joinReportTarget(channel, id) || (channel ? `${channel}:` : "");

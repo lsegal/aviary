@@ -244,6 +244,13 @@ func TestFinishedJobRemovesItsClone(t *testing.T) {
 				Issues: &fakeSource{batches: [][]Issue{{{Number: 7, Target: "o/r"}}}}, Runner: runner,
 			}
 			w.SetTempDirs([]string{root})
+			released := make(chan string, 1)
+			w.clones.released = func(key string) {
+				select {
+				case released <- key:
+				default:
+				}
+			}
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
 			go func() { done <- w.Run(ctx) }()
@@ -256,15 +263,17 @@ func TestFinishedJobRemovesItsClone(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("the job was not started")
 			}
-			deadline := time.Now().Add(5 * time.Second)
-			for !strings.Contains(logs.String(), "issue #7 completed") {
-				if time.Now().After(deadline) {
-					t.Fatalf("the job never completed:\n%s", logs.String())
+			// Wait for the release itself rather than a fixed delay after
+			// the completion is logged: on a slow Windows runner the
+			// removal can take longer than any short sleep (issue #806).
+			select {
+			case key := <-released:
+				if key != "o/r#7" {
+					t.Fatalf("released job %q, want o/r#7", key)
 				}
-				time.Sleep(10 * time.Millisecond)
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the finished job's clone was never released:\n%s", logs.String())
 			}
-			// The release runs right after the completion is logged.
-			time.Sleep(50 * time.Millisecond)
 			if removed := !isDir(clone); removed == shared {
 				t.Fatalf("clone removed = %t with shared = %t:\n%s", removed, shared, logs.String())
 			}

@@ -159,7 +159,7 @@ func TestNewReportsStaleSkills(t *testing.T) {
 }
 
 // TestReportCarriesProjectsGate checks the doctor reports why agy is
-// gated out of Projects dispatch, whether or not its CLI is installed.
+// gated out of Code Loop dispatch, whether or not its CLI is installed.
 func TestReportCarriesProjectsGate(t *testing.T) {
 	doctor := New(clidefs.MustBuiltin())
 	doctor.LookPath = func(string) (string, error) { return "", errors.New("not found") }

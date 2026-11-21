@@ -30,10 +30,10 @@ func TestApprovalModeResolution(t *testing.T) {
 	assert.Equal(t, clidefs.ApprovalFull, overridden.ChatApprovalMode())
 	assert.Equal(t, clidefs.ApprovalAuto, overridden.ProjectsApprovalMode())
 
-	// yolo is the Projects override's full mode, unless approval_mode is set.
+	// yolo is the Code Loop override's full mode, unless approval_mode is set.
 	yolo := &Config{Approval: ApprovalConfig{Mode: clidefs.ApprovalReadOnly}, Projects: ProjectsConfig{Yolo: true}}
 	assert.Equal(t, clidefs.ApprovalFull, yolo.ProjectsApprovalMode())
-	assert.Equal(t, clidefs.ApprovalReadOnly, yolo.ChatApprovalMode(), "yolo is Projects-only")
+	assert.Equal(t, clidefs.ApprovalReadOnly, yolo.ChatApprovalMode(), "yolo is Code Loop-only")
 	yolo.Projects.ApprovalMode = clidefs.ApprovalAuto
 	assert.Equal(t, clidefs.ApprovalAuto, yolo.ProjectsApprovalMode())
 }

@@ -41,6 +41,8 @@ server:
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
 | `auto_update` | bool | `false` | Install new releases automatically as soon as they are available. Running jobs are checkpointed and resume after the restart. Dev builds in a git checkout fast-forward the checkout instead (see [Upgrades](/guide/operations#dev-checkouts)). |
+| `restart_call_grace` | string | `"1m"` | How long a pending restart keeps admitting new MCP tool calls while it waits for in-flight ones. Go duration string. |
+| `restart_call_max_wait` | string | `"5m"` | How long a restart waits for in-flight MCP tool calls before it proceeds anyway. Go duration string. |
 | `tls.cert` | string | | Path to TLS certificate file |
 | `tls.key` | string | | Path to TLS private key file |
 
@@ -163,7 +165,9 @@ channels:
 | `type` | string | _(required)_ | Channel type: `"slack"`, `"discord"`, or `"signal"` |
 | `enabled` | bool | `true` | Whether this channel connection is active |
 | `token` | string | | Bot token for the channel. For Slack this is the `xoxb-...` token. For Discord this is the bot token from the Discord Developer Portal. |
-| `id` | string | | Aviary's configured channel/integration ID. Used when routing task output, e.g. `slack:workspace-bot:#alerts`. |
+| `id` | string | | Aviary's configured channel/integration ID. The channel's own session is keyed by its type and `id`. |
+| `name` | string | `id` | Display name in the **Channels** sidebar section, and the name delivery targets pick the channel by (`channel:<name>`). Unique per agent. |
+| `deliver_to` | string | | The conversation the channel's own session sends to: a Slack or Discord channel ID, or a Signal number or group ID. Empty keeps deliveries in Aviary. |
 | `url` | string | | Channel transport address. For Slack this is the App-Level token (`xapp-...`) used by Socket Mode. For Signal this is the `signal-cli` daemon address. Discord does not use `url`. |
 | `model` | string | | Override model for all messages on this channel |
 | `fallbacks` | []string | | Override fallbacks for all messages on this channel |
@@ -186,7 +190,6 @@ channels:
 - Set `separate_top_level_sessions: true` to keep each new top-level Slack message and its thread replies in a separate session.
 - `users:read` is required on the Slack bot token if you want Aviary to resolve Slack user names for name-based routing.
 - Slack Event Subscriptions should include both message events and the `app_mention` event if you want the bot to answer `@bot` mentions in channels.
-- Slack scheduled task delivery routes use the form `slack:<configured-id>:<slack-channel-id>`.
 - For Slack, Aviary accepts either raw IDs or friendly names in many places:
   `@alice` for users, and `#alerts` for channels in the common case. Raw Slack IDs still work when needed.
 
@@ -197,7 +200,6 @@ channels:
 - `id` is Aviary's configured integration name for that Discord connection, not a Discord channel ID.
 - `allow_from[].from` should contain Discord user IDs.
 - `allow_from[].allowed_groups` should contain Discord channel IDs.
-- Discord scheduled task delivery routes use the form `discord:<configured-id>:<discord-channel-id>`.
 
 **allow_from entries:**
 
@@ -227,7 +229,7 @@ tasks:
   - name: daily-summary
     schedule: "0 9 * * *"
     prompt: "Summarize what happened yesterday and post to Slack."
-    target: slack:workspace-bot:#alerts
+    target: channel:Alerts
 
   - name: process-new-files
     watch: "./inbox/*.csv"
@@ -250,11 +252,11 @@ tasks:
 | `watch` | string | | File glob pattern; the task runs when matching files change |
 | `prompt` | string | | Prompt text sent to the agent (for `type: prompt`) |
 | `script` | string | | Lua script executed directly (for `type: script`) |
-| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `<channel-type>:<configured-channel-id>:<delivery-id>` for channel delivery. |
+| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `channel:<name>` for one of the agent's channels, which delivers into that channel's session. |
 
 ### agents[].projects
 
-The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's tab in **Projects Settings** (`/projects/settings?agent=<agent>`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
+The [projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
 
 ```yaml
 agents:
@@ -273,7 +275,7 @@ agents:
 | --- | --- | --- | --- |
 | `[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
 | `[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
-| `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `channel:<name>` (one of the reports agent's channels) or `session:<name>` |
 | `[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 
 ---
@@ -309,7 +311,7 @@ models:
 | `providers.<name>.auth` | string | Credential reference in the form `auth:<key>` (see `aviary auth set`) |
 | `defaults.model` | string | Default model used by agents that do not specify one |
 | `defaults.fallbacks` | []string | Default fallback models used by agents that do not specify their own |
-| `cli_definitions` | map | CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. System → Providers & Auth and Projects both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Projects jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns). The schema is in [CLI provider definitions](/reference/cli-definitions) |
+| `cli_definitions` | map | CLI definitions by agent name: field-by-field overrides of the built-ins (`codex`, `claude`, `gemini`, `muse`, `opencode`, `cline`, `agy`; `null` drops a field) and new CLIs. Settings → Providers & Authentication and Code Loop both read the CLIs from here; a `binary` override (a path, or a name looked up on `PATH`) is the executable the doctor reports and the one Code Loop jobs run. `wakeup` declares how a CLI signals a deferred turn; see [Deferred turns](/guide/projects#deferred-turns). The schema is in [CLI provider definitions](/reference/cli-definitions) |
 
 **Supported providers:** `anthropic`, `openai`, `gemini`, `github-copilot`, `meta`
 
@@ -416,7 +418,7 @@ coding_skills:
 
 ## projects
 
-The one set of [Projects](/guide/projects) settings, shared by every project of every agent and edited on **Projects Settings** (`/projects/settings`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
+The one set of [Code Loop](/guide/projects) settings, shared by every project of every agent and edited on **Code Loop Settings** (`/projects/settings`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
 
 Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
 
@@ -435,7 +437,7 @@ projects:
 | `filter` | string[] | `assignee:@me` | Issue search filter |
 | `all_issues` | bool | `false` | Drop the issue filter and pick up every open issue |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `approval_mode` | string | `approval.mode` | Projects' [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
+| `approval_mode` | string | `approval.mode` | Code Loop's [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
 | `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
@@ -452,22 +454,22 @@ projects:
 
 ## approval
 
-How much CLI providers may do without asking. Aviary owns the mode: every CLI launch (chat turns, Projects jobs, one-shot prompts) works out its surface's mode and translates it into that CLI's own permission flags at launch. Aviary never creates or edits a CLI's settings files to set it, so the CLI behaves as configured when you use it yourself.
+How much CLI providers may do without asking. Aviary owns the mode: every CLI launch (chat turns, Code Loop jobs, one-shot prompts) works out its surface's mode and translates it into that CLI's own permission flags at launch. Aviary never creates or edits a CLI's settings files to set it, so the CLI behaves as configured when you use it yourself.
 
 ```yaml
 approval:
   mode: auto        # the general setting
   chat: read-only   # override for chat turns
 projects:
-  approval_mode: full  # override for Projects jobs
+  approval_mode: full  # override for Code Loop jobs
 ```
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `mode` | string | `auto` | The general setting, used by every surface without its own override |
-| `chat` | string | `mode` | Override for agent chat turns run through a CLI provider: the web UI chat, including the Projects board's prompt chat |
+| `chat` | string | `mode` | Override for agent chat turns run through a CLI provider: the web UI chat, including the Code Loop board's prompt chat |
 
-`projects.approval_mode` (or `projects.yolo`, which means `full`) is the Projects override; see [`projects`](#projects).
+`projects.approval_mode` (or `projects.yolo`, which means `full`) is the Code Loop override; see [`projects`](#projects).
 
 | Mode | Meaning |
 | --- | --- |

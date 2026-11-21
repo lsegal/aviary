@@ -714,9 +714,9 @@ func TestPolledDirectMentionOnFinishedJobGoesToTheProjectsAgent(t *testing.T) {
 			t.Fatalf("prompt = %q, want %q", prompt, want)
 		}
 	case n := <-runner.dispatched:
-		t.Fatalf("mention on the finished job restarted #%d instead of reaching the Projects agent", n)
+		t.Fatalf("mention on the finished job restarted #%d instead of reaching the Code Loop agent", n)
 	case <-time.After(time.Second):
-		t.Fatal("mention on the finished job never reached the Projects agent")
+		t.Fatal("mention on the finished job never reached the Code Loop agent")
 	}
 
 	// The job restarts only when the agent asks for it.
@@ -725,7 +725,7 @@ func TestPolledDirectMentionOnFinishedJobGoesToTheProjectsAgent(t *testing.T) {
 	case n := <-runner.dispatched:
 		t.Fatalf("a routed mention restarted #%d", n)
 	case prompt := <-prompts:
-		t.Fatalf("one mention reached the Projects agent twice: %q", prompt)
+		t.Fatalf("one mention reached the Code Loop agent twice: %q", prompt)
 	default:
 	}
 }
@@ -745,7 +745,7 @@ func TestPolledDirectMentionRestartsTheJobWhenTheProjectsAgentIsUnavailable(t *t
 			t.Fatalf("direct mention dispatched issue #%d, want #7", n)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("direct mention was dropped when the Projects agent could not take it")
+		t.Fatal("direct mention was dropped when the Code Loop agent could not take it")
 	}
 }
 

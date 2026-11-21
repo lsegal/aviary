@@ -1,8 +1,8 @@
 <template>
 	<section v-show="activeTab === 'projects'" class="space-y-5 pb-8" data-testid="projects-settings-tab">
 		<p class="text-xs text-gray-500 dark:text-gray-400">
-			Every agent's projects, and the settings every project of every agent runs under. Each agent's GitHub
-			Projects page is the board of its projects' jobs.
+			Every agent's projects, and the settings every project of every agent runs under. Each agent's Code Loop
+			page is the board of its projects' jobs.
 		</p>
 	<section v-if="instanceID" :class="CARD" data-testid="projects-instance-id">
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
@@ -40,9 +40,8 @@
 				</label>
 				<label class="block">
 					<span :class="LABEL">How to read GitHub <DefaultTag :on="isDefault('delivery')" /></span>
-					<select v-model="form.delivery" :class="INPUT" data-field="delivery">
-						<option v-for="d in DELIVERY_OPTIONS" :key="d.key" :value="d.key">{{ d.label }}</option>
-					</select>
+					<AppSelect v-model="form.delivery" data-field="delivery" class="mt-1"
+						:options="DELIVERY_OPTIONS.map((d) => ({ value: d.key, label: d.label }))" />
 				</label>
 			</div>
 			<label class="block">
@@ -64,10 +63,8 @@
 			</div>
 			<label class="block max-w-xs">
 				<span :class="LABEL">CLI approval mode</span>
-				<select v-model="form.approvalMode" :class="INPUT" data-field="approval_mode">
-					<option value="">Same as the general approval mode</option>
-					<option v-for="m in APPROVAL_MODES" :key="m.value" :value="m.value">{{ m.label }}</option>
-				</select>
+				<AppSelect v-model="form.approvalMode" data-field="approval_mode" class="mt-1"
+					:options="[{ value: '', label: 'Same as the general approval mode' }, ...APPROVAL_MODES]" />
 				<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">How much jobs' CLI providers may do
 					without asking, translated into each CLI's own flags at launch.</span>
 			</label>
@@ -177,6 +174,7 @@ import {
 	withSettings,
 } from "../../lib/projectSettings";
 import type { AppConfig } from "../../stores/settings";
+import { AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 import SettingsAgentProjects from "./SettingsAgentProjects.vue";
 

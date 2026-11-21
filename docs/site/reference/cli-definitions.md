@@ -2,7 +2,7 @@
 
 Aviary reaches some providers through their own CLI, such as Claude Code, Codex or Gemini CLI. Aviary has no CLI-specific launch code: every CLI provider is described by a **definition**, a document that says which executable to run, the argv for a fresh run, a resume and a vision call, the environment the child process gets, how its session ID comes to exist, how its output is decoded, how Aviary's approval modes map to its flags, where its quota is read, and which skills.sh target its skills install for.
 
-Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Projects](/guide/projects) jobs, the Projects prompt chat and watchdog, and System → Providers & Auth.
+Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Code Loop](/guide/projects) jobs, the Code Loop prompt chat and watchdog, and Settings → Providers & Authentication.
 
 This page is the reference for that schema. To see how a definition is used in the issue-to-merge loop, read [The code loop on GitHub](/guide/code-loop).
 
@@ -25,13 +25,13 @@ A model names a definition and, optionally, a model and a reasoning level: `clau
 
 A CLI with no resumable session is not a degraded one. When its run exits early, the job is restarted with a recovery prompt, and `gh-fix` is re-entrant, so the restarted run adopts the branch and draft pull request the previous one left behind.
 
-`agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Its `projectsUnavailable` field says so, and dispatching a job to it fails with that reason.
+`agy` cannot run Code Loop jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Its `projectsUnavailable` field says so, and dispatching a job to it fails with that reason.
 
 `aviary/<agent>` is the `aviary` definition: it runs the turn on one of your Aviary agents inside the server rather than as a child process, so it declares no argv or output.
 
 ### Reporting on the CLIs
 
-`aviary models clis` (the `provider_cli_list` tool), System → Providers & Auth and `aviary doctor` report every definition in force: whether its CLI is installed and where, its version, whether it is signed in, its quota, and the models it accepts as fully qualified `cli/<name>/<model>` names. A CLI that is not installed is still listed.
+`aviary models clis` (the `provider_cli_list` tool), Settings → Providers & Authentication and `aviary doctor` report every definition in force: whether its CLI is installed and where, its version, whether it is signed in, its quota, and the models it accepts as fully qualified `cli/<name>/<model>` names. A CLI that is not installed is still listed.
 
 The models are asked of each CLI rather than carried in Aviary, since a list written down is stale the day a vendor ships: `opencode` and `agy` run their own `models` command, `codex` runs `codex debug models`, `gemini` and `cline` answer over their agent-client protocol (`--acp`), and `muse` answers `model/list` over `muse serve`. Claude Code has no way to be asked, so `claude` reports the aliases and ids its definition knows and says the CLI may accept others. A CLI signed out of its provider lists nothing, and the report names the command that could not list it.
 
@@ -69,7 +69,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | string | no | the key | The name used in models; when given it must match the key. Letters, digits, dot, dash and underscore only. |
-| `binary` | string | yes | | The executable, a path or a name looked up on `PATH`. System → Providers & Auth and `aviary doctor` probe the same executable jobs run. |
+| `binary` | string | yes | | The executable, a path or a name looked up on `PATH`. Settings → Providers & Authentication and `aviary doctor` probe the same executable jobs run. |
 | `inProcess` | bool | no | `false` | Runs the turn on an Aviary agent inside the server. Such a definition declares no `args` or `output`, and `session.assign` must be `none`. |
 | `minVersion` | string | no | none | The lowest CLI version the argv works with. See [`minVersion`](#minversion). |
 | `args` | object | yes | | The argv templates. See [`args`](#args). |
@@ -85,11 +85,13 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | `output` | object | yes | | How stdout is decoded. See [`output`](#output). |
 | `missingSession` | string[] | no | none | Extra phrases that mean the session to resume is gone. See [`missingSession`](#missingsession). |
 | `wakeup` | object | no | none | How the CLI ends a turn asking to be woken later. See [Deferred turns](/guide/projects#deferred-turns). |
-| `projectsUnavailable` | string | no | none | Keeps the CLI out of Projects jobs, with the reason; it stays usable elsewhere. |
+| `projectsUnavailable` | string | no | none | Keeps the CLI out of Code Loop jobs, with the reason; it stays usable elsewhere. |
 | `quota` | object | no | `{reader: none}` | Where the quota reading comes from. See [`quota`](#quota). |
 | `skills` | object | no | none | The skills.sh target its skills install for. See [`skills`](#skills). |
 | `promptStdin` | string[] | no | none | Lets long prompts go to stdin. See [`promptStdin`](#promptstdin). |
 | `doctor` | object | no | none | The read-only probes the CLI report runs. See [`doctor`](#doctor). |
+| `mcp` | object | no | none | How a chat hands the CLI Aviary's MCP server. See [`mcp` and `systemPrompt`](#mcp-and-systemprompt). |
+| `systemPrompt` | object | no | none | How a chat hands the CLI the agent's system prompt. See [`mcp` and `systemPrompt`](#mcp-and-systemprompt). |
 
 ### Allow-lists
 
@@ -152,8 +154,8 @@ Each template is a list of **fragments**, appended in order. A fragment is delib
 | Condition | Holds when |
 | --- | --- |
 | `yolo` | The call runs in the `full` approval mode. |
-| `remoteControl` | The Projects job runs with Claude Code's Remote Control bridge. |
-| `oneShot` | The call is an out-of-band one-shot outside any checkout, such as the Projects prompt chat or the stuck-job watchdog. Dispatched jobs never set it. |
+| `remoteControl` | The Code Loop job runs with Claude Code's Remote Control bridge. |
+| `oneShot` | The call is an out-of-band one-shot outside any checkout, such as the Code Loop prompt chat or the stuck-job watchdog. Dispatched jobs never set it. |
 | `noCheckout` | The CLI runs outside any checkout: every `oneShot` call, and a job whose clone does not exist yet. |
 
 So `{when: model, args: [--model, "{model}"]}` passes a model only when one was named, and `{when: noCheckout, args: [--skip-git-repo-check]}` is how `codex` runs outside a repository.
@@ -178,6 +180,62 @@ So `{when: model, args: [--model, "{model}"]}` passes a model only when one was 
 A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` and `full` and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
 
 A mode may also list `enforce`: flags, with no placeholders, that replace the mode's `approval` flags when the agent's rules are narrower than allowing every command (`*`) and the whole Aviary directory (`@/**`). A mode that skips the CLI's own permission checks would otherwise skip its allow rules too, and only `!` rules would bind. `claude` declares it for `full` as `[--permission-mode, dontAsk]`, plus allows for the tools the agent's rules do not govern (`WebFetch`, `WebSearch`, `Skill`), so in `full` a command or write the rules leave out is refused while everything they allow runs without asking. Because `dontAsk` still runs commands Claude classifies as read-only, such as `echo hi`, when the command rules are narrower than `*` Aviary also gives a Claude chat session a `PreToolUse` hook that checks every `Bash` and `PowerShell` call against Allowed Exec Commands, as Aviary's own `exec` tool does, and refuses a call they do not allow with the responsible rule named.
+
+### `mcp` and `systemPrompt`
+
+`claude` and `codex` chats get Aviary's tools from a scoped MCP endpoint and the agent's system prompt as real instructions. A chat on any other definition gets them only when the definition says how, through these two optional blocks. They apply to interactive chat turns only; Code Loop jobs ignore them.
+
+`mcp` registers an HTTP MCP server for each turn. The bearer token is never written anywhere: Aviary puts it in the environment, and the definition names the variable for the CLI to expand.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `args` | string[] | Arguments added to `args.run` and `args.resume` where their `{approval}` argument stands, so both templates need one. |
+| `env` | map of string | Extra environment for the turn. |
+| `file` | object | A JSON document written to a temporary file for each turn and removed afterwards. `{mcpFile}` names its path in `args` or `env`. A string that is exactly `{mcpTimeoutMs}` or `{mcpTimeoutSec}` is written as a number. |
+| `toolPrefix` | string | Required. How the CLI's output names a tool from the registered server, such as `mcp_{mcpName}_`. Aviary's MCP boundary reports those calls itself, so the chat leaves them out of what it reads from the CLI's output instead of reporting them twice. |
+
+Their strings may use these placeholders, and must use `{mcpUrl}` and one of the two token variables:
+
+| Placeholder | Value |
+| --- | --- |
+| `{mcpName}` | `aviary`, the name the server is registered under |
+| `{mcpUrl}` | the scoped MCP endpoint |
+| `{mcpTokenEnv}` | `AVIARY_MCP_TOKEN`, the variable holding the token |
+| `{mcpAuthEnv}` | `AVIARY_MCP_AUTHORIZATION`, the variable holding the whole `Bearer <token>` header value, for a CLI that only expands a variable standing for a whole setting |
+| `{mcpTimeoutMs}`, `{mcpTimeoutSec}` | how long the CLI should wait on one tool call (30 minutes) |
+| `{mcpFile}` | the path `file` was written to |
+
+::: v-pre
+A placeholder sits inside the CLI's own variable syntax, so `"Bearer ${{mcpTokenEnv}}"` renders as `Bearer ${AVIARY_MCP_TOKEN}`.
+:::
+
+`systemPrompt` writes the agent's system prompt to a temporary file for each turn, with `{systemPromptFile}` naming it. It has `args` (added where `{approval}` stands, as for `mcp`) and `env`, and must use `{systemPromptFile}` in one of them. Without it, the system prompt opens the session's first turn.
+
+The built-in `gemini` definition declares both. It writes the server to a settings file that `GEMINI_CLI_SYSTEM_SETTINGS_PATH` points at, which takes precedence over your own settings and stands in for any system-wide settings file during the chat, and passes the system prompt through `GEMINI_SYSTEM_MD`, which replaces Gemini CLI's built-in system prompt as `--system-prompt-file` does Claude Code's:
+
+```json
+"mcp": {
+  "env": {"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "{mcpFile}"},
+  "file": {
+    "mcpServers": {
+      "{mcpName}": {
+        "httpUrl": "{mcpUrl}",
+        "headers": {"Authorization": "Bearer ${{mcpTokenEnv}}"},
+        "trust": true,
+        "timeout": "{mcpTimeoutMs}"
+      }
+    }
+  },
+  "toolPrefix": "mcp_{mcpName}_"
+},
+"systemPrompt": {"env": {"GEMINI_SYSTEM_MD": "{systemPromptFile}"}}
+```
+
+`trust` skips Gemini CLI's own confirmation, since Aviary checks every call at its MCP boundary. Gemini CLI's read-only `plan` mode, used when the agent's built-in tools are off, still refuses MCP tools it does not know to be read-only.
+
+::: v-pre
+A CLI that takes per-run settings as arguments uses `args` instead, for example `["-c", "mcpServers.{mcpName}.url=\"{mcpUrl}\"", "-c", "mcpServers.{mcpName}.headers.Authorization=\"${{mcpAuthEnv}}\""]`.
+:::
 
 ### `minVersion`
 
@@ -221,7 +279,7 @@ Claude Code, for another, ignores the permission allow entries of a workspace it
 | `output.jsonl` | object | when `format` is `jsonl` | The generic decoder's field paths. Rejected on the other formats. |
 | `output.transcript` | string | no | The mapper that turns a `jsonl` stream into a job's structured transcript: `opencode-json`, `cline-json` or `muse-json`. The other formats have mappers of their own. |
 
-Projects keeps a structured transcript for every job, so a CLI whose output Aviary cannot map should declare `projectsUnavailable`, as `agy` does.
+Code Loop keeps a structured transcript for every job, so a CLI whose output Aviary cannot map should declare `projectsUnavailable`, as `agy` does.
 
 A **path** is dot-separated object keys, each optionally suffixed with `[]` to step into every element of an array: `message.content[].text` reads the text of every content block. A path that names nothing in an event contributes nothing, so an unfamiliar event is passed over rather than failing the stream, and a line that is not JSON is passed through as written.
 
@@ -259,7 +317,7 @@ Every field but `reader` belongs to the `command` reader and is rejected on the 
 
 ### `promptStdin`
 
-Out-of-band calls, such as the Projects prompt chat and the stuck-job watchdog, send a prompt carrying the instance's jobs and their latest output, which can exceed what an OS command line allows. A definition with `promptStdin` writes the prompt to stdin instead and renders the template's `{prompt}` argument as the listed arguments: `[]` leaves it out (Claude Code's `-p` then reads stdin), and `["-"]` puts a dash there (how `codex exec` reads stdin). Without it, a long prompt is written to a temporary file and the CLI is asked to read that file. Dispatched jobs always pass their prompt as an argument.
+Out-of-band calls, such as the Code Loop prompt chat and the stuck-job watchdog, send a prompt carrying the instance's jobs and their latest output, which can exceed what an OS command line allows. A definition with `promptStdin` writes the prompt to stdin instead and renders the template's `{prompt}` argument as the listed arguments: `[]` leaves it out (Claude Code's `-p` then reads stdin), and `["-"]` puts a dash there (how `codex exec` reads stdin). Without it, a long prompt is written to a temporary file and the CLI is asked to read that file. Dispatched jobs always pass their prompt as an argument.
 
 ### `skills`
 
@@ -296,7 +354,7 @@ Answer these by running the CLI:
 1. **What is the non-interactive invocation?** It must not open a TUI or need a terminal.
 2. **How does it run without asking for approval?** A job cannot answer a permission prompt, and a CLI whose non-interactive default is to auto-reject cannot reach the clone `gh-fix` works in. Find its flags for each approval mode.
 3. **Does it have a resumable session?** It accepts an ID you give it, prints one you can read back, or has neither.
-4. **What does it print?** Plain text, or line-delimited JSON. Projects jobs need a machine-readable stream.
+4. **What does it print?** Plain text, or line-delimited JSON. Code Loop jobs need a machine-readable stream.
 5. **Which skills.sh id does it have?** `universal` if none.
 
 ### 2. Write the minimal definition
@@ -397,7 +455,7 @@ describe where the fields are instead of writing a decoder:
           ignore: [usage]
 ```
 
-Without a transcript mapper for its stream, add `projectsUnavailable` with the reason until one exists, so Projects does not dispatch jobs it cannot record.
+Without a transcript mapper for its stream, add `projectsUnavailable` with the reason until one exists, so Code Loop does not dispatch jobs it cannot record.
 
 ### 7. Add quota, if it reports any
 
@@ -423,7 +481,7 @@ If `robo whoami` exits non-zero when signed out and `robo models` prints one mod
         models: ["{binary}", models]
 ```
 
-The models then appear in System → Providers & Auth and `aviary models clis` as names you can paste into an agent's model. Add `signedIn` if `whoami` exits zero while signed out, `modelPattern` if the list is decorated, `modelsJSON` for JSON output, and `modelsStdin` for a CLI that only answers over a stdio protocol.
+The models then appear in Settings → Providers & Authentication and `aviary models clis` as names you can paste into an agent's model. Add `signedIn` if `whoami` exits zero while signed out, `modelPattern` if the list is decorated, `modelsJSON` for JSON output, and `modelsStdin` for a CLI that only answers over a stdio protocol.
 
 ### 9. Install the skills for it
 
@@ -462,7 +520,7 @@ cli_definitions: agent "robo": unknown field "arg"
 cli_definitions: agent "robo": field "args.run"[2].args: unknown placeholder {prmpt}; known placeholders are {approval}, {image}, {level}, {model}, {prompt}, {session}, {sessionName}, {settings}
 ```
 
-Run `aviary doctor` after every edit; it loads the same definitions jobs and System → Providers & Auth do.
+Run `aviary doctor` after every edit; it loads the same definitions jobs and Settings → Providers & Authentication do.
 
 **A dispatch failed naming a version.** The definition's `minVersion` is newer than the installed CLI. Upgrade it, or set `binary` to a newer install. A warning that the version could not be read means the run went ahead; if it then fails on an unrecognized argument, check the version by hand.
 

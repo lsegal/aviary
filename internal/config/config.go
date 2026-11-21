@@ -30,7 +30,7 @@ type Config struct {
 	// Approval is how much CLI providers may do without asking; see
 	// ApprovalConfig.
 	Approval ApprovalConfig `yaml:"approval,omitempty" json:"approval,omitzero"`
-	// Projects is the one set of Projects settings, shared by every project
+	// Projects is the one set of Code Loop settings, shared by every project
 	// of every agent; the projects themselves are listed under the agents
 	// that own them.
 	Projects ProjectsConfig `yaml:"projects,omitempty" json:"projects,omitzero"`
@@ -69,6 +69,13 @@ type ServerConfig struct {
 	// available, checkpointing running jobs so they resume after the restart.
 	// Unset means on; see EffectiveServerAutoUpdate.
 	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
+	// RestartCallGrace is how long a pending automatic restart keeps admitting
+	// new MCP tool calls while it waits for in-flight ones. Go duration
+	// string; defaults to 1m.
+	RestartCallGrace string `yaml:"restart_call_grace,omitempty" json:"restart_call_grace,omitempty"`
+	// RestartCallMaxWait is how long a restart waits for in-flight MCP tool
+	// calls before it proceeds anyway. Go duration string; defaults to 5m.
+	RestartCallMaxWait string `yaml:"restart_call_max_wait,omitempty" json:"restart_call_max_wait,omitempty"`
 }
 
 // TLSConfig holds paths to TLS certificate and key.
@@ -226,7 +233,17 @@ type ChannelConfig struct {
 	Enabled *bool  `yaml:"enabled,omitempty"         json:"enabled,omitempty"`
 	Type    string `yaml:"type"                    json:"type"`
 	Token   string `yaml:"token,omitempty"         json:"token,omitempty"`
-	ID      string `yaml:"id,omitempty"            json:"id,omitempty"`
+	// ID is the channel's stable key within its agent and type. Its own
+	// session is keyed by it, so renaming the channel keeps that session.
+	ID string `yaml:"id,omitempty"            json:"id,omitempty"`
+	// Name is the channel's display name in the sidebar and the name
+	// delivery targets pick it by ("channel:<name>"). Empty means the ID.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+	// DeliverTo is the conversation the channel's own session sends to: a
+	// Slack or Discord channel ID, or a Signal phone number or group ID.
+	// Messages delivered to the channel by name land in that session and go
+	// out here. Empty keeps them in Aviary only.
+	DeliverTo string `yaml:"deliver_to,omitempty" json:"deliver_to,omitempty"`
 	// Primary optionally identifies the configured sender ID of the "primary"
 	// person for this channel (for example a Signal phone number or a Slack/
 	// Discord user ID). When set, messages originating from this ID will be
@@ -322,7 +339,7 @@ type TaskConfig struct {
 	Watch  string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
 	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
-	// Project is the watched Projects target a "project" task runs its prompt
+	// Project is the watched Code Loop target a "project" task runs its prompt
 	// against as a board job.
 	Project string `yaml:"project,omitempty"  json:"project,omitempty"`
 	// Model overrides the project agent's default model for a project task's
@@ -377,7 +394,7 @@ type ModelsConfig struct {
 	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
 	// CLIDefinitions overrides built-in CLI definitions field by field
 	// and adds new ones, keyed by agent name. A null field drops it.
-	// Providers reached through a CLI are like any other, so Projects reads
+	// Providers reached through a CLI are like any other, so Code Loop reads
 	// them from here rather than owning a registry of its own.
 	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 }
@@ -448,6 +465,26 @@ func (s ServerConfig) EffectiveFailedTaskTimeout() time.Duration {
 	d, err := time.ParseDuration(s.FailedTaskTimeout)
 	if err != nil || d <= 0 {
 		return DefaultFailedTaskTimeout
+	}
+	return d
+}
+
+// EffectiveRestartCallGrace returns the parsed RestartCallGrace, or 0 (the
+// restart gate's default) when unset or invalid.
+func (s ServerConfig) EffectiveRestartCallGrace() time.Duration {
+	return positiveDuration(s.RestartCallGrace)
+}
+
+// EffectiveRestartCallMaxWait returns the parsed RestartCallMaxWait, or 0 (the
+// restart gate's default) when unset or invalid.
+func (s ServerConfig) EffectiveRestartCallMaxWait() time.Duration {
+	return positiveDuration(s.RestartCallMaxWait)
+}
+
+func positiveDuration(v string) time.Duration {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0
 	}
 	return d
 }
@@ -863,6 +900,7 @@ func Load(path string) (*Config, error) {
 			cfg.Agents[i].Tasks = mergeTasksByName(cfg.Agents[i].Tasks, fileTasks)
 		}
 	}
+	migrateChannelTargets(&cfg)
 
 	return &cfg, nil
 }

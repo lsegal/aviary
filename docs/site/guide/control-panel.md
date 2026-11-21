@@ -10,8 +10,10 @@ Log in with the bearer token from `~/.config/aviary/token`.
 
 The sidebar has two top-level sections:
 
-- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
-- **System** — the instance's own pages: **Overview**, **Settings**, **Projects**, **Providers & Auth** and **Usage**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
+- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **Code Loop**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
+- **System** — the instance's overview, and under it the instance's own pages: **Usage**, **Tools**, **Skills**, **Sessions**, **Models**, **Logs** and **Daemons**. The section starts collapsed; the overview lists every System page as a card.
+
+The **gear** at the bottom left opens a menu of **Settings**, **Restart** (a safe restart that waits for running jobs) and **Logout**.
 
 ---
 
@@ -29,15 +31,15 @@ The primary conversational interface. Which agent you talk to is the agent you o
 - **Stop** — click the stop button or send `/stop` to cancel an in-progress agent run immediately.
 - **Session controls** — rename, delete, or create sessions from the session panel.
 
-### GitHub Projects (`/agents/<agent>/projects`)
+### Code Loop (`/agents/<agent>/projects`)
 
-One board of the jobs of every [project](/guide/projects) the agent owns: the same search, state filters and job cards as a single project's board, with each card naming its project. The page holds no settings; its **Settings** gear opens the agent's projects in [Projects Settings](#projects-settings-projects-settings). Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
+One board of the jobs of every [project](/guide/projects) the agent owns: the same search, state filters and job cards as a single project's board, with each card naming its project. The page holds no settings; its **Settings** gear opens the agent's projects in [Code Loop Settings](#projects-settings-projects-settings). Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
 
 The board's state chips (Starting, Paused, Running, Done, Failed) each toggle on and off, showing jobs in any selected state; with none selected every job and scheduled task shows, and **Clear** deselects them all. Each board remembers its own selection across pages and reloads, and the URL carries it as `?state=running,failed`, so a shared link opens the same filter.
 
-### Projects Settings (`/projects/settings`)
+### Code Loop Settings (`/projects/settings`)
 
-Opened from the **Settings** gear on any GitHub Projects board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
+Opened from the **Settings** gear on any Code Loop board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Code Loop](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
 
 ### Scheduled Tasks (`/agents/<agent>/tasks`)
 
@@ -53,13 +55,16 @@ Clicking a task opens its editor (`/agents/<agent>/tasks?task=<name>`), which ha
 
 Browse and edit root-level markdown files in the agent's data directory (RULES.md, MEMORY.md, etc.).
 
+### Channels (`/agents/<agent>/channels`)
+
+The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Edit**, **Rename** (keeping its session) and **Remove**, which archives or deletes its sessions. The old `/agents/<agent>/settings/channels` address redirects here.
+
 ### Agent Settings (`/agents/<agent>/settings`)
 
 The agent's own settings, as sections on one scrolling page. **Save Changes** saves every section at once, and **Reload** discards unsaved edits. A section's URL opens the page scrolled to it.
 
 - **General** — name, model, fallbacks, working directory, and verbose mode.
 - **Permissions** (`/agents/<agent>/settings/permissions`) — preset selector, tool allow/blocklist, filesystem paths, and exec rules.
-- **Channels** (`/agents/<agent>/settings/channels`) — add, edit, or remove Slack/Discord/Signal channel connections and their `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels directly from the UI.
 - **Danger Zone** — **Remove Agent** deletes the agent, after a confirmation.
 
 ---
@@ -75,13 +80,13 @@ The home screen. It shows:
 - **Agent health** — count of configured agents and their current state (idle, running, error).
 - **Job summary** — count of recent jobs, in-progress indicators, and failure flags.
 - **Config validation** — any errors or warnings in `aviary.yaml`, refreshed on each load.
-- **Setup wizard** — appears automatically when no agents have been configured yet. Walks through provider auth and first-agent creation.
+- **Setup wizard** — while no agent has been configured, every page opens the wizard first, even when a provider such as an installed CLI is already detected. Walks through provider auth and first-agent creation; **Skip for now** opens the control panel without an agent for the rest of the browser session.
 
 ### Settings (`/system/settings`)
 
-Covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
+Opened from the sidebar's gear menu, with two tabs. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
-### Providers & Auth (`/system/providers`)
+### Settings → Providers & Authentication (`/system/providers`)
 
 Manages API credentials and OAuth sessions:
 
@@ -95,7 +100,7 @@ Token analytics for the last 30 days (or a custom range):
 
 - Input and output tokens per day, per agent, per model, and per provider.
 - Total cost estimates when provider pricing is available.
-- A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), the total wall time project job runs took, and the code those jobs changed: the lines added (+) and removed (−) by the pull requests that merged in the range. A table below breaks the same figures down per project repository. A job that opened no pull request adds no lines.
+- A **Code Loop** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), the total wall time project job runs took, and the code those jobs changed: the lines added (+) and removed (−) by the pull requests that merged in the range. A table below breaks the same figures down per project repository. A job that opened no pull request adds no lines.
 
 ### Tools (`/system/tools`)
 

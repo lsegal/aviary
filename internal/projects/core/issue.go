@@ -42,10 +42,29 @@ type IssueLabel struct {
 	Name string `json:"name"`
 }
 
-// IssueDependency is an issue this one is blocked by.
+// IssueDependency is an issue this one is blocked by. Repository is the
+// OWNER/REPO the dependency lives in, which can differ from the dependent
+// issue's own repository.
 type IssueDependency struct {
-	Number int    `json:"number"`
-	State  string `json:"state"`
+	Number     int    `json:"number"`
+	State      string `json:"state"`
+	Repository string `json:"repository,omitempty"`
+}
+
+// Reference names the dependency as seen from an issue in repo: a bare #NN
+// when it lives in the same repository, and OWNER/REPO#NN when it does not.
+func (d IssueDependency) Reference(repo string) string {
+	if d.Repository != "" && !strings.EqualFold(d.Repository, repo) {
+		return fmt.Sprintf("%s#%d", d.Repository, d.Number)
+	}
+	return fmt.Sprintf("#%d", d.Number)
+}
+
+// Key names the dependency uniquely across repositories, as OWNER/REPO#NN
+// with the repository lowercased, so two repositories' issues that share a
+// number never collide. Repository must already be resolved.
+func (d IssueDependency) Key() string {
+	return fmt.Sprintf("%s#%d", strings.ToLower(d.Repository), d.Number)
 }
 
 // IssueSource lists the issues a watched target currently offers.

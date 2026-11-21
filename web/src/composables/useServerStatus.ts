@@ -13,10 +13,13 @@ export interface RestartJob {
 
 /** Mirrors saferestart.Status on the server. */
 export interface RestartStatus {
-	phase: "idle" | "waiting" | "updating";
+	phase: "idle" | "waiting" | "draining" | "updating";
 	when?: "now" | "idle";
 	upgrade?: boolean;
 	version?: string;
+	force?: boolean;
+	/** In-flight MCP calls a draining restart waits on. */
+	mcpCalls?: number;
 	jobs: RestartJob[];
 	held: boolean;
 	noop?: boolean;

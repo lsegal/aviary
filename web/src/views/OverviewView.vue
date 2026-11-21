@@ -30,11 +30,6 @@
       </div>
     </div>
 
-    <!-- Setup wizard: shown until at least one agent exists -->
-    <div v-else-if="showWizard" class="h-full overflow-y-auto">
-      <SetupWizard @skip="dismissed = true" />
-    </div>
-
     <div v-else class="px-6 py-6">
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">Overview</h2>
@@ -209,31 +204,52 @@
           </div>
         </div>
       </div>
+
+      <!-- Every System page, as in the sidebar's System section -->
+      <section class="mt-8" data-testid="overview-system-pages">
+        <h3 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">System</h3>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <router-link v-for="page in systemPages" :key="page.key" :to="page.to"
+            :data-testid="`overview-system-card-${page.key}`"
+            class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ page.label }}</span>
+            <span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ page.description }}</span>
+          </router-link>
+        </div>
+      </section>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SetupWizard from "../components/SetupWizard.vue";
 import { Skeleton } from "../components/ui/skeleton";
+import { useProjectList } from "../composables/useProjects";
+import { projectOwner } from "../lib/projectSettings";
+import { projectPath } from "../lib/projects";
+import { SYSTEM_PAGES, type SystemPage } from "../lib/systemNav";
 import { useOverviewStore } from "../stores/overview";
-import { agentTaskPath } from "../stores/settings";
+import { agentTaskPath, useSettingsStore } from "../stores/settings";
 
 const store = useOverviewStore();
-const route = useRoute();
-onMounted(() => store.fetchAll());
+const settingsStore = useSettingsStore();
+const { projects } = useProjectList();
 
-const dismissed = ref(false);
-const forceOnboarding = computed(() => route.path === "/onboarding");
-const showWizard = computed(
-	() =>
-		store.fetched &&
-		(forceOnboarding.value || (!store.error && store.agents.length === 0)) &&
-		!dismissed.value,
-);
+// The sidebar's System pages, runtime watches included, so each is reachable
+// while the System section is collapsed.
+const systemPages = computed<SystemPage[]>(() => [
+	...SYSTEM_PAGES,
+	...projects.value
+		.filter((p) => !projectOwner(settingsStore.config, p.name))
+		.map((p) => ({
+			key: `watch:${p.name}`,
+			label: `Watch: ${p.name}`,
+			to: projectPath("", p.name),
+			description: "A runtime watch no agent owns.",
+		})),
+]);
+onMounted(() => store.fetchAll());
 
 // --- Agents ---
 const agentStateCounts = computed(() => {

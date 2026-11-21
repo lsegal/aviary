@@ -16,13 +16,14 @@ func IssueBlocked(issue Issue) (bool, string) {
 	if issue.HasSubIssues {
 		return true, "has sub-issues"
 	}
+	repo := IssueRepository(issue.Target, issue)
 	blocked := make([]string, 0)
 	for _, dependency := range issue.DependsOn {
 		if !strings.EqualFold(dependency.State, "closed") {
 			if dependency.State == "" {
-				blocked = append(blocked, fmt.Sprintf("depends on #%d", dependency.Number))
+				blocked = append(blocked, "depends on "+dependency.Reference(repo))
 			} else {
-				blocked = append(blocked, fmt.Sprintf("depends on #%d (%s)", dependency.Number, strings.ToLower(dependency.State)))
+				blocked = append(blocked, fmt.Sprintf("depends on %s (%s)", dependency.Reference(repo), strings.ToLower(dependency.State)))
 			}
 		}
 	}
@@ -37,18 +38,14 @@ func IssueBlocked(issue Issue) (bool, string) {
 // stacked pull requests, the dependent issue's pull request is built on the
 // blocker's branch. A tracking issue with sub-issues is never stackable, and
 // neither is an issue blocked by more than one open issue, because a stack is
-// a single chain of branches.
+// a single chain of branches. A blocker in another repository is never
+// stackable either, because a stack's branches all live in one repository.
 func StackableDependency(issue Issue) (IssueDependency, bool) {
 	if issue.HasSubIssues {
 		return IssueDependency{}, false
 	}
-	var open []IssueDependency
-	for _, dependency := range issue.DependsOn {
-		if !strings.EqualFold(dependency.State, "closed") {
-			open = append(open, dependency)
-		}
-	}
-	if len(open) != 1 {
+	open := OpenDependencies(issue)
+	if len(open) != 1 || !strings.EqualFold(open[0].Repository, IssueRepository(issue.Target, issue)) {
 		return IssueDependency{}, false
 	}
 	return open[0], true

@@ -1,7 +1,7 @@
 <template>
 	<details class="group inline-block max-w-full" :open="open">
 		<summary :data-state="state" :title="error || undefined"
-			class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs hover:border-gray-300 hover:bg-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-800"
+			class="inline-flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs hover:border-gray-300 hover:bg-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-800"
 			:class="error
 				? 'border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400'
 				: 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'">
@@ -23,7 +23,9 @@
 					d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
 					clip-rule="evenodd" />
 			</svg>
-			<span>{{ name }}</span>
+			<span class="min-w-0 [overflow-wrap:anywhere]">{{ name }}</span>
+			<span v-if="elapsed !== undefined" data-testid="tool-call-elapsed"
+				class="tabular-nums">· {{ elapsed }}s</span>
 			<span class="sr-only">({{ state }})</span>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
 				class="h-2.5 w-2.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true">
@@ -66,6 +68,8 @@ const props = withDefaults(
 		error?: string;
 		images?: string[];
 		pending?: boolean;
+		/** Seconds the call has taken (so far, while running), once it is slow. */
+		elapsed?: number;
 		open?: boolean;
 	}>(),
 	{ pending: true },

@@ -9,14 +9,14 @@ Connect at `https://localhost:16677/mcp` using the bearer token from `~/.config/
 | Category | Tools | Description |
 | --- | --- | --- |
 | [Agent Tools](./agents) | `agent_list`, `agent_run`, `agent_stop`, `agent_run_script`, `agent_get`, `agent_add`, `agent_update`, `agent_delete`, `agent_template_sync`, `agent_rules_get`, `agent_rules_set` | Lifecycle, execution, and configuration of agents |
-| [Session Tools](./sessions) | `session_list`, `session_create`, `session_messages`, `session_history`, `session_stop`, `session_turn`, `session_remove`, `session_clear`, `session_rename`, `session_send`, `session_set_target` | Conversation history and channel delivery |
+| [Session Tools](./sessions) | `session_list`, `session_create`, `session_messages`, `session_history`, `session_stop`, `session_turn`, `session_remove`, `session_clear`, `session_rename`, `session_send`, `channel_sessions`, `channel_create`, `channel_rename`, `channel_remove` | Conversation history, and channels and their sessions |
 | [Task and Job Tools](./tasks-and-jobs) | `task_list`, `task_run`, `task_schedule`, `task_update`, `task_delete`, `task_preview`, `task_upcoming`, `task_stop`, `task_compile_query`, `task_compile_get`, `job_list`, `job_query`, `job_logs`, `job_run_now` | Scheduled automation and execution history |
 | [Browser and Channel Tools](./browser-and-channels) | `browser_open`, `browser_tabs`, `browser_navigate`, `browser_wait`, `browser_click`, `browser_keystroke`, `browser_fill`, `browser_text`, `browser_query`, `browser_screenshot`, `browser_resize`, `browser_eval`, `browser_close`, `channel_send_file` | Browser automation and file delivery to channels |
 | [Files and Notes Tools](./files-and-notes) | `agent_file_list`, `agent_file_read`, `agent_file_write`, `agent_file_delete`, `agent_file_rename`, `file_read`, `file_edit`, `file_multi_edit`, `file_write`, `file_glob`, `file_grep`, `file_append`, `file_truncate`, `file_delete`, `file_copy`, `file_move`, `exec` | Workspace files, filesystem access, and command execution |
 | [Auth Tools](./auth) | `auth_set`, `auth_get`, `auth_list`, `auth_delete`, `auth_login_anthropic`, `auth_login_anthropic_complete`, `auth_login_gemini`, `auth_login_openai`, `auth_login_github_copilot`, `auth_login_github_copilot_complete` | Credential storage and OAuth login flows |
 | [Auth Tools](./auth#provider_cli_list) | `provider_cli_list` | Providers reached through a CLI and their install, sign-in, quota and models |
 | [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `server_restart`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
-| [Projects Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_refresh`, `project_add`, `project_remove`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_check` | Watched GitHub projects and their CLI jobs |
+| [Code Loop Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_refresh`, `project_add`, `project_remove`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_check` | Watched GitHub projects and their CLI jobs |
 | [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `coding_skills_list`, `coding_skills_install`, `web_search` | Token analytics, skill discovery, skills Aviary ships, and web search |
 
 ## Permissions
@@ -31,4 +31,4 @@ Which tools are available to an agent depends on its [permissions preset](/refer
 
 Tools in the `agent`, `auth`, `exec`, `file`, and `server` groups are blocked by the `standard` preset. Add them via `permissions.tools` or switch to `full` to use them.
 
-The System → Providers & Auth panel and the Tools runner in the control panel expose all tools regardless of agent permissions.
+The Settings → Providers & Authentication panel and the Tools runner in the control panel expose all tools regardless of agent permissions.

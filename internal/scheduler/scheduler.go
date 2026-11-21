@@ -524,7 +524,7 @@ func resolveWatchGlob(agentID, glob string) string {
 	return filepath.Join(store.AgentDir(agentID), glob)
 }
 
-// SetProjectRunner registers what runs "project" tasks: the Projects engine,
+// SetProjectRunner registers what runs "project" tasks: the Code Loop engine,
 // which runs each fire's prompt as a board job.
 func (s *Scheduler) SetProjectRunner(fn ProjectRunner) {
 	s.pool.projectRunner = fn

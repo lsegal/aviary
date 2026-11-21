@@ -1,5 +1,5 @@
 // Package ngrok starts and supervises the ngrok tunnel that carries GitHub
-// webhook deliveries to the Projects engine.
+// webhook deliveries to the Code Loop engine.
 package ngrok
 
 import (

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption, optionLabels, searchOption } from "./helpers/select";
 import {
 	expectSavedTrigger,
 	expectTrigger,
@@ -151,7 +152,11 @@ async function setup(
 		// System → Watches.
 		config_get: {
 			agents: [
-				{ name: "assistant", model: "cli/codex/gpt-5.5" },
+				{
+					name: "assistant",
+					model: "cli/codex/gpt-5.5",
+					channels: [{ type: "discord", id: "ops", name: "ops" }],
+				},
 				...(opts.owner
 					? [
 							{
@@ -215,13 +220,6 @@ async function setup(
 		session_list: (args?: Args) =>
 			args?.agent === "assistant"
 				? [
-						{
-							id: "sess_discord",
-							agent_id: "assistant",
-							name: "ops",
-							created_at: minutesFromNow(-60),
-							channels: ["discord"],
-						},
 						{
 							id: "sess_plain",
 							agent_id: "assistant",
@@ -373,6 +371,13 @@ test("a scheduled card opens its editor within the project page", async ({
 	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
 		3,
 	);
+	// Project tasks are never precomputed, so the feedback is informational.
+	const feedback = editor.getByTestId("task-cost-feedback");
+	await expect(feedback).toHaveAttribute("data-state", "project");
+	await expect(feedback).toContainText("Project tasks are never precomputed");
+	await expect(feedback).toContainText(
+		"Estimate unavailable: depends on the work the Code Loop job does",
+	);
 	const runs = editor.getByTestId("schedule-runs").locator("li");
 	await expect(runs).toHaveCount(2);
 	await expect(runs.first()).toContainText("running");
@@ -458,11 +463,9 @@ test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 
 	// The model override is the shared model picker, holding the task's model.
 	const model = editor.getByTestId("schedule-model");
-	await expect(model).toContainText("cli/claude/opus");
-	await model.getByRole("button").click();
-	await model.getByRole("textbox").fill("cli/codex/gpt-5.5");
-	await model.getByRole("textbox").press("Enter");
-	await expect(model).toContainText("cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
+	await searchOption(model.getByRole("combobox"), "cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/codex/gpt-5.5");
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -511,8 +514,19 @@ test("the header Schedule button creates a project scheduled task through the sh
 	});
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText("lsegal/aviary");
-	// The task's agent comes from the project, so the dialog never asks.
-	await expect(dialog.getByLabel("Agent")).toHaveCount(0);
+	// The board opens the shared dialog targeting this project; the project's
+	// agent is implied, so there is no Agent field, and project tasks run a
+	// prompt, so Script is unavailable.
+	await expect(
+		dialog.getByRole("radiogroup", { name: "Target" }).getByRole("radio", {
+			name: "Project",
+		}),
+	).toHaveAttribute("aria-checked", "true");
+	await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+		"lsegal/aviary",
+	);
+	await expect(dialog.getByLabel("Agent", { exact: true })).toHaveCount(0);
+	await expect(dialog.getByRole("radio", { name: "Script" })).toBeDisabled();
 	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
 	// A project task needs a time trigger: no None tab, daily by default.
 	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
@@ -523,18 +537,22 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
-	// Project tasks run as Projects jobs, so the dialog offers precompute but
+	// Project tasks run as Code Loop jobs, so the dialog offers precompute but
 	// it cannot apply to them.
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();
 	await expect(precompute).not.toBeChecked();
-	// Send To offers the agent's channel sessions by name.
+	await expect(dialog.getByTestId("task-cost-feedback")).toHaveAttribute(
+		"data-state",
+		"project",
+	);
+	// Send To offers the agent's channels by name.
 	const sendTo = dialog.getByLabel("Send To");
-	await expect(sendTo.locator("option")).toHaveText([
+	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
 		"ops · discord",
 	]);
-	await sendTo.selectOption({ label: "ops · discord" });
+	await chooseOption(sendTo, "ops · discord");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.config_task_convert_to_script).toBeUndefined();
@@ -549,7 +567,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 			project: "lsegal/aviary",
 			schedule: "0 * * * *",
 			prompt: "Rerun flaky CI jobs on open PRs.",
-			target: "session:sess_discord",
+			target: "channel:ops",
 			enabled: true,
 		}),
 	]);

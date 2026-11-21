@@ -18,6 +18,21 @@
     "modelsJSON": "result.models.availableModels[].modelId",
     "timeout": "45s"
   },
+  "mcp": {
+    "env": {"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "{mcpFile}"},
+    "file": {
+      "mcpServers": {
+        "{mcpName}": {
+          "httpUrl": "{mcpUrl}",
+          "headers": {"Authorization": "Bearer ${{mcpTokenEnv}}"},
+          "trust": true,
+          "timeout": "{mcpTimeoutMs}"
+        }
+      }
+    },
+    "toolPrefix": "mcp_{mcpName}_"
+  },
+  "systemPrompt": {"env": {"GEMINI_SYSTEM_MD": "{systemPromptFile}"}},
   "approval": {
     "read-only": ["--approval-mode", "plan"],
     "auto": ["--approval-mode", "auto_edit"],

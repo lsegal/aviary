@@ -59,6 +59,15 @@ var restartSnapshot struct {
 	status *saferestart.Status
 }
 
+// configureRestartGate applies the configured restart gate timings.
+func configureRestartGate(cfg *config.Config) {
+	var srv config.ServerConfig
+	if cfg != nil {
+		srv = cfg.Server
+	}
+	saferestart.MCPCalls.SetTimings(srv.EffectiveRestartCallGrace(), srv.EffectiveRestartCallMaxWait(), 0)
+}
+
 func publishRestartStatus(st saferestart.Status) {
 	restartSnapshot.Lock()
 	if st.Phase == saferestart.PhaseIdle {
@@ -88,6 +97,9 @@ func (s *Server) RestartStatus() saferestart.Status {
 	s.restart.mu.Unlock()
 	if st.Phase == "" {
 		st.Phase = saferestart.PhaseIdle
+	}
+	if st.Phase == saferestart.PhaseDraining {
+		st.MCPCalls = saferestart.MCPCalls.Active()
 	}
 	st.Jobs = saferestart.RunningJobs()
 	st.Held = saferestart.Held()
@@ -159,18 +171,19 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		}
 	}
 
-	return s.startRestart(when, req.Upgrade, version)
+	return s.startRestart(when, req.Upgrade, version, req.Force)
 }
 
 // startRestart holds new jobs and restarts now, or once no jobs are running,
-// installing version first when upgrade is set.
-func (s *Server) startRestart(when string, upgrade bool, version string) (saferestart.Status, error) {
+// installing version first when upgrade is set. Either way it first waits for
+// in-flight MCP calls unless force is set.
+func (s *Server) startRestart(when string, upgrade bool, version string, force bool) (saferestart.Status, error) {
 	s.restart.mu.Lock()
 	switch s.restart.status.Phase {
 	case saferestart.PhaseUpdating:
 		s.restart.mu.Unlock()
 		return s.RestartStatus(), fmt.Errorf("a restart is already in progress")
-	case saferestart.PhaseWaiting:
+	case saferestart.PhaseWaiting, saferestart.PhaseDraining:
 		// A newer request replaces the waiting one.
 		close(s.restart.cancel)
 	}
@@ -179,6 +192,7 @@ func (s *Server) startRestart(when string, upgrade bool, version string) (safere
 		When:    when,
 		Upgrade: upgrade,
 		Version: version,
+		Force:   force,
 	}
 	cancel := make(chan struct{})
 	s.restart.cancel = cancel
@@ -225,7 +239,7 @@ func (s *Server) gitUpgrade(ctx context.Context, dir, when string) (saferestart.
 	case plan.RestartReason != "":
 		slog.Info("server: dev update needs a full restart", "component", "update", "reason", plan.RestartReason, "to", res.To)
 		if res.Supervised {
-			st, err := s.startRestart(when, false, res.To)
+			st, err := s.startRestart(when, false, res.To, false)
 			st.Message = msg
 			return st, err
 		}
@@ -276,7 +290,7 @@ func (s *Server) awaitHotReload(dir string, since int, when string, res update.G
 		if !res.Supervised {
 			return
 		}
-		if _, err := s.startRestart(when, false, res.To); err != nil {
+		if _, err := s.startRestart(when, false, res.To, false); err != nil {
 			slog.Warn("server: restarting after a failed hot reload", "component", "update", "error", err)
 		}
 	}()
@@ -284,7 +298,7 @@ func (s *Server) awaitHotReload(dir string, since int, when string, res update.G
 
 func (s *Server) cancelRestart() (saferestart.Status, error) {
 	s.restart.mu.Lock()
-	if s.restart.status.Phase != saferestart.PhaseWaiting {
+	if phase := s.restart.status.Phase; phase != saferestart.PhaseWaiting && phase != saferestart.PhaseDraining {
 		phase := s.restart.status.Phase
 		s.restart.mu.Unlock()
 		if phase == saferestart.PhaseUpdating {
@@ -316,10 +330,16 @@ func (s *Server) runRestart(when string, cancel <-chan struct{}, poll time.Durat
 		}
 	}
 
+	unlock := s.drainMCPCalls(cancel)
+	if unlock == nil {
+		return
+	}
+
 	s.restart.mu.Lock()
 	select {
 	case <-cancel:
 		s.restart.mu.Unlock()
+		unlock()
 		return
 	default:
 	}
@@ -335,9 +355,59 @@ func (s *Server) runRestart(when string, cancel <-chan struct{}, poll time.Durat
 		s.restart.mu.Lock()
 		s.restart.status = saferestart.Status{Phase: saferestart.PhaseIdle, Error: err.Error()}
 		s.restart.mu.Unlock()
+		unlock()
 		saferestart.Hold(false)
 		publishRestartStatus(s.RestartStatus())
 	}
+}
+
+// drainMCPCalls waits for in-flight MCP calls to finish, then takes the
+// exclusive restart lock so no new call starts while the restart runs. Unless
+// the restart is forced, it defers the restart while calls are active, logging
+// why and publishing the count; new calls are refused after the grace period,
+// and the restart stops waiting after the max wait. It returns the lock's
+// unlock, or nil when the restart was canceled or the server stopped while it
+// waited.
+func (s *Server) drainMCPCalls(cancel <-chan struct{}) (unlock func()) {
+	s.restart.mu.Lock()
+	select {
+	case <-cancel:
+		s.restart.mu.Unlock()
+		return nil
+	default:
+	}
+	s.restart.status.Phase = saferestart.PhaseDraining
+	force := s.restart.status.Force
+	s.restart.mu.Unlock()
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() {
+		select {
+		case <-s.runDone():
+			stop()
+		case <-ctx.Done():
+		}
+	}()
+	unlock, abandoned, err := saferestart.MCPCalls.Lock(ctx, saferestart.LockOptions{
+		Force:  force,
+		Cancel: cancel,
+		OnWait: func(active int) {
+			slog.Info("server: restart deferred", "component", "update", "reason", "waiting for in-flight MCP calls", "active_mcp_calls", active)
+			publishRestartStatus(s.RestartStatus())
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	if abandoned > 0 {
+		reason := "max wait elapsed"
+		if force {
+			reason = "forced"
+		}
+		slog.Warn("server: restarting with MCP calls still in flight", "component", "update", "reason", reason, "active_mcp_calls", abandoned)
+	}
+	return unlock
 }
 
 // performRestart replaces the binary (for an upgrade), updates skills, runs the

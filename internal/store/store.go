@@ -19,7 +19,7 @@ const (
 	DirAuth   = "auth"
 	DirMedia  = "media"
 	DirUsage  = "usage"
-	// DirProjects holds the Projects engine's work state and job transcripts.
+	// DirProjects holds the Code Loop engine's work state and job transcripts.
 	DirProjects = "projects"
 
 	// Deprecated: legacy flat directories kept for backward-compat migration.

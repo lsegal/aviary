@@ -18,7 +18,7 @@ func TestWriteProjectsAgentGates_ListsAgy(t *testing.T) {
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)
 	assert.Contains(t, out.String(), "agy")
-	assert.Contains(t, out.String(), "unavailable for Projects: agy has no machine-readable output mode")
+	assert.Contains(t, out.String(), "unavailable for Code Loop: agy has no machine-readable output mode")
 	assert.NotContains(t, out.String(), "claude")
 }
 
@@ -27,7 +27,7 @@ func TestWriteProjectsAgentGates_UngatedByConfig(t *testing.T) {
 	require.NoError(t, err)
 	var out strings.Builder
 	writeProjectsAgentGates(&out, registry)
-	assert.Equal(t, "  (every agent can run Projects jobs)\n", out.String())
+	assert.Equal(t, "  (every agent can run Code Loop jobs)\n", out.String())
 }
 
 func TestDescribeCLIBackend(t *testing.T) {
@@ -47,7 +47,7 @@ func TestDescribeCLIBackend(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, "codex 0.1.0, signed in; version older than the required 0.2.0", line)
 
-	// The quota comes from the same readers provider_cli_list and Projects
+	// The quota comes from the same readers provider_cli_list and Code Loop
 	// use, so a tracked CLI reports its reading or why it has none.
 	_, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Auth: clidoctor.SignedIn, TracksQuota: true, Quota: "weekly 60% left"})
 	assert.Equal(t, "codex, signed in; quota weekly 60% left", line)

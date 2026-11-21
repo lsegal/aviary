@@ -10,7 +10,7 @@ import (
 )
 
 // ProjectsConfig is the top-level projects: section in aviary.yaml: the one
-// set of Projects settings, shared by every project of every agent. Every
+// set of Code Loop settings, shared by every project of every agent. Every
 // field is optional and holds only a value that differs from its default, so
 // a watch started with defaults writes nothing here. The projects themselves
 // are listed under the agents that own them; see AgentProjectsConfig.
@@ -43,7 +43,7 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
-	// ApprovalMode is the Projects surface's approval-mode override for the
+	// ApprovalMode is the Code Loop surface's approval-mode override for the
 	// CLI runs it launches. Empty follows approval.mode.
 	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
 	// Yolo is the full approval mode, honoured when ApprovalMode is unset.
@@ -59,7 +59,7 @@ type ProjectsConfig struct {
 	// means the coding agent.
 	UnblockAgent string `yaml:"unblock_agent,omitempty" json:"unblock_agent,omitempty"`
 	UnblockModel string `yaml:"unblock_model,omitempty" json:"unblock_model,omitempty"`
-	// ChatModel and ChatFallbacks pick the model of the built-in Projects
+	// ChatModel and ChatFallbacks pick the model of the built-in Code Loop
 	// agent behind the board's prompt chat. Empty uses models.defaults, as
 	// for any Aviary agent.
 	ChatModel     string   `yaml:"chat_model,omitempty" json:"chat_model,omitempty"`
@@ -95,8 +95,7 @@ type ProjectReportsConfig struct {
 	// Agent is the Aviary agent whose channels deliver the reports.
 	Agent string `yaml:"agent" json:"agent"`
 	// Targets are where reports go, in the same form as a scheduled task's
-	// target: "<channel type>:<configured channel id>:<delivery id>" or
-	// "session:<name>".
+	// target: "channel:<channel name>" or "session:<name>".
 	Targets []string `yaml:"targets" json:"targets"`
 	// Events limits reports to these job events. Empty means every event in
 	// ProjectReportEvents.
@@ -160,6 +159,18 @@ func (c *Config) ValidateProjectReports(r *ProjectReportsConfig) error {
 	if !r.Enabled() {
 		return fmt.Errorf("reports need at least one target")
 	}
+	owner := c.Agents[slices.IndexFunc(c.Agents, func(a AgentConfig) bool { return a.Name == agent })]
+	for _, target := range r.Targets {
+		if strings.TrimSpace(target) == "" {
+			continue
+		}
+		if !validTaskTarget(target) || strings.EqualFold(strings.TrimSpace(target), "silent") {
+			return fmt.Errorf("invalid report target %q; use channel:<channel name> or session:<name>", target)
+		}
+		if name, ok := ChannelTargetName(target); ok && owner.ChannelByName(name) < 0 {
+			return fmt.Errorf("agent %q has no channel named %q", agent, name)
+		}
+	}
 	for _, event := range r.Events {
 		if !slices.Contains(ProjectReportEvents, strings.ToLower(strings.TrimSpace(event))) {
 			return fmt.Errorf("unknown report event %q; use one of %s", event, strings.Join(ProjectReportEvents, ", "))
@@ -176,7 +187,7 @@ type ProjectsWebhookConfig struct {
 	NgrokBinary string `yaml:"ngrok_binary,omitempty" json:"ngrok_binary,omitempty"`
 }
 
-// Projects defaults, applied by the consuming code so they never reach the
+// Code Loop defaults, applied by the consuming code so they never reach the
 // YAML file.
 const (
 	DefaultProjectsConcurrency = 3
