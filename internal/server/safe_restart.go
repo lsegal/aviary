@@ -27,8 +27,8 @@ var (
 	gitPull        = update.GitPull
 	executablePath = os.Executable
 	idlePoll       = 2 * time.Second
-	// autoUpdateWait is how long one self-updater round waits for jobs to
-	// finish before checking for a newer update.
+	// autoUpdateWait is how long one self-updater round waits for a restart
+	// already in progress before checking for a newer update.
 	autoUpdateWait = update.CheckInterval
 )
 
@@ -314,7 +314,8 @@ func (s *Server) runDone() <-chan struct{} {
 
 // runSelfUpdater checks for a new release (or, in git mode, new upstream
 // commits) every update.CheckInterval, tells every dashboard about it, and
-// applies it when auto_update is on, as soon as no jobs are running.
+// applies it when auto_update is on. Running jobs do not delay it: the restart
+// checkpoints them and they resume afterwards.
 func (s *Server) runSelfUpdater(ctx context.Context) {
 	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
 		return // dev builds outside a checkout have nothing to compare against
@@ -343,7 +344,7 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 		}
 		if s.autoApply(ctx, check) {
 			// Tell dashboards the update is gone, e.g. after a git pull
-			// whose restart is still waiting for jobs to finish.
+			// whose restart is still checkpointing jobs.
 			update.ClearCache()
 			if check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second}); err == nil {
 				notify(check)
@@ -367,31 +368,23 @@ func (s *Server) autoUpdateOn() bool {
 	return cfg != nil && cfg.Server.AutoUpdate
 }
 
-// autoApply applies check's update once no restart is pending and no jobs
-// are running, publishing what it waits for meanwhile, and reports whether
-// it applied. It waits at most autoUpdateWait, so the next round re-checks
-// for a newer update. A failed attempt stays published until one succeeds.
+// autoApply applies check's update, restarting now and checkpointing any
+// running jobs, and reports whether it applied. Only a restart already in
+// progress delays it, for at most autoUpdateWait, so the next round re-checks
+// for a newer update; a restart still waiting for jobs to finish is replaced.
+// A failed attempt stays published until one succeeds.
 func (s *Server) autoApply(ctx context.Context, check update.CheckResult) bool {
 	version := check.LatestVersion
 	deadline := time.NewTimer(autoUpdateWait)
 	defer deadline.Stop()
 	poll := time.NewTicker(idlePoll)
 	defer poll.Stop()
-	for {
+	for s.RestartStatus().Phase == saferestart.PhaseUpdating {
 		if !s.autoUpdateOn() {
 			s.setAutoUpdate(nil)
 			return false
 		}
-		state, jobs := "", 0
-		if s.RestartStatus().Phase != saferestart.PhaseIdle {
-			state = saferestart.AutoWaitingRestart
-		} else if n := len(saferestart.RunningJobs()); n > 0 {
-			state, jobs = saferestart.AutoWaitingJobs, n
-		}
-		if state == "" {
-			break
-		}
-		s.setAutoUpdateState(version, state, jobs)
+		s.setAutoUpdateState(version, saferestart.AutoWaitingRestart)
 		select {
 		case <-ctx.Done():
 			return false
@@ -400,10 +393,14 @@ func (s *Server) autoApply(ctx context.Context, check update.CheckResult) bool {
 		case <-poll.C:
 		}
 	}
+	if !s.autoUpdateOn() {
+		s.setAutoUpdate(nil)
+		return false
+	}
 
 	slog.Info("server: applying automatic update", "component", "update", "version", version)
-	s.setAutoUpdateState(version, saferestart.AutoApplying, 0)
-	st, err := s.requestRestart(ctx, saferestart.Request{When: saferestart.WhenIdle, Upgrade: true, Version: version})
+	s.setAutoUpdateState(version, saferestart.AutoApplying)
+	st, err := s.requestRestart(ctx, saferestart.Request{When: saferestart.WhenNow, Upgrade: true, Version: version})
 	if err != nil {
 		slog.Warn("server: automatic update", "component", "update", "error", err)
 		s.setAutoUpdate(&saferestart.AutoUpdate{Version: version, Error: err.Error()})
@@ -418,9 +415,9 @@ func (s *Server) autoApply(ctx context.Context, check update.CheckResult) bool {
 
 // setAutoUpdateState records what a pending automatic update waits for,
 // keeping the last attempt's error.
-func (s *Server) setAutoUpdateState(version, state string, jobs int) {
+func (s *Server) setAutoUpdateState(version, state string) {
 	s.restart.mu.Lock()
-	next := saferestart.AutoUpdate{Version: version, State: state, Jobs: jobs}
+	next := saferestart.AutoUpdate{Version: version, State: state}
 	if prev := s.restart.auto; prev != nil && prev.Version == version {
 		next.Error = prev.Error
 	}
