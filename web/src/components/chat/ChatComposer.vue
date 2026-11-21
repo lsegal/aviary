@@ -33,11 +33,11 @@
 			</button>
 			<input ref="fileInput" type="file" multiple class="hidden" data-testid="chat-file-input"
 				@change="onFilesPicked" />
-			<ChatComposerInput ref="inputRef" :model-value="modelValue" :disabled="disabled" :placeholder="placeholder"
+			<ChatComposerInput ref="inputRef" :model-value="modelValue" :history="history" :disabled="disabled" :placeholder="placeholder"
 				aria-label="Message"
 				class="max-h-48 min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-5 text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500"
 				@update:model-value="emit('update:modelValue', $event)" @send="submit"
-				@keydown="emit('keydown', $event)" @paste="onPaste" />
+				@paste="onPaste" />
 			<button v-if="showStop" type="button" aria-label="Stop response" title="Stop"
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 				:disabled="disabled" @click="emit('stop')">
@@ -70,6 +70,8 @@ const props = withDefaults(
 		/** The agent is replying; an empty composer offers Stop instead of Send. */
 		running?: boolean;
 		placeholder?: string;
+		/** Sent messages, oldest first, that Up and Down recall. */
+		history?: string[];
 	}>(),
 	{ placeholder: "Describe a task or ask a question" },
 );
@@ -79,7 +81,6 @@ const emit = defineEmits<{
 	"update:attachments": [value: ChatAttachment[]];
 	submit: [];
 	stop: [];
-	keydown: [event: KeyboardEvent];
 }>();
 
 const inputRef = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
