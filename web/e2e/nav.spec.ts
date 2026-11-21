@@ -100,7 +100,7 @@ test("the System section collapses to its header and stays collapsed across page
 	await expect(header).not.toHaveClass(/bg-white/);
 });
 
-test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Agent Settings", async ({
+test("an agent's pages are Chats, Code Loop, Scheduled Tasks, Files and Agent Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -120,7 +120,7 @@ test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Ag
 		agent.getByRole("link").and(page.locator(":not([title])")),
 	).toHaveText([
 		"Chats",
-		"GitHub Projects",
+		"Code Loop",
 		"Scheduled Tasks",
 		"Files",
 		"Agent Settings",

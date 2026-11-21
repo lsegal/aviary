@@ -22,7 +22,7 @@
 						<h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Approval</h3>
 						<p class="mb-4 text-xs text-gray-500 dark:text-gray-400">How much CLI providers may do without asking. Each
 							CLI launch translates the mode into that CLI's own permission flags; its settings files are never
-							changed. Projects has its own override in Projects settings.</p>
+							changed. Projects has its own override in Code Loop settings.</p>
 						<div class="grid gap-4 lg:grid-cols-2">
 							<div>
 								<label class="field-label" for="approval-mode">Approval mode</label>

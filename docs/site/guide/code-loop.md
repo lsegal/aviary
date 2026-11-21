@@ -12,9 +12,9 @@ watch ─► pick up ─► claim ─► clone, branch, draft PR ─► implemen
 
 A project is a watched target that belongs to one Aviary agent: a repository (`owner/repo`), a GitHub Project board, or a Discussions board. The agent's model and fallbacks decide which provider the project's jobs run on.
 
-- **Configure:** the agent's tab in **Projects Settings** (`/projects/settings?agent=<agent>`), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command without saving anything.
+- **Configure:** the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command without saving anything.
 - **Delivery:** `poll` (the default) reads GitHub through `gh` every `interval`; `webhook` adds repository webhooks through an ngrok tunnel and still polls as a fallback.
-- **Observe:** the agent's **GitHub Projects** page is one board of all its projects' jobs, and each project's own board opens beneath it; `aviary project status` reports every project.
+- **Observe:** the agent's **Code Loop** page is one board of all its projects' jobs, and each project's own board opens beneath it; `aviary project status` reports every project.
 
 ## 2. An issue matches and is picked up
 
@@ -24,7 +24,7 @@ On every poll, Aviary looks for issues that are ready for work:
 - Issues labeled `critical`, then `high`, go first, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.
 - An issue blocked by open dependencies waits. Blocked by exactly one issue that already has an open pull request, on a repository that allows stacked pull requests, it runs stacked on that pull request instead.
-- `concurrency` caps how many jobs run at once in total, across every project of every agent. It and the other settings named on this page live in the one shared [`projects:` section](/reference/config#projects), edited on Projects Settings (`/projects/settings`).
+- `concurrency` caps how many jobs run at once in total, across every project of every agent. It and the other settings named on this page live in the one shared [`projects:` section](/reference/config#projects), edited on Code Loop Settings (`/projects/settings`).
 
 The job is dispatched to the first provider in the agent's model and fallbacks whose quota is not used up. Its prompt is the skill call itself, for example:
 

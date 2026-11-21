@@ -95,7 +95,7 @@ const projectsItems: ShowcaseItem[] = [
 		],
 		lightSrc: "/screenshots/projects-board-light.png",
 		darkSrc: "/screenshots/projects-board-dark.png",
-		alt: "GitHub Projects board with running, paused, and merged jobs",
+		alt: "Code Loop board with running, paused, and merged jobs",
 	},
 	{
 		title: "A job's run view",
@@ -141,7 +141,7 @@ const docsLinks = [
 	},
 	{
 		number: "03",
-		title: "GitHub Projects",
+		title: "Code Loop",
 		description:
 			"Watch repositories and let agents work issues end to end, from draft PR to merge.",
 		href: "/guide/projects",
@@ -494,7 +494,7 @@ onBeforeUnmount(() => {
 
 		<section class="landing-band" id="projects">
 			<div class="landing-wrap">
-				<div class="landing-eyebrow reveal">GitHub Projects</div>
+				<div class="landing-eyebrow reveal">Code Loop</div>
 				<h2 class="landing-section-title reveal">
 					Label an issue.<br />
 					Get a <em>merged</em> pull request.
@@ -580,7 +580,7 @@ onBeforeUnmount(() => {
 
 				<div class="landing-projects-links reveal">
 					<a class="landing-btn landing-btn-primary" :href="withBase('/projects')">
-						See how GitHub Projects works
+						See how Code Loop works
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
 							aria-hidden="true">
 							<path d="M5 12h14M13 5l7 7-7 7" />

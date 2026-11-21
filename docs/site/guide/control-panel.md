@@ -10,7 +10,7 @@ Log in with the bearer token from `~/.config/aviary/token`.
 
 The sidebar has two top-level sections:
 
-- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
+- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **Code Loop**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
 - **System** — the instance's own pages: **Overview**, **Settings**, **Projects**, **Providers & Auth** and **Usage**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
 
 ---
@@ -29,15 +29,15 @@ The primary conversational interface. Which agent you talk to is the agent you o
 - **Stop** — click the stop button or send `/stop` to cancel an in-progress agent run immediately.
 - **Session controls** — rename, delete, or create sessions from the session panel.
 
-### GitHub Projects (`/agents/<agent>/projects`)
+### Code Loop (`/agents/<agent>/projects`)
 
-One board of the jobs of every [project](/guide/projects) the agent owns: the same search, state filters and job cards as a single project's board, with each card naming its project. The page holds no settings; its **Settings** gear opens the agent's projects in [Projects Settings](#projects-settings-projects-settings). Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
+One board of the jobs of every [project](/guide/projects) the agent owns: the same search, state filters and job cards as a single project's board, with each card naming its project. The page holds no settings; its **Settings** gear opens the agent's projects in [Code Loop Settings](#projects-settings-projects-settings). Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
 
 The board's state chips (Starting, Paused, Running, Done, Failed) each toggle on and off, showing jobs in any selected state; with none selected every job and scheduled task shows, and **Clear** deselects them all. Each board remembers its own selection across pages and reloads, and the URL carries it as `?state=running,failed`, so a shared link opens the same filter.
 
-### Projects Settings (`/projects/settings`)
+### Code Loop Settings (`/projects/settings`)
 
-Opened from the **Settings** gear on any GitHub Projects board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
+Opened from the **Settings** gear on any Code Loop board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
 
 ### Scheduled Tasks (`/agents/<agent>/tasks`)
 

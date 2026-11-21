@@ -254,7 +254,7 @@ tasks:
 
 ### agents[].projects
 
-The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's tab in **Projects Settings** (`/projects/settings?agent=<agent>`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
+The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
 
 ```yaml
 agents:
@@ -416,7 +416,7 @@ coding_skills:
 
 ## projects
 
-The one set of [Projects](/guide/projects) settings, shared by every project of every agent and edited on **Projects Settings** (`/projects/settings`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
+The one set of [Projects](/guide/projects) settings, shared by every project of every agent and edited on **Code Loop Settings** (`/projects/settings`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
 
 Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
 

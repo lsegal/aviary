@@ -200,14 +200,14 @@ function savedProjects(calls: Calls, agent: string) {
 const saveChanges = (page: Page) =>
 	page.getByRole("button", { name: "Save Changes" }).click();
 
-test('the Add project "+" on GitHub Projects opens Add project', async ({
+test('the Add project "+" on Code Loop opens Add project', async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page
 		.getByTestId("sidebar-nav")
-		.getByRole("link", { name: /^GitHub Projects/ })
+		.getByRole("link", { name: /^Code Loop/ })
 		.hover();
 	await page.getByRole("link", { name: "Add project", exact: true }).click();
 	await expect(page).toHaveURL("/agents/coder/projects?add=1");
@@ -336,7 +336,7 @@ test("add-project checks report each failing prerequisite", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("a project's board names its agent and links to its projects in Projects settings", async ({
+test("a project's board names its agent and links to its projects in Code Loop settings", async ({
 	page,
 }) => {
 	await setup(page);
@@ -469,7 +469,7 @@ test("changing a setting writes only the differing values to the shared section"
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 });
 
-test("Projects settings holds each agent's projects beside the shared settings", async ({
+test("Code Loop settings holds each agent's projects beside the shared settings", async ({
 	page,
 }) => {
 	await setup(page, { config: REPORTS_CONFIG });
@@ -702,13 +702,13 @@ test("a short clone list does not scroll", async ({ page }) => {
 	expect(box.scroll).toBe(box.client);
 });
 
-test("Projects settings live under the projects section, not System", async ({
+test("Code Loop settings live under the projects section, not System", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
 	await expect(page.getByTestId("settings-title")).toHaveText(
-		"Projects Settings",
+		"Code Loop Settings",
 	);
 	await expect(page.getByTestId("project-settings")).toBeVisible();
 	await page.getByTestId("sidebar-system-more").click();
@@ -722,7 +722,7 @@ test("Projects settings live under the projects section, not System", async ({
 	await expect(page.getByTestId("project-settings")).toHaveCount(0);
 });
 
-test("Projects settings shows this instance's ID", async ({ page }) => {
+test("Code Loop settings shows this instance's ID", async ({ page }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
 	const card = page.getByTestId("projects-instance-id");

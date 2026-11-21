@@ -470,7 +470,7 @@
     "projects": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The one set of Projects settings, shared by every project of every agent. The projects themselves are listed under the agents that own them.",
+      "description": "The one set of Code Loop settings, shared by every project of every agent. The projects themselves are listed under the agents that own them.",
       "properties": {
         "concurrency": {
           "type": "integer",

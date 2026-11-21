@@ -23,7 +23,7 @@ A target is one of:
 
 Every target of every agent shares one concurrency limit, and work is drawn from them in turn.
 
-To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's tab in **Projects Settings** (`/projects/settings?agent=<agent>`), where its projects are added and removed and their reports set. The **✕** on a saved project's row there deletes it: it stops watching the project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The agent's **GitHub Projects** page (`/agents/<agent>/projects`) is one board of every project it owns, each job card naming its project, with no settings on it. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent, with its Settings button opening the project in Projects Settings. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
+To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), where its projects are added and removed and their reports set. The **✕** on a saved project's row there deletes it: it stops watching the project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The agent's **Code Loop** page (`/agents/<agent>/projects`) is one board of every project it owns, each job card naming its project, with no settings on it. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent, with its Settings button opening the project in Code Loop Settings. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
 
 ```bash
 aviary project add owner/repo --agent coder
@@ -37,7 +37,7 @@ agents:
       - target: owner/repo
 ```
 
-The settings every project runs under, such as concurrency, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **Projects Settings** (`/projects/settings`). See [`projects`](/reference/config#projects) for every setting.
+The settings every project runs under, such as concurrency, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **Code Loop Settings** (`/projects/settings`). See [`projects`](/reference/config#projects) for every setting.
 
 ```yaml
 projects:
@@ -101,7 +101,7 @@ models:
 
 Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the CLI provider treats comments by anyone else in the thread as untrusted information rather than instructions.
 
-Every Aviary server has an instance identity, an 8-character ID generated on first run and kept in Aviary's state, so a restarted server keeps the same ID and recognizes its own claims. The Projects board header and Projects Settings both show it. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
+Every Aviary server has an instance identity, an 8-character ID generated on first run and kept in Aviary's state, so a restarted server keeps the same ID and recognizes its own claims. The Projects board header and Code Loop Settings both show it. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
 On a finished or paused job, a mention goes to the Projects agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
 

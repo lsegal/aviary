@@ -30,7 +30,7 @@ const router = createRouter({
 			component: () => import("../views/ChatView.vue"),
 			meta: { requiresAuth: true },
 		},
-		// GitHub Projects: the board for every project the agent owns, and
+		// Code Loop: the board for every project the agent owns, and
 		// one project's board. Their settings live in /projects/settings.
 		{
 			path: "/agents/:agent/projects",
