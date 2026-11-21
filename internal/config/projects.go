@@ -43,7 +43,7 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
-	// ApprovalMode is the Projects surface's approval-mode override for the
+	// ApprovalMode is the Code Loop surface's approval-mode override for the
 	// CLI runs it launches. Empty follows approval.mode.
 	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
 	// Yolo is the full approval mode, honoured when ApprovalMode is unset.
@@ -59,7 +59,7 @@ type ProjectsConfig struct {
 	// means the coding agent.
 	UnblockAgent string `yaml:"unblock_agent,omitempty" json:"unblock_agent,omitempty"`
 	UnblockModel string `yaml:"unblock_model,omitempty" json:"unblock_model,omitempty"`
-	// ChatModel and ChatFallbacks pick the model of the built-in Projects
+	// ChatModel and ChatFallbacks pick the model of the built-in Code Loop
 	// agent behind the board's prompt chat. Empty uses models.defaults, as
 	// for any Aviary agent.
 	ChatModel     string   `yaml:"chat_model,omitempty" json:"chat_model,omitempty"`
@@ -176,7 +176,7 @@ type ProjectsWebhookConfig struct {
 	NgrokBinary string `yaml:"ngrok_binary,omitempty" json:"ngrok_binary,omitempty"`
 }
 
-// Projects defaults, applied by the consuming code so they never reach the
+// Code Loop defaults, applied by the consuming code so they never reach the
 // YAML file.
 const (
 	DefaultProjectsConcurrency = 3

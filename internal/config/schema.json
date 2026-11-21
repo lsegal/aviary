@@ -572,7 +572,7 @@
           "type": "string",
           "x-label": "Prompt chat model",
           "x-order": 19,
-          "description": "Model of the built-in Projects agent behind the board's prompt chat. Defaults to models.defaults."
+          "description": "Model of the built-in Code Loop agent behind the board's prompt chat. Defaults to models.defaults."
         },
         "chat_fallbacks": {
           "type": "array",
@@ -581,7 +581,7 @@
           },
           "x-label": "Prompt chat fallbacks",
           "x-order": 20,
-          "description": "Fallback models of the built-in Projects agent, tried in order."
+          "description": "Fallback models of the built-in Code Loop agent, tried in order."
         },
         "temp_dirs": {
           "type": "array",

@@ -958,7 +958,7 @@ func TestManager_ReconcileAndLookup(t *testing.T) {
 	_, ok = mgr.Get("bot2")
 	assert.True(t, ok)
 
-	// The built-in Projects agent runs alongside the configured ones.
+	// The built-in Code Loop agent runs alongside the configured ones.
 	got := len(mgr.List())
 	assert.Equal(t, 3, got)
 	_, ok = mgr.Get(config.ProjectsAgentName)

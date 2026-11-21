@@ -8,7 +8,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 )
 
-// Config collects the overrides that decide which browser Projects drives
+// Config collects the overrides that decide which browser Code Loop drives
 // and where it keeps that browser's state. Both are empty by default, which
 // means "discover a Chromium-based browser" and "use Aviary's browser
 // profile"; ConfigFrom fills them in from Aviary's browser settings.
@@ -49,7 +49,7 @@ var tabOpenTimeout = 30 * time.Second
 
 // ProfileDir reports the profile directory the browser is launched against:
 // the override when one was given, otherwise Aviary's own browser profile, so
-// a GitHub sign-in made in Aviary's browser is the one Projects reads with.
+// a GitHub sign-in made in Aviary's browser is the one Code Loop reads with.
 func ProfileDir(override string) (string, error) {
 	if override != "" {
 		return override, nil

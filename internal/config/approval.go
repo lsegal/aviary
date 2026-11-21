@@ -12,7 +12,7 @@ type ApprovalConfig struct {
 	// override of its own. Empty means clidefs.DefaultApprovalMode.
 	Mode clidefs.ApprovalMode `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// Chat overrides Mode for agent chat turns run through a CLI provider:
-	// the web UI chat, including the Projects board's prompt chat. Empty
+	// the web UI chat, including the Code Loop board's prompt chat. Empty
 	// follows Mode.
 	Chat clidefs.ApprovalMode `yaml:"chat,omitempty" json:"chat,omitempty"`
 }
@@ -29,7 +29,7 @@ func (c *Config) ChatApprovalMode() clidefs.ApprovalMode {
 }
 
 // ProjectsApprovalMode is the effective approval mode of the CLI runs
-// Projects launches.
+// Code Loop launches.
 func (c *Config) ProjectsApprovalMode() clidefs.ApprovalMode {
 	if c == nil {
 		return clidefs.DefaultApprovalMode
@@ -37,7 +37,7 @@ func (c *Config) ProjectsApprovalMode() clidefs.ApprovalMode {
 	return c.Projects.EffectiveApprovalMode(c.Approval.Mode)
 }
 
-// EffectiveApprovalMode resolves the Projects surface's approval mode against
+// EffectiveApprovalMode resolves the Code Loop surface's approval mode against
 // the general setting: the section's approval_mode wins, then yolo (which is
 // the full mode), then general.
 func (p ProjectsConfig) EffectiveApprovalMode(general clidefs.ApprovalMode) clidefs.ApprovalMode {

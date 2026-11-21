@@ -11,7 +11,7 @@ import (
 
 // transcriptStore keeps every job's transcript, keyed by the job's
 // "target#number" key, under one directory. It is shared by pointer between
-// the engine, which records Projects' own events, and the runner, which
+// the engine, which records Code Loop's own events, and the runner, which
 // records the CLI's output.
 type transcriptStore struct {
 	dir  string
@@ -62,7 +62,7 @@ func (s *transcriptStore) Lookup(key string) *transcript.Log {
 	return s.For(key)
 }
 
-// jobSystem records one of Projects' own events in a job's transcript.
+// jobSystem records one of Code Loop's own events in a job's transcript.
 func (w *Engine) jobSystem(key, text string) {
 	w.Transcripts.For(key).System(text)
 }

@@ -316,8 +316,8 @@ func (v *validator) checkModel(field, model string) {
 
 // checkProjectTaskModel validates a project task's model override as any
 // model is checked, except that a provider reached through a CLI that only
-// Projects jobs run on, such as cli/gemini/<model>, is fine: the task runs as
-// a Projects job, never as an agent prompt.
+// Code Loop jobs run on, such as cli/gemini/<model>, is fine: the task runs as
+// a Code Loop job, never as an agent prompt.
 func (v *validator) checkProjectTaskModel(field, model string) {
 	if _, ok := v.projectsOnlyCLI(model); ok {
 		return
@@ -341,7 +341,7 @@ func (v *validator) checkCLIModel(field, model string) {
 	backend, _, err := cliagent.ParseModel(model)
 	if err != nil {
 		if name, ok := v.projectsOnlyCLI(model); ok {
-			v.warnf(field, "%s is a provider reached through a CLI that runs Projects jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
+			v.warnf(field, "%s is a provider reached through a CLI that runs Code Loop jobs, but only claude and codex can answer agent prompts; %q will not respond to messages", name, model)
 			return
 		}
 		v.errorf(field, "%v", err)
@@ -354,7 +354,7 @@ func (v *validator) checkCLIModel(field, model string) {
 
 // projectsOnlyCLI reports the CLI provider a model names when it is one of
 // the providers reached through a CLI, built in or from models.cli_definitions, that
-// Projects jobs run on but agent turns cannot, such as gemini/<model> or
+// Code Loop jobs run on but agent turns cannot, such as gemini/<model> or
 // cli/gemini/<model>.
 func (v *validator) projectsOnlyCLI(model string) (string, bool) {
 	rest, _ := strings.CutPrefix(strings.TrimSpace(model), cliagent.ModelPrefix)

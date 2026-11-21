@@ -1636,7 +1636,7 @@ test.describe("GitHub sign-in banner", () => {
 const PNG =
 	"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-/** Fixtures for the built-in Projects agent behind the prompt chat. */
+/** Fixtures for the built-in Code Loop agent behind the prompt chat. */
 function chatFixtures(calls: Calls): ToolFixtures {
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
@@ -1721,7 +1721,7 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await expect(chat).toContainText(
 		"Ask the projects agent about lsegal/aviary",
 	);
-	// It talks to the built-in Projects agent's one hidden session, never to
+	// It talks to the built-in Code Loop agent's one hidden session, never to
 	// a job, and offers no other chats (#624).
 	await expect
 		.poll(() => calls.session_messages?.at(-1))

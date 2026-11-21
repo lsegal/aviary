@@ -378,7 +378,7 @@ test("a scheduled card opens its editor within the project page", async ({
 	await expect(feedback).toHaveAttribute("data-state", "project");
 	await expect(feedback).toContainText("Project tasks are never precomputed");
 	await expect(feedback).toContainText(
-		"Estimate unavailable: depends on the work the Projects job does",
+		"Estimate unavailable: depends on the work the Code Loop job does",
 	);
 	const runs = editor.getByTestId("schedule-runs").locator("li");
 	await expect(runs).toHaveCount(2);

@@ -10,9 +10,9 @@ import (
 	"github.com/lsegal/aviary/internal/projects"
 )
 
-// promptProjectsAgent sends prompt to the built-in Projects agent's hidden
+// promptProjectsAgent sends prompt to the built-in Code Loop agent's hidden
 // prompt chat session, the one every board's prompt chat opens, without waiting for the
-// answer. Projects routes direct mentions on finished or paused jobs here.
+// answer. Code Loop routes direct mentions on finished or paused jobs here.
 func (s *Server) promptProjectsAgent(_ context.Context, prompt string) error {
 	if s.agents == nil {
 		return errors.New("the agent manager is not running")
@@ -23,7 +23,7 @@ func (s *Server) promptProjectsAgent(_ context.Context, prompt string) error {
 	}
 	sess, err := agent.NewSessionManager().GetOrCreateNamed(config.ProjectsAgentName, config.ProjectsChatSession)
 	if err != nil {
-		return fmt.Errorf("opening the Projects agent's session: %w", err)
+		return fmt.Errorf("opening the Code Loop agent's session: %w", err)
 	}
 	// The run outlives the engine's poll that routed it.
 	ctx := agent.WithSessionID(context.Background(), sess.ID)
@@ -35,7 +35,7 @@ func (s *Server) promptProjectsAgent(_ context.Context, prompt string) error {
 	return nil
 }
 
-// runProjectsJobTurn runs one turn of a Projects job on an Aviary agent
+// runProjectsJobTurn runs one turn of a Code Loop job on an Aviary agent
 // in-process, in the agent's main session as agent_run does, granting the
 // turn the job's directory. It returns once the turn ends; cancelling ctx
 // stops it.

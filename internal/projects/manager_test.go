@@ -311,7 +311,7 @@ func recordLogs(t *testing.T, m *Manager) *logRecorder {
 	return recorder
 }
 
-// TestManagerLogsThroughSlog checks Projects keeps no log buffer of its own:
+// TestManagerLogsThroughSlog checks Code Loop keeps no log buffer of its own:
 // its lines go to slog under the projects component, without a timestamp in
 // the text, and project_status pages them back from the log source.
 func TestManagerLogsThroughSlog(t *testing.T) {
@@ -397,8 +397,8 @@ func TestManagerRetriesAFailedLoginLookup(t *testing.T) {
 	}
 }
 
-// TestManagerSettingsResolveApprovalMode checks Projects jobs run under the
-// Projects override, fall back to the general approval mode without one, and
+// TestManagerSettingsResolveApprovalMode checks Code Loop jobs run under the
+// Code Loop override, fall back to the general approval mode without one, and
 // that yolo, in the config or on a watch, is the override's full mode
 // (issue #513).
 func TestManagerSettingsResolveApprovalMode(t *testing.T) {
@@ -434,7 +434,7 @@ func TestManagerSettingsResolveApprovalMode(t *testing.T) {
 	}
 	reconcile(config.ProjectsConfig{ApprovalMode: clidefs.ApprovalAuto})
 	if got := approval(); got != clidefs.ApprovalAuto {
-		t.Fatalf("Projects override: approval = %q, want auto", got)
+		t.Fatalf("Code Loop override: approval = %q, want auto", got)
 	}
 	reconcile(config.ProjectsConfig{Yolo: true})
 	if got := approval(); got != clidefs.ApprovalFull {

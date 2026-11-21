@@ -329,7 +329,7 @@ type TaskConfig struct {
 	Watch  string `yaml:"watch,omitempty"    json:"watch,omitempty"`
 	Prompt string `yaml:"prompt,omitempty"   json:"prompt,omitempty"`
 	Target string `yaml:"target,omitempty"   json:"target,omitempty"`
-	// Project is the watched Projects target a "project" task runs its prompt
+	// Project is the watched Code Loop target a "project" task runs its prompt
 	// against as a board job.
 	Project string `yaml:"project,omitempty"  json:"project,omitempty"`
 	// Model overrides the project agent's default model for a project task's
@@ -384,7 +384,7 @@ type ModelsConfig struct {
 	Defaults  *ModelDefaults            `yaml:"defaults,omitempty"  json:"defaults,omitempty"`
 	// CLIDefinitions overrides built-in CLI definitions field by field
 	// and adds new ones, keyed by agent name. A null field drops it.
-	// Providers reached through a CLI are like any other, so Projects reads
+	// Providers reached through a CLI are like any other, so Code Loop reads
 	// them from here rather than owning a registry of its own.
 	CLIDefinitions map[string]any `yaml:"cli_definitions,omitempty" json:"cli_definitions,omitempty"`
 }

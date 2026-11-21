@@ -1286,7 +1286,7 @@ type CommandRunner struct {
 	Agent, Repo string
 	Identity    Identity
 	Output      io.Writer
-	// Approval is the Projects surface's effective approval mode, which
+	// Approval is the Code Loop surface's effective approval mode, which
 	// every CLI launch renders through its definition.
 	Approval clidefs.ApprovalMode
 	NoMerge  bool
@@ -1339,10 +1339,10 @@ type CommandRunner struct {
 }
 
 // UsageRecorder receives the token use of one agent run, or one record of
-// Projects work.
+// Code Loop work.
 type UsageRecorder func(domain.UsageRecord)
 
-// recordProjectUsage reports Projects work on issue repo#number to core usage
+// recordProjectUsage reports Code Loop work on issue repo#number to core usage
 // tracking, so System → Usage can count the issues worked on, merged, and
 // failed, and the wall time spent on them.
 func (w *Engine) recordProjectUsage(at time.Time, repo string, number int, project domain.ProjectUsage) {
@@ -1358,11 +1358,11 @@ func (w *Engine) recordProjectUsage(at time.Time, repo string, number int, proje
 	})
 }
 
-// UsageAgentID is the agent ID Projects job usage is recorded under.
+// UsageAgentID is the agent ID Code Loop job usage is recorded under.
 const UsageAgentID = "projects"
 
 // recordUsage reports a run's token use, as its transcript mapper read it
-// from the agent's stream, so Projects jobs appear in core's Usage view. A
+// from the agent's stream, so Code Loop jobs appear in core's Usage view. A
 // run that reported nothing and did not fail records nothing, as core's own
 // prompts do.
 func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transcript.Recorder, runErr error) {
@@ -1515,7 +1515,7 @@ func (r CommandRunner) resolveRunDir(session AgentSession) (AgentSession, error)
 }
 
 // allowedCommentersPrompt tells the agent whose comments are instructions.
-// Projects relays only allowed commenters' comments, but the agent reads the
+// Code Loop relays only allowed commenters' comments, but the agent reads the
 // whole thread on GitHub, so without this a comment from anyone else could
 // still steer the work.
 func allowedCommentersPrompt(logins []string) string {

@@ -14,7 +14,7 @@ import (
 	"github.com/lsegal/aviary/internal/projects/browser"
 )
 
-// The ways Projects reads GitHub. Browser is the default: it reads the
+// The ways Code Loop reads GitHub. Browser is the default: it reads the
 // rendered pages in Aviary's own browser, signed in as the user, which costs
 // no API rate limit. Webhook and poll are the API-backed modes.
 const (
@@ -54,7 +54,7 @@ const githubLoginJS = `(() => {
 
 // BrowserOptions decide which browser browser delivery drives and how.
 type BrowserOptions struct {
-	// Binary and Profile come from Aviary's browser settings, so Projects
+	// Binary and Profile come from Aviary's browser settings, so Code Loop
 	// reads GitHub through the same browser and profile as Aviary itself.
 	Binary  string
 	Profile string

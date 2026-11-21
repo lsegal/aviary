@@ -252,9 +252,9 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 	case "project":
 		return &taskAnalysisResult{
 			Verdict:  taskVerdictProject,
-			Reason:   "Project tasks run as Projects jobs, so they are never precomputed",
+			Reason:   "Project tasks run as Code Loop jobs, so they are never precomputed",
 			Model:    strings.TrimSpace(args.Model),
-			Estimate: taskRunEstimate{Reason: "depends on the work the Projects job does"},
+			Estimate: taskRunEstimate{Reason: "depends on the work the Code Loop job does"},
 		}, nil
 	}
 	agentName := strings.TrimSpace(args.Agent)

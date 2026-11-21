@@ -34,7 +34,7 @@ With a project argument (for example owner/repo), open that project's board.`,
 	},
 }
 
-// projectsURL is the web UI address of the Projects board, or of one
+// projectsURL is the web UI address of the Code Loop board, or of one
 // project's board when project is set.
 func projectsURL(server, project string) string {
 	u := strings.TrimRight(server, "/") + "/projects"

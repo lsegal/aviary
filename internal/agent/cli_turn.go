@@ -762,7 +762,7 @@ func cliRefusalNote(backend cliagent.Backend, mode clidefs.ApprovalMode, agentNa
 }
 
 // cliLaunchEnv points the backend's CLI at the settings overlay its provider
-// definition declares, as every Projects launch does. For codex that is
+// definition declares, as every Code Loop launch does. For codex that is
 // CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
 // trusted-project bookkeeping out of the user's config.toml (#528). When the
 // overlay cannot be prepared, the CLI runs against the user's directory.

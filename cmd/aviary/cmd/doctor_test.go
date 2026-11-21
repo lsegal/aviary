@@ -47,7 +47,7 @@ func TestDescribeCLIBackend(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, "codex 0.1.0, signed in; version older than the required 0.2.0", line)
 
-	// The quota comes from the same readers provider_cli_list and Projects
+	// The quota comes from the same readers provider_cli_list and Code Loop
 	// use, so a tracked CLI reports its reading or why it has none.
 	_, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Auth: clidoctor.SignedIn, TracksQuota: true, Quota: "weekly 60% left"})
 	assert.Equal(t, "codex, signed in; quota weekly 60% left", line)

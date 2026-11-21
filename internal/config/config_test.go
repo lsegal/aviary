@@ -922,7 +922,7 @@ func TestValidate_CLIModel(t *testing.T) {
 	}
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, "unknown CLI backend \"nosuchcli\""))
-	// gemini is a provider reached through a CLI that Projects jobs run on, so it only warns.
+	// gemini is a provider reached through a CLI that Code Loop jobs run on, so it only warns.
 	assert.True(t, hasIssue(issues, "only claude and codex can answer agent prompts"))
 	assert.True(t, hasIssue(issues, "expected <claude|codex>/<model> or cli/<claude|codex>/<model>"))
 
@@ -1654,7 +1654,7 @@ func TestValidate_ProjectTask(t *testing.T) {
 	}}}}}
 	assert.True(t, hasIssue(Validate(badModel, nil), "expected format <provider>/<model-name>"))
 
-	// A coding CLI only Projects jobs run on is fine for a project task.
+	// A coding CLI only Code Loop jobs run on is fine for a project task.
 	projectsCLI := &Config{Agents: []AgentConfig{{Name: "bot", Model: "ollama/llama3", Tasks: []TaskConfig{{
 		Name: "triage", Type: "project", Every: "1h", Project: "o/r", Model: "cli/gemini/gemini-2.5-pro", Prompt: "p",
 	}}}}}

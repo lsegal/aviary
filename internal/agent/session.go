@@ -192,7 +192,7 @@ func sessionFromHeader(agentID, sessionID string, header map[string]any) *domain
 	return sess
 }
 
-// sessionTypeFor is the type of agentID's session named name: the Projects
+// sessionTypeFor is the type of agentID's session named name: the Code Loop
 // prompt chat is hidden, and every other name is inferred.
 func sessionTypeFor(agentID, name string) domain.SessionType {
 	if agentID == config.ProjectsAgentName && name == config.ProjectsChatSession {

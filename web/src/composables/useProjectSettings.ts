@@ -73,7 +73,7 @@ export function useProjectClones() {
 }
 
 /**
- * This Aviary instance's Projects identity, the persisted ID it signs its
+ * This Aviary instance's Code Loop identity, the persisted ID it signs its
  * GitHub claims with. It does not change while the server runs, so it is read
  * once rather than polled.
  */

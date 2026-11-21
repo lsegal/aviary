@@ -116,7 +116,7 @@ func projectResult[T any](fn func(*projects.Manager) (T, error)) (*sdkmcp.CallTo
 	return jsonResult(value)
 }
 
-// projectsAgentContext is the live context a request to the Projects agent
+// projectsAgentContext is the live context a request to the Code Loop agent
 // carries: this instance, its targets, the board project the chat was opened
 // from, and a snapshot of its jobs. Other agents get none.
 func projectsAgentContext(ctx context.Context, agentName, project string) string {
@@ -130,7 +130,7 @@ func projectsAgentContext(ctx context.Context, agentName, project string) string
 	return m.ChatContext(ctx, project)
 }
 
-// retryScheduledJob fires a scheduled Projects job's task again through
+// retryScheduledJob fires a scheduled Code Loop job's task again through
 // core's scheduler, so the rerun lands in the task's history like any fire.
 func retryScheduledJob(taskID string) (map[string]any, error) {
 	d := GetDeps()
@@ -147,7 +147,7 @@ func retryScheduledJob(taskID string) (map[string]any, error) {
 func registerProjectTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_status",
-		Description: "Projects status: instance identity, watched projects with issue counts, job counts, jobs in each board state (starting, paused, running, done, failed), delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
+		Description: "Code Loop status: instance identity, watched projects with issue counts, job counts, jobs in each board state (starting, paused, running, done, failed), delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectStatusArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -157,7 +157,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_list",
-		Description: "List every Projects job, running and errored jobs first, with the actions each accepts; filter by project, status, board states and search text, paged",
+		Description: "List every Code Loop job, running and errored jobs first, with the actions each accepts; filter by project, status, board states and search text, paged",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -167,7 +167,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_get",
-		Description: "One Projects job: its state, agent session, structured transcript events, raw output, and scrollback",
+		Description: "One Code Loop job: its state, agent session, structured transcript events, raw output, and scrollback",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobGetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -177,7 +177,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_explain",
-		Description: "Explain why a Projects job is paused, blocked, waiting, queued, or looks stuck, what will wake it, and its last output",
+		Description: "Explain why a Code Loop job is paused, blocked, waiting, queued, or looks stuck, what will wake it, and its last output",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -189,10 +189,10 @@ func registerProjectTools(s *sdkmcp.Server) {
 		name, verb, description string
 		annotations             *sdkmcp.ToolAnnotations
 	}{
-		{"project_job_retry", "retry", "Retry a Projects job: requeue it so gh-fix reruns it with its saved session; on a paused job this clears the pause first. A scheduled job's task is fired again through the scheduler instead", mutatingTool},
-		{"project_job_pause", "pause", "Pause an active, waiting or queued Projects job; a running agent is stopped and its work pushed, and only a retry or resume picks it back up", mutatingTool},
-		{"project_job_resume", "resume", "Resume a paused Projects job: clear the pause and requeue it", mutatingTool},
-		{"project_job_stop", "stop", "Stop a Projects job's agent and wait for it to exit, or clear a paused job and release its claim on the issue", destructiveTool},
+		{"project_job_retry", "retry", "Retry a Code Loop job: requeue it so gh-fix reruns it with its saved session; on a paused job this clears the pause first. A scheduled job's task is fired again through the scheduler instead", mutatingTool},
+		{"project_job_pause", "pause", "Pause an active, waiting or queued Code Loop job; a running agent is stopped and its work pushed, and only a retry or resume picks it back up", mutatingTool},
+		{"project_job_resume", "resume", "Resume a paused Code Loop job: clear the pause and requeue it", mutatingTool},
+		{"project_job_stop", "stop", "Stop a Code Loop job's agent and wait for it to exit, or clear a paused job and release its claim on the issue", destructiveTool},
 	} {
 		addTool(s, &sdkmcp.Tool{
 			Name:        action.name,
@@ -214,7 +214,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_refresh",
-		Description: "Check GitHub for Projects work now instead of waiting for the next poll",
+		Description: "Check GitHub for Code Loop work now instead of waiting for the next poll",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -318,7 +318,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_clone_list",
-		Description: "List every clone Projects made for a job, with its repository, issue, pull request and size, and whether it is still in use",
+		Description: "List every clone Code Loop made for a job, with its repository, issue, pull request and size, and whether it is still in use",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (any, error) {
@@ -328,7 +328,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_clone_clear",
-		Description: "Remove every Projects clone no job still uses, reporting each one removed and the space reclaimed",
+		Description: "Remove every Code Loop clone no job still uses, reporting each one removed and the space reclaimed",
 		Annotations: destructiveTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (any, error) {
@@ -338,7 +338,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_unblock_run",
-		Description: "Run a stuck-job watchdog round now, over every stuck Projects job or the one named; it returns once the round is requested",
+		Description: "Run a stuck-job watchdog round now, over every stuck Code Loop job or the one named; it returns once the round is requested",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectUnblockArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {

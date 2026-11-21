@@ -190,7 +190,7 @@ const headline = computed(() => {
 const estimate = computed(() => {
 	if (state.value === "script") return "0 tokens/run";
 	if (state.value === "project")
-		return "Estimate unavailable: depends on the work the Projects job does";
+		return "Estimate unavailable: depends on the work the Code Loop job does";
 	if (state.value !== "ready" || !result.value) return "";
 	return formatEstimate(result.value.estimate);
 });

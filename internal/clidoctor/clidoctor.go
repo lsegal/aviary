@@ -2,7 +2,7 @@
 // CLI. It reads a CLI's agent definition and asks the installed binary what
 // the definition says to ask -- where it is, its version against the declared
 // minimum, whether it is signed in, which models it takes, and its quota -- so
-// `aviary doctor`, System → Providers & Auth and the Projects doctor all report
+// `aviary doctor`, System → Providers & Auth and the Code Loop doctor all report
 // from the same code.
 package clidoctor
 
@@ -71,7 +71,7 @@ type Report struct {
 	// SkillsNote says which of aviary's installed skills are stale, empty when
 	// they match the running release or the agent installs none.
 	SkillsNote string
-	// ProjectsNote says why the agent is gated out of Projects jobs, empty
+	// ProjectsNote says why the agent is gated out of Code Loop jobs, empty
 	// when it can run them.
 	ProjectsNote string
 }
