@@ -852,7 +852,7 @@ test("search filters the whole job list across every field", async ({
 	await expect(
 		page.getByTestId("job-toolbar").getByTestId("search-icon"),
 	).toBeVisible();
-	await expect(search).toHaveClass(/field-input/);
+	await expect(search).toHaveClass(/\bfield-input\b/);
 	await expect(pages).toContainText("Page 1 of 3");
 	await expect(cards).toHaveCount(12);
 	await expect(page.getByTestId("search-count")).toHaveCount(0);

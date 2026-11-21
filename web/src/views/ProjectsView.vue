@@ -100,10 +100,12 @@
 
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
 							<div class="relative min-w-0 flex-1 sm:max-w-xs">
-								<MagnifyingGlassIcon class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-									aria-hidden="true" data-testid="search-icon" />
+								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
+									aria-hidden="true" data-testid="search-icon">
+									<MagnifyingGlassIcon class="h-4 w-4" />
+								</span>
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
-									class="field-input py-1.5 pl-9" />
+									class="field-input pl-9!" />
 							</div>
 							<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
 								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
