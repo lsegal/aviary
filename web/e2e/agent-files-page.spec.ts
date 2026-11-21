@@ -112,13 +112,15 @@ test("the Files page is one file bar over a full-page editor", async ({
 		const ed = document.querySelector<HTMLTextAreaElement>(
 			'[data-testid="agent-file-editor"]',
 		);
+		const split = document.querySelector('[data-testid="file-preview-split"]');
 		const scroller = ed?.closest("main")?.querySelector(".h-full");
-		if (!bar || !ed || !scroller) return null;
+		if (!bar || !ed || !split || !scroller) return null;
 		const b = bar.getBoundingClientRect();
 		const e = ed.getBoundingClientRect();
+		// The editor and the Preview panel beside it span the bar's width.
 		return {
 			gap: e.top - b.bottom,
-			sameWidth: Math.abs(e.width - b.width) < 1,
+			sameWidth: Math.abs(split.getBoundingClientRect().width - b.width) < 1,
 			bottom: e.bottom,
 			viewport: window.innerHeight,
 			editorScrolls: ed.scrollHeight > ed.clientHeight,
@@ -284,4 +286,206 @@ test("other agent pages keep the settings page header", async ({ page }) => {
 		page.locator("main").getByRole("button", { name: "Save Changes" }),
 	).toBeVisible();
 	await expect(page.getByTestId("agent-file-bar")).toBeHidden();
+});
+
+const PREVIEW_MD = [
+	"# Agent rules",
+	"",
+	"Be **brief** and use `tools`.",
+	"",
+	"- one",
+	"- two",
+	"",
+	"<script>alert(1)</script>",
+].join("\n");
+
+/** The editor and Preview panel's widths, and the bar's, in pixels. */
+function splitWidths(page: Page) {
+	return page.evaluate(() => {
+		const width = (id: string) =>
+			document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect()
+				.width ?? 0;
+		return {
+			bar: width("agent-file-bar"),
+			editor: width("agent-file-editor"),
+			preview: width("file-preview-pane"),
+		};
+	});
+}
+
+test("a Markdown file opens with a live rendered Preview beside the editor", async ({
+	page,
+}) => {
+	await mockFiles(page, { "AGENTS.md": PREVIEW_MD });
+	await page.goto("/agents/assistant/files?file=AGENTS.md");
+
+	const editor = page.getByTestId("agent-file-editor");
+	const preview = page.getByTestId("file-preview");
+	const toggle = page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name: "Preview" });
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+	await expect(preview).toBeVisible();
+	await expect(preview).toHaveAttribute("aria-label", "Markdown preview");
+	// Rendered with chat's renderer and prose styles; raw HTML stays text.
+	const md = page.getByTestId("markdown-preview");
+	await expect(md).toHaveClass(/prose/);
+	await expect(md.getByRole("heading", { level: 1 })).toHaveText("Agent rules");
+	await expect(md.locator("strong")).toHaveText("brief");
+	await expect(md.locator("code")).toHaveText("tools");
+	await expect(md.getByRole("listitem")).toHaveText(["one", "two"]);
+	await expect(md.locator("script")).toHaveCount(0);
+	await expect(md).toContainText("<script>alert(1)</script>");
+
+	// Editor left, preview right.
+	const [e, p] = await Promise.all([
+		editor.boundingBox(),
+		preview.boundingBox(),
+	]);
+	expect((e?.x ?? 0) + (e?.width ?? 0)).toBeLessThanOrEqual(p?.x ?? 0);
+
+	// Typing updates the preview without saving.
+	await editor.fill("## Edited heading\n\n_live_");
+	await expect(md.getByRole("heading", { level: 2 })).toHaveText(
+		"Edited heading",
+	);
+	await expect(md.locator("em")).toHaveText("live");
+	await expect(md.getByRole("heading", { level: 1 })).toHaveCount(0);
+});
+
+test("dragging the divider resizes the panes within their minimums and is remembered", async ({
+	page,
+}) => {
+	await mockFiles(page, { "AGENTS.md": PREVIEW_MD });
+	await page.goto("/agents/assistant/files?file=AGENTS.md");
+	const divider = page.getByRole("separator", { name: "Resize preview" });
+	await expect(divider).toBeVisible();
+	const before = await splitWidths(page);
+
+	const drag = async (dx: number) => {
+		const box = await divider.boundingBox();
+		const x = (box?.x ?? 0) + (box?.width ?? 0) / 2;
+		const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x + dx, y, { steps: 5 });
+		await page.mouse.up();
+	};
+
+	// Dragging left widens the preview and narrows the editor.
+	await drag(-100);
+	const wider = await splitWidths(page);
+	expect(wider.preview).toBeCloseTo(before.preview + 100, -1);
+	expect(wider.editor).toBeCloseTo(before.editor - 100, -1);
+
+	// Neither pane shrinks below its minimum.
+	await drag(5000);
+	expect((await splitWidths(page)).preview).toBeCloseTo(240, 0);
+	await drag(-5000);
+	expect((await splitWidths(page)).editor).toBeGreaterThanOrEqual(279);
+
+	// The keyboard moves the divider too.
+	await divider.focus();
+	await page.keyboard.press("End");
+	expect((await splitWidths(page)).preview).toBeCloseTo(240, 0);
+	await page.keyboard.press("ArrowLeft");
+	await expect(divider).toHaveAttribute("aria-valuenow", "256");
+
+	await page.reload();
+	await expect(page.getByTestId("file-preview")).toBeVisible();
+	expect((await splitWidths(page)).preview).toBeCloseTo(256, 0);
+});
+
+test("the file bar's Preview toggle collapses and expands the panel and is remembered", async ({
+	page,
+}) => {
+	await mockFiles(page, { "AGENTS.md": PREVIEW_MD });
+	await page.goto("/agents/assistant/files?file=AGENTS.md");
+	const toggle = page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name: "Preview" });
+	const preview = page.getByTestId("file-preview");
+	await expect(preview).toBeVisible();
+
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+	await expect(preview).toHaveCount(0);
+	let widths = await splitWidths(page);
+	expect(widths.editor).toBeCloseTo(widths.bar, 0);
+
+	await page.reload();
+	await expect(page.getByTestId("agent-file-editor")).toHaveValue(PREVIEW_MD);
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+	await expect(preview).toHaveCount(0);
+
+	// The toggle is a keyboard-operable button.
+	await toggle.focus();
+	await page.keyboard.press("Enter");
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+	await expect(preview).toBeVisible();
+	await page.reload();
+	await expect(preview).toBeVisible();
+	widths = await splitWidths(page);
+	expect(widths.editor + widths.preview).toBeCloseTo(widths.bar, 0);
+});
+
+test("a file with no previewer has no Preview toggle and a full-width editor", async ({
+	page,
+}) => {
+	await mockFiles(page, { "AGENTS.md": "# Agents", "notes.txt": "plain" });
+	await page.goto("/agents/assistant/files?file=notes.txt");
+	const editor = page.getByTestId("agent-file-editor");
+	await expect(editor).toHaveValue("plain");
+	await expect(page.getByTestId("file-preview-toggle")).toHaveCount(0);
+	await expect(page.getByTestId("file-preview")).toHaveCount(0);
+	await expect(page.getByTestId("file-preview-divider")).toHaveCount(0);
+	const [bar, ed] = await Promise.all([
+		page.getByTestId("agent-file-bar").boundingBox(),
+		editor.boundingBox(),
+	]);
+	expect(ed?.width).toBeCloseTo(bar?.width ?? 0, 0);
+});
+
+test("at mobile width the Preview is an Edit / Preview tab, never a squeezed split", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockFiles(page, { "AGENTS.md": PREVIEW_MD, "notes.txt": "plain" });
+	await page.goto("/agents/assistant/files?file=AGENTS.md");
+	const editor = page.getByTestId("agent-file-editor");
+	const preview = page.getByTestId("file-preview");
+	const tabs = page.getByRole("tablist", { name: "Editor view" });
+	await expect(editor).toHaveValue(PREVIEW_MD);
+	await expect(page.getByTestId("file-preview-toggle")).toBeHidden();
+	await expect(page.getByTestId("file-preview-divider")).toHaveCount(0);
+	const edit = tabs.getByRole("tab", { name: "Edit" });
+	const previewTab = tabs.getByRole("tab", { name: "Preview" });
+	await expect(edit).toHaveAttribute("aria-selected", "true");
+	await expect(preview).toHaveCount(0);
+
+	await previewTab.click();
+	await expect(previewTab).toHaveAttribute("aria-selected", "true");
+	await expect(editor).toBeHidden();
+	await expect(
+		page.getByTestId("markdown-preview").getByRole("heading", { level: 1 }),
+	).toHaveText("Agent rules");
+	const widths = await page.evaluate(() => ({
+		scroll: document.documentElement.scrollWidth,
+		viewport: window.innerWidth,
+		preview:
+			document
+				.querySelector('[data-testid="file-preview"]')
+				?.getBoundingClientRect().width ?? 0,
+	}));
+	expect(widths.scroll).toBeLessThanOrEqual(widths.viewport);
+	expect(widths.preview).toBeCloseTo(widths.viewport, 0);
+
+	await edit.click();
+	await expect(editor).toBeVisible();
+	await expect(preview).toHaveCount(0);
+
+	// Files without a previewer get no tabs.
+	await page.goto("/agents/assistant/files?file=notes.txt");
+	await expect(editor).toHaveValue("plain");
+	await expect(tabs).toHaveCount(0);
 });
