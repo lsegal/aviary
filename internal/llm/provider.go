@@ -30,13 +30,13 @@ const (
 
 // Message is a single message in a conversation.
 type Message struct {
-	Role     Role
-	Content  string
+	Role    Role
+	Content string
 	// MediaURLs are images attached to the message, as data URLs or
 	// remote URLs.
 	MediaURLs []string
-	ToolCall *ToolCall
-	Result   *ToolResult
+	ToolCall  *ToolCall
+	Result    *ToolResult
 }
 
 // Request is the input to an LLM provider.

@@ -57,18 +57,21 @@
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<button v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)" type="button"
-										class="cursor-zoom-in" @click="openExpandedImage(item.msg.mediaURL)">
-										<img :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
-									</button>
-									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
-										controls class="max-w-full rounded-lg" style="max-height:320px" />
-									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
-										controls class="max-w-full" />
-									<a v-else-if="item.msg.mediaURL" :href="item.msg.mediaURL" target="_blank" rel="noopener noreferrer"
-										class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
-										Open attachment
-									</a>
+									<template v-for="(mediaURL, mi) in item.msg.mediaURLs ?? []" :key="mi">
+										<button v-if="isImageMedia(mediaURL)" type="button"
+											class="cursor-zoom-in" @click="openExpandedImage(mediaURL)">
+											<img :src="mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+										</button>
+										<video v-else-if="isVideoMedia(mediaURL)" :src="mediaURL"
+											controls class="max-w-full rounded-lg" style="max-height:320px" />
+										<audio v-else-if="isAudioMedia(mediaURL)" :src="mediaURL"
+											controls class="max-w-full" />
+										<a v-else :href="mediaURL" target="_blank" rel="noopener noreferrer"
+											:download="attachmentName(mediaURL) || undefined"
+											class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
+											{{ attachmentName(mediaURL) || "Open attachment" }}
+										</a>
+									</template>
 									<span v-if="item.msg.text && item.msg.role === 'user'"
 										class="whitespace-pre-wrap">{{ item.msg.text }}</span>
 									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError"
@@ -103,39 +106,11 @@
 			</div>
 
 			<!-- Input -->
-			<div class="sticky bottom-0 z-10 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-				<!-- Pending image preview -->
-				<div v-if="pastedMedia" class="flex items-center gap-2 px-6 pt-3">
-					<div class="relative inline-block">
-						<img :src="pastedMedia" class="h-20 w-auto rounded-lg border border-gray-300 dark:border-gray-700" />
-						<button type="button"
-							class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white text-xs hover:bg-gray-600"
-							@click="pastedMedia = ''" aria-label="Remove image">✕</button>
-					</div>
-				</div>
-				<form class="flex gap-3 px-6 py-4" @submit.prevent="send">
-					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
-						placeholder="Type a message or paste an image…"
-						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-						@input="onChatInput" @keydown="onChatInputKeydown" @paste="onPaste" />
-					<button v-if="currentSessionProcessing" type="button" @click="stopSession" :disabled="!selectedSessionId"
-						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
-						aria-label="Stop response" title="Stop">
-						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
-							<path fill-rule="evenodd"
-								d="M2.25 12a9.75 9.75 0 1 1 19.5 0 9.75 9.75 0 0 1-19.5 0ZM9 9.75A.75.75 0 0 1 9.75 9h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5Z"
-								clip-rule="evenodd" />
-						</svg>
-					</button>
-					<button type="submit" :disabled="(!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
-						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
-						aria-label="Send message" title="Send">
-						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
-							<path
-								d="M3.478 2.559a.75.75 0 0 0-.926.93l2.432 7.917H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.917a.75.75 0 0 0 .926.93 60.872 60.872 0 0 0 18.09-8.153.75.75 0 0 0 0-1.2A60.872 60.872 0 0 0 3.478 2.56Z" />
-						</svg>
-					</button>
-				</form>
+			<div class="sticky bottom-0 z-10 bg-white px-6 pb-4 pt-2 dark:bg-gray-950">
+				<ChatComposer ref="composer" v-model="input" v-model:attachments="attachments"
+					:disabled="!selectedAgent || !selectedSessionId" :running="currentSessionProcessing"
+					@submit="send" @stop="stopSession" @keydown="onChatInputKeydown"
+					@update:model-value="onChatInput" />
 			</div>
 		</div>
 		<div v-if="expandedImageURL" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
@@ -161,6 +136,11 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import {
+	attachmentName,
+	type ChatAttachment,
+} from "../components/chat/attachments";
+import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
@@ -189,7 +169,7 @@ interface Message {
 	localKey?: string;
 	role: "user" | "assistant" | "tool";
 	text: string;
-	mediaURL?: string;
+	mediaURLs?: string[];
 	toolData?: ToolData;
 	/** A streamed tool call that has not reported its result yet. */
 	toolPending?: boolean;
@@ -207,7 +187,7 @@ interface PersistedMessage {
 	session_id?: string;
 	role: "user" | "assistant" | "system" | "tool";
 	content: string;
-	media_url?: string;
+	media_urls?: string[];
 	model?: string;
 	timestamp?: string;
 }
@@ -397,7 +377,7 @@ const sessionsLoading = computed(
 	() => chatSessions.loading[selectedAgent.value] === true,
 );
 const input = ref("");
-const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
+const attachments = ref<ChatAttachment[]>([]);
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.
@@ -405,7 +385,7 @@ const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
-const chatInputEl = ref<HTMLInputElement | null>(null);
+const composer = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
@@ -776,7 +756,7 @@ async function loadSessionMessages(force = false) {
 					id: m.id,
 					role: m.role,
 					text: m.content,
-					mediaURL: m.media_url,
+					mediaURLs: m.media_urls,
 					timestamp: m.timestamp,
 					model: m.model,
 					isError: m.role === "assistant" && isErrorMessage(m.content),
@@ -820,40 +800,21 @@ async function scrollBottom(force = false) {
 	updateScrollState();
 }
 
-function onPaste(e: ClipboardEvent) {
-	const items = e.clipboardData?.items;
-	if (!items) return;
-	for (const item of items) {
-		if (item.type.startsWith("image/")) {
-			e.preventDefault();
-			const file = item.getAsFile();
-			if (!file) continue;
-			const reader = new FileReader();
-			reader.onload = (ev) => {
-				pastedMedia.value = ev.target?.result as string;
-			};
-			reader.readAsDataURL(file);
-			break;
-		}
-	}
-}
-
 function resetHistoryNavigation() {
 	historyIndex.value = -1;
 	historyDraft.value = "";
 }
 
-function onChatInput(e: Event) {
+function onChatInput(value: string) {
 	if (historyIndex.value === -1) return;
-	input.value = (e.target as HTMLInputElement).value;
-	historyDraft.value = input.value;
+	historyDraft.value = value;
 	historyIndex.value = -1;
 }
 
 function setChatInputValue(value: string) {
 	input.value = value;
 	void nextTick(() => {
-		const el = chatInputEl.value;
+		const el = composer.value?.textarea;
 		if (!el) return;
 		const end = value.length;
 		el.setSelectionRange(end, end);
@@ -864,6 +825,17 @@ function onChatInputKeydown(e: KeyboardEvent) {
 	if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
 	if (e.altKey || e.ctrlKey || e.metaKey) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
+	// In a multi-line message the arrows move between lines; history only
+	// takes over from the first line (up) or the last line (down).
+	const el = e.target as HTMLTextAreaElement;
+	const caret = el.selectionStart ?? 0;
+	if (e.key === "ArrowUp" && el.value.lastIndexOf("\n", caret - 1) !== -1)
+		return;
+	if (
+		e.key === "ArrowDown" &&
+		el.value.indexOf("\n", el.selectionEnd ?? caret) !== -1
+	)
+		return;
 
 	const history = userMessageHistory.value;
 	if (history.length === 0) return;
@@ -896,8 +868,8 @@ function onChatInputKeydown(e: KeyboardEvent) {
 // at once, and its reply streams alongside any others still running.
 async function send() {
 	const text = input.value.trim();
-	const mediaURL = pastedMedia.value;
-	if (!text && !mediaURL) return;
+	const mediaURLs = attachments.value.map((a) => a.dataURL);
+	if (!text && mediaURLs.length === 0) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
 	const now = new Date().toISOString();
@@ -906,7 +878,7 @@ async function send() {
 	)?.model;
 
 	input.value = "";
-	pastedMedia.value = "";
+	attachments.value = [];
 	resetHistoryNavigation();
 	sessionProcessing.value = {
 		...sessionProcessing.value,
@@ -916,7 +888,7 @@ async function send() {
 		localKey: newMessageKey(),
 		role: "user",
 		text,
-		mediaURL: mediaURL || undefined,
+		mediaURLs: mediaURLs.length ? mediaURLs : undefined,
 		timestamp: now,
 	});
 	// Count the stream before yielding so no reload replaces the new message.
@@ -1013,7 +985,7 @@ async function send() {
 						localKey: newMessageKey(),
 						role: "assistant",
 						text: "",
-						mediaURL: chunk,
+						mediaURLs: [chunk],
 						timestamp: now,
 						model: agentModel,
 					});
@@ -1029,7 +1001,7 @@ async function send() {
 			},
 			// A pinned session is opened by name, which creates it on first use.
 			props.session ? "" : selectedSessionId.value,
-			mediaURL || undefined,
+			mediaURLs,
 			props.project,
 			props.session,
 		);

@@ -91,7 +91,7 @@ test.beforeEach(async ({ page }) => {
 test("up arrow recalls previous chat messages", async ({ page }) => {
 	await page.goto("/agents/assistant/chat");
 
-	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
 	await expect(input).toBeEnabled();
 
 	await input.fill("draft message");
@@ -174,7 +174,7 @@ test("streaming response updates without dropping existing messages", async ({
 	});
 	await page.goto("/agents/assistant/chat");
 
-	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
 	await input.fill("stream this");
 	await input.press("Enter");
 
@@ -305,7 +305,7 @@ test("a streamed tool call and its result share one block", async ({
 	});
 	await page.goto("/agents/assistant/chat");
 
-	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
 	await input.fill("check visibility");
 	await input.press("Enter");
 
@@ -393,7 +393,7 @@ test("messages sent while a reply streams are added at once", async ({
 	await page.goto("/agents/assistant/chat");
 	await expect(page.getByText("first prompt")).toBeVisible();
 
-	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
 	const sendButton = page.getByRole("button", { name: "Send message" });
 	await input.fill("message one");
 	await input.press("Enter");

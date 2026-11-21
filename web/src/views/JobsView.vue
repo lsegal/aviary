@@ -544,8 +544,8 @@
                         </div>
                         <div class="whitespace-pre-wrap text-sm text-gray-200">
                           <div v-if="!isExpanded(m.id ?? ('sess-'+idx))">
-                            <div v-if="m.media_url">
-                              <a :href="m.media_url" target="_blank" class="text-blue-400 hover:underline">[media]</a>
+                            <div v-if="m.media_urls?.length">
+                              <a v-for="(u, ui) in m.media_urls" :key="ui" :href="u" target="_blank" class="mr-2 text-blue-400 hover:underline">[media]</a>
                               <div v-if="m.content" class="mt-1">{{ (m.content || '').slice(0,200) }}{{ (m.content||'').length>200 ? '…' : '' }}</div>
                             </div>
                             <div v-else-if="m.role === 'tool'">

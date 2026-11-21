@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestPromptMedia_SendsEveryAttachment(t *testing.T) {
