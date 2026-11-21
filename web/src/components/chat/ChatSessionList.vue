@@ -1,11 +1,6 @@
 <template>
 	<div class="space-y-0.5 pl-2" data-testid="sidebar-chats">
-		<button type="button" data-testid="sidebar-new-chat"
-			class="mt-1 block w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-gray-800"
-			:disabled="creating" @click="newChat">
-			+ New chat
-		</button>
-		<div v-for="s in sessions" :key="s.id" data-testid="chat-row" :data-session="s.id"
+		<div v-for="s in shown" :key="s.id" data-testid="chat-row" :data-session="s.id"
 			class="group relative flex items-center rounded-lg transition-colors"
 			:class="s.id === activeId
 				? 'bg-gray-100 dark:bg-gray-800'
@@ -57,6 +52,17 @@
 				</DropdownMenuRoot>
 			</template>
 		</div>
+		<button v-if="ordered.length > visibleLimit" type="button" data-testid="sidebar-chats-more"
+			:aria-expanded="showAll"
+			class="block w-full rounded-lg px-3 py-2 text-left text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+			@click="showAll = !showAll">
+			{{ showAll ? "Less" : "More" }}
+		</button>
+		<button type="button" data-testid="sidebar-new-chat"
+			class="block w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-gray-800"
+			:disabled="creating" @click="newChat">
+			+ New chat
+		</button>
 
 		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
 			<AlertDialogPortal>
@@ -105,9 +111,10 @@ import {
 	DropdownMenuRoot,
 	DropdownMenuTrigger,
 } from "radix-vue";
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { age } from "../../lib/projects";
+import { useAuthStore } from "../../stores/auth";
 import {
 	type ChatSession,
 	chatDisplayName,
@@ -118,6 +125,7 @@ import {
 const props = defineProps<{ agent: string }>();
 
 const store = useChatSessionsStore();
+const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -127,14 +135,72 @@ const activeId = computed(() => {
 	return sessions.value.find(isMainChat)?.id ?? "";
 });
 
+/** How many chats the list shows before More. */
+const visibleLimit = 5;
+const showAll = ref(false);
+
+const lastActive = (s: ChatSession) =>
+	Date.parse(s.last_message_at || s.created_at) || 0;
+
+// Main Chat leads; the rest follow, most recent message first.
+const ordered = computed(() =>
+	[...sessions.value].sort(
+		(a, b) =>
+			Number(isMainChat(b)) - Number(isMainChat(a)) ||
+			lastActive(b) - lastActive(a),
+	),
+);
+const shown = computed(() =>
+	showAll.value ? ordered.value : ordered.value.slice(0, visibleLimit),
+);
+
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
+let ws: WebSocket | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+function reload() {
+	store.load(props.agent).catch((e) => console.error("Failed to load chats", e));
+}
+
+// New messages and generated titles change the list, on any page.
+function watchSessions() {
+	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+	const tok = auth.getToken();
+	const qs = tok ? `?token=${encodeURIComponent(tok)}` : "";
+	ws = new WebSocket(`${protocol}//${location.host}/api/ws${qs}`);
+	ws.onmessage = (e) => {
+		try {
+			const data = JSON.parse(e.data as string) as {
+				type?: string;
+				agent_id?: string;
+			};
+			if (data.type !== "session_message") return;
+			if (data.agent_id !== props.agent && data.agent_id !== `agent_${props.agent}`)
+				return;
+			clearTimeout(refreshTimer);
+			refreshTimer = setTimeout(reload, 300);
+		} catch {
+			// ignore malformed frames
+		}
+	};
+}
+
+watch(() => props.agent, reload);
+
 onMounted(() => {
 	clock = setInterval(() => {
 		now.value = Date.now();
 	}, 30_000);
+	reload();
+	watchSessions();
 });
-onUnmounted(() => clearInterval(clock));
+onUnmounted(() => {
+	clearInterval(clock);
+	clearTimeout(refreshTimer);
+	ws?.close();
+	ws = null;
+});
 
 function chatPath(agent: string, sessionId: string): string {
 	const base = `/agents/${encodeURIComponent(agent)}/chat`;
