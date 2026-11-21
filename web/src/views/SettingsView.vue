@@ -19,6 +19,13 @@
 									<span class="text-xs font-medium">{{ headerNoticeText }}</span>
 								</div>
 							</transition>
+							<button v-if="tasksRoot && draft.agents[selectedAgentIdx]?.name" type="button" data-testid="new-task-button"
+								aria-label="New task" title="New task"
+								class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+								@click="openNewTask">
+								<PlusIcon aria-hidden="true" class="h-4 w-4" />
+								New task
+							</button>
 							<template v-if="!tasksRoot">
 							<button v-if="revertAvailable" type="button"
 								class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
@@ -292,6 +299,7 @@
 </template>
 
 <script setup lang="ts">
+import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import {
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -323,6 +331,7 @@ import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vu
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import { Skeleton } from "../components/ui/skeleton";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
@@ -502,6 +511,7 @@ const { callTool, listTools } = useMCP();
 const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
 const authStore = useAuthStore();
+const { open: openItemDialog } = useAgentItemDialogs();
 
 // Rename state for tasks
 const editingTaskOriginalName = ref<string | null>(null);
@@ -690,6 +700,12 @@ function projectTargetOptions(task: AgentTask): string[] {
  * The Scheduled Tasks root page: the overview of the agent's tasks, with no
  * task open. A task opens for editing with its ?task.
  */
+/** The Scheduled Tasks page's "+ New task": the sidebar's Add task dialog. */
+function openNewTask() {
+	const agent = draft.value.agents[selectedAgentIdx.value]?.name;
+	if (agent) openItemDialog({ kind: "task", agent, mode: "create" });
+}
+
 const tasksRoot = computed(
 	() =>
 		activeTab.value === "agents" &&
@@ -3606,6 +3622,7 @@ const settingsContext = proxyRefs({
 	selectedTask,
 	selectedTaskIdx,
 	tasksRoot,
+	openNewTask,
 	selectedTaskTarget,
 	serverPortInput,
 	sessionAgent,
