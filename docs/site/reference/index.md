@@ -4,6 +4,7 @@
 
 - [CLI Reference](./cli) — all `aviary` commands, subcommands, and flags.
 - [Configuration Reference](./config) — complete `aviary.yaml` schema with field-by-field documentation.
+- [CLI Provider Definitions](./cli-definitions) — the schema that describes how Aviary launches each CLI provider, and how to add one.
 
 ## UI Reference
 
