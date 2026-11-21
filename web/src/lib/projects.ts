@@ -1,3 +1,5 @@
+import { type ScheduleTrigger, TRIGGERS, type TriggerFields } from "./trigger";
+
 // View models for the Projects board and run view, normalized from the
 // project_* MCP tools (project_status, project_job_list, project_job_get)
 // served by internal/projects. Every tool response passes through the
@@ -677,8 +679,6 @@ export function jobPath(owner: string, target: string, number: number): string {
 	return `${projectPath(owner, target)}/jobs/${number}`;
 }
 
-export type ScheduleTrigger = "once" | "interval" | "daily" | "weekly" | "cron";
-
 export interface ScheduleRun {
 	fireTime: string;
 	reason: string;
@@ -688,7 +688,7 @@ export interface ScheduleRun {
 }
 
 /** A project's scheduled prompt: an Aviary task of type `project`. */
-export interface ProjectSchedule {
+export interface ProjectSchedule extends TriggerFields {
 	/** The task's `agent/task` key. */
 	id: string;
 	agent: string;
@@ -699,27 +699,11 @@ export interface ProjectSchedule {
 	prompt: string;
 	enabled: boolean;
 	trigger: ScheduleTrigger;
-	schedule: string;
-	every: string;
-	at: string;
-	days: string;
-	startAt: string;
-	timezone: string;
-	overlap: "queue" | "skip";
-	missed: "skip" | "run_once";
 	description: string;
 	nextRun: string;
 	/** Most recent first, at most 20. */
 	history: ScheduleRun[];
 }
-
-const TRIGGERS: ScheduleTrigger[] = [
-	"once",
-	"interval",
-	"daily",
-	"weekly",
-	"cron",
-];
 
 function normalizeTrigger(raw: Record<string, unknown>): ScheduleTrigger {
 	const t = str(raw.trigger_type);
@@ -820,40 +804,6 @@ export function until(iso: string, now = Date.now()): string {
  * the trigger does not use are cleared, so switching triggers on an existing
  * task does not leave the old one behind.
  */
-export function triggerArgs(s: ProjectSchedule): Record<string, string> {
-	const args: Record<string, string> = {
-		trigger: s.trigger,
-		schedule: "",
-		every: "",
-		at: "",
-		days: "",
-		start_at: "",
-		timezone: s.timezone.trim(),
-		overlap: s.overlap,
-		missed: s.missed,
-	};
-	switch (s.trigger) {
-		case "once":
-			args.start_at = s.startAt.trim();
-			break;
-		case "interval":
-			args.every = s.every.trim();
-			break;
-		case "daily":
-			args.at = s.at.trim();
-			break;
-		case "weekly":
-			args.at = s.at.trim();
-			args.days = s.days.trim();
-			break;
-		case "cron":
-			args.trigger = "";
-			args.schedule = s.schedule.trim();
-			break;
-	}
-	return args;
-}
-
 export function emptySchedule(project: string): ProjectSchedule {
 	return {
 		id: "",

@@ -27,72 +27,7 @@
 			<span class="text-xs text-gray-500">The project's agent runs this task with this model instead of its own. Leave empty to use the agent's model.</span>
 		</div>
 
-		<fieldset class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-			<legend class="px-1 text-sm font-medium text-gray-700 dark:text-gray-200">Trigger</legend>
-			<div role="radiogroup" class="flex flex-wrap overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
-				<button v-for="t in TRIGGERS" :key="t.key" type="button" role="radio" :aria-checked="draft.trigger === t.key"
-					class="flex-1 px-3 py-1.5" :class="draft.trigger === t.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-					@click="draft.trigger = t.key">{{ t.label }}</button>
-			</div>
-			<div class="grid gap-3 sm:grid-cols-2">
-				<label v-if="draft.trigger === 'once'" class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">Start at</span>
-					<input v-model="startAtLocal" name="start_at" type="datetime-local" required :class="INPUT" />
-				</label>
-				<label v-if="draft.trigger === 'interval'" class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">Every</span>
-					<input v-model="draft.every" name="every" required :class="INPUT" placeholder="30m, 2h, 1d" />
-				</label>
-				<label v-if="draft.trigger === 'daily' || draft.trigger === 'weekly'" class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">At</span>
-					<input v-model="draft.at" name="at" required :class="INPUT" placeholder="09:00 or 09:00,17:30" />
-				</label>
-				<div v-if="draft.trigger === 'weekly'" class="text-sm sm:col-span-2">
-					<span class="text-gray-600 dark:text-gray-300">Days</span>
-					<div class="mt-1 flex flex-wrap gap-1">
-						<button v-for="d in DAYS" :key="d" type="button" :aria-pressed="days.includes(d)"
-							class="rounded-md border px-2 py-1 text-xs capitalize"
-							:class="days.includes(d) ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300'"
-							@click="toggleDay(d)">{{ d }}</button>
-					</div>
-				</div>
-				<label v-if="draft.trigger === 'cron'" class="block text-sm sm:col-span-2">
-					<span class="text-gray-600 dark:text-gray-300">Cron expression</span>
-					<input v-model="draft.schedule" name="schedule" required :class="INPUT" class="font-mono" placeholder="0 9 * * 1-5" />
-				</label>
-				<label class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">Timezone</span>
-					<input v-model="draft.timezone" name="timezone" list="schedule-timezones" :class="INPUT" :placeholder="localZone" />
-					<datalist id="schedule-timezones">
-						<option v-for="z in zones" :key="z" :value="z" />
-					</datalist>
-				</label>
-			</div>
-			<div class="grid gap-3 sm:grid-cols-2">
-				<label class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">If the last run is still going</span>
-					<select v-model="draft.overlap" name="overlap" :class="INPUT">
-						<option value="queue">Queue this run</option>
-						<option value="skip">Skip this run</option>
-					</select>
-				</label>
-				<label class="block text-sm">
-					<span class="text-gray-600 dark:text-gray-300">Runs missed while asleep or stopped</span>
-					<select v-model="draft.missed" name="missed" :class="INPUT">
-						<option value="skip">Skip them</option>
-						<option value="run_once">Run once to catch up</option>
-					</select>
-				</label>
-			</div>
-			<div data-testid="schedule-preview" class="text-xs">
-				<p class="font-medium text-gray-600 dark:text-gray-300">Next runs</p>
-				<p v-if="previewError" class="text-red-600 dark:text-red-400">{{ previewError }}</p>
-				<ol v-else-if="nextRuns.length" class="mt-1 space-y-0.5 font-mono text-gray-700 dark:text-gray-200">
-					<li v-for="t in nextRuns" :key="t">{{ formatFire(t) }}</li>
-				</ol>
-				<p v-else class="text-gray-400">No upcoming runs.</p>
-			</div>
-		</fieldset>
+		<TriggerEditor :model-value="draft" :preview="preview" @update:model-value="Object.assign(draft, $event)" />
 
 		<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
 			<input v-model="draft.enabled" type="checkbox" name="enabled" class="rounded" />
@@ -132,8 +67,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
-import type { ProjectSchedule, ScheduleTrigger } from "../../lib/projects";
+import type { ProjectSchedule } from "../../lib/projects";
+import type { TriggerFields } from "../../lib/trigger";
 import ModelSelector from "../ModelSelector.vue";
+import TriggerEditor from "../TriggerEditor.vue";
 
 const props = defineProps<{
 	schedule: ProjectSchedule;
@@ -141,7 +78,7 @@ const props = defineProps<{
 	save: (s: ProjectSchedule) => Promise<void>;
 	remove: (s: ProjectSchedule) => Promise<void>;
 	runNow: (s: ProjectSchedule) => Promise<void>;
-	preview: (s: ProjectSchedule) => Promise<string[]>;
+	preview: (s: TriggerFields) => Promise<string[]>;
 }>();
 const emit = defineEmits<{ saved: [id: string]; deleted: [] }>();
 const { availableModelOptions, refreshCredentials } = useAvailableModels();
@@ -149,20 +86,6 @@ onMounted(() => void refreshCredentials());
 
 const INPUT =
 	"mt-1 block w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800";
-const TRIGGERS: { key: ScheduleTrigger; label: string }[] = [
-	{ key: "once", label: "Once" },
-	{ key: "interval", label: "Interval" },
-	{ key: "daily", label: "Daily" },
-	{ key: "weekly", label: "Weekly" },
-	{ key: "cron", label: "Cron" },
-];
-const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const zones: string[] =
-	(Intl as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.(
-		"timeZone",
-	) ?? [];
-
 const draft = ref<ProjectSchedule>({ ...props.schedule });
 watch(
 	() => props.schedule,
@@ -181,62 +104,6 @@ watch(
 	agentOptions,
 	(list) => {
 		if (!draft.value.agent && list.length) draft.value.agent = list[0];
-	},
-	{ immediate: true },
-);
-
-const days = computed(() =>
-	draft.value.days
-		.split(",")
-		.map((d) => d.trim().toLowerCase())
-		.filter(Boolean),
-);
-function toggleDay(d: string) {
-	const next = days.value.includes(d)
-		? days.value.filter((x) => x !== d)
-		: [...days.value, d];
-	draft.value.days = DAYS.filter((x) => next.includes(x)).join(",");
-}
-
-// datetime-local edits local wall time; the scheduler takes RFC 3339.
-const startAtLocal = computed({
-	get() {
-		const t = Date.parse(draft.value.startAt);
-		if (Number.isNaN(t)) return "";
-		const d = new Date(t - new Date(t).getTimezoneOffset() * 60_000);
-		return d.toISOString().slice(0, 16);
-	},
-	set(v: string) {
-		const t = Date.parse(v);
-		draft.value.startAt = Number.isNaN(t) ? "" : new Date(t).toISOString();
-	},
-});
-
-const nextRuns = ref<string[]>([]);
-const previewError = ref("");
-let previewTimer: ReturnType<typeof setTimeout> | undefined;
-watch(
-	() =>
-		[
-			draft.value.trigger,
-			draft.value.schedule,
-			draft.value.every,
-			draft.value.at,
-			draft.value.days,
-			draft.value.startAt,
-			draft.value.timezone,
-		].join("|"),
-	() => {
-		clearTimeout(previewTimer);
-		previewTimer = setTimeout(async () => {
-			try {
-				nextRuns.value = await props.preview(draft.value);
-				previewError.value = "";
-			} catch (e) {
-				nextRuns.value = [];
-				previewError.value = e instanceof Error ? e.message : String(e);
-			}
-		}, 250);
 	},
 	{ immediate: true },
 );

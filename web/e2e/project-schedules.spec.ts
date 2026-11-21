@@ -260,7 +260,7 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 		"true",
 	);
 	await expect(
-		editor.getByTestId("schedule-preview").locator("li"),
+		editor.getByTestId("trigger-preview").locator("li"),
 	).toHaveCount(3);
 	await expect(editor.getByTestId("schedule-runs").locator("li")).toHaveCount(
 		2,

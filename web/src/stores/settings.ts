@@ -91,6 +91,14 @@ export interface AgentTask {
 	schedule?: string;
 	start_at?: string;
 	run_once?: boolean;
+	/** once, interval, daily, weekly or cron; inferred from the other fields when empty. */
+	trigger?: string;
+	every?: string;
+	at?: string;
+	days?: string;
+	timezone?: string;
+	overlap?: "queue" | "skip";
+	missed?: "skip" | "run_once";
 	watch?: string;
 	target?: string;
 	/** The project of this agent's that a "project" task runs its prompt against. */
