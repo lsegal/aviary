@@ -225,6 +225,51 @@ test("the … menu edits and deletes tasks", async ({ page }) => {
 	]);
 });
 
+test("the task editor's Danger Zone removes the open task", async ({
+	page,
+}) => {
+	const { saved } = await mockAgent(
+		page,
+		[
+			{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" },
+			{
+				name: "cleanup",
+				schedule: "0 0 * * *",
+				prompt: "Clean",
+				from_file: true,
+				file: "tasks/cleanup.md",
+			},
+		],
+		FILES,
+	);
+	await page.goto("/agents/assistant/tasks?task=cleanup");
+
+	const dangerZone = page.getByTestId("task-danger-zone");
+	await expect(
+		dangerZone.getByRole("heading", { name: "Danger Zone" }),
+	).toBeVisible();
+	await expect(dangerZone).toContainText(
+		"Remove this scheduled task from the agent's configuration, including its definition file tasks/cleanup.md.",
+	);
+	await dangerZone.getByRole("button", { name: "Remove Task" }).click();
+
+	const confirm = page.getByRole("alertdialog", { name: "Delete task?" });
+	await expect(confirm).toContainText("cleanup");
+	await confirm.getByRole("button", { name: "Cancel" }).click();
+	await expect(confirm).toBeHidden();
+	await expect(taskRows(page)).toHaveText(["daily-briefing", "cleanup"]);
+
+	await dangerZone.getByRole("button", { name: "Remove Task" }).click();
+	await confirm.getByRole("button", { name: "Delete" }).click();
+
+	await expect(confirm).toBeHidden();
+	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
+	expect(saved.at(-1)?.agents[0].tasks.map((t) => t.name)).toEqual([
+		"daily-briefing",
+	]);
+});
+
 test("the … menu renames and deletes files, and locks built-ins", async ({
 	page,
 }) => {
