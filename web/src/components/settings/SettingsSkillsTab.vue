@@ -100,7 +100,7 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, inject, ref } from "vue";
+import { computed, defineComponent, inject, ref, toRef } from "vue";
 import CodingSkillsPanel from "../skills/CodingSkillsPanel.vue";
 import { settingsViewContextKey } from "./context";
 
@@ -161,8 +161,12 @@ export default defineComponent({
 						: a.name.localeCompare(b.name),
 				);
 		});
+		// Live refs to the shared context, so its values stay reactive here.
+		const shared = Object.fromEntries(
+			Object.keys(settings).map((key) => [key, toRef(settings, key)]),
+		);
 		return {
-			...settings,
+			...(shared as typeof settings),
 			skillSearch,
 			skillStatusFilter,
 			skillSourceFilter,
