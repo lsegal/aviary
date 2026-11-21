@@ -2,7 +2,9 @@
 import { siDiscord, siSignal } from "simple-icons";
 import { useData, withBase } from "vitepress";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { data as skills } from "../../../skills/skills.data.mts";
 import LandingInstallBlock from "./LandingInstallBlock.vue";
+import SkillCard from "./skills/SkillCard.vue";
 
 interface ShowcaseItem {
 	title: string;
@@ -602,6 +604,32 @@ onBeforeUnmount(() => {
 			</div>
 		</section>
 
+		<section class="landing-band" id="skills">
+			<div class="landing-wrap">
+				<div class="landing-eyebrow reveal">Skills</div>
+				<h2 class="landing-section-title reveal">
+					Use Aviary's skills <em>anywhere.</em>
+				</h2>
+				<p class="landing-section-sub reveal">
+					The skills behind Projects are ordinary skills for Claude Code, Codex,
+					Gemini CLI and other CLI agents. Install them and use them on their
+					own, with no Aviary at all, or let Aviary run them for you.
+				</p>
+				<div class="skill-card-grid reveal">
+					<SkillCard v-for="skill in skills" :key="skill.name" :skill="skill" />
+				</div>
+				<div class="landing-projects-links reveal">
+					<a class="landing-btn landing-btn-primary" :href="withBase('/skills/')">
+						Browse the skills
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+							aria-hidden="true">
+							<path d="M5 12h14M13 5l7 7-7 7" />
+						</svg>
+					</a>
+				</div>
+			</div>
+		</section>
+
 		<section class="landing-band" id="workflows">
 			<div class="landing-wrap">
 				<div class="landing-eyebrow reveal">Core workflows</div>
@@ -921,6 +949,7 @@ onBeforeUnmount(() => {
 				</div>
 				<div class="landing-footer-links">
 					<a :href="withBase('/guide/')">Guide</a>
+					<a :href="withBase('/skills/')">Skills</a>
 					<a :href="withBase('/reference/')">Reference</a>
 					<a href="https://github.com/lsegal/aviary/releases" target="_blank" rel="noreferrer">Changelog</a>
 					<a href="https://github.com/lsegal/aviary" target="_blank" rel="noreferrer">GitHub</a>

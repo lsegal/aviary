@@ -54,12 +54,40 @@
       <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
         data-testid="usage-projects">
         <h3 class="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Projects</h3>
-        <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+        <div class="grid gap-3 sm:grid-cols-3 md:grid-cols-6">
           <div v-for="card in projectCards" :key="card.label" class="flex flex-col">
             <span class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ card.label }}</span>
             <span class="text-xl font-bold" :class="card.color ?? 'text-gray-900 dark:text-white'"
               :data-testid="card.testid">{{ card.value }}</span>
           </div>
+        </div>
+        <div v-if="store.projectBreakdown.length" class="mt-4 overflow-x-auto">
+          <table class="w-full text-xs" data-testid="usage-projects-breakdown">
+            <thead>
+              <tr class="border-b border-gray-100 text-left text-[10px] uppercase tracking-wide text-gray-400 dark:border-gray-800 dark:text-gray-500">
+                <th class="py-2 pr-3 font-semibold">Project</th>
+                <th class="px-3 py-2 text-right font-semibold">Worked On</th>
+                <th class="px-3 py-2 text-right font-semibold">Merged</th>
+                <th class="px-3 py-2 text-right font-semibold">Failed</th>
+                <th class="px-3 py-2 text-right font-semibold">Wall Time</th>
+                <th class="py-2 pl-3 text-right font-semibold">Code Changed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in store.projectBreakdown" :key="row.name"
+                class="border-b border-gray-50 last:border-0 dark:border-gray-800/50" data-testid="usage-project-row">
+                <td class="py-2 pr-3 font-mono text-gray-700 dark:text-gray-300" data-testid="usage-project-name">{{ row.name }}</td>
+                <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.issues }}</td>
+                <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.merged }}</td>
+                <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.failed }}</td>
+                <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ fmtDuration(row.wallMs) }}</td>
+                <td class="py-2 pl-3 text-right font-mono" data-testid="usage-project-lines">
+                  <span class="text-green-600 dark:text-green-400">+{{ fmtLines(row.additions) }}</span> <span
+                    class="text-red-500">−{{ fmtLines(row.deletions) }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -364,6 +392,18 @@ const projectCards = computed(() => {
 			value: fmtDuration(p.wallMs),
 			testid: "usage-projects-wall-time",
 		},
+		{
+			label: "Lines Added",
+			value: `+${fmtLines(p.additions)}`,
+			testid: "usage-projects-additions",
+			color: "text-green-600 dark:text-green-400",
+		},
+		{
+			label: "Lines Removed",
+			value: `−${fmtLines(p.deletions)}`,
+			testid: "usage-projects-deletions",
+			color: "text-red-500",
+		},
 	];
 });
 
@@ -398,6 +438,10 @@ function fmtTokens(n: number): string {
 
 function fmtCost(n: number): string {
 	return `$${n.toFixed(n < 0.01 ? 4 : 2)}`;
+}
+
+function fmtLines(n: number): string {
+	return n.toLocaleString("en-US");
 }
 
 function fmtDuration(ms: number): string {

@@ -6,7 +6,9 @@
 /gh-create owner/repo the save button crashes on empty files, see ./crash.png
 ```
 
-[Read the skill](https://github.com/lsegal/aviary/tree/main/.agents/skills/gh-create/SKILL.md)
+[Landing page](/skills/gh-create/) · [Read the skill](https://github.com/lsegal/aviary/tree/main/.agents/skills/gh-create/SKILL.md)
+
+This skill works on its own, with no Aviary at all. Aviary just runs it for you.
 
 ## How It Works
 

@@ -1,0 +1,30 @@
+# Landing page content for https://aviary.bot/skills/gh-safe-merge/. The docs
+# site reads this file, SKILL.md and agents/openai.yaml at build time.
+eyebrow: Outside contribution gatekeeper
+# Wrap the accent word in *asterisks*.
+headline: Safety-checked, then *merged.*
+tagline: Accepts a pull request nobody on your side owns. It checks the change is safe and does what it says, then drives it through CI to a merge.
+usage: /gh-safe-merge owner/repo#123
+steps:
+  - title: Safety check
+    text: Reads the description, full diff and every commit for intent, security, backdoors, supply chain and licensing before anything runs.
+  - title: Mark ready
+    text: Marks a draft ready once the check passes. A pull request that fails stays a draft.
+  - title: Unblock CI
+    text: Approves the workflow runs GitHub is holding, only for the commit it checked.
+  - title: Finish
+    text: Resolves conflicts, applies formatters and auto-fixes, and adds a changelog entry or docs the change plainly needs.
+  - title: Green CI
+    text: Runs every required check to completion on the final head.
+  - title: Merge
+    text: Merges a safe, working pull request with no comment. Incorrect ones go back to the author, malicious ones are closed.
+aviary: Run it yourself on an outside pull request, from any CLI or from an Aviary agent. Holds work the same way as in gh-fix.
+requirements:
+  - The GitHub CLI (gh), signed in with write access to the repository.
+  - git.
+  - A CLI agent that loads skills, such as Claude Code, Codex or Gemini CLI.
+options:
+  - name: owner/repo#123
+    text: The pull request to accept.
+  - name: and do not merge
+    text: Stops after the safety check and green CI, with one comment naming the hold. A do-not-merge label does the same.

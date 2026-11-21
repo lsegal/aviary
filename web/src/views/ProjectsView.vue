@@ -48,7 +48,7 @@
 							</button>
 							<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
 								class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-								:disabled="!scheduleOwners.length" @click="onNewSchedule">
+								:disabled="!scheduleAgent" @click="onNewSchedule">
 								<CalendarDaysIcon aria-hidden="true" class="h-5 w-5" />
 								Schedule
 							</button>
@@ -148,7 +148,7 @@
 									<template v-if="filters.length">{{ shownTotal }} of {{ allItems }} {{ allItems === 1 ? noun : `${noun}s` }}</template>
 									<template v-else>{{ shownTotal }} {{ shownTotal === 1 ? noun : `${noun}s` }}</template>
 								</span>
-								<router-link v-if="!aggregate && scheduleOwners.length" :to="agentTaskPath(scheduleOwners[0])" data-testid="manage-scheduled-tasks"
+								<router-link v-if="!aggregate && scheduleAgent" :to="agentTaskPath(scheduleAgent)" data-testid="manage-scheduled-tasks"
 									class="text-blue-600 hover:underline dark:text-blue-400">Manage in Scheduled Tasks</router-link>
 								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
 									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -432,7 +432,6 @@ const {
 	preview: previewSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project);
-
 // The project's scheduled tasks are their own kind of box on the board: in
 // the list and in the kanban's Scheduled column, while the Scheduled chip or
 // no chip is selected.
@@ -461,21 +460,20 @@ function openSchedule(id: string) {
 	void router.push({ query: { ...route.query, scheduled: id } });
 }
 
-// The agents a new scheduled task can belong to: the project's owner, or
-// any agent when no agent owns the watch.
-const scheduleOwners = computed(() =>
-	owner.value ? [owner.value] : scheduleAgents.value,
+// The agent a new scheduled task runs under: the project's owner, or the
+// first agent when no agent owns the watch.
+const scheduleAgent = computed(
+	() => owner.value || scheduleAgents.value[0] || "",
 );
 // Schedule creates a scheduled task the way any is created, through the
 // shared Add task dialog, as a "project" task targeting this project.
 const { open: openItemDialog } = useAgentItemDialogs();
 function onNewSchedule() {
-	const [agent] = scheduleOwners.value;
-	if (!agent) return;
+	if (!scheduleAgent.value) return;
 	openItemDialog({
 		kind: "task",
 		mode: "create",
-		agent,
+		agent: scheduleAgent.value,
 		project: project.value,
 		onCreated: () => void refreshSchedules(),
 	});

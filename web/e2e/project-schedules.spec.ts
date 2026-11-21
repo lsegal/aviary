@@ -132,7 +132,10 @@ const UPCOMING = [
 
 type Args = Record<string, unknown>;
 
-async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
+async function setup(
+	page: Page,
+	opts: { upcoming?: unknown[]; owner?: string } = {},
+) {
 	await setAuthToken(page);
 	const calls: Record<string, Args[]> = {};
 	const tasks: unknown[] = [...TASKS];
@@ -144,8 +147,22 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 	await mockMCP(page, {
 		agent_list: [{ name: "assistant" }, { name: "reviewer" }],
 		auth_list: [],
-		// No agent owns the watch, so its board sits under System → Watches.
-		config_get: { agents: [{ name: "assistant", model: "cli/codex/gpt-5.5" }] },
+		// Without an owner no agent owns the watch, so its board sits under
+		// System → Watches.
+		config_get: {
+			agents: [
+				{ name: "assistant", model: "cli/codex/gpt-5.5" },
+				...(opts.owner
+					? [
+							{
+								name: opts.owner,
+								model: "cli/codex/gpt-5.5",
+								projects: [{ target: "lsegal/aviary" }],
+							},
+						]
+					: []),
+			],
+		},
 		// The shared Add task dialog saves the config; the saved project task
 		// then lists like any other.
 		config_save: (args?: Args) => {
@@ -574,6 +591,39 @@ test("the header Schedule button creates a project scheduled task through the sh
 		"href",
 		"/agents/assistant/tasks?task=hourly-ci-watch",
 	);
+});
+
+test("new schedule on an owned project runs under the project's agent without asking", async ({
+	page,
+}) => {
+	const calls = await setup(page, { owner: "reviewer" });
+	await page.goto("/agents/reviewer/projects/lsegal%2Faviary");
+	await page.getByRole("button", { name: "Schedule", exact: true }).click();
+
+	const dialog = page.getByRole("dialog", {
+		name: "Add project scheduled task",
+	});
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByLabel("Agent")).toHaveCount(0);
+	await dialog.getByLabel("Task name").fill("owned-watch");
+	await dialog.getByLabel("Prompt").fill("Summarize open PRs.");
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+
+	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
+		agents: { name: string; tasks?: { name: string }[] }[];
+	};
+	const owner = config.agents.find((a) => a.name === "reviewer");
+	expect(owner?.tasks).toEqual([
+		expect.objectContaining({
+			name: "owned-watch",
+			type: "project",
+			project: "lsegal/aviary",
+		}),
+	]);
+	expect(
+		config.agents.find((a) => a.name === "assistant")?.tasks ?? [],
+	).toEqual([]);
 });
 
 test("new schedule sets every trigger type, timezone and policy, and they round-trip", async ({
