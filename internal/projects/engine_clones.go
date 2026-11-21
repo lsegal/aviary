@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -319,7 +320,7 @@ func (w *Engine) removeCloneIfUnused(reg *cloneRegistry, path string) (core.Clon
 		return core.CloneEntry{}, false
 	}
 	verdict, reason := classifyClone(rec, usage)
-	if verdict != cloneUnused || !ownedHere(rec, usage) {
+	if verdict != cloneUnused || !ownedHere(rec, usage) || !w.safeToRemoveAutomatically(rec.Path) {
 		return core.CloneEntry{}, false
 	}
 	size, _ := dirSize(context.Background(), rec.Path)
@@ -344,4 +345,15 @@ func ownedHere(rec cloneRecord, usage cloneUsage) bool {
 	}
 	state, ok := usage.work[rec.Job]
 	return ok && state.Status != ""
+}
+
+// safeToRemoveAutomatically reports whether path looks like a clone that can
+// be removed without anyone asking: a git checkout that does not hold this
+// instance's state. A checkout recorded for a directory that is not a clone
+// is left to a manual clear.
+func (w *Engine) safeToRemoveAutomatically(path string) bool {
+	if !isDir(filepath.Join(path, ".git")) {
+		return false
+	}
+	return w.StatePath == "" || !underRoots(w.StatePath, []string{path})
 }

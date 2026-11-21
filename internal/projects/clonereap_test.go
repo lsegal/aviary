@@ -262,3 +262,29 @@ func TestFinishedJobRemovesItsClone(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseJobCloneKeepsDirectoriesThatAreNotClones(t *testing.T) {
+	root := t.TempDir()
+	// A checkout that is no git clone, and a clone that holds the state
+	// file, are never removed without asking.
+	plain := filepath.Join(root, "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	holder := makeClone(t, root, "r-gh-fix-2", "o/r")
+	statePath := filepath.Join(holder, ".aviary.json")
+	work := map[string]workState{
+		"o/r#1": {Status: "completed", CheckoutDirectory: plain},
+		"o/r#2": {Status: "completed", CheckoutDirectory: holder},
+	}
+	if err := saveScopedWorkState(statePath, work, []string{"o/r"}); err != nil {
+		t.Fatal(err)
+	}
+	w := &Engine{Targets: []string{"o/r"}, StatePath: statePath, Out: &syncBuffer{}}
+	w.SetTempDirs([]string{root})
+	w.releaseJobClone("o/r#1", plain)
+	w.releaseJobClone("o/r#2", holder)
+	if !isDir(plain) || !isDir(holder) {
+		t.Fatal("a directory that is not a removable clone was removed")
+	}
+}
