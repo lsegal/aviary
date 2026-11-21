@@ -1019,13 +1019,13 @@ export default defineComponent({
 					name: file,
 				});
 		};
-		// A project scheduled task is also edited from its project's Schedules.
+		// A project scheduled task is also edited from its project's board.
 		const projectScheduleLink = (agentName: string, task: AgentTask) => ({
 			path: projectPath(
 				projectOwner(store.config, task.project ?? ""),
 				task.project ?? "",
 			),
-			query: { tab: "schedules", schedule: `${agentName}/${task.name}` },
+			query: { scheduled: `${agentName}/${task.name}` },
 		});
 		// The sidebar's delete dialog confirms and removes the task.
 		const removeTask = (agent: string, name: string) =>

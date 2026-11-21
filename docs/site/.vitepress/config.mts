@@ -23,13 +23,13 @@ export default defineConfig({
 			["meta", { property: "og:description", content: description }],
 			["meta", { property: "og:url", content: pageUrl }],
 			["meta", { property: "og:image", content: imageUrl }],
-			["meta", { property: "og:image:width", content: "512" }],
-			["meta", { property: "og:image:height", content: "512" }],
+			["meta", { property: "og:image:width", content: "1200" }],
+			["meta", { property: "og:image:height", content: "630" }],
 			[
 				"meta",
 				{
 					property: "og:image:alt",
-					content: "Aviary logo on white background",
+					content: "Aviary logo and tagline on a white card",
 				},
 			],
 			["meta", { name: "twitter:card", content: "summary_large_image" }],
@@ -40,7 +40,7 @@ export default defineConfig({
 				"meta",
 				{
 					name: "twitter:image:alt",
-					content: "Aviary logo on white background",
+					content: "Aviary logo and tagline on a white card",
 				},
 			],
 		];
