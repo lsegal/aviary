@@ -143,7 +143,7 @@
 								Targets:
 								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ t.issues }})</template>
 							</span>
-							<span v-if="version">Version {{ version }}</span>
+							<span v-if="version">Version {{ shortVersion(version) }}</span>
 						</footer>
 					</div>
 				</template>
@@ -179,6 +179,7 @@ import {
 	projectPath,
 	summarizePrompt,
 } from "../lib/projects";
+import { shortVersion } from "../lib/version";
 import { useSettingsStore } from "../stores/settings";
 
 const FILTERS: { key: BoardFilter; label: string }[] = [

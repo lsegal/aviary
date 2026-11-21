@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -128,14 +129,43 @@ func IsDevBuild() bool {
 	return err != nil
 }
 
-// CurrentVersion returns the effective local version, honoring emulation when enabled.
+// CurrentVersion returns the effective local version, honoring emulation when
+// enabled. A dev build reports the full commit SHA of the code it runs: the
+// git-mode checkout's HEAD, read on every call so a pulled checkout reports its
+// new commit, else the VCS revision Go embedded in the binary, else "dev".
 func CurrentVersion() string {
 	emulateMu.RLock()
-	defer emulateMu.RUnlock()
-	if emulateLocal != "" {
-		return emulateLocal
+	local := emulateLocal
+	emulateMu.RUnlock()
+	if local != "" {
+		return local
+	}
+	if !IsDevBuild() {
+		return buildinfo.Version
+	}
+	if dir := GitCheckout(); dir != "" {
+		if sha, err := runGit(context.Background(), dir, "rev-parse", "HEAD"); err == nil && sha != "" {
+			return sha
+		}
+	}
+	if rev := buildRevision(); rev != "" {
+		return rev
 	}
 	return buildinfo.Version
+}
+
+// buildRevision returns the VCS revision embedded in the binary, if any.
+var buildRevision = func() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" {
+			return s.Value
+		}
+	}
+	return ""
 }
 
 // Check compares the current version with the latest available release, or
@@ -190,6 +220,7 @@ func cachedGitCheck(ctx context.Context, dir string) (CheckResult, error) {
 	if time.Now().Before(cacheExpiry) && cachedCheck.Git != nil {
 		out := cachedCheck
 		cacheMu.RUnlock()
+		out.CurrentVersion = CurrentVersion()
 		return out, nil
 	}
 	cacheMu.RUnlock()

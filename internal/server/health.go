@@ -9,7 +9,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/update"
 )
@@ -105,7 +104,7 @@ var wsUpgrader = websocket.Upgrader{
 // Public — no authentication required. Returns current version and status.
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS})
+	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: update.CurrentVersion(), GOOS: runtime.GOOS})
 }
 
 // wsHandler returns a handler for GET /api/ws.
@@ -140,9 +139,8 @@ func wsHandler(token string) http.HandlerFunc {
 		defer conn.Close() //nolint:errcheck
 		defer wsUnregister(conn)
 
-		payload := wsEvent{Type: "health", OK: true, Version: buildinfo.Version, GOOS: runtime.GOOS}
 		healthEvent := func() wsEvent {
-			ev := payload
+			ev := wsEvent{Type: "health", OK: true, Version: update.CurrentVersion(), GOOS: runtime.GOOS}
 			ev.Restart = currentRestartSnapshot()
 			return ev
 		}
