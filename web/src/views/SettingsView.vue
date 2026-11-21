@@ -2928,10 +2928,7 @@ function normalizedDraftConfig(): AppConfig {
 			target: (task.target ?? "").trim(),
 			run_once: Boolean(task.run_once),
 		})),
-		projects:
-			agent.projects && Object.keys(agent.projects).length
-				? agent.projects
-				: undefined,
+		projects: agent.projects?.length ? agent.projects : undefined,
 		permissions:
 			(agent.permissions?.tools?.length ?? 0) > 0 ||
 			(agent.permissions?.disabled_tools?.length ?? 0) > 0 ||

@@ -262,20 +262,19 @@ agents:
     model: cli/claude/opus
     fallbacks: [cli/codex/gpt-5.6-terra:high]
     projects:
-      list:
-        - target: owner/repo
-        - target: https://github.com/orgs/acme/projects/3
-          reports:                   # off unless set
-            agent: assistant
-            targets: [slack:main:C0123456789]
+      - target: owner/repo
+      - target: https://github.com/orgs/acme/projects/3
+        reports:                   # off unless set
+          agent: assistant
+          targets: [slack:main:C0123456789]
 ```
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `list[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
-| `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
-| `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
-| `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
+| `[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
+| `[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
+| `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 
 ---
 

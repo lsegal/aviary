@@ -150,7 +150,7 @@ func TestManagerDeliversReportsFromSnapshots(t *testing.T) {
 		sent <- sentReport{agent, target, text}
 		return nil
 	})
-	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"telegram:main:42"}})}}}})
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "cli/codex", Projects: reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"telegram:main:42"}})}}})
 
 	m.Snapshot(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
 	m.Snapshot(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("failed")}})

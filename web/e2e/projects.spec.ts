@@ -247,9 +247,7 @@ async function setup(
 				{
 					name: "coder",
 					model: "cli/claude/opus",
-					projects: {
-						list: [{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }],
-					},
+					projects: [{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }],
 				},
 			],
 		},
