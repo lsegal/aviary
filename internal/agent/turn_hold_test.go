@@ -61,6 +61,7 @@ func TestTurnHoldHoldsToolCallsUntilReleased(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("released turn did not finish")
 	}
+	runner.Wait()
 	assert.Equal(t, 1, toolClient.callCount())
 }
 
@@ -85,6 +86,7 @@ func TestTurnHoldStopsWithTheTurn(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("cancelled held turn did not stop")
 	}
+	runner.Wait()
 	assert.Equal(t, 0, toolClient.callCount())
 }
 

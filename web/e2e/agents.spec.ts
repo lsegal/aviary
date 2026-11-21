@@ -259,11 +259,11 @@ test("switching agents preserves subtab and loads that agent file state", async 
 	await agentPageLink(page, "Files").click();
 	await expect(page).toHaveURL(/\/agents\/coder\/files$/);
 	await expect(
-		page.getByRole("button", { name: "IDENTITY.md", exact: true }),
-	).toBeVisible();
+		page.getByTestId("sidebar-files").getByTestId("file-row"),
+	).toHaveText(["AGENTS.md", "IDENTITY.md"]);
 	await expect(
 		page.locator(
-			'textarea[placeholder="Select or add a markdown file to edit."]',
+			'textarea[placeholder="Pick a file in the sidebar, or add one with its +."]',
 		),
 	).toHaveValue("# Coder Agent");
 });
@@ -987,12 +987,17 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 	await openAgentPage(page, "settings");
 	await agentPageLink(page, "Tasks").click();
 
-	await expect(page.getByRole("button", { name: "file-task" })).toBeVisible();
-	await page.getByLabel("Delete task").click();
-	await page.getByRole("button", { name: "Delete" }).click();
+	const row = page.getByTestId("task-row").filter({ hasText: "file-task" });
+	await expect(row).toBeVisible();
+	await row.hover();
+	await row.getByTestId("task-menu-button").click();
+	await page.getByRole("menuitem", { name: "Delete" }).click();
+	await page.getByRole("button", { name: "Delete", exact: true }).click();
 
-	await expect(page.getByRole("button", { name: "file-task" })).toHaveCount(0);
-	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	await expect(row).toHaveCount(0);
+	await expect(
+		page.getByText("No tasks configured for this agent."),
+	).toBeVisible();
 	expect(savedConfig).toMatchObject({
 		agents: [
 			{
@@ -1002,26 +1007,31 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 	});
 });
 
-test("agent files editor lists root markdown files and protects built-ins", async ({
+test("agent files editor opens the file picked in the sidebar", async ({
 	page,
 }) => {
 	await openAgentPage(page, "files");
 
-	await expect(page.getByRole("button", { name: "IDENTITY.md" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
-	await page.getByRole("button", { name: "AGENTS.md" }).click();
-	await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
-	await page.getByRole("button", { name: "RULES.md" }).click();
-	await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
+	const files = page.getByTestId("sidebar-files").getByTestId("file-row");
+	await expect(files).toHaveText([
+		"AGENTS.md",
+		"IDENTITY.md",
+		"MEMORY.md",
+		"RULES.md",
+	]);
+	const editor = page.getByPlaceholder(
+		"Pick a file in the sidebar, or add one with its +.",
+	);
+	// Without a ?file the page opens the first file.
+	await expect(editor).toHaveValue("# Agents");
+	await expect(page.getByTestId("agent-file-name")).toContainText("Built-in");
 
-	await page.getByRole("button", { name: "IDENTITY.md" }).click();
-	await expect(page.getByRole("button", { name: "Delete" })).toBeEnabled();
-
-	await page.getByPlaceholder("IDENTITY.md").fill("PROFILE");
-	await page.getByRole("button", { name: "+", exact: true }).click();
-	await expect(page.getByRole("button", { name: "PROFILE.md" })).toBeVisible();
+	await files.filter({ hasText: "IDENTITY.md" }).getByRole("link").click();
+	await expect(page).toHaveURL(
+		/\/agents\/assistant\/files\?file=IDENTITY\.md$/,
+	);
+	await expect(editor).toHaveValue("# Identity");
+	await expect(page.getByTestId("agent-file-name")).toHaveText("IDENTITY.md");
 });
 
 test("agent files editor auto-syncs templates when an older agent has no root files", async ({
@@ -1066,12 +1076,10 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	await openAgentPage(page, "files");
 	await page.getByRole("button", { name: "Refresh" }).first().click();
 
-	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "RULES.md" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "MEMORY.md" })).toBeVisible();
 	await expect(
-		page.getByText("No root markdown files yet. Refresh or add one."),
-	).toHaveCount(0);
+		page.getByTestId("sidebar-files").getByTestId("file-row"),
+	).toHaveText(["AGENTS.md", "MEMORY.md", "RULES.md"]);
+	await expect(page.getByText("No files yet")).toHaveCount(0);
 });
 
 test("a task can target one of its agent's projects and keeps it when saved", async ({
@@ -1126,7 +1134,10 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page.getByRole("button", { name: "nightly-triage" }).click();
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "nightly-triage" })
+		.click();
 
 	// A project that is no longer watched stays selected instead of clearing.
 	const project = page.getByRole("combobox", { name: "Project" });
@@ -1148,7 +1159,10 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	await expect(model).toContainText("cli/claude/opus");
 
 	// Turning the first task into a project task offers the watched projects.
-	await page.getByRole("button", { name: "daily-briefing" }).click();
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
 	await page
 		.locator("select")
 		.filter({ has: page.locator('option[value="project"]') })
@@ -1203,7 +1217,7 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 			},
 		],
 		agent_file_list: [],
-		task_preview: (args) => {
+		task_preview: (args?: Record<string, unknown>) => {
 			previews.push(args ?? {});
 			return {
 				description: "preview",

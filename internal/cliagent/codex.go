@@ -147,8 +147,8 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 	defer s.mu.Unlock()
 
 	var images []string
-	if turn.MediaURL != "" {
-		path, err := writeTempImage(ctx, turn.MediaURL)
+	for _, mediaURL := range turn.MediaURLs {
+		path, err := writeTempImage(ctx, mediaURL)
 		if err != nil {
 			return Result{}, err
 		}

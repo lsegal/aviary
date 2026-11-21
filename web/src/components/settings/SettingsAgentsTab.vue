@@ -72,12 +72,15 @@
 							</div>
 						</div>
 
-						<!-- Files page -->
+						<!-- Files page: the sidebar lists the files; this edits the open one. -->
 						<div v-show="selectedAgentSubtab === 'files'" class="p-5">
 							<div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-								<div class="flex items-center justify-between gap-2">
-									<div class="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Files
-									</div>
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<h4 data-testid="agent-file-name" class="flex min-w-0 items-center gap-2 font-mono text-sm font-semibold text-gray-800 dark:text-gray-200">
+										<span class="truncate">{{ getAgentFileState(agent.name).selectedFile || 'Files' }}</span>
+										<span v-if="isProtectedAgentFile(getAgentFileState(agent.name).selectedFile)"
+											class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
+									</h4>
 									<div class="flex flex-wrap items-center gap-1.5">
 										<transition name="save-indicator">
 											<div v-if="getAgentFileState(agent.name).saveFlash"
@@ -98,73 +101,32 @@
 											{{ getAgentFileState(agent.name).loading ? 'Loading…' : 'Refresh' }}
 										</button>
 										<button type="button"
+											class="rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
+											:disabled="!agent.name || getAgentFileState(agent.name).syncing"
+											@click="syncAgentTemplates(agent.name)">
+											{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
+										</button>
+										<button type="button"
 											class="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
 											:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving"
 											@click="saveAgentFile(agent.name)">
 											{{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
 										</button>
-										<button type="button"
-											class="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-											:disabled="!agent.name || !canDeleteAgentFile(getAgentFileState(agent.name).selectedFile) || getAgentFileState(agent.name).deleting"
-											@click="promptDeleteAgentFile(agent.name)">
-											{{ getAgentFileState(agent.name).deleting ? 'Deleting…' : 'Delete' }}
-										</button>
 									</div>
 								</div>
-								<div class="grid grid-cols-[160px_minmax(0,1fr)] gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-									<div class="space-y-2 self-start">
-										<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-											<div v-if="getAgentFileState(agent.name).files.length" class="space-y-1">
-												<button v-for="file in getAgentFileState(agent.name).files" :key="file" type="button"
-													class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium"
-													:class="getAgentFileState(agent.name).selectedFile === file ? 'bg-gray-900 text-white dark:bg-gray-700 dark:text-white' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
-													@click="selectAgentFile(agent.name, file)">
-													<span class="truncate">{{ file }}</span>
-													<span v-if="isProtectedAgentFile(file)"
-														class="ml-2 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
-												</button>
-											</div>
-											<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
-												{{ agent.name ? 'No root markdown files yet. Refresh or add one.' : 'Name the agent first to manage files.' }}
-											</p>
-										</div>
-										<div class="space-y-1">
-											<div class="flex gap-1.5">
-												<input v-model="getAgentFileState(agent.name).draftFileName" type="text"
-													class="field-input py-1 font-mono text-xs"
-													:disabled="!agent.name || getAgentFileState(agent.name).creating" placeholder="IDENTITY.md" />
-												<button type="button"
-													class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-													:disabled="!agent.name || getAgentFileState(agent.name).creating"
-													@click="createAgentFile(agent.name)">
-													{{ getAgentFileState(agent.name).creating ? '…' : '+' }}
-												</button>
-											</div>
-											<button type="button"
-												class="w-full rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40"
-												:disabled="!agent.name || getAgentFileState(agent.name).syncing"
-												@click="syncAgentTemplates(agent.name)">
-												{{ getAgentFileState(agent.name).syncing ? 'Syncing…' : 'Sync Templates' }}
-											</button>
-											<p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span
-													class="font-mono">.md</span> only. <span class="font-mono">AGENTS.md</span>, <span class="font-mono">SYSTEM.md</span>, <span
-													class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are protected.
-											</p>
-										</div>
-									</div>
-
-									<div class="relative flex flex-col">
-										<textarea :value="getAgentFileState(agent.name).content"
-											@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
-											@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
-											class="field-input min-h-[50vh] resize-y py-2 font-mono text-xs"
-											:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
-											:placeholder="agent.name ? 'Select or add a markdown file to edit.' : 'Name the agent first to manage files.'" />
-										<p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">
-											{{ getAgentFileState(agent.name).error }}
-										</p>
-									</div>
-								</div>
+								<textarea :value="getAgentFileState(agent.name).content"
+									@input="getAgentFileState(agent.name).content = ($event.target as HTMLTextAreaElement).value"
+									@keydown="(e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); void saveAgentFile(agent.name); } }"
+									class="field-input min-h-[50vh] w-full resize-y py-2 font-mono text-xs"
+									:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile"
+									:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
+								<p v-if="getAgentFileState(agent.name).error" class="text-xs text-red-600 dark:text-red-400">
+									{{ getAgentFileState(agent.name).error }}
+								</p>
+								<p class="text-[11px] leading-4 text-gray-400 dark:text-gray-500">Root-level <span
+										class="font-mono">.md</span> only. <span class="font-mono">AGENTS.md</span>, <span class="font-mono">SYSTEM.md</span>, <span
+										class="font-mono">MEMORY.md</span>, and <span class="font-mono">RULES.md</span> are built in and cannot be renamed or deleted.
+								</p>
 							</div>
 						</div>
 
@@ -759,44 +721,10 @@
 
 							<div v-if="!agent.tasks?.length"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No tasks configured for this agent.
+								No tasks configured for this agent. Add one with the + on Tasks in the sidebar.
 							</div>
 
-<div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-<!-- Left: list of tasks -->
-<div class="min-w-0">
-<div class="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-<div v-if="agent.tasks?.length" class="space-y-1">
-<div v-for="(task, j) in agent.tasks" :key="`task-button-${i}-${j}`" class="flex items-center gap-1">
-<button type="button" class="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs font-medium" :class="selectedTaskIdx === j ? 'bg-gray-900 text-white dark:bg-gray-700 dark:text-white' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'" @click="selectedTaskIdx = j">
-<span class="truncate">{{ task.name || `Task ${Number(j) + 1}` }}</span>
-</button>
-
-<button type="button" class="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800" aria-label="Delete task" @click="promptDeleteTask(i, j, task.name)">
-<!-- Heroicons outline trash -->
-<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 6h18" />
-<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-<path d="M10 11v6" />
-<path d="M14 11v6" />
-<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-</svg>
-</button>
-
-</div>
-
-</div>
-<p v-else class="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">No tasks configured for this agent.</p>
-
-<div class="flex gap-1.5 mt-2">
-<input v-model="newTaskNameMap[agent.name || i]" type="text" class="field-input py-1 font-mono text-xs" :disabled="!agent.name" placeholder="task-name" />
-<button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" :disabled="!agent.name" @click="createTaskFromName(i)">+</button>
-</div>
-</div>
-<div class="mt-2"></div>
-</div>
-
-<!-- Right: single editor for selected task -->
+<!-- The sidebar lists the tasks; this edits the open one. -->
 <div>
 <div v-if="selectedTask">
 								<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -918,7 +846,6 @@ placeholder="Default project agent model"
 </div>
 <div v-else class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 Select a task to edit.
-</div>
 </div>
 </div>
 <div class="mt-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">

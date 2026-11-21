@@ -449,7 +449,7 @@ func TestClaudeSession_LongLivedProcess(t *testing.T) {
 	defer s.Close() //nolint:errcheck
 
 	var events []Event
-	r1, err := s.Send(context.Background(), Turn{Text: "one", MediaURL: redPixel}, collect(&events))
+	r1, err := s.Send(context.Background(), Turn{Text: "one", MediaURLs: []string{redPixel}}, collect(&events))
 	require.NoError(t, err)
 	assert.Contains(t, r1.Text, "turn=1")
 	assert.Contains(t, r1.Text, "images=1")
@@ -600,7 +600,7 @@ func TestCodexSession_ResumesThread(t *testing.T) {
 	require.NoError(t, err)
 
 	var events []Event
-	r1, err := s.Send(context.Background(), Turn{Text: "hello", MediaURL: redPixel}, collect(&events))
+	r1, err := s.Send(context.Background(), Turn{Text: "hello", MediaURLs: []string{redPixel}}, collect(&events))
 	require.NoError(t, err)
 	assert.Equal(t, "thread=thread-new images=1 prompt=hello", r1.Text)
 	assert.Equal(t, Event{Type: EventSession, SessionID: "thread-new"}, events[0])

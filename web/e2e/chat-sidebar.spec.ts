@@ -229,7 +229,7 @@ test("a new chat takes its generated name after the first message", async ({
 	await expect(page).toHaveURL("/agents/assistant/chat/sess_new");
 	await expect(chatRows(page)).toHaveText([/Main Chat/, /New chat/]);
 
-	const input = page.getByPlaceholder("Type a message or paste an image…");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
 	await input.fill("help me plan a weekend trip");
 	await input.press("Enter");
 

@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import modelCatalog from "../../internal/models/catalog.json" with {
+	type: "json",
+};
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 const CLI_DEFINITIONS = { acme: { binary: "acme-cli" } };
@@ -365,4 +368,39 @@ test("an Add provider row expands into tiles of provider kinds that start the ad
 	await expect(form.getByPlaceholder("Base URI (optional)")).toBeVisible();
 	await form.getByTestId("provider-add-cancel").click();
 	await expect(form).toHaveCount(0);
+});
+
+test("System → Models lists installed CLI providers' models alongside the catalog (#665)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/models");
+
+	const catalogProviders = new Set(
+		modelCatalog.map((entry) => entry.id.split("/", 1)[0]),
+	);
+	// codex is the only installed CLI that reports models; muse and acme are
+	// not installed, so the pickers do not offer them and neither does this page.
+	await expect(page.getByTestId("models-count")).toHaveText(
+		String(modelCatalog.length + 2),
+	);
+	await expect(page.getByTestId("providers-count")).toHaveText(
+		String(catalogProviders.size + 1),
+	);
+	await expect(page.locator('[data-provider-filter="codex"]')).toBeVisible();
+	await expect(page.locator('[data-provider-filter="muse"]')).toHaveCount(0);
+
+	await page
+		.getByPlaceholder("Search provider/model pairs")
+		.fill("codex/gpt-5.5");
+	const card = page.locator('[data-model="codex/gpt-5.5"]');
+	await expect(card).toBeVisible();
+	await expect(card).toContainText("via CLI");
+	await expect(card).toContainText("Reached through the installed codex CLI");
+	// A CLI pair has no catalog data, so the card invents no token sizes.
+	await expect(card).not.toContainText("Input");
+
+	await page.getByPlaceholder("Search provider/model pairs").fill("");
+	await page.locator('[data-provider-filter="codex"]').click();
+	await expect(page.getByText("Showing 2 models")).toBeVisible();
 });

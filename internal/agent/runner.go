@@ -101,34 +101,35 @@ type RunOverrides struct {
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", RunOverrides{}, "", "", true, consumers...)
+	r.promptCore(ctx, message, nil, RunOverrides{}, "", "", true, consumers...)
 }
 
-// PromptMedia is like Prompt but also attaches an image to the user message.
-// mediaURL may be a data URL ("data:image/png;base64,...") or a remote URL.
-// Pass an empty string for text-only messages.
-func (r *AgentRunner) PromptMedia(ctx context.Context, message, mediaURL string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURL, RunOverrides{}, "", "", true, consumers...)
+// PromptMedia is like Prompt but also attaches media to the user message.
+// Each media URL may be a data URL ("data:image/png;base64,...") or a remote
+// URL. Text file data URLs are inlined into the message the model sees.
+func (r *AgentRunner) PromptMedia(ctx context.Context, message string, mediaURLs []string, consumers ...StreamConsumer) {
+	r.promptCore(ctx, message, mediaURLs, RunOverrides{}, "", "", true, consumers...)
 }
 
 // PromptMediaWithOverrides is like PromptMedia but also applies per-run
 // overrides for model, fallbacks, and tool permissions.
-func (r *AgentRunner) PromptMediaWithOverrides(ctx context.Context, message, mediaURL string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURL, overrides, "", "", true, consumers...)
+func (r *AgentRunner) PromptMediaWithOverrides(ctx context.Context, message string, mediaURLs []string, overrides RunOverrides, consumers ...StreamConsumer) {
+	r.promptCore(ctx, message, mediaURLs, overrides, "", "", true, consumers...)
 }
 
 // PromptWithOverrides is like Prompt but applies the provided overrides for
 // this call only. Model, Fallbacks, RestrictTools, and DisabledTools in overrides take
 // precedence over agent-level defaults when non-empty.
 func (r *AgentRunner) PromptWithOverrides(ctx context.Context, message string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, "", overrides, "", "", true, consumers...)
+	r.promptCore(ctx, message, nil, overrides, "", "", true, consumers...)
 }
 
 // promptCore is the shared implementation for Prompt, PromptMedia, and
 // PromptWithOverrides.
 func (r *AgentRunner) promptCore(
 	ctx context.Context,
-	message, mediaURL string,
+	message string,
+	mediaURLs []string,
 	overrides RunOverrides,
 	promptMsgID, checkpointPath string,
 	persistUserMessage bool,
@@ -244,7 +245,7 @@ func (r *AgentRunner) promptCore(
 			userSender = sender
 		}
 		if persistUserMessage {
-			promptMsgID = r.appendSessionMessageWithSender(sessionID, domain.MessageRoleUser, message, mediaURL, effectiveModel, userSender)
+			promptMsgID = r.appendSessionMessageWithSender(sessionID, domain.MessageRoleUser, message, mediaURLs, effectiveModel, userSender)
 		}
 
 		slog.Info("agent: prompt started", "agent", r.agent.Name, "model", effectiveModel)
@@ -261,7 +262,7 @@ func (r *AgentRunner) promptCore(
 				AgentName: r.agent.Name,
 				SessionID: sessionID,
 				Message:   message,
-				MediaURL:  mediaURL,
+				MediaURLs: mediaURLs,
 				Overrides: overrides,
 				CreatedAt: time.Now(),
 			}
@@ -349,7 +350,7 @@ func (r *AgentRunner) promptCore(
 			// No LLM provider configured — surface as a message so the UI shows it but tests pass.
 			slog.Warn("agent: no provider", "agent", r.agent.Name, "model", effectiveModel)
 			msg := fmt.Sprintf("[no LLM provider configured for %q — check credentials and model settings]", effectiveModel)
-			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, "", effectiveModel)
+			r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, msg, nil, effectiveModel)
 			emit(StreamEvent{Type: StreamEventText, Text: msg})
 			deliver(msg)
 			emit(StreamEvent{Type: StreamEventDone})
@@ -413,11 +414,15 @@ func (r *AgentRunner) promptCore(
 			useHistory = *overrides.History
 		}
 
+		// The model sees text attachments inline; the stored message keeps them
+		// as attachments.
+		modelMessage, modelMedia := llm.InlineTextAttachments(message, mediaURLs)
+
 		if isCLI {
 			r.runCLITurn(promptCtx, cliTurnInput{
 				model:         effectiveModel,
-				message:       message,
-				mediaURL:      mediaURL,
+				message:       modelMessage,
+				mediaURLs:     modelMedia,
 				memoryContext: memoryBlock,
 				systemPrompt:  systemPrompt,
 				tools:         tools,
@@ -433,7 +438,7 @@ func (r *AgentRunner) promptCore(
 			return
 		}
 
-		conversation := []llm.Message{{Role: llm.RoleUser, Content: message, MediaURL: mediaURL}}
+		conversation := []llm.Message{{Role: llm.RoleUser, Content: modelMessage, MediaURLs: modelMedia}}
 
 		// Load any existing conversation ID for this session. A valid (non-expired)
 		// ID lets the provider resume server-side history so we only send the new
@@ -454,6 +459,11 @@ func (r *AgentRunner) promptCore(
 			// history only. Non-triggering group messages are now written directly
 			// into the session JSONL with participant metadata.
 			if history := r.loadSessionConversationWithinBudget(sessionID, 24, llm.ModelInputBudget(effectiveModel), systemPrompt); len(history) > 0 {
+				// The last history message is this prompt, which still needs
+				// its attachments.
+				last := &history[len(history)-1]
+				last.Content += strings.TrimPrefix(modelMessage, message)
+				last.MediaURLs = modelMedia
 				conversation = history
 			}
 		}
@@ -653,11 +663,11 @@ func (r *AgentRunner) promptCore(
 			// Answer is done — persist and return.
 			// Persist each returned image as a separate assistant message.
 			for _, mURL := range mediaURLs {
-				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "", mURL, effectiveModel)
+				r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, "", []string{mURL}, effectiveModel)
 			}
 			var assistantMsgID string
 			if answer != "" {
-				assistantMsgID = r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, "", effectiveModel)
+				assistantMsgID = r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, answer, nil, effectiveModel)
 			}
 			slog.Info("agent: prompt done", "agent", r.agent.Name, "model", effectiveModel)
 			// Mark the user message as responded so it is never processed twice.
@@ -687,7 +697,7 @@ func (r *AgentRunner) promptCore(
 		}
 
 		errMsg := fmt.Sprintf("Error: tool loop exceeded %d rounds", maxToolRounds)
-		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, "", effectiveModel)
+		r.appendSessionMessage(sessionID, domain.MessageRoleAssistant, errMsg, nil, effectiveModel)
 		usageRec.HasError = true
 		deliver(errMsg)
 		emit(StreamEvent{Type: StreamEventError, Err: fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)})
@@ -695,7 +705,7 @@ func (r *AgentRunner) promptCore(
 }
 
 func (r *AgentRunner) recoverPrompt(ctx context.Context, checkpointID, checkpointPath string, cp RunCheckpoint, consumers ...StreamConsumer) {
-	r.promptCore(ctx, cp.Message, cp.MediaURL, cp.Overrides, checkpointID, checkpointPath, false, consumers...)
+	r.promptCore(ctx, cp.Message, cp.MediaURLs, cp.Overrides, checkpointID, checkpointPath, false, consumers...)
 }
 
 func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
@@ -720,12 +730,12 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 	return sess.ID
 }
 
-func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content, mediaURL, model string) string {
-	return r.appendSessionMessageWithSender(sessionID, role, content, mediaURL, model, nil)
+func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content string, mediaURLs []string, model string) string {
+	return r.appendSessionMessageWithSender(sessionID, role, content, mediaURLs, model, nil)
 }
 
-func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role domain.MessageRole, content, mediaURL, model string, sender *domain.MessageSender) string {
-	if strings.TrimSpace(content) == "" && strings.TrimSpace(mediaURL) == "" {
+func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role domain.MessageRole, content string, mediaURLs []string, model string, sender *domain.MessageSender) string {
+	if strings.TrimSpace(content) == "" && len(mediaURLs) == 0 {
 		return ""
 	}
 	if sessionID == "" {
@@ -736,7 +746,7 @@ func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role doma
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
-		MediaURL:  mediaURL,
+		MediaURLs: mediaURLs,
 		Timestamp: time.Now(),
 	}
 	if role == domain.MessageRoleAssistant {
@@ -835,7 +845,7 @@ func (r *AgentRunner) loadSessionConversationWithinBudget(sessionID string, maxM
 	// Filter to messages with meaningful content.
 	var msgs []domain.Message
 	for _, line := range lines {
-		if strings.TrimSpace(string(line.Role)) == "" || (strings.TrimSpace(line.Content) == "" && strings.TrimSpace(line.MediaURL) == "") {
+		if strings.TrimSpace(string(line.Role)) == "" || (strings.TrimSpace(line.Content) == "" && len(line.MediaURLs) == 0) {
 			continue
 		}
 		switch line.Role {
@@ -917,7 +927,7 @@ func (r *AgentRunner) loadSessionConversationWithinBudget(sessionID string, maxM
 		if msg.Role == domain.MessageRoleUser {
 			mediaMarker = "prior image attached"
 		}
-		content := strings.TrimSpace(annotateHistoricalMedia(msg.Content, msg.MediaURL, mediaMarker))
+		content := strings.TrimSpace(annotateHistoricalMedia(msg.Content, msg.MediaURLs, mediaMarker))
 		if content == "" {
 			continue
 		}
@@ -941,7 +951,9 @@ func (r *AgentRunner) loadSessionConversationWithinBudget(sessionID string, maxM
 
 	// Format the current (last) user message, preserving sender attribution
 	// and beginning it with a timestamp and username.
-	lastContent := strings.TrimSpace(annotateHistoricalMedia(last.Content, last.MediaURL, "prior image attached"))
+	// The last message is the current prompt; its media is attached to the
+	// request rather than marked.
+	lastContent := strings.TrimSpace(last.Content)
 	ts := last.Timestamp.Format("2006-01-02 15:04:05")
 	// Infer source and privacy for the last message as well.
 	lastSource := "web"
@@ -1095,8 +1107,8 @@ func inferSessionPrivacy(channel *store.SessionChannel, sender *domain.MessageSe
 	return "private"
 }
 
-func annotateHistoricalMedia(content, mediaURL, marker string) string {
-	if strings.TrimSpace(mediaURL) == "" {
+func annotateHistoricalMedia(content string, mediaURLs []string, marker string) string {
+	if len(mediaURLs) == 0 {
 		return content
 	}
 	trimmed := strings.TrimSpace(content)
@@ -1279,7 +1291,7 @@ func (r *AgentRunner) executeToolCall(
 		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
 		errRec := toolEventRecord{Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
-		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), "", "")
+		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
 		return "error: " + callErr.Error(), false
 	}
 
@@ -1289,7 +1301,7 @@ func (r *AgentRunner) executeToolCall(
 	}
 	histRec := toolEventRecord{Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
-	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), "", "")
+	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
 	return resultText, false
 }
 

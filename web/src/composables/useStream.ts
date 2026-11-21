@@ -13,7 +13,7 @@ export function useStream() {
 		message: string,
 		onChunk: (chunk: string, type?: StreamChunkType) => void,
 		sessionID = "",
-		mediaURL?: string,
+		mediaURLs: string[] = [],
 		project?: string,
 		session = "main",
 	): Promise<void> {
@@ -29,7 +29,7 @@ export function useStream() {
 				session,
 				include_tool_progress: true,
 			};
-			if (mediaURL) toolArgs.media_url = mediaURL;
+			if (mediaURLs.length) toolArgs.media_urls = mediaURLs;
 			if (project) toolArgs.project = project;
 
 			const text = await callTool("agent_run", toolArgs, {

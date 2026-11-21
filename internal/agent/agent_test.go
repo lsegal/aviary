@@ -204,6 +204,7 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	assert.Len(t, toolEvents, 2)
 	assert.Equal(t, "web_search", toolEvents[0].Name)
@@ -270,6 +271,7 @@ func TestAgentRunner_NormalizesSessionHistoryCurrentSessionID(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, toolClient.calls, 1) {
 		assert.Equal(t, "session_history", toolClient.calls[0].Tool)
@@ -319,6 +321,7 @@ func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Equal(t, "", provider.requests[0].System)
@@ -389,8 +392,8 @@ func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) 
 
 	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_off", "main")
 	assert.NoError(t, err)
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", nil, "")
 
 	done := make(chan struct{}, 1)
 	history := false
@@ -408,6 +411,7 @@ func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) 
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Len(t, provider.requests[0].Messages, 1)
@@ -430,8 +434,8 @@ func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
 
 	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_on", "main")
 	assert.NoError(t, err)
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", nil, "")
 
 	done := make(chan struct{}, 1)
 	history := true
@@ -449,6 +453,7 @@ func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		// Prior conversation is collapsed into a single assistant message
@@ -503,6 +508,7 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
@@ -557,6 +563,7 @@ func TestAgentRunner_NonInteractiveJobPrompt(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Contains(t, provider.requests[0].System, "IMPORTANT: This is a non-interactive job run.")
@@ -592,6 +599,7 @@ func TestAgentRunner_RequestContextReachesTurnNotSession(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
@@ -674,6 +682,7 @@ func TestAgentRunner_NilProvider(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 	assert.GreaterOrEqual(t, len(got), 2)
 	assert.Equal(t, StreamEventText, got[0].Type)
 	assert.Equal(t, StreamEventDone, got[len(got)-1].Type)
@@ -702,6 +711,7 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 	assert.Equal(t, "hello world", text)
 	assert.Equal(t, []string{"hello ", "world"}, chunks)
 
@@ -1329,7 +1339,7 @@ func TestAppendSessionMessage_SkipsEmptyContent(t *testing.T) {
 	)
 
 	// Empty content should not create a file.
-	runner.appendSessionMessage("sess1", domain.MessageRoleUser, "", "", "")
+	runner.appendSessionMessage("sess1", domain.MessageRoleUser, "", nil, "")
 	p := store.SessionPath("agent_msg", "sess1")
 	_, err := os.Stat(p)
 	assert.Error(t, err)
@@ -1346,7 +1356,7 @@ func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
 		nil,
 	)
 
-	runner.appendSessionMessage("sess2", domain.MessageRoleUser, "Hello, world!", "", "")
+	runner.appendSessionMessage("sess2", domain.MessageRoleUser, "Hello, world!", nil, "")
 
 	p := store.SessionPath("agent_persist", "sess2")
 	data, err := os.ReadFile(p)
@@ -1366,7 +1376,7 @@ func TestAppendSessionMessageWithSender_PersistsSender(t *testing.T) {
 	)
 
 	sender := domain.NewMessageSender("u123", "Alice", true)
-	runner.appendSessionMessageWithSender("sess-sender", domain.MessageRoleUser, "Hello, world!", "", "", sender)
+	runner.appendSessionMessageWithSender("sess-sender", domain.MessageRoleUser, "Hello, world!", nil, "", sender)
 
 	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_sender", "sess-sender"))
 	assert.NoError(t, err)
@@ -1736,7 +1746,7 @@ func TestAppendSessionMessage_WithMediaURL(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Empty content but non-empty mediaURL should persist.
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "", "http://example.com/img.png", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "", []string{"http://example.com/img.png"}, "")
 
 	data, err := os.ReadFile(store.SessionPath(runner.agent.ID, sess.ID))
 	assert.NoError(t, err)
@@ -1754,9 +1764,9 @@ func TestLoadSessionConversation_ReplacesHistoricalMediaWithMarker(t *testing.T)
 	sess, err := NewSessionManager().Create(runner.agent.ID)
 	assert.NoError(t, err)
 
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "read this", "data:image/png;base64,cG5n", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "", "data:image/png;base64,bW9yZQ==", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "follow-up", "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "read this", []string{"data:image/png;base64,cG5n"}, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "", []string{"data:image/png;base64,bW9yZQ=="}, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "follow-up", nil, "")
 
 	history := runner.loadSessionConversation(sess.ID, 10)
 	assert.Len(t, history, 2)
@@ -1777,10 +1787,10 @@ func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
 	sess, err := NewSessionManager().Create(runner.agent.ID)
 	assert.NoError(t, err)
 
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "opening question", "", "", domain.NewMessageSender("u1", "Alice", true))
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "opening answer", "", "")
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "side chatter", "", "", domain.NewMessageSender("u2", "Bob", false))
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "actual follow-up", "", "", domain.NewMessageSender("u1", "Alice", true))
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "opening question", nil, "", domain.NewMessageSender("u1", "Alice", true))
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "opening answer", nil, "")
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "side chatter", nil, "", domain.NewMessageSender("u2", "Bob", false))
+	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "actual follow-up", nil, "", domain.NewMessageSender("u1", "Alice", true))
 
 	history := runner.loadSessionConversation(sess.ID, 10)
 	// Prior messages are collapsed into a single assistant message followed by
@@ -1809,11 +1819,11 @@ func TestLoadSessionConversationWithinBudget_PrioritizesCurrentThenRecentHistory
 	sess, err := NewSessionManager().Create(runner.agent.ID)
 	assert.NoError(t, err)
 
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("old bulky context ", 80), "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "old answer", "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "recent useful context", "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "recent answer", "", "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("current quoted signal text ", 18), "", "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("old bulky context ", 80), nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "old answer", nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "recent useful context", nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "recent answer", nil, "")
+	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, strings.Repeat("current quoted signal text ", 18), nil, "")
 
 	history := runner.loadSessionConversationWithinBudget(sess.ID, 10, 220, "")
 	assert.Len(t, history, 2)
