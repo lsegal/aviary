@@ -58,24 +58,24 @@ func setupCheckout(t *testing.T) (checkout, other string) {
 
 func TestReadGitState_BehindUpstream(t *testing.T) {
 	checkout, _ := setupCheckout(t)
-	t.Setenv(HotReloadEnv, "1")
+	t.Setenv(RestartFileEnv, filepath.Join(t.TempDir(), "restart"))
 	st, err := ReadGitState(context.Background(), checkout)
 	if err != nil {
 		t.Fatalf("ReadGitState: %v", err)
 	}
-	if st.Branch != "main" || st.Upstream != "origin/main" || st.Behind != 1 || st.Ahead != 0 || st.Dirty || !st.HotReload {
+	if st.Branch != "main" || st.Upstream != "origin/main" || st.Behind != 1 || st.Ahead != 0 || st.Dirty || !st.Supervised {
 		t.Fatalf("state = %+v", st)
 	}
 }
 
 func TestGitPull_FastForwardsCleanCheckout(t *testing.T) {
 	checkout, other := setupCheckout(t)
-	t.Setenv(HotReloadEnv, "")
+	t.Setenv(RestartFileEnv, "")
 	res, err := GitPull(context.Background(), checkout)
 	if err != nil {
 		t.Fatalf("GitPull: %v", err)
 	}
-	if res.Commits != 1 || res.From == res.To || res.HotReload {
+	if res.Commits != 1 || res.From == res.To || res.Supervised {
 		t.Fatalf("result = %+v", res)
 	}
 	if got, want := gitT(t, checkout, "rev-parse", "HEAD"), gitT(t, other, "rev-parse", "HEAD"); got != want {

@@ -227,7 +227,7 @@ func TestSafeRestart_GitModePullsWithoutRestart(t *testing.T) {
 	gitCheckout = func() string { return "/src/aviary" }
 	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
 		*log = append(*log, "pull "+dir)
-		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1, HotReload: true}, nil
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 1}, nil
 	}
 
 	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})

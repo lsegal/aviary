@@ -108,7 +108,7 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 
 	if req.Upgrade {
 		if dir := gitCheckout(); dir != "" {
-			return s.gitUpgrade(ctx, dir)
+			return s.gitUpgrade(ctx, dir, when)
 		}
 	}
 
@@ -147,6 +147,12 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		}
 	}
 
+	return s.startRestart(when, req.Upgrade, version)
+}
+
+// startRestart holds new jobs and restarts now, or once no jobs are running,
+// installing version first when upgrade is set.
+func (s *Server) startRestart(when string, upgrade bool, version string) (saferestart.Status, error) {
 	s.restart.mu.Lock()
 	switch s.restart.status.Phase {
 	case saferestart.PhaseUpdating:
@@ -159,7 +165,7 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 	s.restart.status = saferestart.Status{
 		Phase:   saferestart.PhaseWaiting,
 		When:    when,
-		Upgrade: req.Upgrade,
+		Upgrade: upgrade,
 		Version: version,
 	}
 	cancel := make(chan struct{})
@@ -173,14 +179,23 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 	return st, nil
 }
 
-// gitUpgrade updates a dev checkout with a fast-forward pull. Hot reload
-// relaunches the backend from the pulled sources, so there is no restart.
-func (s *Server) gitUpgrade(ctx context.Context, dir string) (saferestart.Status, error) {
+// gitUpgrade updates a dev checkout with a fast-forward pull, then safely
+// restarts so the backend runs the pulled code: hot reload patches the running
+// program in place and keeps its old code for changes it cannot apply. The
+// restart rebuilds from the checkout only under scripts/dev-go.mjs; otherwise
+// re-executing would run the old binary again, so the status says a restart
+// is still needed instead.
+func (s *Server) gitUpgrade(ctx context.Context, dir, when string) (saferestart.Status, error) {
 	res, err := gitPull(ctx, dir)
 	if err != nil {
 		return saferestart.Status{}, err
 	}
-	slog.Info("server: pulled dev checkout", "component", "update", "dir", dir, "from", res.From, "to", res.To, "commits", res.Commits)
+	slog.Info("server: pulled dev checkout", "component", "update", "dir", dir, "from", res.From, "to", res.To, "commits", res.Commits, "supervised", res.Supervised)
+	if res.Commits > 0 && res.Supervised {
+		st, err := s.startRestart(when, false, res.To)
+		st.Message = update.GitPullMessage(res)
+		return st, err
+	}
 	st := s.RestartStatus()
 	st.Noop = true
 	st.Message = update.GitPullMessage(res)
@@ -328,7 +343,7 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 		}
 		if s.autoApply(ctx, check) {
 			// Tell dashboards the update is gone, e.g. after a git pull
-			// that hot reload has not yet restarted onto.
+			// whose restart is still waiting for jobs to finish.
 			update.ClearCache()
 			if check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second}); err == nil {
 				notify(check)

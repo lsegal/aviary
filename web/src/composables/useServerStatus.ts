@@ -44,7 +44,7 @@ export interface GitState {
 	behind: number;
 	ahead: number;
 	dirty: boolean;
-	hotReload: boolean;
+	supervised: boolean;
 }
 
 interface VersionCheck {

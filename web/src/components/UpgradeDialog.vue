@@ -15,8 +15,8 @@
         </h3>
         <p v-if="git" class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="upgrade-dialog-git">
           Aviary runs <code>git pull --ff-only</code> in {{ git.dir }} to bring in {{ git.behind }}
-          {{ git.behind === 1 ? "commit" : "commits" }}. Nothing restarts:
-          {{ git.hotReload ? "hot reload rebuilds Aviary from the pulled sources." : "restart Aviary afterwards to run the new code." }}
+          {{ git.behind === 1 ? "commit" : "commits" }}.
+          {{ git.supervised ? "Aviary then restarts and rebuilds from the pulled sources." : "Nothing restarts: restart Aviary afterwards to run the new code." }}
         </p>
         <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Aviary installs the release, updates skills for every signed-in CLI provider, and restarts.
@@ -24,9 +24,9 @@
       </div>
 
       <div class="space-y-3 overflow-y-auto px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-        <template v-if="jobs.length && git">
+        <template v-if="jobs.length && git && !git.supervised">
           <p>
-            {{ git.hotReload ? "Hot reload relaunches the backend, which interrupts" : "Restarting afterwards interrupts" }}
+            Restarting afterwards interrupts
             {{ jobs.length === 1 ? "this running job" : `these ${jobs.length} running jobs` }}
             without a checkpoint:
           </p>
@@ -59,12 +59,12 @@
         <button type="button"
           class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           @click="$emit('close')">Cancel</button>
-        <button v-if="!git" type="button" :disabled="busy"
+        <button v-if="!git || git.supervised" type="button" :disabled="busy"
           class="rounded-lg border border-yellow-400 px-3 py-1.5 text-xs font-semibold text-yellow-900 hover:bg-yellow-50 disabled:opacity-60 dark:text-yellow-200 dark:hover:bg-yellow-950/40"
           @click="$emit('confirm', 'idle')">When no jobs are running</button>
         <button type="button" :disabled="busy"
           class="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-yellow-950 hover:bg-yellow-400 disabled:opacity-60"
-          @click="$emit('confirm', 'now')">{{ busy ? "Upgrading..." : git ? "Pull" : "Now" }}</button>
+          @click="$emit('confirm', 'now')">{{ busy ? "Upgrading..." : git && !git.supervised ? "Pull" : "Now" }}</button>
       </div>
     </div>
   </div>
