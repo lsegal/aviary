@@ -49,25 +49,27 @@
 		<pre data-testid="job-output"
 			class="h-40 flex-1 overflow-hidden whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">{{ outputText }}</pre>
 		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
-			<router-link :to="runPath"
-				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-				Details
+			<router-link :to="runPath" aria-label="Details" title="Open this job's run view"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+				<ArrowsPointingOutIcon aria-hidden="true" class="h-4 w-4" />
 			</router-link>
-			<button type="button" :disabled="busy || !job.actions.retry" :title="job.actions.retryUnavailable || undefined"
-				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+			<button type="button" :disabled="busy || !job.actions.retry"
+				aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('retry', job)">
-				Retry
+				<ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button v-if="job.number && job.repo" type="button" data-testid="job-summarize"
-				title="Ask the prompt chat to summarize this job's session log"
-				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				aria-label="Summarize" title="Ask the prompt chat to summarize this job's session log"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('summarize', job)">
-				Summarize
+				<SparklesIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button v-if="job.actions.stop" type="button" :disabled="busy"
-				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
+				aria-label="Stop" title="Stop this job"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
 				@click="emit('stop', job)">
-				Stop
+				<StopIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<span v-if="job.cloneDir" class="min-w-0 flex-1 truncate text-right font-mono text-xs text-gray-400"
 				:title="job.cloneDir">{{ job.cloneDir }}</span>
@@ -76,6 +78,10 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
+import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
+import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed } from "vue";
 import { projectOwner } from "../../lib/projectSettings";
 import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";

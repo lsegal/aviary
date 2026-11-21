@@ -18,7 +18,7 @@
 						</span>
 					</div>
 				</div>
-				<div v-if="job" class="flex flex-wrap gap-2 lg:ml-auto">
+				<div v-if="job" class="flex flex-wrap items-center gap-2 lg:ml-auto">
 					<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer"
 						class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 						Issue #{{ job.number }} ↗
@@ -28,12 +28,12 @@
 						PR {{ job.prRepo !== job.repo ? job.prRepo : "" }}#{{ job.pr }} ↗
 					</a>
 					<button type="button" :disabled="busy || !job.actions.retry"
-						:title="job.actions.retryUnavailable || undefined"
-						class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-						@click="run(retry)">Retry</button>
-					<button v-if="stoppable" type="button" :disabled="busy"
-						class="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
-						@click="run(stop)">Stop</button>
+						aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
+						class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						@click="run(retry)"><ArrowPathIcon aria-hidden="true" class="h-4 w-4" /></button>
+					<button v-if="stoppable" type="button" :disabled="busy" aria-label="Stop" title="Stop this job"
+						class="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
+						@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
 				</div>
 			</header>
 
@@ -101,6 +101,8 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
