@@ -8,7 +8,8 @@ import (
 // TestBuiltinPermissionArgs pins how claude carries an agent's exec and
 // filesystem rules into its own allow and deny rules (#560). Only the modes
 // that permit work pass the allows; every mode passes the denies, which
-// claude enforces even with its permission checks skipped.
+// claude enforces even with its permission checks skipped. Only full has
+// enforce arguments, which stop it skipping the allow checks (#577).
 func TestBuiltinPermissionArgs(t *testing.T) {
 	claude, ok := MustBuiltin().Lookup("claude")
 	if !ok {
@@ -33,11 +34,20 @@ func TestBuiltinPermissionArgs(t *testing.T) {
 	for mode, want := range map[ApprovalMode][]string{
 		ApprovalReadOnly: denies,
 		ApprovalAuto:     auto,
-		ApprovalFull:     denies,
+		ApprovalFull:     auto,
 		"":               auto,
 	} {
 		if got := claude.PermissionArgs(mode, commands, paths); !reflect.DeepEqual(got, want) {
 			t.Errorf("%q PermissionArgs =\n%q\nwant\n%q", mode, got, want)
+		}
+	}
+	wantEnforce := []string{"--permission-mode", "dontAsk", "--allowedTools", "WebFetch", "--allowedTools", "WebSearch", "--allowedTools", "Skill"}
+	if got := claude.EnforceArgs(ApprovalFull); !reflect.DeepEqual(got, wantEnforce) {
+		t.Errorf("full EnforceArgs = %q, want %q", got, wantEnforce)
+	}
+	for _, mode := range []ApprovalMode{ApprovalReadOnly, ApprovalAuto, ""} {
+		if got := claude.EnforceArgs(mode); got != nil {
+			t.Errorf("%q EnforceArgs = %q, want none", mode, got)
 		}
 	}
 	if got := claude.PermissionArgs(ApprovalAuto, nil, nil); got != nil {
@@ -72,6 +82,7 @@ func TestUserDefinitionPermissions(t *testing.T) {
 		{"auto": map[string]any{"allowCommand": []any{"--allow", "{path}"}}},
 		{"auto": map[string]any{"denyPath": []any{"--deny", "{commandSpec}"}}},
 		{"yolo": map[string]any{"allowCommand": []any{"--allow"}}},
+		{"full": map[string]any{"enforce": []any{"--deny", "{dir}"}}},
 	} {
 		if err := define(bad); err == nil {
 			t.Errorf("permissions %v was accepted", bad)

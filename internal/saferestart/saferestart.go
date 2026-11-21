@@ -234,4 +234,27 @@ type Status struct {
 	Emulated bool   `json:"emulated,omitempty"`
 	Message  string `json:"message,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// AutoUpdate is set while the self-updater has an update it means to
+	// apply on its own and has not yet: why it is waiting, or why its last
+	// attempt failed.
+	AutoUpdate *AutoUpdate `json:"autoUpdate,omitempty"`
+}
+
+// Auto update states reported in AutoUpdate.
+const (
+	AutoWaitingJobs    = "waiting-jobs"    // waiting for running jobs to finish
+	AutoWaitingRestart = "waiting-restart" // waiting for a pending restart
+	AutoApplying       = "applying"        // applying the update now
+)
+
+// AutoUpdate describes an automatic update that has not applied yet.
+type AutoUpdate struct {
+	Version string `json:"version,omitempty"`
+	// State is one of the Auto* constants, or "" when the update is not
+	// waiting on anything, e.g. after a failed attempt.
+	State string `json:"state,omitempty"`
+	// Jobs is how many running jobs AutoWaitingJobs waits for.
+	Jobs int `json:"jobs,omitempty"`
+	// Error is why the last attempt to apply the update failed.
+	Error string `json:"error,omitempty"`
 }

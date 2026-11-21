@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -53,7 +54,11 @@ func fakeClaude() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 	turn := 0
+	dieNext := false
 	for sc.Scan() {
+		if dieNext {
+			os.Exit(1) // dies as the next turn reaches it, without answering
+		}
 		turn++
 		var msg struct {
 			Message struct {
@@ -73,6 +78,9 @@ func fakeClaude() {
 		}
 		if text == "sleep" {
 			time.Sleep(time.Minute)
+		}
+		if text == "die-next" {
+			dieNext = true
 		}
 		if text == "system" {
 			text = system
@@ -100,10 +108,13 @@ func fakeClaude() {
 func fakeCodex() {
 	args := os.Args[1:]
 	thread := "thread-new"
-	if len(args) > 1 && args[1] == "resume" {
+	if slices.Contains(args, "resume") {
 		thread = args[len(args)-2]
 	}
 	prompt, _ := bufio.NewReader(os.Stdin).ReadString(0)
+	if prompt == "system" {
+		prompt = fakeCodexInstructions(args)
+	}
 	developer := ""
 	images := 0
 	for _, a := range args {
@@ -126,6 +137,27 @@ func fakeCodex() {
 	_ = out.Encode(map[string]any{"type": "turn.completed", "usage": map[string]any{
 		"input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 2,
 	}})
+}
+
+// fakeCodexInstructions reads the developer instructions the way codex does:
+// from $CODEX_HOME/NAME.config.toml for --profile NAME, or from -c.
+func fakeCodexInstructions(args []string) string {
+	line := ""
+	if i := slices.Index(args, "--profile"); i >= 0 {
+		data, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), args[i+1]+".config.toml"))
+		if err != nil {
+			return err.Error()
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(string(data), "developer_instructions = "))
+	}
+	for _, a := range args {
+		if value, ok := strings.CutPrefix(a, "developer_instructions="); ok {
+			line = value
+		}
+	}
+	var text string
+	_ = json.Unmarshal([]byte(line), &text)
+	return text
 }
 
 func fakeOptions(t *testing.T, backend Backend) Options {
@@ -227,24 +259,35 @@ func TestClaudeArgs_BuiltinToolsOnAndResume(t *testing.T) {
 }
 
 func TestCodexArgs(t *testing.T) {
-	args := codexArgs(Options{Model: "gpt", SystemPrompt: "say \"hi\"\nnow", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret"}, "", []string{"/tmp/a.png"})
+	args := codexArgs(Options{Model: "gpt", SystemPrompt: "say \"hi\"\nnow", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret"}, "", "", []string{"/tmp/a.png"})
 	joined := strings.Join(args, " ")
 	assert.Equal(t, []string{"exec", "--json"}, args[:2])
 	assert.Contains(t, joined, `sandbox_mode="read-only"`)
 	assert.Contains(t, joined, `web_search="disabled"`)
 	// Without its own tools the agent stays read-only whatever the mode.
-	assert.NotContains(t, codexArgs(Options{Model: "gpt", Approval: []string{"--dangerously-bypass-approvals-and-sandbox"}}, "", nil), "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", Approval: []string{"--dangerously-bypass-approvals-and-sandbox"}}, "", "", nil), "--dangerously-bypass-approvals-and-sandbox")
 	for _, f := range codexBuiltinFeatures {
 		assert.Contains(t, joined, "--disable "+f)
 	}
 	assert.Contains(t, joined, `mcp_servers.aviary.url="http://127.0.0.1:1/mcp"`)
 	assert.Contains(t, joined, `mcp_servers.aviary.bearer_token_env_var="AVIARY_MCP_TOKEN"`)
 	assert.Contains(t, args, `developer_instructions="say \"hi\"\nnow"`)
+	assert.Contains(t, args, "--ignore-user-config")
+	assert.NotContains(t, args, "--profile")
 	assert.Contains(t, joined, "--image /tmp/a.png")
 	assert.NotContains(t, joined, "secret")
 	assert.Equal(t, "-", args[len(args)-1])
 
-	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", nil)
+	// With a profile codex reads its settings from aviary's own CODEX_HOME,
+	// the developer instructions among them (#573).
+	args = codexArgs(Options{Model: "gpt", SystemPrompt: "rules"}, "", "aviary-1", nil)
+	assert.Equal(t, "aviary-1", args[slices.Index(args, "--profile")+1])
+	assert.NotContains(t, args, "--ignore-user-config")
+	assert.NotContains(t, strings.Join(args, " "), "developer_instructions")
+	args = codexArgs(Options{Model: "gpt", SystemPrompt: "rules"}, "thread-1", "aviary-1", nil)
+	assert.Equal(t, []string{"exec", "--profile", "aviary-1", "resume"}, args[:4], "exec resume takes --profile only before it")
+
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", "", nil)
 	joined = strings.Join(args, " ")
 	assert.Equal(t, []string{"exec", "resume"}, args[:2])
 	assert.Equal(t, []string{"thread-1", "-"}, args[len(args)-2:])
@@ -255,9 +298,9 @@ func TestCodexArgs(t *testing.T) {
 	// The agent's own directory is writable beside the workspace (#534),
 	// including on resume, where codex takes no --add-dir.
 	extra := []string{"-c", `sandbox_workspace_write.writable_roots=["/data/agents/a"]`}
-	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, ExtraDir: extra}, "thread-1", nil)
+	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, ExtraDir: extra}, "thread-1", "", nil)
 	assert.Contains(t, args, extra[1])
-	assert.NotContains(t, codexArgs(Options{Model: "gpt", ExtraDir: extra}, "", nil), extra[1], "without its own tools nothing is made writable")
+	assert.NotContains(t, codexArgs(Options{Model: "gpt", ExtraDir: extra}, "", "", nil), extra[1], "without its own tools nothing is made writable")
 }
 
 func TestClaudeMapper(t *testing.T) {
@@ -467,6 +510,91 @@ func TestClaudeSession_ProcessExit(t *testing.T) {
 	assert.Contains(t, r.Text, "text=again")
 }
 
+// replyPID returns the pid field of a fake claude reply.
+func replyPID(t *testing.T, text string) int {
+	t.Helper()
+	var turn, pid int
+	_, err := fmt.Sscanf(text, "turn=%d pid=%d", &turn, &pid)
+	require.NoError(t, err)
+	return pid
+}
+
+func TestClaudeSession_ProcessDiedWhileIdle(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-idle"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	proc, err := os.FindProcess(replyPID(t, r1.Text))
+	require.NoError(t, err)
+	require.NoError(t, proc.Kill())
+	<-s.(*claudeSession).proc.done
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err, "the turn that finds the dead process is still answered")
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-idle", events[0].SessionID, "the new process resumes the session")
+}
+
+func TestClaudeSession_WriteToDeadProcess(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-pipe"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	// The process looks alive but its pipe is gone, as when it dies with
+	// its output still held open.
+	require.NoError(t, s.(*claudeSession).proc.stdin.Close())
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err)
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-pipe", events[0].SessionID)
+}
+
+func TestClaudeSession_ProcessDiesAsTurnArrives(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-race"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "die-next"}, nil)
+	require.NoError(t, err)
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err)
+	assert.Contains(t, r2.Text, "turn=1")
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-race", events[0].SessionID)
+}
+
+func TestClaudeSession_UndeliverableTurn(t *testing.T) {
+	s := newClaudeSession(fakeOptions(t, Claude))
+	defer s.Close() //nolint:errcheck
+	_, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	s.proc.stdin.Close() //nolint:errcheck,gosec // simulate a broken pipe
+	s.opts.Binary = "/nonexistent/claude"
+
+	_, err = s.Send(context.Background(), Turn{Text: "two"}, nil)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "writing to claude")
+	assert.NotContains(t, err.Error(), "pipe")
+}
+
 func TestCodexSession_ResumesThread(t *testing.T) {
 	s, err := NewSession(fakeOptions(t, Codex))
 	require.NoError(t, err)
@@ -490,4 +618,45 @@ func TestCodexSession_MissingBinary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.Send(context.Background(), Turn{Text: "hi"}, nil)
 	assert.Error(t, err)
+}
+
+func TestCodexSession_LongSystemPrompt(t *testing.T) {
+	// A system prompt longer than Windows' 32,767-character command line
+	// reaches codex word for word through a profile in aviary's own
+	// CODEX_HOME rather than an argument (#573).
+	opts := fakeOptions(t, Codex)
+	home := t.TempDir()
+	opts.Env = append(opts.Env, "CODEX_HOME="+home)
+	opts.SystemPrompt = strings.Repeat("Follow the \"skill\" exactly.\n", 4000) + "end"
+	require.Greater(t, len(opts.SystemPrompt), 32767)
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+
+	profile, removeProfile, err := writeCodexProfile(opts)
+	require.NoError(t, err)
+	defer removeProfile()
+	for _, arg := range codexArgs(opts, "", profile, nil) {
+		assert.Less(t, len(arg), 1024, "no argument carries the system prompt")
+	}
+
+	r, err := s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 prompt="+opts.SystemPrompt, r.Text, "codex read the whole system prompt")
+	r, err = s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 prompt="+opts.SystemPrompt, r.Text, "a resumed turn reads it too")
+	removeProfile()
+	entries, err := os.ReadDir(home)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "the profile is removed once the turn ends")
+
+	// Without aviary's own CODEX_HOME the user's config is ignored and the
+	// instructions stay on the command line.
+	opts = fakeOptions(t, Codex)
+	opts.SystemPrompt = "short rules"
+	s, err = NewSession(opts)
+	require.NoError(t, err)
+	r, err = s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 developer=\"short rules\" prompt=short rules", r.Text)
 }

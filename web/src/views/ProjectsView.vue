@@ -114,11 +114,15 @@
 								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
 							</span>
 							<nav v-if="searching || pageCount > 1" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
-								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-									:disabled="page === 0" @click="page--">Previous</button>
+								<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+									:disabled="page === 0" @click="page--">
+									<ChevronLeftIcon aria-hidden="true" class="h-4 w-4" />
+								</button>
 								<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
-								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-									:disabled="page + 1 >= pageCount" @click="page++">Next</button>
+								<button type="button" aria-label="Next page" title="Next page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+									:disabled="page + 1 >= pageCount" @click="page++">
+									<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
+								</button>
 							</nav>
 						</div>
 
@@ -163,6 +167,8 @@
 
 <script setup lang="ts">
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
+import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
+import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
