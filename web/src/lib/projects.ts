@@ -141,6 +141,8 @@ export interface ProjectJob {
 	session: string;
 	actions: JobActions;
 	output: string[];
+	/** The job's latest structured transcript events, when it emits them. */
+	events: JobEvent[];
 	/** A scheduled prompt's run, which has no issue: its number is its fire time. */
 	scheduled: boolean;
 	/** The `agent/task` key of the schedule a scheduled run fired from. */
@@ -342,6 +344,7 @@ export function normalizeJob(v: unknown): ProjectJob {
 			retryUnavailable: str(raw.retry_unavailable),
 		},
 		output: lines(raw.scrollback),
+		events: normalizeEvents(raw.events),
 		scheduled: str(raw.kind) === "schedule",
 		scheduleID: str(raw.schedule_id),
 	};
@@ -465,7 +468,7 @@ export function normalizeJobDetail(v: unknown): JobDetail {
 	const rawOutput = lines(raw.raw_output);
 	return {
 		job,
-		events: normalizeEvents(raw.events),
+		events: job.events,
 		output: rawOutput.length > 0 ? rawOutput : job.output,
 	};
 }
@@ -647,6 +650,38 @@ export function diffLines(
 			return { text, kind: "del" };
 		return { text, kind: "ctx" };
 	});
+}
+
+// Input fields that name what a tool call acts on, most telling first.
+const TOOL_SUMMARY_FIELDS = [
+	"command",
+	"cmd",
+	"file_path",
+	"path",
+	"pattern",
+	"url",
+	"query",
+	"description",
+	"prompt",
+];
+
+/** A one-line summary of a tool call: its name and what it acts on. */
+export function toolCallSummary(name: string, input: unknown): string {
+	let detail = "";
+	if (typeof input === "string") detail = input;
+	else if (input && typeof input === "object") {
+		const fields = input as Raw;
+		const key = TOOL_SUMMARY_FIELDS.find(
+			(k) => typeof fields[k] === "string" && fields[k],
+		);
+		detail = key
+			? String(fields[key])
+			: Object.keys(fields).length
+				? JSON.stringify(fields)
+				: "";
+	}
+	detail = detail.replace(/\s+/g, " ").trim();
+	return detail ? `${name} ${detail}` : name;
 }
 
 export function diffStat(diff: string): { added: number; removed: number } {

@@ -24,6 +24,8 @@ import { useTriggerPreview } from "./useTriggerPreview";
 export const PROJECTS_POLL_MS = 2_000;
 /** Lines of terminal output shown on a board card. */
 export const CARD_OUTPUT_LINES = 12;
+/** Latest transcript events read for a board card's rich output. */
+export const CARD_OUTPUT_EVENTS = 40;
 export const JOBS_PAGE_SIZE = 12;
 // project_job_list's page size when the board reads every job at once.
 const ALL_JOBS_LIMIT = 1_000;
@@ -143,8 +145,9 @@ export function useProjectBoard(
 				callTool("project_status", { targets: projects }),
 				listJobs(projects),
 			]);
-			// Every visible list card shows its job's latest terminal output,
-			// which streams while the job runs; kanban cards show none.
+			// Every visible list card shows its job's latest transcript events
+			// and terminal output, which stream while the job runs; kanban
+			// cards show none.
 			await Promise.all(
 				(kanban.value ? [] : list.jobs).map(async (j) => {
 					try {
@@ -154,11 +157,12 @@ export function useProjectBoard(
 									target: j.target,
 									number: j.number,
 									lines: CARD_OUTPUT_LINES,
-									events: 1,
+									events: CARD_OUTPUT_EVENTS,
 								}),
 							),
 						);
 						j.output = detail.job.output;
+						j.events = detail.events;
 					} catch {
 						// Keep the card without output until the next poll.
 					}

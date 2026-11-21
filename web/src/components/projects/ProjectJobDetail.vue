@@ -109,8 +109,13 @@
 					<label class="ml-auto flex shrink-0 items-center gap-1 text-slate-400">
 						<input v-model="follow" type="checkbox" class="h-3 w-3" /> following
 					</label>
+					<JobOutputToggle dark />
 				</div>
-				<pre ref="outputEl" data-testid="run-output"
+				<div v-if="rich" ref="outputEl" data-testid="run-output-rich"
+					class="flex-1 overflow-auto bg-white px-4 py-3 dark:bg-gray-900">
+					<JobOutputRows :events="detail?.events ?? []" />
+				</div>
+				<pre v-else ref="outputEl" data-testid="run-output"
 					class="flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-xs leading-relaxed">{{ detail?.output.join("\n") || "No output yet." }}</pre>
 			</section>
 		</div>
@@ -124,6 +129,7 @@ import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { useJobOutputMode } from "../../composables/useJobOutput";
 import { useProjectJob } from "../../composables/useProjects";
 import {
 	githubURL,
@@ -131,6 +137,8 @@ import {
 	lifecycleStep,
 	projectPath,
 } from "../../lib/projects";
+import JobOutputRows from "./JobOutputRows.vue";
+import JobOutputToggle from "./JobOutputToggle.vue";
 import JobStatusPill from "./JobStatusPill.vue";
 import JobTimeline from "./JobTimeline.vue";
 
@@ -196,8 +204,18 @@ const prURL = computed(() =>
 
 const follow = ref(true);
 const outputEl = ref<HTMLElement | null>(null);
+// Rich output falls back to the raw output for a job with no events.
+const mode = useJobOutputMode();
+const rich = computed(
+	() => mode.value === "rich" && !!detail.value?.events.length,
+);
 watch(
-	() => detail.value?.output.length,
+	() => [
+		detail.value?.output.length,
+		detail.value?.events.length,
+		detail.value?.events.at(-1),
+		rich.value,
+	],
 	async () => {
 		if (!follow.value) return;
 		await nextTick();
