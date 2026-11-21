@@ -103,6 +103,14 @@ test("the Chats list shows Main Chat first, titles, and last-message time on hov
 		/Groceries/,
 		/New chat/,
 	]);
+	// "+ New chat" comes after every chat row.
+	await expect(
+		page
+			.getByTestId("sidebar-chats")
+			.locator(
+				'[data-testid="chat-row"]:last-of-type + [data-testid="sidebar-new-chat"]',
+			),
+	).toBeVisible();
 	// The top tabs are gone on wide screens.
 	await expect(page.getByTestId("chat-picker")).toBeHidden();
 

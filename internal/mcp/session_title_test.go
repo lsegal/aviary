@@ -85,6 +85,39 @@ func TestAgentRun_FallsBackToPromptWhenTitleFails(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
+func TestAgentRun_TitlesUntitledChatOnLaterPrompt(t *testing.T) {
+	c := setupTitleTest(t, func(_ context.Context, _, prompt string) (string, error) {
+		return "About " + prompt, nil
+	})
+	sess, err := agent.NewSessionManager().Create("assistant")
+	require.NoError(t, err)
+	// The chat's first exchange happened without naming it.
+	require.NoError(t, agent.AppendMessageToSession("assistant", sess.ID, "user", "test"))
+	require.NoError(t, agent.AppendMessageToSession("assistant", sess.ID, "assistant", "hello"))
+
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "gardening", "session_id": sess.ID})
+	require.Eventually(t, func() bool {
+		return agent.SessionTitle("assistant", sess.ID) == "About gardening"
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestAgentRun_ImageOnlyFirstPromptLeavesChatForNextPrompt(t *testing.T) {
+	c := setupTitleTest(t, func(context.Context, string, string) (string, error) {
+		return "", errors.New("no provider")
+	})
+	sess, err := agent.NewSessionManager().Create("assistant")
+	require.NoError(t, err)
+
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "   ", "session_id": sess.ID})
+	time.Sleep(50 * time.Millisecond)
+	assert.Empty(t, agent.SessionTitle("assistant", sess.ID))
+
+	runPrompt(t, c, map[string]any{"name": "assistant", "message": "test", "session_id": sess.ID})
+	require.Eventually(t, func() bool {
+		return agent.SessionTitle("assistant", sess.ID) == "test"
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestAgentRun_LeavesMainAndNamedSessionsUntitled(t *testing.T) {
 	var calls atomic.Int32
 	c := setupTitleTest(t, func(context.Context, string, string) (string, error) {
