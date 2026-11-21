@@ -29,7 +29,7 @@
           "timeout": "{mcpTimeoutMs}"
         }
       },
-      "policyPaths": ["{mcpAllowFile}"]
+      "policyPaths": ["{mcpAllowFile}", "~/.gemini/policies"]
     },
     "allowFile": {
       "extension": ".toml",
