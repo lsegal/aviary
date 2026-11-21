@@ -164,9 +164,9 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 		void dialog.dismiss();
 	});
 	await refresh.click();
-	await expect.poll(() => prompts).toEqual([
-		"Discard unsaved changes to MEMORY.md and reload it from disk?",
-	]);
+	await expect
+		.poll(() => prompts)
+		.toEqual(["Discard unsaved changes to MEMORY.md and reload it from disk?"]);
 	await expect(refresh).toBeEnabled();
 	await expect(editor).toHaveValue("# My unsaved edit");
 
