@@ -99,3 +99,53 @@ test("hides cost when no record reports one", async ({ page }) => {
 	await expect(page.getByTestId("usage-item-cost")).toHaveCount(0);
 	await expect(page.getByText("$", { exact: false })).toHaveCount(0);
 });
+
+test("summarizes project outcomes and wall time apart from token metrics", async ({
+	page,
+}) => {
+	const project = (
+		issue: string,
+		extra: { outcome?: string; duration_ms?: number },
+		timestamp = now,
+	) => ({
+		timestamp,
+		session_id: issue,
+		agent_id: "projects",
+		model: "",
+		provider: "",
+		input_tokens: 0,
+		output_tokens: 0,
+		project: { issue, ...extra },
+	});
+	const earlier = new Date(Date.now() - 60_000).toISOString();
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		usage_query: [
+			...MIXED_RECORDS,
+			project("o/r#1", { duration_ms: 90 * 60_000 }),
+			project("o/r#1", { outcome: "merged" }),
+			project("o/r#2", { duration_ms: 30 * 60_000 }),
+			project("o/r#2", { outcome: "failed" }),
+			// Failed, then retried and merged: counts as merged only.
+			project("o/r#3", { duration_ms: 5 * 60_000 }),
+			project("o/r#3", { outcome: "failed" }, earlier),
+			project("o/r#3", { outcome: "merged" }),
+		],
+	});
+	await page.goto("/system/usage");
+
+	await expect(page.getByTestId("usage-projects-issues")).toHaveText("3");
+	await expect(page.getByTestId("usage-projects-merged")).toHaveText("2");
+	await expect(page.getByTestId("usage-projects-failed")).toHaveText("1");
+	await expect(page.getByTestId("usage-projects-wall-time")).toHaveText(
+		"2h 5m",
+	);
+	// Project records are not token calls.
+	await expect(
+		page
+			.locator("div.rounded-xl", { hasText: "Messages" })
+			.getByText("3", { exact: true }),
+	).toBeVisible();
+});

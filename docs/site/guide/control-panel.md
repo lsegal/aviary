@@ -86,6 +86,7 @@ Token analytics for the last 30 days (or a custom range):
 
 - Input and output tokens per day, per agent, per model, and per provider.
 - Total cost estimates when provider pricing is available.
+- A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), and the total wall time project job runs took.
 
 ### Jobs (`/system/jobs`)
 
