@@ -195,6 +195,24 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 		config_task_convert_to_script: record("config_task_convert_to_script"),
 		task_run: record("task_run"),
 		task_delete: record("task_delete"),
+		session_list: (args?: Args) =>
+			args?.agent === "assistant"
+				? [
+						{
+							id: "sess_discord",
+							agent_id: "assistant",
+							name: "ops",
+							created_at: minutesFromNow(-60),
+							channels: ["discord"],
+						},
+						{
+							id: "sess_plain",
+							agent_id: "assistant",
+							name: "plain",
+							created_at: minutesFromNow(-60),
+						},
+					]
+				: [],
 	});
 	return calls;
 }
@@ -506,6 +524,13 @@ test("new schedule creates a project scheduled task through the shared Add task 
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();
 	await expect(precompute).not.toBeChecked();
+	// Send To offers the agent's channel sessions by name.
+	const sendTo = dialog.getByLabel("Send To");
+	await expect(sendTo.locator("option")).toHaveText([
+		"Task session only",
+		"ops · discord",
+	]);
+	await sendTo.selectOption({ label: "ops · discord" });
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.config_task_convert_to_script).toBeUndefined();
@@ -520,6 +545,7 @@ test("new schedule creates a project scheduled task through the shared Add task 
 			project: "lsegal/aviary",
 			schedule: "0 * * * *",
 			prompt: "Rerun flaky CI jobs on open PRs.",
+			target: "session:sess_discord",
 			enabled: true,
 		}),
 	]);

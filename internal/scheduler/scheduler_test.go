@@ -672,6 +672,38 @@ func TestExecuteScriptJob(t *testing.T) {
 	assert.Contains(t, result.Logs, "print: script-ok")
 }
 
+func TestExecuteScriptJob_ShowsOutputInTaskSessionAndForwards(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("alpha", "digest")
+	require.NoError(t, err)
+	job := &domain.Job{
+		ID:            "job_script_forward",
+		TaskID:        "alpha/digest",
+		TaskType:      "script",
+		AgentID:       "alpha",
+		SessionID:     sess.ID,
+		OutputChannel: "session:sess_channel",
+		Script:        testScriptBody(),
+	}
+
+	var delivered []string
+	_, err = executeScriptJob(context.Background(), job, &config.AgentConfig{}, func(agentName, route, text string) error {
+		delivered = append(delivered, agentName+"|"+route+"|"+text)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha|session:sess_channel|script-ok"}, delivered)
+	assertSessionContains(t, "alpha", sess.ID, "script-ok")
+}
+
+func assertSessionContains(t *testing.T, agentID, sessionID, text string) {
+	t.Helper()
+	data, err := os.ReadFile(store.FindSessionPath(agentID, sessionID))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), text)
+}
+
 func TestCollectJobSessionToolLogs(t *testing.T) {
 	setupSchedulerDataDir(t)
 
@@ -946,6 +978,11 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	}}}}})
 	q := NewJobQueue()
 	p := NewWorkerPool(q, mgr, 1)
+	var delivered []string
+	p.SetTaskOutputDelivery(func(agentName, route, text string) error {
+		delivered = append(delivered, agentName+"|"+route+"|"+text)
+		return nil
+	})
 
 	job, err := q.EnqueueWithType("alpha/triage", "project", "alpha", "Triage new issues", "Triage new issues", "", 1, "", "")
 	require.NoError(t, err)
@@ -965,6 +1002,14 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "Opened issue #12", persisted.Output)
+	assertSessionContains(t, "alpha", persisted.SessionID, "Opened issue #12")
+	assert.Empty(t, delivered)
+
+	// With a delivery target, the summary is forwarded as well as kept in the
+	// task session.
+	job.OutputChannel = "session:sess_channel"
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, []string{"alpha|session:sess_channel|Opened issue #12"}, delivered)
 
 	p.projectRunner = func(context.Context, ProjectRun) (string, error) {
 		return "agent exited 1", errors.New("agent exited 1")

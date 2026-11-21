@@ -72,6 +72,14 @@ async function mockAgent(
 				name: "main",
 				created_at: new Date().toISOString(),
 			},
+			{
+				id: "sess_slack",
+				agent_id: "assistant",
+				name: "sess_slack",
+				title: "Team standup",
+				created_at: new Date().toISOString(),
+				channels: ["slack"],
+			},
 		],
 		auth_list: [],
 		tool_list: [],
@@ -253,6 +261,55 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(converted).toEqual([{ agent: "assistant", task: "compiled" }]);
+});
+
+test("the add-task modal's Send To forwards runs to a channel session, shown as Send Via in the editor", async ({
+	page,
+}) => {
+	const { saved } = await mockAgent(page, [], FILES);
+	await page.goto("/agents/assistant/tasks");
+	await sidebarRow(page, "tasks").hover();
+	await sidebarRow(page, "tasks")
+		.getByRole("button", { name: "Add task" })
+		.click();
+
+	const dialog = page.getByRole("dialog", { name: "Add task" });
+	const sendTo = dialog.getByLabel("Send To");
+	// Only chats bound to a channel are offered, by name, after the default.
+	await expect(sendTo).toHaveValue("");
+	await expect(sendTo.locator("option")).toHaveText([
+		"Task session only",
+		"Team standup · slack",
+	]);
+	await dialog.getByLabel("Task name").fill("standup-digest");
+	await dialog.getByLabel("Prompt").fill("Summarize yesterday");
+	await sendTo.selectOption({ label: "Team standup · slack" });
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
+		{ name: "standup-digest", target: "session:sess_slack" },
+	]);
+
+	// The task's editor shows the same delivery in Send Via.
+	await expect(page).toHaveURL(/\?task=standup-digest$/);
+	const main = page.locator("main");
+	await expect(
+		main.locator("label", { hasText: "Send Via" }).locator("+ select"),
+	).toHaveValue("session");
+	await expect(main.getByTestId("session-select")).toHaveValue("sess_slack");
+
+	// Left at the default, a new task forwards nowhere, as before.
+	await sidebarRow(page, "tasks").hover();
+	await sidebarRow(page, "tasks")
+		.getByRole("button", { name: "Add task" })
+		.click();
+	await expect(sendTo).toHaveValue("");
+	await dialog.getByLabel("Task name").fill("quiet");
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+	expect(
+		saved.at(-1)?.agents[0].tasks.find((t) => t.name === "quiet"),
+	).toMatchObject({ target: "" });
 });
 
 test("the Files + creates a file that joins the sidebar, and the page has no file tabs", async ({
