@@ -13,9 +13,8 @@ import (
 
 // RestartFileEnv is set by scripts/dev-go.mjs to a file the backend creates
 // before exiting to ask for a restart. The script then runs the backend again,
-// rebuilding it from the checkout's current sources. Hot reload alone cannot be
-// trusted to pick up a pull: it patches the running program in place, keeps
-// the old code for changes it cannot apply, and only works on linux/amd64.
+// rebuilding it from the checkout's current sources. A dev update restarts only
+// when forgo cannot hot-reload the pulled code (see PlanDevReload).
 const RestartFileEnv = "AVIARY_RESTART_FILE"
 
 // CheckoutEnv is set by scripts/dev-go.mjs to the root of the source checkout
@@ -39,6 +38,9 @@ type GitState struct {
 	// Supervised is true when a restart rebuilds the backend from the
 	// checkout (see RestartFileEnv), so pulled sources go live by restarting.
 	Supervised bool `json:"supervised"`
+	// HotReload is true when the backend runs under forgo's hot reload, so
+	// pulled Go changes go live without a restart where forgo can apply them.
+	HotReload bool `json:"hotReload"`
 }
 
 // GitPullResult describes a git-mode update.
@@ -47,6 +49,7 @@ type GitPullResult struct {
 	To         string `json:"to"`
 	Commits    int    `json:"commits"`
 	Supervised bool   `json:"supervised"`
+	HotReload  bool   `json:"hotReload"`
 }
 
 var (
@@ -151,7 +154,7 @@ func gitCount(ctx context.Context, dir, rng string) (int, error) {
 // ReadGitState fetches the checkout's upstream and reports how far behind it
 // is and whether the working tree has local changes.
 func ReadGitState(ctx context.Context, dir string) (GitState, error) {
-	st := GitState{Dir: dir, Supervised: Supervised()}
+	st := GitState{Dir: dir, Supervised: Supervised(), HotReload: HotReloadDir() != ""}
 	var err error
 	if st.Branch, err = runGit(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
 		return st, err
@@ -224,7 +227,7 @@ func GitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	if blocker := gitBlocker(st); blocker != "" {
 		return GitPullResult{}, fmt.Errorf("not updating: %s", blocker)
 	}
-	res := GitPullResult{Commits: st.Behind, Supervised: st.Supervised}
+	res := GitPullResult{Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
 	res.From, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
 	if st.Behind > 0 {
 		if _, err := runGit(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
@@ -236,14 +239,20 @@ func GitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	return res, nil
 }
 
-// GitPullMessage summarizes a git-mode update for the user.
-func GitPullMessage(res GitPullResult) string {
+// GitPullMessage summarizes a git-mode update for the user, given how the
+// pulled code goes live.
+func GitPullMessage(res GitPullResult, plan DevReloadPlan) string {
 	if res.Commits == 0 {
 		return fmt.Sprintf("The checkout is already up to date (%s).", res.To)
 	}
 	msg := fmt.Sprintf("Pulled %d commit(s) (%s → %s).", res.Commits, res.From, res.To)
-	if res.Supervised {
-		return msg + " Aviary restarts to build and run the new code."
+	switch {
+	case plan.RestartReason == "" && plan.GoChanged:
+		return msg + " The backend hot-reloads the new code, and restarts only if forgo cannot apply it."
+	case plan.RestartReason == "":
+		return msg + " No backend code changed."
+	case res.Supervised:
+		return msg + " Aviary restarts to build and run the new code (" + plan.RestartReason + ")."
 	}
-	return msg + " Restart Aviary to run the new code."
+	return msg + " Restart Aviary to run the new code (" + plan.RestartReason + ")."
 }

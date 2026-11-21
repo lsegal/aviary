@@ -31,3 +31,18 @@ func SyncLiveServer(cfg *config.Config) {
 	}
 	syncSkillTools(s, cfg)
 }
+
+// RefreshLiveServer registers every tool on the current process MCP server
+// again. A hot reload replaces changed code without rerunning startup, so this
+// is how tools a reload adds or changes reach the MCP server; registering a
+// tool replaces the one with the same name, and connected sessions are told
+// the list changed.
+func RefreshLiveServer() {
+	liveServerMu.RLock()
+	s := liveServer
+	liveServerMu.RUnlock()
+	if s == nil {
+		return
+	}
+	Register(s)
+}

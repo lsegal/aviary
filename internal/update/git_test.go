@@ -81,7 +81,7 @@ func TestGitPull_FastForwardsCleanCheckout(t *testing.T) {
 	if got, want := gitT(t, checkout, "rev-parse", "HEAD"), gitT(t, other, "rev-parse", "HEAD"); got != want {
 		t.Fatalf("HEAD = %s, want upstream %s", got, want)
 	}
-	if msg := GitPullMessage(res); !strings.Contains(msg, "Restart Aviary") {
+	if msg := GitPullMessage(res, DevReloadPlan{GoChanged: true, RestartReason: "forgo hot reload is not active"}); !strings.Contains(msg, "Restart Aviary") {
 		t.Fatalf("message without hot reload = %q, want a restart hint", msg)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/update"
 )
@@ -26,6 +27,14 @@ var (
 	installRelease = update.Install
 	gitCheckout    = update.GitCheckout
 	gitPull        = update.GitPull
+	planDevReload  = update.PlanDevReload
+	hotReloadDir   = update.HotReloadDir
+	hotReloadGen   = update.HotReloadGeneration
+	waitHotReload  = update.WaitHotReload
+	hotReloadWait  = update.DefaultHotReloadWait
+	// refreshAfterHotReload reruns the startup registrations a hot reload
+	// does not repeat, so reloaded code's MCP tools go live too.
+	refreshAfterHotReload = mcp.RefreshLiveServer
 	executablePath = os.Executable
 	idlePoll       = 2 * time.Second
 	// autoUpdateWait is how long one self-updater round waits for a restart
@@ -39,6 +48,8 @@ type restartState struct {
 	cancel     chan struct{}
 	reexecPath string
 	auto       *saferestart.AutoUpdate
+	// stopHotReloadWait stops waiting on forgo for an earlier dev update.
+	stopHotReloadWait context.CancelFunc
 }
 
 // restartSnapshot is what newly connected dashboards are told about a restart
@@ -182,27 +193,93 @@ func (s *Server) startRestart(when string, upgrade bool, version string) (safere
 	return st, nil
 }
 
-// gitUpgrade updates a dev checkout with a fast-forward pull, then safely
-// restarts so the backend runs the pulled code: hot reload patches the running
-// program in place and keeps its old code for changes it cannot apply. The
-// restart rebuilds from the checkout only under scripts/dev-go.mjs; otherwise
-// re-executing would run the old binary again, so the status says a restart
-// is still needed instead.
+// gitUpgrade updates a dev checkout with a fast-forward pull. Under forgo's
+// hot reload the backend picks up pulled Go changes in place, keeping running
+// jobs, the Projects engine and MCP/chat sessions; gitUpgrade only waits for
+// forgo's verdict. It falls back to a safe restart only when hot reload cannot
+// run the pulled code: go.mod, go.sum or an embedded file changed, forgo is
+// not active, or forgo refuses or fails the reload. That restart rebuilds from
+// the checkout only under scripts/dev-go.mjs; otherwise re-executing would run
+// the old binary again, so the status says a restart is still needed instead.
 func (s *Server) gitUpgrade(ctx context.Context, dir, when string) (saferestart.Status, error) {
+	hotDir := hotReloadDir()
+	since := 0
+	if hotDir != "" {
+		since = hotReloadGen(hotDir)
+	}
 	res, err := gitPull(ctx, dir)
 	if err != nil {
 		return saferestart.Status{}, err
 	}
-	slog.Info("server: pulled dev checkout", "component", "update", "dir", dir, "from", res.From, "to", res.To, "commits", res.Commits, "supervised", res.Supervised)
-	if res.Commits > 0 && res.Supervised {
-		st, err := s.startRestart(when, false, res.To)
-		st.Message = update.GitPullMessage(res)
-		return st, err
+	slog.Info("server: pulled dev checkout", "component", "update", "dir", dir, "from", res.From, "to", res.To, "commits", res.Commits, "supervised", res.Supervised, "hot_reload", hotDir != "")
+
+	var plan update.DevReloadPlan
+	if res.Commits > 0 {
+		if plan, err = planDevReload(ctx, dir, res.From, res.To, hotDir != ""); err != nil {
+			plan = update.DevReloadPlan{GoChanged: true, RestartReason: "listing the pulled changes failed: " + err.Error()}
+		}
+	}
+	msg := update.GitPullMessage(res, plan)
+	switch {
+	case res.Commits == 0:
+	case plan.RestartReason != "":
+		slog.Info("server: dev update needs a full restart", "component", "update", "reason", plan.RestartReason, "to", res.To)
+		if res.Supervised {
+			st, err := s.startRestart(when, false, res.To)
+			st.Message = msg
+			return st, err
+		}
+	case plan.GoChanged:
+		slog.Info("server: dev update waiting for hot reload", "component", "update", "to", res.To)
+		s.awaitHotReload(hotDir, since, when, res)
+	default:
+		slog.Info("server: dev update applied without a backend change", "component", "update", "to", res.To)
 	}
 	st := s.RestartStatus()
 	st.Noop = true
-	st.Message = update.GitPullMessage(res)
+	st.Message = msg
 	return st, nil
+}
+
+// awaitHotReload waits in the background for forgo to reload the code a pull
+// brought in, replacing any earlier wait. When the reload goes live nothing
+// restarts; otherwise the existing safe restart runs (when supervised).
+func (s *Server) awaitHotReload(dir string, since int, when string, res update.GitPullResult) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.restart.mu.Lock()
+	if s.restart.stopHotReloadWait != nil {
+		s.restart.stopHotReloadWait()
+	}
+	s.restart.stopHotReloadWait = cancel
+	s.restart.mu.Unlock()
+	opts := hotReloadWait
+	done := s.runDone()
+	go func() {
+		defer cancel()
+		go func() {
+			select {
+			case <-done:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		result := waitHotReload(ctx, dir, since, opts)
+		if ctx.Err() != nil {
+			return // a newer pull or shutdown took over
+		}
+		if result.Applied {
+			refreshAfterHotReload()
+			slog.Info("server: dev update applied via hot reload", "component", "update", "to", res.To, "generation", result.Generation)
+			return
+		}
+		slog.Warn("server: dev update needs a full restart", "component", "update", "reason", result.Reason, "to", res.To)
+		if !res.Supervised {
+			return
+		}
+		if _, err := s.startRestart(when, false, res.To); err != nil {
+			slog.Warn("server: restarting after a failed hot reload", "component", "update", "error", err)
+		}
+	}()
 }
 
 func (s *Server) cancelRestart() (saferestart.Status, error) {
