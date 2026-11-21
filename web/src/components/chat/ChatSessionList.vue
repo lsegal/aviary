@@ -6,7 +6,7 @@
 					:label="chatDisplayName(s)" :active="s.id === activeId" :actions="chatActions(s)"
 					menu-testid="chat-menu-button" :editing="editingId === s.id"
 					:menu-open="menuId === s.id" @update:menu-open="(open) => (menuId = open ? s.id : '')"
-					@select="(key) => (key === 'delete' ? askDelete(s) : startRename(s))" @dblclick="startRename(s)">
+					@select="(key) => onAction(key, s)" @dblclick="startRename(s)">
 					<template #editor>
 						<input :ref="setEditInput" v-model="editName" data-testid="chat-rename-input"
 							:aria-label="`Rename ${chatDisplayName(s)}`"
@@ -24,18 +24,26 @@
 			</template>
 		</SidebarItemList>
 
-		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
+		<AlertDialogRoot :open="confirmOpen" @update:open="(open) => (confirmOpen = open)">
 			<AlertDialogPortal>
 				<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 				<AlertDialogContent
 					class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 					<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-						Delete chat?
+						<template v-if="confirmKind === 'clear'">
+							Clear <span class="break-all">{{ confirmTarget ? chatDisplayName(confirmTarget) : "" }}</span>?
+						</template>
+						<template v-else>Delete chat?</template>
 					</AlertDialogTitle>
 					<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-						This will permanently delete
-						<span class="break-all font-medium text-gray-900 dark:text-white">{{ deleteTarget ? chatDisplayName(deleteTarget) : "" }}</span>
-						and all its messages. This cannot be undone.
+						<template v-if="confirmKind === 'clear'">
+							This removes all messages in this chat. The chat itself stays. This cannot be undone.
+						</template>
+						<template v-else>
+							This will permanently delete
+							<span class="break-all font-medium text-gray-900 dark:text-white">{{ confirmTarget ? chatDisplayName(confirmTarget) : "" }}</span>
+							and all its messages. This cannot be undone.
+						</template>
 					</AlertDialogDescription>
 					<div class="mt-6 flex justify-end gap-3">
 						<AlertDialogCancel
@@ -44,8 +52,8 @@
 						</AlertDialogCancel>
 						<AlertDialogAction
 							class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-							@click="confirmDelete">
-							Delete
+							@click="confirmAction">
+							{{ confirmKind === "clear" ? "Clear" : "Delete" }}
 						</AlertDialogAction>
 					</div>
 				</AlertDialogContent>
@@ -117,9 +125,19 @@ const deleteAction: SidebarItemAction = {
 	label: "Delete",
 	danger: true,
 };
-// Main Chat cannot be deleted.
+const clearAction: SidebarItemAction = {
+	key: "clear",
+	label: "Clear",
+	danger: true,
+};
+// Chats the server will not delete, such as Main Chat, are cleared instead.
 function chatActions(s: ChatSession): SidebarItemAction[] {
-	return isMainChat(s) ? [renameAction] : [renameAction, deleteAction];
+	return [renameAction, s.deletable ? deleteAction : clearAction];
+}
+
+function onAction(key: string, s: ChatSession) {
+	if (key === "delete" || key === "clear") askConfirm(key, s);
+	else startRename(s);
 }
 
 const now = ref(Date.now());
@@ -219,18 +237,28 @@ async function saveRename() {
 	}
 }
 
-const deleteTarget = ref<ChatSession | null>(null);
-const deleteOpen = ref(false);
-function askDelete(s: ChatSession) {
+const confirmTarget = ref<ChatSession | null>(null);
+const confirmKind = ref<"delete" | "clear">("delete");
+const confirmOpen = ref(false);
+function askConfirm(kind: "delete" | "clear", s: ChatSession) {
 	menuId.value = "";
-	deleteTarget.value = s;
-	deleteOpen.value = true;
+	confirmKind.value = kind;
+	confirmTarget.value = s;
+	confirmOpen.value = true;
 }
 
-async function confirmDelete() {
-	const s = deleteTarget.value;
-	deleteOpen.value = false;
+async function confirmAction() {
+	const s = confirmTarget.value;
+	confirmOpen.value = false;
 	if (!s) return;
+	if (confirmKind.value === "clear") {
+		try {
+			await store.clear(props.agent, s.id);
+		} catch (e) {
+			console.error("Failed to clear chat", e);
+		}
+		return;
+	}
 	try {
 		await store.remove(props.agent, s.id);
 		if (activeId.value === s.id) {
