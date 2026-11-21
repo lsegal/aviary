@@ -1,5 +1,6 @@
-// Package cliagent runs agent turns through a coding-agent CLI (Claude Code or
-// Codex) instead of a model API. The CLI owns the agent loop; Aviary exposes
+// Package cliagent runs agent turns through a coding-agent CLI (Claude Code,
+// Codex, or any CLI provider definition that resumes its sessions) instead of
+// a model API. The CLI owns the agent loop; Aviary exposes
 // its tools to the CLI over MCP and receives the CLI's JSON event stream as
 // backend-neutral events.
 package cliagent
@@ -9,19 +10,22 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/llm"
 )
 
-// Backend identifies a supported agent CLI.
+// Backend names the CLI provider definition a session runs through. Any
+// definition in the CLI provider registry whose CLI resumes its own sessions
+// can back a chat; claude and codex additionally get backends of their own
+// that keep Aviary's MCP tools and system prompt in the CLI's native form.
 type Backend string
 
-// Supported backends.
+// Backends with their own session implementations.
 const (
 	Claude Backend = "claude"
 	Codex  Backend = "codex"
 )
-
-// Backends lists every supported backend.
-var Backends = []Backend{Claude, Codex}
 
 // ModelPrefix is the provider prefix that selects a CLI backend in a model
 // string such as "cli/claude/opus". A backend's own name selects it too, as
@@ -40,7 +44,8 @@ const MCPServerName = "aviary"
 const MCPToolTimeout = 30 * time.Minute
 
 // IsCLIModel reports whether model selects a CLI backend, either as
-// "cli/<backend>/<model>" or as "<backend>/<model>".
+// "cli/<backend>/<model>" or as "<backend>/<model>" for a backend in the CLI
+// provider registry in force.
 func IsCLIModel(model string) bool {
 	model = strings.TrimSpace(model)
 	if strings.HasPrefix(model, ModelPrefix) {
@@ -51,31 +56,64 @@ func IsCLIModel(model string) bool {
 }
 
 // ParseModel splits "cli/<backend>/<model>" or "<backend>/<model>" into its
-// backend and the model name passed to that CLI.
+// backend and the model name passed to that CLI, resolving the backend in
+// the CLI provider registry in force.
 func ParseModel(model string) (Backend, string, error) {
+	return ParseModelIn(llm.CLIProviders(), model)
+}
+
+// ParseModelIn is ParseModel against an explicit registry, for config
+// validation, which checks definitions before they are installed.
+func ParseModelIn(registry *clidefs.Registry, model string) (Backend, string, error) {
 	model = strings.TrimSpace(model)
 	rest, prefixed := strings.CutPrefix(model, ModelPrefix)
 	backend, name, ok := strings.Cut(rest, "/")
-	if !prefixed && !Backend(backend).Valid() {
+	b := Backend(backend)
+	if !prefixed && !b.validIn(registry) {
 		return "", "", fmt.Errorf("model %q is not a CLI model", model)
 	}
 	if !ok || backend == "" || strings.TrimSpace(name) == "" {
-		return "", "", fmt.Errorf("invalid CLI model %q: expected <claude|codex>/<model> or cli/<claude|codex>/<model>", model)
+		return "", "", fmt.Errorf("invalid CLI model %q: expected <cli>/<model> or cli/<cli>/<model>", model)
 	}
-	b := Backend(backend)
-	if !b.Valid() {
-		return "", "", fmt.Errorf("unknown CLI backend %q in model %q; must be claude or codex", backend, model)
+	if !b.validIn(registry) {
+		return "", "", fmt.Errorf("unknown CLI backend %q in model %q; must be one of %s", backend, model, clidefs.JoinOr(ChatBackends(registry)))
 	}
 	return b, name, nil
 }
 
-// Valid reports whether b is a supported backend.
-func (b Backend) Valid() bool {
-	return b == Claude || b == Codex
+// ChatBackends lists, in sorted order, the providers in registry that can back
+// a chat: those whose CLI resumes its own sessions.
+func ChatBackends(registry *clidefs.Registry) []string {
+	var names []string
+	for _, name := range registry.Providers() {
+		if Backend(name).validIn(registry) {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
-// Binary returns the executable name for the backend.
+// Valid reports whether b names a provider in the CLI provider registry in
+// force that can back a chat.
+func (b Backend) Valid() bool {
+	return b.validIn(llm.CLIProviders())
+}
+
+func (b Backend) validIn(registry *clidefs.Registry) bool {
+	definition, ok := registry.Lookup(string(b))
+	return ok && definition.ResumesSessions()
+}
+
+// Definition returns b's CLI provider definition from the registry in force.
+func (b Backend) Definition() (clidefs.Definition, bool) {
+	return llm.CLIProvider(string(b))
+}
+
+// Binary returns the executable the backend's definition runs.
 func (b Backend) Binary() string {
+	if definition, ok := b.Definition(); ok && definition.Binary != "" {
+		return definition.Binary
+	}
 	return string(b)
 }
 
@@ -116,7 +154,8 @@ type Options struct {
 	// ResumeID is the CLI-native session ID to resume. Empty starts a new
 	// session; the new ID is reported with an EventSession event.
 	ResumeID string
-	// NewSessionID, when set, is used as the ID of a new Claude Code session.
+	// NewSessionID, when set, is the ID Aviary assigns a new session, for a
+	// definition whose session.assign is "aviary".
 	NewSessionID string
 	// Ephemeral runs without persisting the CLI session, so it cannot be
 	// resumed later.
@@ -209,9 +248,12 @@ func NewSession(opts Options) (Session, error) {
 		return newClaudeSession(opts), nil
 	case Codex:
 		return newCodexSession(opts), nil
-	default:
+	}
+	definition, ok := opts.Backend.Definition()
+	if !ok || !definition.ResumesSessions() {
 		return nil, fmt.Errorf("unknown CLI backend %q", opts.Backend)
 	}
+	return newDefinitionSession(opts, definition), nil
 }
 
 func stringField(m map[string]any, key string) string {

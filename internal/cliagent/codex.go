@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,49 +43,42 @@ func newCodexSession(opts Options) *codexSession {
 // shell, file and web access.
 var codexBuiltinFeatures = []string{"shell_tool", "unified_exec", "view_image", "browser_use", "computer_use"}
 
-// codexArgs builds the command line for one Codex turn. The prompt is read
-// from stdin. With a profile, codex reads its settings, the developer
+// codexArgs builds the command line for one Codex turn. The subcommand,
+// model, thread and prompt placement come from codex's CLI provider
+// definition, as every other launch renders them; the prompt is read from
+// stdin. What an interactive chat adds (its sandbox, Aviary's MCP server, the
+// developer instructions and images) takes the place of the template's
+// approval arguments, which every codex template puts before its positional
+// thread and prompt. With a profile, codex reads its settings, the developer
 // instructions among them, from aviary's own CODEX_HOME (see
 // writeCodexProfile); otherwise it ignores the user's config and the
 // instructions go on the command line.
 func codexArgs(opts Options, threadID, profile string, images []string) []string {
-	args := []string{"exec"}
-	if profile != "" {
-		args = append(args, "--profile", profile) // exec resume takes no --profile of its own
-	}
-	if threadID != "" {
-		args = append(args, "resume")
-	}
-	args = append(args,
-		"--json",
-		"--skip-git-repo-check",
-		"--model", opts.Model,
-		"-c", "approval_policy="+tomlString("never"),
-	)
+	chat := []string{"-c", "approval_policy=" + tomlString("never")}
 	if profile == "" {
-		args = append(args, "--ignore-user-config")
+		chat = append(chat, "--ignore-user-config")
 	}
 	if opts.Ephemeral {
-		args = append(args, "--ephemeral")
+		chat = append(chat, "--ephemeral")
 	}
 	if opts.SystemPrompt != "" && profile == "" {
-		args = append(args, "-c", "developer_instructions="+tomlString(opts.SystemPrompt))
+		chat = append(chat, "-c", "developer_instructions="+tomlString(opts.SystemPrompt))
 	}
 	if opts.BuiltinTools {
-		args = append(args, opts.Approval...)
-		args = append(args, opts.ExtraDir...)
+		chat = append(chat, opts.Approval...)
+		chat = append(chat, opts.ExtraDir...)
 	} else {
-		args = append(args,
+		chat = append(chat,
 			"-c", "sandbox_mode="+tomlString("read-only"),
 			"-c", "web_search="+tomlString("disabled"),
 		)
 		for _, f := range codexBuiltinFeatures {
-			args = append(args, "--disable", f)
+			chat = append(chat, "--disable", f)
 		}
 	}
 	if opts.MCPURL != "" {
 		prefix := "mcp_servers." + MCPServerName + "."
-		args = append(args,
+		chat = append(chat,
 			"-c", prefix+"url="+tomlString(opts.MCPURL),
 			"-c", prefix+"bearer_token_env_var="+tomlString(mcpTokenEnv),
 			"-c", prefix+"default_tools_approval_mode="+tomlString("approve"),
@@ -92,12 +86,25 @@ func codexArgs(opts Options, threadID, profile string, images []string) []string
 		)
 	}
 	for _, img := range images {
-		args = append(args, "--image", img)
+		chat = append(chat, "--image", img)
 	}
+	mode := clidefs.ModeRun
 	if threadID != "" {
-		args = append(args, threadID)
+		mode = clidefs.ModeResume
 	}
-	return append(args, "-")
+	args := renderDefinition(Codex, mode, clidefs.Values{
+		Model:        opts.Model,
+		Session:      threadID,
+		ApprovalArgs: chat,
+		PromptStdin:  true,
+		NoCheckout:   true, // a chat's working directory need not be a git repository
+	})
+	if profile != "" && len(args) > 0 {
+		// `exec resume` takes no --profile of its own, so it goes right after
+		// `exec`, ahead of any subcommand.
+		args = slices.Insert(args, 1, "--profile", profile)
+	}
+	return args
 }
 
 // tomlString quotes s as a TOML basic string. JSON string escapes are a
