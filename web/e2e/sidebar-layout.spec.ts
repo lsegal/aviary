@@ -103,8 +103,8 @@ test("rail icons navigate and name their page in a tooltip", async ({
 	await expect(page).toHaveURL("/system/overview");
 
 	// The footer's connection, restart and logout stay reachable.
-	await rail.getByTestId("sidebar-rail-health").hover();
-	await expect(page.getByRole("tooltip")).toHaveText(
+	await expect(rail.getByTestId("connection-status")).toHaveAttribute(
+		"aria-label",
 		/Connected|Connecting|Disconnected/,
 	);
 	await expect(rail.getByTestId("restart-button")).toBeVisible();

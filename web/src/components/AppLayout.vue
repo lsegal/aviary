@@ -348,13 +348,14 @@
         </SidebarRailItem>
       </div>
       <div class="mt-auto flex flex-col items-center gap-1 pt-2">
-        <SidebarRailItem :label="versionLabel" :dot="versionDotClass" data-testid="sidebar-rail-version"
-          :disabled="!upgradeAvailable || upgrading || restartPending || !upgradeSupported" @click="openUpgradeDialog()">
+        <SidebarRailItem v-if="upgradeAvailable" :label="railUpdateLabel" dot="bg-yellow-400"
+          data-testid="sidebar-rail-update" :disabled="upgradeDisabled" @click="openUpgradeDialog()">
+          <ArrowUpCircleIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+        <SidebarRailItem v-else :label="railVersionLabel" data-testid="sidebar-rail-version">
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
-        <SidebarRailItem :label="healthLabel" :dot="dotClass" data-testid="sidebar-rail-health">
-          <SignalIcon aria-hidden="true" class="h-5 w-5" />
-        </SidebarRailItem>
+        <ConnectionIndicator :status="status" @retry="reconnect()" />
         <SidebarRailItem label="Restart" data-testid="restart-button" :disabled="upgrading || restartPending"
           @click="triggerRestart()">
           <ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="restartPending ? 'animate-spin' : ''" />
@@ -389,6 +390,7 @@ const systemCollapsedState = ref(false);
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
+import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
 import ChevronDoubleRightIcon from "@heroicons/vue/24/outline/ChevronDoubleRightIcon";
@@ -397,7 +399,6 @@ import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
-import SignalIcon from "@heroicons/vue/24/outline/SignalIcon";
 import Squares2X2Icon from "@heroicons/vue/24/outline/Squares2X2Icon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
 import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
@@ -553,6 +554,15 @@ const sidebar = useSidebarLayout();
 const sidebarWidth = sidebar.width;
 const sidebarCollapsed = sidebar.collapsed;
 const sidebarResizing = ref(false);
+const railVersionLabel = computed(() => {
+	if (version.value) return `Version ${shortVersion(version.value)}`;
+	return status.value === "disconnected" ? "Version unknown" : "Version …";
+});
+const railUpdateLabel = computed(() =>
+	latestVersion.value
+		? `Update available: ${shortVersion(latestVersion.value)}`
+		: "Update available",
+);
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 const shortcutLabel = isMac ? "⌘B" : "Ctrl+B";
 
