@@ -1,10 +1,10 @@
-# Projects
+# Code Loop
 
-Projects watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a CLI provider such as Codex or Claude Code on every issue that is ready for work. Each job runs the [`gh-fix`](/skills/gh-fix/) skill on an issue, or [`gh-discuss`](/skills/gh-discuss/) on a new Discussion thread. Both are ordinary skills you can also install and run without Aviary; see [Skills](/skills/). The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Projects decides which issue runs, on which CLI, and when.
+Code Loop watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a CLI provider such as Codex or Claude Code on every issue that is ready for work. Each job runs the [`gh-fix`](/skills/gh-fix/) skill on an issue, or [`gh-discuss`](/skills/gh-discuss/) on a new Discussion thread. Both are ordinary skills you can also install and run without Aviary; see [Skills](/skills/). The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Code Loop decides which issue runs, on which CLI, and when.
 
 [The code loop on GitHub](./code-loop) follows one issue through every stage, from the watch to the merged pull request.
 
-Projects needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one CLI provider, and the `gh-fix` skill installed for that CLI.
+Code Loop needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one CLI provider, and the `gh-fix` skill installed for that CLI.
 
 ## Watching a repository
 
@@ -23,7 +23,7 @@ A target is one of:
 
 Every target of every agent shares one concurrency limit, and work is drawn from them in turn.
 
-To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's tab in **Projects Settings** (`/projects/settings?agent=<agent>`), where its projects are added and removed and their reports set. The **✕** on a saved project's row there deletes it: it stops watching the project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The agent's **GitHub Projects** page (`/agents/<agent>/projects`) is one board of every project it owns, each job card naming its project, with no settings on it. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent, with its Settings button opening the project in Projects Settings. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
+To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), where its projects are added and removed and their reports set. The **✕** on a saved project's row there deletes it: it stops watching the project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The agent's **Code Loop** page (`/agents/<agent>/projects`) is one board of every project it owns, each job card naming its project, with no settings on it. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent, with its Settings button opening the project in Code Loop Settings. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
 
 ```bash
 aviary project add owner/repo --agent coder
@@ -37,7 +37,7 @@ agents:
       - target: owner/repo
 ```
 
-The settings every project runs under, such as concurrency, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **Projects Settings** (`/projects/settings`). See [`projects`](/reference/config#projects) for every setting.
+The settings every project runs under, such as concurrency, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **Code Loop Settings** (`/projects/settings`). See [`projects`](/reference/config#projects) for every setting.
 
 ```yaml
 projects:
@@ -56,11 +56,11 @@ A repository issue is picked up when it is open and matches the issue filter (`a
 
 A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a runtime watch (`aviary watch`) no agent owns, which then needs a CLI model there.
 
-Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`; [CLI provider definitions](/reference/cli-definitions) documents the schema: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Projects. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers & Authentication then reports it installed at that path, and jobs run the same executable.
+Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`; [CLI provider definitions](/reference/cli-definitions) documents the schema: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Code Loop. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers & Authentication then reports it installed at that path, and jobs run the same executable.
 
-Jobs run under the Projects [approval mode](/reference/config#approval): `projects.approval_mode`, or `approval.mode` when that is unset (`yolo` means `full`). Each CLI's definition translates the mode into the CLI's own flags at launch, and no CLI settings file is touched. Under the default `auto` mode, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
+Jobs run under the Code Loop [approval mode](/reference/config#approval): `projects.approval_mode`, or `approval.mode` when that is unset (`yolo` means `full`). Each CLI's definition translates the mode into the CLI's own flags at launch, and no CLI settings file is touched. Under the default `auto` mode, Codex runs in its `workspace-write` sandbox with network access, so `gh` and `git push` reach GitHub, and Claude Code runs in `auto` permission mode.
 
-`agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
+`agy` cannot run Code Loop jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Dispatching a job to it fails with that reason, and `aviary doctor` lists the gate. A definition's `projectsUnavailable` field holds the reason.
 
 Settings → Providers & Authentication shows the CLI providers in its one Providers list, tagged CLI beside the API, OAuth and endpoint providers, with each CLI's install, version, sign-in, quota and models, including CLIs that are not installed; `aviary models clis` (the `provider_cli_list` tool) reports the same, plus any Projects gate.
 
@@ -101,9 +101,9 @@ models:
 
 Jobs take instructions only from GitHub comments by allowed commenters on the issue or its pull request. By default the only allowed commenter is the signed-in `gh` user. New comments, edits to the issue description, and closures are relayed into the running session. The job's prompt also names the allowed commenters, so the CLI provider treats comments by anyone else in the thread as untrusted information rather than instructions.
 
-Every Aviary server has an instance identity, an 8-character ID generated on first run and kept in Aviary's state, so a restarted server keeps the same ID and recognizes its own claims. The Projects board header and Projects Settings both show it. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
+Every Aviary server has an instance identity, an 8-character ID generated on first run and kept in Aviary's state, so a restarted server keeps the same ID and recognizes its own claims. The Code Loop board header and Code Loop Settings both show it. A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass for that instance. Instances working the same repository coordinate through claim comments on the issue, so two instances never work one issue.
 
-On a finished or paused job, a mention goes to the Projects agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
+On a finished or paused job, a mention goes to the Code Loop agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
 
 ## Prompt chat
 
@@ -143,7 +143,7 @@ Targets use the same form as a scheduled task's target ([delivery targets](/guid
 
 ## Job transcripts
 
-Each job keeps a structured transcript built from the CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`), Codex (`exec --json`) and Gemini CLI (`gemini-json`) are mapped by their output format. opencode, Cline and Muse write generic `jsonl` streams, mapped by the `opencode-json`, `cline-json` and `muse-json` transcript mappers their definitions name in [`output.transcript`](/reference/cli-definitions#output). `agy` has no machine-readable output, so Projects does not dispatch jobs to it. A custom definition whose stream has no mapper records only its raw output and Projects' own events.
+Each job keeps a structured transcript built from the CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Code Loop adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`), Codex (`exec --json`) and Gemini CLI (`gemini-json`) are mapped by their output format. opencode, Cline and Muse write generic `jsonl` streams, mapped by the `opencode-json`, `cline-json` and `muse-json` transcript mappers their definitions name in [`output.transcript`](/reference/cli-definitions#output). `agy` has no machine-readable output, so Code Loop does not dispatch jobs to it. A custom definition whose stream has no mapper records only its raw output and Projects' own events.
 
 ## Scheduled prompts
 
@@ -151,7 +151,7 @@ A project can also run prompts on a timer, such as a nightly triage or a weekly 
 
 ## Managing projects
 
-Every Projects action is an MCP tool, and the `aviary project` command mirrors each one with the same arguments. See [Projects tools](/reference/mcp/projects).
+Every Code Loop action is an MCP tool, and the `aviary project` command mirrors each one with the same arguments. See [Code Loop tools](/reference/mcp/projects).
 
 ```bash
 aviary project status
@@ -164,4 +164,4 @@ aviary project clone clear
 
 Jobs reuse clones. A job's clone stays on disk after the job ends, and the next job on the same repository is handed a free one instead of cloning and installing dependencies again. Before the hand-off the clone is fetched and reset to the latest default branch: its other branches, local git config, stashes, hooks, and untracked and ignored files are removed, except `node_modules` and `.venv` dependency directories. A clone is free when no running, queued, waiting or paused job holds it, the same decision `project_clone_list` reports; jobs on the same repository that run at once each get their own clone. The job detail view shows the job's clone path with a copy button, or says when the job has no clone yet or its clone was removed or handed to another job. `aviary project clone clear` removes the clones no job holds.
 
-Projects state, including handled issues, sessions and job transcripts, lives in the `projects/` directory of Aviary's data directory.
+Code Loop state, including handled issues, sessions and job transcripts, lives in the `projects/` directory of Aviary's data directory.

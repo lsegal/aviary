@@ -16,7 +16,7 @@ steps:
     text: Uploads the screenshots and videos you mention, and draws wireframes or sequence diagrams when prose isn't enough.
   - title: File and verify
     text: Files the issue assigned to you, then reads it back to check that media renders and no local path or secret slipped in.
-aviary: Projects never runs gh-create on its own, but the issues it files are exactly what Projects picks up. The Projects prompt chat files issues through it too.
+aviary: Code Loop never runs gh-create on its own, but the issues it files are exactly what Code Loop picks up. The Code Loop prompt chat files issues through it too.
 requirements:
   - The GitHub CLI (gh), signed in with permission to create issues.
   - A CLI agent that loads skills, such as Claude Code, Codex or Gemini CLI.

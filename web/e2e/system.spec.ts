@@ -498,7 +498,7 @@ test("system skills shows provider installs and installs them on one page", asyn
 		"Not installed",
 	);
 	await expect(page.getByTestId("coding-skill-gh-fix")).toContainText(
-		"run by Projects",
+		"run by Code Loop",
 	);
 	await expect(page.getByTestId("coding-skill-gh-create")).toContainText(
 		"you run it",

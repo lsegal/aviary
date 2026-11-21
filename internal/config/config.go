@@ -30,7 +30,7 @@ type Config struct {
 	// Approval is how much CLI providers may do without asking; see
 	// ApprovalConfig.
 	Approval ApprovalConfig `yaml:"approval,omitempty" json:"approval,omitzero"`
-	// Projects is the one set of Projects settings, shared by every project
+	// Projects is the one set of Code Loop settings, shared by every project
 	// of every agent; the projects themselves are listed under the agents
 	// that own them.
 	Projects ProjectsConfig `yaml:"projects,omitempty" json:"projects,omitzero"`

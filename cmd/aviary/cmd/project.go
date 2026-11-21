@@ -12,8 +12,8 @@ import (
 
 var projectCmd = &cobra.Command{
 	Use:   "project",
-	Short: "Manage Projects: watched GitHub issues fixed by CLI providers",
-	Long: `Manage Projects. Every subcommand calls the project_* MCP tool of the same
+	Short: "Manage Code Loop: watched GitHub issues fixed by CLI providers",
+	Long: `Manage Code Loop. Every subcommand calls the project_* MCP tool of the same
 name with the same arguments, given as --<field> <value> flags. A leading
 positional argument fills the subcommand's main field, such as the job number
 or the project target.`,
@@ -142,7 +142,7 @@ func init() {
 		if len(spec.path) > 1 {
 			group, ok := groups[spec.path[0]]
 			if !ok {
-				group = &cobra.Command{Use: spec.path[0], Short: "Projects " + spec.path[0] + " commands"}
+				group = &cobra.Command{Use: spec.path[0], Short: "Code Loop " + spec.path[0] + " commands"}
 				groups[spec.path[0]] = group
 				projectCmd.AddCommand(group)
 			}
