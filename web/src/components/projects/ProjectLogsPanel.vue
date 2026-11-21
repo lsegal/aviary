@@ -29,7 +29,8 @@ const HEIGHT_KEY = "aviary.projects.logsHeight";
 const MIN_HEIGHT = 96;
 const DEFAULT_HEIGHT = 224;
 // A log entry starts with its time, optionally preceded by its date.
-const ENTRY_START = /^((?:\d{4}-\d{2}-\d{2}[ T])?\d{1,2}:\d{2}:\d{2}(?:\.\d+)?) (.*)$/s;
+const ENTRY_START =
+	/^((?:\d{4}-\d{2}-\d{2}[ T])?\d{1,2}:\d{2}:\d{2}(?:\.\d+)?) (.*)$/s;
 
 const props = defineProps<{
 	/** The board's recent log lines, oldest first. */

@@ -983,9 +983,7 @@ test("logs panel wraps long lines and indents multi-line entries", async ({
 	const entries = page.getByTestId("project-logs-entry");
 	await expect(entries).toHaveCount(3);
 	const first = entries.nth(0);
-	expect(await first.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(
-		0,
-	);
+	expect(await first.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
 	await expect(first).toContainText(url);
 
 	// Continuation lines stay in their entry, keep their line breaks, and line
@@ -999,7 +997,8 @@ test("logs panel wraps long lines and indents multi-line entries", async ({
 	const textBox = await text.boundingBox();
 	if (!timeBox || !textBox) throw new Error("no entry boxes");
 	expect(textBox.x).toBeGreaterThan(timeBox.x + timeBox.width);
-	expect(textBox.height).toBeGreaterThan(timeBox.height * 2);
+	const oneLine = (await entries.nth(2).boundingBox())?.height ?? 0;
+	expect(textBox.height).toBeGreaterThan(oneLine * 2.5);
 	await expect(second.locator("span").first()).toHaveText(
 		"2026-11-20 12:04:02",
 	);
