@@ -22,9 +22,7 @@ Each agent's pages, in sidebar order:
 
 | Page | Route | Exposed Functionality |
 | --- | --- | --- |
-| Overview | `/system/overview` | Health, counts, validation, and initial setup. |
-| Settings | `/system/settings` | Server, models, browser, scheduler, and search settings. |
-| Providers & Auth | `/system/providers` | API keys, OAuth flows, and secret management. |
+| Overview | `/system/overview` | Health, counts, validation, initial setup, and a card for every System page. |
 | Usage | `/system/usage` | Token and session analytics. |
 | Tools | `/system/tools` | MCP tool catalog and direct invocation. |
 | Skills | `/system/skills` | Every installed skill on one page: the installed version of each skill Aviary ships in each provider's CLI, and search, filtering, activation and per-skill settings for the skills Aviary agents use. |
@@ -34,7 +32,16 @@ Each agent's pages, in sidebar order:
 | Daemons | `/system/daemons` | Process monitoring and restart support. |
 | Watches | `/system/watches/<owner%2Frepo>` | Boards of runtime watches no agent owns. |
 
-Overview, Settings, Projects, Providers & Auth and Usage are always shown; the rest sit behind **More**.
+The System sidebar item is the Overview; the section lists the other pages and starts collapsed.
+
+## Settings
+
+Settings opens from the sidebar's gear menu, which also holds **Restart** and **Logout**.
+
+| Tab | Route | Exposed Functionality |
+| --- | --- | --- |
+| General | `/system/settings` | Server, models, browser, scheduler, and search settings. |
+| Providers & Authentication | `/system/providers` | API keys, OAuth flows, and secret management. |
 
 Skills detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`, and is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
 
