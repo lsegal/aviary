@@ -3030,6 +3030,21 @@ func TestIssueBlockedUntilDependenciesClose(t *testing.T) {
 	}
 }
 
+func TestIssueBlockedQualifiesCrossRepositoryDependencies(t *testing.T) {
+	issue := Issue{Repository: "owner/repo", DependsOn: []IssueDependency{
+		{Number: 4, State: "open", Repository: "Owner/Repo"},
+		{Number: 50, State: "open", Repository: "other/lib"},
+	}}
+	if blocked, reason := issueBlocked(issue); !blocked || reason != "depends on #4 (open), depends on other/lib#50 (open)" {
+		t.Fatalf("blocked=%v reason=%q", blocked, reason)
+	}
+	// A repository target names the issue's repository when the issue does not.
+	issue = Issue{Target: "owner/repo", DependsOn: []IssueDependency{{Number: 4, Repository: "owner/repo"}, {Number: 50, Repository: "other/lib"}}}
+	if blocked, reason := issueBlocked(issue); !blocked || reason != "depends on #4, depends on other/lib#50" {
+		t.Fatalf("blocked=%v reason=%q", blocked, reason)
+	}
+}
+
 func TestIssueBlockedWhenItHasSubIssues(t *testing.T) {
 	blocked, reason := issueBlocked(Issue{HasSubIssues: true})
 	if !blocked || reason != "has sub-issues" {
