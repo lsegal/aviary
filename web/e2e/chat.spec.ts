@@ -435,3 +435,198 @@ test("messages sent while a reply streams are added at once", async ({
 		await expect(page.getByText(t, { exact: true })).toHaveCount(1);
 	}
 });
+
+const RED_PNG =
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+const BLUE_PNG =
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg==";
+
+/** Pastes PNG files (base64) into the element the way a browser paste does. */
+async function pasteImages(
+	input: import("@playwright/test").Locator,
+	pngs: string[],
+) {
+	await input.evaluate((el, images) => {
+		const data = new DataTransfer();
+		images.forEach((b64, i) => {
+			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+			data.items.add(
+				new File([bytes], `pasted-${i}.png`, { type: "image/png" }),
+			);
+		});
+		el.dispatchEvent(
+			new ClipboardEvent("paste", {
+				clipboardData: data,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}, pngs);
+}
+
+function chatMocks(runs: Record<string, unknown>[]) {
+	return {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "claude/opus",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		agent_run: (args?: Record<string, unknown>) => {
+			runs.push(args ?? {});
+			return { stream: ["got them"], result: "" };
+		},
+		config_validate: [],
+		// What the server persists once a prompt has run.
+		session_messages: () =>
+			runs.flatMap((run, i) => [
+				{
+					id: `u${i}`,
+					session_id: "s1",
+					role: "user",
+					content: run.message,
+					media_urls: run.media_urls,
+					timestamp: "2026-03-12T12:00:00Z",
+				},
+				{
+					id: `a${i}`,
+					session_id: "s1",
+					role: "assistant",
+					content: "got them",
+					timestamp: "2026-03-12T12:00:01Z",
+				},
+			]),
+	};
+}
+
+test("pasting two images attaches and sends both", async ({ page }) => {
+	const runs: Record<string, unknown>[] = [];
+	await mockMCP(page, chatMocks(runs));
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	await expect(input).toBeEnabled();
+	await pasteImages(input, [RED_PNG]);
+	await pasteImages(input, [BLUE_PNG]);
+
+	const previews = page.getByTestId("chat-attachment");
+	await expect(previews).toHaveCount(2);
+	await expect(page.getByRole("button", { name: "Remove image 1" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Remove image 2" })).toBeVisible();
+
+	await input.fill("compare these");
+	await input.press("Enter");
+
+	await expect(previews).toHaveCount(0);
+	await expect.poll(() => runs.length).toBe(1);
+	expect(runs[0].message).toBe("compare these");
+	expect(runs[0].media_urls).toEqual([
+		`data:image/png;base64,${RED_PNG}`,
+		`data:image/png;base64,${BLUE_PNG}`,
+	]);
+
+	// The sent bubble, reloaded from the persisted session, shows both.
+	await expect(page.getByText("got them")).toBeVisible();
+	const bubble = page
+		.locator(".bg-blue-600")
+		.filter({ hasText: "compare these" });
+	await expect(bubble.locator("img")).toHaveCount(2);
+	await page.reload();
+	await expect(bubble.locator("img")).toHaveCount(2);
+	await expect(bubble.locator("img").nth(1)).toHaveAttribute(
+		"src",
+		`data:image/png;base64,${BLUE_PNG}`,
+	);
+});
+
+test("removing one attachment keeps the others", async ({ page }) => {
+	const runs: Record<string, unknown>[] = [];
+	await mockMCP(page, chatMocks(runs));
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	await expect(input).toBeEnabled();
+	// One paste carrying two images adds both.
+	await pasteImages(input, [RED_PNG, BLUE_PNG]);
+	const previews = page.getByTestId("chat-attachment");
+	await expect(previews).toHaveCount(2);
+
+	await page.getByRole("button", { name: "Remove image 1" }).click();
+	await expect(previews).toHaveCount(1);
+	await expect(previews.locator("img")).toHaveAttribute(
+		"src",
+		`data:image/png;base64,${BLUE_PNG}`,
+	);
+
+	await page.getByRole("button", { name: "Send message" }).click();
+	await expect.poll(() => runs.length).toBe(1);
+	expect(runs[0].media_urls).toEqual([`data:image/png;base64,${BLUE_PNG}`]);
+});
+
+test("the file picker and drag-and-drop append attachments", async ({
+	page,
+}) => {
+	await mockMCP(page, chatMocks([]));
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	await expect(input).toBeEnabled();
+	await pasteImages(input, [RED_PNG]);
+
+	await page.getByTestId("chat-attachment-input").setInputFiles([
+		{
+			name: "a.png",
+			mimeType: "image/png",
+			buffer: Buffer.from(BLUE_PNG, "base64"),
+		},
+		{
+			name: "b.png",
+			mimeType: "image/png",
+			buffer: Buffer.from(RED_PNG, "base64"),
+		},
+	]);
+	const previews = page.getByTestId("chat-attachment");
+	await expect(previews).toHaveCount(3);
+
+	await input.evaluate((el, b64) => {
+		const data = new DataTransfer();
+		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+		data.items.add(new File([bytes], "dropped.png", { type: "image/png" }));
+		el.dispatchEvent(
+			new DragEvent("drop", {
+				dataTransfer: data,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}, BLUE_PNG);
+	await expect(previews).toHaveCount(4);
+});
+
+test("the attachment limit is shown instead of dropping images silently", async ({
+	page,
+}) => {
+	await mockMCP(page, chatMocks([]));
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Type a message or paste an image…");
+	await expect(input).toBeEnabled();
+	await pasteImages(input, Array(9).fill(RED_PNG));
+	await pasteImages(input, [BLUE_PNG, RED_PNG, BLUE_PNG]);
+
+	await expect(page.getByTestId("chat-attachment")).toHaveCount(10);
+	await expect(page.getByRole("status")).toHaveText(
+		"A message can carry up to 10 images; 2 not attached.",
+	);
+});

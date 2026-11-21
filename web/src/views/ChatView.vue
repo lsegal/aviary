@@ -57,18 +57,19 @@
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
-									<button v-if="item.msg.mediaURL && isImageMedia(item.msg.mediaURL)" type="button"
-										class="cursor-zoom-in" @click="openExpandedImage(item.msg.mediaURL)">
-										<img :src="item.msg.mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
-									</button>
-									<video v-else-if="item.msg.mediaURL && isVideoMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
-										controls class="max-w-full rounded-lg" style="max-height:320px" />
-									<audio v-else-if="item.msg.mediaURL && isAudioMedia(item.msg.mediaURL)" :src="item.msg.mediaURL"
-										controls class="max-w-full" />
-									<a v-else-if="item.msg.mediaURL" :href="item.msg.mediaURL" target="_blank" rel="noopener noreferrer"
-										class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
-										Open attachment
-									</a>
+									<template v-for="(mediaURL, mediaIndex) in item.msg.mediaURLs ?? []" :key="mediaIndex">
+										<button v-if="isImageMedia(mediaURL)" type="button" class="cursor-zoom-in"
+											@click="openExpandedImage(mediaURL)">
+											<img :src="mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
+										</button>
+										<video v-else-if="isVideoMedia(mediaURL)" :src="mediaURL" controls class="max-w-full rounded-lg"
+											style="max-height:320px" />
+										<audio v-else-if="isAudioMedia(mediaURL)" :src="mediaURL" controls class="max-w-full" />
+										<a v-else :href="mediaURL" target="_blank" rel="noopener noreferrer"
+											class="text-sm underline underline-offset-2 opacity-90 hover:opacity-100">
+											Open attachment
+										</a>
+									</template>
 									<span v-if="item.msg.text && item.msg.role === 'user'"
 										class="whitespace-pre-wrap">{{ item.msg.text }}</span>
 									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError"
@@ -103,17 +104,35 @@
 			</div>
 
 			<!-- Input -->
-			<div class="sticky bottom-0 z-10 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-				<!-- Pending image preview -->
-				<div v-if="pastedMedia" class="flex items-center gap-2 px-6 pt-3">
-					<div class="relative inline-block">
-						<img :src="pastedMedia" class="h-20 w-auto rounded-lg border border-gray-300 dark:border-gray-700" />
+			<div class="sticky bottom-0 z-10 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950"
+				@dragover="onDragOver" @drop="onDrop">
+				<!-- Pending image previews -->
+				<div v-if="attachments.length" class="flex flex-wrap items-center gap-3 px-6 pt-3"
+					data-testid="chat-attachments">
+					<div v-for="(attachment, index) in attachments" :key="index" class="relative inline-block"
+						data-testid="chat-attachment">
+						<img :src="attachment" :alt="`Attachment ${index + 1}`"
+							class="h-20 w-auto rounded-lg border border-gray-300 dark:border-gray-700" />
 						<button type="button"
 							class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white text-xs hover:bg-gray-600"
-							@click="pastedMedia = ''" aria-label="Remove image">✕</button>
+							@click="removeAttachment(index)" :aria-label="`Remove image ${index + 1}`">✕</button>
 					</div>
 				</div>
+				<p v-if="attachmentNotice" class="px-6 pt-2 text-xs text-amber-600 dark:text-amber-400" role="status">
+					{{ attachmentNotice }}
+				</p>
 				<form class="flex gap-3 px-6 py-4" @submit.prevent="send">
+					<input ref="attachmentInputEl" type="file" accept="image/*" multiple class="hidden"
+						data-testid="chat-attachment-input" @change="onAttachmentInputChange" />
+					<button type="button" :disabled="!selectedAgent || !selectedSessionId"
+						class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+						aria-label="Attach images" title="Attach images" @click="attachmentInputEl?.click()">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-5 w-5"
+							aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round"
+								d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+						</svg>
+					</button>
 					<input ref="chatInputEl" v-model="input" type="text" :disabled="!selectedAgent || !selectedSessionId"
 						placeholder="Type a message or paste an image…"
 						class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
@@ -127,7 +146,7 @@
 								clip-rule="evenodd" />
 						</svg>
 					</button>
-					<button type="submit" :disabled="(!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
+					<button type="submit" :disabled="(!input.trim() && !attachments.length) || !selectedAgent || !selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
 						aria-label="Send message" title="Send">
 						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
@@ -189,7 +208,7 @@ interface Message {
 	localKey?: string;
 	role: "user" | "assistant" | "tool";
 	text: string;
-	mediaURL?: string;
+	mediaURLs?: string[];
 	toolData?: ToolData;
 	/** A streamed tool call that has not reported its result yet. */
 	toolPending?: boolean;
@@ -207,7 +226,7 @@ interface PersistedMessage {
 	session_id?: string;
 	role: "user" | "assistant" | "system" | "tool";
 	content: string;
-	media_url?: string;
+	media_urls?: string[];
 	model?: string;
 	timestamp?: string;
 }
@@ -397,7 +416,12 @@ const sessionsLoading = computed(
 	() => chatSessions.loading[selectedAgent.value] === true,
 );
 const input = ref("");
-const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
+// MAX_ATTACHMENTS caps the images one message carries.
+const MAX_ATTACHMENTS = 10;
+// Data URLs of the images pasted, dropped, or picked for the next message.
+const attachments = ref<string[]>([]);
+const attachmentNotice = ref("");
+const attachmentInputEl = ref<HTMLInputElement | null>(null);
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.
@@ -776,7 +800,7 @@ async function loadSessionMessages(force = false) {
 					id: m.id,
 					role: m.role,
 					text: m.content,
-					mediaURL: m.media_url,
+					mediaURLs: m.media_urls,
 					timestamp: m.timestamp,
 					model: m.model,
 					isError: m.role === "assistant" && isErrorMessage(m.content),
@@ -820,22 +844,61 @@ async function scrollBottom(force = false) {
 	updateScrollState();
 }
 
+function readDataURL(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(reader.result as string);
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
+}
+
+// addAttachments appends every image file to the pending attachments, up to
+// MAX_ATTACHMENTS, and says so when some are left out.
+async function addAttachments(files: File[]) {
+	const images = files.filter((f) => f.type.startsWith("image/"));
+	if (images.length === 0) return;
+	const urls = await Promise.all(images.map(readDataURL));
+	const room = MAX_ATTACHMENTS - attachments.value.length;
+	attachments.value = [...attachments.value, ...urls.slice(0, room)];
+	attachmentNotice.value =
+		urls.length > room
+			? `A message can carry up to ${MAX_ATTACHMENTS} images; ${urls.length - Math.max(room, 0)} not attached.`
+			: "";
+}
+
+function removeAttachment(index: number) {
+	attachments.value = attachments.value.filter((_, i) => i !== index);
+	attachmentNotice.value = "";
+}
+
 function onPaste(e: ClipboardEvent) {
-	const items = e.clipboardData?.items;
-	if (!items) return;
-	for (const item of items) {
-		if (item.type.startsWith("image/")) {
-			e.preventDefault();
-			const file = item.getAsFile();
-			if (!file) continue;
-			const reader = new FileReader();
-			reader.onload = (ev) => {
-				pastedMedia.value = ev.target?.result as string;
-			};
-			reader.readAsDataURL(file);
-			break;
-		}
-	}
+	const files = Array.from(e.clipboardData?.items ?? [])
+		.filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+		.map((item) => item.getAsFile())
+		.filter((f): f is File => !!f);
+	if (files.length === 0) return;
+	e.preventDefault();
+	void addAttachments(files);
+}
+
+function onDragOver(e: DragEvent) {
+	if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+}
+
+function onDrop(e: DragEvent) {
+	const files = Array.from(e.dataTransfer?.files ?? []);
+	if (files.length === 0) return;
+	e.preventDefault();
+	if (!selectedAgent.value || !selectedSessionId.value) return;
+	void addAttachments(files);
+}
+
+function onAttachmentInputChange(e: Event) {
+	const el = e.target as HTMLInputElement;
+	const files = Array.from(el.files ?? []);
+	el.value = "";
+	void addAttachments(files);
 }
 
 function resetHistoryNavigation() {
@@ -896,8 +959,8 @@ function onChatInputKeydown(e: KeyboardEvent) {
 // at once, and its reply streams alongside any others still running.
 async function send() {
 	const text = input.value.trim();
-	const mediaURL = pastedMedia.value;
-	if (!text && !mediaURL) return;
+	const mediaURLs = attachments.value;
+	if (!text && mediaURLs.length === 0) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
 	const now = new Date().toISOString();
@@ -906,7 +969,8 @@ async function send() {
 	)?.model;
 
 	input.value = "";
-	pastedMedia.value = "";
+	attachments.value = [];
+	attachmentNotice.value = "";
 	resetHistoryNavigation();
 	sessionProcessing.value = {
 		...sessionProcessing.value,
@@ -916,7 +980,7 @@ async function send() {
 		localKey: newMessageKey(),
 		role: "user",
 		text,
-		mediaURL: mediaURL || undefined,
+		mediaURLs: mediaURLs.length ? mediaURLs : undefined,
 		timestamp: now,
 	});
 	// Count the stream before yielding so no reload replaces the new message.
@@ -1013,7 +1077,7 @@ async function send() {
 						localKey: newMessageKey(),
 						role: "assistant",
 						text: "",
-						mediaURL: chunk,
+						mediaURLs: [chunk],
 						timestamp: now,
 						model: agentModel,
 					});
@@ -1029,7 +1093,7 @@ async function send() {
 			},
 			// A pinned session is opened by name, which creates it on first use.
 			props.session ? "" : selectedSessionId.value,
-			mediaURL || undefined,
+			mediaURLs,
 			props.project,
 			props.session,
 		);

@@ -808,7 +808,7 @@ function chatLog(calls: Calls) {
 			session_id: "projects-chat",
 			role: "user",
 			content: "What does the board look like?",
-			media_url: PNG,
+			media_urls: [PNG],
 			timestamp: at(5),
 		},
 		{
@@ -816,7 +816,7 @@ function chatLog(calls: Calls) {
 			session_id: "projects-chat",
 			role: "assistant",
 			content: "Here is the failing run.",
-			media_url: PNG,
+			media_urls: [PNG],
 			timestamp: at(4),
 		},
 		// What the server persists once a prompt has run.
