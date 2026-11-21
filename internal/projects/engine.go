@@ -1669,6 +1669,29 @@ func closedWorkReason(previous, current OriginatingWorkState, issueNumber int) s
 	return ""
 }
 
+// mergedWork reports the merged pull request that finished work whose issue
+// is closed. A merged pull request outranks a run's own exit, so work with
+// one is done even when its run failed; a pull request closed unmerged, or
+// an issue still open, leaves a failure standing.
+func mergedWork(state OriginatingWorkState) (int, bool) {
+	if !strings.EqualFold(state.IssueState, "closed") {
+		return 0, false
+	}
+	for _, pullRequest := range state.PullRequests {
+		if pullRequest.Merged {
+			return pullRequest.Number, true
+		}
+	}
+	return 0, false
+}
+
+// failedWorkSettled reports whether failed work whose pull request did not
+// merge can no longer change: its issue is closed and nothing it opened is
+// still open to merge later.
+func failedWorkSettled(state OriginatingWorkState) bool {
+	return strings.EqualFold(state.IssueState, "closed") && len(core.OpenPullRequests(state)) == 0
+}
+
 // rejectedPullRequest reports a pull request closed without merging since
 // previous while the issue stayed open, which rejects that attempt and
 // restarts the work rather than ending it. A closed issue always
@@ -2239,6 +2262,10 @@ func (w *Engine) Run(ctx context.Context) error {
 	// pause it again: the retry overrides what it waited on.
 	// Only the run loop's own goroutine reads or writes it.
 	retriedPaused := make(map[string]bool)
+	// settledFailures holds failed work already found closed with nothing
+	// left open to merge, so later polls stop reading it back. Guarded by
+	// workMu; a run that fails again clears it.
+	settledFailures := make(map[string]bool)
 	// deferredForCapacity records that the last poll left new work unclaimed
 	// because every agent slot was busy, so the run loop polls again as soon
 	// as a slot frees instead of waiting out the interval (issue #652).
@@ -2422,6 +2449,45 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 			}
 			w.logf("issue #%d unpaused: %s; its paused work is finished", issue.Number, reason)
+			publish()
+		}
+		// completeMergedFailure books failed work whose pull request merged
+		// and closed its issue as completed: the merge outranks the run's own
+		// failure.
+		completeMergedFailure := func(issue Issue, key string, own OriginatingWorkState, merged int) {
+			workMu.Lock()
+			state := work[key]
+			if state.Status != "failed" {
+				workMu.Unlock()
+				return
+			}
+			state.Status, state.Paused = "completed", nil
+			work[key] = state
+			_ = saveScopedWorkState(w.StatePath, work, targets)
+			workMu.Unlock()
+			jobMu.Lock()
+			job, counted := jobs[key]
+			counted = counted && job.Status == "failed"
+			if counted {
+				job.SetPullRequest(own, issueRepository(issue.Target, issue))
+				job.Status, job.WaitReason = "complete", ""
+				job.Finish()
+				jobs[key] = job
+			}
+			jobMu.Unlock()
+			if counted {
+				tasks.mu.Lock()
+				tasks.failed--
+				tasks.completed++
+				tasks.mu.Unlock()
+				w.jobSystem(key, fmt.Sprintf("completed: pull request #%d merged", merged))
+			}
+			if w.Status != nil {
+				if statusErr := w.Status.SetIssueStatus(ctx, issue.Target, issue, "Done"); statusErr != nil {
+					w.logf("issue #%d failed to update project status: %v", issue.Number, statusErr)
+				}
+			}
+			w.logf("issue #%d failed run reconciled: pull request #%d merged and closed the issue; its job is done", issue.Number, merged)
 			publish()
 		}
 		observedWork := make(map[string]bool, len(issues))
@@ -2654,6 +2720,42 @@ func (w *Engine) Run(ctx context.Context) error {
 				if wake, reason := core.WakePaused(paused, core.PausedCheck{Issue: issue, Own: &state}); wake == core.PausedComplete {
 					finishPaused(issue, key, paused, reason)
 				}
+			}
+		}
+		// Failed work whose issue the poll no longer lists is read back once
+		// per poll, so a pull request that merges after its run failed, by a
+		// later run or by hand, completes the job instead of leaving it
+		// failed (issue #685). Work that can no longer merge is settled and
+		// not read again; one that never merged stays failed.
+		if closureChecker != nil {
+			workMu.Lock()
+			var failedKeys []string
+			for key, state := range work {
+				if _, running := active[key]; state.Status == "failed" && !running && !observedWork[key] && !settledFailures[key] {
+					failedKeys = append(failedKeys, key)
+				}
+			}
+			workMu.Unlock()
+			for _, key := range failedKeys {
+				target, number, ok := parseIssueWorkKey(key)
+				if !ok || !slices.Contains(targets, target) || isDiscussionTarget(target) {
+					continue
+				}
+				issue := Issue{Number: number, Target: target, Repository: issueRepository(target, Issue{})}
+				state, err := closureChecker.OriginatingWorkState(ctx, issue.Repository, number)
+				if err != nil {
+					continue
+				}
+				merged, ok := mergedWork(state)
+				if !ok {
+					if failedWorkSettled(state) {
+						workMu.Lock()
+						settledFailures[key] = true
+						workMu.Unlock()
+					}
+					continue
+				}
+				completeMergedFailure(issue, key, state, merged)
 			}
 		}
 		// A job the owner paused whose issue the poll no longer lists still
@@ -3244,6 +3346,23 @@ func (w *Engine) Run(ctx context.Context) error {
 				workMu.Lock()
 				manualPause := pausing[key] && errors.Is(runErr, errWorkStoppedFromWebUI)
 				workMu.Unlock()
+				// A run can error after its work has landed, such as a
+				// teardown failing once the pull request merged (issue
+				// #685). The merged pull request outranks the run's own
+				// exit, so the job is done rather than failed.
+				if runErr != nil && !manualPause && closureChecker != nil && ctx.Err() == nil {
+					if state, err := closureChecker.OriginatingWorkState(ctx, issueRepository(i.Target, i), i.Number); err == nil {
+						if number, ok := mergedWork(state); ok {
+							w.logf("issue #%d run ended with an error, but pull request #%d merged and closed the issue; completing it: %v", i.Number, number, runErr)
+							jobMu.Lock()
+							if job, ok := jobs[key]; ok && job.SetPullRequest(state, issueRepository(i.Target, i)) {
+								jobs[key] = job
+							}
+							jobMu.Unlock()
+							runErr, paused = nil, nil
+						}
+					}
+				}
 				if manualPause {
 					// The owner paused the run: it is held, keeping its session
 					// and its claim on the issue, until the owner retries it.
@@ -3287,6 +3406,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					state := work[key]
 					state.Status = "failed"
 					work[key] = state
+					delete(settledFailures, key)
 					_ = saveScopedWorkState(w.StatePath, work, targets)
 					workMu.Unlock()
 					if errors.Is(runErr, errWorkClaimedByOther) && state.CheckoutDirectory != "" {
