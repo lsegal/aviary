@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -478,6 +479,41 @@ func MarkMessageResponded(agentID, sessionID, promptMsgID, responseMsgID string)
 		ResponseID: responseMsgID,
 	}
 	return store.AppendJSONL(store.SessionPath(agentID, sessionID), marker)
+}
+
+// UnansweredUserMessageID returns the ID of the session's latest user
+// message when it carries this content and media and has no response yet,
+// so a failed turn can be run again without storing its message twice.
+// Tool records from the failed turn may follow it; any other later message
+// means the turn has moved on, and it returns "".
+func UnansweredUserMessageID(agentID, sessionID, content string, mediaURLs []string) string {
+	if sessionID == "" {
+		return ""
+	}
+	p := store.FindSessionPath(agentID, sessionID)
+	if p == "" {
+		p = store.SessionPath(agentID, sessionID)
+	}
+	lines, err := store.ReadJSONL[domain.Message](p)
+	if err != nil {
+		return ""
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		msg := lines[i]
+		switch msg.Role {
+		case "", domain.MessageRoleTool:
+			continue
+		case domain.MessageRoleUser:
+			if msg.Content != content || !slices.Equal(msg.MediaURLs, mediaURLs) ||
+				HasMessageResponse(agentID, sessionID, msg.ID) {
+				return ""
+			}
+			return msg.ID
+		default:
+			return ""
+		}
+	}
+	return ""
 }
 
 // HasMessageResponse reports whether promptMsgID already has a response_id
