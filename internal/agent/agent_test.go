@@ -1336,6 +1336,77 @@ func TestAppendSessionMessage_SkipsEmptyContent(t *testing.T) {
 
 }
 
+func TestSessionManager_ListLastMessageAtIsTheLatestMessage(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+	sess, err := sm.Create("lastmsg")
+	require.NoError(t, err)
+
+	list, err := sm.List("lastmsg")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Nil(t, list[0].LastMessageAt, "a chat with no messages has no last message time")
+
+	require.NoError(t, AppendMessageToSession("lastmsg", sess.ID, domain.MessageRoleUser, "first"))
+	time.Sleep(5 * time.Millisecond)
+	before := time.Now()
+	require.NoError(t, AppendMessageToSession("lastmsg", sess.ID, domain.MessageRoleAssistant, "latest"))
+	// Tool records and response markers are not messages.
+	require.NoError(t, AppendMessageToSession("lastmsg", sess.ID, domain.MessageRoleTool, "{}"))
+	require.NoError(t, MarkMessageResponded("lastmsg", sess.ID, "msg_x", "resp_x"))
+
+	list, err = sm.List("lastmsg")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NotNil(t, list[0].LastMessageAt)
+	assert.False(t, list[0].LastMessageAt.Before(before), "last message time is the newest message, not the first")
+	assert.True(t, list[0].LastMessageAt.After(list[0].CreatedAt))
+}
+
+func TestSessionManager_ListUsesRecordedLastMessageTime(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+	main, err := sm.GetOrCreateNamed("recorded", "main")
+	require.NoError(t, err)
+
+	// A transcript whose records carry no message timestamps, as a CLI-backed
+	// turn might leave, still reports the time recorded when it was appended.
+	recorded := time.Now().Add(-time.Minute).Round(0)
+	require.NoError(t, store.AppendJSONL(store.SessionPath("recorded", main.ID), map[string]any{"role": "assistant", "content": "hi"}))
+	require.NoError(t, store.UpdateSessionMeta(store.SessionMetaPath("recorded", main.ID), func(meta *store.SessionMeta) {
+		meta.LastMessageAt = &recorded
+	}))
+
+	list, err := sm.List("recorded")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NotNil(t, list[0].LastMessageAt)
+	assert.True(t, recorded.Equal(*list[0].LastMessageAt))
+}
+
+func TestAppendSessionMessage_RecordsLastMessageTime(t *testing.T) {
+	setTestDataDir(t)
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_lastmsg", Name: "lastmsg"},
+		&config.AgentConfig{Name: "lastmsg"},
+		&mockProvider{},
+		nil,
+	)
+
+	before := time.Now()
+	runner.appendSessionMessage("sess", domain.MessageRoleAssistant, "reply", "", "m")
+	meta, err := store.ReadSessionMeta(store.SessionMetaPath("agent_lastmsg", "sess"))
+	require.NoError(t, err)
+	require.NotNil(t, meta.LastMessageAt)
+	assert.False(t, meta.LastMessageAt.Before(before))
+
+	recorded := *meta.LastMessageAt
+	runner.appendSessionMessage("sess", domain.MessageRoleTool, "{}", "", "")
+	meta, err = store.ReadSessionMeta(store.SessionMetaPath("agent_lastmsg", "sess"))
+	require.NoError(t, err)
+	assert.True(t, recorded.Equal(*meta.LastMessageAt), "tool records do not move the last message time")
+}
+
 func TestAppendSessionMessage_PersistsMessage(t *testing.T) {
 	setTestDataDir(t)
 

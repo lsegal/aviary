@@ -742,11 +742,10 @@ func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role doma
 	if role == domain.MessageRoleAssistant {
 		msg.Model = model
 	}
-	if err := store.AppendJSONL(store.SessionPath(r.agent.ID, sessionID), msg); err != nil {
+	if err := appendSessionMessage(r.agent.ID, sessionID, msg); err != nil {
 		slog.Warn("agent: failed to persist session message", "agent", r.agent.Name, "session", sessionID, "err", err)
 		return ""
 	}
-	notifySessionMessage(r.agent.ID, sessionID, string(role))
 	return msg.ID
 }
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -268,13 +269,14 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		if sessType == "" {
 			sessType = sessionTypeFor(agentID, name)
 		}
+		meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, id))
 		s := &domain.Session{
 			ID:            id,
 			AgentID:       agentID,
 			Name:          name,
 			Type:          sessType,
-			Title:         SessionTitle(agentID, id),
-			LastMessageAt: lastMessageAt(lines[1:]),
+			Title:         meta.Title,
+			LastMessageAt: latest(meta.LastMessageAt, lastMessageAt(lines[1:])),
 			CreatedAt:     created,
 			UpdatedAt:     updated,
 		}
@@ -360,6 +362,14 @@ func lastMessageAt(records []map[string]any) *time.Time {
 	return &last
 }
 
+// latest returns the later of two optional times.
+func latest(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.After(*a)) {
+		return b
+	}
+	return a
+}
+
 // AppendMessageToSession appends a message to an existing session and fires
 // the session-message observer so WebSocket clients are notified.
 func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, content string) error {
@@ -370,17 +380,34 @@ func AppendMessageToSession(agentID, sessionID string, role domain.MessageRole, 
 // metadata to an existing session and fires the session-message observer so
 // WebSocket clients are notified.
 func AppendMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content string, sender *domain.MessageSender) error {
-	msg := domain.Message{
+	return appendSessionMessage(agentID, sessionID, domain.Message{
 		ID:        newID("msg"),
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
 		Timestamp: time.Now(),
-	}
+	})
+}
+
+// appendSessionMessage persists msg to the session, records it as the
+// session's last message when it is a user or assistant message, and fires the
+// session-message observer.
+func appendSessionMessage(agentID, sessionID string, msg domain.Message) error {
 	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
 		return err
 	}
-	notifySessionMessage(agentID, sessionID, string(role))
+	if msg.Role == domain.MessageRoleUser || msg.Role == domain.MessageRoleAssistant {
+		ts := msg.Timestamp
+		err := store.UpdateSessionMeta(store.SessionMetaPath(agentID, sessionID), func(meta *store.SessionMeta) {
+			if meta.LastMessageAt == nil || ts.After(*meta.LastMessageAt) {
+				meta.LastMessageAt = &ts
+			}
+		})
+		if err != nil {
+			slog.Warn("agent: failed to record last message time", "agent", agentID, "session", sessionID, "err", err)
+		}
+	}
+	notifySessionMessage(agentID, sessionID, string(msg.Role))
 	return nil
 }
 
@@ -403,19 +430,14 @@ func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageR
 // AppendMediaMessageToSessionWithSender appends a message with optional text,
 // media, and structured sender metadata to an existing session.
 func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content, mediaURL string, sender *domain.MessageSender) error {
-	msg := domain.Message{
+	return appendSessionMessage(agentID, sessionID, domain.Message{
 		ID:        newID("msg"),
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
 		MediaURL:  mediaURL,
 		Timestamp: time.Now(),
-	}
-	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
-		return err
-	}
-	notifySessionMessage(agentID, sessionID, string(role))
-	return nil
+	})
 }
 
 // newID generates a simple timestamped ID with a prefix.
