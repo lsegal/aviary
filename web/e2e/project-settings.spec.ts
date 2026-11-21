@@ -586,12 +586,12 @@ test("projects are added to an agent in its settings", async ({ page }) => {
 		list: [{ target: "lsegal/zvidlib" }],
 	});
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
-	// Once saved, it is deleted through project_remove instead.
+	// Once saved, its ✕ deletes it through project_remove instead.
 	await expect(
 		page.getByRole("button", { name: "Remove lsegal/zvidlib" }),
 	).toHaveCount(0);
 	await expect(
-		page.getByRole("button", { name: "Delete project" }),
+		page.getByRole("button", { name: "Delete lsegal/zvidlib" }),
 	).toBeVisible();
 });
 
@@ -804,10 +804,22 @@ test("saved reports load into the form and are checked like the server does", as
 	);
 });
 
-test("a project is deleted after a confirmation that names it and its in-flight jobs", async ({
+test("a project row's ✕ deletes that project after a confirmation naming it and its in-flight jobs", async ({
 	page,
 }) => {
 	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{
+					...CONFIG.agents[1],
+					projects: {
+						list: [{ target: "lsegal/aviary" }, { target: "lsegal/nupp" }],
+					},
+				},
+			],
+		},
 		jobs: [
 			{ number: 12, status: "active" },
 			{ number: 14, status: "paused" },
@@ -815,19 +827,34 @@ test("a project is deleted after a confirmation that names it and its in-flight 
 		],
 	});
 	await page.goto("/agents/coder/projects");
+	const projects = page.getByTestId("agent-project");
+	await expect(projects).toHaveCount(2);
+	// Every saved row carries its own ✕; there is no separate Delete section.
+	await expect(
+		page.getByRole("button", { name: "Delete lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.locator("#delete")).toHaveCount(0);
+	await expect(
+		page.getByRole("button", { name: "Delete project" }),
+	).toHaveCount(0);
 	// A saved project is deleted with a confirmation, not dropped from the draft.
 	await expect(
-		page.getByRole("button", { name: "Remove lsegal/aviary" }),
+		page.getByRole("button", { name: "Remove lsegal/nupp" }),
 	).toHaveCount(0);
-	await page.getByRole("button", { name: "Delete project" }).click();
+
+	// The ✕ deletes its own row's project, not the selected one.
+	await expect(
+		page.getByRole("button", { name: "lsegal/aviary", exact: true }),
+	).toHaveAttribute("aria-pressed", "true");
+	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
 	const dialog = page.getByRole("alertdialog");
-	await expect(dialog.getByRole("heading")).toHaveText("Delete lsegal/aviary?");
+	await expect(dialog.getByRole("heading")).toHaveText("Delete lsegal/nupp?");
 	await expect(dialog).toContainText("clones on disk are not touched");
 	await expect(dialog.getByTestId("delete-jobs")).toContainText(
 		"2 jobs are still in flight (#12, #14). Deleting stops them",
 	);
 	expect(calls.project_job_list?.at(-1)).toMatchObject({
-		target: "lsegal/aviary",
+		target: "lsegal/nupp",
 	});
 
 	// Cancelling removes nothing.
@@ -835,11 +862,12 @@ test("a project is deleted after a confirmation that names it and its in-flight 
 	await expect(dialog).toBeHidden();
 	expect(calls.project_remove).toBeUndefined();
 
-	await page.getByRole("button", { name: "Delete project" }).click();
+	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
 	await dialog.getByRole("button", { name: "Delete project" }).click();
 	await expect(dialog).toBeHidden();
-	await expect(page.getByTestId("agent-project")).toHaveCount(0);
-	expect(calls.project_remove).toEqual([{ target: "lsegal/aviary" }]);
+	await expect(projects).toHaveCount(1);
+	await expect(projects.first()).toHaveAttribute("data-target", "lsegal/aviary");
+	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
 	// The removal goes through project_remove alone, never a config rewrite.
 	expect(calls.config_save).toBeUndefined();
 });
@@ -852,9 +880,12 @@ test("a project being added has nothing to delete", async ({ page }) => {
 		page.getByRole("button", { name: "lsegal/zvidlib", exact: true }),
 	).toHaveAttribute("aria-pressed", "true");
 	await expect(
-		page.getByRole("button", { name: "Delete project" }),
+		page.getByRole("button", { name: "Delete lsegal/zvidlib" }),
 	).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Remove lsegal/zvidlib" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Delete lsegal/aviary" }),
 	).toBeVisible();
 });

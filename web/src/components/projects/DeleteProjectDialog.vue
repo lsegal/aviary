@@ -1,20 +1,5 @@
 <template>
-	<section id="delete" class="scroll-mt-24 rounded-xl border border-red-200 bg-white dark:border-red-900/60 dark:bg-gray-950">
-		<h2
-			class="flex flex-wrap items-baseline gap-x-2 border-b border-red-200 px-5 py-3 text-base font-semibold text-gray-900 dark:border-red-900/60 dark:text-white">
-			Delete <span class="text-sm font-normal text-gray-500 dark:text-gray-400">Stop watching {{ target }} and remove it from aviary.yaml</span>
-		</h2>
-		<div class="flex flex-wrap items-center gap-3 p-5">
-			<p class="min-w-0 flex-1 text-sm text-gray-600 dark:text-gray-400">
-				The GitHub repository, its issues and pull requests, and the clones on disk are left alone.
-			</p>
-			<button type="button"
-				class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
-				@click="openDialog">Delete project</button>
-		</div>
-	</section>
-
-	<AlertDialogRoot :open="open" @update:open="(v) => { if (!v && !deleting) open = false }">
+	<AlertDialogRoot :open="!!target" @update:open="(v) => { if (!v && !deleting) emit('close') }">
 		<AlertDialogPortal>
 			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
 			<AlertDialogContent
@@ -58,36 +43,40 @@ import {
 	AlertDialogRoot,
 	AlertDialogTitle,
 } from "radix-vue";
-import { ref, toRef } from "vue";
+import { ref, toRef, watch } from "vue";
 import { useRemoveProject } from "../../composables/useProjectSettings";
 
+/** The project to delete; the dialog is open while it is set. */
 const props = defineProps<{ target: string }>();
-const emit = defineEmits<{ deleted: [stopped: number[]] }>();
+const emit = defineEmits<{ deleted: [target: string, stopped: number[]]; close: [] }>();
 
 const { inFlight, loadInFlight, remove } = useRemoveProject(
 	toRef(props, "target"),
 );
-const open = ref(false);
 const deleting = ref(false);
 const error = ref("");
 
-async function openDialog() {
-	error.value = "";
-	open.value = true;
-	try {
-		await loadInFlight();
-	} catch {
-		// The list only informs the confirmation; deleting still stops the jobs.
-	}
-}
+watch(
+	() => props.target,
+	async (target) => {
+		error.value = "";
+		if (!target) return;
+		try {
+			await loadInFlight();
+		} catch {
+			// The list only informs the confirmation; deleting still stops the jobs.
+		}
+	},
+	{ immediate: true },
+);
 
 async function confirm() {
 	deleting.value = true;
 	error.value = "";
 	try {
+		const target = props.target;
 		const stopped = await remove();
-		open.value = false;
-		emit("deleted", stopped);
+		emit("deleted", target, stopped);
 	} catch (e) {
 		error.value = e instanceof Error ? e.message : String(e);
 	} finally {
