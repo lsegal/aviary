@@ -2100,7 +2100,7 @@ test("search filters the whole job list across every field", async ({
 	await expect(cards).toHaveCount(12);
 });
 
-test("the view tabs, five state filters and kanban toggle sit beside the search", async ({
+test("the Scheduled and five state filters and kanban toggle sit beside the search", async ({
 	page,
 }) => {
 	await setup(page);
@@ -2110,16 +2110,20 @@ test("the view tabs, five state filters and kanban toggle sit beside the search"
 		toolbar.getByRole("searchbox", { name: "Search jobs" }),
 	).toBeVisible();
 	await expect(
-		toolbar.getByRole("tablist", { name: "Project views" }),
-	).toBeVisible();
-	await expect(
 		toolbar.getByRole("group", { name: "Job filter" }).getByRole("button"),
-	).toHaveText([/^Starting/, /^Paused/, /^Running/, /^Done/, /^Failed/]);
+	).toHaveText([
+		/^Scheduled/,
+		/^Starting/,
+		/^Paused/,
+		/^Running/,
+		/^Done/,
+		/^Failed/,
+	]);
 	await expect(toolbar.getByTestId("kanban-toggle")).toBeVisible();
-	// The header no longer carries its own copy of the tabs.
+	// The board has no separate Schedules view to switch to (#767).
 	await expect(
 		page.getByRole("tablist", { name: "Project views" }),
-	).toHaveCount(1);
+	).toHaveCount(0);
 	await expect(page.getByRole("group", { name: "Job filter" })).toHaveCount(1);
 
 	// Each state filter shows exactly that state's jobs.
@@ -2238,17 +2242,6 @@ test("a URL's state query preselects its chips over the remembered ones", async 
 	])
 		await expect(stateChip(page, label)).toHaveAttribute("aria-pressed", on);
 	const cards = page.getByTestId("job-card");
-	await expect(cards).toHaveCount(2);
-
-	// The Board/Schedules toggle keeps the selection.
-	await page.getByRole("tab", { name: /^Schedules/ }).click();
-	await expect(page).toHaveURL(/tab=schedules/);
-	await expect(page).toHaveURL(/state=running(,|%2C)failed/);
-	await page.getByRole("tab", { name: /^Board/ }).click();
-	await expect(stateChip(page, "Running")).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
 	await expect(cards).toHaveCount(2);
 
 	// The URL's selection is now the remembered one.
