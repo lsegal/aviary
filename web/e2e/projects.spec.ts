@@ -356,6 +356,7 @@ test("board shows status, ordered job cards and live output", async ({
 	);
 	await expect(repoLink).toHaveAttribute("target", "_blank");
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
+	await expect(page.getByTestId("instance-id")).toHaveText("Instance 7F3CA91B");
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");

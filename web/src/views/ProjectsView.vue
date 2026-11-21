@@ -8,7 +8,7 @@
 						<div class="min-w-0">
 							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
 							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
-							<div class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">GitHub Projects</h1>
 								<span v-if="aggregate" data-testid="board-projects"
 									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -24,6 +24,11 @@
 									:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
 									<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
 									{{ online ? "live" : "offline" }}
+								</span>
+								<span v-if="status?.instanceID" data-testid="instance-id"
+									class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
+									:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
+									Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
 								</span>
 							</div>
 							<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
@@ -158,7 +163,6 @@
 						</details>
 
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-							<span v-if="status.instanceID">Instance <code class="font-mono">{{ status.instanceID }}</code></span>
 							<span v-if="status.targets.length">
 								Targets:
 								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ t.issues }})</template>

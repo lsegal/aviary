@@ -4,6 +4,13 @@
 			Every agent's projects, and the settings every project of every agent runs under. Each agent's GitHub
 			Projects page is the board of its projects' jobs.
 		</p>
+	<section v-if="instanceID" :class="CARD" data-testid="projects-instance-id">
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+			<span class="text-sm font-semibold text-gray-900 dark:text-white">Instance ID</span>
+			<code class="rounded-md bg-gray-100 px-2 py-1 font-mono text-lg font-bold tracking-wider text-gray-900 dark:bg-gray-800 dark:text-white">{{ instanceID }}</code>
+			<span :class="CARD_NOTE">This instance signs its GitHub claims as <code class="font-mono">/aviary:{{ instanceID }}</code>. It is kept across restarts.</span>
+		</div>
+	</section>
 	<section :class="CARD" data-testid="agent-projects-settings">
 		<h3 :class="CARD_HEAD">Agents' projects <span :class="CARD_NOTE">Each project belongs to exactly one agent</span></h3>
 		<p v-if="!agents.length" class="p-4 text-sm text-gray-500 dark:text-gray-400">
@@ -154,7 +161,10 @@
 import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, inject, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useProjectClones } from "../../composables/useProjectSettings";
+import {
+	useProjectClones,
+	useProjectInstanceID,
+} from "../../composables/useProjectSettings";
 import { APPROVAL_MODES } from "../../lib/approval";
 import {
 	cloneState,
@@ -223,6 +233,7 @@ function DefaultTag(p: { on: boolean }) {
 DefaultTag.props = ["on"];
 
 const clones = useProjectClones();
+const instanceID = useProjectInstanceID();
 
 // The agent whose projects are shown comes from ?agent, so the boards'
 // Settings links open on their agent.
