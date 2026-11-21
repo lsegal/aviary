@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -25,9 +26,11 @@ const (
 // prompt. Tests replace it.
 var sessionTitleGenerator = generateSessionTitle
 
-// needsAutoTitle reports whether a run's prompt is the first one in a chat
-// created by session_create that nobody has named yet. The default "main"
-// session and channel, task, and named sessions keep their names.
+// needsAutoTitle reports whether a run's prompt is for a chat created by
+// session_create that nobody has named yet. A chat whose first prompt did not
+// name it (an image-only prompt, or a failed save) is named by a later one.
+// The default "main" session and channel, task, and named sessions keep their
+// names.
 func needsAutoTitle(sess *domain.Session) bool {
 	if sess == nil || !strings.HasPrefix(sess.ID, "sess_") {
 		return false
@@ -38,21 +41,12 @@ func needsAutoTitle(sess *domain.Session) bool {
 	if agent.SessionTitle(sess.AgentID, sess.ID) != "" {
 		return false
 	}
-	path := store.FindSessionPath(sess.AgentID, sess.ID)
-	if path == "" {
-		return false
-	}
-	records, err := store.ReadJSONL[domain.Message](path)
-	if err != nil {
-		return false
-	}
-	for _, rec := range records {
-		if rec.Role == domain.MessageRoleUser {
-			return false
-		}
-	}
-	return true
+	return store.FindSessionPath(sess.AgentID, sess.ID) != ""
 }
+
+// titlingSessions holds the chats with a title being generated, so prompts
+// sent while one is in flight do not generate another.
+var titlingSessions sync.Map
 
 // autoTitleSession names the chat from its first prompt, falling back to the
 // prompt's own opening words when the model gives no usable title.
@@ -61,6 +55,11 @@ func autoTitleSession(agentName string, sess *domain.Session, prompt string) {
 	if prompt == "" {
 		return
 	}
+	key := sess.AgentID + "/" + sess.ID
+	if _, busy := titlingSessions.LoadOrStore(key, struct{}{}); busy {
+		return
+	}
+	defer titlingSessions.Delete(key)
 	ctx, cancel := context.WithTimeout(context.Background(), sessionTitleTimeout)
 	defer cancel()
 	title, err := sessionTitleGenerator(ctx, agentName, truncateRunes(prompt, sessionTitlePromptCap))
