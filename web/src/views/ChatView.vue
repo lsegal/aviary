@@ -46,7 +46,7 @@
 							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
 								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
 									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
-									:error="item.msg.toolData?.error" :pending="!!item.msg.toolData" />
+									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
 							</div>
 							<!-- Regular user / assistant messages -->
 							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
@@ -173,10 +173,14 @@ import {
 } from "../stores/chatSessions";
 
 interface ToolData {
+	/** Ties a streamed call to its result; the two share one block. */
+	id?: string;
 	name: string;
 	args?: Record<string, unknown>;
 	result?: string;
 	error?: string;
+	/** Set on the streamed result of a call. */
+	done?: boolean;
 }
 
 interface Message {
@@ -186,6 +190,8 @@ interface Message {
 	text: string;
 	mediaURL?: string;
 	toolData?: ToolData;
+	/** A streamed tool call that has not reported its result yet. */
+	toolPending?: boolean;
 	timestamp?: string;
 	model?: string;
 	isError?: boolean;
@@ -941,6 +947,33 @@ async function send() {
 			});
 			assistantIndex = -1;
 		};
+		// A call and its result arrive as separate chunks sharing an ID, so
+		// the result finishes the call's block instead of adding another.
+		const appendToolChunk = (chunk: string) => {
+			const msg = parseToolChunk(chunk, now);
+			const data = msg.toolData;
+			const index = data?.id
+				? messages.value.findLastIndex(
+						(m) =>
+							m.role === "tool" && m.toolPending && m.toolData?.id === data.id,
+					)
+				: -1;
+			if (index !== -1 && data) {
+				const current = messages.value[index];
+				messages.value.splice(index, 1, {
+					...current,
+					toolData: { ...current.toolData, ...data },
+					toolPending: !data.done,
+				});
+				return;
+			}
+			messages.value.push({
+				...msg,
+				toolPending: !!data && !data.done,
+				localKey: newMessageKey(),
+			});
+			assistantIndex = -1;
+		};
 		const flushPendingChunks = () => {
 			while (pendingText) {
 				const toolIndex = pendingText.indexOf("[tool] ");
@@ -974,10 +1007,7 @@ async function send() {
 					});
 					scrollBottom();
 				} else if (type === "tool" && chunk) {
-					messages.value.push({
-						...parseToolChunk(chunk, now),
-						localKey: newMessageKey(),
-					});
+					appendToolChunk(chunk);
 					scrollBottom();
 				} else if (chunk) {
 					pendingText += chunk;
