@@ -2,7 +2,8 @@
   <nav ref="row" class="relative flex min-w-0 flex-nowrap items-center gap-2" aria-label="Main" data-testid="mobile-main-nav">
     <router-link v-for="item in visibleItems" :key="item.key" :to="item.to" :data-testid="item.testid"
       :class="pillClass(item.active)">
-      {{ item.label }}<ProjectRunningBadge :running="item.running ?? 0" class="ml-1.5" />
+      {{ item.label }}
+      <ProjectRunningBadge :running="item.running ?? 0" class="ml-1.5" />
     </router-link>
     <div v-if="hiddenItems.length" ref="more" class="relative shrink-0">
       <button ref="moreButton" type="button" aria-label="More" title="More" aria-haspopup="menu"
