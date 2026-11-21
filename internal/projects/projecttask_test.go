@@ -203,8 +203,8 @@ func TestEngineRunsProjectTaskWithModelOverride(t *testing.T) {
 func TestManagerProjectAgentResolvesTheOwningAgent(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
-		{Name: "opus", Model: "cli/claude/opus", Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}}},
-		{Name: "shared", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "o/b"}}}},
+		{Name: "opus", Model: "cli/claude/opus", Projects: config.AgentProjectsConfig{{Target: "o/a"}}},
+		{Name: "shared", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/b"}}},
 	}})
 	m.mu.Lock()
 	defer m.mu.Unlock()

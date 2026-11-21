@@ -10,9 +10,9 @@ func TestProjectJobSpecsComeFromTheOwningAgent(t *testing.T) {
 	cfg := &Config{
 		Agents: []AgentConfig{
 			{Name: "coder", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex/gpt-5.6-terra:high", "cli/claude/opus"},
-				Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/shared"}}}},
+				Projects: AgentProjectsConfig{{Target: "o/shared"}}},
 			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/gemini/gemini-3.5-flash"},
-				Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/own"}}}},
+				Projects: AgentProjectsConfig{{Target: "o/own"}}},
 			{Name: "plain"},
 		},
 		Models: ModelsConfig{Defaults: &ModelDefaults{Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/codex/gpt-5.6-terra"}}},

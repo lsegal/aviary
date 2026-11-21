@@ -305,7 +305,7 @@ func (s engineSettings) restartKey() string {
 // settingsLocked resolves the engine settings from the config and watches.
 func (m *Manager) settingsLocked() (engineSettings, error) {
 	cfg := m.cfg
-	targets := config.AgentProjectsConfig{List: m.list}.Targets()
+	targets := config.AgentProjectsConfig(m.list).Targets()
 	watchAgents := map[string]string{}
 	for _, watch := range m.watches {
 		cfg = cfg.Override(watch.Settings)

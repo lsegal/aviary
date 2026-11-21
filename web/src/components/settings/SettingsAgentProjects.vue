@@ -183,16 +183,13 @@ if (cliStatus.clis.value === null) void cliStatus.refresh();
 
 const agentLabel = computed(() => props.agent.name || "This agent");
 const section = computed<AgentProjectsSection>(
-	() => props.agent.projects ?? {},
+	() => props.agent.projects ?? [],
 );
 const targets = computed(() => projectTargets(section.value));
 
-/** Stores the agent's section, dropping it once it holds nothing. */
+/** Stores the agent's projects, dropping them once there are none. */
 function store(next: AgentProjectsSection) {
-	const clean = Object.fromEntries(
-		Object.entries(next).filter(([, v]) => v !== undefined),
-	);
-	props.agent.projects = Object.keys(clean).length ? clean : undefined;
+	props.agent.projects = next.length ? next : undefined;
 }
 
 // ── Projects ────────────────────────────────────────────────────────────────

@@ -167,12 +167,7 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "coder", added["agent"])
 	require.Len(t, cfg.Agents, 1, "no agent was created for the project")
-	owned := cfg.Agents[0].Projects
-	require.Len(t, owned.List, 1)
-	assert.Equal(t, config.ProjectConfig{Target: "o/r"}, owned.List[0])
-	// Only the project was written: every setting is still its default.
-	owned.List = nil
-	assert.True(t, owned.IsZero())
+	assert.Equal(t, config.AgentProjectsConfig{{Target: "o/r"}}, cfg.Agents[0].Projects)
 
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, []any{"o/r"}, status["targets"])
@@ -193,7 +188,7 @@ func TestProjectAddAndRemoveSavedProject(t *testing.T) {
 	assert.Equal(t, []any{1.0, 2.0, 3.0, 4.0}, removed["stopped_jobs"])
 	cfg, err = config.Load("")
 	require.NoError(t, err)
-	assert.Empty(t, cfg.Agents[0].Projects.List)
+	assert.Empty(t, cfg.Agents[0].Projects)
 	toolCallContains(t, d, "project_remove", map[string]any{"target": "o/r"}, "not watched")
 }
 
@@ -290,8 +285,8 @@ func TestProjectAddWithReports(t *testing.T) {
 	assert.Equal(t, true, added["saved"])
 	cfg, err := config.Load("")
 	require.NoError(t, err)
-	require.Len(t, cfg.Agents[0].Projects.List, 1)
-	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Agents[0].Projects.List[0].Reports)
+	require.Len(t, cfg.Agents[0].Projects, 1)
+	assert.Equal(t, &config.ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"merged", "failed"}}, cfg.Agents[0].Projects[0].Reports)
 }
 
 func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {
