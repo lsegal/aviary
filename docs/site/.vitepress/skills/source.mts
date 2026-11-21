@@ -23,6 +23,12 @@ export interface SkillOption {
 	text: string;
 }
 
+export interface HeadlineParts {
+	before: string;
+	accent: string;
+	after: string;
+}
+
 export interface Skill {
 	name: string;
 	displayName: string;
@@ -30,6 +36,7 @@ export interface Skill {
 	description: string;
 	eyebrow: string;
 	headline: string;
+	headlineParts: HeadlineParts;
 	tagline: string;
 	usage: string;
 	steps: SkillStep[];
@@ -78,6 +85,7 @@ export function loadSkill(name: string): Skill {
 		description: required(meta.description, name, "description"),
 		eyebrow: required(landing.eyebrow, name, "eyebrow"),
 		headline: required(landing.headline, name, "headline"),
+		headlineParts: headlineParts(landing.headline),
 		tagline: required(landing.tagline, name, "tagline"),
 		usage: required(landing.usage, name, "usage"),
 		steps: required(landing.steps, name, "steps"),
@@ -95,11 +103,7 @@ export function loadSkills(): Skill[] {
 }
 
 // headlineParts splits a headline on its *accent* word.
-export function headlineParts(headline: string): {
-	before: string;
-	accent: string;
-	after: string;
-} {
+export function headlineParts(headline: string): HeadlineParts {
 	const match = headline.match(/^(.*?)\*([^*]+)\*(.*)$/);
 	if (!match) return { before: headline, accent: "", after: "" };
 	return { before: match[1], accent: match[2], after: match[3] };
