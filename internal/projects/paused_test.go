@@ -51,7 +51,7 @@ func TestEnginePausesADependencyBlockedIssueUntilItsBlockerCloses(t *testing.T) 
 	}()
 
 	paused := waitForPaused(t, statePath, 7, core.PausedBlocked)
-	if !slices.Equal(paused.WaitingOn, []int{12}) {
+	if !slices.Equal(paused.WaitingOn, []string{"#12"}) {
 		t.Fatalf("paused record = %+v, want it waiting on #12", paused)
 	}
 	select {
@@ -133,7 +133,7 @@ func TestStandDownForStandingClaimsChecksWokenPausedWork(t *testing.T) {
 func TestLoadWorkStateReadsParkedWorkAsPaused(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	legacy := `{
-  "acme/app#7": {"status": "parked", "parked": {"kind": "blocked", "waitingOn": [3]}},
+  "acme/app#7": {"status": "parked", "parked": {"kind": "blocked", "waitingFor": ["#3"]}},
   "acme/app#8": {"status": "parked"}
 }
 `
@@ -145,7 +145,7 @@ func TestLoadWorkStateReadsParkedWorkAsPaused(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocked := state["acme/app#7"]
-	if blocked.Status != "paused" || blocked.Paused == nil || blocked.Paused.Kind != core.PausedBlocked || !slices.Equal(blocked.Paused.WaitingOn, []int{3}) {
+	if blocked.Status != "paused" || blocked.Paused == nil || blocked.Paused.Kind != core.PausedBlocked || !slices.Equal(blocked.Paused.WaitingOn, []string{"#3"}) {
 		t.Fatalf("blocked state = %+v, want paused blocked work waiting on #3", blocked)
 	}
 	if stacked := state["acme/app#8"]; stacked.Status != "paused" || pausedRecord(stacked).Kind != core.PausedStacked {
@@ -205,8 +205,8 @@ func TestEngineWebUIRetriesPausedWork(t *testing.T) {
 		issues []Issue
 		own    OriginatingWorkState
 	}{
-		{"blocked", `{"kind": "blocked", "waitingOn": [12]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open"}},
-		{"stacked", `{"kind": "stacked", "waitingOn": [12], "pullRequests": [15]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}},
+		{"blocked", `{"kind": "blocked", "waitingFor": ["#12"]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open"}},
+		{"stacked", `{"kind": "stacked", "waitingFor": ["#12"], "pullRequests": [15]}`, blockedOn12("open"), OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}},
 		{"pull request", `{"kind": "pull-request", "pullRequests": [15]}`, []Issue{{Number: 7, Repository: "o/r"}}, OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open"}}}},
 		// A manual pause ends only when the owner retries it.
 		{"manual", `{"kind": "manual"}`, []Issue{{Number: 7, Repository: "o/r"}}, OriginatingWorkState{IssueState: "open"}},
@@ -274,7 +274,7 @@ func TestEngineWebUIRetriesPausedWork(t *testing.T) {
 // rather than reporting success for a retry that changed nothing.
 func TestEngineWebUIRetryKeepsPauseWhenNothingIsRequeued(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingOn": [12]}}}`), 0600); err != nil {
+	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingFor": ["#12"]}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	src := pausingSource(blockedOn12("open"), []Issue{})
@@ -348,7 +348,7 @@ func (f *hydratingPausingSource) setIssue(issue Issue) {
 // its open blocker #12.
 func unlistedBlockedSource(t *testing.T, statePath string) *hydratingPausingSource {
 	t.Helper()
-	saved := `{"o/r#7": {"status": "paused", "paused": {"kind": "blocked", "waitingOn": [12]}}}`
+	saved := `{"o/r#7": {"status": "paused", "paused": {"kind": "blocked", "waitingFor": ["#12"]}}}`
 	if err := os.WriteFile(statePath, []byte(saved), 0600); err != nil {
 		t.Fatal(err)
 	}

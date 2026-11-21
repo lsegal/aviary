@@ -28,6 +28,9 @@ func TestMain(m *testing.M) {
 	case "generic":
 		fakeGeneric()
 		os.Exit(0)
+	case "wired":
+		fakeWired()
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

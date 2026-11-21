@@ -110,10 +110,15 @@ func (b Backend) Definition() (clidefs.Definition, bool) {
 }
 
 // ServesAviaryTools reports whether the backend's CLI is pointed at Aviary's
-// MCP server. A CLI driven only through its definition has no declared way to
-// take one, so it runs on its own tools alone.
+// MCP server: claude and codex always are, and a CLI driven through its
+// definition is when the definition's mcp block says how. One that declares
+// none runs on its own tools alone.
 func (b Backend) ServesAviaryTools() bool {
-	return b == Claude || b == Codex
+	if b == Claude || b == Codex {
+		return true
+	}
+	definition, ok := b.Definition()
+	return ok && definition.TakesMCP()
 }
 
 // Binary returns the executable the backend's definition runs.

@@ -218,7 +218,7 @@ func TestEngineWebUIPausesQueuedWork(t *testing.T) {
 // .
 func TestEngineWebUIRefusesPauseOfPausedWork(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingOn": [12]}}}`), 0600); err != nil {
+	if err := os.WriteFile(statePath, []byte(`{"o/r#7": {"status": "paused", "sessionId": "session-7", "agent": "claude", "paused": {"kind": "blocked", "waitingFor": ["#12"]}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	src := pausingSource(blockedOn12("open"))

@@ -60,6 +60,13 @@ func (d IssueDependency) Reference(repo string) string {
 	return fmt.Sprintf("#%d", d.Number)
 }
 
+// Key names the dependency uniquely across repositories, as OWNER/REPO#NN
+// with the repository lowercased, so two repositories' issues that share a
+// number never collide. Repository must already be resolved.
+func (d IssueDependency) Key() string {
+	return fmt.Sprintf("%s#%d", strings.ToLower(d.Repository), d.Number)
+}
+
 // IssueSource lists the issues a watched target currently offers.
 type IssueSource interface {
 	ListIssues(context.Context, string) ([]Issue, error)

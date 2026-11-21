@@ -122,6 +122,12 @@ type Definition struct {
 	// agent that declares none is reported from what the definition already
 	// says, and runs no process of its own.
 	Doctor Doctor `json:"doctor,omitempty"`
+	// MCP, when declared, says how an interactive chat hands the CLI
+	// Aviary's MCP server. See MCP.
+	MCP *MCP `json:"mcp,omitempty"`
+	// SystemPrompt, when declared, says how an interactive chat hands the
+	// CLI the agent's system prompt. See SystemPrompt.
+	SystemPrompt *SystemPrompt `json:"systemPrompt,omitempty"`
 }
 
 // AllowList is the set of values one dimension of --agent -- a reasoning
@@ -967,6 +973,12 @@ func (d Definition) Validate() error {
 		return err
 	}
 	if err := d.ConfigHome.validate(); err != nil {
+		return err
+	}
+	if err := d.validateMCP(); err != nil {
+		return err
+	}
+	if err := d.validateSystemPrompt(); err != nil {
 		return err
 	}
 	if err := d.Quota.validate(); err != nil {
