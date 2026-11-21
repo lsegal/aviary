@@ -2226,7 +2226,10 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 			expect(card.overflow, `${card.text} overflow at ${width}px`).toBe(false);
 		}
 		// Cards in one row share a height and line up labels and numbers.
-		const rows = Map.groupBy(layout.cards, (card) => card.top);
+		const rows = new Map<number, typeof layout.cards>();
+		for (const card of layout.cards) {
+			rows.set(card.top, [...(rows.get(card.top) ?? []), card]);
+		}
 		for (const row of rows.values()) {
 			for (const key of ["height", "labelTop", "valueTop"] as const) {
 				expect(
