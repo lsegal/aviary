@@ -1485,34 +1485,30 @@ test("loading a job details URL shows the project header with that job open", as
 test("logs panel shows project_status recent_logs and updates live", async ({
 	page,
 }) => {
-	// project_status returns recent_logs as an array of dated lines. The first
-	// poll has none yet; each later poll adds one.
-	let polls = 0;
-	await setup(page, () => {
-		polls++;
-		return {
-			...STATUS,
-			recent_logs: Array.from(
-				{ length: Math.max(0, polls - 1) },
-				(_, i) =>
-					`2026-11-21 11:02:${String(i).padStart(2, "0")} issue #${737 + i} picked up`,
-			),
-			log_offset: 650 + polls,
-		};
-	});
+	// project_status returns recent_logs as an array of dated lines. None have
+	// been logged yet; the test logs them one at a time.
+	const logged: string[] = [];
+	await setup(page, () => ({
+		...STATUS,
+		recent_logs: [...logged],
+		log_offset: 650 + logged.length,
+	}));
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page.getByTestId("logs-toggle").click();
 	const panel = page.getByTestId("project-logs");
 	await expect(panel).toContainText("No log lines yet.");
 
 	// Lines appear without a reload, and the placeholder goes away.
+	logged.push("2026-11-21 11:02:00 issue #737 picked up");
 	await expect(panel).toContainText("issue #737 picked up", {
 		timeout: 10_000,
 	});
 	await expect(panel).not.toContainText("No log lines yet.");
+	logged.push("2026-11-21 11:02:01 issue #738 picked up");
 	await expect(panel).toContainText("issue #738 picked up", {
 		timeout: 10_000,
 	});
+	await expect(page.getByTestId("project-logs-entry")).toHaveCount(2);
 	await expect(
 		page.getByTestId("project-logs-entry").first().locator("span").first(),
 	).toHaveText("2026-11-21 11:02:00");
