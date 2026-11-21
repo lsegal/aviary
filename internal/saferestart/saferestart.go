@@ -210,6 +210,7 @@ const (
 const (
 	PhaseIdle     = "idle"     // no restart requested
 	PhaseWaiting  = "waiting"  // holding new jobs until running jobs finish
+	PhaseDraining = "draining" // waiting for in-flight MCP calls to finish
 	PhaseUpdating = "updating" // installing, checkpointing and restarting
 )
 
@@ -220,14 +221,19 @@ type Request struct {
 	Version string `json:"version,omitempty"`
 	// Cancel withdraws a restart that is still waiting for jobs to finish.
 	Cancel bool `json:"cancel,omitempty"`
+	// Force restarts without waiting for in-flight MCP calls to finish.
+	Force bool `json:"force,omitempty"`
 }
 
 // Status describes the current restart state and the jobs a restart would stop.
 type Status struct {
-	Phase    string `json:"phase"`
-	When     string `json:"when,omitempty"`
-	Upgrade  bool   `json:"upgrade,omitempty"`
-	Version  string `json:"version,omitempty"`
+	Phase   string `json:"phase"`
+	When    string `json:"when,omitempty"`
+	Upgrade bool   `json:"upgrade,omitempty"`
+	Version string `json:"version,omitempty"`
+	Force   bool   `json:"force,omitempty"`
+	// MCPCalls is how many MCP calls a draining restart is waiting on.
+	MCPCalls int    `json:"mcpCalls,omitempty"`
 	Jobs     []Job  `json:"jobs"`
 	Held     bool   `json:"held"`
 	Noop     bool   `json:"noop,omitempty"`
