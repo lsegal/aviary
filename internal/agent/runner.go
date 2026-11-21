@@ -92,6 +92,10 @@ type RunOverrides struct {
 	Bare             bool
 	History          *bool
 	SuppressDelivery bool
+	// Retry re-runs the session's latest user message when it matches this
+	// prompt and was never answered, as the chat's Retry on a failed turn
+	// does, instead of appending the message again.
+	Retry bool
 	// Context is live context for this run only, such as a snapshot of the
 	// state the agent answers about. It reaches the model with the turn, as
 	// recalled memory does, and is never written to the session.
@@ -244,7 +248,10 @@ func (r *AgentRunner) promptCore(
 		if sender, ok := SessionSenderFromContext(promptCtx); ok {
 			userSender = sender
 		}
-		if persistUserMessage {
+		if persistUserMessage && overrides.Retry {
+			promptMsgID = UnansweredUserMessageID(r.agent.ID, sessionID, message, mediaURLs)
+		}
+		if persistUserMessage && promptMsgID == "" {
 			promptMsgID = r.appendSessionMessageWithSender(sessionID, domain.MessageRoleUser, message, mediaURLs, effectiveModel, userSender)
 		}
 

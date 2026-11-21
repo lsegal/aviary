@@ -16,6 +16,7 @@ export function useStream() {
 		mediaURLs: string[] = [],
 		project?: string,
 		session = "main",
+		retry = false,
 	): Promise<void> {
 		streaming.value = true;
 		error.value = null;
@@ -31,6 +32,7 @@ export function useStream() {
 			};
 			if (mediaURLs.length) toolArgs.media_urls = mediaURLs;
 			if (project) toolArgs.project = project;
+			if (retry) toolArgs.retry = true;
 
 			const text = await callTool("agent_run", toolArgs, {
 				onProgress: (chunk) => {

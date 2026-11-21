@@ -169,6 +169,7 @@ type agentRunArgs struct {
 	Bare                bool     `json:"bare,omitempty"`                  // skip all system prompt, rules, memory, and tool preamble
 	History             *bool    `json:"history,omitempty"`               // include prior session messages; defaults to true unless bare=true
 	Project             string   `json:"project,omitempty"`               // the Projects board the chat was opened from; read only for the Projects agent
+	Retry               bool     `json:"retry,omitempty"`                 // re-run the session's unanswered latest user message instead of appending it again
 }
 
 type sessionRenameArgs struct {
@@ -416,6 +417,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 			Bare:    args.Bare,
 			History: &history,
 			Context: requestContext,
+			Retry:   args.Retry,
 		}, func(e agent.StreamEvent) {
 			if streamEvents {
 				if event, ok := events.fromStream(e); ok {
