@@ -11,8 +11,8 @@ export interface AgentItemDialog {
 	name?: string;
 	/**
 	 * Creates a project scheduled task: a "project" task that runs against
-	 * this watched project, under agent. A project's Schedules section opens
-	 * the dialog with it set and agent set to the project's owning agent.
+	 * this watched project, under agent. A project board's Schedule button
+	 * opens the dialog with it set and agent set to the project's owning agent.
 	 */
 	project?: string;
 	/**

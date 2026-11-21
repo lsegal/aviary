@@ -487,7 +487,6 @@ const router = useRouter();
 // System pages map to their tab; System → Settings is the general tab.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
-	projects: "projects",
 	providers: "providers",
 	sessions: "sessions",
 	skills: "skills",
@@ -496,6 +495,7 @@ const systemTabs: Record<string, Tab> = {
 function routeToActiveTab(): Tab {
 	if (route.path === "/agents" || route.path.startsWith("/agents/"))
 		return "agents";
+	if (route.path === "/projects/settings") return "projects";
 	return systemTabs[route.params.tab as string] ?? "general";
 }
 
@@ -618,7 +618,7 @@ watch(
 
 // An agent's pages: its Agent Settings page's General, Permissions and
 // Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in System → Projects.
+// settings in Projects settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -963,7 +963,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects",
+	projects: "Projects Settings",
 	providers: "Providers & Auth",
 	sessions: "Sessions",
 	skills: "Skills",

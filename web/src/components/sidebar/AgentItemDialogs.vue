@@ -175,7 +175,7 @@ const description = computed(() => {
 	if (d.mode !== "create")
 		return `Renames ${d.name} or changes its trigger and prompt.`;
 	return d.project
-		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and this project's Schedules section edits the rest of its settings.`
+		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and its box on this project's board edits the rest of its settings.`
 		: `A scheduled task for ${d.agent}. The Scheduled Tasks page edits the rest of its settings.`;
 });
 
