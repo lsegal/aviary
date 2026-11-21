@@ -1,7 +1,9 @@
 // Runs the Aviary Go backend for development under forgo's hot reload
 // (`forgo run --watch`), installing the forgo toolchain first if it is missing.
-// A backend that asks to restart (for a safe restart or after pulling its
-// checkout) is run again, which rebuilds it from the current sources.
+// A dev update only pulls the checkout and lets forgo hot-reload the backend in
+// place. A backend that asks to restart (a safe restart, or a pull forgo cannot
+// hot-reload, such as a go.mod change) is run again, which rebuilds it from the
+// current sources.
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, existsSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";

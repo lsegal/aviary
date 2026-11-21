@@ -80,6 +80,8 @@ This starts:
 
 The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
 
+`pnpm dev` (or `pnpm dev:go` for the backend alone) is the supported way to run the dev backend: it runs it under forgo hot reload, so updating the checkout from Aviary's update notice is just a `git pull` that hot-reloads the backend without stopping running jobs. Aviary restarts the backend only when a pull can't be hot-reloaded, such as a `go.mod` change; see [Dev checkouts](docs/site/guide/operations.md#dev-checkouts).
+
 Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
 
 > **First run:** The backend generates an auth token on first start. Check the terminal output for `Your access token: aviary_tok_...` and paste it into the login screen.

@@ -16,7 +16,13 @@
         <p v-if="git" class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="upgrade-dialog-git">
           Aviary runs <code>git pull --ff-only</code> in {{ git.dir }} to bring in {{ git.behind }}
           {{ git.behind === 1 ? "commit" : "commits" }}.
-          {{ git.supervised ? "Aviary then restarts and rebuilds from the pulled sources." : "Nothing restarts: restart Aviary afterwards to run the new code." }}
+          <template v-if="git.hotReload">
+            The backend then hot-reloads the pulled code in place, so running jobs keep running.
+            {{ git.supervised ? "Aviary restarts and rebuilds only when a change can't be hot-reloaded." : "If a change can't be hot-reloaded, restart Aviary afterwards to run it." }}
+          </template>
+          <template v-else>
+            {{ git.supervised ? "Aviary then restarts and rebuilds from the pulled sources." : "Nothing restarts: restart Aviary afterwards to run the new code." }}
+          </template>
         </p>
         <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Aviary installs the release, updates skills for every signed-in CLI provider, and restarts.
@@ -40,7 +46,8 @@
         </template>
         <template v-else-if="jobs.length">
           <p>
-            Upgrading now stops {{ jobs.length === 1 ? "this running job" : `these ${jobs.length} running jobs` }}
+            {{ git?.hotReload ? "If a change can't be hot-reloaded, the restart stops" : "Upgrading now stops" }}
+            {{ jobs.length === 1 ? "this running job" : `these ${jobs.length} running jobs` }}
             and resumes each one in its own session after the restart:
           </p>
           <ul class="space-y-1.5" data-testid="upgrade-dialog-jobs">
