@@ -39,10 +39,10 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<button v-if="view === 'board'" type="button"
-								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+							<button v-if="view === 'board'" type="button" aria-label="Check now" title="Check now"
+								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
-								{{ checking ? "Checking…" : "Check now" }}
+								<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
 							</button>
 							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
@@ -194,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";

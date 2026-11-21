@@ -458,7 +458,10 @@ test("retry, stop, filters and check now call project tools", async ({
 		.poll(() => calls.project_job_list.some((c) => c.state === "paused"))
 		.toBe(true);
 
-	await page.getByRole("button", { name: "Check now" }).click();
+	const checkNow = page.getByRole("button", { name: "Check now" });
+	await expect(checkNow).toHaveAttribute("title", "Check now");
+	await expect(checkNow).toHaveText("");
+	await checkNow.click();
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
