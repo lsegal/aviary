@@ -210,6 +210,31 @@ test("one providers list holds the API providers and every CLI provider with its
 	await expect(card.locator("tbody tr").first()).toContainText("Anthropic");
 });
 
+test("Settings has General and Providers & Authentication tabs (#822)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/settings");
+
+	const tabs = page.getByTestId("settings-tabs").getByRole("tab");
+	await expect(tabs).toHaveText(["General", "Providers & Authentication"]);
+	await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+
+	await tabs.nth(1).click();
+	await expect(page).toHaveURL("/system/providers");
+	await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect(page.getByTestId("providers-list")).toBeVisible();
+	// Providers & Auth is no longer a System page in the sidebar.
+	await page.getByTestId("sidebar-system-toggle").click();
+	await expect(
+		page.getByTestId("sidebar-system-list").getByRole("link", {
+			name: /Providers/,
+		}),
+	).toHaveCount(0);
+});
+
 test("saving settings keeps the CLI definitions", async ({ page }) => {
 	let saved: Record<string, unknown> | null = null;
 	await setup(page, (config) => {

@@ -133,7 +133,7 @@ Backups rotate up to five copies in `~/.config/aviary/backups/`.
 
 Provider connectivity is checked asynchronously and cached for 30 seconds. Results appear in:
 
-- **System → Providers & Auth** — per-provider status badge
+- **Settings → Providers & Authentication** — per-provider status badge
 - **config_validate** — `"provider connectivity check pending"` warnings become pass/fail on subsequent calls
 
 If a provider shows as unreachable:
