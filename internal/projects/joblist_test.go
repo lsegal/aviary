@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
@@ -88,6 +89,34 @@ func TestListJobsFiltersByBoardState(t *testing.T) {
 	}
 	if seen != 9 {
 		t.Errorf("the five states hold %d jobs, want every one of 9", seen)
+	}
+}
+
+func TestStatusCountsBoardStatesLikeTheFilters(t *testing.T) {
+	m := newTestManager(t)
+	m.snapshot.Store(&core.Snapshot{Jobs: []core.JobSnapshot{
+		{Number: 1, Target: "o/r", Status: "queued", Kind: core.JobKindIssue},
+		{Number: 2, Target: "o/r", Status: "active", Kind: core.JobKindIssue},
+		{Number: 3, Target: "o/r", Status: "active", Kind: core.JobKindIssue, CheckoutDirectory: "/tmp/r-3"},
+		{Number: 4, Target: "o/r", Status: "waiting", Kind: core.JobKindIssue, WaitReason: "waiting for CI"},
+		{Number: 5, Target: "o/r", Status: "paused", Kind: core.JobKindIssue},
+		{Number: 6, Target: "o/r", Status: "complete", Kind: core.JobKindIssue},
+		{Number: 7, Target: "x/y", Status: "failed", Kind: core.JobKindIssue},
+	}})
+	for _, targets := range [][]string{nil, {"o/r"}, {"x/y"}, {"o/r", "x/y"}} {
+		states := m.Status(t.Context(), 0, targets)["states"].(map[string]int)
+		if len(states) != len(core.BoardStates) {
+			t.Errorf("targets %v: states = %v, want one count per board state", targets, states)
+		}
+		for _, state := range core.BoardStates {
+			if want := m.ListJobs(targets, "", state, "", 0, 0)["total"]; states[state] != want {
+				t.Errorf("targets %v: %s = %d, the filter shows %v", targets, state, states[state], want)
+			}
+		}
+	}
+	want := map[string]int{core.BoardStarting: 2, core.BoardPaused: 2, core.BoardRunning: 1, core.BoardDone: 1, core.BoardFailed: 0}
+	if got := m.Status(t.Context(), 0, []string{"o/r"})["states"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("o/r states = %v, want %v", got, want)
 	}
 }
 

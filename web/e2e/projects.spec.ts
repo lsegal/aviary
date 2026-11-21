@@ -280,9 +280,19 @@ async function setup(
 				},
 			],
 		},
+		// Like the Manager, project_status counts the jobs of the projects
+		// it is passed in each board state.
 		project_status: (args?: Record<string, unknown>) => {
 			record("project_status", args);
-			return status();
+			const states: Record<string, number> = {
+				starting: 0,
+				paused: 0,
+				running: 0,
+				done: 0,
+				failed: 0,
+			};
+			for (const j of JOBS) if (inTargets(args, j.target)) states[j.state]++;
+			return { states, ...status() };
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
@@ -367,7 +377,7 @@ test("a board watching a project URL links its header to that URL", async ({
 test("board shows status, ordered job cards and live output", async ({
 	page,
 }) => {
-	await setup(page);
+	const calls = await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
 	await expect(
@@ -386,9 +396,21 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");
-	await expect(stats).toContainText("Waiting1");
 	await expect(stats).toContainText("Merged (24h)3");
 	await expect(stats).not.toContainText("Completed");
+	await expect(stats).not.toContainText("Waiting");
+	await expect
+		.poll(() => calls.project_status.at(-1)?.targets)
+		.toEqual(["lsegal/aviary"]);
+	// Each board state's card counts the jobs its filter tab shows.
+	for (const label of ["Starting", "Paused", "Running", "Done", "Failed"]) {
+		const card = stats.locator("div").filter({ hasText: label });
+		await expect(card).toHaveText(new RegExp(`^${label}\\d+$`));
+		const count = Number((await card.textContent())?.replace(/\D/g, ""));
+		await page.getByRole("tab", { name: label }).click();
+		await expect(page.getByTestId("job-card")).toHaveCount(count);
+	}
+	await page.getByRole("tab", { name: "All" }).click();
 	const clis = page.getByRole("region", { name: "CLI providers" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
