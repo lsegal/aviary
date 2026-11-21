@@ -932,7 +932,11 @@ test("a failed turn's error attaches to its message and its icon Retry re-runs i
 		expect(retryBox.width).toBeLessThanOrEqual(24);
 		expect(retryBox.height).toBeLessThanOrEqual(24);
 		expect(retryBox.x).toBeGreaterThan(footerBox.x);
-		expect(Math.abs(retryBox.y + retryBox.height / 2 - (footerBox.y + footerBox.height / 2))).toBeLessThan(4);
+		expect(
+			Math.abs(
+				retryBox.y + retryBox.height / 2 - (footerBox.y + footerBox.height / 2),
+			),
+		).toBeLessThan(4);
 	}
 
 	// Retrying while the provider still fails updates the error in place.
