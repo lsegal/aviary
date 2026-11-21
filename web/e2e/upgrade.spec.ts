@@ -292,9 +292,9 @@ test("auto update applies with jobs running", async ({ page }) => {
 	await expect(page.getByTestId("auto-update-status").first()).toContainText(
 		"Auto update is pulling the checkout…",
 	);
-	await expect(page.getByTestId("auto-update-status").first()).not.toContainText(
-		"running job",
-	);
+	await expect(
+		page.getByTestId("auto-update-status").first(),
+	).not.toContainText("running job");
 	await expect(page.getByTestId("auto-update-error")).toHaveCount(0);
 });
 
