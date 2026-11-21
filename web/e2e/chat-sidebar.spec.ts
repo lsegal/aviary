@@ -89,7 +89,7 @@ test("the Chats list shows Main Chat first, titles, and last-message time on hov
 			id: "sess_2",
 			agent_id: "assistant",
 			name: "sess_2",
-			created_at: hoursAgo(1),
+			created_at: hoursAgo(4),
 		},
 	]);
 	await page.goto("/agents/assistant/chat");
@@ -237,4 +237,121 @@ test("a new chat takes its generated name after the first message", async ({
 	await input.press("Enter");
 
 	await expect(chatRows(page)).toHaveText([/Main Chat/, /Weekend trip plans/]);
+});
+
+/** Main Chat plus `count` titled chats, chat N last messaged N hours ago. */
+function manyChats(count: number): Sess[] {
+	const chats: Sess[] = [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: hoursAgo(100),
+			last_message_at: hoursAgo(50),
+		},
+	];
+	// Listed oldest first so the sidebar has to order them itself.
+	for (let i = count; i >= 1; i--) {
+		chats.push({
+			id: `sess_${i}`,
+			agent_id: "assistant",
+			name: `sess_${i}`,
+			title: `Chat ${i}`,
+			created_at: hoursAgo(60),
+			last_message_at: hoursAgo(i),
+		});
+	}
+	return chats;
+}
+
+test("the Chats list is expanded on load away from the chat page", async ({
+	page,
+}) => {
+	await mockChats(page, manyChats(2));
+	await page.goto("/system/overview");
+
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Chat 1/, /Chat 2/]);
+	await expect(page.getByTestId("sidebar-new-chat")).toBeVisible();
+	// No chat is selected away from the chat pages.
+	await expect(chatRows(page).first().getByRole("link")).not.toHaveClass(
+		/font-semibold/,
+	);
+});
+
+test("five or fewer chats are all shown without More", async ({ page }) => {
+	await mockChats(page, manyChats(4));
+	await page.goto("/agents/assistant/chat");
+
+	await expect(chatRows(page)).toHaveText([
+		/Main Chat/,
+		/Chat 1/,
+		/Chat 2/,
+		/Chat 3/,
+		/Chat 4/,
+	]);
+	await expect(page.getByTestId("sidebar-chats-more")).toHaveCount(0);
+});
+
+test("more than five chats show the five most recent and More reveals the rest", async ({
+	page,
+}) => {
+	await mockChats(page, manyChats(7));
+	await page.goto("/system/overview");
+
+	await expect(chatRows(page)).toHaveText([
+		/Main Chat/,
+		/Chat 1/,
+		/Chat 2/,
+		/Chat 3/,
+		/Chat 4/,
+	]);
+	const more = page.getByTestId("sidebar-chats-more");
+	await expect(more).toHaveText("More");
+	// + New chat stays below the list and More.
+	await expect(
+		page.getByTestId("sidebar-chats").locator("> button"),
+	).toHaveText(["More", "+ New chat"]);
+
+	await more.click();
+	await expect(chatRows(page)).toHaveCount(8);
+	await expect(chatRows(page).nth(7)).toHaveText(/Chat 7/);
+
+	await more.click();
+	await expect(chatRows(page)).toHaveCount(5);
+});
+
+test("the Chats list follows chats created, renamed and deleted elsewhere", async ({
+	page,
+}) => {
+	const sessions = manyChats(1);
+	await mockChats(page, sessions);
+	const sockets: Array<{ send: (m: string) => void }> = [];
+	await page.routeWebSocket(/\/api\/ws/, (ws) => {
+		sockets.push(ws);
+	});
+	await page.goto("/system/overview");
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Chat 1/]);
+	await expect.poll(() => sockets.length).toBeGreaterThan(0);
+
+	const notify = () => {
+		for (const ws of sockets)
+			ws.send(
+				JSON.stringify({ type: "session_message", agent_id: "assistant" }),
+			);
+	};
+	sessions.push({
+		id: "sess_x",
+		agent_id: "assistant",
+		name: "sess_x",
+		title: "Fresh",
+		created_at: hoursAgo(0),
+		last_message_at: hoursAgo(0),
+	});
+	notify();
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Fresh/, /Chat 1/]);
+
+	sessions[1].title = "Renamed";
+	sessions.pop();
+	notify();
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Renamed/]);
 });
