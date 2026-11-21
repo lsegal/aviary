@@ -126,7 +126,7 @@
 								clip-rule="evenodd" />
 						</svg>
 					</button>
-					<button type="submit" :disabled="isSending || (!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
+					<button type="submit" :disabled="(!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
 						aria-label="Send message" title="Send">
 						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
@@ -390,8 +390,9 @@ const input = ref("");
 const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
-const isStreaming = ref(false);
-const isSending = ref(false);
+// Each send streams its own reply, and several can run at once.
+const activeStreams = ref(0);
+const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
 const chatInputEl = ref<HTMLInputElement | null>(null);
@@ -880,14 +881,14 @@ function onChatInputKeydown(e: KeyboardEvent) {
 	setChatInputValue(history[history.length - 1 - nextIndex]);
 }
 
+// send never waits for a running reply: each message is added and delivered
+// at once, and its reply streams alongside any others still running.
 async function send() {
-	if (isSending.value) return;
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
-	isSending.value = true;
 	const now = new Date().toISOString();
 	const agentModel = agentsStore.agents.find(
 		(a) => a.name === selectedAgent.value,
@@ -907,20 +908,26 @@ async function send() {
 		mediaURL: mediaURL || undefined,
 		timestamp: now,
 	});
-	await scrollBottom(true);
-
+	// Count the stream before yielding so no reload replaces the new message.
 	loadMessagesSeq += 1;
-	isStreaming.value = true;
+	activeStreams.value += 1;
 	let streamError = false;
 	hasInlineError.value = false;
+	await scrollBottom(true);
 	try {
-		let assistantIndex = -1;
+		// Other sends can add messages while this reply streams, so the
+		// reply's bubble is found by key rather than by position.
+		let assistantKey = "";
 		let pendingText = "";
 		const appendAssistantText = (chunk: string) => {
 			if (!chunk) return;
+			let assistantIndex = assistantKey
+				? messages.value.findIndex((m) => m.localKey === assistantKey)
+				: -1;
 			if (assistantIndex === -1) {
+				assistantKey = newMessageKey();
 				messages.value.push({
-					localKey: newMessageKey(),
+					localKey: assistantKey,
 					role: "assistant",
 					text: "",
 					timestamp: now,
@@ -939,7 +946,7 @@ async function send() {
 				...parseToolMessage(`[tool] ${payload}`, now, agentModel),
 				localKey: newMessageKey(),
 			});
-			assistantIndex = -1;
+			assistantKey = "";
 		};
 		const flushPendingChunks = () => {
 			while (pendingText) {
@@ -993,34 +1000,30 @@ async function send() {
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		const normalized = msg.toLowerCase();
-		if (
+		const stopped =
 			normalized.includes("stopped") ||
 			normalized.includes("canceled") ||
-			normalized.includes("cancelled")
-		) {
-			isStreaming.value = false;
-			await loadSessionMessages(true);
-			await refreshSessionProcessing();
-			await scrollBottom();
-			return;
+			normalized.includes("cancelled");
+		if (!stopped) {
+			streamError = true;
+			hasInlineError.value = true;
+			messages.value.push({
+				localKey: newMessageKey(),
+				role: "assistant",
+				text: `Error: ${msg}`,
+				isError: true,
+				timestamp: now,
+				model: agentModel,
+			});
 		}
-		streamError = true;
-		hasInlineError.value = true;
-		messages.value.push({
-			localKey: newMessageKey(),
-			role: "assistant",
-			text: `Error: ${msg}`,
-			isError: true,
-			timestamp: now,
-			model: agentModel,
-		});
 	} finally {
-		isStreaming.value = false;
-		isSending.value = false;
+		activeStreams.value -= 1;
 	}
-	// Reload canonical messages from server after streaming completes.
-	// Skip if we showed an inline error so the error bubble stays visible.
-	if (!streamError) {
+	// The last reply to finish reloads the canonical messages; reloading
+	// earlier would drop replies still streaming. Skip if we showed an inline
+	// error so the error bubble stays visible.
+	if (activeStreams.value > 0) return;
+	if (!streamError && !hasInlineError.value) {
 		await loadSessionMessages(true);
 	}
 	await refreshSessionProcessing();
