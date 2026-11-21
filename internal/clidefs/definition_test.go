@@ -3,6 +3,7 @@ package clidefs
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,13 @@ func TestRenderPromptStdinReplacesThePromptArgument(t *testing.T) {
 		}
 		if got := definition.Render(ModeRun, Values{Prompt: "a long prompt"}); got[len(got)-1] != "a long prompt" {
 			t.Errorf("%s argv without stdin = %#v, want the prompt last", test.agent, got)
+		}
+		// A resumed run hands its prompt over the same way a fresh one does.
+		if !definition.ReadsPromptFromStdinIn(ModeResume) {
+			t.Errorf("%s cannot take a resumed run's prompt on stdin", test.agent)
+		}
+		if got := definition.Render(ModeResume, Values{Prompt: "a long prompt", Session: "s", PromptStdin: true}); slices.Contains(got, "a long prompt") {
+			t.Errorf("%s resume stdin argv = %#v, want the prompt left out", test.agent, got)
 		}
 	}
 	gemini, _ := registry.Lookup("gemini")
