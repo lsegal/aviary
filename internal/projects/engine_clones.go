@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/lsegal/aviary/internal/projects/core"
 )
@@ -23,9 +25,19 @@ type cloneState struct {
 	// them, keyed by cloneKey, with the job's key (issue #622).
 	leased map[string]string
 	// leaseMu serializes choosing a clone to reuse, so two jobs are never
-	// handed the same one.
+	// handed the same one, and removing an unused clone, so none is removed
+	// while it is being handed to a job.
 	leaseMu sync.Mutex
+	// reapInterval overrides cloneReapInterval in tests, and reaping keeps
+	// two sweeps from overlapping.
+	reapInterval time.Duration
+	reaping      atomic.Bool
 }
+
+// cloneReapInterval is how often unused clones are removed in the
+// background, as a backstop for clones a finished job's own cleanup missed
+// (issue #752).
+const cloneReapInterval = 15 * time.Minute
 
 // SetTempDirs replaces the ordered temp directories new clones are placed in.
 func (w *Engine) SetTempDirs(dirs []string) {
@@ -212,4 +224,124 @@ func clearClonesTotal(result core.ClearClonesResult) string {
 		noun = "clone"
 	}
 	return fmt.Sprintf("cleared %d unused %s, reclaimed %s", len(result.Removed), noun, formatBytes(result.Reclaimed))
+}
+
+// reapClonesEvery removes unused clones every cloneReapInterval until ctx
+// ends.
+func (w *Engine) reapClonesEvery(ctx context.Context) {
+	interval := w.clones.reapInterval
+	if interval <= 0 {
+		interval = cloneReapInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.reapClones()
+		}
+	}
+}
+
+// reapClones removes every recorded clone nothing uses, adopting leftovers
+// found on disk first. A sweep still running when the next one is due is
+// not overlapped.
+func (w *Engine) reapClones() {
+	if !w.clones.reaping.CompareAndSwap(false, true) {
+		return
+	}
+	defer w.clones.reaping.Store(false)
+	reg, err := w.cloneRegistry()
+	if err != nil {
+		w.logf("could not reap clones: %v", err)
+		return
+	}
+	usage := w.cloneUsage()
+	if usage.workErr != nil {
+		w.logf("could not reap clones: %v: %v", errWorkStateUnreadable, usage.workErr)
+		return
+	}
+	reg.adopt(usage.roots, usage.work)
+	result := w.removeUnusedClones(reg, func(cloneRecord) bool { return true })
+	if len(result.Removed) > 0 {
+		w.logf("reaper %s", clearClonesTotal(result))
+	}
+}
+
+// releaseJobClone removes the clone job key used once the job has finished,
+// unless another job or agent still uses that directory. checkout is the
+// job's last recorded checkout, which may be empty.
+func (w *Engine) releaseJobClone(key, checkout string) {
+	reg, err := w.cloneRegistry()
+	if err != nil {
+		return
+	}
+	if checkout != "" {
+		if _, known := reg.get(checkout); !known && isDir(checkout) {
+			_ = reg.record(cloneRecord{Path: checkout, Job: key})
+		}
+	}
+	w.removeUnusedClones(reg, func(rec cloneRecord) bool {
+		return rec.Job == key || (checkout != "" && cloneKey(rec.Path) == cloneKey(checkout))
+	})
+}
+
+// removeUnusedClones removes each recorded clone match selects that no live
+// job or agent of this instance uses and that belongs to this instance,
+// logging each removal and the space it freed. Each clone is classified
+// right before it is removed, under the lease lock, so a clone being handed
+// to a job is never removed.
+func (w *Engine) removeUnusedClones(reg *cloneRegistry, match func(cloneRecord) bool) core.ClearClonesResult {
+	result := core.ClearClonesResult{Removed: []core.CloneEntry{}}
+	for _, rec := range reg.list() {
+		if !match(rec) {
+			continue
+		}
+		if entry, ok := w.removeCloneIfUnused(reg, rec.Path); ok {
+			result.Removed = append(result.Removed, entry)
+			result.Reclaimed += *entry.Size
+		}
+	}
+	return result
+}
+
+func (w *Engine) removeCloneIfUnused(reg *cloneRegistry, path string) (core.CloneEntry, bool) {
+	w.clones.leaseMu.Lock()
+	defer w.clones.leaseMu.Unlock()
+	rec, ok := reg.get(path)
+	if !ok {
+		return core.CloneEntry{}, false
+	}
+	usage := w.cloneUsage()
+	if usage.workErr != nil {
+		return core.CloneEntry{}, false
+	}
+	verdict, reason := classifyClone(rec, usage)
+	if verdict != cloneUnused || !ownedHere(rec, usage) {
+		return core.CloneEntry{}, false
+	}
+	size, _ := dirSize(context.Background(), rec.Path)
+	if err := removeTree(rec.Path); err != nil {
+		w.logf("could not remove unused clone %s: %v", rec.Path, err)
+		return core.CloneEntry{}, false
+	}
+	_ = reg.remove(rec.Path)
+	w.logf("removed unused clone %s (%s freed): %s", rec.Path, formatBytes(size), reason)
+	entry := cloneEntry(rec, verdict, reason)
+	entry.Size = &size
+	return entry, true
+}
+
+// ownedHere reports whether rec belongs to this instance: recorded by one of
+// its runs, or adopted from disk for a job its work state tracks. Removing
+// clones automatically leaves clones another instance may own to a manual
+// clear.
+func ownedHere(rec cloneRecord, usage cloneUsage) bool {
+	if !rec.Adopted {
+		return true
+	}
+	state, ok := usage.work[rec.Job]
+	return ok && state.Status != ""
 }
