@@ -1121,9 +1121,7 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	});
 	await page.goto("/agents/coder/projects");
 
-	await expect(
-		page.getByRole("heading", { name: "Code Loop" }),
-	).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Code Loop" })).toBeVisible();
 	await expect(page.getByTestId("board-projects")).toHaveText("2 projects");
 	// Every project's jobs share the board, each naming its project.
 	const cards = page.getByTestId("job-card");

@@ -200,9 +200,7 @@ function savedProjects(calls: Calls, agent: string) {
 const saveChanges = (page: Page) =>
 	page.getByRole("button", { name: "Save Changes" }).click();
 
-test('the Add project "+" on Code Loop opens Add project', async ({
-	page,
-}) => {
+test('the Add project "+" on Code Loop opens Add project', async ({ page }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page
