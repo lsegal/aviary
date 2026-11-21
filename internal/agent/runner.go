@@ -1281,7 +1281,10 @@ func (r *AgentRunner) executeToolCall(
 	if usageRec != nil {
 		usageRec.ToolCalls++
 	}
-	resultText, callErr := toolClient.CallToolText(promptCtx, name, args)
+	resultText, shared, callErr := callToolOnce(promptCtx, toolClient, r.agent.ID, sessionID, name, args)
+	if shared && callErr == nil {
+		resultText = sharedToolCallNote + resultText
+	}
 	if callErr != nil {
 		if errors.Is(callErr, context.Canceled) || promptCtx.Err() != nil {
 			emit(StreamEvent{Type: StreamEventStop})
