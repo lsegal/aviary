@@ -52,10 +52,11 @@
 									:elapsed="toolElapsed(item.msg)" />
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end text-right' : 'text-left'">
+							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end' : 'text-left'"
+								:data-testid="item.msg.role === 'user' ? 'chat-user-message' : undefined">
 								<div
 									:class="item.msg.role === 'user'
-										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
+										? 'inline-flex flex-col items-start gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
 										: item.msg.isError
 											? 'inline-flex flex-col items-start gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-base text-red-700 max-w-2xl dark:border-red-800 dark:bg-red-950 dark:text-red-300'
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-2xl dark:bg-gray-800 dark:text-gray-100'">
