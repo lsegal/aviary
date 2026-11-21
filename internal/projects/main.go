@@ -1767,9 +1767,12 @@ const agentCommandWaitDelay = 5 * time.Second
 
 // launchEnv is the environment an agent launch adds to aviary's own. When the
 // definition's settings overlay cannot be built, the agent still runs, against
-// the user's own settings directory, and the reason is logged.
-func launchEnv(definition clidefs.Definition) []string {
-	env, err := definition.LaunchEnv(store.CLIHomesDir())
+// the user's own settings directory, and the reason is logged. Workspaces are
+// the directories the agent runs in, which the overlay records as trusted, so
+// a CLI that gates a workspace's settings behind trust, as Claude drops the
+// permission allow entries of a fresh clone, applies them (#565).
+func launchEnv(definition clidefs.Definition, workspaces ...string) []string {
+	env, err := definition.LaunchEnv(store.CLIHomesDir(), workspaces...)
 	if err != nil {
 		slog.Warn("projects: running agent against its own settings directory", "agent", definition.Name, "err", err)
 	}
@@ -2161,10 +2164,10 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	// The launch env also points a CLI that writes bookkeeping into its own
 	// settings file, as codex records trusted workspaces, at a private
 	// overlay of its settings directory, so the user's file is left alone.
-	if env := launchEnv(definition); len(env) > 0 {
+	cmd.Dir, _ = sessionRunDir(session)
+	if env := launchEnv(definition, cmd.Dir); len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	cmd.Dir, _ = sessionRunDir(session)
 	// Record the run for the shutdown checkpoint, following the checkout the
 	// agent announces so the checkpoint commits the right directory.
 	active := r.Active.add(issue, session.CheckoutDirectory)

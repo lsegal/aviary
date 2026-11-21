@@ -102,7 +102,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		Approval:     cliApprovalArgs(backend, r.approvalMode()),
 		ExtraDir:     cliExtraDirArgs(backend, r.approvalMode(), workDir, r.agentHomeDir()),
 		Ephemeral:    !in.useHistory,
-		Env:          cliLaunchEnv(backend),
+		Env:          cliLaunchEnv(backend, workDir),
 	}
 	key := r.agent.ID + "\x00" + in.sessionID
 	if opts.Ephemeral {
@@ -398,12 +398,14 @@ func cliExtraDirArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, workDi
 // CODEX_HOME at aviary's overlay of the user's directory, which keeps codex's
 // trusted-project bookkeeping out of the user's config.toml (#528). When the
 // overlay cannot be prepared, the CLI runs against the user's directory.
-func cliLaunchEnv(backend cliagent.Backend) []string {
+// The overlay also records workDir as trusted, so Claude applies its
+// workspace's permission allow entries (#565).
+func cliLaunchEnv(backend cliagent.Backend, workDir string) []string {
 	definition, ok := llm.CLIProvider(string(backend))
 	if !ok {
 		return nil
 	}
-	env, err := definition.HomeEnv(store.CLIHomesDir())
+	env, err := definition.HomeEnv(store.CLIHomesDir(), workDir)
 	if err != nil {
 		slog.Warn("agent: running CLI against its own settings directory", "backend", backend, "err", err)
 	}
