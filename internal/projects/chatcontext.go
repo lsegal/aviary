@@ -19,7 +19,7 @@ const (
 var chatContextStatusKeys = []string{
 	"identity", "running", "targets", "issue_counts", "jobs", "concurrency",
 	"delivery", "poll_interval", "ready_label", "allowed_commenters",
-	"quotas", "last_check", "webhook_online", "error",
+	"quotas", "clis", "last_check", "webhook_online", "error",
 }
 
 // ChatContext is the context the Projects agent gets with each request: this
