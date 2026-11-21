@@ -129,13 +129,14 @@ function toolRecord(id: string, name: string, timestamp: string) {
 const toolCalls = (page: Page) => page.getByTestId("chat-tool-call");
 
 async function expectLiveTurn(page: Page) {
-	await expect(page.getByTestId("chat-typing")).toBeVisible();
 	await expect(toolCalls(page)).toHaveCount(2);
 	await expect(toolCalls(page).nth(0)).toContainText("exec");
 	await expect(toolCalls(page).nth(0)).not.toHaveAttribute("data-pending");
 	await expect(toolCalls(page).nth(1)).toContainText("web_search");
 	await expect(toolCalls(page).nth(1)).toHaveAttribute("data-pending", "true");
 	await expect(page.getByText("Looking at the logs")).toBeVisible();
+	// The running call's chip is the turn's status; no typing bubble too.
+	await expect(page.getByTestId("chat-typing")).toHaveCount(0);
 }
 
 async function newPage(browser: Browser, server: Server) {
@@ -177,6 +178,11 @@ test("a second client mid-turn shows the same state and live updates, then the r
 		result: "found",
 		done: true,
 	};
+	server.broadcast();
+	// With no call running, the turn is thinking again.
+	for (const page of [first, second]) {
+		await expect(page.getByTestId("chat-typing")).toBeVisible();
+	}
 	server.turn.items.push({ tool: { id: "call_3", name: "file_read" } });
 	server.broadcast();
 	for (const page of [first, second]) {

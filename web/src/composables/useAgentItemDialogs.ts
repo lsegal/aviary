@@ -10,9 +10,8 @@ export interface AgentItemDialog {
 	/** The task or file being edited or deleted. */
 	name?: string;
 	/**
-	 * Creates a project scheduled task: a "project" task that runs against
-	 * this watched project, under agent. A project board's Schedule button
-	 * opens the dialog with it set and agent set to the project's owning agent.
+	 * Opens a new task with Target = Project on this watched project, run by
+	 * agent. A project board's Schedule button opens the dialog with it set.
 	 */
 	project?: string;
 	/**

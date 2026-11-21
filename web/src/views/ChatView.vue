@@ -48,7 +48,8 @@
 								:data-pending="item.msg.toolPending ? 'true' : undefined" class="text-left my-0.5">
 								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
 									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
-									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
+									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending"
+									:elapsed="toolElapsed(item.msg)" />
 							</div>
 							<!-- Regular user / assistant messages -->
 							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end text-right' : 'text-left'">
@@ -106,8 +107,8 @@
 								</div>
 							</div>
 						</template>
-						<div v-if="turnActivity" data-testid="chat-typing" class="text-left">
-							<ChatActivityIndicator :tool="turnActivity.tool" :elapsed="turnActivity.elapsed" />
+						<div v-if="showThinking" data-testid="chat-typing" class="text-left">
+							<ChatActivityIndicator />
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -201,6 +202,7 @@ interface Message {
 	toolPending?: boolean;
 	/** When this client saw a pending tool call start, in epoch ms. */
 	toolStartedAt?: number;
+	toolFinishedAt?: number;
 	timestamp?: string;
 	model?: string;
 	isError?: boolean;
@@ -617,41 +619,40 @@ const SLOW_TOOL_MS = 5000;
 const activityNow = ref(Date.now());
 let activityTimer: ReturnType<typeof setInterval> | undefined;
 
-// What the in-progress turn is doing: running its oldest unfinished tool
-// call, or thinking. Undefined once reply text streams or no turn runs.
-const turnActivity = computed(() => {
-	if (!currentSessionProcessing.value) return undefined;
+const hasRunningTool = computed(() =>
+	shownMessages.value.some((msg) => msg.role === "tool" && msg.toolPending),
+);
+
+// The typing bubble shows while the turn thinks: not once reply text
+// streams, and not while a tool runs, whose chip already shows that.
+const showThinking = computed(() => {
+	if (!currentSessionProcessing.value) return false;
 	const list = shownMessages.value;
 	const last = list[list.length - 1];
-	if (last?.role === "assistant" && !last.isError) return undefined;
-	let running: Message | undefined;
-	for (let i = list.length - 1; i >= 0; i--) {
-		const msg = list[i];
-		if (msg.role === "user") break;
-		if (msg.role === "tool" && msg.toolPending) running = msg;
-	}
-	if (!running) return { tool: undefined, elapsed: undefined };
-	const ms = running.toolStartedAt
-		? activityNow.value - running.toolStartedAt
-		: 0;
-	return {
-		tool: toolName(running),
-		elapsed: ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined,
-	};
+	if (last?.role === "assistant" && !last.isError) return false;
+	return !hasRunningTool.value;
 });
 
-watch(
-	() => !!turnActivity.value?.tool,
-	(running) => {
-		clearInterval(activityTimer);
-		activityTimer = undefined;
-		if (!running) return;
+// Seconds a tool call has taken, counting up while it runs and kept once it
+// finishes, shown only once it is slow.
+function toolElapsed(msg: Message): number | undefined {
+	if (!msg.toolStartedAt) return undefined;
+	const end = msg.toolPending
+		? activityNow.value
+		: (msg.toolFinishedAt ?? msg.toolStartedAt);
+	const ms = end - msg.toolStartedAt;
+	return ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined;
+}
+
+watch(hasRunningTool, (running) => {
+	clearInterval(activityTimer);
+	activityTimer = undefined;
+	if (!running) return;
+	activityNow.value = Date.now();
+	activityTimer = setInterval(() => {
 		activityNow.value = Date.now();
-		activityTimer = setInterval(() => {
-			activityNow.value = Date.now();
-		}, 1000);
-	},
-);
+	}, 1000);
+});
 
 const userMessageHistory = computed(() =>
 	messages.value
@@ -1189,11 +1190,16 @@ async function runTurn(
 				: -1;
 			if (index !== -1 && data) {
 				const current = messages.value[index];
+				// A finished call stays finished if its start arrives again.
+				const stillPending = !!current.toolPending && !data.done;
 				messages.value.splice(index, 1, {
 					...current,
 					toolData: { ...current.toolData, ...data },
-					// A finished call stays finished if its start arrives again.
-					toolPending: !!current.toolPending && !data.done,
+					toolPending: stillPending,
+					toolFinishedAt:
+						current.toolPending && !stillPending
+							? Date.now()
+							: current.toolFinishedAt,
 				});
 				return;
 			}

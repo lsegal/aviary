@@ -511,8 +511,19 @@ test("the header Schedule button creates a project scheduled task through the sh
 	});
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText("lsegal/aviary");
-	// The task's agent comes from the project, so the dialog never asks.
-	await expect(dialog.getByLabel("Agent")).toHaveCount(0);
+	// The board opens the shared dialog targeting this project; the project's
+	// agent is implied, so there is no Agent field, and project tasks run a
+	// prompt, so Script is unavailable.
+	await expect(
+		dialog.getByRole("radiogroup", { name: "Target" }).getByRole("radio", {
+			name: "Project",
+		}),
+	).toHaveAttribute("aria-checked", "true");
+	await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+		"lsegal/aviary",
+	);
+	await expect(dialog.getByLabel("Agent", { exact: true })).toHaveCount(0);
+	await expect(dialog.getByRole("radio", { name: "Script" })).toBeDisabled();
 	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
 	// A project task needs a time trigger: no None tab, daily by default.
 	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
@@ -523,7 +534,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
-	// Project tasks run as Projects jobs, so the dialog offers precompute but
+	// Project tasks run as Code Loop jobs, so the dialog offers precompute but
 	// it cannot apply to them.
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();

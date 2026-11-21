@@ -41,6 +41,8 @@ server:
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
 | `auto_update` | bool | `false` | Install new releases automatically as soon as they are available. Running jobs are checkpointed and resume after the restart. Dev builds in a git checkout fast-forward the checkout instead (see [Upgrades](/guide/operations#dev-checkouts)). |
+| `restart_call_grace` | string | `"1m"` | How long a pending restart keeps admitting new MCP tool calls while it waits for in-flight ones. Go duration string. |
+| `restart_call_max_wait` | string | `"5m"` | How long a restart waits for in-flight MCP tool calls before it proceeds anyway. Go duration string. |
 | `tls.cert` | string | | Path to TLS certificate file |
 | `tls.key` | string | | Path to TLS private key file |
 
