@@ -82,8 +82,8 @@
                 <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.failed }}</td>
                 <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{{ fmtDuration(row.wallMs) }}</td>
                 <td class="py-2 pl-3 text-right font-mono" data-testid="usage-project-lines">
-                  <span class="text-green-600 dark:text-green-400">+{{ fmtLines(row.additions) }}</span>
-                  <span class="ml-1 text-red-500">−{{ fmtLines(row.deletions) }}</span>
+                  <span class="text-green-600 dark:text-green-400">+{{ fmtLines(row.additions) }}</span> <span
+                    class="text-red-500">−{{ fmtLines(row.deletions) }}</span>
                 </td>
               </tr>
             </tbody>

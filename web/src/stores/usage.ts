@@ -179,7 +179,9 @@ export const useUsageStore = defineStore("usage", () => {
 		};
 	}
 
-	const projectSummary = computed(() => summarizeProjects(projectRecords.value));
+	const projectSummary = computed(() =>
+		summarizeProjects(projectRecords.value),
+	);
 
 	// Each project is the repository of the issues its jobs worked, the
 	// "owner/repo" before the issue's "#number".

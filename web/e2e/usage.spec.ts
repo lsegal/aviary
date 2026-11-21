@@ -172,9 +172,7 @@ test("summarizes project outcomes and wall time apart from token metrics", async
 	await expect(page.getByTestId("usage-projects-additions")).toHaveText(
 		"+1,240",
 	);
-	await expect(page.getByTestId("usage-projects-deletions")).toHaveText(
-		"−45",
-	);
+	await expect(page.getByTestId("usage-projects-deletions")).toHaveText("−45");
 	// Each project totals its own merged pull requests' lines.
 	await expect(page.getByTestId("usage-project-name")).toHaveText([
 		"a/b",
