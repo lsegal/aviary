@@ -31,11 +31,11 @@ const tasks = computed(
 			?.tasks.filter((t) => t.name) ?? [],
 );
 
-// The Tasks page opens on its ?task, or on the first task.
+// The Tasks page edits its ?task; without one it is the overview.
 const activeName = computed(() => {
 	if (route.path !== agentTaskPath(props.agent).path) return "";
 	const q = route.query.task;
-	return typeof q === "string" && q ? q : (tasks.value[0]?.name ?? "");
+	return typeof q === "string" ? q : "";
 });
 
 const actions = editDeleteActions("Edit");

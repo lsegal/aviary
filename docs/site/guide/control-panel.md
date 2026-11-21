@@ -11,7 +11,7 @@ Log in with the bearer token from `~/.config/aviary/token`.
 The sidebar has two top-level sections:
 
 - **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **GitHub Projects**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
-- **System** — the instance's own pages: **Overview**, **Settings**, **Providers & Auth**, **Usage** and **Jobs**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
+- **System** — the instance's own pages: **Overview**, **Settings**, **Projects**, **Providers & Auth** and **Usage**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
 
 ---
 
@@ -35,9 +35,15 @@ One board of the jobs of every [project](/guide/projects) the agent owns: the sa
 
 The board's state chips (Starting, Paused, Running, Done, Failed) each toggle on and off, showing jobs in any selected state; with none selected every job and scheduled task shows, and **Clear** deselects them all. Each board remembers its own selection across pages and reloads, and the URL carries it as `?state=running,failed`, so a shared link opens the same filter.
 
-### Tasks (`/agents/<agent>/tasks`)
+### Scheduled Tasks (`/agents/<agent>/tasks`)
 
-Add, edit, or remove the agent's scheduled and file-watch tasks.
+The one place for the agent's scheduled and file-watch tasks and their runs. **+ New task** adds one.
+
+- **Summary** — stat cards for the chosen range (Today, 7d, 30d or custom dates): runs over time (succeeded and failed), success rate, average and median duration, runs coming up in the next 24 hours, running and pending runs, and recent failures.
+- **More analytics** — expands to the runs by day, the latest compile attempts of precomputed prompt tasks (with their LLM stages and resulting Lua script), and the job queue with a status filter, paging, Run Now and Stop. Clicking a run opens its details: timing, attempts, and its live or saved output.
+- **Tasks** — each task as a compact card with its enabled switch, its agent or target project, its schedule in words with its next run (or "paused"), its last run, a running-now dot, and quick actions: run now, pause or resume, edit, and view runs. Search and the Enabled, Paused, Running and Failed chips filter them. The Cards / List toggle switches to a dense list with the same fields, and the choice is remembered.
+
+Clicking a task opens its editor (`/agents/<agent>/tasks?task=<name>`), which has its own **Save Changes** and asks before leaving unsaved edits. The page refreshes itself, so it has no Reload or Save.
 
 ### Files (`/agents/<agent>/files`)
 
@@ -90,16 +96,6 @@ Token analytics for the last 30 days (or a custom range):
 - Input and output tokens per day, per agent, per model, and per provider.
 - Total cost estimates when provider pricing is available.
 - A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), and the total wall time project job runs took.
-
-### Jobs (`/system/jobs`)
-
-The job queue and execution history:
-
-- **Queue view** — all pending, running, completed, and failed jobs with status badges.
-- **Job details** — click a job to see its logs, timing, and the session it ran in.
-- **Compile attempts** — for precomputed prompt tasks, inspect the LLM compilation stages and the resulting Lua script.
-- **Manual trigger** — run any configured task or pending job immediately with the Run Now button.
-- **Stop** — cancel any pending or running job.
 
 ### Tools (`/system/tools`)
 

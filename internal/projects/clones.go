@@ -103,11 +103,39 @@ func pickCloneRoot(roots []string) (string, error) {
 	return "", fmt.Errorf("%w: need %s free in one of: %s", errNoCloneSpace, formatBytes(int64(cloneMinFreeBytes)), strings.Join(tried, ", "))
 }
 
-// underRoots reports whether path lies inside one of roots.
-func underRoots(path string, roots []string) bool {
+// resolvePath returns path made absolute and clean with every symlink in it
+// resolved, so a directory reached through different paths (on macOS /var is
+// a symlink to /private/var) is always named the same way (issue #752). A
+// path that does not exist yet keeps its missing tail below the deepest
+// ancestor that does, which is resolved.
+func resolvePath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	path = filepath.Clean(path)
+	var tail []string
+	for dir := path; ; {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return path
+		}
+		tail = append(tail, filepath.Base(dir))
+		dir = parent
+	}
+}
+
+// underRoots reports whether path lies inside one of roots, with symlinks in
+// both resolved.
+func underRoots(path string, roots []string) bool {
+	path = resolvePath(path)
 	for _, root := range roots {
-		rel, err := filepath.Rel(root, path)
+		rel, err := filepath.Rel(resolvePath(root), path)
 		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 			continue
 		}
@@ -174,16 +202,38 @@ func loadCloneRegistry(path string) (*cloneRegistry, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Records saved before paths were resolved can name one directory
+	// twice; the most recently created record is the directory's current
+	// job, and the older one is a stale record of an earlier job (issue
+	// #752).
+	deduplicated := false
 	for _, rec := range list {
-		if rec.Path != "" {
-			reg.records[cloneKey(rec.Path)] = rec
+		if rec.Path == "" {
+			continue
+		}
+		key := cloneKey(rec.Path)
+		if resolved := resolvePath(rec.Path); resolved != rec.Path {
+			rec.Path, deduplicated = resolved, true
+		}
+		if existing, ok := reg.records[key]; ok {
+			deduplicated = true
+			if existing.Created.After(rec.Created) {
+				continue
+			}
+		}
+		reg.records[key] = rec
+	}
+	if deduplicated {
+		if err := reg.saveLocked(); err != nil {
+			return nil, err
 		}
 	}
 	return reg, nil
 }
 
+// cloneKey identifies the directory path names, however it is reached.
 func cloneKey(path string) string {
-	key := filepath.Clean(path)
+	key := resolvePath(path)
 	if filepath.Separator == '\\' {
 		key = strings.ToLower(key)
 	}
@@ -207,7 +257,8 @@ func (r *cloneRegistry) listLocked() []cloneRecord {
 	return list
 }
 
-// record adds or updates a clone, keeping fields the update leaves empty.
+// record adds or updates a clone, keeping fields the update leaves empty. A
+// clone recorded for a different job is replaced rather than merged.
 func (r *cloneRegistry) record(update cloneRecord) error {
 	if r == nil || update.Path == "" {
 		return nil
@@ -216,8 +267,13 @@ func (r *cloneRegistry) record(update cloneRecord) error {
 	defer r.mu.Unlock()
 	key := cloneKey(update.Path)
 	rec, ok := r.records[key]
+	if ok && update.Job != "" && rec.Job != "" && update.Job != rec.Job {
+		// The directory was reused for another job, so nothing recorded
+		// about the earlier job still describes it.
+		ok = false
+	}
 	if !ok {
-		rec = cloneRecord{Path: filepath.Clean(update.Path), Created: update.Created, Adopted: update.Adopted}
+		rec = cloneRecord{Path: resolvePath(update.Path), Created: update.Created, Adopted: update.Adopted}
 		if rec.Created.IsZero() {
 			rec.Created = time.Now()
 		}

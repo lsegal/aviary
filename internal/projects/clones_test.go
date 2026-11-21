@@ -23,7 +23,8 @@ func stubDiskFree(t *testing.T, free map[string]uint64) {
 	t.Cleanup(func() { diskFree = previous })
 }
 
-// makeClone creates a directory that looks like a gh-fix clone of repo.
+// makeClone creates a directory that looks like a gh-fix clone of repo and
+// returns its resolved path, the form clone records keep.
 func makeClone(t *testing.T, root, name, repo string) string {
 	t.Helper()
 	dir := filepath.Join(root, name)
@@ -37,7 +38,7 @@ func makeClone(t *testing.T, root, name, repo string) string {
 	if err := os.WriteFile(filepath.Join(dir, "work.txt"), bytes.Repeat([]byte("x"), 1000), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	return resolvePath(dir)
 }
 
 func TestCloneRootsDefaultToSystemTemp(t *testing.T) {

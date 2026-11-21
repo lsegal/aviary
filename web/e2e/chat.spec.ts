@@ -936,68 +936,127 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 	await expect(page.getByText("summarize", { exact: true })).toHaveCount(1);
 });
 
-test("a processing session shows a staggered three-dot typing indicator", async ({
+// #770: the waiting indicator shows what the turn is doing.
+function holdReload() {
+	let ran = false;
+	return () => {
+		if (!ran) {
+			ran = true;
+			return [];
+		}
+		return new Promise(() => {});
+	};
+}
+
+test("the waiting indicator animates while the agent thinks", async ({
 	page,
 }) => {
 	await mockMCP(page, {
 		agent_list: [
-			{
-				id: "a1",
-				name: "assistant",
-				model: "anthropic/claude-sonnet-4-5",
-				fallbacks: [],
-				state: "idle",
-			},
+			{ id: "a1", name: "assistant", model: "claude/opus", state: "idle" },
 		],
 		session_list: [
-			{
-				id: "s1",
-				agent_id: "a1",
-				name: "main",
-				created_at: "2026-03-12T12:00:00Z",
-				is_processing: true,
-			},
+			{ id: "s1", agent_id: "a1", name: "main", created_at: "2026-03-12" },
 		],
-		session_messages: [
-			{
-				id: "m1",
-				session_id: "s1",
-				role: "user",
-				content: "first prompt",
-				timestamp: "2026-03-12T12:00:00Z",
-			},
-		],
+		agent_run: () => new Promise(() => {}),
 		config_validate: [],
+		session_messages: [],
 	});
-	await page.goto("/agents/assistant/chat");
+	await sendChat(page);
 
-	const indicator = page.getByRole("status", { name: "Assistant is working" });
-	await expect(indicator).toBeVisible();
-	await expect(indicator).not.toContainText("…");
-	const dots = indicator.locator(".typing-dot");
-	await expect(dots).toHaveCount(3);
-	const animations = await dots.evaluateAll((els) =>
-		els.map((el) => {
-			const style = getComputedStyle(el);
-			return {
-				name: style.animationName,
-				delay: style.animationDelay,
-				iterations: style.animationIterationCount,
-			};
-		}),
+	const indicator = page.getByTestId("chat-activity");
+	await expect(indicator).toHaveAttribute("aria-live", "polite");
+	await expect(indicator).toHaveText("Thinking…");
+	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
+		"animation-name",
+		/chat-activity-bounce/,
 	);
-	for (const animation of animations) {
-		expect(animation.name).not.toBe("none");
-		expect(animation.iterations).toBe("infinite");
-	}
-	expect(new Set(animations.map((a) => a.delay)).size).toBe(3);
+});
 
+test("the waiting indicator fades instead of bouncing with reduced motion", async ({
+	page,
+}) => {
 	await page.emulateMedia({ reducedMotion: "reduce" });
-	await expect
-		.poll(() =>
-			dots.evaluateAll((els) =>
-				els.map((el) => getComputedStyle(el).animationName),
-			),
-		)
-		.toEqual(["none", "none", "none"]);
+	await mockMCP(page, {
+		agent_list: [
+			{ id: "a1", name: "assistant", model: "claude/opus", state: "idle" },
+		],
+		session_list: [
+			{ id: "s1", agent_id: "a1", name: "main", created_at: "2026-03-12" },
+		],
+		agent_run: () => new Promise(() => {}),
+		config_validate: [],
+		session_messages: [],
+	});
+	await sendChat(page);
+
+	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
+		"animation-name",
+		/chat-activity-fade/,
+	);
+});
+
+test("a running tool spins and shows its elapsed time once slow", async ({
+	page,
+}) => {
+	await page.clock.install();
+	await mockToolChat(page, [jobList(filterCall)], holdReload());
+	await sendChat(page);
+
+	const block = jobListBlocks(page);
+	await expect(block.getByTestId("tool-call-spinner")).toBeVisible();
+	const indicator = page.getByTestId("chat-activity");
+	await expect(indicator).toHaveText("Running project_job_list…");
+
+	await page.clock.fastForward(6000);
+	await expect(indicator).toHaveText(/Running project_job_list · [67]s/);
+	await page.clock.fastForward(4000);
+	await expect(indicator).toHaveText(/Running project_job_list · 1[01]s/);
+});
+
+test("finished tool chips show a check or a warning with the error", async ({
+	page,
+}) => {
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			jobList(indicatorCall),
+			jobList({ ...indicatorCall, error: "timed out", done: true }),
+		],
+		holdReload(),
+	);
+	await sendChat(page);
+
+	const blocks = jobListBlocks(page);
+	await expect(blocks).toHaveCount(2);
+	await expect(blocks.nth(0).getByTestId("tool-call-check")).toBeVisible();
+	await expect(blocks.nth(1).getByTestId("tool-call-warning")).toBeVisible();
+	await expect(blocks.nth(1).locator("summary")).toHaveAttribute(
+		"title",
+		"timed out",
+	);
+	await expect(page.getByTestId("tool-call-spinner")).toHaveCount(0);
+	// Between tools and before any reply, the turn is thinking again.
+	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+});
+
+test("the waiting indicator goes away once reply text streams", async ({
+	page,
+}) => {
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			"Here is the answer",
+		],
+		holdReload(),
+	);
+	await sendChat(page);
+
+	await expect(page.getByText("Here is the answer")).toBeVisible();
+	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
 });

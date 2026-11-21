@@ -68,42 +68,18 @@ export interface TaskCompile {
 	updated_at: string;
 }
 
-export interface ScheduledTask {
-	id: string;
-	agent_id: string;
-	agent_name: string;
-	name: string;
-	type?: "prompt" | "script";
-	trigger_type: "cron" | "watch";
-	schedule?: string;
-	start_at?: string;
-	run_once?: boolean;
-	watch?: string;
-	prompt?: string;
-	script?: string;
-	target?: string;
-}
-
-function isScheduledTask(value: unknown): value is ScheduledTask {
-	if (!value || typeof value !== "object") return false;
-	const task = value as Record<string, unknown>;
+/** How long a finished job ran, from its creation to its last update. */
+export function jobDurationMs(job: Job): number {
 	return (
-		typeof task.id === "string" &&
-		typeof task.agent_id === "string" &&
-		typeof task.agent_name === "string" &&
-		typeof task.name === "string" &&
-		(task.type === undefined ||
-			task.type === "prompt" ||
-			task.type === "script") &&
-		(task.prompt === undefined || typeof task.prompt === "string") &&
-		(task.trigger_type === "cron" || task.trigger_type === "watch")
+		new Date(job.updated_at).getTime() - new Date(job.created_at).getTime()
 	);
 }
 
-function parseScheduledTasks(raw: string): ScheduledTask[] {
-	const parsed = JSON.parse(raw) as unknown;
-	if (!Array.isArray(parsed)) return [];
-	return parsed.filter(isScheduledTask);
+/** A duration as 850ms, 4.2s or 3m 12s. */
+export function formatDuration(ms: number): string {
+	if (ms < 1000) return `${Math.round(ms)}ms`;
+	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+	return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
 }
 
 function fmtDate(daysAgo: number): string {
@@ -117,23 +93,37 @@ export const useJobsStore = defineStore("jobs", () => {
 
 	const jobs = ref<Job[]>([]);
 	const taskCompiles = ref<TaskCompile[]>([]);
-	const scheduledTasks = ref<ScheduledTask[]>([]);
+	/** The agent whose runs the store holds; empty holds none. */
+	const agent = ref("");
 	const loading = ref(false);
 	const compilesLoading = ref(false);
-	const tasksLoading = ref(false);
 	const error = ref<string | null>(null);
 	const startDate = ref<string>(fmtDate(7));
 	const endDate = ref<string>(fmtDate(0));
 
+	/** Points the store at an agent's runs, clearing another agent's. */
+	function setAgent(name: string) {
+		if (agent.value === name) return;
+		agent.value = name;
+		jobs.value = [];
+		taskCompiles.value = [];
+	}
+
 	async function fetch() {
+		if (!agent.value) return;
+		const name = agent.value;
 		loading.value = true;
 		error.value = null;
 		try {
 			const raw = await callTool("job_query", {
 				start: startDate.value,
 				end: endDate.value,
+				agent: name,
 			});
-			jobs.value = (JSON.parse(raw) as Job[] | null) ?? [];
+			if (agent.value !== name) return;
+			jobs.value = ((JSON.parse(raw) as Job[] | null) ?? []).filter(
+				(j) => j.agent_id === name,
+			);
 			// Sort newest first.
 			jobs.value.sort((a, b) => b.created_at.localeCompare(a.created_at));
 		} catch (e) {
@@ -144,6 +134,8 @@ export const useJobsStore = defineStore("jobs", () => {
 	}
 
 	async function fetchTaskCompiles() {
+		if (!agent.value) return;
+		const name = agent.value;
 		compilesLoading.value = true;
 		error.value = null;
 		try {
@@ -151,7 +143,10 @@ export const useJobsStore = defineStore("jobs", () => {
 				start: startDate.value,
 				end: endDate.value,
 			});
-			taskCompiles.value = (JSON.parse(raw) as TaskCompile[] | null) ?? [];
+			if (agent.value !== name) return;
+			taskCompiles.value = (
+				(JSON.parse(raw) as TaskCompile[] | null) ?? []
+			).filter((c) => c.agent_id === name);
 			taskCompiles.value.sort((a, b) =>
 				b.created_at.localeCompare(a.created_at),
 			);
@@ -162,25 +157,11 @@ export const useJobsStore = defineStore("jobs", () => {
 		}
 	}
 
-	async function fetchScheduledTasks() {
-		tasksLoading.value = true;
-		error.value = null;
-		try {
-			const raw = await callTool("task_list", {});
-			scheduledTasks.value = parseScheduledTasks(raw);
-		} catch (e) {
-			error.value = e instanceof Error ? e.message : String(e);
-		} finally {
-			tasksLoading.value = false;
-		}
-	}
-
 	async function refreshAll() {
 		// Streamable HTTP MCP requests on the live server are more reliable when
 		// this page initializes sequentially instead of issuing both calls at once.
 		await fetch();
 		await fetchTaskCompiles();
-		await fetchScheduledTasks();
 	}
 
 	async function fetchLogs(jobID: string): Promise<string> {
@@ -291,38 +272,18 @@ export const useJobsStore = defineStore("jobs", () => {
 		return result;
 	});
 
-	// ── By agent breakdown ────────────────────────────────────────────────────
-
-	const byAgent = computed(() => {
-		const m = new Map<
-			string,
-			{ completed: number; failed: number; total: number }
-		>();
-		for (const j of jobs.value) {
-			const v = m.get(j.agent_id) ?? { completed: 0, failed: 0, total: 0 };
-			v.total++;
-			if (j.status === "completed") v.completed++;
-			if (j.status === "failed") v.failed++;
-			m.set(j.agent_id, v);
-		}
-		return [...m.entries()]
-			.sort((a, b) => b[1].total - a[1].total)
-			.map(([name, counts]) => ({ name, ...counts }));
-	});
-
 	return {
 		jobs,
 		taskCompiles,
-		scheduledTasks,
+		agent,
+		setAgent,
 		loading,
 		compilesLoading,
-		tasksLoading,
 		error,
 		startDate,
 		endDate,
 		fetch,
 		fetchTaskCompiles,
-		fetchScheduledTasks,
 		refreshAll,
 		fetchLogs,
 		fetchTaskCompile,
@@ -336,6 +297,5 @@ export const useJobsStore = defineStore("jobs", () => {
 		completed,
 		failed,
 		byDay,
-		byAgent,
 	};
 });

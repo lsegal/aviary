@@ -2150,3 +2150,93 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 		"true",
 	);
 });
+
+test("job count stat boxes reflow without wrapping mid-value", async ({
+	page,
+}) => {
+	await setup(page, () => ({
+		...STATUS,
+		jobs: { ...STATUS.jobs, running: 10, merged_24h: 61 },
+		concurrency: 20,
+	}));
+	// 1280 keeps the sidebar beside a narrow board while the viewport is xl.
+	for (const width of [375, 768, 1024, 1280, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const stats = page.getByRole("region", { name: "Job counts" });
+		await expect(stats).toContainText("10of 20 busy");
+		await expect(stats).toContainText("Merged (24h)61");
+		const layout = await stats.evaluate((section) => {
+			const lines = (el: Element) => {
+				// Text of mixed sizes on one line overlaps vertically; a wrap
+				// starts a rect below every earlier one.
+				const range = document.createRange();
+				range.selectNodeContents(el);
+				let count = 0;
+				let bottom = Number.NEGATIVE_INFINITY;
+				for (const r of [...range.getClientRects()].sort(
+					(a, b) => a.top - b.top,
+				)) {
+					if (r.top >= bottom - 1) count++;
+					bottom = Math.max(bottom, r.bottom);
+				}
+				return count;
+			};
+			const overflows = (el: Element) => el.scrollWidth > el.clientWidth;
+			const cards = [
+				...section.querySelectorAll("[data-testid=stat-card]"),
+			].map((card) => {
+				const label = card.querySelector("[data-testid=stat-label]");
+				const value = card.querySelector("[data-testid=stat-value]");
+				if (!label || !value) throw new Error("stat card is missing parts");
+				const box = card.getBoundingClientRect();
+				return {
+					text: card.textContent,
+					top: Math.round(box.top),
+					height: Math.round(box.height),
+					labelTop: Math.round(label.getBoundingClientRect().top),
+					valueTop: Math.round(value.getBoundingClientRect().top),
+					labelLines: lines(label),
+					valueLines: lines(value),
+					overflow: overflows(card) || overflows(label) || overflows(value),
+				};
+			});
+			const clis = document.querySelector("[aria-label='CLI providers']");
+			return {
+				cards,
+				pageOverflow:
+					document.documentElement.scrollWidth > window.innerWidth ||
+					overflows(section) ||
+					(clis ? overflows(clis) : false),
+				chipOverflow: clis
+					? [...clis.children].some(
+							(chip) =>
+								chip.getBoundingClientRect().right >
+								clis.getBoundingClientRect().right + 1,
+						)
+					: false,
+			};
+		});
+		expect(layout.cards).toHaveLength(7);
+		expect(layout.pageOverflow, `page overflow at ${width}px`).toBe(false);
+		expect(layout.chipOverflow, `CLI chip overflow at ${width}px`).toBe(false);
+		for (const card of layout.cards) {
+			expect(card.labelLines, `${card.text} label at ${width}px`).toBe(1);
+			expect(card.valueLines, `${card.text} value at ${width}px`).toBe(1);
+			expect(card.overflow, `${card.text} overflow at ${width}px`).toBe(false);
+		}
+		// Cards in one row share a height and line up labels and numbers.
+		const rows = new Map<number, typeof layout.cards>();
+		for (const card of layout.cards) {
+			rows.set(card.top, [...(rows.get(card.top) ?? []), card]);
+		}
+		for (const row of rows.values()) {
+			for (const key of ["height", "labelTop", "valueTop"] as const) {
+				expect(
+					new Set(row.map((card) => card[key])).size,
+					`${key} in a row at ${width}px`,
+				).toBe(1);
+			}
+		}
+	}
+});
