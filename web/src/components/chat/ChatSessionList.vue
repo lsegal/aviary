@@ -1,10 +1,5 @@
 <template>
 	<div class="space-y-0.5 pl-2" data-testid="sidebar-chats">
-		<button type="button" data-testid="sidebar-new-chat"
-			class="mt-1 block w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-gray-800"
-			:disabled="creating" @click="newChat">
-			+ New chat
-		</button>
 		<div v-for="s in sessions" :key="s.id" data-testid="chat-row" :data-session="s.id"
 			class="group relative flex items-center rounded-lg transition-colors"
 			:class="s.id === activeId
@@ -57,6 +52,11 @@
 				</DropdownMenuRoot>
 			</template>
 		</div>
+		<button type="button" data-testid="sidebar-new-chat"
+			class="mt-1 block w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-gray-800"
+			:disabled="creating" @click="newChat">
+			+ New chat
+		</button>
 
 		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
 			<AlertDialogPortal>

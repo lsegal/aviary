@@ -10,7 +10,7 @@ A **session** is an ordered log of messages between one agent and one caller. Ea
 
 - **`id`** — a stable UUID assigned at creation; use this when calling tools that accept `session_id`
 - **`name`** — a human-readable label (defaults to `"main"` for the first session)
-- **`title`** — the display name, set by `session_rename` or generated from a new chat's first prompt; absent until then
+- **`title`** — the display name, set by `session_rename` or generated from a new chat's first prompt; absent until then. An untitled chat is named by its next prompt
 - **`last_message_at`** — when the last user or assistant message was sent; absent for an empty session
 
 The `"main"` session is created automatically on first use. Additional sessions can be created explicitly with `session_create`.
@@ -59,7 +59,7 @@ Create a new session for an agent.
 
 **Returns:** JSON session object (same shape as `session_list` entries).
 
-The first prompt sent to a chat created this way names it: Aviary asks the agent's model for a short title from that prompt and stores it as the session's `title`, falling back to the prompt's opening words.
+The first prompt sent to a chat created this way names it: Aviary asks the agent's model for a short title from that prompt and stores it as the session's `title`, falling back to the prompt's opening words. A chat that is still untitled after its first prompt (for example, one sent with only an image) is named by its next prompt.
 
 ---
 

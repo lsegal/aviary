@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/lsegal/aviary/internal/testenv"
 )
@@ -26,24 +27,26 @@ const (
 	DirSessions = "sessions" // deprecated: sessions now live under agents/<name>/sessions/
 )
 
-var customDataDir string
-var customWorkspaceDir string
+// The overrides are atomic because background goroutines, such as agent
+// checkpoint recovery, can read them while a test's cleanup resets them.
+var customDataDir atomic.Pointer[string]
+var customWorkspaceDir atomic.Pointer[string]
 
 // SetDataDir overrides the directory returned by DataDir.
 // Pass an empty string to restore automatic resolution via XDG_CONFIG_HOME or ~/.config.
 // This is intended for the --data-dir CLI flag and for tests.
-func SetDataDir(dir string) { customDataDir = dir }
+func SetDataDir(dir string) { customDataDir.Store(&dir) }
 
 // SetWorkspaceDir overrides the directory returned by WorkspaceDir.
 // Pass an empty string to restore automatic resolution via the process working directory.
 // This is intended for tests and tools that need repo-local artifacts.
-func SetWorkspaceDir(dir string) { customWorkspaceDir = dir }
+func SetWorkspaceDir(dir string) { customWorkspaceDir.Store(&dir) }
 
 // DataDir returns the Aviary data directory.
 // Resolution order: SetDataDir value > XDG_CONFIG_HOME > ~/.config/aviary.
 func DataDir() string {
-	if customDataDir != "" {
-		return customDataDir
+	if dir := customDataDir.Load(); dir != nil && *dir != "" {
+		return *dir
 	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "aviary")
@@ -62,8 +65,8 @@ func CLIHomesDir() string { return filepath.Join(DataDir(), "cli-homes") }
 // WorkspaceDir returns the current workspace root.
 // Resolution order: SetWorkspaceDir value > process working directory.
 func WorkspaceDir() string {
-	if customWorkspaceDir != "" {
-		return customWorkspaceDir
+	if dir := customWorkspaceDir.Load(); dir != nil && *dir != "" {
+		return *dir
 	}
 	wd, err := os.Getwd()
 	if err != nil {
