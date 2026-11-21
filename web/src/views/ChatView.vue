@@ -50,7 +50,7 @@
 									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'text-right' : 'text-left'">
+							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end text-right' : 'text-left'">
 								<div
 									:class="item.msg.role === 'user'
 										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
@@ -82,6 +82,25 @@
 										:class="item.msg.role === 'user' ? 'text-xs opacity-60 self-end' : item.msg.isError ? 'text-xs text-red-400 dark:text-red-500 self-end' : 'text-xs text-gray-400 dark:text-gray-500 self-end'">
 										{{ formatTime(item.msg.timestamp) }}{{ item.msg.model ? ' | ' + item.msg.model : '' }}
 									</span>
+								</div>
+								<!-- A failed turn's error hangs off the bottom of its message,
+									offset so it reads as part of that bubble. -->
+								<div v-if="item.error" data-testid="chat-message-error"
+									class="relative z-[1] -mt-2 mr-6 flex justify-end">
+									<div
+										class="inline-flex max-w-lg flex-col items-start gap-1 rounded-b-xl rounded-tl-xl border border-red-200 bg-red-50 px-3 py-1.5 text-left text-red-700 shadow-sm dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+										<div class="flex items-start gap-3">
+											<span class="whitespace-pre-wrap font-mono text-sm">{{ item.error.text }}</span>
+											<button type="button" data-testid="chat-message-retry"
+												class="shrink-0 rounded border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-700 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800"
+												@click="retryMessage(item.msg, item.error)">
+												Retry
+											</button>
+										</div>
+										<span v-if="item.error.timestamp" class="self-end text-xs text-red-400 dark:text-red-500">
+											{{ formatTime(item.error.timestamp) }}{{ item.error.model ? ' | ' + item.error.model : '' }}
+										</span>
+									</div>
 								</div>
 							</div>
 						</template>
@@ -180,11 +199,22 @@ interface Message {
 	timestamp?: string;
 	model?: string;
 	isError?: boolean;
+	/** The key of the user message whose turn this error failed. */
+	errorFor?: string;
 }
+
+type MessageItem = {
+	type: "message";
+	key: string;
+	msg: Message;
+	isLastInGroup: boolean;
+	/** The error of this user message's failed turn, shown on its bubble. */
+	error?: Message;
+};
 
 type DisplayItem =
 	| { type: "date-divider"; key: string; label: string }
-	| { type: "message"; key: string; msg: Message; isLastInGroup: boolean };
+	| MessageItem;
 
 interface PersistedMessage {
 	id?: string;
@@ -240,6 +270,22 @@ function parseToolMessage(
 		/* legacy: just a bare name */
 	}
 	return { id, role: "tool", text: raw, timestamp, model };
+}
+
+/**
+ * Collapse stored tool records that share a tool-use ID into one entry, the
+ * latest, so a call stored more than once shows once (#740). Records without
+ * an ID are distinct calls and are all kept.
+ */
+function dedupeToolMessages(list: Message[]): Message[] {
+	const last = new Map<string, number>();
+	list.forEach((m, i) => {
+		if (m.role === "tool" && m.toolData?.id) last.set(m.toolData.id, i);
+	});
+	return list.filter(
+		(m, i) =>
+			m.role !== "tool" || !m.toolData?.id || last.get(m.toolData.id) === i,
+	);
 }
 
 function parseToolChunk(
@@ -422,9 +468,24 @@ const showBelowScroller = computed(
 
 const displayItems = computed((): DisplayItem[] => {
 	const items: DisplayItem[] = [];
+	const userItems = new Map<string, MessageItem>();
+	// An error with no recorded message belongs to the user message before
+	// it, unless a reply came in between.
+	let lastUserItem: MessageItem | undefined;
 	let lastDateKey = "";
 	for (let i = 0; i < messages.value.length; i++) {
 		const msg = messages.value[i];
+		if (msg.role === "assistant" && msg.isError) {
+			const owner = msg.errorFor
+				? userItems.get(msg.errorFor)
+				: !lastUserItem?.error
+					? lastUserItem
+					: undefined;
+			if (owner) {
+				owner.error = msg;
+				continue;
+			}
+		}
 		// Insert date divider when the calendar day changes (skip tool messages)
 		if (msg.timestamp && msg.role !== "tool") {
 			const d = new Date(msg.timestamp);
@@ -442,10 +503,27 @@ const displayItems = computed((): DisplayItem[] => {
 		const next = messages.value[i + 1];
 		const isLastInGroup =
 			msg.role !== "tool" && (!next || next.role !== msg.role);
-		items.push({ type: "message", key: `msg-${i}`, msg, isLastInGroup });
+		const item: MessageItem = {
+			type: "message",
+			key: `msg-${i}`,
+			msg,
+			isLastInGroup,
+		};
+		items.push(item);
+		if (msg.role === "user") {
+			lastUserItem = item;
+			const key = userMessageKey(msg);
+			if (key) userItems.set(key, item);
+		} else if (msg.role === "assistant") {
+			lastUserItem = undefined;
+		}
 	}
 	return items;
 });
+
+function userMessageKey(msg: Message): string {
+	return msg.localKey ?? msg.id ?? "";
+}
 
 function newMessageKey(): string {
 	nextMessageKey += 1;
@@ -750,35 +828,39 @@ async function loadSessionMessages(force = false) {
 			return;
 		}
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
-		messages.value = persisted
-			.filter(
-				(m): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
-					m.role === "user" || m.role === "assistant" || m.role === "tool",
-			)
-			.map((m) => {
-				if (m.role === "tool") {
+		messages.value = dedupeToolMessages(
+			persisted
+				.filter(
+					(
+						m,
+					): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
+						m.role === "user" || m.role === "assistant" || m.role === "tool",
+				)
+				.map((m) => {
+					if (m.role === "tool") {
+						return {
+							...parseToolMessage(
+								`[tool] ${m.content}`,
+								m.timestamp,
+								m.model,
+								m.id,
+							),
+						};
+					}
+					if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
+						return parseToolMessage(m.content, m.timestamp, m.model, m.id);
+					}
 					return {
-						...parseToolMessage(
-							`[tool] ${m.content}`,
-							m.timestamp,
-							m.model,
-							m.id,
-						),
+						id: m.id,
+						role: m.role,
+						text: m.content,
+						mediaURLs: m.media_urls,
+						timestamp: m.timestamp,
+						model: m.model,
+						isError: m.role === "assistant" && isErrorMessage(m.content),
 					};
-				}
-				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
-					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
-				}
-				return {
-					id: m.id,
-					role: m.role,
-					text: m.content,
-					mediaURLs: m.media_urls,
-					timestamp: m.timestamp,
-					model: m.model,
-					isError: m.role === "assistant" && isErrorMessage(m.content),
-				};
-			});
+				}),
+		);
 		await scrollBottom(true);
 	} catch (e) {
 		console.error("Failed to load session messages", e);
@@ -824,24 +906,51 @@ async function send() {
 	if (!text && mediaURLs.length === 0) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
+	input.value = "";
+	attachments.value = [];
+	const userKey = newMessageKey();
+	messages.value.push({
+		localKey: userKey,
+		role: "user",
+		text,
+		mediaURLs: mediaURLs.length ? mediaURLs : undefined,
+		timestamp: new Date().toISOString(),
+	});
+	await runTurn(userKey, text, mediaURLs, false);
+}
+
+// retryMessage runs a failed message's turn again. Its error leaves the
+// bubble while the turn runs, and a new failure attaches there again.
+async function retryMessage(msg: Message, error: Message) {
+	if (!selectedAgent.value || !selectedSessionId.value) return;
+	messages.value = messages.value.filter((m) => m !== error);
+	let userKey = userMessageKey(msg);
+	if (!userKey) {
+		userKey = newMessageKey();
+		const index = messages.value.indexOf(msg);
+		if (index !== -1) {
+			messages.value.splice(index, 1, { ...msg, localKey: userKey });
+		}
+	}
+	await runTurn(userKey, msg.text, msg.mediaURLs ?? [], true);
+}
+
+// runTurn streams the reply to the user message keyed userKey. A retry
+// re-runs that message on the server instead of storing it again.
+async function runTurn(
+	userKey: string,
+	text: string,
+	mediaURLs: string[],
+	retry: boolean,
+) {
 	const now = new Date().toISOString();
 	const agentModel = agentsStore.agents.find(
 		(a) => a.name === selectedAgent.value,
 	)?.model;
-
-	input.value = "";
-	attachments.value = [];
 	sessionProcessing.value = {
 		...sessionProcessing.value,
 		[selectedSessionId.value]: true,
 	};
-	messages.value.push({
-		localKey: newMessageKey(),
-		role: "user",
-		text,
-		mediaURLs: mediaURLs.length ? mediaURLs : undefined,
-		timestamp: now,
-	});
 	// Count the stream before yielding so no reload replaces the new message.
 	loadMessagesSeq += 1;
 	activeStreams.value += 1;
@@ -875,22 +984,14 @@ async function send() {
 				text: current.text + chunk,
 			});
 		};
-		const appendToolMessage = (payload: string) => {
-			messages.value.push({
-				...parseToolMessage(`[tool] ${payload}`, now, agentModel),
-				localKey: newMessageKey(),
-			});
-			assistantKey = "";
-		};
-		// A call and its result arrive as separate chunks sharing an ID, so
-		// the result finishes the call's block instead of adding another.
-		const appendToolChunk = (chunk: string) => {
-			const msg = parseToolChunk(chunk, now);
+		// Tool events are keyed by tool-use ID: a call and its result share
+		// one block, and an event delivered again for a call already shown
+		// updates that block instead of adding another (#740).
+		const upsertToolMessage = (msg: Message, pending: boolean) => {
 			const data = msg.toolData;
 			const index = data?.id
 				? messages.value.findLastIndex(
-						(m) =>
-							m.role === "tool" && m.toolPending && m.toolData?.id === data.id,
+						(m) => m.role === "tool" && m.toolData?.id === data.id,
 					)
 				: -1;
 			if (index !== -1 && data) {
@@ -898,16 +999,27 @@ async function send() {
 				messages.value.splice(index, 1, {
 					...current,
 					toolData: { ...current.toolData, ...data },
-					toolPending: !data.done,
+					// A finished call stays finished if its start arrives again.
+					toolPending: !!current.toolPending && !data.done,
 				});
 				return;
 			}
 			messages.value.push({
 				...msg,
-				toolPending: !!data && !data.done,
+				toolPending: pending,
 				localKey: newMessageKey(),
 			});
 			assistantKey = "";
+		};
+		const appendToolMessage = (payload: string) => {
+			upsertToolMessage(
+				parseToolMessage(`[tool] ${payload}`, now, agentModel),
+				false,
+			);
+		};
+		const appendToolChunk = (chunk: string) => {
+			const msg = parseToolChunk(chunk, now);
+			upsertToolMessage(msg, !!msg.toolData && !msg.toolData.done);
 		};
 		const flushPendingChunks = () => {
 			while (pendingText) {
@@ -955,6 +1067,7 @@ async function send() {
 			mediaURLs,
 			props.project,
 			props.session,
+			retry,
 		);
 		flushPendingChunks();
 	} catch (e) {
@@ -972,6 +1085,7 @@ async function send() {
 				role: "assistant",
 				text: `Error: ${msg}`,
 				isError: true,
+				errorFor: userKey,
 				timestamp: now,
 				model: agentModel,
 			});

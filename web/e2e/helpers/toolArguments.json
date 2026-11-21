@@ -48,6 +48,7 @@
 		"message",
 		"name",
 		"project",
+		"retry",
 		"session",
 		"session_id",
 		"stream_events",

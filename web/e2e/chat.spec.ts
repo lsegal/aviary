@@ -563,6 +563,175 @@ test("a streamed tool call and its result share one block", async ({
 	await expect(blocks.nth(1)).toContainText("Running…");
 });
 
+// #740: tool entries are keyed by tool-use ID from stream to history.
+const jobList = (fields: Record<string, unknown>) =>
+	`[tool]${JSON.stringify({ name: "project_job_list", ...fields })}`;
+const filterCall = { id: "call_a", args: { limit: 10, query: "filter" } };
+const indicatorCall = { id: "call_b", args: { limit: 10, query: "indicator" } };
+
+function mockToolChat(
+	page: import("@playwright/test").Page,
+	stream: string[],
+	sessionMessages: () => unknown,
+) {
+	return mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "claude/opus",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		agent_run: () => ({ stream, result: "" }),
+		config_validate: [],
+		session_messages: sessionMessages,
+	});
+}
+
+async function sendChat(page: import("@playwright/test").Page) {
+	await page.goto("/agents/assistant/chat");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await input.fill("hi");
+	await input.press("Enter");
+}
+
+function jobListBlocks(page: import("@playwright/test").Page) {
+	return page.locator("details").filter({
+		has: page.locator("summary", { hasText: "project_job_list" }),
+	});
+}
+
+test("parallel calls to the same tool show one block each", async ({
+	page,
+}) => {
+	let ran = false;
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList(indicatorCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			jobList({ ...indicatorCall, result: '{"total": 1}', done: true }),
+		],
+		() => {
+			if (!ran) {
+				ran = true;
+				return [];
+			}
+			return new Promise(() => {});
+		},
+	);
+	await sendChat(page);
+
+	const blocks = jobListBlocks(page);
+	await expect(blocks).toHaveCount(2);
+	await blocks.nth(0).locator("summary").click();
+	await expect(blocks.nth(0)).toContainText('"filter"');
+	await expect(blocks.nth(0)).toContainText('"total": 0');
+	await blocks.nth(1).locator("summary").click();
+	await expect(blocks.nth(1)).toContainText('"indicator"');
+	await expect(blocks.nth(1)).toContainText('"total": 1');
+	await expect(page.getByText("Running…")).toHaveCount(0);
+});
+
+test("a re-delivered tool event does not add a block", async ({ page }) => {
+	let ran = false;
+	const result = { ...filterCall, result: '{"total": 0}', done: true };
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList(result),
+			jobList(filterCall),
+			jobList(result),
+			jobList(indicatorCall),
+			jobList(indicatorCall),
+		],
+		() => {
+			if (!ran) {
+				ran = true;
+				return [];
+			}
+			return new Promise(() => {});
+		},
+	);
+	await sendChat(page);
+
+	const blocks = jobListBlocks(page);
+	await expect(blocks).toHaveCount(2);
+	await blocks.nth(0).locator("summary").click();
+	await expect(blocks.nth(0)).toContainText('"total": 0');
+	await expect(blocks.nth(0)).not.toContainText("Running…");
+	await blocks.nth(1).locator("summary").click();
+	await expect(blocks.nth(1)).toContainText("Running…");
+});
+
+test("reloading after a turn shows the same tool blocks as the live view", async ({
+	page,
+}) => {
+	let loads = 0;
+	const record = (id: string, call: typeof filterCall, result: string) => ({
+		id,
+		role: "tool",
+		content: JSON.stringify({ name: "project_job_list", ...call, result }),
+		timestamp: "2026-03-12T12:00:01Z",
+	});
+	const stored = [
+		{
+			id: "m1",
+			role: "user",
+			content: "hi",
+			timestamp: "2026-03-12T12:00:00Z",
+		},
+		record("m2", filterCall, '{"total": 0}'),
+		// The same call stored twice is still one call.
+		record("m3", filterCall, '{"total": 0}'),
+		record("m4", indicatorCall, '{"total": 1}'),
+		{
+			id: "m5",
+			role: "assistant",
+			content: "Here's the board.",
+			timestamp: "2026-03-12T12:00:02Z",
+		},
+	];
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList(indicatorCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			jobList({ ...indicatorCall, result: '{"total": 1}', done: true }),
+			"Here's the board.",
+		],
+		() => (loads++ === 0 ? [] : stored),
+	);
+	await sendChat(page);
+
+	const blocks = jobListBlocks(page);
+	const reply = page.getByText("Here's the board.");
+	await expect.poll(() => loads).toBeGreaterThan(1);
+	await expect(reply).toHaveCount(1);
+	await expect(blocks).toHaveCount(2);
+
+	await page.reload();
+	await expect(reply).toHaveCount(1);
+	await expect(blocks).toHaveCount(2);
+	await blocks.nth(0).locator("summary").click();
+	await expect(blocks.nth(0)).toContainText('"filter"');
+	await blocks.nth(1).locator("summary").click();
+	await expect(blocks.nth(1)).toContainText('"indicator"');
+});
+
 test("messages sent while a reply streams are added at once", async ({
 	page,
 }) => {
@@ -677,4 +846,92 @@ test("messages sent while a reply streams are added at once", async ({
 	for (const t of ["reply to one", "reply to two", "reply to three"]) {
 		await expect(page.getByText(t, { exact: true })).toHaveCount(1);
 	}
+});
+
+test("a failed turn's error attaches to its message and Retry re-runs it", async ({
+	page,
+}) => {
+	const runs: Record<string, unknown>[] = [];
+	let failing = true;
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "claude/opus",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: () =>
+			runs.length > 1
+				? [
+						{
+							id: "m1",
+							session_id: "s1",
+							role: "user",
+							content: "summarize",
+							timestamp: "2026-03-12T12:00:00Z",
+						},
+						{
+							id: "m2",
+							session_id: "s1",
+							role: "assistant",
+							content: "all good",
+							timestamp: "2026-03-12T12:00:01Z",
+						},
+					]
+				: [],
+		agent_run: (args?: Record<string, unknown>) => {
+			runs.push(args ?? {});
+			if (failing) throw new Error("MCP error: 502 Bad Gateway");
+			return { stream: ["all good"], result: "" };
+		},
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill("summarize");
+	await input.press("Enter");
+
+	// The error hangs off the sent message's bubble, not as its own entry.
+	const sent = page.locator(".text-right").filter({ hasText: "summarize" });
+	const error = sent.getByTestId("chat-message-error");
+	await expect(error).toContainText("Error: MCP error: 502 Bad Gateway");
+	await expect(error).toContainText("claude/opus");
+	await expect(page.getByTestId("chat-message-error")).toHaveCount(1);
+	const bubble = await sent.locator(".bg-blue-600").boundingBox();
+	const attached = await error.boundingBox();
+	expect(bubble && attached).toBeTruthy();
+	if (bubble && attached) {
+		// Staggered: tucked under the bubble and inset from its right edge.
+		expect(attached.y).toBeLessThan(bubble.y + bubble.height + 1);
+		expect(attached.x + attached.width).toBeLessThan(bubble.x + bubble.width);
+	}
+
+	// Retrying while the provider still fails updates the error in place.
+	await sent.getByTestId("chat-message-retry").click();
+	await expect.poll(() => runs.length).toBe(2);
+	expect(runs[1]).toMatchObject({ message: "summarize", retry: true });
+	await expect(error).toContainText("502 Bad Gateway");
+	await expect(page.getByTestId("chat-message-error")).toHaveCount(1);
+
+	// Once it recovers, Retry lands the reply and the error is gone.
+	failing = false;
+	await sent.getByTestId("chat-message-retry").click();
+	await expect.poll(() => runs.length).toBe(3);
+	expect(runs[2]).toMatchObject({ message: "summarize", retry: true });
+	await expect(page.getByText("all good")).toBeVisible();
+	await expect(page.getByTestId("chat-message-error")).toHaveCount(0);
+	await expect(page.getByText("summarize", { exact: true })).toHaveCount(1);
 });
