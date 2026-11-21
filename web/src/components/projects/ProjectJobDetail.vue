@@ -22,11 +22,11 @@
 					<template v-if="job">
 						<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" :title="`Open issue #${job.number} on GitHub`"
 							class="inline-flex h-8 min-w-0 items-center rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-							<span class="truncate">Issue #{{ job.number }} ↗</span>
+							<span class="truncate"><span class="sr-only @md:not-sr-only">Issue </span>#{{ job.number }} ↗</span>
 						</a>
 						<a v-if="job.pr" :href="prURL" target="_blank" rel="noreferrer" :title="`Open PR ${prLabel} on GitHub`"
 							class="inline-flex h-8 min-w-0 items-center rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-							<span class="truncate">PR {{ prLabel }} ↗</span>
+							<span class="truncate"><span class="sr-only @md:not-sr-only">PR </span>{{ prLabel }} ↗</span>
 						</a>
 						<button type="button" data-testid="raw-output-toggle" :aria-pressed="showRaw"
 							:aria-label="showRaw ? 'Hide raw output' : 'Show raw output'"

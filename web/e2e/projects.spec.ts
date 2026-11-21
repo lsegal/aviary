@@ -2487,6 +2487,16 @@ for (const { name, width } of [
 			};
 		});
 		expect(layout.overflow).toBeLessThanOrEqual(0);
+		// The Issue and PR links show their whole label, not an ellipsis.
+		for (const link of await actions
+			.getByRole("link", { name: /^(Issue|PR) #/ })
+			.all()) {
+			expect(
+				await link
+					.locator("span.truncate")
+					.evaluate((el) => el.scrollWidth - el.clientWidth),
+			).toBeLessThanOrEqual(0);
+		}
 		// The close button ends the row at the header's content edge.
 		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
 		// The long title wraps instead of squeezing or overlapping the actions.
