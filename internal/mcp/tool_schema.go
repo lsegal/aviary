@@ -26,6 +26,17 @@ func addTool[Args any](
 	sdkmcp.AddTool(s, tool, handler)
 }
 
+// AddTool registers a tool on s the way Aviary's own tools are registered:
+// with an input schema inferred from Args when tool has none, and holding the
+// restart gate for the length of each call.
+func AddTool[Args any](
+	s *sdkmcp.Server,
+	tool *sdkmcp.Tool,
+	handler func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error),
+) {
+	addTool(s, tool, handler)
+}
+
 // restartUngatedTools run agent turns rather than a single operation: they can
 // last as long as a job, which a restart checkpoints instead of waiting for,
 // and the tool calls their turns make are gated on their own.

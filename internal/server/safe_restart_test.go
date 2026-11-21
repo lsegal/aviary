@@ -81,6 +81,8 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	executablePath = func() (string, error) { return "/opt/aviary/bin/aviary", nil }
 	idlePoll = 10 * time.Millisecond
 	p := &fakeParticipant{log: &log}
+	origGate := saferestart.MCPCalls
+	saferestart.MCPCalls = saferestart.NewGate()
 	saferestart.Register("test", p)
 	saferestart.RegisterSkillsUpdater("test", func(_ context.Context, version string) error {
 		log = append(log, "skills "+version)
@@ -89,6 +91,7 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	t.Cleanup(func() {
 		buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll = origVersion, origCheck, origInstall, origExe, origPoll
 		gitCheckout, gitPull = origCheckout, origPull
+		saferestart.MCPCalls = origGate
 		saferestart.Unregister("test")
 		saferestart.UnregisterSkillsUpdater("test")
 		saferestart.Hold(false)
