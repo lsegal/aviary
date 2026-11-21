@@ -1669,6 +1669,29 @@ func closedWorkReason(previous, current OriginatingWorkState, issueNumber int) s
 	return ""
 }
 
+// mergedWork reports the merged pull request that finished work whose issue
+// is closed. A merged pull request outranks a run's own exit, so work with
+// one is done even when its run failed; a pull request closed unmerged, or
+// an issue still open, leaves a failure standing.
+func mergedWork(state OriginatingWorkState) (int, bool) {
+	if !strings.EqualFold(state.IssueState, "closed") {
+		return 0, false
+	}
+	for _, pullRequest := range state.PullRequests {
+		if pullRequest.Merged {
+			return pullRequest.Number, true
+		}
+	}
+	return 0, false
+}
+
+// failedWorkSettled reports whether failed work whose pull request did not
+// merge can no longer change: its issue is closed and nothing it opened is
+// still open to merge later.
+func failedWorkSettled(state OriginatingWorkState) bool {
+	return strings.EqualFold(state.IssueState, "closed") && len(core.OpenPullRequests(state)) == 0
+}
+
 // rejectedPullRequest reports a pull request closed without merging since
 // previous while the issue stayed open, which rejects that attempt and
 // restarts the work rather than ending it. A closed issue always
@@ -3244,6 +3267,23 @@ func (w *Engine) Run(ctx context.Context) error {
 				workMu.Lock()
 				manualPause := pausing[key] && errors.Is(runErr, errWorkStoppedFromWebUI)
 				workMu.Unlock()
+				// A run can error after its work has landed, such as a
+				// teardown failing once the pull request merged (issue
+				// #685). The merged pull request outranks the run's own
+				// exit, so the job is done rather than failed.
+				if runErr != nil && !manualPause && closureChecker != nil && ctx.Err() == nil {
+					if state, err := closureChecker.OriginatingWorkState(ctx, issueRepository(i.Target, i), i.Number); err == nil {
+						if number, ok := mergedWork(state); ok {
+							w.logf("issue #%d run ended with an error, but pull request #%d merged and closed the issue; completing it: %v", i.Number, number, runErr)
+							jobMu.Lock()
+							if job, ok := jobs[key]; ok && job.SetPullRequest(state, issueRepository(i.Target, i)) {
+								jobs[key] = job
+							}
+							jobMu.Unlock()
+							runErr, paused = nil, nil
+						}
+					}
+				}
 				if manualPause {
 					// The owner paused the run: it is held, keeping its session
 					// and its claim on the issue, until the owner retries it.
