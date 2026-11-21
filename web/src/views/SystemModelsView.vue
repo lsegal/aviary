@@ -6,7 +6,7 @@
           <div>
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Supported Models</h2>
             <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-              Browse the built-in provider/model catalog Aviary accepts for agent and default model selection.
+              Browse the provider/model pairs Aviary accepts for agent and default model selection: the built-in catalog plus the models of every installed CLI provider.
             </p>
           </div>
         </div>
@@ -14,11 +14,11 @@
         <div class="mb-6 grid gap-3 sm:grid-cols-3">
           <div class="rounded-2xl border border-gray-200 bg-white/90 p-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/90">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Models</p>
-            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{{ MODEL_CATALOG.length }}</p>
+            <p data-testid="models-count" class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{{ allModels.length }}</p>
           </div>
           <div class="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 backdrop-blur dark:border-sky-900/50 dark:bg-sky-950/20">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Providers</p>
-            <p class="mt-2 text-3xl font-semibold text-sky-700 dark:text-sky-300">{{ SUPPORTED_PROVIDERS.length }}</p>
+            <p data-testid="providers-count" class="mt-2 text-3xl font-semibold text-sky-700 dark:text-sky-300">{{ providers.length }}</p>
           </div>
           <div class="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 backdrop-blur dark:border-amber-900/50 dark:bg-amber-950/20">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400">Text + Image</p>
@@ -43,6 +43,7 @@
                     v-for="filter in providerFilters"
                     :key="filter.value"
                     type="button"
+                    :data-provider-filter="filter.value"
                     :class="providerFilter === filter.value ? activeFilterClass : inactiveFilterClass"
                     @click="providerFilter = filter.value"
                   >
@@ -65,6 +66,7 @@
           <article
             v-for="entry in filteredModels"
             :key="entry.id"
+            :data-model="entry.id"
             class="rounded-3xl border border-gray-200 bg-white/95 p-5 shadow-sm transition-colors dark:border-gray-800 dark:bg-gray-900/95"
           >
             <div class="flex flex-wrap items-center gap-2">
@@ -72,7 +74,13 @@
                 {{ entry.provider }}
               </span>
               <span
-                v-if="!entry.supportsImageInput"
+                v-if="entry.cli"
+                class="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+              >
+                via CLI
+              </span>
+              <span
+                v-else-if="!entry.supportsImageInput"
                 class="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
               >
                 text only
@@ -84,7 +92,10 @@
             <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
               Model name: <span class="font-mono">{{ entry.model }}</span>
             </p>
-            <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <p v-if="entry.cli" class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+              Reached through the installed <span class="font-mono">{{ entry.provider }}</span> CLI{{ entry.note ? ` (${entry.note})` : "" }}.
+            </p>
+            <dl v-else class="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-950/70">
                 <dt class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Input</dt>
                 <dd class="mt-1 font-semibold text-gray-900 dark:text-white">{{ entry.inputTokensLabel }}</dd>
@@ -104,15 +115,25 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	formatTokenCount,
 	MODEL_CATALOG,
 	modelNameOf,
 	providerOf,
-	SUPPORTED_PROVIDERS,
 } from "../constants/models";
 
-type ProviderFilter = "all" | (typeof SUPPORTED_PROVIDERS)[number];
+type ModelEntry = {
+	id: string;
+	provider: string;
+	model: string;
+	/** Reached through a CLI provider, which reports no catalog data. */
+	cli: boolean;
+	note: string;
+	inputTokensLabel: string;
+	outputTokensLabel: string;
+	supportsImageInput: boolean;
+};
 
 const activeFilterClass =
 	"whitespace-nowrap rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white";
@@ -120,15 +141,59 @@ const inactiveFilterClass =
 	"whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-900";
 
 const search = ref("");
-const providerFilter = ref<ProviderFilter>("all");
+const providerFilter = ref("all");
 
-const providerFilters = [
-	{ label: "All", value: "all" as const },
-	...SUPPORTED_PROVIDERS.map((provider) => ({
-		label: provider,
-		value: provider,
-	})),
-];
+// Installed CLI providers' models are the CLI pairs the model pickers offer
+// (useAvailableModels), so the page lists exactly what can be picked.
+const cliStatus = useProviderStatus();
+
+const catalogModels: ModelEntry[] = MODEL_CATALOG.map((entry) => ({
+	id: entry.id,
+	provider: providerOf(entry.id),
+	model: modelNameOf(entry.id),
+	cli: false,
+	note: "",
+	inputTokensLabel: formatTokenCount(entry.input_tokens),
+	outputTokensLabel: formatTokenCount(entry.output_tokens),
+	supportsImageInput: entry.supports_image_input,
+}));
+
+const cliModels = computed<ModelEntry[]>(() =>
+	(cliStatus.clis.value ?? [])
+		.filter((cli) => cli.installed)
+		.flatMap((cli) =>
+			cli.models.map((id) => ({
+				id,
+				provider: providerOf(id) || cli.name,
+				model: modelNameOf(id),
+				cli: true,
+				note: cli.modelNote,
+				inputTokensLabel: "",
+				outputTokensLabel: "",
+				supportsImageInput: false,
+			})),
+		),
+);
+
+const allModels = computed(() => {
+	const seen = new Set<string>();
+	return [...catalogModels, ...cliModels.value].filter((entry) => {
+		if (seen.has(entry.id)) return false;
+		seen.add(entry.id);
+		return true;
+	});
+});
+
+const providers = computed(() =>
+	Array.from(new Set(allModels.value.map((entry) => entry.provider))).filter(
+		Boolean,
+	),
+);
+
+const providerFilters = computed(() => [
+	{ label: "All", value: "all" },
+	...providers.value.map((provider) => ({ label: provider, value: provider })),
+]);
 
 const multimodalCount = computed(
 	() => MODEL_CATALOG.filter((entry) => entry.supports_image_input).length,
@@ -136,17 +201,7 @@ const multimodalCount = computed(
 
 const filteredModels = computed(() => {
 	const term = search.value.trim().toLowerCase();
-	return MODEL_CATALOG.map((entry) => {
-		const provider = providerOf(entry.id);
-		return {
-			id: entry.id,
-			provider,
-			model: modelNameOf(entry.id),
-			inputTokensLabel: formatTokenCount(entry.input_tokens),
-			outputTokensLabel: formatTokenCount(entry.output_tokens),
-			supportsImageInput: entry.supports_image_input,
-		};
-	}).filter((entry) => {
+	return allModels.value.filter((entry) => {
 		if (
 			providerFilter.value !== "all" &&
 			entry.provider !== providerFilter.value
@@ -160,7 +215,8 @@ const filteredModels = computed(() => {
 			entry.model.toLowerCase().includes(term) ||
 			entry.inputTokensLabel.toLowerCase().includes(term) ||
 			entry.outputTokensLabel.toLowerCase().includes(term) ||
-			(!entry.supportsImageInput && "text only".includes(term))
+			(entry.cli && "via cli".includes(term)) ||
+			(!entry.cli && !entry.supportsImageInput && "text only".includes(term))
 		);
 	});
 });

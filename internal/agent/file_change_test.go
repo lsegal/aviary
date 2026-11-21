@@ -65,6 +65,7 @@ func TestAgentRunner_EmitsFileChangeEventsForEdits(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		require.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	require.Len(t, toolClient.calls, 1)
 	require.Len(t, changes, 1)
