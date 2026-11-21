@@ -125,6 +125,10 @@ export interface ProjectJob {
 	progressTotal: number;
 	startedAt: string;
 	cloneDir: string;
+	/** Where the job's clone stands; only the job detail reports it. */
+	cloneState: CloneState;
+	/** The job that was handed this job's clone, when cloneState is "reused". */
+	cloneReusedBy: number;
 	session: string;
 	actions: JobActions;
 	output: string[];
@@ -273,6 +277,18 @@ function repoOf(url: string): string {
 	return m ? m[1] : "";
 }
 
+/**
+ * Where a job's clone stands: none assigned yet, on disk, handed to a later
+ * job on the same repository, or deleted.
+ */
+export type CloneState = "none" | "present" | "reused" | "removed";
+
+function normalizeCloneState(v: unknown, cloneDir: string): CloneState {
+	if (v === "none" || v === "present" || v === "reused" || v === "removed")
+		return v;
+	return cloneDir ? "present" : "none";
+}
+
 export function normalizeJob(v: unknown): ProjectJob {
 	const raw = obj(v);
 	const progress = obj(raw.progress);
@@ -305,6 +321,11 @@ export function normalizeJob(v: unknown): ProjectJob {
 		progressTotal: num(progress.total),
 		startedAt: str(raw.started),
 		cloneDir: str(raw.checkout_directory),
+		cloneState: normalizeCloneState(
+			raw.checkout_state,
+			str(raw.checkout_directory),
+		),
+		cloneReusedBy: num(raw.checkout_reused_by),
 		session: str(raw.session_id),
 		actions: {
 			retry: actions.retry !== false,
