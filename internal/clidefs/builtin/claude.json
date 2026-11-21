@@ -39,6 +39,22 @@
     "read-only": ["--add-dir", "{dir}"],
     "auto": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{dirPosix}/**)"]
   },
+  "permissions": {
+    "read-only": {
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    },
+    "auto": {
+      "allowCommand": ["--allowedTools", "Bash{commandSpec}", "--allowedTools", "PowerShell{commandSpec}"],
+      "allowPath": ["--add-dir", "{dir}", "--allowedTools", "Edit(/{pathPosix})"],
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    },
+    "full": {
+      "denyCommand": ["--disallowedTools", "Bash{commandSpec}", "--disallowedTools", "PowerShell{commandSpec}"],
+      "denyPath": ["--disallowedTools", "Read(/{pathPosix})", "--disallowedTools", "Edit(/{pathPosix})"]
+    }
+  },
   "args": {
     "run": [
       {"args": ["-p"]},

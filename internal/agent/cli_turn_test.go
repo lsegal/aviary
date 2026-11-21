@@ -417,3 +417,50 @@ func TestCLILaunchEnvOverlaysCodexHome(t *testing.T) {
 
 	assert.Empty(t, cliLaunchEnv(cliagent.Claude), "claude declares no settings overlay")
 }
+
+// TestCLITurn_PassesAgentPermissionsToTheCLI checks the agent's exec and
+// filesystem rules reach the CLI as its own allow and deny rules, so what the
+// agent allows the CLI does not then refuse, and that a session without the
+// CLI's own tools gets none (#560).
+func TestCLITurn_PassesAgentPermissionsToTheCLI(t *testing.T) {
+	setTestDataDir(t)
+	fb := useFakeCLI(t)
+	allowAll := &config.PermissionsConfig{
+		Preset:          config.PermissionsPresetFull,
+		CLIBuiltinTools: true,
+		Exec:            &config.ExecPermissionsConfig{AllowedCommands: []string{"*"}},
+		Filesystem:      &config.FilesystemPermissionsConfig{AllowedPaths: []string{"@/**", "!@/token"}},
+	}
+	runner := newCLITestRunner(t, "agent_cli_perms", allowAll)
+	runCLIPrompt(t, runner, "main", "hi")
+	runner.Stop()
+	require.Len(t, fb.turns, 1)
+	opts := fb.turns[0].opts
+	base := config.BaseDir()
+	token := filepath.Join(base, "token")
+	assert.Equal(t, []string{
+		"--allowedTools", "Bash", "--allowedTools", "PowerShell",
+		"--add-dir", base, "--allowedTools", "Edit(/" + filepath.ToSlash(posixDrive(filepath.Join(base, "**"))) + ")",
+		"--disallowedTools", "Read(/" + filepath.ToSlash(posixDrive(token)) + ")", "--disallowedTools", "Edit(/" + filepath.ToSlash(posixDrive(token)) + ")",
+	}, opts.Permissions)
+	assert.Contains(t, opts.RefusalNote, `chat approval mode is "auto"`)
+	assert.Contains(t, opts.RefusalNote, `agent "agent_cli_perms"'s Allowed Exec Commands or Filesystem Allowed Paths`)
+
+	fb.turns = nil
+	noBuiltins := *allowAll
+	noBuiltins.CLIBuiltinTools = false
+	runner = newCLITestRunner(t, "agent_cli_perms_mcp", &noBuiltins)
+	runCLIPrompt(t, runner, "main", "hi")
+	runner.Stop()
+	require.Len(t, fb.turns, 1)
+	assert.Empty(t, fb.turns[0].opts.Permissions, "without the CLI's own tools Aviary's MCP boundary enforces the rules")
+	assert.Empty(t, fb.turns[0].opts.RefusalNote)
+}
+
+// posixDrive writes a Windows drive letter as claude's rules do: C:\a is /c/a.
+func posixDrive(path string) string {
+	if len(path) >= 2 && path[1] == ':' {
+		return "/" + strings.ToLower(path[:1]) + path[2:]
+	}
+	return path
+}

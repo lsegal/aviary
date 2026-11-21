@@ -309,7 +309,7 @@ func TestNewFileTools_RefuseOutsideAllowlistAndConfigDir(t *testing.T) {
 	for _, c := range calls {
 		out, err := d.CallTool(ctx, c.tool, c.args)
 		require.NoError(t, err)
-		assert.Contains(t, out, "outside the filesystem allowlist", c.tool)
+		assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths", c.tool)
 	}
 	configCalls := map[string]map[string]any{
 		"file_edit":       {"path": "@/aviary.yaml", "old_string": "a", "new_string": "b"},

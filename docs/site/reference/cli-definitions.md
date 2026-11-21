@@ -81,6 +81,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | `defaultModel` | string | no | none | The model used when none is named. See [`defaultModel`](#defaultmodel). |
 | `approval` | map | no | none | The CLI's flags for each approval mode. See [`approval` and `extraDir`](#approval-and-extradir). |
 | `extraDir` | map | no | none | The flags that add one more directory to the CLI's scope. See [`approval` and `extraDir`](#approval-and-extradir). |
+| `permissions` | map | no | none | The flags that pass an agent's exec and filesystem rules to the CLI. See [`permissions`](#permissions). |
 | `output` | object | yes | | How stdout is decoded. See [`output`](#output). |
 | `missingSession` | string[] | no | none | Extra phrases that mean the session to resume is gone. See [`missingSession`](#missingsession). |
 | `wakeup` | object | no | none | How the CLI ends a turn asking to be woken later. See [Deferred turns](/guide/projects#deferred-turns). |
@@ -162,6 +163,19 @@ So `{when: model, args: [--model, "{model}"]}` passes a model only when one was 
 `approval` maps Aviary's [approval modes](/reference/config#approval) (`read-only`, `auto`, `full`) to the CLI's own flags, rendered where a template has an argument that is exactly `{approval}`. A mode left out falls back to the closest less permissive mode declared; with none, the flag is left off. Aviary never edits a CLI's settings files to set a mode. The built-in mappings are listed under [`approval`](/reference/config#approval).
 
 `extraDir` maps the same modes to the flags that add one more directory to the CLI's scope, with `{dir}`, `{dirQuoted}` (a quoted TOML string) or `{dirPosix}` (`C:\a` becomes `/c/a`) standing for it. Chat turns use it to keep the agent's own directory in scope wherever it works.
+
+### `permissions`
+
+`permissions` maps the same modes, with the same fallback, to the flags that pass each of a chat agent's [exec and filesystem rules](/reference/config#agents-permissions) on to the CLI's own allow and deny rules. Each mode lists up to four templates, each rendered once per rule:
+
+| Field | Rendered for | Placeholders |
+| --- | --- | --- |
+| `allowCommand` | each `exec.allowed_commands` rule | `{commandSpec}`: `(pattern)`, or nothing for `*` |
+| `denyCommand` | each `!` command rule | `{commandSpec}` |
+| `allowPath` | each `filesystem.allowed_paths` rule | `{path}` and `{pathPosix}` (the expanded pattern), `{dir}` and `{dirPosix}` (the directory its globs sit under) |
+| `denyPath` | each `!` path rule | the same as `allowPath` |
+
+A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` only and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
 
 ### `minVersion`
 

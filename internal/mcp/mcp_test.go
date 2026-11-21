@@ -2220,7 +2220,7 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 		"content": "blocked",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "outside the filesystem allowlist")
+	assert.Contains(t, out, `refused by Aviary: the agent's Filesystem Allowed Paths deny it with rule "!./sandbox/private/**"`)
 
 	out, err = d.CallTool(ctx, "file_write", map[string]any{
 		"path":    "./sandbox/private/keep.txt",
@@ -2238,7 +2238,7 @@ func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
 		"content": "blocked",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "outside the filesystem allowlist")
+	assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths have no rule allowing it")
 
 	outside := t.TempDir()
 	link := filepath.Join(workspace, "sandbox-link")
@@ -2251,7 +2251,7 @@ func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
 		"content": "blocked",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "outside the filesystem allowlist")
+	assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths have no rule allowing it")
 }
 
 func TestFileToolsRequireFilesystemAllowlistAndAgentContext(t *testing.T) {
@@ -2386,7 +2386,7 @@ func TestExecTool_OrderedAllowlist(t *testing.T) {
 
 	out, err := d.CallTool(ctx, "exec", map[string]any{"command": "go env GOARCH"})
 	require.NoError(t, err)
-	assert.Contains(t, out, "outside the exec allowlist")
+	assert.Contains(t, out, `Allowed Exec Commands deny it with rule "!go env *"`)
 
 	out, err = d.CallTool(ctx, "exec", map[string]any{"command": "go env GOOS"})
 	require.NoError(t, err)
