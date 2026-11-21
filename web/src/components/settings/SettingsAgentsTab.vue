@@ -862,14 +862,6 @@ placeholder="Default project agent model"
 Select a task to edit.
 </div>
 </div>
-<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-<label class="flex cursor-pointer items-start gap-3">
-<input v-model="draft.scheduler.precompute_tasks" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute tasks
-<span class="block text-xs text-gray-500 dark:text-gray-400">Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs</span>
-</span>
-</label>
-</div>
 
 						</div>
 					</div>

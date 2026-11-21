@@ -26,6 +26,17 @@
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
+						<label v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
+							:class="dialog.project ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
+							<input v-model="form.precompute" type="checkbox" :disabled="!!dialog.project"
+								data-testid="agent-task-precompute"
+								class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+							<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute task
+								<span class="block text-xs text-gray-500 dark:text-gray-400">{{ dialog.project
+									? "Project tasks run as Projects jobs, so they are never precomputed"
+									: "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs" }}</span>
+							</span>
+						</label>
 					</template>
 					<p v-else class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 						Root-level <span class="font-mono">.md</span> only; <span class="font-mono">.md</span> is added when missing.
@@ -98,6 +109,7 @@ import {
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
+import { useMCP } from "../../composables/useMCP";
 import { agentFilePath, useAgentFilesStore } from "../../stores/agentFiles";
 import {
 	type AgentTask,
@@ -111,6 +123,7 @@ const settings = useSettingsStore();
 const files = useAgentFilesStore();
 const route = useRoute();
 const router = useRouter();
+const { callTool } = useMCP();
 
 const busy = ref(false);
 const error = ref("");
@@ -120,6 +133,7 @@ const form = reactive({
 	prompt: "",
 	type: "prompt",
 	agent: "",
+	precompute: true,
 });
 
 /** The agents a project task may be created under, its default first. */
@@ -174,6 +188,8 @@ watch(dialog, (d) => {
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
 	form.agent = d?.agent ?? "";
+	form.precompute =
+		!d?.project && settings.config?.scheduler?.precompute_tasks !== false;
 });
 
 /** Whether the route shows this agent's task or file. */
@@ -208,6 +224,14 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 				...fields,
 			},
 		]);
+		// Precompute runs in the background, as Convert to Script does; the
+		// task already exists, so a failure to start it does not fail creation.
+		if (!project && form.precompute && fields.prompt.trim()) {
+			await callTool("config_task_convert_to_script", {
+				agent,
+				task: name,
+			}).catch((e) => console.error("precompute task", e));
+		}
 		if (onCreated) onCreated(agent, name);
 		else await router.push(agentTaskPath(agent, name));
 		return;
