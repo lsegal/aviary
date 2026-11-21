@@ -15,9 +15,10 @@ import (
 const sharedToolCallNote = "Note: an identical call from another request in this session was already running, so this call did not run again. Its result:\n\n"
 
 type inflightToolCall struct {
-	done chan struct{}
-	text string
-	err  error
+	done    chan struct{}
+	text    string
+	err     error
+	waiters int // duplicate calls sharing this one; guarded by inflightToolCalls.mu
 }
 
 var inflightToolCalls = struct {
@@ -42,6 +43,7 @@ func callToolOnce(ctx context.Context, client ToolClient, agentID, sessionID, na
 
 	inflightToolCalls.mu.Lock()
 	if call, ok := inflightToolCalls.calls[key]; ok {
+		call.waiters++
 		inflightToolCalls.mu.Unlock()
 		select {
 		case <-call.done:
