@@ -361,35 +361,19 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		void refresh();
 	});
 
-	/** Creates the schedule when it has no id yet, otherwise updates it. */
+	/**
+	 * Saves an existing project scheduled task. New ones are created through
+	 * the shared Add task dialog, as any scheduled task is.
+	 */
 	async function save(s: ProjectSchedule) {
-		const fields = {
+		await callTool("task_update", {
+			name: s.id,
 			...triggerArgs(s),
 			content: s.prompt.trim(),
 			model: s.model.trim(),
-		};
-		if (s.id) {
-			await callTool("task_update", {
-				name: s.id,
-				...fields,
-				project: s.project,
-				enabled: s.enabled,
-			});
-		} else {
-			await callTool("task_schedule", {
-				...fields,
-				agent: s.agent,
-				name: s.name.trim(),
-				type: "project",
-				project: s.project,
-			});
-			if (!s.enabled) {
-				await callTool("task_update", {
-					name: `${s.agent}/${s.name.trim()}`,
-					enabled: false,
-				});
-			}
-		}
+			project: s.project,
+			enabled: s.enabled,
+		});
 		await refresh();
 	}
 

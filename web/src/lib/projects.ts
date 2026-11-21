@@ -799,35 +799,6 @@ export function until(iso: string, now = Date.now()): string {
 	return `in ${age(new Date(now - (t - now)).toISOString(), now)}`;
 }
 
-/**
- * The task_schedule / task_update arguments for a schedule's trigger. Fields
- * the trigger does not use are cleared, so switching triggers on an existing
- * task does not leave the old one behind.
- */
-export function emptySchedule(project: string): ProjectSchedule {
-	return {
-		id: "",
-		agent: "",
-		name: "",
-		project,
-		model: "",
-		prompt: "",
-		enabled: true,
-		trigger: "daily",
-		schedule: "",
-		every: "",
-		at: "09:00",
-		days: "",
-		startAt: "",
-		timezone: "",
-		overlap: "queue",
-		missed: "skip",
-		description: "",
-		nextRun: "",
-		history: [],
-	};
-}
-
 const FINISHED_RUNS = ["completed", "failed", "canceled", "skipped"];
 
 /** The schedule's latest finished run, or its latest run when none finished. */

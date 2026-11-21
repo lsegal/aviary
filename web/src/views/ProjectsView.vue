@@ -155,7 +155,7 @@
 						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
 							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
 							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
-							:preview="previewSchedule" />
+							:preview="previewSchedule" :refresh="refreshSchedules" />
 
 						<ScheduleDetail v-else-if="detailSchedule" :schedule="detailSchedule" :now="now" :back="{ query: {} }"
 							:edit="{ query: { tab: 'schedules', schedule: detailSchedule.id } }" :predict="predictSchedule"
@@ -349,6 +349,7 @@ const {
 	runNow: runScheduleNow,
 	preview: previewSchedule,
 	predict: predictSchedule,
+	refresh: refreshSchedules,
 } = useProjectSchedules(project);
 
 // The project's scheduled tasks are their own kind of box on the board: in
