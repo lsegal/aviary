@@ -30,7 +30,7 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`), delivery mode, poll interval, ready label, last check, quota per CLI provider, the configured agent specs, and recent log lines.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, and recent log lines.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
@@ -116,7 +116,6 @@ It reports, as separate checks:
 
 - **github**: `gh` is installed, signed in, and can read the repository (archived repositories fail).
 - **fork**: a warning when you can't push to the repository, so pull requests will come from your fork.
-- **ready_label**: the ready label exists, with its count of open issues. Repositories only.
 - **clis**: which CLI providers (`claude`, `codex`, `gemini`, `opencode`, `cline`) are on `PATH`.
 - **skills**: whether `gh-fix` is installed for each of those CLIs, with its version when the skill declares one.
 
@@ -125,7 +124,6 @@ It reports, as separate checks:
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `target` | string | ✓ | `owner/repo`, a GitHub URL, `users/<login>/projects/<n>`, `orgs/<org>/projects/<n>`, or `owner/repo/discussions`. |
-| `ready_label` | string | | Ready label to look for. Defaults to `ready`. |
 
 **Returns:** JSON object. `ok` is false when any check has `status: "fail"`.
 
@@ -134,13 +132,11 @@ It reports, as separate checks:
   "target": "lsegal/zvidlib",
   "repo": "lsegal/zvidlib",
   "kind": "repo",
-  "ready_label": "ready",
   "fork": true,
   "ok": true,
   "checks": [
     { "name": "github", "status": "ok", "message": "gh is signed in and can read lsegal/zvidlib" },
     { "name": "fork", "status": "warn", "message": "You can't push to lsegal/zvidlib, so pull requests will come from your fork" },
-    { "name": "ready_label", "status": "ok", "message": "\"ready\" exists, with 4 open issues" },
     { "name": "clis", "status": "ok", "message": "Found claude and codex" },
     { "name": "skills", "status": "ok", "message": "gh-fix 1.6.0 installed for all 2" }
   ],

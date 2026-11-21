@@ -18,7 +18,7 @@ const (
 // logs and agent specs stay behind project_status.
 var chatContextStatusKeys = []string{
 	"identity", "running", "targets", "issue_counts", "jobs", "states", "concurrency",
-	"delivery", "poll_interval", "ready_label", "allowed_commenters",
+	"delivery", "poll_interval", "issue_filter", "allowed_commenters",
 	"quotas", "clis", "last_check", "webhook_online", "error",
 }
 

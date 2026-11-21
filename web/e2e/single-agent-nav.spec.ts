@@ -221,18 +221,12 @@ test.describe("on a phone", () => {
 		await expect(pill).toHaveClass(/shadow-sm/);
 	});
 
-	test("the status pills shrink to dots with tooltips", async ({ page }) => {
+	test("the header is about two rows: logo and status, then the nav", async ({
+		page,
+	}) => {
 		await mockAgents(page, ["assistant"]);
 		await page.goto("/system/overview");
-		const status = page.getByTestId("mobile-status");
-		await expect(status.getByTestId("mobile-version-dot")).toHaveAttribute(
-			"title",
-			/^Version /,
-		);
-		await expect(status.getByTestId("mobile-health-dot")).toHaveAttribute(
-			"title",
-			/^(Connected|Connecting|Disconnected)$/,
-		);
+		await expect(page.getByTestId("mobile-main-nav")).toBeVisible();
 		// Logo row plus nav row: about two rows.
 		const header = await page.locator("header").boundingBox();
 		expect(header?.height ?? 0).toBeLessThan(110);

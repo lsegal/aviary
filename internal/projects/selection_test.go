@@ -12,28 +12,12 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-func TestRepositoryFilterAddsTheReadyLabel(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		gh         GHCLI
-		wantFilter string
-		wantAll    bool
-	}{
-		{"no label", GHCLI{Filter: defaultIssueFilter}, defaultIssueFilter, false},
-		{"label with filter", GHCLI{Filter: defaultIssueFilter, ReadyLabel: "ready"}, defaultIssueFilter + " label:ready", false},
-		{"label survives all issues", GHCLI{Filter: defaultIssueFilter, AllIssues: true, ReadyLabel: "ready"}, "label:ready", false},
-		{"all issues without a label", GHCLI{Filter: defaultIssueFilter, AllIssues: true}, defaultIssueFilter, true},
-		{"quoted label", GHCLI{ReadyLabel: "ready to go"}, `label:"ready to go"`, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			filter, all := test.gh.repositoryFilter()
-			if filter != test.wantFilter || all != test.wantAll {
-				t.Fatalf("repositoryFilter() = %q, %v; want %q, %v", filter, all, test.wantFilter, test.wantAll)
-			}
-		})
+func TestIssueFilterReportsTheRealSelection(t *testing.T) {
+	if got := issueFilter(engineSettings{Filter: defaultIssueFilter}); got != defaultIssueFilter {
+		t.Fatalf("issueFilter() = %q, want %q", got, defaultIssueFilter)
 	}
-	if got := publicIssueSearchQuery("o/r", "label:ready", false, ""); got != "repo:o/r is:issue state:open label:ready" {
-		t.Fatalf("query = %q", got)
+	if got := issueFilter(engineSettings{Filter: defaultIssueFilter, AllIssues: true}); got != "" {
+		t.Fatalf("all issues should report no filter, got %q", got)
 	}
 }
 

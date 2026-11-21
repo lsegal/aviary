@@ -30,16 +30,10 @@
             </a>
           </div>
         </div>
-        <!-- Status shrinks to dots on narrow screens; the label is its tooltip. -->
-        <div class="flex items-center gap-1" data-testid="mobile-status">
-          <span role="img" :title="versionLabel" :aria-label="versionLabel" data-testid="mobile-version-dot"
-            class="inline-flex h-8 w-6 items-center justify-center">
-            <span class="h-2 w-2 rounded-full" :class="versionDotClass" />
-          </span>
-          <span role="img" :title="healthLabel" :aria-label="healthLabel" data-testid="mobile-health-dot"
-            class="inline-flex h-8 w-6 items-center justify-center">
-            <span class="h-2 w-2 rounded-full" :class="dotClass" />
-          </span>
+        <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
+          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+            :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
+          <ConnectionIndicator :status="status" @retry="reconnect()" />
         </div>
       </div>
       <div class="relative mt-2">
@@ -258,31 +252,22 @@
           <div class="font-medium">Dev build — no checkout found</div>
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
-        <div class="flex flex-wrap gap-1.5 px-1">
-          <span
-            class="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800"
-            :class="versionTextClass">
-            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="versionDotClass" />
-            {{ versionLabel }}
-          </span>
-          <span
-            class="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800"
-            :class="healthTextClass">
-            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="dotClass" />
-            {{ healthLabel }}
-          </span>
-        </div>
-        <div class="flex items-center gap-1 px-1">
-          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            :disabled="upgrading || restartPending" @click="triggerRestart()">
-            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
-          <button type="button" aria-label="Log out" title="Log out"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-            @click="auth.logout(); $router.push('/login')">
-            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-          </button>
+        <div class="flex items-center gap-2 px-1" data-testid="sidebar-footer">
+          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+            :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
+          <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
+            <ConnectionIndicator :status="status" @retry="reconnect()" />
+            <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+              :disabled="upgrading || restartPending" @click="triggerRestart()">
+              <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
+            </button>
+            <button type="button" aria-label="Log out" title="Log out"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+              @click="auth.logout(); $router.push('/login')">
+              <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </nav>
@@ -329,8 +314,10 @@ import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
+import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
+import VersionIndicator from "./VersionIndicator.vue";
 
 interface NavChild {
 	key: string;
@@ -378,6 +365,7 @@ const {
 	releaseUrl,
 	restart,
 	upgradeDialogOpen,
+	reconnect,
 	openUpgradeDialog,
 	triggerUpgrade,
 	triggerRestart,
@@ -385,6 +373,9 @@ const {
 } = useServerStatus();
 const restartPending = computed(
 	() => !!restart.value && restart.value.phase !== "idle",
+);
+const upgradeDisabled = computed(
+	() => upgrading.value || restartPending.value || !upgradeSupported.value,
 );
 // Why an automatic update has not applied yet, and how its last attempt
 // failed, shown at the update notice.
@@ -729,44 +720,4 @@ function mobileSubnavClass(child: NavChild): string {
 		? "shrink-0 rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-950 dark:bg-gray-800 dark:text-white"
 		: "shrink-0 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white";
 }
-
-const dotClass = computed(() => {
-	if (status.value === "connected") return "bg-green-500";
-	if (status.value === "disconnected") return "bg-red-500";
-	return "bg-yellow-400 animate-pulse";
-});
-
-const versionDotClass = computed(() => {
-	if (upgradeAvailable.value) return "bg-yellow-400";
-	return noCheckout.value ? "bg-gray-400" : "bg-green-500";
-});
-
-const displayVersion = computed(() =>
-	version.value ? shortVersion(version.value) : status.value === "disconnected" ? "—" : "…",
-);
-
-const versionLabel = computed(() => {
-	if (upgradeAvailable.value && latestVersion.value) {
-		return `Version ${displayVersion.value} -> ${shortVersion(latestVersion.value)}`;
-	}
-	return `Version ${displayVersion.value}`;
-});
-
-const versionTextClass = computed(() =>
-	upgradeAvailable.value
-		? "text-yellow-700 dark:text-yellow-300"
-		: "text-gray-600 dark:text-gray-400",
-);
-
-const healthLabel = computed(() => {
-	if (status.value === "connected") return "Connected";
-	if (status.value === "disconnected") return "Disconnected";
-	return "Connecting";
-});
-
-const healthTextClass = computed(() => {
-	if (status.value === "connected") return "text-green-600 dark:text-green-400";
-	if (status.value === "disconnected") return "text-red-500 dark:text-red-400";
-	return "text-yellow-600 dark:text-yellow-400";
-});
 </script>
