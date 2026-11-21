@@ -16,9 +16,8 @@
 					<template v-if="dialog?.kind === 'task'">
 						<template v-if="dialog.project && dialog.mode === 'create'">
 							<label for="agent-task-agent" class="field-label mt-3">Agent</label>
-							<select id="agent-task-agent" v-model="form.agent" class="field-input">
-								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
-							</select>
+							<AppSelect id="agent-task-agent" v-model="form.agent"
+								:options="agentChoices.map((a) => ({ value: a, label: a }))" />
 						</template>
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="!taskProject" />
@@ -28,13 +27,9 @@
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
 						<template v-if="dialog.mode === 'create'">
 							<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
-							<select id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
-								aria-describedby="agent-task-send-to-help" class="field-input">
-								<option value="">Task session only</option>
-								<option v-for="s in channelSessions" :key="s.id" :value="`session:${s.id}`">
-									{{ chatDisplayName(s) }} · {{ s.channels?.join(", ") }}
-								</option>
-							</select>
+							<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
+								aria-describedby="agent-task-send-to-help" :options="sendToOptions"
+								empty-text="No matching sessions" />
 							<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 								Runs always show their output in the task's own session; a channel session also gets a copy.
 							</p>
@@ -143,6 +138,7 @@ import {
 	useSettingsStore,
 } from "../../stores/settings";
 import TriggerEditor from "../TriggerEditor.vue";
+import { AppCombobox, AppSelect, type SelectOption } from "../ui/select";
 
 const { dialog, close } = useAgentItemDialogs();
 const settings = useSettingsStore();
@@ -197,6 +193,13 @@ const channelSessions = computed(() =>
 		.sessions(taskAgent.value)
 		.filter((s) => (s.channels?.length ?? 0) > 0),
 );
+const sendToOptions = computed<SelectOption[]>(() => [
+	{ value: "", label: "Task session only" },
+	...channelSessions.value.map((s) => ({
+		value: `session:${s.id}`,
+		label: `${chatDisplayName(s)} · ${s.channels?.join(", ")}`,
+	})),
+]);
 
 // Each dialog opening reloads the chats, so a newly bound channel shows up;
 // picking another agent clears a Send To that named one of the old agent's.

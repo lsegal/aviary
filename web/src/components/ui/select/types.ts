@@ -53,7 +53,12 @@ export function matchesSearch(
 ): boolean {
 	const q = term.trim().toLowerCase();
 	if (!q) return true;
-	return [option.label, option.description, option.keywords, String(option.value)]
+	return [
+		option.label,
+		option.description,
+		option.keywords,
+		String(option.value),
+	]
 		.filter(Boolean)
 		.some((s) => String(s).toLowerCase().includes(q));
 }

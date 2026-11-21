@@ -2511,8 +2511,7 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 		: "border-gray-200 bg-gray-50 opacity-75 dark:border-gray-800 dark:bg-gray-950";
 }
 
-function setTaskChannelSelection(task: AgentTask, event: Event) {
-	const selection = (event.target as HTMLSelectElement).value;
+function setTaskChannelSelection(task: AgentTask, selection: string) {
 	const parsed = parseTaskChannelValue(task.target);
 	if (!selection) {
 		task.target = "";

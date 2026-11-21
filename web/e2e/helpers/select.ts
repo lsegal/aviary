@@ -38,9 +38,8 @@ export async function optionLabels(field: Locator): Promise<string[]> {
 	const labels = await options.evaluateAll((els) =>
 		els.map(
 			(el) =>
-				(
-					el.querySelector("[data-option-label]") ?? el
-				).textContent?.trim() ?? "",
+				(el.querySelector("[data-option-label]") ?? el).textContent?.trim() ??
+				"",
 		),
 	);
 	await field.page().keyboard.press("Escape");

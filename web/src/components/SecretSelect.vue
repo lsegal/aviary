@@ -1,82 +1,34 @@
 <template>
-  <div ref="root" class="relative w-full">
-    <button
-      :id="id"
-      :data-testid="dataTestid"
-      type="button"
-      :disabled="disabled"
-      :aria-expanded="open ? 'true' : 'false'"
-      aria-haspopup="listbox"
-      class="flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-2 text-left transition focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-800"
-      :class="triggerClass"
-      @click="toggle"
-    >
-      <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white">
-        {{ selectedOption?.label ?? emptyLabel }}
-      </span>
-      <span
-        v-if="selectedOption?.badge"
-        :class="badgeClass(selectedOption.badgeTone)"
-        class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-      >
-        {{ selectedOption.badge }}
-      </span>
-      <svg
-        class="h-4 w-4 shrink-0 text-gray-400 transition-transform dark:text-gray-500"
-        :class="open ? 'rotate-180' : ''"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path
-          fill-rule="evenodd"
-          d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
-          clip-rule="evenodd"
-        />
-      </svg>
-    </button>
-
-    <div
-      v-if="open"
-      class="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
-    >
-      <div class="max-h-72 overflow-y-auto p-1">
-        <button
-          v-for="option in options"
-          :key="option.value"
-          type="button"
-          role="option"
-          :aria-selected="option.value === selectedValue ? 'true' : 'false'"
-          class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition"
-          :class="
-            option.value === selectedValue
-              ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-              : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'
-          "
-          @click="select(option.value)"
-        >
-          <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ option.label }}</span>
-          <span
-            v-if="option.badge"
-            :class="badgeClass(option.badgeTone, option.value === selectedValue)"
-            class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-          >
-            {{ option.badge }}
-          </span>
-        </button>
-      </div>
-    </div>
-  </div>
+	<AppSelect :id="id" :data-testid="dataTestid" :model-value="selectedValue" :options="options"
+		:disabled="disabled" :invalid="hasMissingSecret" @update:model-value="select">
+		<template #value="{ option }">
+			<span class="flex min-w-0 items-center gap-3">
+				<span class="min-w-0 flex-1 truncate font-medium">{{ option?.label ?? emptyLabel }}</span>
+				<span v-if="option && badgeFor(option.value)" :class="badgeClass(badgeFor(option.value)?.tone)"
+					class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+					{{ badgeFor(option.value)?.label }}
+				</span>
+			</span>
+		</template>
+		<template #option="{ option }">
+			<span class="flex min-w-0 items-center gap-3">
+				<span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+				<span v-if="badgeFor(option.value)" :class="badgeClass(badgeFor(option.value)?.tone)"
+					class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+					{{ badgeFor(option.value)?.label }}
+				</span>
+			</span>
+		</template>
+	</AppSelect>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed } from "vue";
+import { AppSelect, type SelectOption } from "./ui/select";
 
 type BadgeTone = "secret" | "inline" | "missing";
 
-interface SecretOption {
-	value: string;
-	label: string;
+interface SecretOption extends SelectOption {
 	badge?: string;
 	badgeTone?: BadgeTone;
 }
@@ -99,9 +51,6 @@ const emit = defineEmits<{
 	(event: "update:modelValue", value: string): void;
 	(event: "add-secret"): void;
 }>();
-
-const root = ref<HTMLElement | null>(null);
-const open = ref(false);
 
 function maskInlineSecret(value: string): string {
 	const trimmed = value.trim();
@@ -158,45 +107,22 @@ const options = computed<SecretOption[]>(() => {
 	return result;
 });
 
-const selectedOption = computed(
-	() =>
-		options.value.find((option) => option.value === selectedValue.value) ??
-		null,
-);
-
 const hasMissingSecret = computed(() => selectedValue.value === MISSING_VALUE);
-
-const triggerClass = computed(() => {
-	if (hasMissingSecret.value) {
-		return "border-red-300 text-red-900 hover:border-red-400 focus:border-red-500 focus:ring-red-500 dark:border-red-800 dark:text-red-100 dark:hover:border-red-700";
-	}
-	return "border-gray-300 hover:border-gray-400 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:hover:border-gray-600";
-});
-
-function toggle() {
-	if (props.disabled) return;
-	open.value = !open.value;
-}
 
 function select(value: string) {
 	if (value === ADD_VALUE) {
 		emit("add-secret");
-		open.value = false;
 		return;
 	}
 	if (value === RAW_VALUE || value === MISSING_VALUE) {
-		open.value = false;
 		return;
 	}
 	emit("update:modelValue", value);
-	open.value = false;
 }
 
-function handlePointerDown(event: MouseEvent) {
-	if (!open.value) return;
-	if (!root.value?.contains(event.target as Node)) {
-		open.value = false;
-	}
+function badgeFor(value: string) {
+	const option = options.value.find((o) => o.value === value);
+	return option?.badge ? { label: option.badge, tone: option.badgeTone } : null;
 }
 
 function badgeClass(tone?: BadgeTone, selected = false): string {
@@ -217,12 +143,4 @@ function badgeClass(tone?: BadgeTone, selected = false): string {
 	}
 	return "";
 }
-
-onMounted(() => {
-	document.addEventListener("mousedown", handlePointerDown);
-});
-
-onBeforeUnmount(() => {
-	document.removeEventListener("mousedown", handlePointerDown);
-});
 </script>

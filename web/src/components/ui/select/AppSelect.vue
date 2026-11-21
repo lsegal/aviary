@@ -1,6 +1,6 @@
 <template>
 	<SelectRoot v-model:open="open" :model-value="selectedKey" :disabled="disabled" @update:model-value="onChange">
-		<SelectTrigger :id="id" :aria-label="ariaLabel" :aria-invalid="invalid ? 'true' : undefined"
+		<SelectTrigger v-bind="$attrs" :id="id" :aria-label="ariaLabel" :aria-invalid="invalid ? 'true' : undefined"
 			:data-testid="dataTestid" :data-value="modelValue === undefined || modelValue === null ? '' : String(modelValue)"
 			:class="[FIELD_BASE, FIELD[size], invalid ? FIELD_INVALID : FIELD_BORDER, props.class]">
 			<span class="min-w-0 flex-1 truncate" :class="selected ? '' : 'text-gray-400 dark:text-gray-500'">
@@ -98,6 +98,9 @@ const props = withDefaults(
 	}>(),
 	{ size: "md" },
 );
+
+// Extra attributes (data-field, aria-describedby…) belong on the trigger.
+defineOptions({ inheritAttrs: false });
 
 const emit = defineEmits<{ "update:modelValue": [value: V] }>();
 

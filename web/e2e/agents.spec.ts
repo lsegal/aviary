@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
-import { chooseOption, expectValue, optionLabels, searchOption } from "./helpers/select";
+import {
+	chooseOption,
+	expectValue,
+	optionLabels,
+	searchOption,
+} from "./helpers/select";
 import { agentPageLink, openAgentPage } from "./helpers/sidebar";
 
 const CONFIG = {

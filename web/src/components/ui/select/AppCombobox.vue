@@ -2,7 +2,7 @@
 	<ComboboxRoot v-model:open="open" v-model:search-term="searchTerm" :model-value="selectedKeys" :multiple="multiple"
 		:disabled="disabled" :filter-function="filter" :display-value="displayValue" class="relative w-full"
 		@update:model-value="onChange">
-		<ComboboxAnchor :data-testid="dataTestid" :data-value="dataValue" :data-state="open ? 'open' : 'closed'"
+		<ComboboxAnchor v-bind="$attrs" :data-testid="dataTestid" :data-value="dataValue" :data-state="open ? 'open' : 'closed'"
 			:data-disabled="disabled ? '' : undefined"
 			:class="[FIELD_BASE, FIELD[size], invalid ? FIELD_INVALID : FIELD_BORDER, 'cursor-text focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500', multiple ? 'flex-wrap' : '', props.class]"
 			@mousedown="onAnchorMouseDown">
@@ -18,7 +18,7 @@
 				</span>
 			</template>
 			<ComboboxInput ref="inputRef" :id="id" :aria-label="ariaLabel" :aria-invalid="invalid ? 'true' : undefined"
-				:placeholder="multiple ? (selectedKeys.length ? '' : placeholder) : placeholder"
+				:aria-describedby="ariaDescribedby" :placeholder="multiple ? (selectedKeys.length ? '' : placeholder) : placeholder"
 				class="min-w-[4rem] flex-1 bg-transparent p-0 text-inherit outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
 				@focus="open = true" @click="open = true" @keydown.backspace="onBackspace" />
 			<button v-if="clearable && !multiple && selectedKeys" type="button" aria-label="Clear selection"
@@ -102,6 +102,7 @@ import {
 	type SelectSize,
 } from "./styles";
 import {
+	EMPTY_KEY,
 	groupOptions,
 	matchesSearch,
 	optionKey,
@@ -120,6 +121,7 @@ const props = withDefaults(
 		name?: string;
 		id?: string;
 		ariaLabel?: string;
+		ariaDescribedby?: string;
 		dataTestid?: string;
 		disabled?: boolean;
 		invalid?: boolean;
@@ -128,6 +130,9 @@ const props = withDefaults(
 	}>(),
 	{ size: "md" },
 );
+
+// Extra attributes (data-field…) belong on the field box.
+defineOptions({ inheritAttrs: false });
 
 const emit = defineEmits<{ "update:modelValue": [value: string | string[]] }>();
 
@@ -147,7 +152,8 @@ const selectedKeys = computed<string | string[]>(() => {
 			? props.modelValue.map(optionKey)
 			: [];
 	const v = typeof props.modelValue === "string" ? props.modelValue : "";
-	return v ? optionKey(v) : "";
+	// "" is "nothing chosen" unless an option offers it explicitly.
+	return v || byKey.value.has(EMPTY_KEY) ? optionKey(v) : "";
 });
 
 const dataValue = computed(() =>
@@ -157,16 +163,16 @@ const dataValue = computed(() =>
 );
 
 function labelFor(key: string): string {
-	return byKey.value.get(key)?.label ?? (key === "\u0000empty" ? "" : key);
+	return byKey.value.get(key)?.label ?? (key === EMPTY_KEY ? "" : key);
 }
 
 function displayValue(key: unknown): string {
 	return typeof key === "string" && key ? labelFor(key) : "";
 }
 
-function filter(keys: unknown[], term: string): unknown[] {
+function filter(keys: string[], term: string): string[] {
 	return keys.filter((k) => {
-		const option = byKey.value.get(String(k));
+		const option = byKey.value.get(k);
 		return option ? matchesSearch(option, term) : false;
 	});
 }

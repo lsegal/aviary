@@ -44,6 +44,7 @@ export const DESCRIPTION =
 export const GROUP_LABEL =
 	"px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500";
 
-export const EMPTY = "px-2.5 py-2 text-sm italic text-gray-400 dark:text-gray-500";
+export const EMPTY =
+	"px-2.5 py-2 text-sm italic text-gray-400 dark:text-gray-500";
 
 export const CHECK = "h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400";
