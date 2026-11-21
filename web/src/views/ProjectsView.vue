@@ -41,6 +41,11 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
+							<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
+								class="rounded-lg border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700"
+								@click="openAdd">
+								<PlusIcon aria-hidden="true" class="h-5 w-5" />
+							</button>
 							<button v-if="view === 'board'" type="button" aria-label="Check now" title="Check now"
 								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
@@ -217,6 +222,7 @@ import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
+import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";

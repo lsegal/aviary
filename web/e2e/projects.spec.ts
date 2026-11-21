@@ -840,6 +840,32 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
+test("the GitHub Projects board's header starts with a blue + that adds a project (#739)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects");
+	const icons = page.getByTestId("board-add-project").locator("..");
+	const add = icons.locator(":scope > *").first();
+	await expect(add).toHaveAttribute("aria-label", "Add project");
+	await expect(add).toHaveAttribute("title", "Add project");
+	await expect(add).toHaveClass(/\bbg-blue-600\b/);
+	await expect(icons.locator(":scope > *").nth(1)).toHaveAttribute(
+		"aria-label",
+		"Check now",
+	);
+	await add.click();
+	await expect(page).toHaveURL(/\/agents\/coder\/projects\?add=1$/);
+	await expect(
+		page.getByRole("dialog", { name: "Watch a repository" }),
+	).toBeVisible();
+
+	// One project's board has no + in its header.
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+	await expect(page.getByTestId("board-add-project")).toHaveCount(0);
+});
+
 test("one project's board leaves its cards unlabelled", async ({ page }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
