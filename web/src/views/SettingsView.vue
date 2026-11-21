@@ -2184,7 +2184,7 @@ function selectedConfiguredChannelIndex(
 
 function taskDeliveryTargetLabel(agent: AgentEntry, task: AgentTask): string {
 	const parsed = parseTaskChannelValue(task.target);
-	if (parsed.type === "session") return "Session name";
+	if (parsed.type === "session") return "Session";
 	const channel = selectedConfiguredChannel(agent, task);
 	switch (channel?.type) {
 		case "slack":

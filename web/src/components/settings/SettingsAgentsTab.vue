@@ -884,8 +884,16 @@ placeholder="Default project agent model"
 <div v-if="taskChannelSelection(selectedTask)" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
 <label class="field-label">{{ taskDeliveryTargetLabel(agent, selectedTask) }}</label>
+<SessionSelect
+	v-if="taskChannelSelection(selectedTask) === 'session'"
+	:agent="agent.name"
+	:model-value="selectedTaskTarget(selectedTask)"
+	select-class="field-input"
+	aria-label="Session"
+	@update:model-value="setSelectedTaskTarget(selectedTask, $event)"
+/>
 <select
-	v-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
+	v-else-if="selectedConfiguredChannel(agent, selectedTask)?.type === 'slack' && slackChannelsForTask(i, agent, selectedTask).length"
 	:value="selectedTaskTarget(selectedTask)"
 	class="field-input"
 	@change="setSelectedTaskTarget(selectedTask, ($event.target as HTMLSelectElement).value)"
@@ -941,6 +949,7 @@ import FancySelect from "../FancySelect.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
+import SessionSelect from "../SessionSelect.vue";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -950,6 +959,7 @@ export default defineComponent({
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
+		SessionSelect,
 		SwitchRoot,
 		SwitchThumb,
 	},
