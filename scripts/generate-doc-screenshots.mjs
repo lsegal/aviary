@@ -11,7 +11,8 @@ const outputDir = path.join(
 	"public",
 	"screenshots",
 );
-const baseURL = "http://127.0.0.1:5173";
+const baseURL =
+	process.env.DOCS_SCREENSHOT_BASE_URL ?? "http://127.0.0.1:5173";
 const themes = ["light", "dark"];
 
 function themedOutputName(outputName, theme) {
@@ -707,6 +708,228 @@ const jobsFixtures = {
 	task_compile_get: compileDetail,
 };
 
+function minutesAgo(minutes) {
+	return new Date(Date.now() - minutes * 60_000).toISOString();
+}
+
+function projectJob({
+	number,
+	title,
+	status,
+	agent,
+	model,
+	started,
+	pr,
+	progress,
+	waitReason,
+}) {
+	return {
+		key: `lsegal/aviary#${number}`,
+		target: "lsegal/aviary",
+		number,
+		title,
+		status,
+		kind: "issue",
+		agent,
+		model,
+		actions: {
+			retry: status !== "queued",
+			pause: status === "active" || status === "waiting",
+			resume: status === "paused",
+			stop: ["active", "waiting", "paused"].includes(status),
+		},
+		repository: "lsegal/aviary",
+		issue_url: `https://github.com/lsegal/aviary/issues/${number}`,
+		...(pr
+			? {
+					pull_request: pr,
+					pull_request_url: `https://github.com/lsegal/aviary/pull/${pr}`,
+				}
+			: {}),
+		...(progress
+			? {
+					progress: {
+						done: progress[0],
+						total: progress[1],
+						percent: Math.round((progress[0] / progress[1]) * 100),
+					},
+				}
+			: {}),
+		started: minutesAgo(started),
+		...(waitReason ? { wait_reason: waitReason } : {}),
+	};
+}
+
+const projectJobs = [
+	projectJob({
+		number: 218,
+		title: "Cap scheduler retry backoff at 10 minutes",
+		status: "active",
+		agent: "claude",
+		model: "opus",
+		started: 14,
+		pr: 233,
+		progress: [2, 5],
+	}),
+	projectJob({
+		number: 221,
+		title: "Export a session as Markdown from the chat menu",
+		status: "active",
+		agent: "codex",
+		model: "gpt-5.5",
+		started: 3,
+		pr: 236,
+		progress: [1, 6],
+	}),
+	projectJob({
+		number: 214,
+		title: "Show token usage per scheduled task",
+		status: "waiting",
+		agent: "claude",
+		model: "opus",
+		started: 41,
+		pr: 229,
+		progress: [5, 6],
+		waitReason: "Waiting on CI for PR #229",
+	}),
+	projectJob({
+		number: 209,
+		title: "Scoop install fails when ~/.local/bin is missing",
+		status: "complete",
+		agent: "claude",
+		model: "opus",
+		started: 95,
+		pr: 227,
+		progress: [6, 6],
+	}),
+	projectJob({
+		number: 200,
+		title: "Add a dark theme toggle",
+		status: "complete",
+		agent: "codex",
+		model: "gpt-5.5",
+		started: 300,
+		pr: 205,
+		progress: [5, 5],
+	}),
+];
+
+const projectRunEvents = [
+	{ kind: "system", time: minutesAgo(14), text: "Claimed #218" },
+	{ kind: "system", time: minutesAgo(13), text: "Opened draft PR #233" },
+	{
+		kind: "message",
+		time: minutesAgo(12),
+		text: "I can reproduce it: retries back off **without a cap**. I'll clamp the delay at 10 minutes and keep the jitter.",
+	},
+	{
+		kind: "plan",
+		time: minutesAgo(11),
+		items: [
+			{ text: "Reproduce the unbounded backoff", status: "completed" },
+			{ text: "Clamp the delay", status: "completed" },
+			{ text: "Add a test", status: "in_progress" },
+			{ text: "Repair CI", status: "pending" },
+			{ text: "Merge", status: "pending" },
+		],
+	},
+	{
+		kind: "tool_call",
+		time: minutesAgo(11),
+		call_id: "c1",
+		name: "Read",
+		input: { file_path: "internal/scheduler/queue.go" },
+	},
+	{
+		kind: "tool_result",
+		time: minutesAgo(11),
+		call_id: "c1",
+		output: "package scheduler\n…",
+	},
+	{
+		kind: "file_change",
+		time: minutesAgo(10),
+		path: "internal/scheduler/queue.go",
+		diff: "@@ -40,3 +40,3 @@\n delay := base << attempt\n-return delay\n+return min(delay, 10*time.Minute)",
+	},
+	{
+		kind: "comment_relay",
+		time: minutesAgo(9),
+		author: "lsegal",
+		text: "Keep the jitter, please.",
+		url: "https://github.com/lsegal/aviary/issues/218#issuecomment-1",
+	},
+	{
+		kind: "command",
+		time: minutesAgo(7),
+		command: "go test ./internal/scheduler/...",
+		output: "ok  internal/scheduler 2.41s",
+		exit_code: 0,
+		status: "completed",
+	},
+	{
+		kind: "usage",
+		time: minutesAgo(6),
+		usage: { input_tokens: 182000, output_tokens: 9100, cost_usd: 1.42 },
+	},
+];
+
+const projectsFixtures = {
+	agent_list: [],
+	config_get: {
+		agents: [
+			{
+				name: "coder",
+				model: "cli/claude/opus",
+				projects: [{ target: "lsegal/aviary" }],
+			},
+		],
+	},
+	project_status: {
+		identity: "7F3CA91B",
+		running: true,
+		targets: ["lsegal/aviary"],
+		issue_counts: { "lsegal/aviary": 4 },
+		jobs: {
+			running: 2,
+			queued: 0,
+			paused: 0,
+			completed: 12,
+			merged_24h: 3,
+			failed: 0,
+		},
+		concurrency: 4,
+		delivery: "poll",
+		poll_interval: "30s",
+		ready_label: "ready",
+		allowed_commenters: ["lsegal"],
+		quotas: { claude: "62% of 5h quota left", codex: "quota ok" },
+		agents: ["claude", "codex"],
+		recent_logs:
+			"12:03:58 checked lsegal/aviary: 4 ready issues\n12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
+		log_offset: 2,
+		last_check: minutesAgo(0.1),
+	},
+	project_job_list: {
+		jobs: projectJobs,
+		total: projectJobs.length,
+		offset: 0,
+		limit: 50,
+	},
+	project_job_get: {
+		...projectJobs[0],
+		checkout_directory: "~/.aviary/clones/aviary-218",
+		session_id: "7f3c…a9",
+		scrollback: [
+			"▸ read internal/scheduler/queue.go",
+			"$ go test ./internal/scheduler/...",
+			"ok  internal/scheduler 2.41s",
+		].join("\n"),
+		events: projectRunEvents,
+		raw_output: "",
+	},
+};
+
 async function waitForServer(url, timeoutMs = 30_000) {
 	const started = Date.now();
 	for (;;) {
@@ -1016,6 +1239,26 @@ async function main() {
 				readySelector: 'h2:has-text("Supported Models")',
 				outputName: "system-models.png",
 				viewport: { width: 1040, height: 1120 },
+				theme,
+			});
+
+			await captureSimple({
+				browser,
+				fixtures: projectsFixtures,
+				pathname: "/agents/coder/projects/lsegal%2Faviary",
+				readySelector: "text=Cap scheduler retry backoff at 10 minutes",
+				outputName: "projects-board.png",
+				viewport: { width: 1040, height: 980 },
+				theme,
+			});
+
+			await captureSimple({
+				browser,
+				fixtures: projectsFixtures,
+				pathname: "/agents/coder/projects/lsegal%2Faviary/jobs/218",
+				readySelector: '[data-event="file_change"]',
+				outputName: "projects-run.png",
+				viewport: { width: 1440, height: 980 },
 				theme,
 			});
 
