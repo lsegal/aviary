@@ -659,6 +659,42 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(running).not.toHaveText(first ?? "", { timeout: 5_000 });
 });
 
+test("long wrapped output never grows a card past half the viewport (#718)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 700 });
+	const line = `$ ${"go test ./internal/scheduler/... -run TestBackoffCap -count=1 ".repeat(6)}`;
+	await setup(page, () => STATUS, {
+		project_job_get: (args?: Record<string, unknown>) => {
+			const found = JOBS.find(
+				(j) => j.target === args?.target && j.number === args?.number,
+			);
+			if (!found) throw new Error("no such job");
+			return {
+				...found,
+				...CLONES[found.number],
+				scrollback: Array(12).fill(line).join("\n"),
+				events: [],
+				raw_output: "",
+			};
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const output = card.getByTestId("job-output");
+	await expect(output).toContainText("TestBackoffCap");
+	const cardBox = await card.boundingBox();
+	const outputBox = await output.boundingBox();
+	expect(cardBox?.height).toBeLessThanOrEqual(350);
+	// The log area clips its content instead of stretching the card.
+	expect(outputBox?.height).toBeLessThan(
+		await output.evaluate((el) => el.scrollHeight),
+	);
+	// The header and actions keep their natural size.
+	await expect(card.getByRole("link", { name: /#218 Cap scheduler/ })).toBeInViewport();
+	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
+});
+
 test("retry, stop, filters and check now call project tools", async ({
 	page,
 }) => {
