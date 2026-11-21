@@ -77,7 +77,7 @@ func TestProjectCommandTree(t *testing.T) {
 
 func TestWatchSettingsFromFlags(t *testing.T) {
 	t.Cleanup(func() { watchOpts = watchOptions{} })
-	if err := watchCmd.Flags().Parse([]string{"--concurrency", "2", "--interval", "1m", "--delivery", "Webhook", "--ready-label", "", "--no-merge", "--filter", "label:bug"}); err != nil {
+	if err := watchCmd.Flags().Parse([]string{"--concurrency", "2", "--interval", "1m", "--delivery", "Webhook", "--no-merge", "--filter", "label:bug"}); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := watchSettings(watchCmd)
@@ -86,9 +86,6 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 	}
 	if settings.Concurrency != 2 || settings.Interval != "1m" || settings.Delivery != "webhook" || !settings.NoMerge {
 		t.Fatalf("settings = %+v", settings)
-	}
-	if settings.ReadyLabel == nil || *settings.ReadyLabel != "" {
-		t.Fatalf("an explicitly empty --ready-label should turn the label off: %v", settings.ReadyLabel)
 	}
 	if len(settings.Filter) != 1 || settings.Filter[0] != "label:bug" {
 		t.Fatalf("filter = %v", settings.Filter)

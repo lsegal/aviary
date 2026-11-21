@@ -86,10 +86,6 @@ type GHCLI struct {
 	Filter     string
 	AllIssues  bool
 	ReadyState string
-	// ReadyLabel is the label a repository issue needs to be dispatched. It
-	// is added to the issue search alongside Filter; empty dispatches without
-	// one. Board targets use ReadyState instead.
-	ReadyLabel string
 	// Timeout bounds each `gh` call; zero uses ghCommandTimeout. Interactive
 	// callers that must answer quickly set a shorter one.
 	Timeout    time.Duration
@@ -582,23 +578,6 @@ type repositoryProjectItemsPage struct {
 	} `json:"data"`
 }
 
-// repositoryFilter is the issue search a repository target runs: Filter plus
-// the ready label. The label still applies when AllIssues drops the filter.
-func (g GHCLI) repositoryFilter() (string, bool) {
-	label := strings.TrimSpace(g.ReadyLabel)
-	if label == "" {
-		return g.Filter, g.AllIssues
-	}
-	qualifier := "label:" + label
-	if strings.ContainsAny(label, " \t") {
-		qualifier = "label:" + strconv.Quote(label)
-	}
-	if g.AllIssues {
-		return qualifier, false
-	}
-	return strings.TrimSpace(g.Filter + " " + qualifier), false
-}
-
 // ListIssues lists the dispatchable issues of a target.
 func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 	target, err := parseTarget(repo)
@@ -636,7 +615,7 @@ func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 
 	var issues []Issue
 	usedPublicAPI := false
-	filter, allIssues := g.repositoryFilter()
+	filter, allIssues := g.Filter, g.AllIssues
 	if g.isPublicRepo(ctx, target.Repo) {
 		if got, ok := g.listPublicIssues(ctx, target.Repo, filter, allIssues); ok {
 			issues, usedPublicAPI = got, true

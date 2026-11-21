@@ -64,8 +64,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if shared.Concurrency != 2 || !reflect.DeepEqual(shared.Targets, []string{"o/b", "o/a"}) {
 		t.Fatalf("shared settings = %+v", shared)
 	}
-	label := ""
-	if err := m.AddWatch(Watch{Targets: []string{"o/c", "o/d"}, Agent: "high", Settings: config.ProjectsConfig{Concurrency: 6, ReadyLabel: &label, NoMerge: true}}); err != nil {
+	if err := m.AddWatch(Watch{Targets: []string{"o/c", "o/d"}, Agent: "high", Settings: config.ProjectsConfig{Concurrency: 6, NoMerge: true}}); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
@@ -86,7 +85,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	if got := s.TargetAgents["o/c"]; !reflect.DeepEqual(got, []string{"codex:high"}) {
 		t.Fatalf("watch agents = %v", got)
 	}
-	if s.Concurrency != 6 || s.Interval != time.Minute || s.ReadyLabel != "" || !s.NoMerge || s.Delivery != DeliveryBrowser {
+	if s.Concurrency != 6 || s.Interval != time.Minute || !s.NoMerge || s.Delivery != DeliveryBrowser {
 		t.Fatalf("settings = %+v", s)
 	}
 	if !reflect.DeepEqual(s.Agents, []string{"codex"}) {
@@ -180,7 +179,6 @@ func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {
 		"agents":      func(s *engineSettings) { s.Agents = []string{"claude"} },
 		"interval":    func(s *engineSettings) { s.Interval = time.Hour },
 		"delivery":    func(s *engineSettings) { s.Delivery = "webhook" },
-		"ready label": func(s *engineSettings) { s.ReadyLabel = "go" },
 		"filter":      func(s *engineSettings) { s.Filter = "label:x" },
 		"yolo":        func(s *engineSettings) { s.Approval = clidefs.ApprovalFull },
 	} {
