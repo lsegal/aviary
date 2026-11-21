@@ -24,6 +24,7 @@ import (
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -392,8 +393,8 @@ func TestLogHub_Handle(t *testing.T) {
 	// Ring should have one entry.
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	assert.Equal(t, 1, len(hub.ring))
-	assert.Equal(t, "test message", hub.ring[0].Message)
+	assert.Equal(t, 1, hubLen(hub))
+	assert.Equal(t, "test message", hub.rings["server"][0].Message)
 
 }
 
@@ -475,7 +476,7 @@ func TestLogHub_WithAttrsAndWithGroup(t *testing.T) {
 	_ = child.Handle(context.Background(), rec)
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	assert.NotEqual(t, 0, len(hub.ring))
+	assert.NotEqual(t, 0, hubLen(hub))
 
 }
 
@@ -592,7 +593,7 @@ func TestHubGroup_Methods(t *testing.T) {
 	assert.NoError(t, err)
 
 	hub.mu.Lock()
-	n := len(hub.ring)
+	n := hubLen(hub)
 	hub.mu.Unlock()
 	assert.NotEqual(t, 0, n)
 
@@ -1077,7 +1078,7 @@ func TestLogHub_RingCapOverflow(t *testing.T) {
 		_ = hub.Handle(context.Background(), rec)
 	}
 	hub.mu.Lock()
-	n := len(hub.ring)
+	n := hubLen(hub)
 	hub.mu.Unlock()
 	assert.LessOrEqual(t, n, 3)
 
@@ -1252,7 +1253,7 @@ func TestLogHub_LevelCoverage(t *testing.T) {
 		_ = hub.Handle(context.Background(), rec)
 	}
 	hub.mu.Lock()
-	n := len(hub.ring)
+	n := hubLen(hub)
 	hub.mu.Unlock()
 	assert.Equal(t, 4, n)
 
@@ -1396,14 +1397,86 @@ func TestLogHubSince(t *testing.T) {
 	assert.True(t, strings.HasSuffix(lines[0], " three"))
 	assert.Equal(t, 5, next)
 
-	// The ring holds four records, so "one" has been evicted.
+	// Each component's ring holds four records, so "one" has been evicted.
+	projectsLog.Info("four")
+	projectsLog.Info("five")
 	lines, _ = hub.since("projects", 0, 0)
-	require.Len(t, lines, 2)
+	require.Len(t, lines, 4)
 	assert.True(t, strings.HasSuffix(lines[0], " two"))
 
 	// An offset from before a restart reads from the start of the ring.
 	lines, _ = hub.since("projects", 99, 0)
-	assert.Len(t, lines, 2)
+	assert.Len(t, lines, 4)
+}
+
+func TestLogHubSinceKeepsQuietComponent(t *testing.T) {
+	hub := newLogHub(4)
+	logger := slog.New(hub)
+	projectsLog := logger.With("component", "projects")
+	projectsLog.Info("first")
+	projectsLog.Info("second")
+	// Far more records from another component than the ring holds.
+	for i := 0; i < 20; i++ {
+		logger.Info("noise", "component", "agent")
+	}
+
+	lines, offset := hub.since("projects", 0, 0)
+	require.Len(t, lines, 2)
+	assert.True(t, strings.HasSuffix(lines[0], " first"))
+	assert.True(t, strings.HasSuffix(lines[1], " second"))
+	assert.Equal(t, 22, offset)
+	assert.Equal(t, 6, hubLen(hub))
+
+	projectsLog.Info("third")
+	lines, next := hub.since("projects", offset, 0)
+	require.Len(t, lines, 1)
+	assert.True(t, strings.HasSuffix(lines[0], " third"))
+	assert.Equal(t, 23, next)
+}
+
+// TestProjectStatusLogsSurviveOtherComponents checks project_status reads the
+// engine's lines back from the log hub even after other components log far
+// more records than the hub keeps, as running jobs streaming output do.
+func TestProjectStatusLogsSurviveOtherComponents(t *testing.T) {
+	hub := newLogHub(10)
+	previous := slog.Default()
+	slog.SetDefault(slog.New(hub))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	m, err := projects.NewManager(t.TempDir())
+	require.NoError(t, err)
+	m.SetLogSource(hub.since)
+
+	m.Log("poll #1 found 3 open issue(s)")
+	m.Log("issue #7 picked up")
+	for i := 0; i < 50; i++ {
+		slog.Info("job output", "component", "agent")
+	}
+
+	status := m.Status(t.Context(), 0, nil)
+	logs := status["recent_logs"].([]string)
+	require.Len(t, logs, 2)
+	assert.True(t, strings.HasSuffix(logs[0], " poll #1 found 3 open issue(s)"))
+	assert.True(t, strings.HasSuffix(logs[1], " issue #7 picked up"))
+	offset := status["log_offset"].(int)
+	assert.Equal(t, 52, offset)
+
+	m.Log("issue #7 started")
+	slog.Info("job output", "component", "agent")
+	status = m.Status(t.Context(), offset, nil)
+	logs = status["recent_logs"].([]string)
+	require.Len(t, logs, 1)
+	assert.True(t, strings.HasSuffix(logs[0], " issue #7 started"))
+	assert.Equal(t, 54, status["log_offset"])
+}
+
+// hubLen counts the records held across every component's ring. The caller
+// holds hub.mu when the hub may be written concurrently.
+func hubLen(hub *logHub) int {
+	n := 0
+	for _, ring := range hub.rings {
+		n += len(ring)
+	}
+	return n
 }
 
 func TestRecordToEntry_AttrsCoverage(t *testing.T) {
@@ -1864,7 +1937,7 @@ func TestLogHub_RingCapWithSubs(t *testing.T) {
 	}
 
 	hub.mu.Lock()
-	n := len(hub.ring)
+	n := hubLen(hub)
 	hub.mu.Unlock()
 	assert.LessOrEqual(t, n, 5)
 

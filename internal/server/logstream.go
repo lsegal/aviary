@@ -26,12 +26,13 @@ type logEntry struct {
 	Attrs     map[string]string `json:"attrs,omitempty"`
 }
 
-// logHub captures slog records into a ring buffer and fans them out to SSE
-// clients.  It implements slog.Handler so it can be composed with the default
-// text/JSON handler.
+// logHub captures slog records into a ring buffer per component and fans them
+// out to SSE clients.  It implements slog.Handler so it can be composed with
+// the default text/JSON handler.  Each component keeps its own latest ringCap
+// records, so a chatty component cannot push a quieter one's lines out.
 type logHub struct {
 	mu       sync.Mutex
-	ring     []logEntry
+	rings    map[string][]logEntry
 	ringCap  int
 	seq      int64
 	subs     map[chan logEntry]struct{}
@@ -43,7 +44,7 @@ var globalHub = newLogHub(500)
 func newLogHub(bufCap int) *logHub {
 	return &logHub{
 		ringCap: bufCap,
-		ring:    make([]logEntry, 0, bufCap),
+		rings:   make(map[string][]logEntry),
 		subs:    make(map[chan logEntry]struct{}),
 	}
 }
@@ -67,10 +68,11 @@ func (h *logHub) Handle(_ context.Context, r slog.Record) error {
 	// order, so since never skips a record still being appended.
 	h.seq++
 	entry.Seq = h.seq
-	h.ring = append(h.ring, entry)
-	if len(h.ring) > h.ringCap {
-		h.ring = h.ring[len(h.ring)-h.ringCap:]
+	ring := append(h.rings[entry.Component], entry)
+	if len(ring) > h.ringCap {
+		ring = ring[len(ring)-h.ringCap:]
 	}
+	h.rings[entry.Component] = ring
 	subs := make([]chan logEntry, 0, len(h.subs))
 	for ch := range h.subs {
 		subs = append(subs, ch)
@@ -167,7 +169,7 @@ func extractComponent(msg string, attrs map[string]string) string {
 	return "server"
 }
 
-// since pages the ring for one component: its lines after sequence number
+// since pages one component's ring: its lines after sequence number
 // offset, oldest first, each prefixed with its local time, and the offset to
 // ask from next time. An offset of zero or less returns the latest limit
 // lines; a limit of zero or less returns every line.
@@ -179,8 +181,8 @@ func (h *logHub) since(component string, offset, limit int) ([]string, int) {
 		offset = 0
 	}
 	lines := []string{}
-	for _, e := range h.ring {
-		if e.Component != component || (offset > 0 && e.Seq <= int64(offset)) {
+	for _, e := range h.rings[component] {
+		if offset > 0 && e.Seq <= int64(offset) {
 			continue
 		}
 		line := e.Message
