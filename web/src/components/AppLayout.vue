@@ -119,12 +119,12 @@
       </nav>
     </div>
 
-    <nav
-      class="hidden w-60 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
+    <nav v-if="!sidebarCollapsed" data-testid="sidebar" :style="{ width: `${sidebarWidth}px` }"
+      class="relative hidden shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900 lg:flex">
       <div class="group/row mb-6 flex items-center gap-2">
-        <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
+        <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
         <div class="relative flex min-w-0 flex-1 items-center self-stretch">
-          <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
+          <span class="truncate text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
           <!-- With one agent there is no Agents row, so its pages hang off
                Aviary itself and Add agent sits here. -->
           <SidebarRowAction v-if="soleAgent" label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
@@ -152,6 +152,12 @@
               <path :d="link.iconPath" />
             </svg>
           </a>
+          <button type="button" data-testid="sidebar-collapse" aria-label="Collapse sidebar"
+            :title="`Collapse sidebar (${shortcutLabel})`"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            @click="sidebar.toggle()">
+            <ChevronDoubleLeftIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
         </div>
       </div>
       <div class="min-h-0 flex-1 space-y-1 overflow-y-auto" data-testid="sidebar-nav">
@@ -306,9 +312,69 @@
           </button>
         </div>
       </div>
+      <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize sidebar"
+        data-testid="sidebar-resize" :aria-valuenow="sidebarWidth" :aria-valuemin="SIDEBAR_MIN_WIDTH"
+        :aria-valuemax="SIDEBAR_MAX_WIDTH" title="Drag to resize, double-click to reset"
+        class="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize transition-colors hover:bg-blue-500/30 focus-visible:bg-blue-500/40 focus-visible:outline-none"
+        :class="sidebarResizing ? 'bg-blue-500/40' : ''"
+        @pointerdown="startSidebarResize" @dblclick="sidebar.resetWidth()" @keydown="resizeSidebarByKey" />
     </nav>
 
-    <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <nav v-else data-testid="sidebar-rail" aria-label="Main"
+      class="hidden w-14 shrink-0 flex-col items-center gap-1 border-r border-gray-200 bg-gray-50 py-3 dark:border-gray-800 dark:bg-gray-900 lg:flex">
+      <img :src="logoUrl" alt="Aviary logo" class="mb-1 h-8 w-8 object-contain" />
+      <SidebarRailItem :label="`Expand sidebar (${shortcutLabel})`" data-testid="sidebar-expand" @click="sidebar.toggle()">
+        <ChevronDoubleRightIcon aria-hidden="true" class="h-5 w-5" />
+      </SidebarRailItem>
+      <div class="my-1 h-px w-8 shrink-0 bg-gray-200 dark:bg-gray-800" />
+      <div class="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto" data-testid="sidebar-rail-nav">
+        <template v-if="soleAgent">
+          <SidebarRailItem v-for="child in soleAgent.children" :key="child.key" :label="child.label" :to="child.to"
+            :active="isChildActive(child)" :badge="child.running" :data-testid="`sidebar-rail-${child.key}`">
+            <component :is="pageIcons[child.key]" aria-hidden="true" class="h-5 w-5" />
+          </SidebarRailItem>
+        </template>
+        <template v-else>
+          <SidebarRailItem label="Agents" to="/agents" :active="route.path === '/agents'" data-testid="sidebar-rail-agents">
+            <UsersIcon aria-hidden="true" class="h-5 w-5" />
+          </SidebarRailItem>
+          <template v-for="a in agentNav" :key="a.name">
+            <SidebarRailItem :label="a.label" :to="a.to" :active="a.active && !a.children.length" :badge="a.running"
+              :data-agent="a.name" data-testid="sidebar-rail-agent">
+              <span aria-hidden="true" class="text-sm font-semibold uppercase"
+                :class="a.active ? 'text-gray-950 dark:text-white' : ''">{{ a.label.slice(0, 1) }}</span>
+            </SidebarRailItem>
+            <template v-if="a.active">
+              <SidebarRailItem v-for="child in a.children" :key="child.key" :label="child.label" :to="child.to"
+                :active="isChildActive(child)" :badge="child.running" :data-testid="`sidebar-rail-${child.key}`">
+                <component :is="pageIcons[child.key]" aria-hidden="true" class="h-5 w-5" />
+              </SidebarRailItem>
+            </template>
+          </template>
+        </template>
+        <SidebarRailItem label="System" to="/system/overview" :active="systemActive" data-testid="sidebar-rail-system">
+          <ServerStackIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+      </div>
+      <div class="mt-auto flex flex-col items-center gap-1 pt-2">
+        <SidebarRailItem :label="versionLabel" :dot="versionDotClass" data-testid="sidebar-rail-version"
+          :disabled="!upgradeAvailable || upgrading || restartPending || !upgradeSupported" @click="openUpgradeDialog()">
+          <TagIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+        <SidebarRailItem :label="healthLabel" :dot="dotClass" data-testid="sidebar-rail-health">
+          <SignalIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+        <SidebarRailItem label="Restart" data-testid="restart-button" :disabled="upgrading || restartPending"
+          @click="triggerRestart()">
+          <ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="restartPending ? 'animate-spin' : ''" />
+        </SidebarRailItem>
+        <SidebarRailItem label="Log out" tone="danger" @click="auth.logout(); $router.push('/login')">
+          <ArrowRightOnRectangleIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+      </div>
+    </nav>
+
+    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <slot />
     </main>
 
@@ -330,12 +396,36 @@ const systemMoreState = ref<boolean | null>(null);
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
+import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
+import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
+import ChevronDoubleRightIcon from "@heroicons/vue/24/outline/ChevronDoubleRightIcon";
+import ClockIcon from "@heroicons/vue/24/outline/ClockIcon";
+import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
-import { type Component, computed, markRaw } from "vue";
+import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
+import SignalIcon from "@heroicons/vue/24/outline/SignalIcon";
+import Squares2X2Icon from "@heroicons/vue/24/outline/Squares2X2Icon";
+import TagIcon from "@heroicons/vue/24/outline/TagIcon";
+import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
+import {
+	type Component,
+	computed,
+	markRaw,
+	onBeforeUnmount,
+	onMounted,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useServerStatus } from "../composables/useServerStatus";
+import {
+	SIDEBAR_KEY_STEP,
+	SIDEBAR_MAX_WIDTH,
+	SIDEBAR_MIN_WIDTH,
+	SIDEBAR_SNAP_WIDTH,
+	useSidebarLayout,
+} from "../composables/useSidebarLayout";
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { shortVersion } from "../lib/version";
@@ -350,6 +440,7 @@ import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
 import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
+import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
 interface NavChild {
@@ -447,6 +538,79 @@ const AGENT_PAGES = [
 	{ key: "files", label: "Files" },
 	{ key: "settings", label: "Agent Settings" },
 ] as const;
+
+// An agent page's icon on the collapsed sidebar rail.
+const pageIcons: Record<string, Component> = {
+	chat: markRaw(ChatBubbleLeftRightIcon),
+	projects: markRaw(Squares2X2Icon),
+	tasks: markRaw(ClockIcon),
+	files: markRaw(DocumentTextIcon),
+	settings: markRaw(Cog6ToothIcon),
+};
+
+// The desktop sidebar collapses to an icon rail with Cmd/Ctrl+B or its
+// header toggle, and its right edge drags to resize it (#724).
+const sidebar = useSidebarLayout();
+const sidebarWidth = sidebar.width;
+const sidebarCollapsed = sidebar.collapsed;
+const sidebarResizing = ref(false);
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const shortcutLabel = isMac ? "⌘B" : "Ctrl+B";
+
+function startSidebarResize(e: PointerEvent) {
+	if (e.button !== 0) return;
+	e.preventDefault();
+	const startX = e.clientX;
+	const startWidth = sidebarWidth.value;
+	sidebarResizing.value = true;
+	document.body.style.cursor = "col-resize";
+	document.body.style.userSelect = "none";
+	const onMove = (move: PointerEvent) => {
+		const next = startWidth + move.clientX - startX;
+		// Dragging well below the minimum snaps to the rail; expanding again
+		// restores the width the drag started from.
+		if (next < SIDEBAR_SNAP_WIDTH) {
+			sidebar.setWidth(startWidth);
+			sidebarCollapsed.value = true;
+			stop();
+			return;
+		}
+		sidebar.setWidth(next);
+	};
+	const stop = () => {
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", stop);
+		sidebarResizing.value = false;
+		document.body.style.cursor = "";
+		document.body.style.userSelect = "";
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", stop);
+}
+
+function resizeSidebarByKey(e: KeyboardEvent) {
+	const steps: Record<string, number> = {
+		ArrowLeft: sidebarWidth.value - SIDEBAR_KEY_STEP,
+		ArrowRight: sidebarWidth.value + SIDEBAR_KEY_STEP,
+		Home: SIDEBAR_MIN_WIDTH,
+		End: SIDEBAR_MAX_WIDTH,
+	};
+	if (!(e.key in steps)) return;
+	e.preventDefault();
+	sidebar.setWidth(steps[e.key]);
+}
+
+function onSidebarShortcut(e: KeyboardEvent) {
+	if (e.defaultPrevented || e.altKey || e.shiftKey) return;
+	if (!(isMac ? e.metaKey : e.ctrlKey) || e.key.toLowerCase() !== "b") return;
+	// Below lg the mobile header replaces the sidebar.
+	if (!window.matchMedia("(min-width: 1024px)").matches) return;
+	e.preventDefault();
+	sidebar.toggle();
+}
+
+onMounted(() => window.addEventListener("keydown", onSidebarShortcut));
+onBeforeUnmount(() => window.removeEventListener("keydown", onSidebarShortcut));
 
 // System's first pages are always shown; the rest sit behind the expander in
 // their previous relative order.
