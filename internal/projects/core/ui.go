@@ -42,6 +42,9 @@ type JobSnapshot struct {
 	// request opened from a fork.
 	PullRequest           int
 	PullRequestRepository string
+	// PullRequestState is the current pull request's PullRequestDraft,
+	// PullRequestOpen, or PullRequestMerged, so the board can color its icon.
+	PullRequestState string
 	// TasksDone and TasksTotal count the checked and all items in the plan
 	// checklist of the job's current pull request, and Progress is the
 	// percentage done the dashboards draw as a progress bar. A
@@ -63,6 +66,49 @@ const (
 	JobKindDiscussion = "discussion"
 	JobKindSchedule   = "schedule"
 )
+
+// The states of a job's pull request the board draws.
+const (
+	PullRequestDraft  = "draft"
+	PullRequestOpen   = "open"
+	PullRequestMerged = "merged"
+)
+
+// The five states the board shows a job in. Every engine status maps onto
+// exactly one of them.
+const (
+	BoardStarting = "starting"
+	BoardPaused   = "paused"
+	BoardRunning  = "running"
+	BoardDone     = "done"
+	BoardFailed   = "failed"
+)
+
+// BoardStates lists the board states in the order the board shows them.
+var BoardStates = []string{BoardStarting, BoardPaused, BoardRunning, BoardDone, BoardFailed}
+
+// BoardState is the state the board shows the job in. A queued job, and an
+// issue's run whose agent has not reported its clone yet, are starting; a job
+// waiting out a wakeup is paused alongside paused work, with WaitReason saying
+// why.
+func (j JobSnapshot) BoardState() string {
+	switch j.Status {
+	case "queued":
+		return BoardStarting
+	case "active":
+		if j.Kind == JobKindIssue && j.CheckoutDirectory == "" {
+			return BoardStarting
+		}
+		return BoardRunning
+	case "waiting", "paused":
+		return BoardPaused
+	case "complete":
+		return BoardDone
+	case "failed":
+		return BoardFailed
+	}
+	return BoardRunning
+}
 
 // HasProgress reports whether the job has a plan checklist to measure its
 // progress against.
@@ -143,20 +189,28 @@ func (j JobSnapshot) PullRequestURL() string {
 // reports whether that changed what the dashboards show, along
 // with the progress its plan checklist makes.
 func (j *JobSnapshot) SetPullRequest(state OriginatingWorkState, issueRepository string) bool {
-	number, repository := 0, ""
+	number, repository, prState := 0, "", ""
 	pullRequest, ok := CurrentPullRequest(state)
 	if ok {
 		number = pullRequest.Number
 		if !pullRequest.InRepo(issueRepository) {
 			repository = pullRequest.Repository
 		}
+		switch {
+		case pullRequest.Merged:
+			prState = PullRequestMerged
+		case pullRequest.IsDraft:
+			prState = PullRequestDraft
+		default:
+			prState = PullRequestOpen
+		}
 	}
 	// A merged pull request reads 100%.
 	changed := j.setProgress(pullRequest.TasksDone, pullRequest.TasksTotal, pullRequest.Merged)
-	if j.PullRequest == number && j.PullRequestRepository == repository {
+	if j.PullRequest == number && j.PullRequestRepository == repository && j.PullRequestState == prState {
 		return changed
 	}
-	j.PullRequest, j.PullRequestRepository = number, repository
+	j.PullRequest, j.PullRequestRepository, j.PullRequestState = number, repository, prState
 	return true
 }
 
