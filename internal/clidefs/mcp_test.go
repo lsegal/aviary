@@ -10,13 +10,14 @@ import (
 
 // TestBuiltinGeminiTakesMCPAndSystemPrompt pins how a gemini chat is handed
 // Aviary's MCP server, through a system settings file whose header expands
-// the token variable, and the system prompt, through GEMINI_SYSTEM_MD.
+// the token variable and whose policy file allows the server's tools in plan
+// mode, and the system prompt, through GEMINI_SYSTEM_MD.
 func TestBuiltinGeminiTakesMCPAndSystemPrompt(t *testing.T) {
 	gemini, ok := MustBuiltin().Lookup("gemini")
 	if !ok || !gemini.TakesMCP() || !gemini.TakesSystemPrompt() {
 		t.Fatalf("gemini declares mcp %t and systemPrompt %t", gemini.TakesMCP(), gemini.TakesSystemPrompt())
 	}
-	values := MCPValues{Name: "aviary", URL: "http://127.0.0.1:1/mcp", TokenEnv: "TOK", AuthEnv: "AUTH", Timeout: 30 * time.Minute, File: "/tmp/s.json"}
+	values := MCPValues{Name: "aviary", URL: "http://127.0.0.1:1/mcp", TokenEnv: "TOK", AuthEnv: "AUTH", Timeout: 30 * time.Minute, File: "/tmp/s.json", AllowFile: "/tmp/p.toml"}
 	if got := gemini.MCPEnv(values); !reflect.DeepEqual(got, []string{"GEMINI_CLI_SYSTEM_SETTINGS_PATH=/tmp/s.json"}) {
 		t.Errorf("MCPEnv = %q", got)
 	}
@@ -36,9 +37,16 @@ func TestBuiltinGeminiTakesMCPAndSystemPrompt(t *testing.T) {
 		"headers": map[string]any{"Authorization": "Bearer ${TOK}"},
 		"trust":   true,
 		"timeout": float64(1800000),
-	}}}
+	}}, "policyPaths": []any{"/tmp/p.toml", "~/.gemini/policies"}}
 	if !reflect.DeepEqual(file, want) {
 		t.Errorf("MCPFile = %s", data)
+	}
+	if ext, ok := gemini.MCPAllowFileExtension(); !ok || ext != ".toml" {
+		t.Errorf("MCPAllowFileExtension = %q, %t", ext, ok)
+	}
+	policy := "[[rule]]\ntoolName = \"*\"\nmcpName = \"aviary\"\ndecision = \"allow\"\npriority = 100\nmodes = [\"plan\"]\n"
+	if got := string(gemini.MCPAllowFile(values)); got != policy {
+		t.Errorf("MCPAllowFile = %q, want %q", got, policy)
 	}
 	if got := gemini.MCPToolPrefix("aviary"); got != "mcp_aviary_" {
 		t.Errorf("MCPToolPrefix = %q", got)
@@ -74,6 +82,8 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 		return err
 	}
 	server := map[string]any{"url": "{mcpUrl}", "auth": "Bearer ${{mcpTokenEnv}}"}
+	allowed := map[string]any{"url": "{mcpUrl}", "auth": "Bearer ${{mcpTokenEnv}}", "policies": []any{"{mcpAllowFile}"}}
+	allow := map[string]any{"extension": ".toml", "lines": []any{"allow {mcpName}"}}
 	valid := []struct {
 		block string
 		value any
@@ -81,6 +91,8 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 		{"mcp", map[string]any{"args": []any{"--mcp", "{mcpUrl}", "--token-var", "{mcpTokenEnv}"}, "toolPrefix": "mcp__{mcpName}__"}},
 		{"mcp", map[string]any{"env": map[string]any{"SETTINGS": "{mcpFile}"}, "file": server, "toolPrefix": "x_"}},
 		{"mcp", map[string]any{"args": []any{"-c", `auth="${{mcpAuthEnv}}"`, "-c", `url="{mcpUrl}"`}, "toolPrefix": "x_"}},
+		{"mcp", map[string]any{"env": map[string]any{"SETTINGS": "{mcpFile}"}, "file": allowed, "allowFile": allow, "toolPrefix": "x_"}},
+		{"mcp", map[string]any{"args": []any{"--policy", "{mcpAllowFile}", "--mcp", "{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": map[string]any{"lines": []any{"x"}}, "toolPrefix": "x_"}},
 		{"systemPrompt", map[string]any{"args": []any{"--system-file", "{systemPromptFile}"}}},
 		{"systemPrompt", map[string]any{"env": map[string]any{"PROMPT_FILE": "{systemPromptFile}"}}},
 	}
@@ -103,6 +115,12 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 		{"mcp", map[string]any{"args": []any{"{mcpFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "toolPrefix": "x_"}, `declares no "mcp.file"`},
 		{"mcp", map[string]any{"env": map[string]any{"S": "{mcpFile}"}, "file": map[string]any{"self": "{mcpFile}", "u": "{mcpUrl}", "t": "{mcpTokenEnv}"}, "toolPrefix": "x_"}, `own path`},
 		{"mcp", map[string]any{"env": map[string]any{"A=B": "{mcpUrl}{mcpTokenEnv}"}, "toolPrefix": "x_"}, `usable variable name`},
+		{"mcp", map[string]any{"args": []any{"{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": allow, "toolPrefix": "x_"}, `"mcp.allowFile" is never handed to the CLI`},
+		{"mcp", map[string]any{"args": []any{"{mcpAllowFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "toolPrefix": "x_"}, `declares no "mcp.allowFile"`},
+		{"mcp", map[string]any{"args": []any{"{mcpAllowFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": map[string]any{"lines": []any{}}, "toolPrefix": "x_"}, `"mcp.allowFile.lines" is required`},
+		{"mcp", map[string]any{"args": []any{"{mcpAllowFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": map[string]any{"extension": "toml", "lines": []any{"x"}}, "toolPrefix": "x_"}, `must start with "."`},
+		{"mcp", map[string]any{"args": []any{"{mcpAllowFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": map[string]any{"extension": "./x.toml", "lines": []any{"x"}}, "toolPrefix": "x_"}, `name no directory`},
+		{"mcp", map[string]any{"args": []any{"{mcpAllowFile}", "{mcpUrl}", "{mcpTokenEnv}"}, "allowFile": map[string]any{"lines": []any{"{mcpFile}"}}, "toolPrefix": "x_"}, `"mcp.allowFile.lines"`},
 		{"systemPrompt", map[string]any{"args": []any{"--system"}}, `{systemPromptFile}`},
 		{"systemPrompt", map[string]any{"args": []any{"{systemPromptFile}", "{mcpUrl}"}}, `may only use`},
 	}
@@ -116,10 +134,10 @@ func TestUserDefinitionMCPAndSystemPrompt(t *testing.T) {
 	if err := define("mcp", valid[0].value, noApproval...); err == nil || !strings.Contains(err.Error(), "{approval}") {
 		t.Errorf("mcp.args without {approval}: %v", err)
 	}
-	if err := define("systemPrompt", valid[3].value, noApproval...); err == nil || !strings.Contains(err.Error(), "{approval}") {
+	if err := define("systemPrompt", valid[5].value, noApproval...); err == nil || !strings.Contains(err.Error(), "{approval}") {
 		t.Errorf("systemPrompt.args without {approval}: %v", err)
 	}
-	if err := define("systemPrompt", valid[4].value, noApproval...); err != nil {
+	if err := define("systemPrompt", valid[6].value, noApproval...); err != nil {
 		t.Errorf("systemPrompt.env needs no {approval}: %v", err)
 	}
 }

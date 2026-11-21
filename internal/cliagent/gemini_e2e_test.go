@@ -32,6 +32,10 @@ import (
 // instruction rather than in the turn, and that the call is left to Aviary's
 // MCP boundary to report.
 //
+// With the agent's built-in tools off, gemini runs in its read-only plan
+// mode, where the definition's allow file lets it call Aviary's tools while
+// its own write and shell tools stay refused.
+//
 // It needs gemini on PATH, so it runs only when AVIARY_GEMINI_E2E is set.
 func TestGeminiChatServesAviaryTools(t *testing.T) {
 	if os.Getenv("AVIARY_GEMINI_E2E") == "" {
@@ -39,6 +43,13 @@ func TestGeminiChatServesAviaryTools(t *testing.T) {
 	}
 	binary, err := exec.LookPath("gemini")
 	require.NoError(t, err)
+	t.Run("builtin tools", func(t *testing.T) { testGeminiChatServesAviaryTools(t, binary, true) })
+	t.Run("read-only", func(t *testing.T) { testGeminiChatServesAviaryTools(t, binary, false) })
+}
+
+func testGeminiChatServesAviaryTools(t *testing.T, binary string, builtinTools bool) {
+	workDir := t.TempDir()
+	written := filepath.Join(workDir, "written.txt")
 
 	const token = "scoped-token-e2e"
 	var mu sync.Mutex
@@ -111,19 +122,27 @@ func TestGeminiChatServesAviaryTools(t *testing.T) {
 		mu.Lock()
 		systemInstructions = append(systemInstructions, strings.Join(system, ""))
 		mu.Unlock()
-		answered := false
+		answered := map[string]bool{}
 		for _, content := range req.Contents {
 			for _, part := range content.Parts {
-				if _, ok := part["functionResponse"]; ok {
-					answered = true
+				if response, ok := part["functionResponse"].(map[string]any); ok {
+					name, _ := response["name"].(string)
+					answered[name] = true
 				}
 			}
 		}
-		if answered {
+		// In read-only mode the model first tries gemini's own write and
+		// shell tools, which plan mode must refuse.
+		switch {
+		case !builtinTools && len(answered) == 0:
+			respond(map[string]any{"functionCall": map[string]any{"name": "write_file", "args": map[string]any{"file_path": written, "content": "x"}}})
+		case !builtinTools && len(answered) == 1:
+			respond(map[string]any{"functionCall": map[string]any{"name": "run_shell_command", "args": map[string]any{"command": "touch " + written}}})
+		case answered["mcp_aviary_echo"]:
 			respond(map[string]any{"text": "all done"})
-			return
+		default:
+			respond(map[string]any{"functionCall": map[string]any{"name": "mcp_aviary_echo", "args": map[string]any{"text": "hi"}}})
 		}
-		respond(map[string]any{"functionCall": map[string]any{"name": "mcp_aviary_echo", "args": map[string]any{"text": "hi"}}})
 	}))
 	defer model.Close()
 
@@ -141,10 +160,10 @@ func TestGeminiChatServesAviaryTools(t *testing.T) {
 		Backend:      "gemini",
 		Model:        "gemini-2.5-flash",
 		SystemPrompt: "You are the e2e stand-in agent.",
-		WorkDir:      t.TempDir(),
+		WorkDir:      workDir,
 		MCPURL:       mcpServer.URL,
 		MCPToken:     token,
-		BuiltinTools: true,
+		BuiltinTools: builtinTools,
 		Approval:     approval,
 		NewSessionID: randomUUID(),
 		Binary:       binary,
@@ -166,6 +185,7 @@ func TestGeminiChatServesAviaryTools(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, []string{"hi"}, calls, "gemini called Aviary's tool through the registered server with the token")
+	assert.NoFileExists(t, written, "gemini's own write and shell tools stay refused in read-only mode")
 	require.NotEmpty(t, systemInstructions)
 	assert.Equal(t, "You are the e2e stand-in agent.", strings.TrimSpace(systemInstructions[0]), "the system prompt replaces gemini's own")
 	for _, event := range events {
