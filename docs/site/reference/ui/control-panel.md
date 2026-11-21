@@ -10,8 +10,9 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
 | GitHub Projects | `/agents/<agent>/projects` | One board of the jobs of every project the agent owns, with no settings; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
+| Projects Settings | `/projects/settings` | Opened from the boards' Settings gear: each agent's projects (add, remove, reports), the Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
 | Channels | `/agents/<agent>/channels/:channel?` | The agent's Slack, Discord and Signal channels; a channel's conversation in the chat UI, and its settings at `/agents/<agent>/channels/<name>/settings`. `/agents/<agent>/settings/channels` redirects here. |
-| Tasks | `/agents/<agent>/tasks` | The agent's task definitions. |
+| Scheduled Tasks | `/agents/<agent>/tasks` | Run stats and analytics (job queue, compile attempts), and the agent's tasks as cards or a list with quick actions; `?task=<name>` opens a task's editor. |
 | Files | `/agents/<agent>/files` | The agent's root markdown files. |
 | Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), and Permissions (`/settings/permissions`) sections. |
 
@@ -23,10 +24,8 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Overview | `/system/overview` | Health, counts, validation, and initial setup. |
 | Settings | `/system/settings` | Server, models, browser, scheduler, and search settings. |
-| Projects | `/system/projects` | Each agent's projects (add, remove, reports), the Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
 | Providers & Auth | `/system/providers` | API keys, OAuth flows, and secret management. |
 | Usage | `/system/usage` | Token and session analytics. |
-| Jobs | `/system/jobs` | Scheduled work, queue state, logs, run-now, and compile attempts. |
 | Tools | `/system/tools` | MCP tool catalog and direct invocation. |
 | Skills | `/system/skills` | Every installed skill on one page: the installed version of each skill Aviary ships in each provider's CLI, and search, filtering, activation and per-skill settings for the skills Aviary agents use. |
 | Sessions | `/system/sessions` | Session list, stop, create, and remove operations. |
@@ -35,7 +34,7 @@ Each agent's pages, in sidebar order:
 | Daemons | `/system/daemons` | Process monitoring and restart support. |
 | Watches | `/system/watches/<owner%2Frepo>` | Boards of runtime watches no agent owns. |
 
-Overview, Settings, Providers & Auth, Usage and Jobs are always shown; the rest sit behind **More**.
+Overview, Settings, Projects, Providers & Auth and Usage are always shown; the rest sit behind **More**.
 
 Skills detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`, and is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
 

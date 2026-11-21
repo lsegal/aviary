@@ -2,7 +2,9 @@
 import { siDiscord, siSignal } from "simple-icons";
 import { useData, withBase } from "vitepress";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { data as skills } from "../../../skills/skills.data.mts";
 import LandingInstallBlock from "./LandingInstallBlock.vue";
+import SkillCard from "./skills/SkillCard.vue";
 
 interface ShowcaseItem {
 	title: string;
@@ -577,7 +579,14 @@ onBeforeUnmount(() => {
 				</div>
 
 				<div class="landing-projects-links reveal">
-					<a class="landing-btn landing-btn-primary" :href="withBase('/guide/projects')">
+					<a class="landing-btn landing-btn-primary" :href="withBase('/projects')">
+						See how GitHub Projects works
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+							aria-hidden="true">
+							<path d="M5 12h14M13 5l7 7-7 7" />
+						</svg>
+					</a>
+					<a class="landing-btn landing-btn-ghost" :href="withBase('/guide/projects')">
 						Read the Projects guide
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
 							aria-hidden="true">
@@ -586,6 +595,32 @@ onBeforeUnmount(() => {
 					</a>
 					<a class="landing-btn landing-btn-ghost" :href="withBase('/guide/code-loop')">
 						Follow one issue through the code loop
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+							aria-hidden="true">
+							<path d="M5 12h14M13 5l7 7-7 7" />
+						</svg>
+					</a>
+				</div>
+			</div>
+		</section>
+
+		<section class="landing-band" id="skills">
+			<div class="landing-wrap">
+				<div class="landing-eyebrow reveal">Skills</div>
+				<h2 class="landing-section-title reveal">
+					Use Aviary's skills <em>anywhere.</em>
+				</h2>
+				<p class="landing-section-sub reveal">
+					The skills behind Projects are ordinary skills for Claude Code, Codex,
+					Gemini CLI and other CLI agents. Install them and use them on their
+					own, with no Aviary at all, or let Aviary run them for you.
+				</p>
+				<div class="skill-card-grid reveal">
+					<SkillCard v-for="skill in skills" :key="skill.name" :skill="skill" />
+				</div>
+				<div class="landing-projects-links reveal">
+					<a class="landing-btn landing-btn-primary" :href="withBase('/skills/')">
+						Browse the skills
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
 							aria-hidden="true">
 							<path d="M5 12h14M13 5l7 7-7 7" />
@@ -914,6 +949,7 @@ onBeforeUnmount(() => {
 				</div>
 				<div class="landing-footer-links">
 					<a :href="withBase('/guide/')">Guide</a>
+					<a :href="withBase('/skills/')">Skills</a>
 					<a :href="withBase('/reference/')">Reference</a>
 					<a href="https://github.com/lsegal/aviary/releases" target="_blank" rel="noreferrer">Changelog</a>
 					<a href="https://github.com/lsegal/aviary" target="_blank" rel="noreferrer">GitHub</a>
@@ -945,8 +981,8 @@ onBeforeUnmount(() => {
 	inset: -20% -10% auto;
 	height: 80%;
 	background:
-		radial-gradient(600px 300px at 30% 30%, rgba(214, 87, 31, 0.18), transparent 70%),
-		radial-gradient(500px 260px at 80% 10%, rgba(198, 140, 79, 0.2), transparent 70%);
+		radial-gradient(600px 300px at 30% 30%, rgba(214, 87, 31, 0.1), transparent 70%),
+		radial-gradient(500px 260px at 80% 10%, rgba(184, 58, 29, 0.06), transparent 70%);
 	pointer-events: none;
 }
 
@@ -1074,13 +1110,13 @@ onBeforeUnmount(() => {
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.25),
 		0 6px 14px -4px rgba(184, 58, 29, 0.45);
-	color: #fff2e4;
+	color: #ffffff;
 }
 
 .landing-btn-primary:hover,
 .landing-btn-primary:focus-visible,
 .landing-btn-primary:visited {
-	color: #fff2e4;
+	color: #ffffff;
 	text-decoration: none;
 }
 
@@ -1128,8 +1164,8 @@ onBeforeUnmount(() => {
 	border: 1px solid var(--rule-strong);
 	border-radius: var(--radius-lg);
 	background:
-		radial-gradient(circle at 30% 30%, rgba(255, 240, 220, 0.5), transparent 60%),
-		linear-gradient(160deg, #ffe9cd, #f7c9a0 50%, #e09563);
+		radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.7), transparent 60%),
+		linear-gradient(160deg, #ffffff, #fbe9e2 55%, #f2b9a3);
 	box-shadow: var(--shadow-lg);
 	overflow: hidden;
 }
@@ -1141,7 +1177,7 @@ onBeforeUnmount(() => {
 	width: 160px;
 	height: 160px;
 	border-radius: 999px;
-	background: radial-gradient(circle, rgba(255, 220, 170, 0.9), rgba(255, 200, 130, 0.35) 60%, transparent 72%);
+	background: radial-gradient(circle, rgba(255, 228, 214, 0.95), rgba(240, 150, 115, 0.3) 60%, transparent 72%);
 }
 
 .landing-flock-stage .horizon {
@@ -1150,7 +1186,7 @@ onBeforeUnmount(() => {
 	bottom: 0;
 	left: 0;
 	height: 30%;
-	background: linear-gradient(180deg, transparent, rgba(150, 60, 20, 0.25));
+	background: linear-gradient(180deg, transparent, rgba(184, 58, 29, 0.16));
 }
 
 .bird {
@@ -1205,7 +1241,7 @@ onBeforeUnmount(() => {
 	border: 1px solid var(--rule);
 	border-radius: 14px;
 	background: color-mix(in oklab, var(--paper) 96%, transparent);
-	box-shadow: 0 10px 28px -12px rgba(93, 53, 31, 0.4);
+	box-shadow: 0 10px 28px -12px rgba(24, 20, 19, 0.4);
 	font-size: 12px;
 	animation: float-pod 6s ease-in-out infinite;
 }
@@ -1521,7 +1557,7 @@ onBeforeUnmount(() => {
 	border: 1px solid var(--rule);
 	border-radius: 16px;
 	background: var(--bg-soft);
-	box-shadow: 0 20px 40px -20px rgba(93, 53, 31, 0.35);
+	box-shadow: 0 20px 40px -20px rgba(24, 20, 19, 0.35);
 }
 
 /* Gradient overlay removed */
@@ -1740,7 +1776,7 @@ onBeforeUnmount(() => {
 	padding: 12px 14px;
 	border: 1px solid color-mix(in oklab, var(--rule-strong) 70%, transparent);
 	border-radius: 18px;
-	background: rgba(255, 250, 240, 0.84);
+	background: rgba(255, 255, 255, 0.86);
 	backdrop-filter: blur(10px);
 	-webkit-backdrop-filter: blur(10px);
 	box-shadow: var(--shadow-md);
@@ -1749,7 +1785,7 @@ onBeforeUnmount(() => {
 }
 
 .dark .channel-logo-card {
-	background: rgba(29, 19, 17, 0.82);
+	background: rgba(26, 26, 29, 0.84);
 }
 
 .channel-logo-card.signal {
@@ -2155,11 +2191,11 @@ onBeforeUnmount(() => {
 
 .landing-terminal {
 	overflow: hidden;
-	border: 1px solid #2a1612;
+	border: 1px solid #26262a;
 	border-radius: var(--radius-md);
-	background: #140b09;
+	background: #111113;
 	box-shadow: var(--shadow-md);
-	color: #ffe1c5;
+	color: #f1eeec;
 	font-family: var(--mono);
 	font-size: 13px;
 }
@@ -2169,9 +2205,9 @@ onBeforeUnmount(() => {
 	align-items: center;
 	gap: 8px;
 	padding: 10px 14px;
-	border-bottom: 1px solid #2a1612;
-	background: #1d100d;
-	color: #a08476;
+	border-bottom: 1px solid #26262a;
+	background: #19191c;
+	color: #94908d;
 	font-size: 12px;
 }
 
@@ -2184,7 +2220,7 @@ onBeforeUnmount(() => {
 	width: 10px;
 	height: 10px;
 	border-radius: 999px;
-	background: #4a3a33;
+	background: #3a3a3f;
 }
 
 .landing-terminal-body {
@@ -2199,7 +2235,7 @@ onBeforeUnmount(() => {
 }
 
 .landing-terminal-body .cmt {
-	color: #a98063;
+	color: #8e8985;
 }
 
 .landing-terminal-body .k {
@@ -2289,8 +2325,8 @@ onBeforeUnmount(() => {
 	border: 1px solid var(--rule-strong);
 	border-radius: var(--radius-lg);
 	background:
-		radial-gradient(600px 240px at 80% 10%, rgba(214, 87, 31, 0.22), transparent 70%),
-		radial-gradient(500px 220px at 15% 90%, rgba(198, 140, 79, 0.24), transparent 70%),
+		radial-gradient(600px 240px at 80% 10%, rgba(214, 87, 31, 0.12), transparent 70%),
+		radial-gradient(500px 220px at 15% 90%, rgba(184, 58, 29, 0.06), transparent 70%),
 		linear-gradient(180deg, color-mix(in oklab, var(--paper) 80%, transparent), var(--paper));
 	box-shadow: var(--shadow-lg);
 }
@@ -2390,112 +2426,6 @@ onBeforeUnmount(() => {
 .landing-final-cta :deep(.landing-install) {
 	max-width: 520px;
 	width: 100%;
-}
-
-.landing-home :deep(.landing-install) {
-	overflow: hidden;
-	border: 1px solid var(--rule-strong);
-	border-radius: 14px;
-	background: var(--paper);
-	box-shadow: var(--shadow-sm);
-}
-
-.landing-home :deep(.landing-install-tabs) {
-	display: flex;
-	gap: 2px;
-	padding: 6px;
-	border-bottom: 1px solid var(--rule);
-	background: color-mix(in oklab, var(--bg-soft) 60%, transparent);
-}
-
-.landing-home :deep(.landing-install-tab) {
-	flex: 1;
-	padding: 8px 12px;
-	border: 0;
-	border-radius: 8px;
-	background: transparent;
-	color: var(--ink-2);
-	font: inherit;
-	font-size: 13px;
-	font-weight: 500;
-	cursor: pointer;
-	transition:
-		background-color 0.15s ease,
-		color 0.15s ease;
-}
-
-.landing-home :deep(.landing-install-tab:hover) {
-	color: var(--ink);
-}
-
-.landing-home :deep(.landing-install-tab.active) {
-	background: var(--paper);
-	color: var(--ink);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-.landing-home :deep(.landing-install-command) {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 14px 16px;
-	color: var(--ink);
-	font-family: var(--mono);
-	font-size: 13.5px;
-}
-
-.landing-home :deep(.landing-install-command .prompt) {
-	color: var(--brand);
-	font-weight: 600;
-}
-
-.landing-home :deep(.landing-install-command .command) {
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.landing-home :deep(.landing-install-command .caret) {
-	display: inline-block;
-	width: 8px;
-	height: 1em;
-	margin-left: 2px;
-	background: var(--brand);
-	vertical-align: -2px;
-	animation: blink 1.05s step-end infinite;
-}
-
-.landing-home :deep(.landing-install-copy) {
-	display: grid;
-	place-items: center;
-	width: 32px;
-	height: 32px;
-	border: 1px solid var(--rule);
-	border-radius: 8px;
-	background: transparent;
-	color: var(--ink-2);
-	cursor: pointer;
-	transition:
-		color 0.15s ease,
-		border-color 0.15s ease,
-		background-color 0.15s ease;
-}
-
-.landing-home :deep(.landing-install-copy:hover) {
-	border-color: var(--rule-strong);
-	background: color-mix(in oklab, var(--bg-soft) 45%, transparent);
-	color: var(--ink);
-}
-
-.landing-home :deep(.landing-install-copy.copied) {
-	border-color: #2eb67d;
-	color: #2eb67d;
-}
-
-.landing-home :deep(.landing-install-minimal .landing-install-command) {
-	padding-block: 12px;
 }
 
 .reveal {

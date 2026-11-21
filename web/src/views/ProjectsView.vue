@@ -46,19 +46,25 @@
 								@click="openAdd">
 								<PlusIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
-							<button v-if="view === 'board'" type="button" aria-label="Check now" title="Check now"
+							<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
+								class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+								:disabled="!scheduleAgent" @click="onNewSchedule">
+								<CalendarDaysIcon aria-hidden="true" class="h-5 w-5" />
+								Schedule
+							</button>
+							<button type="button" aria-label="Check now" title="Check now"
 								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
 								<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
 							</button>
-							<button v-if="view === 'board'" type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+							<button type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
 								aria-label="Logs" title="Logs"
 								class="rounded-lg border p-1.5"
 								:class="logsOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 								@click="logsOpen = !logsOpen">
 								<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
-							<button v-if="view === 'board'" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+							<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
 								class="rounded-lg border p-1.5"
 								:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
@@ -87,20 +93,21 @@
 							{{ error }}
 						</p>
 
-						<template v-if="view === 'board'">
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
-						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7" aria-label="Job counts">
-							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
-								<p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ s.label }}</p>
-								<p class="text-2xl font-bold">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
+						<!-- Columns follow the width the board actually has, not the viewport, so
+							the cards reflow onto more rows instead of squeezing their values. -->
+						<section v-if="status" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3" aria-label="Job counts">
+							<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-xl border px-4 py-3" :class="s.cls" data-testid="stat-card">
+								<p class="truncate text-xs font-semibold uppercase tracking-wide opacity-80" :title="s.label" data-testid="stat-label">{{ s.label }}</p>
+								<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
 							</div>
 						</section>
 
 						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
 							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
 							<span v-for="cli in status.clis" :key="cli.name"
-								class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
+								class="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
 								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
 								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
@@ -108,10 +115,8 @@
 							</span>
 						</section>
 
-						</template>
-
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
-							<div v-if="view === 'board'" class="relative min-w-0 flex-1 sm:max-w-xs">
+							<div class="relative min-w-0 flex-1 sm:max-w-xs">
 								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
 									aria-hidden="true" data-testid="search-icon">
 									<MagnifyingGlassIcon class="h-4 w-4" />
@@ -119,21 +124,13 @@
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
 									class="field-input pl-9!" />
 							</div>
-							<div v-if="!aggregate" role="tablist" aria-label="Project views" class="flex max-w-full shrink-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
-									class="shrink-0 px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-									@click="setView(v.key)">
-									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
-								</button>
-							</div>
-							<template v-if="view === 'board'">
 								<div role="group" aria-label="Job filter" class="flex max-w-full flex-wrap items-center gap-1.5">
-									<button v-for="state in BOARD_STATES" :key="state" type="button" :aria-pressed="states.includes(state)"
-										class="shrink-0 rounded-full border px-3 py-1" :class="states.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
+									<button v-for="state in filterChips" :key="state" type="button" :aria-pressed="filters.includes(state)"
+										class="shrink-0 rounded-full border px-3 py-1" :class="filters.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
 										@click="toggleState(state)">
-										{{ stateLabel(state) }}<span v-if="status" class="ml-1.5 tabular-nums opacity-75">{{ status.states[state] }}</span>
+										{{ stateLabel(state) }}<span v-if="chipCount(state) !== null" class="ml-1.5 tabular-nums opacity-75">{{ chipCount(state) }}</span>
 									</button>
-									<button v-if="states.length" type="button" class="px-1 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+									<button v-if="filters.length" type="button" class="px-1 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
 										@click="setStates([])">Clear</button>
 								</div>
 								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
@@ -145,12 +142,14 @@
 									<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
 								</button>
 								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
-									{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
+									{{ shownTotal }} of {{ unfilteredShown }} {{ unfilteredShown === 1 ? `${noun} matches` : `${noun}s match` }}
 								</span>
 								<span v-else class="text-gray-500 dark:text-gray-400" data-testid="job-total">
-									<template v-if="states.length">{{ total }} of {{ allJobs }} {{ allJobs === 1 ? "job" : "jobs" }}</template>
-									<template v-else>{{ total }} {{ total === 1 ? "job" : "jobs" }}</template>
+									<template v-if="filters.length">{{ shownTotal }} of {{ allItems }} {{ allItems === 1 ? noun : `${noun}s` }}</template>
+									<template v-else>{{ shownTotal }} {{ shownTotal === 1 ? noun : `${noun}s` }}</template>
 								</span>
+								<router-link v-if="!aggregate && scheduleAgent" :to="agentTaskPath(scheduleAgent)" data-testid="manage-scheduled-tasks"
+									class="text-blue-600 hover:underline dark:text-blue-400">Manage in Scheduled Tasks</router-link>
 								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
 									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 										:disabled="page === 0" @click="page--">
@@ -162,23 +161,31 @@
 										<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
 									</button>
 								</nav>
-							</template>
 						</div>
 
-						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
-							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
-							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
-							:preview="previewSchedule" :refresh="refreshSchedules" />
-
-						<ScheduleDetail v-else-if="detailSchedule" :schedule="detailSchedule" :now="now" :back="{ query: {} }"
-							:edit="{ query: { tab: 'schedules', schedule: detailSchedule.id } }" :predict="predictSchedule"
-							:run-now="runScheduleNow" />
+						<section v-if="detailSchedule" data-testid="schedule-detail" :aria-label="`Schedule ${detailSchedule.name}`"
+							class="space-y-4 rounded-xl border border-violet-200 bg-white p-4 dark:border-violet-900 dark:bg-gray-900">
+							<header class="flex flex-wrap items-center gap-2">
+								<router-link :to="boardQuery" aria-label="Back to board" title="Back to board"
+									class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+									<ArrowLeftIcon aria-hidden="true" class="h-4 w-4" />
+								</router-link>
+								<span class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Scheduled</span>
+								<h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white">{{ detailSchedule.name }}</h2>
+							</header>
+							<p v-if="scheduleError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+								{{ scheduleError }}
+							</p>
+							<ScheduleEditor :key="detailSchedule.id" :schedule="detailSchedule" :save="saveSchedule"
+								:remove="removeSchedule" :run-now="runScheduleNow" :preview="previewSchedule"
+								@deleted="router.replace(boardQuery)" />
+						</section>
 
 						<template v-else>
-						<div v-if="loading && !jobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
-						<KanbanBoard v-else-if="kanban" :jobs="jobs" :states="states" :now="now" :schedules="boardSchedules"
+						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
+						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardSchedules"
 							:schedule-to="aggregate ? undefined : scheduleTo" />
-						<div v-else-if="!jobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
+						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="search = ''">Clear search</button>
@@ -187,10 +194,10 @@
 							{{ routeAgent }} owns no projects yet.
 							<button type="button" class="text-blue-600 hover:underline dark:text-blue-400" @click="openAdd">Add one</button>.
 						</div>
-						<div v-else-if="!jobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
+						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)" />
-							<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
+							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
 						</section>
@@ -215,7 +222,9 @@
 </template>
 
 <script setup lang="ts">
+import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
@@ -233,10 +242,10 @@ import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
-import ScheduleDetail from "../components/projects/ScheduleDetail.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
-import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
+import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -252,8 +261,11 @@ import {
 } from "../lib/projectSettings";
 import {
 	age,
+	BOARD_FILTERS,
 	BOARD_STATES,
+	type BoardFilter,
 	type BoardState,
+	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
 	parseBoardStates,
@@ -264,22 +276,17 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
-import { useSettingsStore } from "../stores/settings";
+import { agentTaskPath, useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
-const FILTER_ACTIVE: Record<BoardState, string> = {
+const FILTER_ACTIVE: Record<BoardFilter, string> = {
+	scheduled: "border-violet-600 bg-violet-600 text-white",
 	starting: "border-orange-500 bg-orange-500 text-white",
 	paused: "border-amber-500 bg-amber-500 text-white",
 	running: "border-blue-600 bg-blue-600 text-white",
 	done: "border-green-600 bg-green-600 text-white",
 	failed: "border-red-600 bg-red-600 text-white",
 };
-
-type ProjectView = "board" | "schedules";
-const VIEWS: { key: ProjectView; label: string }[] = [
-	{ key: "board", label: "Board" },
-	{ key: "schedules", label: "Schedules" },
-];
 
 const route = useRoute();
 const router = useRouter();
@@ -324,33 +331,60 @@ const settingsPath = computed(() =>
 // A job's details open under the header, in place of the board, so the
 // header, its panels and the board's filters stay put.
 const jobOpen = computed(() => route.matched.length > 1);
-// The selected states filter the board; none shows every state. They live
-// in the URL as ?state=running,failed, so a link opens the same filter, and
-// each board remembers its own in localStorage, so leaving the board, opening
-// a job and reloading keep them. A URL's states win over remembered ones.
-const states = computed(() => parseBoardStates(route.query.state));
+// The selected filters narrow the board; none shows everything. They live
+// in the URL as ?state=scheduled,running, so a link opens the same filter,
+// and each board remembers its own in localStorage, so leaving the board,
+// opening a job and reloading keep them. A URL's filters win over remembered
+// ones. Scheduled selects the project's scheduled items; the rest select
+// jobs by state, and a scheduled task's run is a job like any other.
+const filters = computed(() => parseBoardStates(route.query.state));
+const states = computed(() => jobStates(filters.value));
+// Selecting only Scheduled hides every job.
+const showJobs = computed(() => !filters.value.length || !!states.value.length);
+const showSchedules = computed(
+	() =>
+		!aggregate.value &&
+		(!filters.value.length || filters.value.includes("scheduled")),
+);
+// A board of agent projects has no scheduled items, so no Scheduled chip.
+const filterChips = computed(() =>
+	aggregate.value ? BOARD_STATES : BOARD_FILTERS,
+);
 const statesKey = computed(
 	() =>
 		`aviary.projects.states.${project.value || `agent:${routeAgent.value}`}`,
 );
-function setStates(next: BoardState[]) {
+function setStates(next: BoardFilter[]) {
 	const state = parseBoardStates(next.join(",")).join(",");
 	if (state) localStorage.setItem(statesKey.value, state);
 	else localStorage.removeItem(statesKey.value);
 	void router.replace({ query: { ...route.query, state: state || undefined } });
 }
-function toggleState(state: BoardState) {
+function toggleState(state: BoardFilter) {
 	setStates(
-		states.value.includes(state)
-			? states.value.filter((s) => s !== state)
-			: [...states.value, state],
+		filters.value.includes(state)
+			? filters.value.filter((s) => s !== state)
+			: [...filters.value, state],
 	);
 }
 watch(
-	() => [statesKey.value, route.query.state],
+	() => [statesKey.value, route.query.state, route.query.tab, route.query.view],
 	() => {
+		// The board replaced the old Schedules view: its links land on the
+		// board's scheduled items, with the linked schedule's editor open.
+		if (route.query.tab === "schedules" || route.query.view === "schedules") {
+			const { schedule } = route.query;
+			void router.replace({
+				query: {
+					state: "scheduled",
+					scheduled:
+						typeof schedule === "string" && schedule ? schedule : undefined,
+				},
+			});
+			return;
+		}
 		if (typeof route.query.state === "string") {
-			const state = states.value.join(",");
+			const state = filters.value.join(",");
 			if (state) localStorage.setItem(statesKey.value, state);
 			else localStorage.removeItem(statesKey.value);
 			return;
@@ -392,57 +426,57 @@ const {
 	upcoming,
 	agents: scheduleAgents,
 	error: scheduleError,
-	loaded: schedulesLoaded,
 	save: saveSchedule,
-	setEnabled: setScheduleEnabled,
 	remove: removeSchedule,
 	runNow: runScheduleNow,
 	preview: previewSchedule,
-	predict: predictSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project);
-
 // The project's scheduled tasks are their own kind of box on the board: in
-// the list, with no states selected, and in the kanban's Scheduled column.
-// Selected states show jobs only.
+// the list and in the kanban's Scheduled column, while the Scheduled chip or
+// no chip is selected.
 const boardSchedules = computed(() =>
-	states.value.length
-		? []
-		: schedules.value.filter((s) => scheduleMatches(s, search.value)),
+	showSchedules.value
+		? schedules.value.filter((s) => scheduleMatches(s, search.value))
+		: [],
 );
-// A scheduled box opens its detail view on the board, at ?scheduled=<id>.
+const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
+// A scheduled box opens its editor on the board, at ?scheduled=<id>, so a
+// reload or a shared link opens the same place.
 function scheduleTo(s: ProjectSchedule) {
-	return { query: { scheduled: s.id } };
+	return { query: { ...boardQuery.value.query, scheduled: s.id } };
 }
+const boardQuery = computed(() => {
+	const { scheduled: _, ...query } = route.query;
+	return { query };
+});
 const detailSchedule = computed(() => {
 	const id = route.query.scheduled;
-	return view.value === "board" && typeof id === "string"
+	return typeof id === "string"
 		? (schedules.value.find((s) => s.id === id) ?? null)
 		: null;
 });
-
-// The view and the schedule being edited live in the URL, so a reload or a
-// shared link opens the same place.
-const view = computed<ProjectView>(() =>
-	route.query.tab === "schedules" ? "schedules" : "board",
-);
-const selectedSchedule = computed({
-	get: () =>
-		typeof route.query.schedule === "string" ? route.query.schedule : "",
-	set: (id: string) => {
-		void router.replace({
-			query: { ...route.query, tab: "schedules", schedule: id || undefined },
-		});
-	},
-});
-function setView(next: ProjectView) {
-	const state = route.query.state;
-	void router.replace({
-		query: { ...(next === "board" ? {} : { tab: next }), state },
-	});
-}
 function openSchedule(id: string) {
-	selectedSchedule.value = id;
+	void router.push({ query: { ...route.query, scheduled: id } });
+}
+
+// The agent a new scheduled task runs under: the project's owner, or the
+// first agent when no agent owns the watch.
+const scheduleAgent = computed(
+	() => owner.value || scheduleAgents.value[0] || "",
+);
+// Schedule creates a scheduled task the way any is created, through the
+// shared Add task dialog, as a "project" task targeting this project.
+const { open: openItemDialog } = useAgentItemDialogs();
+function onNewSchedule() {
+	if (!scheduleAgent.value) return;
+	openItemDialog({
+		kind: "task",
+		mode: "create",
+		agent: scheduleAgent.value,
+		project: project.value,
+		onCreated: () => void refreshSchedules(),
+	});
 }
 
 // The add-project dialog is open while the URL carries ?add=1, so the
@@ -480,6 +514,24 @@ const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
 const allJobs = computed(() =>
 	BOARD_STATES.reduce((n, s) => n + (status.value?.states[s] ?? 0), 0),
 );
+// The board counts its scheduled items with its jobs: "items" once the
+// project has any.
+const noun = computed(() => (schedules.value.length ? "item" : "job"));
+const allItems = computed(
+	() => allJobs.value + (aggregate.value ? 0 : schedules.value.length),
+);
+const shownTotal = computed(
+	() => (showJobs.value ? total.value : 0) + boardSchedules.value.length,
+);
+const unfilteredShown = computed(
+	() =>
+		(showJobs.value ? unfilteredTotal.value : 0) +
+		(showSchedules.value ? schedules.value.length : 0),
+);
+function chipCount(state: BoardFilter): number | null {
+	if (state === "scheduled") return schedules.value.length;
+	return status.value ? status.value.states[state] : null;
+}
 
 // Each board state's stat card, in its pill's colors; Starting is orange.
 const STATE_CARD: Record<BoardState, string> = {

@@ -1,44 +1,316 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
-test.beforeEach(async ({ page }) => {
-	await setAuthToken(page);
-});
+const HOUR = 3_600_000;
+const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
 
-test("a configured task can be run now from System → Jobs", async ({
-	page,
-}) => {
-	const runs: unknown[] = [];
-	await mockMCP(page, {
-		job_query: [],
-		task_list: [
+function job(
+	n: number,
+	task: string,
+	status: string,
+	ageMs: number,
+	durationMs = 2_000,
+) {
+	return {
+		id: `job_${String(n).padStart(8, "0")}`,
+		task_id: `assistant/${task}`,
+		agent_id: "assistant",
+		prompt: "",
+		status,
+		attempts: 1,
+		max_retries: 3,
+		created_at: iso(-ageMs),
+		updated_at: iso(-ageMs + durationMs),
+	};
+}
+
+/**
+ * Mocks an agent with three tasks: a daily one that succeeded, a paused
+ * weekly one that failed, and a project task running now.
+ */
+async function mockTasks(page: Page) {
+	const config = {
+		agents: [
 			{
-				id: "assistant/daily-report",
-				agent_id: "agent_assistant",
-				agent_name: "assistant",
-				name: "daily-report",
-				trigger_type: "cron",
-				schedule: "0 9 * * *",
-				prompt: "write the report",
-				target: "channel:alerts",
+				name: "assistant",
+				model: "x/y",
+				tasks: [
+					{
+						name: "daily-report",
+						trigger: "daily",
+						at: "02:00",
+						prompt: "write the report",
+					},
+					{
+						name: "weekly-cleanup",
+						trigger: "weekly",
+						days: "mon",
+						at: "09:00",
+						enabled: false,
+						prompt: "clean up",
+					},
+					{
+						name: "ci-watch",
+						type: "project",
+						project: "o/r",
+						every: "1h",
+						prompt: "watch ci",
+					},
+				],
 			},
 		],
-		task_run: (args) => {
-			runs.push(args);
+	};
+	const calls = {
+		runs: [] as unknown[],
+		updates: [] as Record<string, unknown>[],
+	};
+	await setAuthToken(page);
+	await mockMCP(page, {
+		agent_list: [
+			{ id: "assistant", name: "assistant", model: "x/y", state: "idle" },
+		],
+		config_get: () => config,
+		config_validate: [],
+		auth_list: [],
+		tool_list: [],
+		session_list: [],
+		job_query: [
+			job(4, "ci-watch", "in_progress", 60_000),
+			job(3, "weekly-cleanup", "failed", 2 * HOUR, 4_000),
+			job(2, "daily-report", "completed", 3 * HOUR, 1_000),
+			job(1, "daily-report", "completed", 27 * HOUR, 3_000),
+		],
+		task_compile_query: [
+			{
+				id: "task_compile_1",
+				agent_id: "assistant",
+				task_name: "daily-report",
+				status: "succeeded",
+				created_at: iso(-HOUR),
+				updated_at: iso(-HOUR),
+			},
+		],
+		task_preview: (args?: Record<string, unknown>) => {
+			const name = String(args?.name);
+			if (name.endsWith("/daily-report"))
+				return {
+					description: "daily at 02:00 (America/Toronto)",
+					next: [iso(41 * 60_000), iso(25 * HOUR)],
+				};
+			if (name.endsWith("/weekly-cleanup"))
+				return { description: "weekly on Mon at 09:00 (UTC)", next: [] };
 			return {
-				id: "job_12345678",
-				task_id: "assistant/daily-report",
-				agent_id: "agent_assistant",
-				status: "in_progress",
-				attempts: 1,
-				created_at: "",
-				updated_at: "",
+				description: "every 1h0m0s (UTC)",
+				next: [iso(HOUR / 2), iso(1.5 * HOUR)],
 			};
 		},
+		task_run: (args) => {
+			calls.runs.push(args);
+			return job(5, "daily-report", "in_progress", 0);
+		},
+		task_update: (args?: Record<string, unknown>) => {
+			calls.updates.push(args ?? {});
+			const task = config.agents[0].tasks.find(
+				(t) => `assistant/${t.name}` === args?.name,
+			);
+			if (task && typeof args?.enabled === "boolean")
+				task.enabled = args.enabled;
+			return "updated";
+		},
 	});
+	return calls;
+}
 
+test("the Scheduled Tasks root page has no Reload or Save Changes", async ({
+	page,
+}) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"Scheduled Tasks",
+	);
+	await expect(page.getByTestId("tasks-overview")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
+		0,
+	);
+	await expect(page.getByTestId("new-task-button")).toBeVisible();
+});
+
+test("a task's editor keeps its own Save Changes", async ({ page }) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks?task=daily-report");
+
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeVisible();
+	await expect(page.getByTestId("tasks-overview")).toHaveCount(0);
+});
+
+test("the summary stat cards and graphs render with data", async ({ page }) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+
+	const runs = page.getByTestId("stat-runs");
+	await expect(runs).toContainText("4");
+	await expect(runs).toContainText("2 ok");
+	await expect(runs).toContainText("1 failed");
+	await expect(
+		page.getByTestId("runs-sparkline").locator(".bg-green-500"),
+	).not.toHaveCount(0);
+	await expect(page.getByTestId("stat-success-rate")).toContainText("67%");
+	await expect(page.getByTestId("stat-duration")).toContainText("2.7s");
+	await expect(page.getByTestId("stat-duration")).toContainText("median 3.0s");
+	// daily-report once and ci-watch twice; the paused task doesn't count.
+	await expect(page.getByTestId("stat-upcoming")).toContainText("3");
+	await expect(page.getByTestId("stat-running")).toContainText("1");
+	await expect(page.getByTestId("stat-failures")).toContainText("1");
+	await expect(page.getByTestId("stat-failures")).toContainText(
+		"last weekly-cleanup",
+	);
+
+	await page.getByTestId("more-analytics-toggle").click();
+	await expect(page.getByTestId("jobs-by-day")).toBeVisible();
+	await expect(page.getByText("task_compile_1")).toBeVisible();
+	await expect(page.getByTestId("job-count")).toHaveText("4 jobs");
+});
+
+test("tasks show as cards by default with every field", async ({ page }) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+
+	const cards = page.getByTestId("task-card");
+	await expect(cards).toHaveCount(3);
+	await expect(page.getByTestId("task-list")).toHaveCount(0);
+
+	const daily = cards.filter({ hasText: "daily-report" });
+	await expect(daily.getByTestId("task-enabled")).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await expect(daily.getByTestId("task-owner")).toHaveText("agent assistant");
+	await expect(daily.getByTestId("task-schedule")).toHaveText(
+		/^daily at 02:00 \(America\/Toronto\) · next in 4\dm$/,
+	);
+	await expect(daily.getByTestId("task-last-run")).toHaveText(
+		"Succeeded 3h ago",
+	);
+	for (const action of ["Run now", "Pause", "Edit", "View runs"])
+		await expect(daily.getByRole("button", { name: action })).toBeVisible();
+
+	const weekly = cards.filter({ hasText: "weekly-cleanup" });
+	await expect(weekly.getByTestId("task-schedule")).toHaveText(
+		"weekly on Mon at 09:00 (UTC) · paused",
+	);
+	await expect(weekly.getByTestId("task-last-run")).toHaveText("Failed 2h ago");
+	await expect(weekly.getByRole("button", { name: "Resume" })).toBeVisible();
+
+	const ci = cards.filter({ hasText: "ci-watch" });
+	await expect(ci.getByTestId("task-owner")).toHaveText("project o/r");
+	await expect(ci.getByTestId("task-running")).toBeVisible();
+	await expect(ci.getByTestId("task-last-run")).toHaveText("Running now");
+
+	// The filter chips narrow the cards by state.
+	await page
+		.getByRole("group", { name: "Task filter" })
+		.getByRole("button", { name: /Paused/ })
+		.click();
+	await expect(cards).toHaveCount(1);
+	await expect(cards).toContainText("weekly-cleanup");
+});
+
+test("the list toggle switches the layout and survives a reload", async ({
+	page,
+}) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+	await expect(page.getByTestId("task-card")).toHaveCount(3);
+
+	await page.getByTestId("layout-list").click();
+	await expect(page.getByTestId("task-list")).toBeVisible();
+	await expect(page.getByTestId("task-row-item")).toHaveCount(3);
+	await expect(page.getByTestId("task-card")).toHaveCount(0);
+	await expect(
+		page.getByTestId("task-row-item").filter({ hasText: "daily-report" }),
+	).toContainText("daily at 02:00 (America/Toronto)");
+
+	await page.reload();
+	await expect(page.getByTestId("task-row-item")).toHaveCount(3);
+	await expect(page.getByTestId("task-card")).toHaveCount(0);
+
+	await page.getByTestId("layout-cards").click();
+	await expect(page.getByTestId("task-card")).toHaveCount(3);
+});
+
+test("card quick actions work", async ({ page }) => {
+	const calls = await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+	const daily = page
+		.getByTestId("task-card")
+		.filter({ hasText: "daily-report" });
+
+	await daily.getByRole("button", { name: "Run now" }).click();
+	await expect
+		.poll(() => calls.runs)
+		.toEqual([{ name: "assistant/daily-report" }]);
+
+	await daily.getByRole("button", { name: "Pause" }).click();
+	await expect
+		.poll(() => calls.updates)
+		.toEqual([{ name: "assistant/daily-report", enabled: false }]);
+	await expect(daily.getByTestId("task-schedule")).toContainText("· paused");
+	await expect(daily.getByRole("button", { name: "Resume" })).toBeVisible();
+
+	await daily.getByTestId("task-enabled").click();
+	await expect
+		.poll(() => calls.updates.at(-1))
+		.toEqual({ name: "assistant/daily-report", enabled: true });
+
+	await daily.getByRole("button", { name: "View runs" }).click();
+	await expect(page.getByTestId("job-task-filter")).toHaveText(
+		/assistant\/daily-report/,
+	);
+	await expect(page.getByTestId("job-count")).toHaveText("2 jobs");
+
+	await daily.getByRole("button", { name: "Edit" }).click();
+	await expect(page.getByRole("dialog")).toBeVisible();
+	await page.keyboard.press("Escape");
+
+	// Clicking the card opens the task's editor.
+	await daily.getByRole("heading", { name: "daily-report" }).click();
+	await expect(page).toHaveURL(
+		/\/agents\/assistant\/tasks\?task=daily-report$/,
+	);
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeVisible();
+});
+
+test("clicking a list row opens the task's editor", async ({ page }) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+	await page.getByTestId("layout-list").click();
+	await page
+		.getByTestId("task-row-item")
+		.filter({ hasText: "weekly-cleanup" })
+		.locator("td")
+		.first()
+		.click();
+	await expect(page).toHaveURL(
+		/\/agents\/assistant\/tasks\?task=weekly-cleanup$/,
+	);
+});
+
+test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async ({
+	page,
+}) => {
+	await mockTasks(page);
 	await page.goto("/system/jobs");
-	await page.getByRole("button", { name: "Run Now" }).first().click();
 
-	await expect.poll(() => runs).toEqual([{ name: "assistant/daily-report" }]);
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"Scheduled Tasks",
+	);
+	await expect(page.locator('a[href="/system/jobs"]')).toHaveCount(0);
 });

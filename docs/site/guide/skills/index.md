@@ -2,12 +2,16 @@
 
 Aviary ships four skills for providers such as Claude Code, Codex and Gemini CLI. Projects runs them: Aviary decides which issue or Discussion to work on, in which CLI and when, and the skill does the rest. They are ordinary [skills.sh](https://skills.sh/) skills installed into each CLI, so they also work on their own, with no Aviary at all.
 
+::: tip Use them without Aviary
+Every skill has its own landing page under [Skills](/skills/) with copy-paste install commands for Claude Code, Codex, Gemini CLI and OpenCode. You don't need Aviary to use them.
+:::
+
 | Skill | What it does | Who runs it |
 | --- | --- | --- |
-| [`gh-fix`](./gh-fix) | Fixes a GitHub issue end to end: draft PR, implementation, tests, changelog, CI repair and merge. | Projects, for issues on watched repositories and boards |
-| [`gh-discuss`](./gh-discuss) | Researches one new GitHub Discussion and posts a single answer, or stays silent. Read-only. | Projects, for watched Discussions boards |
-| [`gh-safe-merge`](./gh-safe-merge) | Accepts an unowned pull request, such as an outside contribution: a safety check gates everything, then CI goes green and it merges. Not a code review. | You |
-| [`gh-create`](./gh-create) | Files a well-formed GitHub issue from a short request. | You. Projects never runs it, but the issues it files are what Projects picks up. |
+| [`gh-fix`](./gh-fix) ([landing page](/skills/gh-fix/)) | Fixes a GitHub issue end to end: draft PR, implementation, tests, changelog, CI repair and merge. | Projects, for issues on watched repositories and boards |
+| [`gh-discuss`](./gh-discuss) ([landing page](/skills/gh-discuss/)) | Researches one new GitHub Discussion and posts a single answer, or stays silent. Read-only. | Projects, for watched Discussions boards |
+| [`gh-safe-merge`](./gh-safe-merge) ([landing page](/skills/gh-safe-merge/)) | Accepts an unowned pull request, such as an outside contribution: a safety check gates everything, then CI goes green and it merges. Not a code review. | You |
+| [`gh-create`](./gh-create) ([landing page](/skills/gh-create/)) | Files a well-formed GitHub issue from a short request. | You. Projects never runs it, but the issues it files are what Projects picks up. |
 
 These skills are separate from the skills Aviary's own agents use. They live in the repository under `.agents/skills/`.
 

@@ -132,7 +132,10 @@ const UPCOMING = [
 
 type Args = Record<string, unknown>;
 
-async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
+async function setup(
+	page: Page,
+	opts: { upcoming?: unknown[]; owner?: string } = {},
+) {
 	await setAuthToken(page);
 	const calls: Record<string, Args[]> = {};
 	const tasks: unknown[] = [...TASKS];
@@ -144,8 +147,26 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 	await mockMCP(page, {
 		agent_list: [{ name: "assistant" }, { name: "reviewer" }],
 		auth_list: [],
-		// No agent owns the watch, so its board sits under System → Watches.
-		config_get: { agents: [{ name: "assistant", model: "cli/codex/gpt-5.5" }] },
+		// Without an owner no agent owns the watch, so its board sits under
+		// System → Watches.
+		config_get: {
+			agents: [
+				{
+					name: "assistant",
+					model: "cli/codex/gpt-5.5",
+					channels: [{ type: "discord", id: "ops", name: "ops" }],
+				},
+				...(opts.owner
+					? [
+							{
+								name: opts.owner,
+								model: "cli/codex/gpt-5.5",
+								projects: [{ target: "lsegal/aviary" }],
+							},
+						]
+					: []),
+			],
+		},
 		// The shared Add task dialog saves the config; the saved project task
 		// then lists like any other.
 		config_save: (args?: Args) => {
@@ -195,6 +216,17 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 		config_task_convert_to_script: record("config_task_convert_to_script"),
 		task_run: record("task_run"),
 		task_delete: record("task_delete"),
+		session_list: (args?: Args) =>
+			args?.agent === "assistant"
+				? [
+						{
+							id: "sess_plain",
+							agent_id: "assistant",
+							name: "plain",
+							created_at: minutesFromNow(-60),
+						},
+					]
+				: [],
 	});
 	return calls;
 }
@@ -240,11 +272,9 @@ test("board shows scheduled job cards and the up next strip", async ({
 		per_task: 3,
 	});
 
-	// A run in the strip opens its schedule in the Schedules tab.
+	// A run in the strip opens its schedule's editor on the board.
 	await strip.getByTestId("up-next-run").first().click();
-	await expect(page).toHaveURL(
-		/tab=schedules&schedule=assistant\/nightly-triage/,
-	);
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
 	await expect(page.getByTestId("schedule-editor")).toBeVisible();
 });
 
@@ -315,7 +345,7 @@ test("kanban shows a Scheduled column of compact scheduled boxes", async ({
 	await expect(columns.first()).toHaveAttribute("data-state", "running");
 });
 
-test("a scheduled box opens its timings, last runs and predicted runs", async ({
+test("a scheduled card opens its editor within the project page", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -327,43 +357,41 @@ test("a scheduled box opens its timings, last runs and predicted runs", async ({
 		.click();
 	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
 
-	const detail = page.getByTestId("schedule-detail");
-	await expect(detail.getByTestId("schedule-timings")).toContainText(
-		"daily at 02:00 (America/Toronto)",
-	);
-	await expect(detail.getByTestId("schedule-timings")).toContainText(
-		"America/Toronto",
-	);
-	// Predictions come from the scheduler for the saved task.
+	// The project header and its actions stay put around the editor.
 	await expect(
-		detail.getByTestId("schedule-predicted").locator("li"),
-	).toHaveCount(3);
-	expect(calls.task_preview?.[0]).toEqual({
-		name: "assistant/nightly-triage",
-		count: 5,
-	});
-	const runs = detail.getByTestId("schedule-last-runs").locator("li");
-	await expect(runs).toHaveCount(2);
-	await expect(runs.first()).toContainText("running");
-	await expect(detail.getByTestId("schedule-prompt")).toHaveText(
+		page.getByRole("link", { name: "lsegal/aviary", exact: true }),
+	).toBeVisible();
+	await expect(page.getByTestId("schedule-new")).toBeVisible();
+	const detail = page.getByTestId("schedule-detail");
+	const editor = detail.getByTestId("schedule-editor");
+	await expect(editor.getByLabel("Prompt")).toHaveValue(
 		"Triage issues opened since the last run and label them.",
 	);
-	await expect(detail.getByTestId("schedule-settings")).toContainText(
-		"cli/claude/opus",
+	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
+		3,
 	);
+	const runs = editor.getByTestId("schedule-runs").locator("li");
+	await expect(runs).toHaveCount(2);
+	await expect(runs.first()).toContainText("running");
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 
-	await detail.getByRole("button", { name: "Run now" }).click();
+	await editor.getByRole("button", { name: "Run now" }).click();
 	await expect
 		.poll(() => calls.task_run?.[0])
 		.toEqual({ name: "assistant/nightly-triage" });
 
-	await detail.getByRole("link", { name: "Edit" }).click();
-	await expect(page.getByTestId("schedule-editor")).toBeVisible();
-
-	await page.goBack();
+	// The card's expand link opens the same editor.
 	await detail.getByRole("link", { name: "Back to board" }).click();
+	await expect(page).not.toHaveURL(/scheduled=/);
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	await page
+		.getByTestId("scheduled-card")
+		.nth(1)
+		.getByRole("link", { name: "Edit schedule" })
+		.click();
+	await expect(
+		page.getByTestId("schedule-editor").getByLabel("Name"),
+	).toHaveValue("weekly-deps");
 });
 
 test("up next strip is hidden when no schedule is enabled", async ({
@@ -384,28 +412,14 @@ test("a watch no agent owns opens no add-project dialog", async ({ page }) => {
 	).toHaveCount(0);
 });
 
-test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
+test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
+	await page.goto(
+		"/system/watches/lsegal%2Faviary?scheduled=assistant/nightly-triage",
+	);
 
-	const rows = page.getByTestId("schedule-row");
-	await expect(rows).toHaveCount(2);
-	await expect(rows.nth(0)).toContainText("nightly-triage");
-	await expect(rows.nth(0)).toContainText("daily at 02:00 (America/Toronto)");
-	await expect(rows.nth(0)).toContainText("Labeled 4 issues");
-	await expect(rows.nth(1)).toContainText("paused");
-
-	await rows.nth(1).getByRole("switch").click();
-	await expect
-		.poll(() => calls.task_update?.[0])
-		.toEqual({ name: "assistant/weekly-deps", enabled: true });
-
-	await rows
-		.nth(0)
-		.getByRole("button", { name: /nightly-triage/ })
-		.click();
 	const editor = page.getByTestId("schedule-editor");
 	await expect(editor.getByLabel("Prompt")).toHaveValue(
 		"Triage issues opened since the last run and label them.",
@@ -476,21 +490,26 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 	await expect
 		.poll(() => calls.task_delete?.[0])
 		.toEqual({ name: "assistant/nightly-triage" });
+	// Deleting it goes back to the board.
+	await expect(page).not.toHaveURL(/scheduled=/);
+	await expect(editor).toHaveCount(0);
 });
 
-test("new schedule creates a project scheduled task through the shared Add task dialog", async ({
+test("the header Schedule button creates a project scheduled task through the shared Add task dialog", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
-	await page.getByTestId("schedule-new").click();
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	await page.getByRole("button", { name: "Schedule", exact: true }).click();
 
 	const dialog = page.getByRole("dialog", {
 		name: "Add project scheduled task",
 	});
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText("lsegal/aviary");
-	await expect(dialog.getByLabel("Agent")).toHaveValue("assistant");
+	// The task's agent comes from the project, so the dialog never asks.
+	await expect(dialog.getByLabel("Agent")).toHaveCount(0);
 	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
 	// A project task needs a time trigger: no None tab, daily by default.
 	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
@@ -506,6 +525,13 @@ test("new schedule creates a project scheduled task through the shared Add task 
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();
 	await expect(precompute).not.toBeChecked();
+	// Send To offers the agent's channels by name.
+	const sendTo = dialog.getByLabel("Send To");
+	await expect(sendTo.locator("option")).toHaveText([
+		"Task session only",
+		"ops · discord",
+	]);
+	await sendTo.selectOption({ label: "ops · discord" });
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.config_task_convert_to_script).toBeUndefined();
@@ -520,14 +546,31 @@ test("new schedule creates a project scheduled task through the shared Add task 
 			project: "lsegal/aviary",
 			schedule: "0 * * * *",
 			prompt: "Rerun flaky CI jobs on open PRs.",
+			target: "channel:ops",
 			enabled: true,
 		}),
 	]);
 	expect(calls.task_schedule).toBeUndefined();
 
-	// It stays in the project, opened in the schedule editor, which links to
-	// the same task in Scheduled Tasks.
-	await expect(page).toHaveURL(/schedule=assistant\/hourly-ci-watch/);
+	// It shows on the board with the other scheduled items, and its card
+	// opens the schedule editor, which links to the same task in Scheduled
+	// Tasks.
+	const card = page
+		.getByTestId("scheduled-card")
+		.filter({ hasText: "hourly-ci-watch" });
+	await expect(card).toHaveCount(1);
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(3);
+	await page.getByTestId("kanban-toggle").click();
+	await expect(
+		page
+			.getByTestId("kanban-column")
+			.first()
+			.getByTestId("kanban-scheduled-card")
+			.filter({ hasText: "hourly-ci-watch" }),
+	).toHaveCount(1);
+	await page.getByTestId("kanban-toggle").click();
+	await card.getByRole("link", { name: "hourly-ci-watch" }).click();
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)hourly-ci-watch/);
 	const editor = page.getByTestId("schedule-editor");
 	await expect(editor.getByLabel("Name")).toHaveValue("hourly-ci-watch");
 	await expect(editor.getByTestId("schedule-task-link")).toHaveAttribute(
@@ -536,11 +579,44 @@ test("new schedule creates a project scheduled task through the shared Add task 
 	);
 });
 
+test("new schedule on an owned project runs under the project's agent without asking", async ({
+	page,
+}) => {
+	const calls = await setup(page, { owner: "reviewer" });
+	await page.goto("/agents/reviewer/projects/lsegal%2Faviary");
+	await page.getByRole("button", { name: "Schedule", exact: true }).click();
+
+	const dialog = page.getByRole("dialog", {
+		name: "Add project scheduled task",
+	});
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByLabel("Agent")).toHaveCount(0);
+	await dialog.getByLabel("Task name").fill("owned-watch");
+	await dialog.getByLabel("Prompt").fill("Summarize open PRs.");
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+
+	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
+		agents: { name: string; tasks?: { name: string }[] }[];
+	};
+	const owner = config.agents.find((a) => a.name === "reviewer");
+	expect(owner?.tasks).toEqual([
+		expect.objectContaining({
+			name: "owned-watch",
+			type: "project",
+			project: "lsegal/aviary",
+		}),
+	]);
+	expect(
+		config.agents.find((a) => a.name === "assistant")?.tasks ?? [],
+	).toEqual([]);
+});
+
 test("new schedule sets every trigger type, timezone and policy, and they round-trip", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
+	await page.goto("/system/watches/lsegal%2Faviary");
 
 	for (const c of TRIGGER_CASES) {
 		const name = `schedule-${c.label.toLowerCase()}`;
@@ -566,28 +642,30 @@ test("new schedule sets every trigger type, timezone and policy, and they round-
 		expect(task).toMatchObject({ type: "project", project: "lsegal/aviary" });
 		expectSavedTrigger(task, c);
 
+		// Its card summarizes the trigger, cron expression included.
+		const card = page.getByTestId("scheduled-card").filter({ hasText: name });
+		if (c.label === "Cron")
+			await expect(card.getByTestId("scheduled-trigger")).toHaveText(
+				"cron 0 * * * * (America/Los_Angeles)",
+			);
 		// The saved task reopens in the schedule editor with every field kept.
-		await expect(page).toHaveURL(new RegExp(`schedule=assistant/${name}`));
+		await card.getByRole("link", { name, exact: true }).click();
 		const editor = page.getByTestId("schedule-editor");
 		await expect(editor.getByLabel("Name")).toHaveValue(name);
 		await expectTrigger(editor, c);
-		// Its list entry summarizes the trigger, cron expression included.
-		if (c.label === "Cron")
-			await expect(
-				page.getByTestId("schedule-row").filter({ hasText: name }),
-			).toContainText("cron 0 * * * * (America/Los_Angeles)");
+		await page.getByRole("link", { name: "Back to board" }).click();
 	}
 });
 
 test.describe("phone width", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the schedules tab and editor have no horizontal overflow", async ({
+	test("the board's schedule editor has no horizontal overflow", async ({
 		page,
 	}) => {
 		await setup(page);
 		await page.goto(
-			"/system/watches/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
+			"/system/watches/lsegal%2Faviary?scheduled=assistant/nightly-triage",
 		);
 		await expect(page.getByTestId("schedule-editor")).toBeVisible();
 		await page.waitForTimeout(500);
@@ -610,38 +688,156 @@ test.describe("phone width", () => {
 test("leaving a schedule with unsaved edits asks first", async ({ page }) => {
 	await setup(page);
 	await page.goto(
-		"/system/watches/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
+		"/system/watches/lsegal%2Faviary?scheduled=assistant/nightly-triage",
 	);
 	const editor = page.getByTestId("schedule-editor");
 	const prompt = editor.getByLabel("Prompt");
 	await expect(prompt).toHaveValue(
 		"Triage issues opened since the last run and label them.",
 	);
-	const rows = page.getByTestId("schedule-row");
+	const back = page.getByRole("link", { name: "Back to board" });
 	const dialog = page.getByTestId("unsaved-changes-dialog");
 
-	// Unchanged: picking another schedule does not ask.
-	await rows
-		.nth(1)
-		.getByRole("button", { name: /weekly-deps/ })
-		.click();
-	await expect(page).toHaveURL(/schedule=assistant\/weekly-deps/);
+	// Unchanged: going back to the board does not ask.
+	await back.click();
+	await expect(page).not.toHaveURL(/scheduled=/);
 	await expect(dialog).toHaveCount(0);
 
-	await prompt.fill("Edited prompt");
-	await rows
-		.nth(0)
-		.getByRole("button", { name: /nightly-triage/ })
+	await page
+		.getByTestId("scheduled-card")
+		.first()
+		.getByRole("link", { name: "nightly-triage" })
 		.click();
+	await prompt.fill("Edited prompt");
+	await back.click();
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole("button", { name: "Stay" }).click();
-	await expect(page).toHaveURL(/schedule=assistant\/weekly-deps/);
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
 	await expect(prompt).toHaveValue("Edited prompt");
 
 	// Saving makes it clean, so leaving no longer asks.
 	await editor.getByRole("button", { name: "Save", exact: true }).click();
 	await expect(editor.getByRole("button", { name: "Save" })).toBeEnabled();
-	await page.getByRole("tab", { name: "Board" }).click();
+	await back.click();
 	await expect(dialog).toHaveCount(0);
-	await expect(page).not.toHaveURL(/tab=schedules/);
+	await expect(page).not.toHaveURL(/scheduled=/);
+});
+
+// The board's filter chip for one state, Scheduled included.
+const chip = (page: Page, label: string) =>
+	page
+		.getByRole("group", { name: "Job filter" })
+		.getByRole("button", { name: new RegExp(`^${label}`) });
+
+test("the Scheduled chip counts, filters and persists with the job state chips", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const scheduled = page.getByTestId("scheduled-card");
+	const jobs = page.getByTestId("job-card");
+	const total = page.getByTestId("job-total");
+
+	// No chip selected shows the scheduled items and every job, and the
+	// total counts both: one job and two scheduled items.
+	await expect(chip(page, "Scheduled")).toHaveText(/^Scheduled\s*2$/);
+	await expect(chip(page, "Scheduled")).toHaveAttribute(
+		"aria-pressed",
+		"false",
+	);
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(1);
+	await expect(total).toHaveText("3 items");
+
+	// Scheduled alone shows only the scheduled items.
+	await chip(page, "Scheduled").click();
+	await expect(page).toHaveURL(/[?&]state=scheduled$/);
+	await expect(chip(page, "Scheduled")).toHaveClass(/bg-violet-600/);
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(0);
+	await expect(total).toHaveText(/^2 of \d+ items$/);
+
+	// With Running it shows both.
+	await chip(page, "Running").click();
+	await expect(page).toHaveURL(/[?&]state=scheduled(,|%2C)running$/);
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(1);
+	await expect(total).toHaveText(/^3 of \d+ items$/);
+
+	// A reload keeps the selection.
+	await page.reload();
+	await expect(chip(page, "Scheduled")).toHaveAttribute("aria-pressed", "true");
+	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(1);
+
+	// The kanban follows the chips: a Scheduled column and a Running one.
+	await page.getByTestId("kanban-toggle").click();
+	const columns = page.getByTestId("kanban-column");
+	await expect(columns).toHaveCount(2);
+	await expect(columns.nth(0)).toHaveAttribute("data-state", "scheduled");
+	await expect(columns.nth(1)).toHaveAttribute("data-state", "running");
+	await page.getByTestId("kanban-toggle").click();
+
+	// Deselecting Scheduled while Running stays selected hides them; the
+	// scheduled task's running run is a job, so it shows under Running.
+	await chip(page, "Scheduled").click();
+	await expect(page).toHaveURL(/[?&]state=running$/);
+	await expect(scheduled).toHaveCount(0);
+	await expect(jobs).toHaveCount(1);
+	await expect(jobs.getByTestId("job-scheduled")).toHaveText("Scheduled");
+	await expect(jobs.getByRole("heading")).toHaveText("nightly-triage");
+});
+
+test("the Board | Schedules toggle is gone and the board links to Scheduled Tasks", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	await expect(
+		page.getByRole("tablist", { name: "Project views" }),
+	).toHaveCount(0);
+	await expect(page.getByRole("tab", { name: /^Schedules/ })).toHaveCount(0);
+	await expect(
+		page.getByRole("link", { name: "Manage in Scheduled Tasks" }),
+	).toHaveAttribute("href", "/agents/assistant/tasks");
+});
+
+for (const query of ["tab=schedules", "view=schedules"])
+	test(`the old Schedules URL ?${query} lands on the board with only Scheduled selected`, async ({
+		page,
+	}) => {
+		await setup(page);
+		await page.goto(`/system/watches/lsegal%2Faviary?${query}`);
+		await expect(page).toHaveURL(/\?state=scheduled$/);
+		for (const label of [
+			"Scheduled",
+			"Starting",
+			"Paused",
+			"Running",
+			"Done",
+			"Failed",
+		])
+			await expect(chip(page, label)).toHaveAttribute(
+				"aria-pressed",
+				label === "Scheduled" ? "true" : "false",
+			);
+		await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+		await expect(page.getByTestId("job-card")).toHaveCount(0);
+	});
+
+test("an old Schedules URL for one schedule opens its editor on the board", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto(
+		"/system/watches/lsegal%2Faviary?tab=schedules&schedule=assistant/nightly-triage",
+	);
+	await expect(page).toHaveURL(/state=scheduled/);
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
+	await expect(page).not.toHaveURL(/tab=/);
+	await expect(
+		page.getByTestId("schedule-editor").getByLabel("Name"),
+	).toHaveValue("nightly-triage");
 });

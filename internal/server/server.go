@@ -160,6 +160,9 @@ func New(cfg *config.Config, token string) *Server {
 		v := processing
 		wsBroadcast(wsEvent{Type: "session_processing", AgentID: agentID, SessionID: sessionID, IsProcessing: &v})
 	})
+	agent.SetActiveTurnObserver(func(turn agent.ActiveTurn) {
+		wsBroadcast(sessionTurnEvent(turn))
+	})
 
 	// Install the log hub as the global slog handler, delegating to the
 	// preconfigured default handler (stderr + file, when logging.Init() ran).

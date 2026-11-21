@@ -37,29 +37,22 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 		"assistant",
 		"coder",
 	]);
-	// Add agent is the "+" on the Agents row (#638).
-	const addAgent = page.getByTestId("sidebar-add-agent");
-	await expect(addAgent).toHaveAttribute("aria-label", "Add agent");
-	await expect(addAgent).toHaveAttribute("title", "Add agent");
-	await expect(addAgent).toHaveText("");
+	// Agents are added from System → Settings, not the sidebar (#759).
+	await expect(page.getByTestId("sidebar-add-agent")).toHaveCount(0);
 
 	const system = page.getByTestId("sidebar-system-list");
 	await expect(system.getByRole("link")).toHaveText([
 		"Overview",
 		"Settings",
-		"Projects",
 		"Providers & Auth",
 		"Usage",
-		"Jobs",
 	]);
 	await page.getByTestId("sidebar-system-more").click();
 	await expect(system.getByRole("link")).toHaveText([
 		"Overview",
 		"Settings",
-		"Projects",
 		"Providers & Auth",
 		"Usage",
-		"Jobs",
 		"Tools",
 		"Skills",
 		"Sessions",
@@ -184,7 +177,9 @@ test("each agent's sidebar item reads Agent Settings", async ({ page }) => {
 	);
 });
 
-test('the Add agent "+" opens a new agent\'s settings', async ({ page }) => {
+test("System → Settings' + Add agent opens a new agent's settings", async ({
+	page,
+}) => {
 	await mockMCP(page, {
 		agent_list: [],
 		job_list: [],
@@ -193,8 +188,8 @@ test('the Add agent "+" opens a new agent\'s settings', async ({ page }) => {
 			agents: [{ name: "assistant", model: "anthropic/claude-sonnet-4-5" }],
 		},
 	});
-	await page.goto("/system/overview");
-	await page.getByTestId("sidebar-add-agent").click();
+	await page.goto("/system/settings");
+	await page.getByTestId("settings-add-agent").click();
 
 	await expect(page).toHaveURL("/agents/_1/settings");
 	await expect(

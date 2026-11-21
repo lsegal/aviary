@@ -2190,8 +2190,10 @@ func (w *Engine) Run(ctx context.Context) error {
 	// status counts over the last day. They are saved beside the work state
 	// so the count survives a restart (issue #413).
 	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
-	merges.onMerge = func(repo string, number int, mergedAt time.Time) {
-		w.recordProjectUsage(mergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged})
+	// Each merge also records the merged pull request's diff size, so Usage
+	// can report the code each project's jobs changed (issue #787).
+	merges.onMerge = func(repo string, number int, pullRequest PullRequestWorkState) {
+		w.recordProjectUsage(pullRequest.MergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged, Additions: pullRequest.Additions, Deletions: pullRequest.Deletions})
 	}
 	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
@@ -2225,6 +2227,9 @@ func (w *Engine) Run(ctx context.Context) error {
 		return workCopy, jobsCopy
 	})
 	defer w.setCloneView(nil)
+	reapCtx, stopReaping := context.WithCancel(ctx)
+	defer stopReaping()
+	go w.reapClonesEvery(reapCtx)
 	publish := func() {
 		if w.UI == nil {
 			return
@@ -3494,6 +3499,11 @@ func (w *Engine) Run(ctx context.Context) error {
 						w.logf("issue #%d completed (tasks: %d running, %d queued, %d completed, %d failed)", i.Number, running, queued, completed, failed)
 					}
 					publish()
+					if paused == nil {
+						// A paused job resumes from its clone; a finished one
+						// no longer needs it.
+						w.releaseJobClone(key, state.CheckoutDirectory)
+					}
 				}
 			}(issue, session, startedRunning, startedQueued)
 		}
@@ -3654,6 +3664,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					request.done <- fmt.Errorf("job is still running")
 					return
 				}
+				checkout := work[key].CheckoutDirectory
 				delete(work, key)
 				delete(active, key)
 				err := saveScopedWorkState(w.StatePath, work, targets)
@@ -3666,6 +3677,9 @@ func (w *Engine) Run(ctx context.Context) error {
 				delete(jobs, key)
 				jobMu.Unlock()
 				publish()
+				// The released job no longer needs its clone; removing it
+				// off the dispatch loop keeps the loop serving.
+				go w.releaseJobClone(key, checkout)
 				issue := Issue{Number: job.Number, Target: job.Target, Repository: job.Repository, Title: job.Title}
 				if w.Status != nil {
 					if statusErr := w.Status.SetIssueStatus(ctx, issue.Target, issue, projectReadyState(w.ReadyState, "")); statusErr != nil {

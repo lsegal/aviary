@@ -19,6 +19,14 @@
 									<span class="text-xs font-medium">{{ headerNoticeText }}</span>
 								</div>
 							</transition>
+							<button v-if="tasksRoot && draft.agents[selectedAgentIdx]?.name" type="button" data-testid="new-task-button"
+								aria-label="New task" title="New task"
+								class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+								@click="openNewTask">
+								<PlusIcon aria-hidden="true" class="h-4 w-4" />
+								New task
+							</button>
+							<template v-if="!tasksRoot">
 							<button v-if="revertAvailable" type="button"
 								class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
 								:disabled="loading || saving || reverting"
@@ -30,6 +38,7 @@
 							<button type="button"
 								class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
 								:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
+							</template>
 						</div>
 					</div>
 				</div>
@@ -44,7 +53,7 @@
 				</div>
 				<div v-if="compileToastVisible" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
 					class="flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-					<span>Compile in progress… <RouterLink to="/system/jobs" class="font-medium underline">View jobs</RouterLink></span>
+					<span>Compile in progress… <RouterLink :to="agentTaskPath(draft.agents[selectedAgentIdx]?.name ?? '')" class="font-medium underline">View runs</RouterLink></span>
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
 
@@ -298,6 +307,7 @@
 </template>
 
 <script setup lang="ts">
+import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import {
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -329,6 +339,7 @@ import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vu
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import { Skeleton } from "../components/ui/skeleton";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
@@ -476,7 +487,6 @@ const router = useRouter();
 // System pages map to their tab; System → Settings is the general tab.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
-	projects: "projects",
 	providers: "providers",
 	sessions: "sessions",
 	skills: "skills",
@@ -485,6 +495,7 @@ const systemTabs: Record<string, Tab> = {
 function routeToActiveTab(): Tab {
 	if (route.path === "/agents" || route.path.startsWith("/agents/"))
 		return "agents";
+	if (route.path === "/projects/settings") return "projects";
 	return systemTabs[route.params.tab as string] ?? "general";
 }
 
@@ -511,6 +522,7 @@ const chatSessions = useChatSessionsStore();
 const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
 const authStore = useAuthStore();
+const { open: openItemDialog } = useAgentItemDialogs();
 
 // Rename state for tasks
 const editingTaskOriginalName = ref<string | null>(null);
@@ -607,7 +619,7 @@ watch(
 // An agent's pages: its Agent Settings page's General and Permissions
 // sections, one channel's settings (opened from the Channels sidebar
 // section), then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in System → Projects.
+// settings in Projects settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -704,7 +716,25 @@ function projectTargetOptions(task: AgentTask): string[] {
 		: targets;
 }
 
+/**
+ * The Scheduled Tasks root page: the overview of the agent's tasks, with no
+ * task open. A task opens for editing with its ?task.
+ */
+/** The Scheduled Tasks page's "+ New task": the sidebar's Add task dialog. */
+function openNewTask() {
+	const agent = draft.value.agents[selectedAgentIdx.value]?.name;
+	if (agent) openItemDialog({ kind: "task", agent, mode: "create" });
+}
+
+const tasksRoot = computed(
+	() =>
+		activeTab.value === "agents" &&
+		selectedAgentSubtab.value === "tasks" &&
+		!(typeof route.query.task === "string" && route.query.task),
+);
+
 const selectedTask = computed((): AgentTask | null => {
+	if (tasksRoot.value) return null;
 	const agent = draft.value.agents[selectedAgentIdx.value];
 	if (!agent?.tasks?.length) return null;
 	const idx = selectedTaskIdx.value ?? 0;
@@ -841,16 +871,6 @@ function routeTaskIdx(): number {
 	return tasks.findIndex((t) => t.name === q);
 }
 
-// Picking a task in the sidebar routes to it; without one the page opens
-// the first task, as the sidebar highlights.
-watch(
-	() => route.query.task,
-	(q) => {
-		if (selectedAgentSubtab.value !== "tasks" || q) return;
-		const tasks = draft.value.agents[selectedAgentIdx.value]?.tasks ?? [];
-		selectedTaskIdx.value = tasks.length ? 0 : null;
-	},
-);
 watch(
 	() => [
 		route.query.task,
@@ -952,13 +972,29 @@ watch(
 );
 
 // /agents alone opens the first agent's chat, or adds an agent with ?add
-// (the sidebar's + Add Agent). With no agents it shows the empty state.
+// (System → Settings' + Add agent). With no agents it shows the empty state.
 function resolveAgentsIndex() {
 	if (loading.value || activeTab.value !== "agents") return;
 	// /agents/NAME alone opens that agent's chat.
 	if (route.params.agent && !route.params.subtab && !route.params.channel) {
 		void router.replace(`/agents/${route.params.agent}/chat`);
 		return;
+	}
+	// An index segment (/agents/_0/…, as /system/jobs redirects to) names a
+	// named agent by its name.
+	const param = route.params.agent as string | undefined;
+	if (param?.startsWith("_") && route.params.subtab) {
+		const name = draft.value.agents[agentIdxFromParam(param)]?.name;
+		if (name) {
+			void router.replace({
+				path: route.path.replace(
+					`/agents/${param}`,
+					`/agents/${encodeURIComponent(name)}`,
+				),
+				query: route.query,
+			});
+			return;
+		}
 	}
 	if (route.path !== "/agents") return;
 	if (route.query.add !== undefined) {
@@ -975,11 +1011,11 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 	permissions: "Agent Settings",
 	channels: "Channel Settings",
 	files: "Files",
-	tasks: "Tasks",
+	tasks: "Scheduled Tasks",
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects",
+	projects: "Projects Settings",
 	providers: "Providers & Auth",
 	sessions: "Sessions",
 	skills: "Skills",
@@ -990,6 +1026,7 @@ const pageTitle = computed(() => {
 	if (activeTab.value !== "agents") return systemTabLabels[activeTab.value];
 	const agent = draft.value.agents[selectedAgentIdx.value];
 	if (!agent || route.path === "/agents") return "Agents";
+	if (tasksRoot.value) return "Scheduled Tasks";
 	const name = agent.name || "New agent";
 	if (selectedAgentSubtab.value === "channels" && selectedChannel.value)
 		return `${name} · ${channelName(selectedChannel.value)} · Settings`;
@@ -1548,8 +1585,12 @@ const agentFileSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 // agent's open file across them, so only leaving the view asks about unsaved
 // settings, and only leaving the view or opening another of the agent's files
 // asks about an edited file.
+// The Scheduled Tasks root page has no Save, so going there from a task's
+// editor leaves its edits.
 const staysInSettings: KeepsEdits = (to, from) =>
-	to.meta.view === "settings" && from.meta.view === "settings";
+	to.meta.view === "settings" &&
+	from.meta.view === "settings" &&
+	!(to.params.subtab === "tasks" && !to.query.task);
 useUnsavedChanges(hasDraftChanges, { keeps: staysInSettings });
 function agentFileDirty(state: AgentFileEditorState): boolean {
 	return !!state.selectedFile && state.content !== state.savedContent;
@@ -1863,6 +1904,7 @@ function emptyConfig(): AppConfig {
 			tls: { cert: "", key: "" },
 			external_access: false,
 			no_tls: false,
+			auto_update: true,
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
@@ -1880,6 +1922,10 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	}
 	if (hydrated.browser.reuse_tabs === undefined) {
 		hydrated.browser.reuse_tabs = true;
+	}
+	// Unset means on, as on the server.
+	if (hydrated.server.auto_update === undefined) {
+		hydrated.server.auto_update = true;
 	}
 	hydrated.approval = {
 		mode: hydrated.approval?.mode ?? "",
@@ -2116,6 +2162,39 @@ function confirmRemoveAgent() {
 		// Index unchanged but the agent at this slot may have changed; update URL.
 		void router.replace(agentRoutePath(next, selectedAgentSubtab.value));
 	}
+}
+
+// System → Settings' Agents list renames and deletes an agent straight away.
+// Only that change is saved; other unsaved edits stay in the draft. An agent
+// that was never saved only changes in the draft.
+async function saveAgentListChange(
+	name: string,
+	change: (agents: AgentEntry[], idx: number) => void,
+) {
+	const saved = JSON.parse(lastSavedSnapshot.value) as AppConfig;
+	const idx = name ? saved.agents.findIndex((a) => a.name === name) : -1;
+	if (idx < 0) return;
+	change(saved.agents, idx);
+	await store.saveConfig(saved);
+	lastSavedSnapshot.value = JSON.stringify(saved);
+}
+
+async function renameAgentEntry(index: number, name: string) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents[idx].name = name;
+	});
+	entry.name = name;
+}
+
+async function deleteAgentEntry(index: number) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents.splice(idx, 1);
+	});
+	draft.value.agents.splice(index, 1);
 }
 
 function onAgentNameChange(agentEntry: AgentEntry) {
@@ -2765,6 +2844,8 @@ function normalizedDraftConfig(): AppConfig {
 		normalized.scheduler.precompute_tasks === false ? false : undefined;
 	normalized.browser.reuse_tabs =
 		normalized.browser.reuse_tabs === false ? false : undefined;
+	normalized.server.auto_update =
+		normalized.server.auto_update === false ? false : undefined;
 	const approval = {
 		mode: normalized.approval?.mode || undefined,
 		chat: normalized.approval?.chat || undefined,
@@ -3410,6 +3491,8 @@ const settingsContext = proxyRefs({
 	activeTab,
 	approvalModes: APPROVAL_MODES,
 	addAgent,
+	deleteAgentEntry,
+	renameAgentEntry,
 	addAllowFrom,
 	addProviderApiKey,
 	addProviderEndpoint,
@@ -3528,6 +3611,8 @@ const settingsContext = proxyRefs({
 	channelNotFound,
 	selectedTask,
 	selectedTaskIdx,
+	tasksRoot,
+	openNewTask,
 	selectedTaskTarget,
 	serverPortInput,
 	sessionAgent,

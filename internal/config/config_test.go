@@ -1575,6 +1575,43 @@ func TestWatcher(t *testing.T) {
 	})
 }
 
+func TestServerAutoUpdateDefaultsOn(t *testing.T) {
+	on, off := true, false
+
+	assert.True(t, EffectiveServerAutoUpdate(nil))
+	assert.True(t, EffectiveServerAutoUpdate(&Config{}), "unset means on")
+	assert.True(t, EffectiveServerAutoUpdate(&Config{Server: ServerConfig{AutoUpdate: &on}}))
+	assert.False(t, EffectiveServerAutoUpdate(&Config{Server: ServerConfig{AutoUpdate: &off}}))
+
+	cfg := &Config{Server: ServerConfig{AutoUpdate: &on}}
+	normalize(cfg)
+	assert.Nil(t, cfg.Server.AutoUpdate, "the default is not written")
+
+	cfg = &Config{Server: ServerConfig{AutoUpdate: &off}}
+	normalize(cfg)
+	assert.Equal(t, &off, cfg.Server.AutoUpdate, "an explicit off is kept")
+}
+
+func TestServerAutoUpdateFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aviary.yaml")
+
+	require.NoError(t, os.WriteFile(path, []byte("server:\n  port: 1234\n"), 0o600))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, EffectiveServerAutoUpdate(cfg), "a config without auto_update updates")
+
+	require.NoError(t, os.WriteFile(path, []byte("server:\n  auto_update: false\n"), 0o600))
+	cfg, err = Load(path)
+	require.NoError(t, err)
+	assert.False(t, EffectiveServerAutoUpdate(cfg), "auto_update: false stays off")
+
+	require.NoError(t, Save(path, cfg))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "auto_update: false")
+}
+
 func TestCodingSkillsConfigKeepsOnlyNonDefaults(t *testing.T) {
 	on, off := true, false
 

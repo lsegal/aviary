@@ -14,18 +14,25 @@
 						class="field-input font-mono" :placeholder="dialog?.kind === 'file' ? 'IDENTITY.md' : 'daily-briefing'" />
 
 					<template v-if="dialog?.kind === 'task'">
-						<template v-if="dialog.project && dialog.mode === 'create'">
-							<label for="agent-task-agent" class="field-label mt-3">Agent</label>
-							<select id="agent-task-agent" v-model="form.agent" class="field-input">
-								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
-							</select>
-						</template>
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="!taskProject" />
 						</div>
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
+						<template v-if="dialog.mode === 'create'">
+							<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
+							<select id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
+								aria-describedby="agent-task-send-to-help" class="field-input">
+								<option value="">Task session only</option>
+								<option v-for="c in taskChannels" :key="channelName(c)" :value="channelTarget(channelName(c))">
+									{{ channelName(c) }} · {{ c.type }}
+								</option>
+							</select>
+							<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+								Runs always show their output in the task's own session; a channel also gets a copy in its conversation.
+							</p>
+						</template>
 						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
 							:class="dialog.project ? 'opacity-60' : ''">
 							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
@@ -113,6 +120,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { useMCP } from "../../composables/useMCP";
 import { useTriggerPreview } from "../../composables/useTriggerPreview";
+import { channelName, channelTarget } from "../../lib/channels";
 import {
 	applyTaskTrigger,
 	type TriggerFields,
@@ -142,8 +150,9 @@ const form = reactive({
 	trigger: taskTriggerFields({ name: "" }),
 	prompt: "",
 	type: "prompt",
-	agent: "",
 	precompute: true,
+	/** Where runs forward their output: "" or channel:<name>. */
+	target: "",
 });
 // Remounts the trigger editor for each dialog, so its preview starts afresh.
 const editorKey = ref(0);
@@ -157,11 +166,24 @@ const taskProject = computed(() => {
 	return task?.type === "project" ? (task.project ?? "") : "";
 });
 
-/** The agents a project task may be created under, its default first. */
-const agentChoices = computed(() => {
+/** The agent a new task is created under. */
+const taskAgent = computed(() => {
 	const d = dialog.value;
-	if (!d) return [];
-	return [...new Set([d.agent, ...(d.agents ?? [])].filter(Boolean))];
+	if (d?.kind !== "task" || d.mode !== "create") return "";
+	return d.agent;
+});
+
+/** The task agent's channels, offered by name as Send To. */
+const taskChannels = computed(
+	() =>
+		settings.config?.agents
+			.find((a) => a.name === taskAgent.value)
+			?.channels?.filter((c) => c.type && c.id) ?? [],
+);
+
+// Another agent clears a Send To that named one of the old agent's channels.
+watch(taskAgent, (agent, prev) => {
+	if (prev && agent !== prev) form.target = "";
 });
 
 const formOpen = computed(
@@ -189,7 +211,7 @@ const description = computed(() => {
 	if (d.mode !== "create")
 		return `Renames ${d.name} or changes its trigger and prompt.`;
 	return d.project
-		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and this project's Schedules section edits the rest of its settings.`
+		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and its box on this project's board edits the rest of its settings.`
 		: `A scheduled task for ${d.agent}. The Scheduled Tasks page edits the rest of its settings.`;
 });
 
@@ -209,9 +231,9 @@ watch(dialog, (d) => {
 	editorKey.value++;
 	form.prompt = task?.prompt ?? "";
 	form.type = agentTaskType(task?.type);
-	form.agent = d?.agent ?? "";
 	form.precompute =
 		!d?.project && settings.config?.scheduler?.precompute_tasks !== false;
+	form.target = "";
 });
 
 /**
@@ -240,7 +262,6 @@ function showing(kind: "task" | "file", agent: string, name: string): boolean {
 async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 	const project = mode === "create" ? dialog.value?.project : undefined;
 	const onCreated = dialog.value?.onCreated;
-	if (project) agent = form.agent || agent;
 	const name = form.name.trim();
 	const clash = agentTasks(agent).some(
 		(t) => t.name === name && t.name !== from,
@@ -255,7 +276,7 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 				type: project ? "project" : "prompt",
 				...(project ? { project } : {}),
 				watch: "",
-				target: "",
+				target: form.target,
 				run_once: false,
 				from_file: true,
 				prompt: form.prompt,

@@ -100,7 +100,6 @@ test.beforeEach(async ({ page }) => {
 test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await openAgentPage(page, "settings");
 
-	await expect(page.getByTestId("sidebar-add-agent")).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Remove Agent", exact: true }).first(),
 	).toBeVisible();
@@ -111,6 +110,8 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 
 	// Tasks subtab
 	await agentPageLink(page, "Scheduled Tasks").click();
+	// The root page is the overview; a task opens for editing.
+	await page.getByTestId("task-row").first().click();
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
@@ -246,20 +247,19 @@ test("switching agents preserves subtab and loads that agent file state", async 
 				?.get(String(args?.file ?? "")) ?? "",
 	});
 
-	await page.goto("/agents/assistant/tasks");
+	await page.goto("/agents/assistant/tasks?task=daily-briefing");
 
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
 
+	// Switching agents keeps the subtab, opening the other agent's overview.
 	await page
 		.getByTestId("sidebar-agent-list")
 		.getByRole("link", { name: "coder", exact: true })
 		.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/tasks$/);
-	await expect(
-		page.locator('input[placeholder="daily-briefing"]').first(),
-	).toHaveValue("repo-check");
+	await expect(page.getByTestId("task-card")).toHaveText([/repo-check/]);
 
 	await agentPageLink(page, "Files").click();
 	await expect(page).toHaveURL(/\/agents\/coder\/files$/);
@@ -816,6 +816,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 
 	await openAgentPage(page, "settings");
 	await agentPageLink(page, "Scheduled Tasks").click();
+	// The root page is the overview; a task opens for editing.
+	await page.getByTestId("task-row").first().click();
 
 	const prompt = page.getByPlaceholder("Task prompt...").first();
 	await prompt.fill("line 1\n\nline 3\n");
@@ -838,6 +840,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await openAgentPage(page, "settings");
 	await agentPageLink(page, "Scheduled Tasks").click();
+	// The root page is the overview; a task opens for editing.
+	await page.getByTestId("task-row").first().click();
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
 	const toggle = page
@@ -849,7 +853,7 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 
 test("task header wraps cleanly on mobile", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await openAgentPage(page, "tasks", "assistant");
+	await page.goto("/agents/assistant/tasks?task=daily-briefing");
 
 	const definedIn = page.getByText("Defined in: aviary.yaml", {
 		exact: true,
@@ -1394,7 +1398,7 @@ test("tasks use the shared trigger editor and save a daily trigger without cron"
 		},
 	});
 
-	await page.goto("/agents/assistant/tasks");
+	await page.goto("/agents/assistant/tasks?task=daily-briefing");
 	const editor = page.getByTestId("trigger-editor");
 
 	// A hand-written cron expression opens on the Cron tab, unchanged.

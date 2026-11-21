@@ -848,7 +848,7 @@ test("messages sent while a reply streams are added at once", async ({
 	}
 });
 
-test("a failed turn's error attaches to its message and Retry re-runs it", async ({
+test("a failed turn's error attaches to its message and its icon Retry re-runs it", async ({
 	page,
 }) => {
 	const runs: Record<string, unknown>[] = [];
@@ -919,8 +919,28 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 		expect(attached.x + attached.width).toBeLessThan(bubble.x + bubble.width);
 	}
 
+	// Retry is a compact icon button in the footer, next to the time and model.
+	const retry = error.getByRole("button", { name: "Retry" });
+	await expect(retry).toBeVisible();
+	await expect(retry).toHaveText("");
+	await expect(retry).toHaveAttribute("title", "Retry this message");
+	await expect(retry.locator("svg")).toBeVisible();
+	const retryBox = await retry.boundingBox();
+	const footerBox = await error.getByText("claude/opus").boundingBox();
+	expect(retryBox && footerBox).toBeTruthy();
+	if (retryBox && footerBox) {
+		expect(retryBox.width).toBeLessThanOrEqual(24);
+		expect(retryBox.height).toBeLessThanOrEqual(24);
+		expect(retryBox.x).toBeGreaterThan(footerBox.x);
+		expect(
+			Math.abs(
+				retryBox.y + retryBox.height / 2 - (footerBox.y + footerBox.height / 2),
+			),
+		).toBeLessThan(4);
+	}
+
 	// Retrying while the provider still fails updates the error in place.
-	await sent.getByTestId("chat-message-retry").click();
+	await retry.click();
 	await expect.poll(() => runs.length).toBe(2);
 	expect(runs[1]).toMatchObject({ message: "summarize", retry: true });
 	await expect(error).toContainText("502 Bad Gateway");
@@ -928,10 +948,135 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 
 	// Once it recovers, Retry lands the reply and the error is gone.
 	failing = false;
-	await sent.getByTestId("chat-message-retry").click();
+	await sent.getByRole("button", { name: "Retry" }).click();
 	await expect.poll(() => runs.length).toBe(3);
 	expect(runs[2]).toMatchObject({ message: "summarize", retry: true });
 	await expect(page.getByText("all good")).toBeVisible();
 	await expect(page.getByTestId("chat-message-error")).toHaveCount(0);
 	await expect(page.getByText("summarize", { exact: true })).toHaveCount(1);
+});
+
+// #770: the waiting indicator shows what the turn is doing.
+function holdReload() {
+	let ran = false;
+	return () => {
+		if (!ran) {
+			ran = true;
+			return [];
+		}
+		return new Promise(() => {});
+	};
+}
+
+test("the waiting indicator animates while the agent thinks", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [
+			{ id: "a1", name: "assistant", model: "claude/opus", state: "idle" },
+		],
+		session_list: [
+			{ id: "s1", agent_id: "a1", name: "main", created_at: "2026-03-12" },
+		],
+		agent_run: () => new Promise(() => {}),
+		config_validate: [],
+		session_messages: [],
+	});
+	await sendChat(page);
+
+	const indicator = page.getByTestId("chat-activity");
+	await expect(indicator).toHaveAttribute("aria-live", "polite");
+	await expect(indicator).toHaveText("Thinking…");
+	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
+		"animation-name",
+		/chat-activity-bounce/,
+	);
+});
+
+test("the waiting indicator fades instead of bouncing with reduced motion", async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	await mockMCP(page, {
+		agent_list: [
+			{ id: "a1", name: "assistant", model: "claude/opus", state: "idle" },
+		],
+		session_list: [
+			{ id: "s1", agent_id: "a1", name: "main", created_at: "2026-03-12" },
+		],
+		agent_run: () => new Promise(() => {}),
+		config_validate: [],
+		session_messages: [],
+	});
+	await sendChat(page);
+
+	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+	await expect(page.getByTestId("chat-activity-dot").first()).toHaveCSS(
+		"animation-name",
+		/chat-activity-fade/,
+	);
+});
+
+test("a running tool spins and shows its elapsed time once slow", async ({
+	page,
+}) => {
+	await page.clock.install();
+	await mockToolChat(page, [jobList(filterCall)], holdReload());
+	await sendChat(page);
+
+	const block = jobListBlocks(page);
+	await expect(block.getByTestId("tool-call-spinner")).toBeVisible();
+	const indicator = page.getByTestId("chat-activity");
+	await expect(indicator).toHaveText("Running project_job_list…");
+
+	await page.clock.fastForward(6000);
+	await expect(indicator).toHaveText(/Running project_job_list · [67]s/);
+	await page.clock.fastForward(4000);
+	await expect(indicator).toHaveText(/Running project_job_list · 1[01]s/);
+});
+
+test("finished tool chips show a check or a warning with the error", async ({
+	page,
+}) => {
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			jobList(indicatorCall),
+			jobList({ ...indicatorCall, error: "timed out", done: true }),
+		],
+		holdReload(),
+	);
+	await sendChat(page);
+
+	const blocks = jobListBlocks(page);
+	await expect(blocks).toHaveCount(2);
+	await expect(blocks.nth(0).getByTestId("tool-call-check")).toBeVisible();
+	await expect(blocks.nth(1).getByTestId("tool-call-warning")).toBeVisible();
+	await expect(blocks.nth(1).locator("summary")).toHaveAttribute(
+		"title",
+		"timed out",
+	);
+	await expect(page.getByTestId("tool-call-spinner")).toHaveCount(0);
+	// Between tools and before any reply, the turn is thinking again.
+	await expect(page.getByTestId("chat-activity")).toHaveText("Thinking…");
+});
+
+test("the waiting indicator goes away once reply text streams", async ({
+	page,
+}) => {
+	await mockToolChat(
+		page,
+		[
+			jobList(filterCall),
+			jobList({ ...filterCall, result: '{"total": 0}', done: true }),
+			"Here is the answer",
+		],
+		holdReload(),
+	);
+	await sendChat(page);
+
+	await expect(page.getByText("Here is the answer")).toBeVisible();
+	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
 });

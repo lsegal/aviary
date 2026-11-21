@@ -94,7 +94,7 @@ async function mockChannels(
 			: [{ id: "assistant", name: "assistant", model: "x/y", state: "idle" }],
 		config_get: () => config,
 		config_save: (args) => {
-			record("config_save", args);
+			record("config_save", { ...args });
 			Object.assign(config, JSON.parse(String(args?.config ?? "{}")));
 			return "ok";
 		},

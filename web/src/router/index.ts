@@ -50,7 +50,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		// GitHub Projects: the board for every project the agent owns, and
-		// one project's board. Their settings live in System → Projects.
+		// one project's board. Their settings live in /projects/settings.
 		{
 			path: "/agents/:agent/projects",
 			component: ProjectsView,
@@ -64,6 +64,13 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 			children: [{ path: "jobs/:number(\\d+)", component: ProjectJobDetail }],
 		},
+		// Every agent's projects and the settings they all share, opened from
+		// the boards' gear.
+		{
+			path: "/projects/settings",
+			component: SettingsView,
+			meta: { requiresAuth: true, view: "settings" },
+		},
 		// The instance's own pages.
 		{ path: "/system", redirect: "/system/overview" },
 		{
@@ -72,7 +79,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/system/:tab(settings|projects|providers|sessions|skills)",
+			path: "/system/:tab(settings|providers|sessions|skills)",
 			component: SettingsView,
 			meta: { requiresAuth: true, view: "settings" },
 		},
@@ -81,10 +88,11 @@ const router = createRouter({
 			component: () => import("../views/UsageView.vue"),
 			meta: { requiresAuth: true },
 		},
+		// Task runs and their analytics live on an agent's Scheduled Tasks.
 		{
 			path: "/system/jobs",
-			component: () => import("../views/JobsView.vue"),
 			meta: { requiresAuth: true },
+			redirect: () => ({ path: "/agents/_0/tasks", query: {} }),
 		},
 		{
 			path: "/system/tools",
