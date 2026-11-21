@@ -5,9 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 devDependencies:
-  '@fontsource/fraunces':
-    specifier: ^5.3.0
-    version: 5.3.0
   '@fontsource/ibm-plex-mono':
     specifier: ^5.3.0
     version: 5.3.0
@@ -522,10 +519,6 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
-
-  /@fontsource/fraunces@5.3.0:
-    resolution: {integrity: sha512-LEHTOBiZufQzAvnAe2rZ8ZknbDS28Q9kzwb0L+gZJEmjLGr8hhZ/5NuHXwDuHBWhVXYoiGGXmrb0H6Ko/RrHTg==}
-    dev: true
 
   /@fontsource/ibm-plex-mono@5.3.0:
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
