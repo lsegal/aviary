@@ -301,7 +301,7 @@
 
 .skill-flow {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	grid-template-columns: repeat(var(--flow-cols, 4), minmax(0, 1fr));
 	gap: 14px;
 	margin: 12px 0 0;
 	padding: 0;
@@ -552,6 +552,10 @@
 	.skill-band {
 		padding-top: 52px;
 	}
+
+	.skill-flow {
+		grid-template-columns: repeat(var(--flow-cols-md, 2), minmax(0, 1fr));
+	}
 }
 
 @media (max-width: 560px) {
@@ -561,6 +565,10 @@
 
 	.skill-panel {
 		padding: 20px;
+	}
+
+	.skill-flow {
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
