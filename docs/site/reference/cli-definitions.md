@@ -2,7 +2,7 @@
 
 Aviary reaches some providers through their own CLI, such as Claude Code, Codex or Gemini CLI. Aviary has no CLI-specific launch code: every CLI provider is described by a **definition**, a document that says which executable to run, the argv for a fresh run, a resume and a vision call, the environment the child process gets, how its session ID comes to exist, how its output is decoded, how Aviary's approval modes map to its flags, where its quota is read, and which skills.sh target its skills install for.
 
-Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Projects](/guide/projects) jobs, the Projects prompt chat and watchdog, and Settings → Providers & Authentication.
+Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Code Loop](/guide/projects) jobs, the Code Loop prompt chat and watchdog, and Settings → Providers & Authentication.
 
 This page is the reference for that schema. To see how a definition is used in the issue-to-merge loop, read [The code loop on GitHub](/guide/code-loop).
 
@@ -25,7 +25,7 @@ A model names a definition and, optionally, a model and a reasoning level: `clau
 
 A CLI with no resumable session is not a degraded one. When its run exits early, the job is restarted with a recovery prompt, and `gh-fix` is re-entrant, so the restarted run adopts the branch and draft pull request the previous one left behind.
 
-`agy` cannot run Projects jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Its `projectsUnavailable` field says so, and dispatching a job to it fails with that reason.
+`agy` cannot run Code Loop jobs yet: it has no machine-readable output mode, so it cannot produce a structured job transcript. Its `projectsUnavailable` field says so, and dispatching a job to it fails with that reason.
 
 `aviary/<agent>` is the `aviary` definition: it runs the turn on one of your Aviary agents inside the server rather than as a child process, so it declares no argv or output.
 
@@ -85,7 +85,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | `output` | object | yes | | How stdout is decoded. See [`output`](#output). |
 | `missingSession` | string[] | no | none | Extra phrases that mean the session to resume is gone. See [`missingSession`](#missingsession). |
 | `wakeup` | object | no | none | How the CLI ends a turn asking to be woken later. See [Deferred turns](/guide/projects#deferred-turns). |
-| `projectsUnavailable` | string | no | none | Keeps the CLI out of Projects jobs, with the reason; it stays usable elsewhere. |
+| `projectsUnavailable` | string | no | none | Keeps the CLI out of Code Loop jobs, with the reason; it stays usable elsewhere. |
 | `quota` | object | no | `{reader: none}` | Where the quota reading comes from. See [`quota`](#quota). |
 | `skills` | object | no | none | The skills.sh target its skills install for. See [`skills`](#skills). |
 | `promptStdin` | string[] | no | none | Lets long prompts go to stdin. See [`promptStdin`](#promptstdin). |
@@ -152,8 +152,8 @@ Each template is a list of **fragments**, appended in order. A fragment is delib
 | Condition | Holds when |
 | --- | --- |
 | `yolo` | The call runs in the `full` approval mode. |
-| `remoteControl` | The Projects job runs with Claude Code's Remote Control bridge. |
-| `oneShot` | The call is an out-of-band one-shot outside any checkout, such as the Projects prompt chat or the stuck-job watchdog. Dispatched jobs never set it. |
+| `remoteControl` | The Code Loop job runs with Claude Code's Remote Control bridge. |
+| `oneShot` | The call is an out-of-band one-shot outside any checkout, such as the Code Loop prompt chat or the stuck-job watchdog. Dispatched jobs never set it. |
 | `noCheckout` | The CLI runs outside any checkout: every `oneShot` call, and a job whose clone does not exist yet. |
 
 So `{when: model, args: [--model, "{model}"]}` passes a model only when one was named, and `{when: noCheckout, args: [--skip-git-repo-check]}` is how `codex` runs outside a repository.
@@ -221,7 +221,7 @@ Claude Code, for another, ignores the permission allow entries of a workspace it
 | `output.jsonl` | object | when `format` is `jsonl` | The generic decoder's field paths. Rejected on the other formats. |
 | `output.transcript` | string | no | The mapper that turns a `jsonl` stream into a job's structured transcript: `opencode-json`, `cline-json` or `muse-json`. The other formats have mappers of their own. |
 
-Projects keeps a structured transcript for every job, so a CLI whose output Aviary cannot map should declare `projectsUnavailable`, as `agy` does.
+Code Loop keeps a structured transcript for every job, so a CLI whose output Aviary cannot map should declare `projectsUnavailable`, as `agy` does.
 
 A **path** is dot-separated object keys, each optionally suffixed with `[]` to step into every element of an array: `message.content[].text` reads the text of every content block. A path that names nothing in an event contributes nothing, so an unfamiliar event is passed over rather than failing the stream, and a line that is not JSON is passed through as written.
 
@@ -259,7 +259,7 @@ Every field but `reader` belongs to the `command` reader and is rejected on the 
 
 ### `promptStdin`
 
-Out-of-band calls, such as the Projects prompt chat and the stuck-job watchdog, send a prompt carrying the instance's jobs and their latest output, which can exceed what an OS command line allows. A definition with `promptStdin` writes the prompt to stdin instead and renders the template's `{prompt}` argument as the listed arguments: `[]` leaves it out (Claude Code's `-p` then reads stdin), and `["-"]` puts a dash there (how `codex exec` reads stdin). Without it, a long prompt is written to a temporary file and the CLI is asked to read that file. Dispatched jobs always pass their prompt as an argument.
+Out-of-band calls, such as the Code Loop prompt chat and the stuck-job watchdog, send a prompt carrying the instance's jobs and their latest output, which can exceed what an OS command line allows. A definition with `promptStdin` writes the prompt to stdin instead and renders the template's `{prompt}` argument as the listed arguments: `[]` leaves it out (Claude Code's `-p` then reads stdin), and `["-"]` puts a dash there (how `codex exec` reads stdin). Without it, a long prompt is written to a temporary file and the CLI is asked to read that file. Dispatched jobs always pass their prompt as an argument.
 
 ### `skills`
 
@@ -296,7 +296,7 @@ Answer these by running the CLI:
 1. **What is the non-interactive invocation?** It must not open a TUI or need a terminal.
 2. **How does it run without asking for approval?** A job cannot answer a permission prompt, and a CLI whose non-interactive default is to auto-reject cannot reach the clone `gh-fix` works in. Find its flags for each approval mode.
 3. **Does it have a resumable session?** It accepts an ID you give it, prints one you can read back, or has neither.
-4. **What does it print?** Plain text, or line-delimited JSON. Projects jobs need a machine-readable stream.
+4. **What does it print?** Plain text, or line-delimited JSON. Code Loop jobs need a machine-readable stream.
 5. **Which skills.sh id does it have?** `universal` if none.
 
 ### 2. Write the minimal definition
@@ -397,7 +397,7 @@ describe where the fields are instead of writing a decoder:
           ignore: [usage]
 ```
 
-Without a transcript mapper for its stream, add `projectsUnavailable` with the reason until one exists, so Projects does not dispatch jobs it cannot record.
+Without a transcript mapper for its stream, add `projectsUnavailable` with the reason until one exists, so Code Loop does not dispatch jobs it cannot record.
 
 ### 7. Add quota, if it reports any
 

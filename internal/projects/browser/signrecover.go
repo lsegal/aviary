@@ -236,7 +236,7 @@ func (r *SignInRecovery) fail(err error) {
 // status when GitHub's own status is what gave the session away, so the log
 // says what Aviary saw rather than only what it decided.
 func signInAnnouncement(err error) string {
-	const next = "sign in to GitHub in Aviary's browser from the Projects board, or switch to gh polling"
+	const next = "sign in to GitHub in Aviary's browser from the Code Loop board, or switch to gh polling"
 	var signedOut *SignedOutError
 	if errors.As(err, &signedOut) {
 		if signedOut.Status != 0 {

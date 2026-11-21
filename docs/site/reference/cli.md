@@ -80,7 +80,7 @@ aviary token [flags]
 
 ## aviary ui
 
-Open the Projects board in the server's web UI. With a project argument such as `owner/repo`, open that project's board. Uses the server address from `--server`.
+Open the Code Loop board in the server's web UI. With a project argument such as `owner/repo`, open that project's board. Uses the server address from `--server`.
 
 ```
 aviary ui [project]
@@ -190,7 +190,7 @@ Manage agents.
 aviary agent <subcommand>
 ```
 
-Agent-scoped commands take the agent's name, which may be omitted when only one agent exists (the built-in Projects agent does not count): the command then acts on that agent. With several agents, omitting it is an error that lists the agents to choose from.
+Agent-scoped commands take the agent's name, which may be omitted when only one agent exists (the built-in Code Loop agent does not count): the command then acts on that agent. With several agents, omitting it is an error that lists the agents to choose from.
 
 ### aviary agent list
 
@@ -272,7 +272,7 @@ aviary task stop
 
 ## aviary watch
 
-Watch GitHub projects and fix ready issues with a CLI provider. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Projects](/guide/projects).
+Watch GitHub projects and fix ready issues with a CLI provider. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Code Loop](/guide/projects).
 
 ```
 aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
@@ -287,7 +287,7 @@ With no `TARGET`, the current checkout's `origin` repository is watched. `--agen
 
 ## aviary project
 
-Manage Projects. Each subcommand calls the `project_*` tool of the same name with the same arguments, given as `--<field> <value>` flags; a leading positional argument fills the main field. See [Projects tools](/reference/mcp/projects).
+Manage Code Loop. Each subcommand calls the `project_*` tool of the same name with the same arguments, given as `--<field> <value>` flags; a leading positional argument fills the main field. See [Code Loop tools](/reference/mcp/projects).
 
 ```
 aviary project status

@@ -91,7 +91,7 @@ test("rail icons navigate and name their page in a tooltip", async ({
 
 	for (const [key, label] of [
 		["chat", "Chats"],
-		["projects", "GitHub Projects"],
+		["projects", "Code Loop"],
 		["tasks", "Scheduled Tasks"],
 		["settings", "Agent Settings"],
 		["system", "System"],

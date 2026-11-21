@@ -33,7 +33,7 @@ test("a single agent's pages are the sidebar's top level", async ({ page }) => {
 		"Chats",
 		"Agent Settings",
 		"Scheduled Tasks",
-		"GitHub Projects",
+		"Code Loop",
 	]) {
 		await expect(
 			sole.getByRole("link", { name: label, exact: true }),
@@ -92,7 +92,7 @@ test("adding an agent from a single-agent sidebar shows the agent tree", async (
 
 const ALL_PAGES = [
 	"Chats",
-	"GitHub Projects",
+	"Code Loop",
 	"Scheduled Tasks",
 	"Files",
 	"Agent Settings",
@@ -151,7 +151,7 @@ test.describe("on a phone", () => {
 		await mockAgents(page, ["assistant"]);
 		await page.goto("/system/overview");
 		const { visible, hidden } = await mobileNav(page);
-		expect(visible.slice(0, 2)).toEqual(["Chats", "GitHub Projects"]);
+		expect(visible.slice(0, 2)).toEqual(["Chats", "Code Loop"]);
 		expect(visible).toContain("System");
 		expect(hidden.length).toBeGreaterThan(0);
 		expect([...visible, ...hidden].sort()).toEqual([...ALL_PAGES].sort());

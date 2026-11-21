@@ -2,7 +2,7 @@
   <div class="space-y-6 pb-8">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <p class="max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-        These skills do the work in Projects. Aviary decides when to run one and in which CLI, then the skill handles the rest:
+        These skills do the work in Code Loop. Aviary decides when to run one and in which CLI, then the skill handles the rest:
         branch, pull request, tests, changelog, CI and merge. They're installed into each CLI, so they work without Aviary too.
       </p>
       <div class="flex flex-wrap items-center gap-3">
@@ -76,7 +76,7 @@
                 <span
                   v-if="skill.run_by_projects"
                   class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-                >run by Projects</span>
+                >run by Code Loop</span>
                 <span
                   v-else
                   class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"

@@ -541,7 +541,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
-	// Project tasks run as Projects jobs, so the dialog offers precompute but
+	// Project tasks run as Code Loop jobs, so the dialog offers precompute but
 	// it cannot apply to them.
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();

@@ -633,8 +633,8 @@ watch(
 );
 
 // An agent's pages: its Agent Settings page's General, Permissions and
-// Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in Projects settings.
+// Channels sections, then Files and Tasks. Code Loop is the agent's board, with its
+// settings in Code Loop settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -979,7 +979,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects Settings",
+	projects: "Code Loop Settings",
 	providers: "Settings",
 	sessions: "Sessions",
 	skills: "Skills",

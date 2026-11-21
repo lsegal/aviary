@@ -53,7 +53,7 @@
       <!-- Projects -->
       <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
         data-testid="usage-projects">
-        <h3 class="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Projects</h3>
+        <h3 class="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Code Loop</h3>
         <div class="grid gap-3 sm:grid-cols-3 md:grid-cols-6">
           <div v-for="card in projectCards" :key="card.label" class="flex flex-col">
             <span class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ card.label }}</span>
@@ -297,7 +297,7 @@ function sessionLabel(agent: string, id: string): string {
 	const sess = chatSessions.sessions(agent).find((s) => s.id === id);
 	if (sess) return chatDisplayName(sess);
 	if (agent in chatSessions.byAgent) return "Deleted session";
-	// Sessions the agent cannot list (such as Projects job runs) have no name.
+	// Sessions the agent cannot list (such as Code Loop job runs) have no name.
 	return `…${id.slice(-12)}`;
 }
 
